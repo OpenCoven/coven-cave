@@ -651,6 +651,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         error: undefined,
         activity: undefined,
       };
+      const delegator = userTurn.delegatedByFamiliarId
+        ? byId.get(userTurn.delegatedByFamiliarId)?.display_name ?? userTurn.delegatedByFamiliarId
+        : null;
+      const retryText = delegator ? `Delegated by @${delegator}:\n${userTurn.text}` : userTurn.text;
       updateReply(reply.id, () => fresh);
       setBusy(true);
       const controller = new AbortController();
@@ -661,7 +665,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         renderCovenRoundtablePrompt({
           participants: rosterParticipants,
           receivingFamiliarId: fresh.familiarId,
-          userText: userTurn.text,
+          userText: retryText,
           targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
         }),
         controller.signal,

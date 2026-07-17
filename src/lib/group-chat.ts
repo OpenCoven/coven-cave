@@ -195,8 +195,10 @@ function delegationIgnoredRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   for (const re of [
     /```[\s\S]*?(?:```|$)/g,
+    /~~~[\s\S]*?(?:~~~|$)/g,
     /(`+)[^\n]*?\1/g,
     /^[ \t]{0,3}>.*$/gm,
+    /^(?: {4,}|\t).*$/gm,
   ]) {
     let match: RegExpExecArray | null;
     while ((match = re.exec(text))) ranges.push([match.index, match.index + match[0].length]);

@@ -216,7 +216,19 @@ test("extractCovenDelegations: ignores quoted, inline-code, and fenced marker ex
   const inline = '`<coven:delegation target="charm">inline</coven:delegation>`';
   const multiBacktickInline = '``<coven:delegation target="charm">inline</coven:delegation>``';
   const fenced = '```xml\n<coven:delegation target="charm">fenced</coven:delegation>\n```';
-  for (const text of [quoted, indentedQuote, inline, multiBacktickInline, fenced]) {
+  const tildeFenced = '~~~xml\n<coven:delegation target="charm">fenced</coven:delegation>\n~~~';
+  const indentedCode = '    <coven:delegation target="charm">indented</coven:delegation>';
+  const tabIndentedCode = '\t<coven:delegation target="charm">indented</coven:delegation>';
+  for (const text of [
+    quoted,
+    indentedQuote,
+    inline,
+    multiBacktickInline,
+    fenced,
+    tildeFenced,
+    indentedCode,
+    tabIndentedCode,
+  ]) {
     assert.deepEqual(extractCovenDelegations(text), { visible: text, delegations: [] });
   }
 });

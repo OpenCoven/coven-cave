@@ -73,6 +73,7 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /delegationSourceReplyId: source\.id/, "records the stable source reply for persistence and idempotency");
   assert.match(view, /targetFamiliarIds: \[targetId\]/, "routes only to the explicitly delegated target");
   assert.match(view, /sessions\[targetId\] \?\? null/, "reuses the target familiar's latest pinned session");
+  assert.match(view, /const retryText = delegator \? `Delegated by @\$\{delegator\}:\\n\$\{userTurn\.text\}` : userTurn\.text/, "preserves delegation attribution when a failed target is retried");
   assert.match(view, /delegator \? "HANDOFF" : "OP"/, "renders familiar-issued work as an attributed handoff");
 });
 
