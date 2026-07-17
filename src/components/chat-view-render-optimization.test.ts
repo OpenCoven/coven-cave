@@ -19,10 +19,9 @@ const messageBubbleSource = readFileSync(
   "utf8",
 );
 
-const caveChatCss = readFileSync(
-  new URL("../styles/cave-chat.css", import.meta.url),
-  "utf8",
-);
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 1: Turn index map for O(1) lookup (CHAT-D10-02 fix)

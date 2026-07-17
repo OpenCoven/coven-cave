@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 // Presentational building blocks shared by the standalone `/daily-report/[date]`
 // and `/dashboard` routes. These are server components — they render the
 // client-only <Icon> as a leaf island, which Next.js allows. Keeping them here

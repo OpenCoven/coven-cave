@@ -1,0 +1,1041 @@
+/* cave-md.css — the shared Markdown/Shiki reading surface (.cave-md,
+ * code blocks, tables, diffs, mermaid). Split out of cave-chat.css
+ * (#3264) so non-chat surfaces (memory, skills, docs) can style
+ * rendered markdown without paying for the whole chat sheet.
+ * Import from every component that renders `cave-md` markup. */
+
+/* cave-chat.css — Markdown + Shiki styles for Cave chat bubbles.
+ * Scoped to .cave-md so styles don't bleed into app chrome.
+ * Tokens reference globals.css custom properties except the fixed code-chrome
+ * inks below, which intentionally mirror the dark palette in both themes.
+ */
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DARK-CHROME FIXED INKS (CHAT-D13-01)
+   Code blocks and system turns keep a deliberate dark-terminal surface in
+   BOTH theme modes (the Shiki theme is mood-c-dark either way). Their
+   foregrounds therefore must NOT follow --text-* — in light mode those
+   tokens flip to dark ink, which is unreadable on the still-dark chrome.
+   Values mirror the globals.css DARK palette so dark mode is unchanged.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root {
+  --code-chrome-ink: oklch(0.985 0 0);                /* dark-mode --text-primary */
+  --code-chrome-ink-muted: oklch(0.66 0.018 293);     /* dark-mode --text-secondary */
+  /* Mirrors dark-mode --text-muted, raised 40% → 72% (CHAT-D13-02): 9-11px
+     chrome labels must clear AA 4.5:1 on the code surface — 40% composited
+     to ~3.7:1. Pinned by theme-contrast-audit.test.ts (chrome section). */
+  --code-chrome-ink-faint: oklch(0.985 0 0 / 72%);    /* dark-mode --text-muted */
+  --code-chrome-accent: #9a8ecd;                      /* dark-mode --accent-presence */
+  /* Fixed chrome surfaces. The body surface is the shared --code-surface
+     (globals.css); these are its raised header/footer and control steps.
+     Theme borders flip to dark ink in light mode and vanish on this chrome,
+     so borders INSIDE the chrome use the fixed hairline below — only the
+     outer wrap border (which delimits against the themed page) stays on
+     --border-hairline. */
+  --code-chrome-surface-raised: oklch(0.16 0.015 280 / 92%);
+  --code-chrome-surface-control: oklch(0.2 0.012 280 / 92%);
+  --code-chrome-surface-control-hover: oklch(0.25 0.015 280 / 92%);
+  --code-chrome-border: oklch(0.985 0 0 / 14%);
+  /* Fixed-chrome state inks (diff gutters, copy-confirmed). The themed
+     --color-success/--color-danger retune darker for light surfaces and
+     would fall below AA on the always-dark chrome. */
+  --code-chrome-success: oklch(0.65 0.15 170);
+  --code-chrome-danger: oklch(0.7 0.17 20);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BASE PROSE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md {
+  font-size: var(--text-md);
+  /* Reading line-spacing + letter-spacing + alignment knobs (Settings →
+     Appearance → Typography). Default to 1.7 / 0 / left when vars are unset. */
+  line-height: var(--cave-reading-leading, 1.7);
+  letter-spacing: var(--cave-reading-tracking, 0);
+  text-align: var(--cave-reading-align, left);
+  /* Max reading-width cap (Settings → Appearance → Typography). `none` when
+     --cave-reading-width is unset, so prose fills its container by default. */
+  max-width: var(--cave-reading-width, none);
+  /* Base reading font-weight (Settings → Appearance → Typography). Bold and
+     headings keep their own weights. Defaults to 400 when var is unset. */
+  font-weight: var(--cave-reading-weight, 400);
+  /* Hyphenation (Settings → Appearance → Typography). `manual` (no auto
+     hyphenation) when unset; needs <html lang> + the -webkit- prefix for the
+     WebKit webview. */
+  -webkit-hyphens: var(--cave-reading-hyphens, manual);
+  hyphens: var(--cave-reading-hyphens, manual);
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cave-md > * + * { margin-top: 0.8em; }
+.cave-md > *:first-child { margin-top: 0; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   READER SCALE — the full-screen Expand view. The transcript's 14px density
+   is right in the stream; a dedicated reading surface earns a book measure
+   (72ch cap set by the modal) and a calmer, larger scale.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md--reader {
+  font-size: 15.5px;
+  line-height: var(--cave-reading-leading, 1.75);
+}
+.cave-md--reader > * + * { margin-top: 0.95em; }
+.cave-md--reader h1 { font-size: 1.45em; }
+.cave-md--reader h2 { font-size: 1.22em; }
+.cave-md--reader h3 { font-size: 1.05em; }
+.cave-md--reader table { font-size: 13.5px; }
+.cave-md--reader .cave-code-wrap pre code { font-size: 13px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HEADINGS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md h1,
+.cave-md h2,
+.cave-md h3,
+.cave-md h4 {
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-top: 1.1em;
+}
+
+.cave-md h1 {
+  font-size: 1.22em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.cave-md h2 {
+  font-size: 1.08em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+.cave-md h3 { font-size: 0.97em; }
+.cave-md h4 { font-size: 0.9em; color: var(--text-secondary); font-weight: 600; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PARAGRAPHS & INLINE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md p { margin: 0; }
+.cave-md strong { font-weight: 650; color: var(--text-primary); }
+.cave-md em     { font-style: italic; color: var(--text-secondary); }
+.cave-md del    { text-decoration: line-through; color: var(--text-muted); opacity: 0.7; }
+
+.cave-md a {
+  color: var(--accent-presence-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  transition: color 0.12s, text-decoration-color 0.12s;
+}
+.cave-md a:hover {
+  color: var(--accent-presence);
+  text-decoration-color: var(--accent-presence);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   INLINE CODE — quiet neutral chip. Responses are dense with identifiers, and
+   the old accent-lavender pill turned every one into decoration; accent is
+   presence, not punctuation (design language). Neutral chips read as text.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md :not(pre) > code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  padding: 0.14em 0.42em;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
+  /* Wrap long inline code gracefully instead of overflowing the bubble.
+     break-word keeps short snippets intact but lets oversized tokens break. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BLOCKQUOTE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md blockquote {
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  margin-left: 0;
+  padding: 0.25em 0 0.25em 0.9em;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
+  border-radius: 0 5px 5px 0;
+}
+.cave-md blockquote p { color: inherit; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LISTS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md ul,
+.cave-md ol {
+  padding-left: 1.4em;
+  margin: 0;
+}
+.cave-md ul { list-style-type: disc; }
+.cave-md ol { list-style-type: decimal; }
+
+.cave-md li { margin-top: 0.28em; }
+.cave-md li:first-child { margin-top: 0; }
+.cave-md li > p { margin: 0; }
+
+.cave-md li > ul,
+.cave-md li > ol { margin-top: 0.2em; }
+
+.cave-md ul > li::marker {
+  color: color-mix(in oklch, var(--accent-presence) 55%, var(--text-muted));
+}
+.cave-md ol > li::marker {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TABLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* CHAT-D7-08: mdToHtml wraps every rendered table in .cave-table-scroll so
+   wide tables get a horizontal scrollbar instead of dominating layout. */
+.cave-md .cave-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+}
+.cave-md .cave-table-scroll::-webkit-scrollbar { height: 4px; }
+.cave-md .cave-table-scroll::-webkit-scrollbar-track { background: transparent; }
+.cave-md .cave-table-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* Expandable tables: each rendered table is wrapped in .cave-table-block with a
+   hover-revealed Expand chip that opens it full-size in a lightbox. */
+.cave-md .cave-table-block {
+  position: relative;
+  margin: var(--space-2) 0 var(--space-4);
+}
+.cave-md .cave-table-block > .cave-table-scroll {
+  margin: 0;
+}
+
+.cave-table-expand-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cave-table-block:hover .cave-table-expand-btn,
+.cave-table-block:focus-within .cave-table-expand-btn,
+.cave-table-expand-btn:focus-visible {
+  opacity: 1;
+}
+.cave-table-expand-btn:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 50%, transparent);
+}
+.cave-table-expand-glyph {
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+/* Touch devices have no hover — keep the affordance visible. */
+@media (hover: none) {
+  .cave-table-expand-btn { opacity: 0.85; }
+}
+
+.cave-table-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 4vw, 48px);
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: cave-table-lightbox-in var(--duration-fast) var(--ease-standard);
+}
+@keyframes cave-table-lightbox-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.cave-table-lightbox__panel {
+  display: flex;
+  flex-direction: column;
+  max-width: min(96vw, 1280px);
+  max-height: 90vh;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
+  overflow: hidden;
+}
+.cave-table-lightbox__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 9px var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+}
+.cave-table-lightbox__title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.cave-table-lightbox__close {
+  padding: var(--space-1) 14px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+.cave-table-lightbox__close:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
+}
+.cave-table-lightbox__body {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5) var(--space-6);
+}
+.cave-table-lightbox__body table {
+  font-size: 13.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-table-lightbox { animation: none; }
+}
+
+/* Mermaid diagrams (```mermaid fences). The plugin's postProcess swaps the
+   placeholder <pre class="cm-mermaid"> for <div class="cm-mermaid-diagram"><svg>.
+   The diagram's own colors come from the mermaid "dark" theme; we only style the
+   surrounding card and the fallback (pre-render / render-failure) placeholder. */
+.cave-md .cm-mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-5) var(--space-4);
+  /* Diagram canvas: a faint dot grid on the panel layer, the same visual
+     language as node editors — diagrams read as a drawing surface, not a
+     quote box. Dots come from the hairline scale so all 19 themes hold. */
+  background:
+    radial-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1px),
+    color-mix(in oklch, var(--bg-panel) 72%, transparent);
+  background-size: 18px 18px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow-x: auto;
+}
+.cave-md .cm-mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Rendered diagrams are click-to-expand into the fullscreen zoom/pan viewer. */
+.cave-md .cm-mermaid-diagram--interactive {
+  position: relative;
+  cursor: zoom-in;
+}
+.cm-mermaid-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.cm-mermaid-diagram--interactive:hover .cm-mermaid-expand,
+.cm-mermaid-expand:focus-visible {
+  opacity: 1;
+}
+.cm-mermaid-expand:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Fullscreen diagram viewer (zoom + pan), mounted on <body>. */
+.cm-mermaid-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  /* Mermaid diagrams are transparent, so unlike the modal (which sits on an
+     opaque panel) the backdrop must be near-solid or the chat bleeds through.
+     The mermaid theme is always dark, so a solid dark backdrop always fits. */
+  background: rgba(9, 9, 11, 0.97);
+  backdrop-filter: blur(6px);
+}
+.cm-mermaid-viewer__stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  /* The same dot-grid canvas as the inline frame, so expanding feels like
+     zooming into the drawing surface rather than teleporting to a void. */
+  background-image: radial-gradient(
+    color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+.cm-mermaid-viewer__stage--grabbing {
+  cursor: grabbing;
+}
+.cm-mermaid-viewer__canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.cm-mermaid-viewer__canvas svg {
+  display: block;
+  overflow: visible;
+}
+/* Stop per-node label clipping when mermaid's pre-font-load measurement left
+   the boxes narrower than the final text. */
+.cm-mermaid-viewer__canvas svg foreignObject {
+  overflow: visible;
+}
+.cm-mermaid-viewer__toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-mermaid-viewer__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.cm-mermaid-viewer__btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.cm-mermaid-viewer__btn--close {
+  color: var(--text-muted);
+}
+.cm-mermaid-viewer__level {
+  min-width: 46px;
+  text-align: center;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.cm-mermaid-viewer__hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  user-select: none;
+  pointer-events: none;
+}
+
+.cave-md .cm-mermaid-container { margin: 8px 0 16px; }
+.cave-md .cm-mermaid {
+  display: block;
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+
+/* Tables read as rows, not a spreadsheet grid: the frame + radius live on the
+   scroll wrapper (border-radius can't clip a collapsed table), separators are
+   horizontal-only, and the header pins while the wrapper scrolls. */
+.cave-md .cave-table-scroll {
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
+}
+.cave-md table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+.cave-md th,
+.cave-md td {
+  padding: 0.52em 0.9em;
+  border-bottom: 1px solid var(--border-hairline);
+  text-align: left;
+  vertical-align: top;
+  /* CHAT-D7-08: undo .cave-md's break-anywhere inside cells — auto table
+     layout then grows the table past 100% when a token can't wrap, and the
+     .cave-table-scroll wrapper scrolls it instead of shattering words. */
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.cave-md th:first-child,
+.cave-md td:first-child { padding-left: 1.1em; }
+.cave-md th:last-child,
+.cave-md td:last-child { padding-right: 1.1em; }
+.cave-md tr:last-child td { border-bottom: none; }
+
+.cave-md th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+.cave-md tbody tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
+.cave-md tbody tr:hover td {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  transition: background 0.1s;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HORIZONTAL RULE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 20%,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 80%,
+    transparent
+  );
+  margin: 1.2em 0;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK OUTER WRAPPER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-wrap {
+  position: relative;
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline);
+  /* Near-opaque fixed dark: a 60%-alpha wash went muddy over a light
+     --bg-base (CHAT-D13-01). Shared with the file editor via --code-surface. */
+  background: var(--code-surface);
+  box-shadow:
+    0 1px 3px oklch(0 0 0 / 30%),
+    inset 0 1px 0 oklch(0.985 0 0 / 4%);
+  /* CHAT-D7-03: the wrap is the block's vertical scroll container — huge
+     blocks clamp instead of dominating the transcript (cf. the system
+     bubble's 320px cap; benchmark: Claude Code truncates long blocks).
+     520px reads as ~24 code lines.
+     overflow-x stays hidden: the inner <pre> owns horizontal scrolling,
+     and the wrap must keep clipping its rounded corners. */
+  max-height: min(60vh, 520px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+  font-size: var(--text-sm);
+  margin: 0.6em 0;
+}
+
+/* "Show more" lifts the clamp (toggled by wireCopyButtons' expand wiring). */
+.cave-code-wrap--expanded {
+  max-height: none;
+}
+
+/* Collapsed: fold the block to just its sticky header (toggled by the chevron
+   in wireCopyButtons' collapse wiring). The code body + "Show more" footer are
+   hidden; the header — language, filename, line count, Copy — stays. */
+.cave-code-wrap--collapsed {
+  max-height: none;
+  overflow: hidden;
+}
+.cave-code-wrap--collapsed > pre,
+.cave-code-wrap--collapsed > .cave-code-expand {
+  display: none;
+}
+
+.cave-code-collapse-btn {
+  order: -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  /* Chrome ink, not --text-*: theme ink goes dark-on-dark in light mode
+     (CHAT-D13-01). */
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.cave-code-collapse-btn:hover {
+  color: var(--code-chrome-ink);
+  background: color-mix(in oklch, var(--code-chrome-ink) 8%, transparent);
+}
+.cave-code-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+.cave-code-chevron {
+  transition: transform 0.12s ease;
+}
+.cave-code-wrap--collapsed .cave-code-chevron {
+  transform: rotate(-90deg);
+}
+
+.cave-code-lines {
+  font-size: var(--text-2xs);
+  color: var(--code-chrome-ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cave-code-wrap::-webkit-scrollbar { width: 4px; }
+.cave-code-wrap::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK HEADER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-header {
+  /* CHAT-D7-02: stick to the top of the wrap's scroll viewport so the lang
+     label + Copy stay reachable on long blocks (benchmark: ChatGPT/Cursor).
+     Legible while stuck thanks to the near-opaque surface (CHAT-D13-01). */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.75em;
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
+  min-height: 28px;
+  backdrop-filter: blur(4px);
+}
+
+/* Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+   were dropped from the code header — the language label + filename + Copy
+   button carry it, no ornamental chrome. */
+.cave-code-lang {
+  order: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* No opacity dimmer: alpha-stacking is how the old 40% ink evaded
+     automated contrast checks while reading ~3:1 (CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 80%, var(--code-chrome-ink-faint));
+  flex-shrink: 0;
+}
+
+.cave-code-filename {
+  order: 2;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  color: var(--code-chrome-ink-faint);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SHIKI PRE + CODE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-wrap pre {
+  margin: 0;
+  border-radius: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+  padding: 0.8em 0;
+  background: transparent !important;
+}
+
+.cave-code-wrap pre::-webkit-scrollbar { height: 4px; }
+.cave-code-wrap pre::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap pre::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
+.cave-code-wrap pre code {
+  display: block;
+  background: transparent !important;
+  border: none !important;
+  padding: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1; /* flex .cave-line rows set their own height; kill gap from \n text nodes */
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE ROWS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 1em;
+  min-height: 1.6em;
+  transition: background 0.08s;
+}
+.cave-line:hover { background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+/* Jump-to-line target (e.g. opened from Projects search): a brief accent wash
+   that fades after landing so it draws the eye without staying loud. */
+.cave-line--active {
+  background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence, var(--foreground));
+  animation: cave-line-flash 1.6s ease-out;
+}
+@keyframes cave-line-flash {
+  0% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 38%, transparent); }
+  100% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent); }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE NUMBERS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-ln {
+  flex-shrink: 0;
+  width: 2.6em;
+  padding-right: 0.8em;
+  /* AA at 10px on the code surface (was accent-28%/50%-alpha gray ≈ 2.2:1,
+     the "ordinals" finding in CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 30%, var(--code-chrome-ink-muted));
+  font-size: var(--text-2xs);
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DIFF GUTTER STRIPS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-diff-add {
+  background: color-mix(in oklch, var(--code-chrome-success) 10%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-success) 55%, transparent);
+  padding-left: calc(1em - 2px);
+}
+.cave-diff-del {
+  background: color-mix(in oklch, var(--code-chrome-danger) 12%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-danger) 55%, transparent);
+  padding-left: calc(1em - 2px);
+}
+/* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
+   tokens carry inline colors, so the ink override needs !important. Chrome
+   ink, not --text-muted: theme ink is dark-on-dark in light mode, and an
+   extra opacity dimmer would sink it back below AA (CHAT-D13-01/02). */
+.cave-diff-meta {
+  color: var(--code-chrome-ink-faint);
+}
+.cave-diff-meta span {
+  color: var(--code-chrome-ink-faint) !important;
+}
+/* Language-highlighted diffs re-attach the leading +/- as its own span so the
+   code keeps its token colors; tint the marker to match its line's strip. */
+.cave-diff-marker {
+  color: var(--code-chrome-ink-faint);
+}
+.cave-diff-add .cave-diff-marker {
+  color: var(--code-chrome-success);
+}
+.cave-diff-del .cave-diff-marker {
+  color: var(--code-chrome-danger);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COPY BUTTON
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-2xs);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0.2em 0.6em;
+  border-radius: var(--radius-sm);
+  /* Fixed chrome border + surface: --border-strong flips to dark ink in
+     light mode and disappeared on this dark chip (CHAT-D13-01). */
+  border: 1px solid var(--code-chrome-border);
+  background: var(--code-chrome-surface-control);
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, background 0.1s;
+  white-space: nowrap;
+  line-height: 1.4;
+  backdrop-filter: blur(4px);
+}
+
+.cave-copy-btn--confirmed {
+  opacity: 1 !important;
+  color: var(--code-chrome-success);
+}
+
+.cave-copy-btn:hover {
+  color: var(--code-chrome-ink);
+  background: var(--code-chrome-surface-control-hover);
+}
+.cave-copy-btn:focus-visible { opacity: 1; }
+
+/* push copy btn to right inside header */
+.cave-code-header .cave-copy-btn {
+  order: 3;
+  margin-left: auto;
+}
+
+/* bubble-level copy — top-right corner */
+.cave-copy-btn-bubble {
+  position: absolute;
+  top: 0.35em;
+  right: 0.45em;
+}
+
+/* Icon-only copy/expand button variant — tighter padding */
+.cave-copy-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   EXPAND FOOTER (CHAT-D7-03) — emitted only on blocks tall enough to clamp;
+   sticks to the bottom of the wrap's scroll viewport like the header sticks
+   to its top. Fixed dark chrome inks (CHAT-D13-01), no theme ink.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-expand {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0.25em 0.75em;
+  background: var(--code-chrome-surface-raised);
+  border-top: 1px solid var(--code-chrome-border);
+  backdrop-filter: blur(4px);
+}
+
+.cave-code-expand-btn {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.8em;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  transition: color 0.1s;
+  line-height: 1.4;
+}
+
+.cave-code-expand-btn:hover,
+.cave-code-expand-btn:focus-visible {
+  color: var(--code-chrome-ink);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SYNTAX BLOCK (tool I/O, file preview, inspector pane)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-syntax-block .cave-code-wrap {
+  border-radius: 6px;
+  margin: 0;
+}
+.cave-syntax-block .cave-code-header { padding: 3px 10px; min-height: 24px; }
+.cave-syntax-block pre { font-size: inherit; }
+
+/* Frosted-glass fallbacks for the table lightbox — split from the shared
+   glass blocks in cave-chat.css (#3264) so md-only surfaces keep an opaque,
+   readable panel without backdrop-filter support. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .cave-table-lightbox__panel { background: var(--bg-panel); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cave-table-lightbox__panel {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Second-pass moves from cave-chat.css (#3264): markdown-pipeline output
+   (file links, GFM task lists, mermaid SVG theming, code-copy reveal) that
+   state/vendor-inner classes had kept in the chat sheet. */
+
+
+/* Inline file references linkified by wireFilePathLinks — clickable, with an
+   underline-on-hover affordance so they read as actionable. */
+.cave-md code.cave-file-link {
+  cursor: pointer;
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+.cave-md code.cave-file-link:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cave-md code.cave-file-link:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+
+/* Task list */
+.cave-md li.task-list-item {
+  list-style: none;
+  margin-left: -1em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+.cave-md li.task-list-item input[type="checkbox"] {
+  accent-color: var(--accent-presence);
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  cursor: default;
+}
+/* Token-theme the diagram itself. Mermaid bakes its palette into an inline
+   <style> per SVG (and initialize()-level theming has proven unreliable
+   through the preview plugin), so the surface's own tokens win here — which
+   also keeps diagrams correct across every theme, live. Scoped to the two
+   places a diagram can live: the transcript card and the fullscreen viewer. */
+.cave-md .cm-mermaid-diagram svg .node rect,
+.cave-md .cm-mermaid-diagram svg .node circle,
+.cave-md .cm-mermaid-diagram svg .node ellipse,
+.cave-md .cm-mermaid-diagram svg .node polygon,
+.cave-md .cm-mermaid-diagram svg .node path,
+.cm-mermaid-viewer__canvas svg .node rect,
+.cm-mermaid-viewer__canvas svg .node circle,
+.cm-mermaid-viewer__canvas svg .node ellipse,
+.cm-mermaid-viewer__canvas svg .node polygon,
+.cm-mermaid-viewer__canvas svg .node path {
+  fill: var(--bg-raised) !important;
+  stroke: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline)) !important;
+}
+.cave-md .cm-mermaid-diagram svg .nodeLabel,
+.cave-md .cm-mermaid-diagram svg .edgeLabel,
+.cave-md .cm-mermaid-diagram svg .label,
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .edgeLabel,
+.cm-mermaid-viewer__canvas svg .label {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgePath path,
+.cave-md .cm-mermaid-diagram svg path.flowchart-link,
+.cm-mermaid-viewer__canvas svg .edgePath path,
+.cm-mermaid-viewer__canvas svg path.flowchart-link {
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .marker,
+.cm-mermaid-viewer__canvas svg .marker {
+  fill: var(--text-muted) !important;
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgeLabel rect,
+.cave-md .cm-mermaid-diagram svg .labelBkg,
+.cm-mermaid-viewer__canvas svg .edgeLabel rect,
+.cm-mermaid-viewer__canvas svg .labelBkg {
+  fill: var(--bg-panel) !important;
+  background-color: var(--bg-panel) !important;
+}
+.cave-md .cm-mermaid-diagram svg .cluster rect,
+.cm-mermaid-viewer__canvas svg .cluster rect {
+  fill: color-mix(in oklch, var(--bg-panel) 60%, transparent) !important;
+  stroke: var(--border-hairline) !important;
+}
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .label,
+.cm-mermaid-viewer__canvas svg .edgeLabel {
+  overflow: visible;
+}
+
+.cave-code-wrap:hover .cave-copy-btn,
+.group:hover .cave-copy-btn { opacity: 1; }
+
+/* Keyboard reach (CHAT-D6-04): the buttons are always in the DOM; tabbing
+ * into them must reveal them even without a pointer. */
+.cave-code-wrap:focus-within .cave-copy-btn,
+.group:focus-within .cave-copy-btn { opacity: 1; }

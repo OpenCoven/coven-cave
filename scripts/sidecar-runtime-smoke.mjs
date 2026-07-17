@@ -148,7 +148,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_510);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_522);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -317,7 +317,7 @@ async function main() {
           accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
         },
       },
-      general: { newsHeadlines: false, stopPhrase: "halt" },
+      general: { newsHeadlines: false, stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {

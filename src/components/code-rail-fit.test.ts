@@ -10,7 +10,13 @@ import { readFile } from "node:fs/promises";
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
-const caveChat = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const caveChat = (
+  await Promise.all(
+    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 // The split width must persist across reloads via useDefaultLayout under
 // CHAT_GROUP_ID, keyed by the mounted panel set (bare vs with-code-rail).

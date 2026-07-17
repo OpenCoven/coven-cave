@@ -5,7 +5,9 @@ import { toolArgDetail, toolArgSummary } from "../lib/tool-arg-summary.ts";
 import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 
 // After the streamline refactor the header is MetaLine (title + status meta)

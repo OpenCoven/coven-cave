@@ -64,7 +64,12 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // route chunk) landed on a main already at the Windows brim — CI measured
   // 5,501 on Windows. Raised to 5,510: nine files of headroom, byte ceiling
   // untouched.
-  fileCount: 5_510,
+  // 2026-07-17 (#3264 root stylesheet split): the 868 KiB root CSS chunk is
+  // now ~13 surface-scoped stylesheets loaded per route (root CSS −29%) —
+  // more files by design, fewer bytes parsed everywhere. CI measured 5,512
+  // on Windows. Raised to 5,522: ten files of headroom, byte ceiling
+  // untouched.
+  fileCount: 5_522,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

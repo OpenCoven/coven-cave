@@ -223,7 +223,9 @@ assert.match(
 // src/lib/transcript-find.ts. Intra-turn highlighting is deferred.
 
 const chatViewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const chatCssSource = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 // 1. Behavioral: the pure turn-level match helper.
 const { findMatchingTurnIds } = await import("../lib/transcript-find.ts");

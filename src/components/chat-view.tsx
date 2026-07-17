@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
@@ -3390,6 +3394,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
+  // The last settled assistant turn's top next-path — the pills flag that one
+  // as "Recommended", and the empty composer mirrors it as its placeholder so
+  // ⇥ / ← can accept it without reaching for the pills.
+  const recommendedNextPath = useMemo(() => {
+    const last = [...activePath]
+      .reverse()
+      .find((t) => t.role === "assistant" && !t.pending && !t.error);
+    if (!last?.text) return null;
+    return extractNextPaths(last.text).suggestions[0] ?? null;
+  }, [activePath]);
+
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
   // chunk). Lookups are O(1).
@@ -5005,6 +5020,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (handlePlaceholderTab(e, inputRef.current, setInput)) return;
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
     if (handleArrowKey(e, input, setInput)) return;
+    // Recommended-next-path ghost fill: an EMPTY composer showing the
+    // recommendation as its placeholder accepts it with ⇥ or ← (both inert
+    // in an empty textarea, so no editing behaviour is lost). Ordered after
+    // the menus and token branches — they keep owning Tab while open — and
+    // gated on the empty draft so native Tab focus-move survives the moment
+    // there's real text (a11y). Fill, never send: the draft stays editable.
+    if (
+      ((e.key === "Tab" && !e.shiftKey) || e.key === "ArrowLeft") &&
+      input === "" &&
+      !busy &&
+      recommendedNextPath
+    ) {
+      e.preventDefault();
+      setInput(recommendedNextPath);
+      return;
+    }
     // `isComposing` is true for the Enter that confirms an IME candidate
     // (CJK/pinyin/kana). Treating that Enter as "send" fires a half-composed,
     // garbled message and destroys the candidate selection, so let the IME keep it.
@@ -5798,7 +5829,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onClick={syncComposerCaret}
               onSelect={syncComposerCaret}
               onPaste={handlePaste}
-              placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
+              placeholder={
+                busy
+                  ? "Streaming… (esc to cancel)"
+                  : recommendedNextPath
+                    ? `${recommendedNextPath}  ⇥ to fill`
+                    : `Message ${familiar.display_name}…  ↵ to send`
+              }
               rows={1}
               inputMode="text"
               enterKeyHint="send"

@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";

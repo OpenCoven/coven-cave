@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = (
+  await Promise.all(
+    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 assert.doesNotMatch(
   css,

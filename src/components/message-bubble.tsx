@@ -1,5 +1,12 @@
 "use client";
 
+// Only the shared markdown/code sheet: MarkdownBlock/SyntaxBlock render on
+// non-chat surfaces (settings memory tab, journal, github, command palette),
+// which must not pull the whole chat stylesheet (#3264). The bubble/turn
+// chrome (.cave-bubble-*) lives in cave-chat.css, imported by the chat
+// surfaces that render <MessageBubble> itself (chat-view, group-chat-view).
+import "@/styles/cave-md.css";
+
 /**
  * MessageBubble — full Markdown/HTML rendering for Cave chat turns.
  *

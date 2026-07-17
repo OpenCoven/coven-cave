@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PulseBars } from "@/components/ui/pulse-bars";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -16,7 +16,6 @@ import {
 } from "@/components/familiars-view-stats";
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
 import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiar-growth-signals";
-import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
@@ -77,12 +76,19 @@ const HEALTH_ORDER: Record<GrowthReportModel["healthLabel"], number> = {
 
 const HEALTH_KEYS = ["stalled", "quiet", "steady", "active"] as const;
 
+/** Dropdown group headings, in the same attention-first order. */
+const HEALTH_GROUP_LABELS: Record<GrowthReportModel["healthLabel"], string> = {
+  stalled: "Stalled",
+  quiet: "Quiet",
+  steady: "Steady",
+  active: "Active",
+};
+
 type RosterRow = {
   familiar: Familiar;
   stats: FamiliarCardStats;
   retro: RetroFamiliarState | null;
   report: GrowthReportModel;
-  pulse: PulseDay[];
 };
 
 function emptyStats(): FamiliarCardStats {
@@ -213,7 +219,6 @@ export function FamiliarGrowthView({
             stats: familiarStats,
             retro,
             report: deriveGrowthReport({ familiar, stats: familiarStats, retroState: retro, now }),
-            pulse: buildSessionPulse(data.sessions, familiar.id, now),
           };
         })
         .sort(
@@ -221,7 +226,7 @@ export function FamiliarGrowthView({
             HEALTH_ORDER[a.report.healthLabel] - HEALTH_ORDER[b.report.healthLabel] ||
             a.familiar.display_name.localeCompare(b.familiar.display_name),
         ),
-    [data.familiars, data.sessions, now, retroStates, stats],
+    [data.familiars, now, retroStates, stats],
   );
 
   const triage = useMemo(() => {
@@ -239,6 +244,35 @@ export function FamiliarGrowthView({
   }, [reports, selectedFamiliarId]);
 
   const selected = reports.find((item) => item.familiar.id === selectedFamiliarId) ?? reports[0] ?? null;
+
+  /** Health-grouped dropdown options — attention-first, so the familiars that
+      need nurturing surface at the top of an arbitrarily long roster. */
+  const familiarGroups = useMemo<StandardSelectGroup<string>[]>(
+    () =>
+      HEALTH_KEYS.map((key) => ({
+        label: `${HEALTH_GROUP_LABELS[key]} (${triage[key]})`,
+        options: reports
+          .filter((row) => row.report.healthLabel === key)
+          .map(({ familiar, stats: familiarStats, retro }) => ({
+            value: familiar.id,
+            label: familiar.display_name,
+            detail: `${familiar.role || familiar.harness || "familiar"} · ${reportSummary(familiarStats, retro)}`,
+            leading: (
+              <AuthedImage
+                className="retro-avatar growth-picker__option-avatar"
+                src={familiar.avatarUrl}
+                alt=""
+                fallback={
+                  <span className="retro-avatar growth-picker__option-avatar">
+                    {familiar.display_name.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+              />
+            ),
+          })),
+      })).filter((group) => group.options.length > 0),
+    [reports, triage],
+  );
 
   const shellClass = `growth-surface${standalone ? " growth-surface--standalone" : ""}`;
 
@@ -284,10 +318,10 @@ export function FamiliarGrowthView({
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
           </button>
           {selected ? (
-            <a className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
+            <Link className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
               <Icon name="ph:chart-bar-bold" aria-hidden />
               Analytics
-            </a>
+            </Link>
           ) : null}
         </div>
       </header>
@@ -300,62 +334,51 @@ export function FamiliarGrowthView({
       ) : null}
 
       <div className="growth-layout">
-        <aside className="growth-sidebar" aria-label="Familiar roster">
-          <div className="retro-panel-title">
+        <div className="growth-picker" role="group" aria-label="Familiar selection">
+          <span className="growth-picker__label">
             <Icon name="ph:users-three-bold" aria-hidden />
-            Familiar roster
-          </div>
-          {loading ? (
-            <SkeletonRows count={4} />
-          ) : reports.length === 0 ? (
-            <EmptyState
-              compact
-              icon="ph:users-three-bold"
-              headline="No familiars yet."
-              subtitle="Create a familiar to start tracking growth."
-            />
-          ) : (
-            <ul>
-              {reports.map(({ familiar, stats: familiarStats, retro, report, pulse }) => {
-                const selectedItem = selected?.familiar.id === familiar.id;
-                return (
-                  <li key={familiar.id}>
-                    <button
-                      type="button"
-                      className={`growth-familiar${selectedItem ? " is-selected" : ""}`}
-                      aria-pressed={selectedItem}
-                      onClick={() => setSelectedFamiliarId(familiar.id)}
-                    >
+            Familiar
+          </span>
+          {reports.length > 0 ? (
+            <>
+              <StandardSelect
+                label="Select familiar"
+                title="Select familiar"
+                value={selected?.familiar.id ?? ""}
+                onChange={setSelectedFamiliarId}
+                options={familiarGroups}
+                className="growth-picker__select focus-ring"
+                popoverClassName="growth-picker__popover"
+                renderValue={() =>
+                  selected ? (
+                    <span className="growth-picker__value">
                       <AuthedImage
-                        className="retro-avatar growth-familiar__avatar"
-                        src={familiar.avatarUrl}
+                        className="retro-avatar growth-picker__avatar"
+                        src={selected.familiar.avatarUrl}
                         alt=""
                         fallback={
-                          <span className="retro-avatar growth-familiar__avatar">
-                            {familiar.display_name.slice(0, 1).toUpperCase()}
+                          <span className="retro-avatar growth-picker__avatar">
+                            {selected.familiar.display_name.slice(0, 1).toUpperCase()}
                           </span>
                         }
                       />
-                      <span className="growth-familiar__copy">
-                        <b>{familiar.display_name}</b>
-                        <small>{familiar.role || familiar.harness || "familiar"}</small>
-                        <small>{reportSummary(familiarStats, retro)}</small>
-                        <PulseBars pulse={pulse} size="sm" />
-                      </span>
-                      <i className={`growth-dot growth-dot--${report.healthLabel}`} aria-label={report.healthLabel} />
-                    </button>
-                    <Link
-                      href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
-                      className="growth-familiar__analytics focus-ring"
-                    >
-                      Analytics →
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </aside>
+                      <b>{selected.familiar.display_name}</b>
+                      <i
+                        className={`growth-dot growth-dot--${selected.report.healthLabel}`}
+                        aria-label={selected.report.healthLabel}
+                      />
+                    </span>
+                  ) : (
+                    <span>Select familiar</span>
+                  )
+                }
+              />
+              <span className="growth-picker__count">
+                {reports.length === 1 ? "1 familiar" : `${reports.length} familiars`}
+              </span>
+            </>
+          ) : null}
+        </div>
 
         <div className="growth-main" aria-busy={loading || refreshing}>
           {loading ? (
@@ -372,8 +395,8 @@ export function FamiliarGrowthView({
             <EmptyState
               compact
               icon="ph:users-three-bold"
-              headline="No familiars available."
-              subtitle="Growth reports appear once a familiar exists."
+              headline="No familiars yet."
+              subtitle="Create a familiar to start tracking growth."
             />
           )}
         </div>

@@ -101,9 +101,15 @@ for (const sel of ["shell-nav--peek", "ui-dock-chat", "ui-tooltip", "familiar-sw
 }
 
 // Feature stylesheets carry the same pairing + their own fallback blocks.
+// (#3264 split: snooze menu → dash-act.css; model popover → cave-composer.css;
+// table lightbox → cave-md.css — each sheet owns its selectors' fallbacks so
+// surfaces loading only the split sheet keep opaque glass.)
 const featureSheets: Array<[string, string[]]> = [
-  ["../styles/dashboard.css", ["dash-snooze__menu", "spark-tip"]],
-  ["../styles/cave-chat.css", ["cave-chat-model-popover", "voice-call-overlay__dialog", "cave-table-lightbox__panel"]],
+  ["../styles/dashboard.css", ["spark-tip"]],
+  ["../styles/dash-act.css", ["dash-snooze__menu"]],
+  ["../styles/cave-chat.css", ["voice-call-overlay__dialog"]],
+  ["../styles/cave-composer.css", ["cave-chat-model-popover"]],
+  ["../styles/cave-md.css", ["cave-table-lightbox__panel"]],
   // flow.css left with the retired FlowView surface (cave-c3yt).
   ["../styles/home-composer.css", ["hc-slash-menu"]],
   ["../styles/journal.css", ["journal-notice"]],

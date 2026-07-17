@@ -6,7 +6,9 @@ const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8")
 // The empty state (the familiar's starting page) was extracted when it became
 // task-aware; its launch-screen pins now read the dedicated file.
 const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
@@ -299,10 +301,18 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
+// The steady-state hint survives behind the recommended-next-path ghost fill
+// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
+// without one the classic `Message <familiar>…  ↵ to send` remains.
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
   "Composer placeholder should include ↵ to send hint in steady state",
+);
+assert.match(
+  source,
+  /busy\s*\? "Streaming… \(esc to cancel\)"/,
+  "Streaming keeps its own placeholder ahead of the recommendation branch",
 );
 
 assert.match(
@@ -859,7 +869,9 @@ assert.match(
   /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
   "A visible drop overlay must render while a file drag is over the chat surface",
 );
-const caveChatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   caveChatCss,
   /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,

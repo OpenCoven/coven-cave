@@ -132,16 +132,21 @@ for (const mode of ["dark", "light"] as const) {
 
 console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} themes × 2 modes, 0 failures`);
 
-// ── fixed dark code chrome (cave-chat.css, CHAT-D13-01/02) ──────────────────
+// ── fixed dark code chrome (cave-md.css, CHAT-D13-01/02) ────────────────────
 // Code blocks and system turns keep a fixed dark-terminal surface in BOTH
 // modes, so their inks are fixed too — theme-independent, but they still must
 // clear AA. Worst case is light mode: the 92%-alpha chrome composites over a
 // near-white page, lightening the surface under the light inks. Audit over
 // opaque white as the harshest base any theme can supply.
+// (#3264: the code-chrome tokens and reader rules moved from cave-chat.css to
+// cave-md.css, the shared markdown sheet; chat-scoped system-turn chrome
+// stayed in cave-chat.css — read both.)
 
-const chatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const mdCss = readFileSync(new URL("../styles/cave-md.css", import.meta.url), "utf8");
+const chatCss =
+  readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8") + "\n" + mdCss;
 
-const chromeRootBlock = chatCss.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+const chromeRootBlock = mdCss.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 const chrome: TokenMap = new Map();
 for (const m of chromeRootBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
   chrome.set(m[1], m[2].trim());
@@ -161,7 +166,7 @@ for (const required of [
   "--code-chrome-success",
   "--code-chrome-danger",
 ]) {
-  assert.ok(chrome.has(required), `cave-chat.css :root must define ${required}`);
+  assert.ok(chrome.has(required), `cave-md.css :root must define ${required}`);
 }
 
 const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, alpha: 1 };
@@ -239,7 +244,7 @@ for (const selector of [
   /\.cave-bubble-system-label--dim \{[^}]*\}/,
 ]) {
   const block = chatCss.match(selector)?.[0] ?? "";
-  assert.ok(block.length > 0, `selector ${selector} must exist in cave-chat.css`);
+  assert.ok(block.length > 0, `selector ${selector} must exist in the chat/md sheets`);
   assert.ok(
     !/\bopacity:/.test(block),
     `${selector}: no opacity dimmer on chrome ink (CHAT-D13-02)`,
