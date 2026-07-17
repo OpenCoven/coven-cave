@@ -74,4 +74,34 @@ assert.deepEqual(sorted.map((a) => a.id), ["b", "a", "c"], "gallery sorts newest
 assert.equal(formatArtifactWhen("not-a-date"), "", "unparseable timestamps render as empty, not 'Invalid Date'");
 assert.notEqual(formatArtifactWhen("2026-07-12T00:00:00Z"), "", "real timestamps produce a short date");
 
+// ── Add tile (cave-fema): in-grid sketch creation ────────────────────────────
+// The gallery owns its add affordance: a ghost tile leads the grid (and IS
+// the empty state), expanding in-place into the Describe/Paste/Blank
+// composer. Save is explicit; nothing hits /api/canvas mid-stream.
+const addTile = readFileSync(new URL("./canvas-add-tile.tsx", import.meta.url), "utf8");
+
+assert.match(
+  view,
+  /<CanvasAddTile hero=\{artifacts\.length === 0\} familiarId=\{familiarId\} onSaved=\{handleSaved\} \/>/,
+  "ONE stable tile mount leads the grid — hero-styled when empty, so crossing zero never remounts the composer",
+);
+assert.doesNotMatch(view, /<CanvasAddTile hero familiarId/, "no second, remount-prone hero mount remains");
+assert.doesNotMatch(view, /No saved sketches yet/, "the old leave-for-chat empty state is gone");
+assert.match(view, /chat-canvas-card--new/, "a kept sketch settles in with a one-shot highlight");
+
+assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
+assert.match(addTile, /generateArtifactCode\(\{/, "describe streams through the existing chat bridge");
+assert.match(addTile, /buildSketchPrompt\(state\.prompt\)/, "prompts are wrapped with the shared sketch contract");
+assert.match(addTile, /buildRefinePrompt\(state\.result\.code, ask, state\.result\.kind\)/, "refine reuses the shared refine contract");
+assert.match(addTile, /abortRef\.current\?\.abort\(\)/, "collapse/unmount aborts an in-flight generation");
+assert.match(addTile, /sandbox="allow-scripts"/, "the in-tile preview keeps the opaque-origin sandbox");
+assert.match(addTile, /detectPastedKind\(state\.pastedCode\)/, "pasted code kind is detected, not asked");
+assert.match(addTile, /useAnnouncer/, "completion and saves are announced to AT");
+assert.match(
+  addTile,
+  /method: "POST",[\s\S]{0,200}?body: JSON\.stringify\(\{ artifact \}\)/,
+  "saving posts one artifact to the existing canvas store route",
+);
+assert.doesNotMatch(addTile, /fetch\("\/api\/canvas"[\s\S]{0,80}?onText/, "no save happens mid-stream — explicit Keep only");
+
 console.log("chat canvas tab wiring: ok");
