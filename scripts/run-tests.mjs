@@ -837,6 +837,7 @@ export const SUITES = {
     "src/lib/copilot-stream.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
+    "src/app/api/sessions/route.test.ts",
     "src/app/api/chat/send/harness-routing.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
