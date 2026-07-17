@@ -300,6 +300,15 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
   }
 }
 
+async function changedFilePaths(repoRoot: string): Promise<Set<string>> {
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+  return new Set(parsePorcelainZ(stdout).map((file) => file.path));
+}
+
+async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean> {
+  return (await changedFilePaths(repoRoot)).has(relPath);
+}
+
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
 async function listChanges(repoRoot: string): Promise<NextResponse> {
@@ -451,6 +460,7 @@ export async function GET(req: NextRequest) {
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
+    if (!(await isChangedFile(root.repoRoot, filePath))) return pathNotAllowed();
     return await diffFile(root.repoRoot, filePath, abs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -762,6 +772,7 @@ export async function POST(req: NextRequest) {
   }
   const abs = resolveContainedFile(root.repoRoot, body.path);
   if (!abs) return pathNotAllowed();
+  if (!(await isChangedFile(root.repoRoot, body.path))) return pathNotAllowed();
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
