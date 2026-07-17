@@ -242,12 +242,18 @@ async function readConversationSummary(
   fallbackSessionId: string,
   mtimeMs: number,
   fileSize: number,
-): Promise<{ summary: ConversationSummary | null; bytesRead: number }> {
+): Promise<{ summary: ConversationSummary | null; bytesRead: number; cacheable: boolean }> {
   let raw: string;
   try {
     raw = await readFile(file, "utf8");
   } catch {
-    return { summary: fallbackConversationSummary(fallbackSessionId, mtimeMs), bytesRead: 0 };
+    // A sharing violation or other transient read failure must be retried on
+    // the next scan even when the file's stat key did not change.
+    return {
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      bytesRead: 0,
+      cacheable: false,
+    };
   }
 
   let conv: ConversationFile;
@@ -257,6 +263,7 @@ async function readConversationSummary(
     return {
       summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
       bytesRead: fileSize,
+      cacheable: true,
     };
   }
 
@@ -285,6 +292,7 @@ async function readConversationSummary(
         updatedAt: conv.updatedAt,
       },
       bytesRead: fileSize,
+      cacheable: true,
     };
   } catch {
     // loadConversation() treats any invalid conversation shape like a parse
@@ -292,6 +300,7 @@ async function readConversationSummary(
     return {
       summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
       bytesRead: fileSize,
+      cacheable: true,
     };
   }
 }
@@ -370,12 +379,16 @@ export async function listConversations(): Promise<ConversationSummary[]> {
           activeReads -= 1;
         }
         bytesRead += loaded.bytesRead;
-        conversationSummaryCache.set(file, {
-          mtimeMs: info.mtimeMs,
-          ctimeMs: info.ctimeMs,
-          size: info.size,
-          summary: loaded.summary,
-        });
+        if (loaded.cacheable) {
+          conversationSummaryCache.set(file, {
+            mtimeMs: info.mtimeMs,
+            ctimeMs: info.ctimeMs,
+            size: info.size,
+            summary: loaded.summary,
+          });
+        } else {
+          conversationSummaryCache.delete(file);
+        }
         results[index] = loaded.summary;
       } catch {
         conversationSummaryCache.delete(file);

@@ -204,7 +204,7 @@ assert.equal(await deleteConversation("summary-failed"), true);
     CONV_DIR,
     getConversationListMetrics,
   } = await import("./cave-conversations.ts");
-  const { mkdir, writeFile, utimes } = await import("node:fs/promises");
+  const { mkdir, rm, writeFile, utimes } = await import("node:fs/promises");
   await mkdir(CONV_DIR, { recursive: true });
   const fixtureIds = Array.from({ length: 12 }, (_, index) => `metadata-perf-${index}`);
   const largeText = "x".repeat(128 * 1024);
@@ -295,6 +295,10 @@ assert.equal(await deleteConversation("summary-failed"), true);
     savedRows.find((row) => row.sessionId === fixtureIds[1])?.title,
     "Changed through saveConversation",
   );
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.branch,
+    "agent/saved-change",
+  );
   assert.equal(getConversationListMetrics().cacheMisses, 1, "save invalidates one summary");
 
   for (const sessionId of fixtureIds) assert.equal(await deleteConversation(sessionId), true);
@@ -320,6 +324,15 @@ assert.equal(await deleteConversation("summary-failed"), true);
     "valid JSON with an invalid conversation shape keeps the cached fallback row",
   );
   assert.equal(await deleteConversation("metadata-invalid-shape"), true);
+
+  const unreadablePath = path.join(CONV_DIR, "metadata-unreadable.json");
+  await mkdir(unreadablePath);
+  const unreadableRows = await listConversations();
+  assert.equal(unreadableRows[0]?.sessionId, "metadata-unreadable");
+  await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "read failures are retried");
+  assert.equal(getConversationListMetrics().cacheHits, 0, "read failures are not cached");
+  await rm(unreadablePath, { recursive: true });
 }
 
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
