@@ -56,7 +56,7 @@ assert.match(editor, /syntaxHighlighting\(moodHighlight\)/, "the editor installs
 // clone, never the module instance (cave-h1hi).
 assert.match(
   theme,
-  /Array\.isArray\(tc\.scope\) && tc\.scope\.includes\(scope\)/,
+  /const scopes = Array\.isArray\(tc\.scope\) \? tc\.scope : typeof tc\.scope === "string" \? \[tc\.scope\] : \[\]/,
   "moodColor guards scope-less tokenColors entries (valid TextMate globals; Shiki injects one)",
 );
 const bubbleSource = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
