@@ -10,6 +10,7 @@ import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { sessionPrStatus } from "@/lib/session-pr-status";
+import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -580,8 +581,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     e?.stopPropagation();
     setActiveId(session.id);
     onOpen(session.id, session.familiarId);
+    // Latched request: notifies a mounted ChatView via the window event and
+    // survives until one mounts — a bare rAF dispatch was lost whenever the
+    // open above had not rendered ChatView (and its listener) yet.
     window.requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("cave:debug-open"));
+      requestDebugOpen();
     });
   };
 

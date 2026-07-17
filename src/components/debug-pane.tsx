@@ -8,7 +8,7 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import { useChatDebugSnapshot, type ChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { type ChatDebugSnapshot } from "@/lib/chat-debug-store";
 import {
   appendEvents,
   buildDebugBundle,
@@ -379,8 +379,11 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   );
 }
 
-export function DebugPane() {
-  const snapshot = useChatDebugSnapshot();
+/** Session diagnostics for ONE chat instance. Props come from the owning
+ *  ChatView (which also hosts the modal this renders in), not from the global
+ *  chat-debug store — with split panes, several ChatViews publish there and a
+ *  last-writer read would show a different pane's session. */
+export function DebugPane(snapshot: ChatDebugSnapshot) {
   if (!snapshot.sessionId) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-[11px] text-[var(--text-muted)]">
