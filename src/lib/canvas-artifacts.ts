@@ -54,8 +54,9 @@ export function extractHtmlArtifact(text: string): string | null {
   return null;
 }
 
-/** Heuristic: does this fenced code look like a React component vs HTML? */
-function looksLikeReact(code: string): boolean {
+/** Heuristic: does this fenced code look like a React component vs HTML?
+ *  Exported for the Canvas add tile's pasted-code kind detection. */
+export function looksLikeReact(code: string): boolean {
   if (/<!doctype html/i.test(code) || /<html[\s>]/i.test(code)) return false;
   return /\bexport\s+default\b/.test(code) || /\bfunction\s+App\b/.test(code) || /\buse(State|Effect|Ref|Memo|Callback)\b/.test(code);
 }
