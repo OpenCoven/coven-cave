@@ -38,16 +38,21 @@ try {
   const canonical = path.join(process.env.COVEN_HOME, "workspaces", "familiars", "sage");
   const savedProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "coven-docs");
   await mkdir(canonical, { recursive: true });
+  const sensitiveFileRoot = path.join(tmp, "sensitive-config");
   await mkdir(path.join(savedProjectRoot, "docs"), { recursive: true });
+  await writeFile(sensitiveFileRoot, "SECRET\n");
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,
     JSON.stringify({
       version: 1,
-      projects: [{ id: "docs", name: "Coven Docs", root: savedProjectRoot }],
+      projects: [
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
+        { id: "sensitive", name: "Sensitive", root: sensitiveFileRoot },
+      ],
     }),
   );
 
-  const { isAllowedNewProjectRoot, resolveAllowedProjectPath } = await import("./project-paths.ts");
+  const { isAllowedNewProjectRoot, resolveAllowedProjectPath, validateCaveProjectRoot } = await import("./project-paths.ts");
   const legacy = path.join(process.env.COVEN_HOME, "workspace", "familiars", "sage");
 
   assert.equal(
@@ -122,6 +127,18 @@ try {
     isAllowedNewProjectRoot("~/secret"),
     false,
     "tilde subpaths cannot masquerade as relative paths under the current working directory",
+  );
+
+  assert.equal(
+    resolveAllowedProjectPath(sensitiveFileRoot),
+    null,
+    "saved Cave project roots that point at files are not promoted into the allowlist",
+  );
+
+  assert.deepEqual(
+    validateCaveProjectRoot(sensitiveFileRoot),
+    { ok: false, error: "root must be a directory" },
+    "project roots must be existing directories",
   );
 } finally {
   restoreEnv();

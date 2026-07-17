@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
-import { isAllowedNewProjectRoot } from "@/lib/server/project-paths";
+import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +28,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ ok: false, error: "root cannot be empty" }, { status: 400 });
     }
     if (!isAllowedNewProjectRoot(trimmed)) {
+      // Containment first: out-of-workspace paths get a uniform 403 so the
+      // existence checks below cannot be used to probe arbitrary filesystem paths.
       return NextResponse.json({ ok: false, error: "root must be inside an allowed workspace" }, { status: 403 });
     }
-    patch.root = trimmed;
+    const validatedRoot = validateCaveProjectRoot(trimmed);
+    if (!validatedRoot.ok) {
+      return NextResponse.json({ ok: false, error: validatedRoot.error }, { status: 400 });
+    }
+    patch.root = validatedRoot.root;
   }
   if (typeof body.color === "string") {
     const trimmed = body.color.trim();

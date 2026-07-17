@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import { isAllowedNewProjectRoot } from "@/lib/server/project-paths";
+import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +35,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "name and root are required" }, { status: 400 });
   }
   if (!isAllowedNewProjectRoot(root)) {
+    // Containment first: out-of-workspace paths get a uniform 403 so the
+    // existence checks below cannot be used to probe arbitrary filesystem paths.
     return NextResponse.json({ ok: false, error: "root must be inside an allowed workspace" }, { status: 403 });
+  }
+  const validatedRoot = validateCaveProjectRoot(root);
+  if (!validatedRoot.ok) {
+    return NextResponse.json({ ok: false, error: validatedRoot.error }, { status: 400 });
   }
 
   const project = await createProject({
     name,
-    root,
+    root: validatedRoot.root,
     color: typeof body.color === "string" ? body.color : undefined,
   });
   return NextResponse.json({ ok: true, project }, { status: 201 });

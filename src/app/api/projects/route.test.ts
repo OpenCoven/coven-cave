@@ -20,11 +20,13 @@ assert.match(listRoute, /export async function POST\(req: Request\)/, "projects 
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
 assert.match(listRoute, /root must be inside an allowed workspace/, "POST /api/projects should reject unsafe roots");
+assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should require existing directory roots before persisting them");
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
 
 assert.match(itemRoute, /export async function PUT/, "project item route should expose PUT");
 assert.match(itemRoute, /export async function DELETE/, "project item route should expose DELETE");
 assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects/[id] should validate root patches before persisting them");
+assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] should require existing directory roots before persisting them");
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 

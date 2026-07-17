@@ -43,6 +43,24 @@ function caveProjectsFilePath(): string {
   return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(/* turbopackIgnore: true */ caveHome(), "projects.json");
 }
 
+export function validateCaveProjectRoot(value: string): { ok: true; root: string } | { ok: false; error: string } {
+  // Expand ~ first (matching isAllowedNewProjectRoot and cave-projects'
+  // normalizeRoot) so manually-typed ~/code/app roots stay accepted.
+  const root = expandHomeShortcut(value).trim();
+  if (!root) return { ok: false, error: "root is required" };
+  if (!path.isAbsolute(root)) return { ok: false, error: "root must be an absolute path" };
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(/* turbopackIgnore: true */ root);
+  } catch {
+    return { ok: false, error: "root does not exist" };
+  }
+  if (!stat.isDirectory()) return { ok: false, error: "root must be a directory" };
+
+  return { ok: true, root: realpathOrResolve(root) };
+}
+
 function savedCaveProjectRoots(): string[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(/* turbopackIgnore: true */ caveProjectsFilePath(), "utf8")) as {
@@ -51,8 +69,10 @@ function savedCaveProjectRoots(): string[] {
     if (!Array.isArray(parsed.projects)) return [];
     return parsed.projects
       .map((project) => project.root)
-      .filter((root): root is string => typeof root === "string" && path.isAbsolute(root.trim()))
-      .map((root) => root.trim());
+      .filter((root): root is string => typeof root === "string")
+      .map((root) => validateCaveProjectRoot(root))
+      .filter((result): result is { ok: true; root: string } => result.ok)
+      .map((result) => result.root);
   } catch {
     return [];
   }
