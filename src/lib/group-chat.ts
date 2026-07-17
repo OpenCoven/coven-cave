@@ -288,6 +288,37 @@ export function parseMentions(text: string, participants: MentionableFamiliar[])
 }
 
 /**
+ * Resolve the authoritative recipients for one coven message.
+ *
+ * Composer messages derive their targets from visible `@mentions`, falling
+ * back to the full coven when none are present. One-tap UI actions such as a
+ * familiar's next-path suggestion may instead provide explicit ids. In that
+ * case visible mentions are deliberately ignored so generated suggestion text
+ * cannot widen the destination set.
+ */
+export function resolveGroupMessageTargets(
+  text: string,
+  groupFamiliarIds: string[],
+  participants: MentionableFamiliar[],
+  explicitTargetFamiliarIds?: string[],
+): { targetIds: string[]; targeted: boolean } {
+  const mentioned = explicitTargetFamiliarIds === undefined ? parseMentions(text, participants) : [];
+  const requested = explicitTargetFamiliarIds ?? mentioned;
+  const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
+  return {
+    targetIds: targeted
+      ? groupFamiliarIds.filter((id) => requested.includes(id))
+      : [...groupFamiliarIds],
+    targeted,
+  };
+}
+
+/** Prefix a suggestion with the author mention shown in the user transcript. */
+export function mentionSuggestionAuthor(suggestion: string, displayName: string): string {
+  return `@${displayName.trim()} ${suggestion.trim()}`.trim();
+}
+
+/**
  * Locate the `@mention` token the caret is currently editing, for autocomplete.
  * Returns the `@`'s index and the partial query typed after it, or `null` when
  * the caret is not inside a mention. The token starts at an `@` preceded by

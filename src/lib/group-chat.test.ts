@@ -11,6 +11,8 @@ import {
   setGroupParticipants,
   parseMentions,
   extractCovenDelegations,
+  resolveGroupMessageTargets,
+  mentionSuggestionAuthor,
   renderCovenRoster,
   renderCovenRoundtablePrompt,
   renderCovenContext,
@@ -256,6 +258,36 @@ test("extractCovenDelegations: hides an incomplete trailing control while stream
   assert.deepEqual(
     extractCovenDelegations('@Charm take this.\n<coven:delegation target="charm">partial'),
     { visible: "@Charm take this.", delegations: [] },
+  );
+});
+
+test("resolveGroupMessageTargets: no mention broadcasts in roster order", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("What does everyone think?", ["nova", "sage"], ROSTER),
+    { targetIds: ["nova", "sage"], targeted: false },
+  );
+});
+
+test("resolveGroupMessageTargets: composer mentions target their parsed subset", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Sage please check this", ["nova", "sage"], ROSTER),
+    { targetIds: ["sage"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: explicit suggestion author cannot be widened by inner mentions", () => {
+  const text = mentionSuggestionAuthor("Ask @Sage to review it", "Nova Star");
+  assert.equal(text, "@Nova Star Ask @Sage to review it");
+  assert.deepEqual(
+    resolveGroupMessageTargets(text, ["nova-star", "sage"], ROSTER, ["nova-star"]),
+    { targetIds: ["nova-star"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: removed explicit targets never fall back to broadcast", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Nova Continue", ["sage"], ROSTER, ["nova"]),
+    { targetIds: [], targeted: true },
   );
 });
 

@@ -53,6 +53,8 @@ import {
   setGroupParticipants,
   parseMentions,
   extractCovenDelegations,
+  resolveGroupMessageTargets,
+  mentionSuggestionAuthor,
   renderCovenRoundtablePrompt,
   findActiveMention,
   matchMentions,
@@ -451,18 +453,30 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   );
 
   const broadcast = useCallback(
-    async (rawText: string) => {
+    async (rawText: string, explicitTargetFamiliarIds?: string[]) => {
       const group = activeGroupRef.current;
       const text = rawText.trim();
       if (!group || group.familiarIds.length === 0 || !text || busy || abortRef.current) return;
-      // Tagging a subset of familiars with `@mentions` targets the message at just
-      // those participants; with no mention it broadcasts to the whole coven.
+      // Suggestion chips carry their author's id explicitly. Visible mentions in
+      // generated suggestion text must not widen that authoritative destination.
+      // Composer messages still target their @mentions or the full coven.
       const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
         id,
         name: byId.get(id)?.display_name ?? "",
       }));
-      const mentioned = parseMentions(text, mentionable);
-      const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
+      const { targetIds, targeted } = resolveGroupMessageTargets(
+        text,
+        group.familiarIds,
+        mentionable,
+        explicitTargetFamiliarIds,
+      );
+      // Historical replies remain in the transcript after roster edits. If their
+      // author has left this coven, do not create a stranded user turn or unlock a
+      // fallback broadcast by mistake.
+      if (targetIds.length === 0) {
+        announce("That familiar is no longer in this coven.", "assertive");
+        return;
+      }
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
       // per-familiar so each sees itself marked "(you)".
@@ -480,7 +494,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         id: newId(),
         role: "user",
         text,
-        targetFamiliarIds: mentioned.length > 0 ? targetIds : undefined,
+        targetFamiliarIds: targeted ? targetIds : undefined,
         createdAt: at,
       };
       const replies: GroupReply[] = targetIds.map((fid) => ({
@@ -511,7 +525,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
               participants: rosterParticipants,
               receivingFamiliarId: r.familiarId,
               userText: text,
-              targeted: mentioned.length > 0,
+              targeted,
             }),
             controller.signal,
           ),
@@ -537,7 +551,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
           if (source.status !== "done") continue;
           const withoutNextPaths = extractNextPaths(source.text).visible;
-          const { delegations } = extractCovenDelegations(withoutNextPaths);
+          const { visible, delegations } = extractCovenDelegations(withoutNextPaths);
+          const visibleTargets = new Set(parseMentions(visible, mentionable));
           for (const delegation of delegations) {
             if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
             const targetId = delegation.targetFamiliarId;
@@ -545,6 +560,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             if (
               targetId === source.familiarId ||
               !group.familiarIds.includes(targetId) ||
+              !visibleTargets.has(targetId) ||
+              !parseMentions(delegation.task, mentionable).includes(targetId) ||
               lineage.has(targetId) ||
               delivered.has(dedupeKey)
             ) continue;
@@ -615,9 +632,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     [busy, streamOne, byId, announce, operatorDisplayName],
   );
 
-  // The composer and "click a next-path suggestion to send" chips both go
-  // through broadcast — a clicked suggestion is just a one-tap next prompt.
+  // Composer sends and suggestion chips share the stream path, but a suggestion
+  // is an explicitly targeted follow-up to the familiar that authored it.
   const send = useCallback(() => broadcast(draft), [broadcast, draft]);
+  const sendSuggestion = useCallback(
+    (suggestion: string, familiarId: string, displayName: string) =>
+      broadcast(mentionSuggestionAuthor(suggestion, displayName), [familiarId]),
+    [broadcast],
+  );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -1096,7 +1118,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                           key={i}
                                           type="button"
                                           className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
-                                          onClick={() => void broadcast(s)}
+                                          onClick={() => void sendSuggestion(s, r.familiarId, f?.display_name ?? r.familiarId)}
                                           disabled={busy}
                                           aria-label={recommended ? `Recommended: ${s}` : undefined}
                                           title={recommended ? "Recommended next step" : undefined}
