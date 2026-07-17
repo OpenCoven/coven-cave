@@ -570,7 +570,7 @@ export function SkillBrowser({
              labels over quiet full-width rows with the count right-aligned.
              Hidden in narrow panes, where the chip row below stands in. ── */}
       <aside className="skill-browser__rail" aria-label="Skill filters">
-        <nav className="skill-browser__rail-group" role="group" aria-label="Filter skills">
+        <div className="skill-browser__rail-group" role="group" aria-label="Filter skills">
           <p className="skill-browser__rail-label">Categories</p>
           {visibleCategories.map((cat) => {
             const active = category === cat.id;
@@ -587,10 +587,10 @@ export function SkillBrowser({
               </Button>
             );
           })}
-        </nav>
+        </div>
         {/* Trust toggles compose with the categories; clicking the active one
             returns to everything. */}
-        <nav className="skill-browser__rail-group" role="group" aria-label="Filter by trust signal">
+        <div className="skill-browser__rail-group" role="group" aria-label="Filter by trust signal">
           <p className="skill-browser__rail-label">Trust</p>
           {TRUST_FILTERS.map((item) => {
             const active = browse === item.id;
@@ -607,8 +607,8 @@ export function SkillBrowser({
               </Button>
             );
           })}
-        </nav>
-        <nav className="skill-browser__rail-group" role="group" aria-label="Browse by topic">
+        </div>
+        <div className="skill-browser__rail-group" role="group" aria-label="Browse by topic">
           <p className="skill-browser__rail-label">Topics</p>
           <Button
             variant="ghost"
@@ -631,7 +631,7 @@ export function SkillBrowser({
               <span className="skill-browser__cat-count">{topics[item.id]}</span>
             </Button>
           ))}
-        </nav>
+        </div>
       </aside>
 
       {/* ── List column — category chips (narrow-pane stand-in for the rail),
