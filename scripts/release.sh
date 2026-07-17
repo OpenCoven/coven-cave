@@ -17,6 +17,10 @@ NOTARY_ISSUER="${NOTARY_ISSUER:-${APPLE_API_ISSUER:-}}"
 NOTARY_APPLE_ID="${NOTARY_APPLE_ID:-${APPLE_ID:-}}"
 NOTARY_APPLE_PASSWORD="${NOTARY_APPLE_PASSWORD:-${APPLE_PASSWORD:-}}"
 NOTARY_TEAM_ID="${NOTARY_TEAM_ID:-${APPLE_TEAM_ID:-}}"
+NOTARY_KEYCHAIN_PROFILE=""
+NOTARY_KEYCHAIN_DIR=""
+NOTARY_KEYCHAIN_PATH=""
+DMG_STAGE=""
 NODE_ENTITLEMENTS="src-tauri/entitlements/node.plist"
 
 require_tool() {
@@ -47,6 +51,49 @@ retry() {
     n=$((n + 1))
   done
 }
+
+cleanup_release_artifacts() {
+  local exit_status=$?
+
+  if [ -n "${NOTARY_KEYCHAIN_PATH:-}" ]; then
+    security delete-keychain "$NOTARY_KEYCHAIN_PATH" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${NOTARY_KEYCHAIN_DIR:-}" ]; then
+    rm -rf "$NOTARY_KEYCHAIN_DIR" || true
+  fi
+  if [ -n "${DMG_STAGE:-}" ]; then
+    rm -rf "$DMG_STAGE" || true
+  fi
+  return "$exit_status"
+}
+trap cleanup_release_artifacts EXIT
+
+store_notary_credentials() {
+  # Refill stdin on every retry without ever exposing the password in argv.
+  printf '%s\n' "$NOTARY_APPLE_PASSWORD" | xcrun notarytool store-credentials "$NOTARY_KEYCHAIN_PROFILE" \
+    --apple-id "$NOTARY_APPLE_ID" \
+    --team-id "$NOTARY_TEAM_ID" \
+    --keychain "$NOTARY_KEYCHAIN_PATH"
+}
+
+setup_notary_keychain_profile() {
+  local keychain_password
+
+  NOTARY_KEYCHAIN_PROFILE="covencave-notary-$$"
+  NOTARY_KEYCHAIN_DIR="$(mktemp -d -t covencave-notary-keychain)"
+  NOTARY_KEYCHAIN_PATH="$NOTARY_KEYCHAIN_DIR/notary.keychain-db"
+  keychain_password="$(openssl rand -hex 24)"
+
+  echo "==> Creating temporary notarytool keychain profile"
+  security create-keychain -p "$keychain_password" "$NOTARY_KEYCHAIN_PATH"
+  security set-keychain-settings -lut 21600 "$NOTARY_KEYCHAIN_PATH"
+  security unlock-keychain -p "$keychain_password" "$NOTARY_KEYCHAIN_PATH"
+
+  # Feed the app-specific password on stdin so it never appears in process
+  # arguments. Submit/log commands reference only this temporary keychain
+  # profile, which the EXIT trap deletes after the release run.
+  retry 3 10 store_notary_credentials
+}
 print_notary_log() {
   local submission_id="$1"
 
@@ -59,9 +106,8 @@ print_notary_log() {
   set +e
   if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
     xcrun notarytool log "$submission_id" \
-      --apple-id "$NOTARY_APPLE_ID" \
-      --password "$NOTARY_APPLE_PASSWORD" \
-      --team-id "$NOTARY_TEAM_ID"
+      --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+      --keychain "$NOTARY_KEYCHAIN_PATH"
   else
     xcrun notarytool log "$submission_id" \
       --key "$NOTARY_KEY_FILE" \
@@ -84,9 +130,8 @@ run_notary_submit() {
   set +e
   if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
     xcrun notarytool submit "$DMG_PATH" \
-      --apple-id "$NOTARY_APPLE_ID" \
-      --password "$NOTARY_APPLE_PASSWORD" \
-      --team-id "$NOTARY_TEAM_ID" \
+      --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+      --keychain "$NOTARY_KEYCHAIN_PATH" \
       --no-s3-acceleration \
       --verbose \
       --wait 2>&1 | tee "$output"
@@ -269,7 +314,10 @@ else
   exit 1
 fi
 
-if [ "$NOTARY_AUTH_MODE" = "api-key" ]; then
+if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
+  require_tool security
+  setup_notary_keychain_profile
+elif [ "$NOTARY_AUTH_MODE" = "api-key" ]; then
   require_file "$NOTARY_KEY_FILE"
   echo "==> Validating App Store Connect API key"
   openssl pkey -in "$NOTARY_KEY_FILE" -noout -check >/dev/null
@@ -362,7 +410,6 @@ echo "==> Packaging DMG with Applications shortcut"
 # tend to double-click the .app inside the mounted DMG, which causes macOS to
 # AppTranslocate the bundle into a sandbox path.
 DMG_STAGE=$(mktemp -d -t covencave-dmg)
-trap 'rm -rf "$DMG_STAGE"' EXIT
 cp -R "$APP_PATH" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
 mkdir -p "$DMG_STAGE/.background"

@@ -35,6 +35,46 @@ test("sidecar bundle restores executable mode for node-pty spawn-helper", () => 
   assert.match(sidecarScript, /fix_node_pty_spawn_helpers "\$DEST\/node_modules"/);
 });
 
+test("Apple ID notarization avoids putting the app password in process arguments", () => {
+  assert.match(releaseScript, /setup_notary_keychain_profile\(\)/);
+  assert.match(releaseScript, /printf '%s\\n' "\$NOTARY_APPLE_PASSWORD" \| xcrun notarytool store-credentials/);
+  assert.match(releaseScript, /retry 3 10 store_notary_credentials/);
+  assert.match(releaseScript, /NOTARY_KEYCHAIN_DIR="\$\(mktemp -d -t covencave-notary-keychain\)"/);
+  assert.match(releaseScript, /--keychain-profile "\$NOTARY_KEYCHAIN_PROFILE"/);
+  assert.match(releaseScript, /security delete-keychain "\$NOTARY_KEYCHAIN_PATH"/);
+  assert.match(releaseScript, /rm -rf "\$NOTARY_KEYCHAIN_DIR"/);
+
+  const cleanupFunction = releaseScript.slice(
+    releaseScript.indexOf("cleanup_release_artifacts()"),
+    releaseScript.indexOf("trap cleanup_release_artifacts EXIT"),
+  );
+  const setupFunctions = releaseScript.slice(
+    releaseScript.indexOf("store_notary_credentials()"),
+    releaseScript.indexOf("print_notary_log()"),
+  );
+  const logFunction = releaseScript.slice(
+    releaseScript.indexOf("print_notary_log()"),
+    releaseScript.indexOf("run_notary_submit()"),
+  );
+  const submitFunction = releaseScript.slice(
+    releaseScript.indexOf("run_notary_submit()"),
+    releaseScript.indexOf("cleanup_dmg_artifacts()"),
+  );
+
+  assert.match(cleanupFunction, /local exit_status=\$\?/);
+  assert.match(cleanupFunction, /rm -rf "\$NOTARY_KEYCHAIN_DIR" \|\| true/);
+  assert.match(cleanupFunction, /rm -rf "\$DMG_STAGE" \|\| true/);
+  assert.match(cleanupFunction, /return "\$exit_status"/);
+  assert(
+    cleanupFunction.indexOf('security delete-keychain "$NOTARY_KEYCHAIN_PATH"') <
+      cleanupFunction.indexOf('rm -rf "$DMG_STAGE"'),
+    "credential cleanup must run before best-effort DMG cleanup",
+  );
+  assert.doesNotMatch(setupFunctions, /--password/);
+  assert.doesNotMatch(logFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
+  assert.doesNotMatch(submitFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
+});
+
 test("notary rejection stops before stapling and prints the Apple log", () => {
   assert.match(releaseScript, /print_notary_log\(\)/);
   assert.match(releaseScript, /Submission in terminal status: Invalid/);
