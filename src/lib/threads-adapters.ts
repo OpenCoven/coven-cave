@@ -464,8 +464,26 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       body: note === undefined ? {} : { note },
       timeoutMs: this.timeoutMs,
     });
-    if (!res.ok) return this.blockedFromDaemon(res);
+    if (!res.ok) return this.blockedFromDecision(res);
     return okEnvelope(res.data, this.meta(pendingDirCursor(pendingDir), true));
+  }
+
+  /**
+   * §3.7: the daemon "applies or refuses" and the route returns its outcome —
+   * a semantic refusal (blocked body with a why) must surface as that refusal,
+   * not be flattened into a transport-shaped `daemon-unavailable` (which the
+   * UI copy reads as "the proposal stays pending" — false for a daemon-side
+   * revalidation refusal, which consumes the staged file).
+   */
+  private blockedFromDecision(res: DaemonResponse<unknown>): ThreadsEnvelope<unknown> {
+    const body = res.data;
+    if (typeof body === "object" && body !== null && (body as { blocked?: unknown }).blocked === true) {
+      const why = (body as { why?: unknown }).why;
+      if (why === "proposal-not-found") return blockedEnvelope("not-found", this.meta("none", false));
+      if (why === "proposal-corrupt") return blockedEnvelope("proposal-corrupt", this.meta("none", false));
+      return blockedEnvelope("proposal-refused", this.meta("none", false));
+    }
+    return this.blockedFromDaemon(res);
   }
 
   async approve(proposalId: string, note?: string): Promise<ThreadsEnvelope<unknown>> {
@@ -478,12 +496,18 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter selection: fixtures-first until threads-986.19 merges (spec §1).
+// Adapter selection: daemon-present is the default since threads-986.19
+// merged PR #382 (2026-07-15) and the daemon grew the read/decision endpoints
+// (coven#408, threads-v3g) — spec §1's fixtures-first condition has lapsed.
+// COVEN_THREADS_ADAPTER=fixtures keeps the daemon-absent adapter for demos,
+// tests, and the fixture scenarios.
 
 export function activeThreadsAdapter(): ThreadsReadAdapter {
-  if (process.env.COVEN_THREADS_ADAPTER === "daemon") return new DaemonThreadsAdapter();
-  const scenario = process.env.COVEN_THREADS_FIXTURE_SCENARIO === "daemon-timeout" ? "daemon-timeout" : "default";
-  return new FixturesThreadsAdapter({ scenario });
+  if (process.env.COVEN_THREADS_ADAPTER === "fixtures") {
+    const scenario = process.env.COVEN_THREADS_FIXTURE_SCENARIO === "daemon-timeout" ? "daemon-timeout" : "default";
+    return new FixturesThreadsAdapter({ scenario });
+  }
+  return new DaemonThreadsAdapter();
 }
 
 /** Map a blocked envelope's `why` to the HTTP status the route answers (§3.7, §4). */
@@ -496,6 +520,8 @@ export function httpStatusForEnvelope(envelope: ThreadsEnvelope<unknown>, method
       return 400;
     case "proposal-corrupt":
       return 409; // R6
+    case "proposal-refused":
+      return 409; // §3.7: daemon re-validated and refused — semantic, not transport
     case "daemon-unavailable":
     case "daemon-unreachable":
     case "daemon-endpoint-missing":

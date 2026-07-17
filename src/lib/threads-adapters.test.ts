@@ -430,6 +430,53 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(httpStatusForEnvelope(res, "POST"), 503);
   });
 
+  it("§3.7: a daemon revalidation refusal surfaces verbatim as proposal-refused (409), not transport", async () => {
+    const { home } = homeWithPending();
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({
+        ok: false,
+        status: 409,
+        data: { blocked: true, why: "proposal-revalidation-failed", verdict: { DegradeToProposal: {} } } as unknown as T,
+      }),
+      covenHomeDir: home,
+    });
+    const res = await adapter.approve(PROPOSAL_OK, "reviewed");
+    assert.equal(res.blocked, true);
+    assert.equal(res.why, "proposal-refused");
+    assert.equal(httpStatusForEnvelope(res, "POST"), 409);
+  });
+
+  it("§3.7: the daemon's own proposal-not-found and proposal-corrupt map to their semantic whys", async () => {
+    const { home } = homeWithPending();
+    const notFound = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: false, status: 404, data: { blocked: true, why: "proposal-not-found" } as unknown as T }),
+      covenHomeDir: home,
+    });
+    const nf = await notFound.approve(PROPOSAL_OK);
+    assert.equal(nf.why, "not-found");
+    assert.equal(httpStatusForEnvelope(nf, "POST"), 404);
+
+    const corrupt = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: false, status: 409, data: { blocked: true, why: "proposal-corrupt" } as unknown as T }),
+      covenHomeDir: home,
+    });
+    const co = await corrupt.reject(PROPOSAL_OK);
+    assert.equal(co.why, "proposal-corrupt");
+    assert.equal(httpStatusForEnvelope(co, "POST"), 409);
+  });
+
+  it("a bodyless daemon 404 still reads as daemon-endpoint-missing (pre-#408 daemon)", async () => {
+    const { home } = homeWithPending();
+    const adapter = new DaemonThreadsAdapter({
+      call: async () => ({ ok: false, status: 404, data: null }),
+      covenHomeDir: home,
+    });
+    const res = await adapter.approve(PROPOSAL_OK);
+    assert.equal(res.blocked, true);
+    assert.equal(res.why, "daemon-endpoint-missing");
+    assert.equal(httpStatusForEnvelope(res, "POST"), 503);
+  });
+
   it("R6: a corrupt staged proposal answers proposal-corrupt (409), decision never forwarded", async () => {
     const home = tempDir("phase4-corrupt-home-");
     mkdirSync(path.join(home, "pending"));
@@ -477,17 +524,18 @@ describe("daemon adapter — proposals and decisions", () => {
   });
 });
 
-describe("adapter selection (fixtures-first until threads-986.19 merges)", () => {
-  it("defaults to fixtures; env flips to daemon; timeout scenario honored", () => {
+describe("adapter selection (daemon default since PR #382 + coven#408; fixtures by override)", () => {
+  it("defaults to daemon; env flips to fixtures; timeout scenario honored in fixtures mode", () => {
     const prevAdapter = process.env.COVEN_THREADS_ADAPTER;
     const prevScenario = process.env.COVEN_THREADS_FIXTURE_SCENARIO;
     try {
       delete process.env.COVEN_THREADS_ADAPTER;
       delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;
-      assert.equal(activeThreadsAdapter().kind, "fixtures");
+      assert.equal(activeThreadsAdapter().kind, "daemon");
       process.env.COVEN_THREADS_ADAPTER = "daemon";
       assert.equal(activeThreadsAdapter().kind, "daemon");
-      delete process.env.COVEN_THREADS_ADAPTER;
+      process.env.COVEN_THREADS_ADAPTER = "fixtures";
+      assert.equal(activeThreadsAdapter().kind, "fixtures");
       process.env.COVEN_THREADS_FIXTURE_SCENARIO = "daemon-timeout";
       assert.equal(activeThreadsAdapter().kind, "fixtures");
     } finally {
