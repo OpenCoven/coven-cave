@@ -134,13 +134,12 @@ function nativeAppBackendUrl(req: Request) {
   const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
-  // The packaged desktop app runs an authenticated sidecar on a random loopback
-  // port. In bundled mode, reconcile the native route against the app server
-  // started by `pnpm mobile:tailscale:app` instead of the packaged sidecar.
-  if (process.env.COVEN_CAVE_BUNDLE === "1") {
-    return "http://127.0.0.1:3000";
-  }
-
+  // App mode is token-gated (`pnpm mobile:tailscale:app` mints the mobile
+  // access token), so app-start publishes THIS server and mints signed invites
+  // (see ensureNativeAppServe). The packaged bundle above all must not
+  // hard-depend on a dev checkout's server (cave-gzje); pointing at a
+  // different local server requires the explicit
+  // COVEN_CAVE_NATIVE_APP_BACKEND_URL override above.
   return backendUrl();
 }
 
