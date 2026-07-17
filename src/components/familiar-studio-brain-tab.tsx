@@ -764,6 +764,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       onChange={(e) => setDraftVoiceModel(e.target.value)}
                       onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
                       onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
                         // Enter commits (via the blur handler) — typing an id
                         // and pressing Enter must never leave it unsaved.
                         if (e.key === "Enter") e.currentTarget.blur();
@@ -854,6 +855,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         onChange={(e) => setDraftVoiceName(e.target.value)}
                         onBlur={() => void save({ voiceName: draftVoiceName.trim() || null })}
                         onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
                           // Enter commits the typed voice id (blur → save).
                           if (e.key === "Enter") e.currentTarget.blur();
                         }}
