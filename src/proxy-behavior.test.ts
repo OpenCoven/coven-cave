@@ -205,13 +205,11 @@ assert.equal(
   "normal same-origin browser dev mode remains allowed",
 );
 
-// ─── expectedRequestOrigins / port-fallback CSRF (cave-5sg) ────────────────
-// server.ts constructs Next with the CONFIGURED port, then startListening()
-// falls back to the next free port when it's taken. req.nextUrl.origin stays
-// pinned to the configured port, so the real browser Origin (the fallback
-// port, carried by Host) must also be accepted or every /api request 403s.
+// ─── expectedRequestOrigins / host-derived CSRF (cave-5sg) ────────────────
+// req.nextUrl.origin can stay pinned to the configured port while the real
+// browser Origin is carried by Host, so both origins remain accepted.
 {
-  // Fell back 3457 -> 3458: nextUrl still says :3457, Host says :3458.
+  // Host reports :3458 while nextUrl still says :3457.
   const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
   assert.deepEqual(
     origins,

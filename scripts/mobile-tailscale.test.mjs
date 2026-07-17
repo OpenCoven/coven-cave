@@ -120,6 +120,12 @@ test("mobile tailscale invite command is chat-safe by default", () => {
   assert.doesNotMatch(script, /Open this URL on your phone:/);
 });
 
+test("mobile tailscale readiness requires this server's ready log", () => {
+  assert.match(script, /server_logged_ready\(\)/);
+  assert.match(script, /grep -F "> Ready on http:\/\/\$\{HOST\}:\$\{PORT\}" "\$LOG_FILE"/);
+  assert.match(script, /recorded_server_is_running && port_is_listening.*&& server_logged_ready/);
+});
+
 test("mobile tailscale runner syntax is shell-checkable by bash", () => {
   assert.match(script, /set -euo pipefail/);
 });

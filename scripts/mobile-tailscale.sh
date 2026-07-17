@@ -363,9 +363,13 @@ ensure_tailscale() {
   fi
 }
 
+server_logged_ready() {
+  grep -F "> Ready on http://${HOST}:${PORT}" "$LOG_FILE" >/dev/null 2>&1
+}
+
 wait_for_server() {
   for _ in $(seq 1 80); do
-    if port_is_listening >/dev/null 2>&1; then
+    if recorded_server_is_running && port_is_listening >/dev/null 2>&1 && server_logged_ready; then
       return 0
     fi
     sleep 0.25
