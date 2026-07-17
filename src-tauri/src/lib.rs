@@ -1527,15 +1527,26 @@ fn live_dev_server_url(app: &tauri::App) -> Option<tauri::Url> {
 }
 
 #[cfg(desktop)]
-fn wait_for_port(port: u16, timeout: Duration, should_cancel: impl Fn() -> bool) -> PortWaitResult {
+fn wait_for_sidecar_ready(
+    port: u16,
+    log_path: &Path,
+    timeout: Duration,
+    should_cancel: impl Fn() -> bool,
+) -> PortWaitResult {
     use std::net::{SocketAddr, TcpStream};
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Require the launched sidecar's own ready log line, not just a listening
+    // port — otherwise another process squatting the port would be trusted.
+    let ready_line = format!("> Ready on http://127.0.0.1:{}", port);
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if should_cancel() {
             return PortWaitResult::Cancelled;
         }
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+        let logged_ready = std::fs::read_to_string(log_path)
+            .map(|log| log.lines().any(|line| line.trim() == ready_line))
+            .unwrap_or(false);
+        if logged_ready && TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
             return PortWaitResult::Ready;
         }
         thread::sleep(Duration::from_millis(150));
@@ -1773,7 +1784,7 @@ fn start_sidecar_runtime(
     } else {
         Duration::from_secs(20)
     };
-    match wait_for_port(port, sidecar_start_timeout, &should_cancel) {
+    match wait_for_sidecar_ready(port, &log_path, sidecar_start_timeout, &should_cancel) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => return Err(SidecarStartError::Cancelled),
         PortWaitResult::TimedOut => {
@@ -2194,16 +2205,39 @@ mod tests {
     fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
         let port = listener.local_addr().expect("fixture address").port();
+        let log_dir = std::env::temp_dir().join(format!(
+            "covencave-sidecar-ready-test-{}-{}",
+            std::process::id(),
+            port
+        ));
+        std::fs::create_dir_all(&log_dir).expect("create log fixture dir");
+        let log_path = log_dir.join("sidecar.log");
+
+        // A listening port without the sidecar's own ready log line must NOT
+        // be trusted — that's the port-squatting scenario this guards against.
+        std::fs::write(&log_path, "starting up\n").expect("write log fixture");
         assert!(matches!(
-            wait_for_port(port, Duration::from_secs(1), || false),
+            wait_for_sidecar_ready(port, &log_path, Duration::from_millis(600), || false),
+            PortWaitResult::TimedOut
+        ));
+
+        std::fs::write(
+            &log_path,
+            format!("starting up\n> Ready on http://127.0.0.1:{}\n", port),
+        )
+        .expect("write ready log fixture");
+        assert!(matches!(
+            wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || false),
             PortWaitResult::Ready
         ));
         drop(listener);
 
         assert!(matches!(
-            wait_for_port(port, Duration::from_secs(1), || true),
+            wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || true),
             PortWaitResult::Cancelled
         ));
+
+        let _ = std::fs::remove_dir_all(&log_dir);
     }
 
     #[cfg(target_os = "windows")]

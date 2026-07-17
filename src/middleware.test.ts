@@ -179,3 +179,8 @@ assert.match(
   /\?covenCaveToken=\{auth_token\}&coven_access_token=\{mobile_access_token\}/,
   "Tauri app URL should bootstrap both named tokens into the webview",
 );
+assert.match(
+  tauriSource,
+  /wait_for_sidecar_ready\(port, &log_path, sidecar_start_timeout, &should_cancel\)/,
+  "Tauri sidecar should require the launched sidecar's ready log before trusting the URL",
+);
