@@ -95,7 +95,7 @@ assert.doesNotMatch(
 assert.match(handoffRoute, /function nativeTokenlessMode\(\)/, "the tokenless/invite trust decision should be a single named predicate");
 assert.match(
   handoffRoute,
-  /if \(!nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret: mobileAccessSecret\(\),[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
+  /if \(!nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret,[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
   "token-gated app-start mints the signed invite the packaged phone pairs with",
 );
 assert.match(
@@ -134,8 +134,8 @@ assert.doesNotMatch(
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
 assert.match(
   handoffRoute,
-  /async function ensureNativeAppServe[\s\S]*if \(!mobileAccessSecret\(\)\)[\s\S]*return mobileAccessUnavailableResponse\(\)/,
-  "native app mobile-mode start must require the mobile access token before starting Tailscale Serve",
+  /async function ensureNativeAppServe[\s\S]*?const access = resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
+  "native app mobile-mode start must resolve (or self-provision) the mobile access secret before starting Tailscale Serve",
 );
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
@@ -148,8 +148,8 @@ assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Se
 assert.match(settings, /describeMobileHandoffError/, "Settings translates handoff failures into plain language");
 assert.match(
   settings,
-  /Pairing runs in the packaged Cave app/,
-  "the plain-dev failure tells users to open the packaged app instead of quoting pnpm incantations",
+  /Pairing secret unavailable/,
+  "the access-rung failure explains the self-provisioned pairing secret instead of quoting pnpm incantations",
 );
 assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
 

@@ -30,7 +30,46 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   }
 }
 
-const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+// Boot re-arm (cave-os73): a tokenless dev boot outside the packaged bundle
+// re-arms COVEN_CAVE_ACCESS_TOKEN from the pairing secret that Settings ·
+// Phone (or scripts/mobile-tailscale.sh — same state file) provisioned, so
+// paired phones survive dev-server restarts and a still-configured Tailscale
+// Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
+// provision.ts, inlined because the standalone server.mjs cannot import from
+// src/.
+function persistedMobileAccessSecretFile(): string {
+  const port = (process.env.PORT || "3000").trim() || "3000";
+  const stateRoot =
+    process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
+    join(
+      process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+      "coven-cave",
+    );
+  const stateDir =
+    process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() ||
+    join(stateRoot, `mobile-tailscale-${port}`);
+  return join(stateDir, "access-token");
+}
+
+if (
+  process.env.COVEN_CAVE_BUNDLE !== "1" &&
+  process.env.COVEN_CAVE_E2E !== "1" &&
+  !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()
+) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+    // No provisioned secret — stay tokenless, exactly as before.
+  }
+}
+
+// Read lazily, not snapshotted: Settings · Phone can provision and arm the
+// pairing secret mid-session (cave-os73), and the PTY upgrade gate must honor
+// tokens signed with it without a server restart.
+function accessToken(): string {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
@@ -106,9 +145,10 @@ function timingSafeEqualString(a: string, b: string): boolean {
 }
 
 function isExpectedAccessToken(value: string | undefined | null): boolean {
-  if (!ACCESS_TOKEN || !value) return false;
-  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
-  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
 }
 
 function isExpectedSidecarToken(value: string | undefined | null): boolean {
@@ -273,7 +313,7 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
 }
 
 function isPtyAuthRequired(): boolean {
-  return Boolean(ACCESS_TOKEN || SIDECAR_TOKEN);
+  return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {

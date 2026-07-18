@@ -20,7 +20,25 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   } catch {
   }
 }
-const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+function persistedMobileAccessSecretFile() {
+  const port2 = (process.env.PORT || "3000").trim() || "3000";
+  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join(
+    process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+    "coven-cave"
+  );
+  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join(stateRoot, `mobile-tailscale-${port2}`);
+  return join(stateDir, "access-token");
+}
+if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+  }
+}
+function accessToken() {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
@@ -62,9 +80,10 @@ function timingSafeEqualString(a, b) {
   return diff === 0;
 }
 function isExpectedAccessToken(value) {
-  if (!ACCESS_TOKEN || !value) return false;
-  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
-  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
 }
 function isExpectedSidecarToken(value) {
   return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
@@ -160,7 +179,7 @@ function parseUpgradeTarget(rawUrl) {
   return { pathname, query };
 }
 function isPtyAuthRequired() {
-  return Boolean(ACCESS_TOKEN || SIDECAR_TOKEN);
+  return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
