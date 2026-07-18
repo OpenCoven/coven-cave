@@ -15,6 +15,11 @@ assert.equal(picked[0].title, "b.md", "newest first, basename title");
 assert.equal(picked[0].excerpt, "bravo");
 assert.equal(picked[1].title, "d.md", "second newest");
 assert.ok(picked.every((p) => p.fullPath.startsWith("/x/")), "keeps fullPath");
+assert.deepEqual(
+  picked.map((p) => p.relPath),
+  ["memory/b.md", "memory/d.md"],
+  "keeps relPath for the card's open-in-Grimoire tooltip (cave-00w0)",
+);
 
 // missing excerpt → empty string, never undefined
 const noExcerpt = pickFamiliarMemory([{ familiarId: "cody", relPath: "m/e.md", modified: "2026-06-12T00:00:00.000Z", fullPath: "/x/e.md" }], "cody", 3);
