@@ -915,12 +915,12 @@ export function Workspace() {
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
-  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
+  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // A multi-toggle shouldn't yank the surface around — only a plain single
     // select restores that familiar's last-viewed surface.
-    if (opts?.multi) return;
+    if (opts?.multi || opts?.preserveSurface) return;
     const last = getLastSurface(id);
     // Guard against retired/unknown persisted modes (e.g. the removed
     // "projects" standalone surface). Only restore if the stored string is
@@ -2581,6 +2581,7 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         activeFamiliarId={activeId}
+        selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
         hideThreadRail
@@ -2593,6 +2594,7 @@ export function Workspace() {
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
         onSetActiveFamiliar={setActiveId}
+        onFamiliarScopeChange={selectFamiliarScope}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
