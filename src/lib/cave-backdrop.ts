@@ -27,6 +27,7 @@ import {
   createBackdropImageState,
   type BackdropMigrationResult,
 } from "@/lib/backdrop-image-state";
+import { MAX_FAMILIAR_BACKDROPS } from "@/lib/preferences-schema";
 
 const PREFS_KEY = "cave:backdrop:v1";
 const DB_NAME = "cave-backdrop";
@@ -113,13 +114,24 @@ export function isFamiliarBackdropOn(
   familiarId: string,
   hasImage: boolean,
 ): boolean {
-  return prefs.familiars[familiarId] ?? hasImage;
+  // Own-property guard: a plain-object map inherits Object.prototype, so a
+  // familiar id like "constructor" would otherwise read a truthy function.
+  if (!Object.hasOwn(prefs.familiars, familiarId)) return hasImage;
+  return prefs.familiars[familiarId];
 }
 
 /** Record an explicit per-familiar backdrop choice. Always writes the full
- *  map so `writeBackdropPrefs`'s shallow merge can't drop sibling entries. */
+ *  map so `writeBackdropPrefs`'s shallow merge can't drop sibling entries.
+ *  The schema hard-caps the map (MAX_FAMILIAR_BACKDROPS); evict the oldest
+ *  other entries rather than let an over-cap write 400 server-side — that
+ *  error would terminally halt the whole preferences pipe for the session. */
 export function setFamiliarBackdropEnabled(familiarId: string, enabled: boolean): BackdropPrefs {
   const familiars = { ...readBackdropPrefs().familiars, [familiarId]: enabled };
+  while (Object.keys(familiars).length > MAX_FAMILIAR_BACKDROPS) {
+    const oldest = Object.keys(familiars).find((key) => key !== familiarId);
+    if (oldest === undefined) break;
+    delete familiars[oldest];
+  }
   return writeBackdropPrefs({ familiars });
 }
 

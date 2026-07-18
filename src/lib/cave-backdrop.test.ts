@@ -46,6 +46,16 @@ assert.equal(isFamiliarBackdropOn({ familiars: {} }, "fam-a", false), false, "un
 assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": true } }, "fam-a", false), true, "explicit on needs no image");
 assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": false } }, "fam-a", true), false, "explicit off keeps the image dormant");
 assert.equal(isFamiliarBackdropOn({ familiars: { "fam-b": true } }, "fam-a", false), false, "other familiars' entries don't leak");
+assert.equal(
+  isFamiliarBackdropOn({ familiars: {} }, "constructor", false),
+  false,
+  "prototype members never count as entries (id 'constructor' is a real slug)",
+);
+assert.equal(
+  isFamiliarBackdropOn({ familiars: { constructor: true } }, "constructor", false),
+  true,
+  "an explicit own entry for a prototype-named id still works",
+);
 
 // ── dominantVibrantOklab: picks the vibrant hue, ignores neutrals ────────────
 function pixels(colors: Array<[number, number, number]>, repeat = 1): Uint8ClampedArray {
@@ -250,6 +260,11 @@ assert.match(
   lib,
   /\{ \.\.\.readBackdropPrefs\(\)\.familiars, \[familiarId\]: enabled \}/,
   "setFamiliarBackdropEnabled preserves sibling familiar entries",
+);
+assert.match(
+  lib,
+  /while \(Object\.keys\(familiars\)\.length > MAX_FAMILIAR_BACKDROPS\)/,
+  "the setter evicts before writing — an over-cap PATCH would terminally halt the prefs pipe",
 );
 assert.match(lib, /familiars: \{ \.\.\.central\.familiars \}/, "readBackdropPrefs copies the central familiars map");
 
