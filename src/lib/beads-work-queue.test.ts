@@ -259,8 +259,6 @@ assert.equal(
   }
 }
 
-console.log("beads-work-queue.test.ts: ok");
-
 // ── no-open-PR triage order: priority asc, then oldest update first (cave-19jy)
 {
   const at = (h) => new Date(NOW - h * HOURS).toISOString();
@@ -348,3 +346,5 @@ assert.equal(beadRefMatchesPr("https://github.com/x/y/pull/1234", 123), false, "
 assert.equal(beadRefMatchesPr("https://github.com/x/y/issues/123", 123), false, "issue URL is not a PR");
 assert.equal(beadRefMatchesPr(null, 123), false, "null ref");
 assert.equal(beadRefMatchesPr("", 123), false, "empty ref");
+
+console.log("beads-work-queue.test.ts: ok");
