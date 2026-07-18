@@ -118,6 +118,9 @@ type Props = {
   onOpenInboxItem: (item: InboxItem) => void;
   /** Jump to the Schedules surface for the full feed. */
   onOpenSchedules: () => void;
+  /** Voice new-chat: start a live voice call in a brand-new chat with this
+   *  familiar. The workspace pre-creates the session and routes to chat. */
+  onStartVoiceCall?: (familiarId: string, projectRoot: string | null) => void;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -142,6 +145,7 @@ export function HomeComposer({
   needsYou,
   onOpenInboxItem,
   onOpenSchedules,
+  onStartVoiceCall,
 }: Props) {
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
@@ -894,8 +898,28 @@ export function HomeComposer({
               </div>
             </div>
             <div className="cave-composer-submit-row">
-              {/* Voice input is hidden until it actually works — a permanently
-                  disabled mic reads as broken, not "coming soon". */}
+              {/* Voice: phone = live call in a brand-new chat (voice
+                  new-chat); the dictation mic renders beside it when an
+                  ears engine exists. */}
+              {onStartVoiceCall ? (
+                <button
+                  type="button"
+                  className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                  title="Start a voice call in a new chat"
+                  aria-label="Start a voice call in a new chat"
+                  disabled={sending}
+                  onClick={() => {
+                    if (!selectedFamiliarId) {
+                      onToast("No familiar yet — summon one to start a voice chat.");
+                      requestSummonFamiliar();
+                      return;
+                    }
+                    onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null);
+                  }}
+                >
+                  <Icon name="ph:phone" width={15} aria-hidden />
+                </button>
+              ) : null}
               <EnhanceControl
                 state={promptEnhance.state}
                 onEnhance={promptEnhance.enhance}

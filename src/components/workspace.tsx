@@ -120,6 +120,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import { startVoiceConversation } from "@/lib/voice/start-voice-chat";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
@@ -1816,6 +1817,21 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Voice new-chat: create the empty conversation the call will attach to,
+  // then route to chat with autoVoice so the overlay opens on arrival. On
+  // failure stay on Home — no navigation, no orphan state.
+  const startVoiceChat = useCallback(async (familiarId: string, projectRoot: string | null) => {
+    const result = await startVoiceConversation(familiarId, projectRoot);
+    if (!result.ok) {
+      pushToast(`Couldn't start a voice chat: ${result.error}`);
+      return;
+    }
+    setActiveId(familiarId);
+    setPendingProjectChatRoot(projectRoot ?? null);
+    setPendingChatAction({ kind: "open", sessionId: result.sessionId, familiarId, autoVoice: true, nonce: Date.now() });
+    setMode("chat");
+  }, [pushToast]);
+
   // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
   // familiar" — startFamiliarChat handles both the off-chat (switch + new
   // thread) and in-chat (new thread) cases (cave-xsq.6).
@@ -2727,6 +2743,7 @@ export function Workspace() {
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
+        onStartVoiceCall={(fid, projectRoot) => { void startVoiceChat(fid, projectRoot); }}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}

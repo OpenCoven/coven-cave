@@ -68,3 +68,23 @@ test("chat-view: voice nonce effect checks sessionId before consuming the nonce"
   // gap while session promotion lands.
   assert.match(chatView, /if \(!sessionId\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/);
 });
+
+const workspace = read("./workspace.tsx");
+const homeComposer = read("./home-composer.tsx");
+
+test("workspace: startVoiceChat creates the session then routes with autoVoice", () => {
+  assert.match(
+    workspace,
+    /startVoiceConversation\(familiarId, projectRoot\)[\s\S]*?kind: "open", sessionId: result\.sessionId, familiarId, autoVoice: true/,
+  );
+  assert.match(workspace, /onStartVoiceCall=\{/);
+});
+
+test("home-composer: call button starts a voice chat, summoning when no familiar", () => {
+  assert.match(homeComposer, /aria-label="Start a voice call in a new chat"/);
+  assert.match(homeComposer, /"ph:phone"/);
+  assert.match(
+    homeComposer,
+    /if \(!selectedFamiliarId\) \{[\s\S]*?requestSummonFamiliar\(\);[\s\S]*?\}\s*\n\s*onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
+  );
+});
