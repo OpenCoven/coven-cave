@@ -446,26 +446,11 @@ export function WorkspaceSidebar({
 
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
-      {/* Collapsed rail — when the nav panel is collapsed the shell adds
-          `.shell-nav--rail`, which hides the full sidebar and shows this
-          vertical "Chats" label. Clicking it reopens the panel. */}
-      <button
-        type="button"
-        className="workspace-sidebar__rail chat-sidebar__rail focus-ring"
-        aria-label="Expand chats"
-        title="Expand chats"
-        onClick={() => window.dispatchEvent(new CustomEvent("cave:toggle-left-panel"))}
-      >
-        <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-        <span className="workspace-sidebar__rail-label chat-sidebar__rail-label">Chats</span>
-      </button>
-
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Header — the labeled familiar switcher (#2747). On the CHAT page
-            this sidebar REPLACES the global sidenav (SidebarMinimal never
-            renders here), so this is the page's only familiar control —
-            cave-l3ay restored it after #2750 removed it as a supposed
-            duplicate. Every other page gets the sidenav header switcher. */}
+        {/* Header — the labeled familiar switcher (#2747). The global nav stays
+            mounted beside Chats now; this header remains the chat-local scope
+            control restored by cave-l3ay after #2750 removed it as a supposed
+            duplicate. */}
         <header className="cnav__header">
           <div className="cnav__switcher">
             <FamiliarSwitcher

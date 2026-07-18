@@ -2650,7 +2650,7 @@ export function Workspace() {
       onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
       }}
       onOpenSessionInSplit={(session) => {
         // Open beside the current chat: same pending-action pipeline as a
@@ -2659,11 +2659,11 @@ export function Workspace() {
         // active familiar is left alone — the pane carries its own.
         setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
         setMode("chat");
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
       }}
       onNewChat={(projectRoot) => {
         startFamiliarChat(activeId, projectRoot);
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
       }}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
@@ -2677,13 +2677,13 @@ export function Workspace() {
       onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
         nextRouter.push("/settings");
       }}
     />
   );
 
-  const list = undefined;
+  const list = mode === "chat" ? chatSidebar : undefined;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -2976,6 +2976,8 @@ export function Workspace() {
         onCloseSplitTile={closeSplitTile}
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
+        navPolicy={mode === "chat" ? "visit-collapsed" : "remembered"}
+        listPolicy={mode === "chat" ? "persistent" : "collapsible"}
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
@@ -3038,7 +3040,7 @@ export function Workspace() {
           />
           </>
         )}
-        nav={mode === "chat" ? chatSidebar : sidebar}
+        nav={sidebar}
         list={list}
         detail={detail}
       />

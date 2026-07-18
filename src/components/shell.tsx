@@ -169,6 +169,7 @@ export type ShellHandle = {
 };
 
 export type ShellNavPolicy = "remembered" | "visit-collapsed";
+export type ShellListPolicy = "collapsible" | "persistent";
 
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
@@ -192,6 +193,7 @@ function ShellInner({
   onDropSplitPage,
   onNavOpenChange,
   navPolicy = "remembered",
+  listPolicy = "collapsible",
   panelShortcutOverrides,
 }: {
   nav: ReactNode;
@@ -212,6 +214,7 @@ function ShellInner({
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
   navPolicy?: ShellNavPolicy;
+  listPolicy?: ShellListPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
@@ -310,6 +313,7 @@ function ShellInner({
       },
       closeList: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "list" ? null : c)); return; }
+        if (listPolicy === "persistent") return;
         listRef.current?.collapse();
       },
       dismissListMobile: () => {
@@ -317,17 +321,18 @@ function ShellInner({
       },
       toggleList: () => {
         if (isMobile) { toggleDrawer("list"); return; }
+        if (listPolicy === "persistent") return;
         togglePanel(listRef.current);
       },
     };
-  }, [isMobile]);
+  }, [isMobile, listPolicy]);
 
   const twoPane = !list;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID;
+  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : listPolicy === "persistent" ? `${SHELL_GROUP_ID}.persistent-list` : SHELL_GROUP_ID;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -566,7 +571,7 @@ function ShellInner({
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
-        else togglePanel(listRef.current);
+        else if (listPolicy === "collapsible") togglePanel(listRef.current);
       }
     };
     const bottomToggle = (e: KeyboardEvent) => {
@@ -592,7 +597,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, isMobile, panelShortcuts]);
+  }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we soft-collapse
@@ -728,7 +733,7 @@ function ShellInner({
             defaultSize="260px"
             minSize="220px"
             maxSize="420px"
-            collapsible
+            collapsible={isMobile || listPolicy === "collapsible"}
             collapsedSize={0}
             panelRef={listRef}
           >
