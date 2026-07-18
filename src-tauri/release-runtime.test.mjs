@@ -372,8 +372,15 @@ test("Windows conformance runs the native harness parser and DryRun fixture", as
 
   assert.match(
     conformanceJob,
-    /^\s+os: \[ubuntu-latest, windows-latest, macos-latest\]$/m,
+    /^\s+os: \[ubuntu-latest, windows-latest\]$/m,
     "the conformance matrix must retain a real Windows runner",
+  );
+  // Apple hosted runners were intentionally removed from PR CI (their minutes
+  // were exhausting the org Actions budget); they must not silently return.
+  assert.doesNotMatch(
+    conformanceJob,
+    /^\s+os: \[[^\]]*macos[^\]]*\]$/m,
+    "Apple runners must stay out of PR CI conformance matrix (release.yml covers them)",
   );
   assert.match(conformanceStep, /^\s+run: pnpm test:conformance$/m);
   assert.deepEqual(

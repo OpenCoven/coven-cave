@@ -488,8 +488,11 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
         timeoutMs: 800,
       });
       const reachable = health.ok && health.data?.ok !== false;
+      const pid = health.data?.daemon?.pid;
       return {
         ok: reachable,
+        // Read-only supervisor-restart evidence; never signalled.
+        ...(reachable && typeof pid === "number" ? { pid } : {}),
         ...(reachable
           ? {}
           : { detail: health.error ?? (health.ok ? "daemon reported unhealthy" : `daemon http ${health.status}`) }),
