@@ -117,6 +117,6 @@ assert.doesNotMatch(automations, /listFlows\(\)/, "Rituals does not load flow do
 assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Rituals does not run flows");
 assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Rituals does not route into Flow");
 assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
-assert.match(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation events normalize to Rituals");
+assert.match(workspace, /if \(next === "flow"\) \{[\s\S]{0,600}?setModeRaw\("inbox"\)/, "Flow navigation events normalize to Rituals via setMode's alias funnel (cave-m4ih.3)");
 
 console.log("rituals-tabs.test.ts: ok");
