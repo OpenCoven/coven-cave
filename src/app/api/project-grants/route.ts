@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import { resolveProjectGrantTarget } from "@/lib/server/project-grant-targets";
 
 import {
   grantProjectToFamiliar,
@@ -100,7 +101,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  await grantProjectToFamiliar({ ...input, source: "human", access });
+  const target = await resolveProjectGrantTarget(input);
+  if (!target.ok) {
+    return NextResponse.json(
+      { ok: false, error: target.error },
+      { status: target.status },
+    );
+  }
+  await grantProjectToFamiliar({ familiarId: target.familiarId, projectId: target.projectId, source: "human", access });
   return NextResponse.json({ ok: true });
 }
 

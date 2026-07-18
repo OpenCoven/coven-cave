@@ -6,6 +6,7 @@ const grantsRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8
 const proposalsRoute = await readFile(new URL("../grant-proposals/route.ts", import.meta.url), "utf8");
 const proposalItemRoute = await readFile(new URL("../grant-proposals/[id]/route.ts", import.meta.url), "utf8");
 const permissions = await readFile(new URL("../../../lib/project-permissions.ts", import.meta.url), "utf8");
+const targets = await readFile(new URL("../../../lib/server/project-grant-targets.ts", import.meta.url), "utf8");
 
 assert.match(
   permissions,
@@ -34,6 +35,42 @@ assert.match(
 );
 
 assert.match(grantsRoute, /export async function GET\(/, "project grants route should list grants");
+
+assert.match(
+  targets,
+  /import \{ loadProjects, projectById \} from "@\/lib\/cave-projects";/,
+  "grant-target validation should use the shared project loader helpers",
+);
+assert.match(
+  targets,
+  /import \{ loadVisibleFamiliarRoster \} from "@\/lib\/server\/familiar-roster";/,
+  "grant-target validation should reuse the shared visible familiar roster loader",
+);
+assert.match(
+  targets,
+  /import \{ isValidFamiliarId \} from "@\/lib\/server\/familiar-id";/,
+  "grant-target validation should use the shared familiar id guard",
+);
+assert.match(
+  targets,
+  /if \(!isValidFamiliarId\(input\.familiarId\)\) return \{ ok: false, status: 400, error: "invalid familiar id" \};/,
+  "malformed familiar ids fail before any filesystem or roster access",
+);
+assert.match(
+  targets,
+  /const project = projectById\(input\.projectId, await loadProjects\(\)\);[\s\S]*if \(!project\) return \{ ok: false, status: 404, error: "project not found" \};/,
+  "grant-target validation rejects unknown project ids",
+);
+assert.match(
+  targets,
+  /const roster = await loadVisibleFamiliarRoster\(\);[\s\S]*if \(!roster\.ok\) return \{ ok: false, status: roster\.status === 401 \|\| roster\.status === 403 \? roster\.status : 503, error: roster\.error \};/,
+  "grant-target validation fails closed when the familiar roster cannot be loaded",
+);
+assert.match(
+  targets,
+  /const familiar = roster\.roster\.find\(\(entry\) => entry\.id\.toLowerCase\(\) === input\.familiarId\.toLowerCase\(\)\);[\s\S]*if \(!familiar\) return \{ ok: false, status: 404, error: "familiar not found" \};/,
+  "grant-target validation rejects nonexistent or removed familiar ids",
+);
 assert.match(grantsRoute, /export async function POST\(/, "project grants route should create human grants");
 assert.match(grantsRoute, /export async function DELETE\(/, "project grants route should revoke human grants");
 assert.match(
@@ -48,8 +85,13 @@ assert.match(
 );
 assert.match(
   grantsRoute,
-  /grantProjectToFamiliar\(\{[\s\S]*source: "human"/,
-  "direct grants should always be recorded with source=human",
+  /const target = await resolveProjectGrantTarget\(input\);[\s\S]*if \(!target\.ok\) \{[\s\S]*status: target\.status[\s\S]*\}/,
+  "direct grants should validate the project and familiar targets before mutating permissions",
+);
+assert.match(
+  grantsRoute,
+  /grantProjectToFamiliar\(\{ familiarId: target\.familiarId, projectId: target\.projectId, source: "human", access \}\)/,
+  "direct grants should always be recorded with source=human against the validated target ids",
 );
 assert.match(
   grantsRoute,

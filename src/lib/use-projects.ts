@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import type { CreateProjectOptions } from "./chat-add-project.ts";
-import { emitProjectRegistryMutation, subscribeProjectRegistryReload } from "./project-registry-events.ts";
+import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
+import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
 import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
 
 type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
+type CreateProjectOptions = { emitMutation?: boolean };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
   | { ok: false; error: string };
@@ -28,6 +29,7 @@ export type ProjectsState = {
   projects: CaveProject[];
   loading: boolean;
   error: string | null;
+  loadedSuccessfully: boolean;
   reload: () => void;
   createProject: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject | null>;
   createProjectOrThrow: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject>;
@@ -52,6 +54,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const [loadedSuccessfully, setLoadedSuccessfully] = useState(false);
   // Generation guard: bumped on every load() call, scope change, and disable,
   // so a stale response can't write into newer state. (Replaces the previous
   // per-instance AbortController — the shared, coalesced request can't be
@@ -71,6 +74,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
         setError(data.error ?? "Failed to load projects");
       } else {
         setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
+        setLoadedSuccessfully(true);
       }
     } catch (err) {
       if (generationRef.current === gen) {
@@ -94,6 +98,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     // so this effect only re-runs when the scope or `enabled` actually changes;
     // a manual reload() after a mutation calls load() directly and is
     // unaffected, so an in-place refresh never blanks the list.
+    setLoadedSuccessfully(false);
     setProjects([]);
     load();
     return () => {
@@ -103,7 +108,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
 
   useEffect(() => {
     if (!enabled) return;
-    return subscribeProjectRegistryReload(() => load());
+    return subscribeProjectRegistryMutation(({ mutation }) => {
+      setProjects((prev) => applyProjectRegistryMutation(prev, mutation));
+      void load();
+    });
   }, [enabled, load]);
 
   // Post-mutation refresh: bypass the microcache so callers always see the
@@ -112,17 +120,13 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     void load({ force: true });
   }, [load]);
 
-  const applyCreatedProject = useCallback((project: CaveProject, emitMutation = true): CaveProject => {
+  const applyCreatedProject = useCallback((project: CaveProject, options?: CreateProjectOptions): CaveProject => {
     setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
-    if (emitMutation) emitProjectRegistryMutation();
+    if (options?.emitMutation !== false) emitProjectRegistryMutation();
     return project;
   }, []);
 
-  const requestCreateProject = useCallback(async (
-    name: string,
-    root: string,
-    options?: CreateProjectOptions,
-  ): Promise<CreateProjectResult> => {
+  const requestCreateProject = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CreateProjectResult> => {
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
@@ -131,10 +135,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       });
       const data = (await res.json().catch(() => null)) as ProjectMutationPayload | null;
       if (res.ok && data?.ok && data.project) {
-        return {
-          ok: true,
-          project: applyCreatedProject(data.project as CaveProject, options?.emitMutation !== false),
-        };
+        return { ok: true, project: applyCreatedProject(data.project as CaveProject, options) };
       }
       return {
         ok: false,
@@ -148,20 +149,12 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     }
   }, [applyCreatedProject]);
 
-  const createProject = useCallback(async (
-    name: string,
-    root: string,
-    options?: CreateProjectOptions,
-  ): Promise<CaveProject | null> => {
+  const createProject = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CaveProject | null> => {
     const result = await requestCreateProject(name, root, options);
     return result.ok ? result.project : null;
   }, [requestCreateProject]);
 
-  const createProjectOrThrow = useCallback(async (
-    name: string,
-    root: string,
-    options?: CreateProjectOptions,
-  ): Promise<CaveProject> => {
+  const createProjectOrThrow = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CaveProject> => {
     const result = await requestCreateProject(name, root, options);
     if (result.ok) return result.project;
     throw new Error(result.error);
@@ -223,7 +216,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const data = await res.json();
     if (data.ok) {
       setProjects((prev) => prev.filter((project) => project.id !== id));
-      emitProjectRegistryMutation();
+      emitProjectRegistryMutation({ kind: "delete", projectId: id });
       return true;
     }
     return false;
@@ -233,6 +226,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     projects,
     loading,
     error,
+    loadedSuccessfully,
     reload,
     createProject,
     createProjectOrThrow,

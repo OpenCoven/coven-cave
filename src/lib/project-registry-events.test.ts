@@ -9,7 +9,7 @@ import {
   subscribeProjectRegistryReload,
 } from "./project-registry-events.ts";
 
-test("project registry listeners unsubscribe cleanly and fan out over a copied set", () => {
+test("project registry listeners unsubscribe cleanly and fan out copied mutation payloads", () => {
   resetProjectRegistryListenersForTests();
   const calls: string[] = [];
   const startGeneration = getProjectRegistryMutationGenerationForTests();
@@ -17,24 +17,24 @@ test("project registry listeners unsubscribe cleanly and fan out over a copied s
   let unsubscribeSecond = () => {};
   let addedLate = false;
 
-  subscribeProjectRegistryMutation(() => {
-    calls.push("first");
+  subscribeProjectRegistryMutation(({ mutation }) => {
+    calls.push(`first:${mutation.kind}`);
     unsubscribeSecond();
     if (!addedLate) {
       addedLate = true;
-      subscribeProjectRegistryMutation(() => {
-        calls.push("late");
+      subscribeProjectRegistryMutation(({ mutation: next }) => {
+        calls.push(`late:${next.kind}`);
       });
     }
   });
-  unsubscribeSecond = subscribeProjectRegistryMutation(() => {
-    calls.push("second");
+  unsubscribeSecond = subscribeProjectRegistryMutation(({ mutation }) => {
+    calls.push(`second:${mutation.kind}`);
   });
-  const unsubscribeThird = subscribeProjectRegistryMutation(() => {
-    calls.push("third");
+  const unsubscribeThird = subscribeProjectRegistryMutation(({ mutation }) => {
+    calls.push(`third:${mutation.kind}`);
   });
 
-  emitProjectRegistryMutation();
+  emitProjectRegistryMutation({ kind: "delete", projectId: "p1" });
   assert.equal(
     getProjectRegistryMutationGenerationForTests(),
     startGeneration + 1,
@@ -42,7 +42,7 @@ test("project registry listeners unsubscribe cleanly and fan out over a copied s
   );
   assert.deepEqual(
     calls,
-    ["first", "second", "third"],
+    ["first:delete", "second:delete", "third:delete"],
     "the first emission uses a copied listener set, so unsubscribes/additions do not disturb fanout",
   );
 
@@ -54,11 +54,11 @@ test("project registry listeners unsubscribe cleanly and fan out over a copied s
     startGeneration + 2,
     "later mutations keep advancing the shared project generation one step at a time",
   );
-  assert.deepEqual(calls, ["first", "late"], "later emissions reflect the updated subscriber set");
+  assert.deepEqual(calls, ["first:refresh", "late:refresh"], "later emissions reflect the updated subscriber set");
   resetProjectRegistryListenersForTests();
 });
 
-test("reload subscriptions fan out to multiple scopes without unhandled rejections", async () => {
+test("reload subscriptions fan out mutation payloads without unhandled rejections", async () => {
   resetProjectRegistryListenersForTests();
   const calls: string[] = [];
   const unhandled: unknown[] = [];
@@ -67,19 +67,19 @@ test("reload subscriptions fan out to multiple scopes without unhandled rejectio
   };
   process.on("unhandledRejection", onUnhandled);
   try {
-    subscribeProjectRegistryReload(async () => {
-      calls.push("all");
+    subscribeProjectRegistryReload(async ({ mutation }) => {
+      calls.push(`all:${mutation.kind}`);
     });
-    subscribeProjectRegistryReload(async () => {
-      calls.push("sage");
+    subscribeProjectRegistryReload(async ({ mutation }) => {
+      calls.push(`sage:${mutation.kind}`);
       throw new Error("boom");
     });
 
-    emitProjectRegistryMutation();
+    emitProjectRegistryMutation({ kind: "delete", projectId: "p1" });
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.deepEqual(calls, ["all", "sage"], "every subscribed scope reloads on the shared notification");
+    assert.deepEqual(calls, ["all:delete", "sage:delete"], "every subscribed scope reloads on the shared notification");
     assert.deepEqual(unhandled, [], "reload callbacks swallow their own rejections");
   } finally {
     process.off("unhandledRejection", onUnhandled);

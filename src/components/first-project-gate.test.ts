@@ -4,22 +4,22 @@ import { readFileSync } from "node:fs";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-test("the first-project gate is a sticky portaled modal with no dismiss path", () => {
+test("the first-project gate is a non-modal detail-scoped panel with no dismiss path", () => {
   const src = read("./first-project-gate.tsx");
-  assert.match(src, /import \{ createPortal \} from "react-dom"/, "uses a portal");
-  assert.match(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "stays visible while a restored or newly-created project still needs a grant retry");
-  assert.match(src, /useFocusTrap\(visible && !pickerOpen, dialogRef\);/, "suspends the outer trap while the nested directory picker is open");
-  assert.doesNotMatch(src, /useFocusTrap\(visible, dialogRef, \{/, "does not wire onEscape for this mandatory gate");
-  assert.match(src, /role="dialog"/, "exposes dialog semantics");
-  assert.match(src, /aria-modal="true"/, "is a true modal");
-  assert.match(src, /tabIndex=\{-1\}/, "dialog container is focusable for the trap fallback");
+  assert.doesNotMatch(src, /import \{ createPortal \} from "react-dom"/, "does not portal to document.body");
+  assert.doesNotMatch(src, /useFocusTrap/, "does not install an outer focus trap");
+  assert.doesNotMatch(src, /role="dialog"/, "does not expose dialog semantics");
+  assert.doesNotMatch(src, /aria-modal="true"/, "is not a modal");
+  assert.match(src, /if \(!open\) return null;/, "visibility is controlled entirely by Workspace policy");
+  assert.doesNotMatch(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "pending retry no longer bypasses Workspace policy locally");
+  assert.match(src, /<section[\s\S]*role="region"[\s\S]*aria-labelledby=\{titleId\}[\s\S]*aria-describedby=\{copyId\}/, "renders an accessible labelled region/section");
+  assert.match(src, /className="absolute inset-0[^\"]*"/, "covers only the detail area, not the whole viewport");
+  assert.doesNotMatch(src, /className="fixed inset-0/, "does not use a viewport-fixed scrim");
   assert.match(src, /aria-hidden=\{pickerOpen \|\| undefined\}/, "hides the underlying gate subtree from assistive tech while the picker is open");
   assert.match(src, /inert=\{pickerOpen \|\| undefined\}/, "makes the underlying gate subtree inert while the picker is open");
   assert.doesNotMatch(src, />\s*Close\s*</, "does not offer a close button");
   assert.doesNotMatch(src, />\s*Cancel\s*</, "does not offer a cancel button");
   assert.doesNotMatch(src, />\s*Skip\s*</, "does not offer a skip action");
-  assert.match(src, /return createPortal\([\s\S]*className="fixed inset-0 z-\[200\][^"]*"/, "renders a full-screen scrim through the portal");
-  assert.doesNotMatch(src, /return createPortal\([\s\S]*className="fixed inset-0 z-\[200\][\s\S]{0,220}onClick=/, "backdrop clicks do not dismiss the gate");
 });
 
 test("the gate copy makes project creation mandatory for chat", () => {
@@ -32,33 +32,38 @@ test("the gate stays prop-driven and focuses the name field on first visibility"
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
-    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
+    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*pendingGrant: PendingFirstProjectAccessSnapshot \| null;[\s\S]*onPendingGrantChange: \(snapshot: PendingFirstProjectAccessSnapshot \| null\) => void;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(\s*name: string,\s*root: string,\s*options\?: CreateProjectOptions,\s*\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
     "the gate stays prop-driven with the required integration fields",
   );
   assert.match(src, /const nameInputRef = useRef<HTMLInputElement \| null>\(null\);/, "keeps a stable ref for the project-name field");
   assert.match(
     src,
-    /if \(!visible\) \{\s*wasVisibleRef\.current = false;\s*return;\s*\}\s*if \(wasVisibleRef\.current\) return;/,
+    /if \(!open\) \{\s*wasVisibleRef\.current = false;\s*return;\s*\}\s*if \(wasVisibleRef\.current\) return;/,
     "the focus helper only runs on a false-to-true visibility transition",
   );
   assert.match(
     src,
     /window\.requestAnimationFrame\(\(\) => \{\s*nameInputRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
-    "requestAnimationFrame restores initial focus to the name field after the trap activates",
+    "requestAnimationFrame restores initial focus to the name field after the panel opens",
   );
   assert.match(src, /ref=\{nameInputRef\}/, "the stable focus ref is wired to the project-name input");
   assert.doesNotMatch(src, /autoFocus/, "initial focus no longer depends on DOM-order-sensitive autoFocus");
 });
 
-test("workspace wires the first-project gate after onboarding resolves and the first project load settles", () => {
+test("workspace wires the first-project gate through pending-aware policy and renders it inside the detail area", () => {
   const src = read("./workspace.tsx");
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
   assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
   assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
-  assert.match(src, /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";/, "workspace uses the familiar hydration helpers for stale persisted ids");
+  assert.match(src, /import \{ resolveFirstProjectGatePolicy \} from "@\/lib\/first-project-gate-policy";/, "workspace uses a shared gate policy helper");
   assert.match(
     src,
-    /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
+    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*resolvePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    "workspace owns pending retry hydration and reconciliation",
+  );
+  assert.match(
+    src,
+    /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
     "workspace destructures the unscoped projects hook with collision-safe names",
   );
   assert.match(src, /const \[onboardingResolved, setOnboardingResolved\] = useState\(false\);/, "onboarding resolution starts false");
@@ -71,48 +76,52 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(
     src,
-    /const projectGateFamiliarId = familiarRosterLoadedSuccessfully \? \(activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null\) : null;/,
-    "the gate only targets a familiar after the roster has successfully loaded",
+    /const \[pendingFirstProjectGrant, setPendingFirstProjectGrant\] = useState<PendingFirstProjectAccessSnapshot \| null>\(\(\) => readPendingFirstProjectAccessSnapshot\(\)\);/,
+    "workspace initializes pending retry state from safe storage",
   );
   assert.match(
     src,
-    /useEffect\(\(\) => \{\s*if \(!projectsLoading\) setProjectsInitiallyResolved\(true\);\s*\}, \[projectsLoading\]\);/,
-    "the first project load flips to resolved once loading settles",
-  );
-  assert.doesNotMatch(src, /setProjectsInitiallyResolved\(false\)/, "project-load resolution stays sticky across later reloads");
-  assert.match(
-    src,
-    /if \(skipped\) \{\s*setOnboardingResolved\(true\);\s*return;\s*\}/,
-    "the localStorage skip path resolves onboarding immediately",
+    /const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsLoadedSuccessfully;/,
+    "pending retry reconciliation waits for both the roster and a successful unscoped projects load",
   );
   assert.match(
     src,
-    /finally \{\s*if \(!cancelled\) setOnboardingResolved\(true\);\s*\}/,
-    "the onboarding-status effect resolves in finally even on non-OK or fetch failures",
+    /const reconciledPendingFirstProjectGrant = resolvePendingFirstProjectAccessSnapshot\(\{[\s\S]*snapshot: pendingFirstProjectGrant,[\s\S]*projects: registeredProjects,[\s\S]*visibleFamiliars,[\s\S]*familiarsLoaded,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*projectsLoadedSuccessfully,[\s\S]*\}\);/,
+    "workspace preserves pending retries through failed project loads, then reconciles them once the unscoped projects list succeeds",
   );
   assert.match(
     src,
-    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& familiarsLoaded\s*&& familiarRosterLoadedSuccessfully\s*&& projectGateFamiliarId !== null\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
-    "the gate only opens for home or chat after onboarding, familiars, and a successful roster load have resolved with an available non-archived familiar target",
+    /useEffect\(\(\) => \{\s*if \(!canReconcilePendingFirstProjectGrant \|\| !pendingFirstProjectGrant \|\| reconciledPendingFirstProjectGrant\) return;[\s\S]*clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*setPendingFirstProjectGrant\(null\);[\s\S]*\}, \[canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant\]\);/,
+    "stale pending retries are cleared once the live projects+roster prove the target is gone",
   );
-  assert.doesNotMatch(src, /const firstProjectGateOpen =[^;]*!projectsLoading/, "later reloads do not hide the gate while Retry is in flight");
   assert.match(
     src,
-    /<FirstProjectGate[\s\S]*familiarId=\{projectGateFamiliarId\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
-    "workspace passes the required familiar and project props into the gate",
+    /const \{ open: firstProjectGateOpen, familiarId: projectGateFamiliarId \} = resolveFirstProjectGatePolicy\(\{[\s\S]*pendingGrant: reconciledPendingFirstProjectGrant,[\s\S]*\}\);/,
+    "workspace policy opens the gate for zero-project or pending-retry states only after the shared eligibility checks pass",
   );
   assert.match(
+    src,
+    /<FirstProjectGate[\s\S]*familiarId=\{projectGateFamiliarId\}[\s\S]*pendingGrant=\{reconciledPendingFirstProjectGrant\}[\s\S]*onPendingGrantChange=\{setPendingFirstProjectGrant\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
+    "workspace passes the policy target, reconciled pending retry, and update callback into the gate",
+  );
+  assert.match(
+    src,
+    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*\{detailContent\}[\s\S]*<\/div>/,
+    "workspace renders the gate as an absolute sibling overlay inside the detail container while leaving the surface itself as the same direct child",
+  );
+  assert.doesNotMatch(
+    src,
+    /<div aria-hidden=\{firstProjectGateOpen \|\| undefined\} inert=\{firstProjectGateOpen \|\| undefined\}>[\s\S]*\{renderSurface\(mode\)\}[\s\S]*<\/div>/,
+    "workspace no longer inserts an intermediate detail wrapper between cave-mode-fade and the rendered surface",
+  );
+  assert.match(src, /mode === "chat" \? \(\s*<ChatSurface/, "Chat stays a direct render branch");
+  assert.match(src, /mode === "browser" \? \(\s*<BrowserPane/, "Browser stays a direct render branch");
+  assert.match(src, /\) : \(\s*<HomeComposer/, "Home stays the fallback direct render branch");
+  assert.doesNotMatch(
     src,
     /\{\(onboardingOpen \|\| onboardingMounted\) && \([\s\S]*<OnboardingOverlay[\s\S]*\)\}\s*\n\s*<FirstProjectGate/,
-    "workspace renders the gate immediately after the onboarding overlay",
+    "the gate no longer lives beside the global onboarding overlays",
   );
-});
-
-test("the Playwright baseline stays post-onboarding unless a gate spec opts into an empty registry", () => {
-  const config = read("../../playwright.config.ts");
-  assert.match(config, /const E2E_PROJECTS_PATH = join\(tmpdir\(\), `cave-e2e-projects-\$\{E2E_RUN_ID\}\.json`\);/);
-  assert.match(config, /writeFileSync\([\s\S]*id: "e2e-project"[\s\S]*root: process\.cwd\(\)/);
-  assert.match(config, /CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH/);
 });
 
 test("the gate browses with native shell fallback and seeds the drafts from the chosen path", () => {
@@ -129,23 +138,19 @@ test("the gate browses with native shell fallback and seeds the drafts from the 
 test("the gate keeps drafts through failures, blocks blank or busy submits, and surfaces retryable alerts", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ addChatProject, type CreateProjectOptions \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
-  assert.match(src, /const project = await createProjectOrThrow\(name, root, options\);/, "forwards bundled-mutation options through the addChatProject adapter");
+  assert.match(src, /const project = await createProjectOrThrow\(name, root, options\);/, "forwards createProject options so addChatProject can suppress the creation-time registry emission");
   assert.match(
     src,
-    /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
     "the gate uses shared helpers for pending-grant persistence",
   );
-  assert.match(
-    src,
-    /const \[pendingGrant, setPendingGrant\] = useState<PendingFirstProjectAccessSnapshot \| null>\(\(\) => readPendingFirstProjectAccessSnapshot\(\)\);/,
-    "tracks the pending project+familiar snapshot for partial failures and reload restores",
-  );
-  assert.match(src, /const registeredProject = pendingGrant\?\.project \?\? null;/, "derived locked fields come from the persisted project snapshot");
+  assert.doesNotMatch(src, /useState<PendingFirstProjectAccessSnapshot \| null>\(\(\) => readPendingFirstProjectAccessSnapshot\(\)\);/, "pending-grant hydration now lives in Workspace");
+  assert.match(src, /const registeredProject = pendingGrant\?\.project \?\? null;/, "derived locked fields come from the reconciled pending project snapshot");
   assert.match(src, /const submitFamiliarId = pendingGrant\?\.familiarId \?\? familiarId;/, "retries keep using the stored target familiar");
   assert.match(
     src,
-    /const snapshot: PendingFirstProjectAccessSnapshot = \{\s*familiarId,\s*project: \{ id: project\.id, name: project\.name, root: project\.root \},\s*\};[\s\S]*setPendingGrant\(snapshot\);[\s\S]*if \(!writePendingFirstProjectAccessSnapshot\(snapshot\)\) \{[\s\S]*throw new Error\(STORAGE_RETRY_ERROR\);[\s\S]*\}/,
-    "create success keeps a local sticky snapshot and blocks the grant if persistence unexpectedly fails",
+    /const snapshot: PendingFirstProjectAccessSnapshot = \{\s*familiarId,\s*project: \{\s*id: project\.id,\s*name: project\.name,\s*root: project\.root,?\s*\},\s*\};[\s\S]*onPendingGrantChange\(snapshot\);[\s\S]*if \(!writePendingFirstProjectAccessSnapshot\(snapshot\)\) \{[\s\S]*throw new Error\(STORAGE_RETRY_ERROR\);[\s\S]*\}/,
+    "create success keeps a sticky in-session snapshot and blocks the grant if persistence unexpectedly fails",
   );
   assert.match(src, /const submitName = lockedProject\?\.name \?\? nameDraft\.trim\(\);/, "retries use the stored project name instead of mutable drafts");
   assert.match(src, /const submitRoot = lockedProject\?\.root \?\? rootDraft\.trim\(\);/, "retries use the stored project root instead of mutable drafts");
@@ -163,7 +168,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /name: submitName/, "passes the stored-or-drafted name through addChatProject");
   assert.match(
     src,
-    /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*setPendingGrant\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/,
+    /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*onPendingGrantChange\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/,
     "announces the stored project name on success and clears persisted retry state only after the grant succeeds",
   );
   assert.match(src, /if \(submitting \|\| loadingProjects \|\| Boolean\(projectsError\)\) return;/, "the submit handler rejects busy or registry-blocked submits before any mutation");
