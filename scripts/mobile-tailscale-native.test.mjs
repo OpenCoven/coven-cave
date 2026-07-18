@@ -57,8 +57,13 @@ assert.match(
 );
 assert.match(
   swiftChatThread,
-  /case \.assistantChunk\(let chunk\):[\s\S]*?coalescer\.append\(chunk\)[\s\S]*?if coalescer\.shouldFlush\(\) \{\s*\n\s*flush\(coalescer, into: messageId, onChange: onChange\)/,
-  "native SwiftUI chat should buffer assistant chunks and periodically notify/persist while streaming",
+  /case \.assistantChunk\(let chunk\):[\s\S]*?coalescer\.append\(chunk\) \{[\s\S]*?self\.flush\(coalescer, into: messageId, onChange: onChange\)/,
+  "native SwiftUI chat should buffer assistant chunks and schedule a coalesced UI/persistence flush",
+);
+assert.match(
+  swiftChatThread,
+  /private var flushTask: Task<Void, Never>\?[\s\S]*?Task\.sleep\(for: self\.interval\)[\s\S]*?onFlushDue\(\)/,
+  "native SwiftUI chat should flush a paused stream's final buffered chunk without waiting for another event",
 );
 assert.match(
   swiftChatThread,
