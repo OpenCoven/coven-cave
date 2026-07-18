@@ -18,7 +18,7 @@ import {
   WardPreflightError,
 } from "./ward-preflight.ts";
 import { resolveWorkspaceForHost } from "./workspace-resolve.ts";
-import { resolveOmnigentBaseUrl } from "./token.ts";
+import { isOmnigentFleetActive, resolveOmnigentBaseUrl } from "./token.ts";
 
 export { WardPreflightError };
 export { resolveWorkspaceForHost } from "./workspace-resolve.ts";
@@ -86,6 +86,12 @@ export async function createOmnigentRun(
   config: CaveConfig,
   request: OmnigentRunRequest,
 ): Promise<OmnigentRunResult> {
+  // Master switch: Vault OMNIGENT_SERVER_URL + the explicit enable toggle.
+  if (!isOmnigentFleetActive(config.omnigent)) {
+    throw new Error(
+      "Omnigent fleet is not enabled — add OMNIGENT_SERVER_URL to your Cave Vault, then turn the fleet on in Settings → Daemon",
+    );
+  }
   const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
   if (!baseUrl) {
     throw new Error("Omnigent server URL is not configured — add OMNIGENT_SERVER_URL to your Cave Vault");

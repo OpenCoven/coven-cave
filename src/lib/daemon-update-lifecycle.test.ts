@@ -110,6 +110,133 @@ function depsFor({
   assert.deepEqual(calls, { stop: 1, start: 0, refresh: 0 });
 }
 
+// Supervised daemon: a clean stop followed by a NEW pid proves the old process
+// exited and a supervisor (launchd/systemd/watchdog) relaunched it. The update
+// proceeds, and recovery bounces the daemon onto the freshly installed CLI.
+{
+  const { deps, calls } = depsFor({
+    health: [
+      { ok: true, pid: 100 }, // before stop
+      { ok: true, pid: 200 }, // still up after stop — supervisor relaunch
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 }, // recovery pre-bounce probe
+      { ok: true, pid: 300 }, // supervisor relaunch on the updated CLI
+    ],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.canInstall, true, "a proven supervisor restart must not block the update");
+  assert.equal(prepared.lifecycle.phase, "supervised");
+  assert.equal(prepared.lifecycle.supervised, true);
+  assert.equal(prepared.lifecycle.health, "running");
+  const installing = markDaemonCliInstalling(prepared.lifecycle);
+  assert.equal(installing.phase, "installing");
+  assert.equal(installing.health, "running", "a supervised daemon keeps running during install");
+  const recovered = await recoverDaemonAfterCliUpdate(installing, deps);
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.lifecycle.phase, "healthy");
+  assert.match(recovered.lifecycle.detail ?? "", /supervised/);
+  assert.deepEqual(calls, { stop: 2, start: 0, refresh: 1 }, "bounce reuses graceful stop; never a PID signal");
+}
+
+// A clean stop with an UNCHANGED pid is not supervision evidence — the daemon
+// simply never stopped, so the update stays blocked.
+{
+  const { deps, calls } = depsFor({
+    health: [{ ok: true, pid: 100 }, { ok: true, pid: 100 }, { ok: true, pid: 100 }],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.canInstall, false);
+  assert.equal(prepared.lifecycle.phase, "stop-failed");
+  assert.deepEqual(calls, { stop: 1, start: 0, refresh: 0 });
+}
+
+// A failed stop command never classifies as supervised, even when the pid
+// changed — without a clean stop the relaunch proof does not hold.
+{
+  const { deps } = depsFor({
+    health: [{ ok: true, pid: 100 }, { ok: true, pid: 200 }, { ok: true, pid: 200 }],
+    stop: { ok: false, detail: "exit 1" },
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.canInstall, false);
+  assert.equal(prepared.lifecycle.phase, "stop-failed");
+}
+
+// Missing pid data on either probe keeps the conservative stop-failed path.
+{
+  const { deps } = depsFor({
+    health: [{ ok: true }, { ok: true, pid: 200 }, { ok: true, pid: 200 }],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.canInstall, false);
+  assert.equal(prepared.lifecycle.phase, "stop-failed");
+}
+
+// Supervised recovery where the bounce does not take (pid never changes) is an
+// honest failure: the daemon may still be running the previous CLI version.
+{
+  const { deps, calls } = depsFor({
+    health: [
+      { ok: true, pid: 100 },
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 }, // clamps: pre-bounce and every relaunch poll stay pid 200
+    ],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.lifecycle.phase, "supervised");
+  const recovered = await recoverDaemonAfterCliUpdate(markDaemonCliInstalling(prepared.lifecycle), deps);
+  assert.equal(recovered.ok, false);
+  assert.equal(recovered.lifecycle.phase, "recovery-failed");
+  assert.equal(recovered.lifecycle.health, "running");
+  assert.match(recovered.lifecycle.detail ?? "", /previous version/);
+  assert.deepEqual(calls, { stop: 2, start: 0, refresh: 1 });
+}
+
+// Reachability without PID evidence must not claim that the supervised daemon
+// relaunched; the reachable process could still be the pre-update process.
+{
+  const { deps, calls } = depsFor({
+    health: [
+      { ok: true, pid: 100 },
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 },
+      { ok: true }, // recovery pre-bounce probe and relaunch polls omit pid
+    ],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.lifecycle.phase, "supervised");
+  const recovered = await recoverDaemonAfterCliUpdate(markDaemonCliInstalling(prepared.lifecycle), deps);
+  assert.equal(recovered.ok, false);
+  assert.equal(recovered.lifecycle.phase, "recovery-failed");
+  assert.equal(recovered.lifecycle.health, "running");
+  assert.match(recovered.lifecycle.detail ?? "", /may still be running the previous version/);
+  assert.deepEqual(calls, { stop: 2, start: 0, refresh: 1 });
+}
+
+// Supervised daemon whose supervisor vanished mid-update: the bounce brings it
+// down and nothing relaunches it, so recovery starts it directly.
+{
+  const { deps, calls } = depsFor({
+    health: [
+      { ok: true, pid: 100 },
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 }, // recovery pre-bounce probe
+      { ok: false },          // bounce landed; supervisor never relaunches
+      { ok: false },
+      { ok: true, pid: 300 }, // direct start on the updated CLI
+    ],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.lifecycle.phase, "supervised");
+  const recovered = await recoverDaemonAfterCliUpdate(markDaemonCliInstalling(prepared.lifecycle), deps);
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.lifecycle.phase, "healthy");
+  assert.match(recovered.lifecycle.detail ?? "", /restored/);
+  assert.doesNotMatch(recovered.lifecycle.detail ?? "", /relaunched on the new version/);
+  assert.deepEqual(calls, { stop: 2, start: 1, refresh: 1 });
+}
+
 // An npm install failure still gets the previously running daemon restored.
 {
   const { deps, calls } = depsFor({

@@ -6,17 +6,18 @@ import { describe, it } from "node:test";
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 describe("Profile card wiring (cave-ujbr)", () => {
-  it("mounts ProfileCardView on both familiar profile routes and the human /profile route", () => {
-    for (const page of [
-      "../app/familiars/[id]/profile/page.tsx",
-      "../app/dashboard/familiars/[id]/profile/page.tsx",
-    ]) {
-      const source = read(page);
-      assert.match(source, /import \{ ProfileCardView \} from "@\/components\/profile-card"/);
-      assert.match(source, /<AnalyticsPageShell>/);
-      assert.match(source, /<ProfileCardView kind="familiar" familiarId=\{id\} \/>/);
-      assert.match(source, /force-dynamic/);
-    }
+  it("mounts ProfileCardView on the canonical familiar profile route and the human /profile route", () => {
+    const source = read("../app/dashboard/familiars/[id]/profile/page.tsx");
+    assert.match(source, /import \{ ProfileCardView \} from "@\/components\/profile-card"/);
+    assert.match(source, /<AnalyticsPageShell>/);
+    assert.match(source, /<ProfileCardView kind="familiar" familiarId=\{id\} \/>/);
+    assert.match(source, /force-dynamic/);
+    // The old top-level twin is a redirect stub into the canonical tree
+    // (route consolidation, cave-m4ih.5) — deep links keep working.
+    const stub = read("../app/familiars/[id]/profile/page.tsx");
+    assert.match(stub, /import \{ redirect \} from "next\/navigation"/);
+    assert.match(stub, /redirect\(`\/dashboard\/familiars\/\$\{encodeURIComponent\(id\)\}\/profile\$\{suffix\}`\)/);
+    assert.doesNotMatch(stub, /ProfileCardView/, "the stub renders nothing of its own");
     const human = read("../app/profile/page.tsx");
     assert.match(human, /<ProfileCardView kind="human" \/>/);
     assert.match(human, /<AnalyticsPageShell>/);
