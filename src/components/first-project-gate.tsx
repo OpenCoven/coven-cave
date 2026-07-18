@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
@@ -45,6 +45,8 @@ export function FirstProjectGate({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [registeredProjectId, setRegisteredProjectId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const wasVisibleRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
   const rootHintId = useId();
@@ -52,6 +54,20 @@ export function FirstProjectGate({
   const canSubmit = Boolean(nameDraft.trim() && rootDraft.trim() && isAbsolutePath(rootDraft));
 
   useFocusTrap(visible, dialogRef);
+
+  useEffect(() => {
+    if (!visible) {
+      wasVisibleRef.current = false;
+      return;
+    }
+    if (wasVisibleRef.current) return;
+
+    wasVisibleRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [visible]);
 
   const applyPickedRoot = useCallback((dir: string) => {
     const trimmed = dir.trim();
@@ -194,7 +210,7 @@ export function FirstProjectGate({
               </label>
               <input
                 id="first-project-gate-name"
-                autoFocus
+                ref={nameInputRef}
                 value={nameDraft}
                 onChange={(event) => {
                   setNameDraft(event.target.value);
