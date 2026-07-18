@@ -85,7 +85,11 @@ function getHighlighter(): Promise<Highlighter> {
     highlighterPromise = (async () => {
       const { createHighlighter } = await import("shiki");
       return createHighlighter({
-        themes: [moodCTheme as Parameters<typeof createHighlighter>[0]["themes"][number]],
+        // Shiki normalizes themes IN PLACE (e.g. prepends a scope-less global
+        // tokenColors entry). The JSON import is a shared module singleton —
+        // code-editor-theme.ts reads the same object — so hand Shiki a clone,
+        // never the module instance (cave-h1hi).
+        themes: [structuredClone(moodCTheme) as Parameters<typeof createHighlighter>[0]["themes"][number]],
         langs: [...LANGS],
       });
     })();
