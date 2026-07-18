@@ -7,14 +7,34 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-### Fixed
-- **Desktop: unhandled `listeners[eventId].handlerId` TypeError on focus-listener teardown** — `useRefreshOnFocus` now subscribes to the raw `tauri://focus` event instead of `onFocusChanged`, whose composite unlisten discards its inner async deregistration promises; after an HMR or webview-navigation registry reset those surfaced as an uncatchable runtime error overlay.
+## [0.1.3] - 2026-07-18
+
+> 🧭 **A more capable, resilient Cave.** Coven conversations gain selectable dispatch modes and durable task handoffs, live chats reconnect cleanly across desktop and iOS, and a broad security and performance pass makes everyday work faster and safer.
+
+### Added
+- **Selectable Coven dispatch modes** — choose Broadcast to send a prompt to every familiar at once or Round robin to advance through the roster one familiar at a time (#3377).
+- **Richer chat continuity** — familiar task handoffs route back into chat, next-path suggestions can fill the composer, and reconnectable stream cursors let desktop and iOS re-attach to live turns without restarting them (#3374, #3358, #3331, #3351).
+- **Weaves, progression, and creation surfaces** — a verified weave graph connects threads to memory, renown tiers and ritual streaks add milestone feedback, and Canvas gains an in-grid add flow for described, pasted, or blank sketches (#3363, #3350, #3359, #3342).
+- **Deeper diagnostics and setup guidance** — chat debug tools gain filtering, safer exports, served-model and usage details; daemon status distinguishes offline from failed checks; mobile pairing now explains its probe ladder and recovery steps (#3361, #3357, #3352, #3378, #3305, #3257).
+- **New appearance and model choices** — the OpenAI monochrome theme joins the palette, familiar selection scales through a dropdown, and GPT-5.6 variants are available in the Copilot catalog (#3355, #3360, #3345).
 
 ### Changed
-- **Root stylesheet split by surface (#3264)** — the 868 KiB global CSS every route downloaded is now route-scoped: chat/composer/markdown-reader/dashboard/editor/xterm sheets load with their surfaces, the retired XYFlow import is gone, and `cave-chat.css` is split into shared `cave-md` / `cave-composer` / `chat-list` / `calendar` layers. Root-layout CSS drops 886 → 630 KiB (−29%); `/settings`, reports, and error routes no longer parse conversation or terminal styles. New root + home CSS budgets in the postbuild bundle gate hold the win.
-- **Dashboard confidence now reads from real thread self-reports** — the cockpit's Coven-confidence vital, Familiar-insights column, and Performance matrix score with the same thread-confidence metric the familiar analytics page uses (reflection-derived confidence, tool reliability, memory recall, file-finding) instead of the retired synthetic weighted-factor score; familiars without reflections read "—" until their first thread report lands.
-- **Familiars roster speaks the profile-card language** — roster cards restyled as terminal stat tiles matching the profile share card: monospace lowercase labels, hairline-divided sessions / this-week / memories band with glowing numerals, a 14-day activity strip bucketed like the profile heatmap, framed square avatars, and the checkerboard `familiars` wordmark on the surface header (cave-uw7c).
-- **Omnigent fleet is now per-user vault-gated** — Fleet surfaces (board Fleet button, `omnigent:…` host-chip options, per-familiar fleet defaults) appear if and only if the user has `OMNIGENT_TOKEN` set up in their Cave Vault; credentials that exist only in `~/.omnigent/auth_tokens.json` no longer surface Fleet UI on their own, and the token itself now resolves through the Vault chain (env → `.env.local` → encrypted store → `op://`/`dl://` reference).
+- **Faster rendering and transcript loading** — unchanged conversation transcripts are no longer reparsed, and route-scoped styles cut the root stylesheet from 886 KiB to 630 KiB while keeping new bundle budgets around the improvement (#3375, #3364).
+- **Clearer work surfaces** — research intake is reduced to a focused composer, Familiar analytics use full-width panels, the composer footer owns project/runtime/git/task context, and Skills adopts the Marketplace side-panel grammar (#3365, #3367, #3347, #3343).
+- **Thread-backed truth** — daemon adapters become the default for Threads, decision refusals surface verbatim, dashboard confidence reads from thread self-reports, and the retired synthetic response-confidence path is removed (#3362, #3349, #3332).
+- **Vault-gated fleet access** — Omnigent Fleet surfaces now appear only when `OMNIGENT_TOKEN` resolves through the user's Cave Vault rather than from ambient machine credentials (#3333).
+
+### Fixed
+- **Browser, editor, and iOS stability** — browser panes replace perpetual reconciliation with bounded event-driven recovery, Shiki can no longer mutate the shared theme singleton, and iOS WebView zoom only accepts trusted base URLs (#3376, #3366, #3379).
+- **Chat and session correctness** — suggestion chips target their author, stale recent-chat deletes stay deleted, debug modals bind to the right session, startup blocks no longer leak into exec parsing, and desktop focus-listener teardown no longer throws an unhandled runtime error (#3373, #3369, #3339, #3326, #3334).
+- **Self-healing local runtime state** — built-in-shadowed adapter manifests repair themselves, orphaned home-migration takeovers recover, sidecar ports stay synchronized, and disabled mobile serving clears stale state (#3372, #3356, #3301, #3303).
+- **Studio input reliability** — typed voice IDs persist across field changes and unmounts, while IME composition no longer commits voice fields early (#3354, #3368).
+- **Release provenance** — manual release rebuilds check out the exact tag receiving their artifacts, and Apple notarization credentials no longer appear in process arguments (#3318, #3328).
+
+### Security
+- Project roots, saved workspaces, project search, file actions, and offline replay now validate or constrain user-controlled paths before reading or executing (#3295, #3321, #3323, #3304, #3314, #3325).
+- Local-origin, proxy, mobile, hosted-context, and automation routes now fail closed when tokens, trusted hosts, or loopback guarantees are absent (#3296, #3299, #3302, #3307, #3308, #3309, #3310, #3317, #3319, #3320, #3322).
+- Child-process and prompt boundaries scrub toolchain secrets, fence untrusted daily-report facts, validate GitHub identities, and require local-human authorization for grant mutations (#3294, #3300, #3306, #3327).
 
 ## [0.1.2] - 2026-07-16
 
