@@ -114,8 +114,8 @@ async function waitForHealth(
 
 /**
  * Wait until the daemon answers health under a PID other than `previousPid` —
- * the observable signature of a supervisor relaunch. Missing PID data on
- * either side degrades to plain reachability.
+ * the observable signature of a supervisor relaunch. Reachability without
+ * both PID values is returned for diagnostics, but is not relaunch proof.
  */
 async function waitForSupervisedRelaunch(
   deps: DaemonUpdateDependencies,
@@ -131,9 +131,9 @@ async function waitForSupervisedRelaunch(
     }
     if (
       latest.ok &&
-      (typeof previousPid !== "number" ||
-        typeof latest.pid !== "number" ||
-        latest.pid !== previousPid)
+      typeof previousPid === "number" &&
+      typeof latest.pid === "number" &&
+      latest.pid !== previousPid
     ) {
       return latest;
     }
@@ -321,8 +321,14 @@ export async function recoverDaemonAfterCliUpdate(
 
     const attempts = deps.restartPollAttempts ?? DEFAULT_RESTART_POLL_ATTEMPTS;
     let relaunched = await waitForSupervisedRelaunch(deps, preBounce.pid, attempts);
+    const supervisedRelaunchProven =
+      relaunched.ok &&
+      typeof preBounce.pid === "number" &&
+      typeof relaunched.pid === "number" &&
+      relaunched.pid !== preBounce.pid;
 
     let start: DaemonCommandResult = { ok: true, detail: "supervisor relaunch" };
+    let recoveredAfterOffline = false;
     if (!relaunched.ok) {
       try {
         start = await deps.start();
@@ -334,20 +340,19 @@ export async function recoverDaemonAfterCliUpdate(
       } catch (err) {
         relaunched = { ok: false, detail: err instanceof Error ? err.message : String(err) };
       }
+      // The daemon was observed offline before this fallback. Reachability now
+      // proves a new post-update process even if its health payload omits PID.
+      recoveredAfterOffline = relaunched.ok;
     }
 
-    const relaunchProven =
-      relaunched.ok &&
-      (typeof preBounce.pid !== "number" ||
-        typeof relaunched.pid !== "number" ||
-        relaunched.pid !== preBounce.pid);
-
-    if (relaunchProven) {
+    if (supervisedRelaunchProven || recoveredAfterOffline) {
       next = publish(deps, {
         ...next,
         phase: "healthy",
         health: "running",
-        detail: "Coven CLI updated; the supervised local daemon relaunched on the new version.",
+        detail: supervisedRelaunchProven
+          ? "Coven CLI updated; the supervised local daemon relaunched on the new version."
+          : "Coven CLI updated; the local daemon was restored after the supervisor stopped relaunching it.",
       });
       return { ok: true, lifecycle: next };
     }

@@ -192,6 +192,27 @@ function depsFor({
   assert.deepEqual(calls, { stop: 2, start: 0, refresh: 1 });
 }
 
+// Reachability without PID evidence must not claim that the supervised daemon
+// relaunched; the reachable process could still be the pre-update process.
+{
+  const { deps, calls } = depsFor({
+    health: [
+      { ok: true, pid: 100 },
+      { ok: true, pid: 200 },
+      { ok: true, pid: 200 },
+      { ok: true }, // recovery pre-bounce probe and relaunch polls omit pid
+    ],
+  });
+  const prepared = await prepareDaemonForCliUpdate(deps);
+  assert.equal(prepared.lifecycle.phase, "supervised");
+  const recovered = await recoverDaemonAfterCliUpdate(markDaemonCliInstalling(prepared.lifecycle), deps);
+  assert.equal(recovered.ok, false);
+  assert.equal(recovered.lifecycle.phase, "recovery-failed");
+  assert.equal(recovered.lifecycle.health, "running");
+  assert.match(recovered.lifecycle.detail ?? "", /may still be running the previous version/);
+  assert.deepEqual(calls, { stop: 2, start: 0, refresh: 1 });
+}
+
 // Supervised daemon whose supervisor vanished mid-update: the bounce brings it
 // down and nothing relaunches it, so recovery starts it directly.
 {
@@ -211,6 +232,8 @@ function depsFor({
   const recovered = await recoverDaemonAfterCliUpdate(markDaemonCliInstalling(prepared.lifecycle), deps);
   assert.equal(recovered.ok, true);
   assert.equal(recovered.lifecycle.phase, "healthy");
+  assert.match(recovered.lifecycle.detail ?? "", /restored/);
+  assert.doesNotMatch(recovered.lifecycle.detail ?? "", /relaunched on the new version/);
   assert.deepEqual(calls, { stop: 2, start: 1, refresh: 1 });
 }
 
