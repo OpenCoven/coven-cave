@@ -382,6 +382,7 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label="Show backdrop while this familiar is active"
           onClick={() => setFamiliarBackdropEnabled(familiarId, !enabled)}
           className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[12px] transition-colors ${
             enabled

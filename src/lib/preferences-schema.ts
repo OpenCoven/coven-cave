@@ -307,7 +307,10 @@ function normalizeFamiliarBackdrops(value: unknown): Record<string, boolean> {
   if (!isRecord(value)) return {};
   const out: Record<string, boolean> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (key !== "" && key.length <= MAX_FAMILIAR_BACKDROP_KEY_LENGTH && typeof entry === "boolean") {
+    // "__proto__" is skipped: assigning it on a plain object would hit the
+    // legacy prototype setter instead of creating an entry, and the slug
+    // alphabet ([a-z0-9-]) can never produce it as a real familiar id.
+    if (key !== "" && key !== "__proto__" && key.length <= MAX_FAMILIAR_BACKDROP_KEY_LENGTH && typeof entry === "boolean") {
       if (Object.keys(out).length >= MAX_FAMILIAR_BACKDROPS) break;
       out[key] = entry;
     }
@@ -601,8 +604,10 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
         }
         const map: Record<string, boolean> = {};
         for (const [key, entry] of Object.entries(familiars)) {
-          if (key === "" || key.length > MAX_FAMILIAR_BACKDROP_KEY_LENGTH) {
-            fail("appearance.backdrop.familiars", "keys must be non-empty familiar ids");
+          // "__proto__" is rejected: it can't be a slugged familiar id, and
+          // assigning it on a plain object would silently drop the entry.
+          if (key === "" || key === "__proto__" || key.length > MAX_FAMILIAR_BACKDROP_KEY_LENGTH) {
+            fail("appearance.backdrop.familiars", "keys must be valid familiar ids");
           }
           map[key] = strictBoolean(entry, `appearance.backdrop.familiars.${key}`);
         }

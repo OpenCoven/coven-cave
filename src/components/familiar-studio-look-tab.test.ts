@@ -74,6 +74,11 @@ assert.match(
 );
 assert.match(
   source,
+  /aria-checked=\{enabled\}\s*aria-label="Show backdrop while this familiar is active"/,
+  "the switch carries its own accessible name — a label element doesn't name a button",
+);
+assert.match(
+  source,
   /Show backdrop while this familiar is active/,
   "the switch label names the behavior",
 );

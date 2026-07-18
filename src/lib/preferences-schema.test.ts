@@ -321,4 +321,21 @@ assert.equal(
   "normalize caps the familiars map instead of growing unbounded",
 );
 
+// "__proto__" can never be a slugged familiar id; JSON.parse creates it as a
+// real own key (an object literal would set the prototype instead).
+const protoKeyed = JSON.parse('{"__proto__": true, "fam-a": true}') as Record<string, boolean>;
+assert.deepEqual(
+  normalizeCavePreferences({ appearance: { backdrop: { familiars: protoKeyed } } })
+    .appearance.backdrop.familiars,
+  { "fam-a": true },
+  "normalize drops __proto__ keys instead of touching the prototype setter",
+);
+assert.throws(
+  () => validatePreferencesPatch({
+    appearance: { backdrop: { familiars: JSON.parse('{"__proto__": true}') } },
+  }),
+  PreferencesValidationError,
+  "the strict validator rejects __proto__ familiar keys",
+);
+
 console.log("preferences-schema.test.ts: ok");
