@@ -4,8 +4,6 @@
 // preview, and persist it. Everything here is framework-/fs-free so it can be
 // unit-tested without a DOM, a daemon, or React Flow.
 
-import type { IconName } from "@/lib/icon";
-
 // An artifact is either a self-contained HTML document or a single React
 // component (transpiled + rendered by the sandbox runtime). Older records
 // (pre-React) have no `kind` and are treated as "html".
@@ -29,6 +27,12 @@ export type CanvasArtifact = {
 // can't bloat the canvas store. Generous enough for a real standalone page.
 export const MAX_ARTIFACT_CODE_CHARS = 200_000;
 const MAX_TITLE_CHARS = 60;
+// Prompts are short descriptions (the composer's ask or a refine request);
+// clamping keeps a runaway/buggy caller from bloating every store read.
+export const MAX_ARTIFACT_PROMPT_CHARS = 4_000;
+// Ids are client-minted (`art-<uuid>`, ghreview slugs); anything this long is
+// garbage and would pollute the positions map keyed by it.
+const MAX_ARTIFACT_ID_CHARS = 200;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -56,8 +60,9 @@ export function extractHtmlArtifact(text: string): string | null {
   return null;
 }
 
-/** Heuristic: does this fenced code look like a React component vs HTML? */
-function looksLikeReact(code: string): boolean {
+/** Heuristic: does this fenced code look like a React component vs HTML?
+ *  Exported for the Canvas add tile's pasted-code kind detection. */
+export function looksLikeReact(code: string): boolean {
   if (/<!doctype html/i.test(code) || /<html[\s>]/i.test(code)) return false;
   return /\bexport\s+default\b/.test(code) || /\bfunction\s+App\b/.test(code) || /\buse(State|Effect|Ref|Memo|Callback)\b/.test(code);
 }
@@ -218,6 +223,32 @@ export function buildRefinePrompt(
   ].join("\n");
 }
 
+/**
+ * One-shot recovery prompt for a Canvas-origin response that streamed
+ * successfully but could not be rendered. Keeping this separate from the
+ * normal sketch prompt lets callers retry only the format failure, and pass
+ * the first run's session id so the repair remains in the same hidden Canvas
+ * conversation.
+ */
+export function buildArtifactRepairPrompt(
+  originalIntent: string,
+  kind?: ArtifactKind,
+): string {
+  const intent = (originalIntent ?? "").trim() || "the requested UI";
+  const form = kind === "react"
+    ? "one complete `tsx` fenced artifact"
+    : kind === "html"
+      ? "one complete `html` fenced artifact"
+      : "one complete `html` or `tsx` fenced artifact";
+  return [
+    "Repair the previous response so the Canvas can preview it.",
+    `Return only ${form}, with no prose before or after.`,
+    "The artifact must be complete, self-contained, and require no network access.",
+    "Original user intent:",
+    intent,
+  ].join("\n");
+}
+
 /** A minimal starter document for hand-written / pasted artifacts. */
 export const STARTER_ARTIFACT_HTML = [
   "<!doctype html>",
@@ -238,150 +269,39 @@ export const STARTER_ARTIFACT_HTML = [
   "</html>",
 ].join("\n");
 
-/** A pre-built starter the canvas composer can drop in (alongside Blank). */
-export type CanvasTemplate = {
-  id: string;
-  label: string;
-  description: string;
-  /** Menu icon (a whitelisted Icon name). */
-  icon: IconName;
-  kind: ArtifactKind;
-  code: string;
-};
-
-const TEMPLATE_DOC = (title: string, bodyStyle: string, body: string): string =>
-  [
-    "<!doctype html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<title>${title}</title>`,
-    "<style>",
-    "  * { box-sizing: border-box; }",
-    `  body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif;`,
-    "    background: #0f1115; color: #e7e9ee; " + bodyStyle + " }",
-    "  h1, h2, h3 { margin: 0 0 .4em; }",
-    "  .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; border: 0;",
-    "    background: #6d5efc; color: #fff; font-weight: 600; cursor: pointer; text-decoration: none; }",
-    "  .btn--ghost { background: transparent; border: 1px solid #2a2e38; color: #e7e9ee; }",
-    "  .muted { color: #9aa0ad; }",
-    "  .card { background: #1a1d24; border: 1px solid #242833; border-radius: 14px; padding: 22px; }",
-    "</style>",
-    "</head>",
-    `<body>${body}</body>`,
-    "</html>",
-  ].join("\n");
-
-/** Starter scaffolds offered in the composer's template dropdown. Self-styled
- *  HTML documents (the HTML preview has no Tailwind), matching the dark canvas
- *  aesthetic; users edit from there. */
-export const CANVAS_TEMPLATES: CanvasTemplate[] = [
-  {
-    id: "landing",
-    label: "Landing page",
-    description: "Hero with headline, subcopy, and call-to-action buttons",
-    icon: "ph:rocket-launch-bold",
-    kind: "html",
-    code: TEMPLATE_DOC(
-      "Landing",
-      "display: grid; place-items: center; padding: 48px;",
-      [
-        '<main style="max-width:640px;text-align:center">',
-        '  <p class="muted" style="letter-spacing:.08em;text-transform:uppercase;font-size:13px">Your product</p>',
-        "  <h1 style=\"font-size:44px;line-height:1.1\">Ship the thing, faster.</h1>",
-        '  <p class="muted" style="font-size:18px;margin:0 auto 28px;max-width:48ch">A one-line promise that makes the value obvious. Replace this with your own pitch.</p>',
-        '  <a href="#" class="btn">Get started</a>',
-        '  <a href="#" class="btn btn--ghost" style="margin-left:10px">Learn more</a>',
-        "</main>",
-      ].join("\n"),
-    ),
-  },
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    description: "Stat cards in a responsive grid",
-    icon: "ph:squares-four",
-    kind: "html",
-    code: TEMPLATE_DOC(
-      "Dashboard",
-      "padding: 32px;",
-      [
-        '<h1 style="font-size:24px">Overview</h1>',
-        '<p class="muted" style="margin-bottom:24px">Last 30 days</p>',
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">',
-        ...[
-          ["Revenue", "$48,210", "+12.4%"],
-          ["Active users", "3,902", "+4.1%"],
-          ["Conversion", "2.8%", "-0.3%"],
-          ["Churn", "1.2%", "+0.1%"],
-        ].map(
-          ([k, v, d]) =>
-            `  <div class="card"><p class="muted" style="font-size:13px">${k}</p><p style="font-size:28px;font-weight:700;margin:.2em 0">${v}</p><p class="muted" style="font-size:12px">${d}</p></div>`,
-        ),
-        "</div>",
-      ].join("\n"),
-    ),
-  },
-  {
-    id: "signin",
-    label: "Sign-in form",
-    description: "Centered card with email/password and submit",
-    icon: "ph:key",
-    kind: "html",
-    code: TEMPLATE_DOC(
-      "Sign in",
-      "display: grid; place-items: center; padding: 32px;",
-      [
-        '<form class="card" style="width:340px;display:grid;gap:14px" onsubmit="event.preventDefault()">',
-        '  <h2 style="font-size:22px;text-align:center">Welcome back</h2>',
-        '  <label style="display:grid;gap:6px;font-size:13px" class="muted">Email',
-        '    <input type="email" style="padding:10px 12px;border-radius:10px;border:1px solid #2a2e38;background:#11141a;color:#e7e9ee" placeholder="you@example.com" /></label>',
-        '  <label style="display:grid;gap:6px;font-size:13px" class="muted">Password',
-        '    <input type="password" style="padding:10px 12px;border-radius:10px;border:1px solid #2a2e38;background:#11141a;color:#e7e9ee" placeholder="••••••••" /></label>',
-        '  <button class="btn" type="submit" style="width:100%;margin-top:4px">Sign in</button>',
-        "</form>",
-      ].join("\n"),
-    ),
-  },
-  {
-    id: "pricing",
-    label: "Pricing tiers",
-    description: "Three side-by-side plans with a highlighted tier",
-    icon: "ph:tag-bold",
-    kind: "html",
-    code: TEMPLATE_DOC(
-      "Pricing",
-      "padding: 40px;",
-      [
-        '<h1 style="font-size:30px;text-align:center">Simple pricing</h1>',
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;max-width:780px;margin:28px auto 0">',
-        ...[
-          ["Starter", "$0", "For trying things out", false],
-          ["Pro", "$19", "For growing teams", true],
-          ["Scale", "$49", "For heavy usage", false],
-        ].map(
-          ([name, price, sub, hot]) =>
-            `  <div class="card"${hot ? ' style="border-color:#6d5efc;box-shadow:0 0 0 1px #6d5efc"' : ""}><h3>${name}</h3><p style="font-size:34px;font-weight:700;margin:.1em 0">${price}<span class="muted" style="font-size:14px;font-weight:400">/mo</span></p><p class="muted" style="min-height:2.4em">${sub}</p><a href="#" class="btn${hot ? "" : " btn--ghost"}" style="width:100%;text-align:center;margin-top:8px">Choose</a></div>`,
-        ),
-        "</div>",
-      ].join("\n"),
-    ),
-  },
-];
+/** A minimal interactive starter for the explicit Blank React path. */
+export const STARTER_ARTIFACT_REACT = [
+  "export default function App() {",
+  "  const [count, setCount] = React.useState(0);",
+  "  return (",
+  '    <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-6">',
+  '      <section className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">',
+  '        <h1 className="text-2xl font-semibold">Hello, canvas</h1>',
+  '        <p className="mt-2 text-slate-400">Edit this React component to sketch an interaction.</p>',
+  '        <button className="mt-5 rounded-lg bg-violet-500 px-4 py-2 font-medium hover:bg-violet-400" onClick={() => setCount((value) => value + 1)}>',
+  "          Clicked {count} times",
+  "        </button>",
+  "      </section>",
+  "    </main>",
+  "  );",
+  "}",
+].join("\n");
 
 /** Validate/normalize a raw artifact record from disk or a request body. */
 export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   const id = typeof v.id === "string" ? v.id.trim() : "";
-  if (!id) return null;
-  const prompt = typeof v.prompt === "string" ? v.prompt : "";
+  if (!id || id.length > MAX_ARTIFACT_ID_CHARS) return null;
+  const prompt = (typeof v.prompt === "string" ? v.prompt : "").slice(0, MAX_ARTIFACT_PROMPT_CHARS);
   const code = clampArtifactCode(typeof v.code === "string" ? v.code : "");
   const title = typeof v.title === "string" && v.title.trim() ? v.title.trim().slice(0, MAX_TITLE_CHARS) : titleFromPrompt(prompt);
   const kind: ArtifactKind = v.kind === "react" ? "react" : "html";
-  const createdAt = typeof v.createdAt === "string" ? v.createdAt : "";
-  const updatedAt = typeof v.updatedAt === "string" ? v.updatedAt : createdAt;
+  // Timestamps feed the gallery's lexicographic recency sort and the card's
+  // date label — garbage strings sort a sketch as if newest forever. Coerce
+  // unparseable values to "" (renders dateless, sorts last).
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
   return { id, title, prompt, code, kind, createdAt, updatedAt };
 }
 

@@ -9,7 +9,7 @@ const fakeFetch = (status, jsonBody) => async () => ({
 });
 const throwingFetch = async () => { throw new Error("network down"); };
 
-assert.equal(hasValidator("GITHUB_PERSONAL_ACCESS_TOKEN"), true);
+assert.equal(hasValidator("GITHUB_PAT"), true);
 assert.equal(hasValidator("COVEN_MCP_FILESYSTEM_ROOT"), false);
 assert.equal(hasValidator("NOPE"), false);
 
@@ -35,7 +35,7 @@ r = await validateGithubToken("tok", throwingFetch);
 assert.equal(r.ok, false);
 assert.match(r.error, /reach/i);
 
-const vs = await validateSecret("GITHUB_PERSONAL_ACCESS_TOKEN", "tok", fakeFetch(200, { login: "me" }));
+const vs = await validateSecret("GITHUB_PAT", "tok", fakeFetch(200, { login: "me" }));
 assert.deepEqual(vs, { ok: true, login: "me" });
 
 const none = await validateSecret("UNKNOWN_ENV", "x", fakeFetch(200, {}));

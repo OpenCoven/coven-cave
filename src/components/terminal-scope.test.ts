@@ -9,7 +9,7 @@ const workspace = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
 const settings = read("./settings-shell.tsx");
 const config = read("../lib/cave-config.ts");
-const projectRow = read("./projects/project-row.tsx");
+const projectDetail = read("./projects/project-detail.tsx");
 const slashCommands = read("../lib/slash-commands.ts");
 const screenshotCapture = read("../../scripts/capture-screenshots.mjs");
 
@@ -20,7 +20,7 @@ assert.doesNotMatch(workspace, /mode === "terminal"/, "workspace does not branch
 assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "sidebar has no Terminal nav row");
 assert.doesNotMatch(settings, /key:\s*"terminal"/, "settings add-ons do not expose Terminal as an add-on");
 assert.doesNotMatch(config, /terminal\?:\s*boolean|terminal:\s*false|terminal:\s*parsed\.addons\?\.terminal/, "config has no terminal add-on flag");
-assert.doesNotMatch(projectRow, /openTerminalHere|Terminal/, "project cards do not offer a standalone terminal action");
+assert.doesNotMatch(projectDetail, /openTerminalHere|Terminal/, "the project detail pane does not offer a standalone terminal action");
 assert.doesNotMatch(slashCommands, /\/terminal|\/comux|integrated terminal view/i, "slash commands do not open a standalone Terminal page");
 assert.doesNotMatch(screenshotCapture, /Terminal surface|click:\s*"Terminal"/, "screenshot capture does not target a standalone Terminal page");
 

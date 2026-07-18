@@ -52,4 +52,10 @@ assert.match(
   "route falls back to daemonMsg before 'daemon http <status>' on the 502 path",
 );
 
+assert.match(
+  source,
+  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,80}model:\s*binding\.model,/,
+  "task sessions forward the familiar's resolved model to the daemon",
+);
+
 console.log("board chat route.test.ts: ok");

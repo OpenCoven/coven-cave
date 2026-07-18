@@ -1,0 +1,87 @@
+// @ts-nocheck
+// Wiring pins: the chat transcript must mount GitHub cards for coven:github
+// markers and bare-line URLs (design: docs/chat-github-integration.md §1-2;
+// bead cave-fpqx.6).
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const card = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
+
+// chat-view: imports and render paths.
+assert.match(
+  chatView,
+  /import \{ sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
+  "chat-view imports the github-blocks lib",
+);
+assert.match(chatView, /import \{ GitHubCard \} from "@\/components\/github-card"/, "chat-view imports GitHubCard");
+assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→github splitter");
+assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
+assert.match(
+  chatView,
+  /splitSegmentsForGitHub\(splitTextForArtifacts\(visibleWithGh, artifactCtx\), onOpenUrl\)/,
+  "settled path composes github splitting after artifact splitting on the marker-bearing text",
+);
+assert.match(
+  chatView,
+  /turn\.pending \? stripGitHubMarkers\(reasoningSplit\.visible\)/,
+  "streaming path strips markers so raw tags never flash",
+);
+assert.match(
+  chatView,
+  /turn\.role === "user" \? unfurlUserMessage\(turn\.text\) : \[\]/,
+  "bare-line unfurl is gated to user turns — never system messages",
+);
+
+// github-card: hydration + degradation contracts.
+assert.match(card, /\/api\/github\/item\?repo=/, "card hydrates from /api/github/item");
+assert.match(card, /cancelled/, "hydration effect guards against post-unmount setState");
+assert.match(card, /connect GitHub to hydrate/, "unauth state degrades with a connect hint");
+assert.match(card, /descriptorUrl\(descriptor\)/, "card links out via the canonical descriptor URL");
+assert.match(card, /res\.status === 401 \|\| res\.status === 403/, "auth failures map to the unauth state");
+
+// W1b (cave-fpqx.7): checks strip + expansion + review threads.
+assert.match(card, /\/api\/github\/checks\?repo=/, "PR cards fetch the checks breakdown");
+assert.match(
+  card,
+  /usePausablePoll\(\(\) => setTick\(\(t\) => t \+ 1\), 30_000, \{ enabled: enabled && pending \}\)/,
+  "checks re-poll every 30s only while the rollup is pending (hidden tabs pause)",
+);
+assert.match(
+  card,
+  /item\.isPull && item\.state === "open" && !item\.merged/,
+  "checks fetch is gated to open, unmerged pull requests",
+);
+assert.match(card, /countChecks\(data\.runs\)/, "strip buckets come from the shared countChecks helper");
+assert.match(card, /aria-expanded=\{expanded\}/, "check details expand in place with an accessible toggle");
+assert.match(card, /\/api\/github\/comments\?repo=.*isPull=1/, "review-thread cards hydrate from /api/github/comments");
+assert.match(card, /connect GitHub to see review threads/, "unauthenticated review threads degrade legibly");
+assert.match(
+  card,
+  /t\.comments\.some\(\(c\) => c\.id === descriptor\.threadId\)/,
+  "thread matching uses comment databaseIds (what #discussion_r ids name), not GraphQL node ids",
+);
+assert.match(card, /isFailConclusion\(run\.conclusion\)/, "run glyphs share the fail-conclusion source of truth");
+
+// W2a (cave-fpqx.8): tier-1 actions fire directly from cards.
+assert.match(card, /fetch\("\/api\/github\/comment"/, "comment action posts through the existing comment route");
+assert.match(card, /fetch\("\/api\/github\/issue"/, "close/reopen goes through PATCH /api/github/issue");
+assert.match(card, /setIssueState\("closed"\)/, "issues expose a close action");
+assert.match(card, /\{!item\.isPull \?/, "close/reopen renders for issues, not pull requests");
+assert.match(card, /fetch\("\/api\/github\/resolve-thread"/, "thread resolve/unresolve fires through the existing GraphQL route");
+assert.match(card, /onMutated=\{state\.refresh\}/, "successful actions re-hydrate the card");
+assert.match(card, /role="alert"/, "action failures surface as alerts, never silently");
+
+// W2b (cave-fpqx.9): tier-2 confirm strip + agent proposal cards.
+const actionCard = readFileSync(new URL("./github-action-card.tsx", import.meta.url), "utf8");
+assert.match(card, /setPending\(\{ kind: "merge", method: "squash" \}\)/, "PR cards expose Merge behind the tier-2 confirm step");
+assert.match(card, /setPending\(\{ kind: "review", event: "APPROVE" \}\)/, "PR cards expose Approve behind the tier-2 confirm step");
+assert.match(card, /needsBody && !reviewBody\.trim\(\)/, "request-changes requires a body before Confirm enables");
+assert.match(card, /fetch\("\/api\/github\/merge"/, "merge confirm fires through the merge route");
+assert.match(card, /fetch\("\/api\/github\/review"/, "review confirm fires through the review route");
+assert.match(actionCard, /const tier = classifyGitHubAction\(action\.kind\);/, "proposal cards read the shared tier table");
+assert.match(actionCard, /agents propose, humans dispose/i, "proposal cards document the no-auto-fire rule");
+assert.doesNotMatch(actionCard, /useEffect\([^)]*fireGitHubAction/s, "no effect ever auto-fires a proposal — taps only");
+assert.match(chatView, /<GitHubActionCard action=\{p\.action\} \/>/, "assistant turns render proposal cards from action pieces");
+
+console.log("github chat-card wiring: ok");

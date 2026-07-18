@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 import { Icon } from "@/lib/icon";
 import { relativeTime, type RecentReport } from "@/lib/daily-report";
 

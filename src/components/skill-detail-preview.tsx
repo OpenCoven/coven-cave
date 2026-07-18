@@ -32,6 +32,11 @@ export function SkillDetailPreview({ skill }: { skill: SkillOption | null }) {
       ) : (
         <p className="skill-preview__desc skill-preview__desc--muted">No description provided.</p>
       )}
+      {skill.argumentHint ? (
+        <p className="skill-preview__desc skill-preview__desc--muted">
+          Arguments: <code>{skill.argumentHint}</code>
+        </p>
+      ) : null}
       {skill.tags?.length ? (
         <div className="skill-preview__tags">
           {skill.tags.slice(0, 8).map((t) => (

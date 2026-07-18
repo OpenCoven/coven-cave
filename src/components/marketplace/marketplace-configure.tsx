@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 
@@ -33,17 +34,37 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const [fields, setFields] = useState<FieldStatus[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  // A Set (not a scalar) of the fields currently saving — concurrent saves of
+  // two fields must each keep their own spinner rather than one clearing the
+  // other (mirrors the parent's busyIds).
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
+  const setKeyBusy = useCallback((key: string, busy: boolean) => {
+    setBusyKeys((prev) => {
+      const next = new Set(prev);
+      if (busy) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
   type ValidationResult = { state: "idle" | "testing" | "valid" | "invalid"; message?: string };
   const [results, setResults] = useState<Record<string, ValidationResult>>({});
   const [error, setError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
+  // Abort a prior in-flight config load before a new one (or on unmount). The
+  // dialog stays mounted between opens, so without this a slow load resolving
+  // after a close/reopen — or after a Save-triggered reload — clobbers the
+  // freshly-seeded fields with the previous plugin's data.
+  const loadCtlRef = useRef<AbortController | null>(null);
   const load = useCallback(async (seedDefaults = false) => {
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     setLoaded(false);
     try {
-      const res = await fetch(`/api/marketplace/config?id=${encodeURIComponent(pluginId)}`, { cache: "no-store" });
+      const res = await fetch(`/api/marketplace/config?id=${encodeURIComponent(pluginId)}`, { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as { ok?: boolean; fields?: FieldStatus[]; error?: string };
+      if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `config http ${res.status}`);
       const nextFields = json.fields ?? [];
       setFields(nextFields);
@@ -57,16 +78,23 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       }
       setError(null);
     } catch (err) {
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       setFields([]);
       setError(err instanceof Error ? err.message : "config unavailable");
     } finally {
-      setLoaded(true);
+      if (!ctl.signal.aborted) setLoaded(true);
     }
   }, [pluginId]);
+  useEffect(() => () => loadCtlRef.current?.abort(), []);
 
   useEffect(() => {
     if (open) {
+      // Full reset — the dialog stays mounted between opens, and `results` is
+      // keyed by field key, so without this a stale "Valid — @login" from the
+      // last session (or another plugin sharing a key) survives into this one.
       setDrafts({});
+      setResults({});
+      setError(null);
       void load(true);
     }
   }, [open, load]);
@@ -98,7 +126,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const save = useCallback(async (field: FieldStatus) => {
     const draft = (drafts[field.key] ?? "").trim();
     if (!draft) return;
-    setBusyKey(field.key);
+    setKeyBusy(field.key, true);
     setError(null);
     try {
       const sensitiveBody = draft.startsWith("op://")
@@ -127,9 +155,9 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       setError(msg);
       announce(msg, "assertive");
     } finally {
-      setBusyKey(null);
+      setKeyBusy(field.key, false);
     }
-  }, [drafts, pluginId, load, onChanged, validate, announce]);
+  }, [drafts, pluginId, load, onChanged, validate, announce, setKeyBusy]);
 
   return (
     <Modal
@@ -140,23 +168,29 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       footerActions={<Button variant="secondary" size="sm" onClick={onClose}>Done</Button>}
     >
       <div className="flex flex-col gap-4">
-        <p className="text-[12px] text-[var(--text-muted)]">
-          {displayName} needs the following before its tools can run. Secrets are saved in the
-          encrypted local vault or stored as 1Password references.
-        </p>
+        {!loaded || fields.length > 0 ? (
+          <p className="text-[12px] text-[var(--text-muted)]">
+            {displayName} needs the following before its tools can run. Secrets are saved in the
+            encrypted local vault or stored as 1Password references.
+          </p>
+        ) : null}
         {error ? (
-          <p className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
             {error}
           </p>
         ) : null}
         {!loaded ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+          <SkeletonRows count={3} />
+        ) : fields.length === 0 && !error ? (
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Nothing to set up — {displayName} has no required values. You can close this dialog.
+          </p>
         ) : (
           fields.map((f) => (
             <div key={f.key} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-hairline)] p-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[13px] font-medium text-[var(--text-primary)]">{f.title}</span>
-                <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--color-warning)]"}`}>
                   <Icon name={f.satisfied ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
                   {f.satisfied ? `Set${f.source === "encrypted" ? " · encrypted" : f.source === "vault" ? " · 1Password" : ""}` : "Not set"}
                 </span>
@@ -175,7 +209,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 <Button
                   variant="primary"
                   size="sm"
-                  loading={busyKey === f.key}
+                  loading={busyKeys.has(f.key)}
                   onClick={() => void save(f)}
                 >
                   Save
@@ -192,7 +226,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 ) : null}
               </div>
               {results[f.key] && results[f.key].state !== "idle" && results[f.key].state !== "testing" ? (
-                <p className={`inline-flex items-center gap-1 text-[11px] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                <p className={`inline-flex items-center gap-1 text-[11px] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}>
                   <Icon name={results[f.key].state === "valid" ? "ph:check-circle" : "ph:warning"} width={11} aria-hidden />
                   {results[f.key].message}
                 </p>

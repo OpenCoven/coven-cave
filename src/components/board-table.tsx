@@ -42,14 +42,20 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
 
 const NO_PROJECT_KEY = "__noproject__";
 
+/** The group a card lands in for a given grouping — shared by the grouper and
+ *  the keep-selection-visible logic so the two can never disagree. */
+function cardGroupKey(c: Card, by: GroupBy): string {
+  return by === "status"
+    ? c.status
+    : by === "familiar"
+      ? (c.familiarId ?? "__unassigned__")
+      : (c.projectId ?? NO_PROJECT_KEY);
+}
+
 function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "status"
-      ? c.status
-      : by === "familiar"
-        ? (c.familiarId ?? "__unassigned__")
-        : (c.projectId ?? NO_PROJECT_KEY);
+    const key = cardGroupKey(c, by);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
@@ -120,7 +126,36 @@ type Props = {
 export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
+
+  // Which group holds the current selection (null when nothing is selected).
+  const selectedGroupKey = useMemo(() => {
+    const sel = selectedCardId ? cards.find((c) => c.id === selectedCardId) : undefined;
+    return sel ? cardGroupKey(sel, groupBy) : null;
+  }, [cards, selectedCardId, groupBy]);
+
+  // "Done" starts collapsed to keep the table short — but never at the cost of
+  // hiding the still-selected card the open inspector describes (cave-iote,
+  // P1-6 remainder): a kanban/gantt selection that lives in "done" must have a
+  // mounted row in the very first commit, or BoardView's view-switch
+  // scrollIntoView finds nothing and silently no-ops. Lazy init, not an
+  // effect, so there's no collapsed→expanded flash to race that scroll.
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => (selectedGroupKey === "done" ? new Set<string>() : new Set(["done"])),
+  );
+
+  // A selection that later arrives in (or regroups into) a collapsed group
+  // would have no row to show — expand that group. Keyed on the selection's
+  // group only, NOT on `collapsed`: collapsing a group by hand must stick
+  // until the selection actually moves.
+  useEffect(() => {
+    if (!selectedGroupKey) return;
+    setCollapsed((prev) => {
+      if (!prev.has(selectedGroupKey)) return prev;
+      const next = new Set(prev);
+      next.delete(selectedGroupKey);
+      return next;
+    });
+  }, [selectedGroupKey]);
 
   // Column arrangement state (reorder + resize). Defaults match COLS for SSR;
   // the persisted layout is hydrated after mount to avoid a hydration mismatch.
@@ -140,6 +175,25 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
 
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars, projects), [sorted, groupBy, familiars, projects]);
+
+  // The "done" group is collapsed by default, so a still-selected done card
+  // can mount with no row for the BoardView view-switch scroll pass to find
+  // (cave-iote). Reveal the group holding the selection once at mount; later
+  // manual collapses are the user's call and are never fought.
+  useEffect(() => {
+    if (!selectedCardId) return;
+    const holder = groups.find((g) => g.cards.some((c) => c.id === selectedCardId));
+    if (!holder) return;
+    setCollapsed((prev) => {
+      if (!prev.has(holder.key)) return prev;
+      const next = new Set(prev);
+      next.delete(holder.key);
+      return next;
+    });
+    // Mount-only by design — reruns would reopen groups the user closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The familiar options are identical for every row, so build them once instead
   // of rebuilding the option data per row on each render.
   const familiarOptions = useMemo(
@@ -400,7 +454,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                                     background: rowChecked ? "var(--accent-presence)" : "transparent",
                                   }}
                                 >
-                                  {rowChecked && <Icon name="ph:check-bold" width={11} className="text-white" />}
+                                  {rowChecked && <Icon name="ph:check-bold" width={11} className="text-[var(--accent-presence-foreground)]" />}
                                 </span>
                               )}
                               <span className="board-table-title" title={card.title}>{card.title}</span>

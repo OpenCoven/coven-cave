@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+// The footer (Dashboard + Settings + version) now lives in a shared component so
+// it persists across every nav host, including Chat's WorkspaceSidebar.
+const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -38,8 +41,20 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*13px/,
+  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*var\(--text-base\)/,
   "Sidebar nav rows should keep compact side-panel text sizing",
+);
+
+assert.match(
+  styles,
+  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*var\(--space-1\)/,
+  "Sidebar nav options should stay visually close together on desktop",
+);
+
+assert.match(
+  styles,
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*min-height:\s*30px/,
+  "Desktop sidebar option rows should use compact height before mobile touch-target overrides",
 );
 
 assert.match(
@@ -64,8 +79,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /FOLDER_MODES\.map\(\(fm\) =>/,
-  "Sidebar should render every folder mode directly",
+  /VISIBLE_MODES\.map\(\(fm, i\) =>/,
+  "Sidebar renders the visible folder modes (navHidden surfaces filtered out)",
+);
+assert.match(
+  source,
+  /const VISIBLE_MODES = FOLDER_MODES\.filter\(\(fm\) => !fm\.navHidden\)/,
+  "VISIBLE_MODES drops navHidden surfaces (Browser) from the rendered nav",
 );
 
 assert.match(
@@ -91,8 +111,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string \| null\) => void/,
-  "Sidebar exposes a nullable familiar scope change callback",
+  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean \}\) => void/,
+  "Sidebar exposes a nullable familiar scope change callback (multi-capable for the header strip)",
 );
 
 assert.doesNotMatch(
@@ -121,8 +141,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
-  "Schedules should own the old Calendar shortcut as the active schedule surface",
+  /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
+  "Rituals should own the old Calendar shortcut as the active schedule surface",
 );
 
 assert.doesNotMatch(
@@ -145,10 +165,12 @@ assert.doesNotMatch(
   "Library should not be a root add-on gate in the integrated sidebar",
 );
 
+// Browser stays in FOLDER_MODES (so ⌘5 + the ⌘K "Go to" launcher still reach
+// it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
-  "Browser is the first Tools surface after Schedules, on ⌘5",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
 assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone sidebar destination");
@@ -209,6 +231,11 @@ assert.match(
 
 assert.match(
   source,
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/,
+  "SidebarMinimal renders the shared footer",
+);
+assert.match(
+  footer,
   /sidebar-foot-icon-cell/,
   "Footer controls should use the fixed footer icon cell",
 );
@@ -237,12 +264,13 @@ assert.doesNotMatch(
   "footer should not render an unread reminders badge",
 );
 
-// Default visible entries include browser and marketplace.
+// Marketplace stays a visible entry; Browser is now summoned on demand
+// (navHidden), so it must NOT appear among the rendered VISIBLE_MODES rows.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
-  /id:\s*"browser"[^}]*label:\s*"Browser"/,
-  "browser stays visible",
+  /id:\s*"browser"[^}]*navHidden:\s*true/,
+  "browser is navHidden (kept for ⌘5/palette, not a sidebar row)",
 );
 assert.doesNotMatch(source, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
@@ -258,7 +286,7 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   source,
-  /addons\?\.github|addons\?\.browser|addons\?\.groupchat|addons\?\.journal|AddonsConfig|addons\?:/,
+  /addons\?\.github|addons\?\.browser|addons\?\.journal|AddonsConfig|addons\?:/,
   "Sidebar should not hide surfaces behind add-on config",
 );
 
@@ -273,13 +301,18 @@ assert.match(
 // the active-row accent) or clicking a recent session silently does nothing.
 assert.match(
   source,
-  /<RecentActivityRollup\b[^/]*\bonOpenSession=\{onOpenSession\}/,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bsessions=\{sessions\}[\s\S]{0,180}\bonOpenSession=\{onOpenSession\}/,
   "Recent Activity must receive onOpenSession so selecting an item navigates to it",
 );
 assert.match(
   source,
-  /<RecentActivityRollup\b[^/]*\bactiveSessionId=\{activeSessionId\}/,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bactiveSessionId=\{activeSessionId\}/,
   "Recent Activity must receive activeSessionId to highlight the open session",
+);
+assert.match(
+  source,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bselectedFamiliarIds=\{selectedFamiliarIds\}/,
+  "Recent Activity must receive the persistent familiar selection so multi-scope stays honest",
 );
 
 // "New chat" is the left panel's top CTA: it sits directly under the wordmark
@@ -300,15 +333,28 @@ assert.match(
 // The sidebar header is a static wordmark — collapsing the panel is owned by
 // the shell's floating top-left toggle (and ⌘B), so the header is no longer a
 // button and the in-panel collapse toggle is gone.
-assert.match(
+assert.doesNotMatch(
   source,
   /className="sidebar-header sidebar-header--static"/,
-  "the sidebar header is a static wordmark, not a collapse button",
+  "the static wordmark header is gone — the familiar switcher owns the slot (collapse stays on the shell's floating toggle + ⌘B)",
+);
+// The header carries the familiar switcher on every page (cave-vtk9) — the
+// wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
+assert.match(
+  source,
+  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
+  "the sidenav header mounts the familiar switcher",
 );
 assert.match(
   source,
-  /<span className="sidebar-title">Coven Cave<\/span>/,
-  "the static header keeps the Coven Cave wordmark",
+  /onSelectFamiliar=\{onFamiliarScopeChange\}/,
+  "the header switcher drives the shared familiar scope",
+);
+const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+assert.match(
+  sidebarCss,
+  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
   source,
@@ -345,21 +391,26 @@ assert.match(
 );
 assert.match(
   source,
-  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?\$\{dragHint\}`/,
-  "title combines label + description (+ shortcut when present) + drag-to-split hint",
+  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?\$\{dragHint\}\$\{splitHint\}`/,
+  "title combines label + description (+ shortcut when present) + drag-to-split hint + open-in-split hint",
 );
 
 // The app version renders as the bottommost sidebar element — one
 // minimal-height muted line under the footer icon row, hidden in the rail.
 assert.match(
-  source,
+  footer,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
-  "SidebarMinimal should read the version from the shared app-version module",
+  "the shared footer reads the version from the shared app-version module",
+);
+assert.match(
+  footer,
+  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
+  "the version line is the bottommost element of the shared footer",
 );
 assert.match(
   source,
-  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>\s*<\/nav>/,
-  "The version line should be the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,
@@ -370,6 +421,89 @@ assert.match(
   styles,
   /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
   "The 56px rail has no room for text — the version line hides there",
+);
+
+// Quiet cluster (§8): occasional destinations stay in the same flat list but
+// render muted-until-hover, with the first quiet row opening a spacing gap.
+// Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
+// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
+// leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+assert.match(
+  source,
+  /\{ id: "journal",[^}]*navHidden: true \}/,
+  "Journal keeps no sidebar row — it's a tab inside Memories (palette/deep-link reachability stays via navHidden)",
+);
+assert.match(
+  source,
+  /\{ id: "grimoire", label: "Memories",[^}]*quiet: true \}/,
+  "Memories (grimoire) is in the quiet cluster (cave-xsq.8)",
+);
+assert.match(
+  source,
+  /id: "inbox",[\s\S]*?\{ id: "grimoire"/,
+  "the ⌘-numbered prominent cluster (…Schedules) renders above the quiet cluster",
+);
+assert.match(
+  source,
+  /\{ id: "marketplace",[^}]*quiet: true \}/,
+  "Marketplace is in the quiet cluster",
+);
+assert.match(
+  source,
+  /quietLead=\{Boolean\(fm\.quiet\) && !VISIBLE_MODES\[i - 1\]\?\.quiet\}/,
+  "the first quiet row opens the spacing gap (indexed on the VISIBLE list)",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--quiet \{[^}]*color: var\(--text-muted\);/,
+  "quiet rows read muted at rest",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
+  "the quiet cluster opens with spacing, not a hairline divider",
+);
+
+// ── Split-open marker ────────────────────────────────────────────────────────
+// Drag-to-split opens a page beside the primary WITHOUT changing `mode`, so
+// active alone would leave the highlight stale. Rows derive a three-way state
+// (active / split / idle) from the pure lib/sidebar-nav-state helper (unit
+// tests in src/lib/sidebar-nav-state.test.ts), and workspace feeds the open
+// split-page modes.
+assert.match(
+  source,
+  /import \{ sidebarRowState, type SidebarRowState \} from "@\/lib\/sidebar-nav-state"/,
+  "row highlight derivation lives in the pure, unit-tested sidebar-nav-state helper",
+);
+assert.match(
+  source,
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  "each row derives active/split/idle from mode + open split pages",
+);
+assert.match(
+  source,
+  /sidebar-folder-row--split/,
+  "rows open in a split carry the --split modifier class",
+);
+assert.match(
+  source,
+  /splitPageModes\?: readonly string\[\]/,
+  "SidebarMinimal accepts the open split-page modes",
+);
+assert.match(
+  workspace,
+  /const splitPageModes = useMemo\([\s\S]{0,220}t\.kind === "page"[\s\S]{0,120}\[splitTargets\],?\s*\n\s*\)/,
+  "workspace derives splitPageModes from the live split tiles",
+);
+assert.match(
+  workspace,
+  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads splitPageModes into the sidebar",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--split \{[^}]*color-mix\(in oklch, var\(--accent-presence\)/,
+  "the split marker reuses the active accent at a lighter wash",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

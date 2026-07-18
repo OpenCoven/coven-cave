@@ -1,39 +1,30 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import type { SessionRow } from "@/lib/types";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
-  familiars: ResolvedFamiliar[];
+  /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
+   *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
-  /** The full multiselect scope (empty = All). Drives multi-highlight in the
-   *  avatar strip; `activeFamiliarId` stays the single-primary for the rest. */
-  selectedFamiliarIds?: ReadonlySet<string>;
-  sessions: SessionRow[];
-  responseNeeded?: Set<string>;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
-  /** Items needing attention — drives the Inbox badge. */
-  inboxCount: number;
+  /** Schedule items needing attention — drives the Schedules badge. */
+  scheduleNeedsCount: number;
   /** Open the shared context-aware search palette. */
   onOpenSearch: () => void;
   /** Shared top-search query, mirrored with the mobile top bar and palette. */
   searchQuery: string;
   /** Update shared top-search query. */
   onSearchQueryChange: (query: string) => void;
-  /** Change the familiar scope. `opts.multi` (⌘/Ctrl-click) toggles the id in
-   *  the multiselect set; a plain click selects only that one (`null` = All). */
-  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Jump to the task board. */
   onViewTasks: () => void;
   /** Enrich active tasks for the selected familiar. */
   onEnrichTasks?: () => void;
   enrichingTasks?: boolean;
   enrichProgress?: { done: number; total: number } | null;
-  /** Jump to the inbox / schedules. */
-  onViewInbox: () => void;
+  /** Jump to the Schedules surface (calendar + crons). */
+  onViewSchedules: () => void;
   /** Open the quick-chat dropdown (anchored under its trigger in this bar). */
   onOpenQuickChat?: () => void;
 };
@@ -42,34 +33,34 @@ const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 
 function fmtBadge(n: number): string {
-  return n > 99 ? "99+" : String(n);
+  // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
+  // in the corner — one glyph says "many" just as well, and the button's
+  // aria-label/tooltip still carries the exact count (cave-gf5l).
+  return n > 9 ? "9+" : String(n);
 }
 
 /**
- * A slim, always-visible desktop top menu bar with the familiar selector,
- * global search, and task/inbox counters. It is the desktop counterpart to the
- * mobile `.top-bar` (which stays hidden ≥1024px); this bar is hidden below
- * 1024px so the two never both render.
+ * A slim, always-visible desktop top menu bar with global search and
+ * task/schedule counters. It is the desktop counterpart to the mobile
+ * `.top-bar` (which stays hidden ≥1024px); this bar is hidden below 1024px so
+ * the two never both render. Familiar selection lives in the chat sidebar's
+ * header switcher, not here.
  */
 export function FamiliarMenuBar({
-  familiars,
   activeFamiliarId,
-  selectedFamiliarIds,
-  sessions,
-  responseNeeded,
   taskCount,
-  inboxCount,
+  scheduleNeedsCount,
   onOpenSearch,
   searchQuery,
   onSearchQueryChange,
-  onSelectFamiliar,
   onViewTasks,
   onEnrichTasks,
   enrichingTasks,
   enrichProgress,
-  onViewInbox,
+  onViewSchedules,
   onOpenQuickChat,
 }: Props) {
+  const keys = useKeySymbols();
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -78,23 +69,8 @@ export function FamiliarMenuBar({
 
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
-      <div className="menu-bar__group menu-bar__group--chat">
-        <FamiliarQuickSwitch
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onSelectFamiliar}
-          placement="bottom-start"
-          labeled
-          // Surface every familiar in the top bar, not just the 6 most-recent.
-          // The strip stays pin/recency-ordered and scrolls horizontally when
-          // they overflow the available width.
-          max={familiars.length}
-        />
-      </div>
-
+      {/* Familiar scope moved to the sidenav header (cave-vtk9) — present on
+          every page there; this bar keeps search + the task verbs. */}
       <form
         className="menu-bar__search"
         role="search"
@@ -115,11 +91,12 @@ export function FamiliarMenuBar({
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search or ask Salem..."
-          aria-label="Search anything or ask Salem"
+          aria-label="Search anything or ask Salem, the docs familiar"
+          title="Search everything — or ask Salem, the familiar trained on the OpenCoven docs"
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>⌘K</kbd>
+        <kbd>{keys.mod}K</kbd>
       </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
@@ -133,7 +110,7 @@ export function FamiliarMenuBar({
             title="Quick chat (⌘J)"
           >
             <Icon name="ph:chat-circle-dots" width={22} height={22} aria-hidden />
-            <span>Chat</span>
+            <span className="menu-bar__task-label">Chat</span>
           </button>
         ) : null}
         {onEnrichTasks ? (
@@ -146,7 +123,11 @@ export function FamiliarMenuBar({
             title={activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
             <Icon name="ph:sparkle" width={22} height={22} aria-hidden />
-            <span>{enrichingTasks ? enrichLabel : "Enhance"}</span>
+            {/* Live progress is information, not chrome — it stays visible
+                while a run is in flight; the idle label is icon-only. */}
+            <span className={enrichingTasks ? "menu-bar__task-label menu-bar__task-label--live" : "menu-bar__task-label"}>
+              {enrichingTasks ? enrichLabel : "Enhance"}
+            </span>
           </button>
         ) : null}
         <button
@@ -154,21 +135,27 @@ export function FamiliarMenuBar({
           className="menu-bar__task focus-ring"
           onClick={onViewTasks}
           aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
+          title={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
         >
           <Icon name="ph:kanban" width={22} height={22} aria-hidden />
-          <span>Tasks</span>
+          <span className="menu-bar__task-label">Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
+        {/* This button lands on the Rituals surface (workspace mode "inbox"
+            is the Rituals view — calendar + crons), so it is labelled
+            Rituals and badged with the schedule needs-you count. There is no
+            dedicated Inbox surface; inbox items live in the notification bell. */}
         <button
           type="button"
           className="menu-bar__task focus-ring"
-          onClick={onViewInbox}
-          aria-label={inboxCount > 0 ? `View inbox — ${inboxCount} need attention` : "View inbox"}
+          onClick={onViewSchedules}
+          aria-label={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
+          title={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
         >
-          <Icon name="ph:tray" width={22} height={22} aria-hidden />
-          <span>Inbox</span>
-          {inboxCount > 0 ? (
-            <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(inboxCount)}</span>
+          <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
+          <span className="menu-bar__task-label">Rituals</span>
+          {scheduleNeedsCount > 0 ? (
+            <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
         </button>
       </div>

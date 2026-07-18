@@ -12,8 +12,13 @@ import {
   isAllowedApiHost,
   sameOrigin,
   isAllowedRequestSource,
+  isAllowedRequestSourceAny,
+  expectedRequestOrigins,
   bearerFromReferer,
+  bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isHtmlNavigationRequest,
+  accessGatePage,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 
@@ -81,6 +86,20 @@ async function mobileAccessGate(req: NextRequest) {
   const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
+    // Browser page navigations get an HTML access page instead of a raw JSON
+    // dead end. Same 401, same fail-closed posture — the page's form submits
+    // the token as ACCESS_TOKEN_QUERY_PARAM, re-entering the audited
+    // query-token exchange below. API routes and non-browser clients keep the
+    // machine-readable envelope.
+    if (isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))) {
+      return new NextResponse(accessGatePage({ invalidToken: suppliedTokens.length > 0 }), {
+        status: 401,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     return jsonError(401, "unauthorized");
   }
 
@@ -118,6 +137,16 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+function isLocalOnlyAutomationRun(pathname: string, method: string) {
+  return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
+}
+
+const HEADER_CSRF_TRUSTED_API_PATHS = new Set(["/api/mobile-handoff", "/api/mobile-token/refresh"]);
+
+function isHeaderCsrfTrustedApiPath(pathname: string) {
+  return HEADER_CSRF_TRUSTED_API_PATHS.has(pathname);
+}
+
 function isProductionWebhookGet(pathname: string, method: string) {
   return (
     method === "GET" &&
@@ -151,58 +180,78 @@ export async function proxy(req: NextRequest) {
   // callers if the dev server were ever bound to anything other than
   // 127.0.0.1. The token equality check below is the only thing
   // legitimately optional in browser-dev mode.
-  const expectedOrigin = req.nextUrl.origin;
   const requestHost = req.headers.get("host");
+  // Accept the Origin/Referer against the configured-port origin (nextUrl,
+  // which the Serve/forwarded-host path relies on) AND the port the browser
+  // actually reached us on (from Host). The latter is what unbreaks a server
+  // that fell back to a free port — see expectedRequestOrigins (cave-5sg).
+  const expectedOrigins = expectedRequestOrigins(
+    req.nextUrl.origin,
+    req.nextUrl.protocol,
+    requestHost,
+  );
   const mobileAccessAuthenticated = mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
-  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-  // `pnpm mobile:tailscale:app`): the server is reachable only over loopback and
-  // via `tailscale serve`, which forwards the request's `<host>.ts.net` Host —
-  // NOT 127.0.0.1 — so the loopback host gate would otherwise 403 every tailnet
-  // request. Trusting the host here is safe because tailnet membership is the
-  // ingress boundary in this mode; the CSRF Origin/Referer gate below still
-  // blocks cross-site browser requests. The packaged app does NOT set this flag.
+  // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
+  // mobile access credential, so a remote-looking (Tailscale Serve) Host is
+  // accepted only when that credential verifies. COVEN_CAVE_TAILNET_TRUST no
+  // longer relaxes this gate — tailnet membership alone is not authorization —
+  // but the flag still marks tailnet ingress below so local-only automation
+  // runs stay off that path.
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
+  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");
+  }
+
+  // Running a Codex automation launches the local `codex` binary with the
+  // user's repository/filesystem authority. Keep that execution surface off
+  // the mobile and tailnet ingress paths even when those paths are otherwise
+  // authenticated: their forwarded Host value is client/forwarder-controlled
+  // and cannot prove that the original peer was loopback.
+  if (isLocalOnlyAutomationRun(req.nextUrl.pathname, req.method)) {
+    if (mobileAccessAuthenticated || tailnetTrusted || !isLoopbackHost(requestHost)) {
+      return jsonError(403, "forbidden local-only endpoint");
+    }
   }
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
-  // is provably first-party: a browser cannot set a custom header on a
-  // cross-origin request (it forces a CORS preflight the server never approves),
-  // so such a request cannot be CSRF regardless of its Origin. Tailscale Serve
-  // terminates TLS and proxies to loopback, forwarding `Host: 127.0.0.1`, so a
-  // legitimately-authenticated WKWebView request keeps its real
-  // https://<machine>.ts.net identity only in the Origin header — which otherwise
-  // fails the same-origin gate and 403s every mutating request as "forbidden
-  // origin" (fixed in #618; #716 reverted it and re-broke mobile-over-Serve).
+  // can be sent by native/mobile clients over Tailscale Serve, where the proxy
+  // forwards `Host: 127.0.0.1` but preserves the real ts.net source in Origin.
+  // Only explicitly mobile-capable API routes may use that header to relax the
+  // Origin/Referer gate. Local-only routes such as automation and inbox APIs
+  // rely on their route-level loopback Host checks, so they must still fail
+  // closed when a remote Serve origin reaches the loopback backend.
   // Scope is deliberately the header ONLY: NOT the access cookie (auto-sent
   // cross-origin → CSRF) and NOT the query/referer token paths. The token value
-  // is still validated below; this only relaxes the CSRF source gate.
+  // is still validated below; this only relaxes the CSRF source gate for the
+  // allowlisted mobile endpoints.
   const headerCsrfTrusted =
-    Boolean(sidecarToken) && req.headers.get(TOKEN_HEADER) === sidecarToken;
+    Boolean(sidecarToken) &&
+    req.headers.get(TOKEN_HEADER) === sidecarToken &&
+    isHeaderCsrfTrustedApiPath(req.nextUrl.pathname);
 
   if (!headerCsrfTrusted) {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
-    if (!isAllowedRequestSource(origin, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(origin, expectedOrigins)) {
       return jsonError(403, "forbidden origin");
     }
-    if (!isAllowedRequestSource(referer, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(referer, expectedOrigins)) {
       return jsonError(403, "forbidden referer");
     }
     // Production GET webhooks are intentionally state-changing: a matching
-    // request starts an agent-backed flow. In tokenless Tailscale mode there is
-    // no sidecar secret to prove the caller is first-party, and browsers can
+    // request starts an agent-backed flow. When no sidecar secret is configured
+    // there is nothing to prove the caller is first-party, and browsers can
     // issue cross-site GET navigations/subresources with both Origin and
-    // Referer omitted (for example via Referrer-Policy: no-referrer). Require a
+    // Referer omitted (for example via Referrer-Policy: no-referrer). The same
+    // applies to a request authenticated only by the mobile-access cookie
+    // (SameSite=Lax still rides top-level GET navigations). Require a
     // same-origin source header for that narrow state-changing GET surface so
     // absent headers cannot bypass the CSRF gate.
     if (
-      tailnetTrusted &&
-      !sidecarToken &&
+      (!sidecarToken || mobileAccessAuthenticated) &&
       isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
       !origin &&
       !referer
@@ -217,7 +266,7 @@ export async function proxy(req: NextRequest) {
   const suppliedToken =
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??
-    bearerFromReferer(req.headers.get("referer"), expectedOrigin);
+    bearerFromRefererAny(req.headers.get("referer"), expectedOrigins);
   const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
 
   if (!sidecarToken) {
@@ -226,7 +275,14 @@ export async function proxy(req: NextRequest) {
       : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
   }
 
-  if (!sidecarAuthenticated) {
+  if (!sidecarAuthenticated && !mobileAccessAuthenticated) {
+    // A verified signed mobile invite is the paired phone's credential: the
+    // token is minted by this desktop from its access secret and already
+    // passed mobileAccessGate above. Requiring the webview's per-launch
+    // sidecar token ON TOP would 401 every native REST call in the packaged
+    // bundle — the phone can never learn that token — which is exactly the
+    // "packaged app cannot pair" failure (cave-gzje). CSRF stays covered: the
+    // Origin/Referer gates above ran for every non-header-trusted request.
     return jsonError(401, "unauthorized");
   }
 

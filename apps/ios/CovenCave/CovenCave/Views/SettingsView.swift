@@ -100,7 +100,7 @@ struct SettingsView: View {
             .padding(.vertical, 6)
             .listRowBackground(chrome.bgRaised.opacity(0.6))
         } footer: {
-            Text("Connected over your Tailscale network — no token or password to manage.")
+            Text("Connected over your Tailscale network with a paired Cave access token.")
         }
     }
 

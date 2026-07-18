@@ -10,8 +10,8 @@ const source = await readFile(new URL("./chat-surface.tsx", import.meta.url), "u
 
 assert.match(
   source,
-  /import\s+\{\s*WorkspaceRail\s*\}\s+from\s+"@\/components\/workspace-rail"/,
-  "chat-surface imports WorkspaceRail",
+  /import\s+\{[\s\S]*WorkspaceRail[\s\S]*\}\s+from\s+"@\/components\/lazy-surfaces"/,
+  "chat-surface lazy-loads WorkspaceRail",
 );
 
 assert.match(
@@ -64,8 +64,14 @@ assert.match(
 
 assert.match(
   source,
+  /fetchChangesSummary\(root/,
+  "chat-surface loads /api/changes for the active root through the shared changes-summary gate (cave-v8hh)",
+);
+
+assert.doesNotMatch(
+  source,
   /fetch\(`\/api\/changes\?projectRoot=\$\{encodeURIComponent\(/,
-  "chat-surface fetches /api/changes for the active session's project root",
+  "no private /api/changes summary fetch remains — the gate owns the request",
 );
 
 assert.match(
@@ -77,7 +83,32 @@ assert.match(
 assert.doesNotMatch(
   source,
   /const railProjectRoot = (?!activeSession\?\.project_root)/,
-  "standalone files/changes rail must not drift to a selected or fallback project root",
+  "railProjectRoot itself stays session-pure (the override lives in a separate binding)",
+);
+
+// cave-z44: the Projects hub can drill into any project's files. The rail's
+// EFFECTIVE root is the browse override when set, else the session root — one
+// binding every rail signal (availability, changeCount, WorkspaceRail) reads,
+// so a peek stays internally coherent. Cleared on session change + collapse.
+assert.match(
+  source,
+  /const effectiveRailRoot = browseRootOverride \?\? railProjectRoot;/,
+  "the rail's effective root is the browse override, falling back to the session root",
+);
+assert.match(
+  source,
+  /useCodeRail\(\s*\{\s*projectRoot:\s*effectiveRailRoot/,
+  "useCodeRail is keyed on the effective (override-aware) root so a peek makes the rail available",
+);
+assert.match(
+  source,
+  /browseActive:\s*browseRootOverride !== null/,
+  "useCodeRail is told when a browse peek is active so it suppresses the Changes auto-reveal",
+);
+assert.match(
+  source,
+  /setBrowseRootOverride\(null\)[\s\S]{0,200}?\}, \[snapshot\.sessionId, terminalOpened\]\)/,
+  "the browse override is cleared when the active session changes",
 );
 
 assert.match(
@@ -102,20 +133,34 @@ assert.match(
 
 assert.match(
   source,
-  /<WorkspaceRail[\s\S]*?changeCount=\{changeCount\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{rail\.collapse\}/,
-  "WorkspaceRail receives changeCount + rail state/handlers",
+  /<WorkspaceRail[\s\S]*?changeCount=\{changeCount \?\? 0\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{\(\) => \{[\s\S]*?rail\.collapse\(\)/,
+  "WorkspaceRail receives the null-coerced changeCount + rail state/handlers; collapse also ends the browse peek",
+);
+// Closed-by-default rail (cave-xsq.7): the count seeds as null (unknown) per
+// root and failures stay null, so pre-existing dirt arriving with the first
+// load can't fake the 0→N fresh-batch reveal.
+assert.match(
+  source,
+  /useState<number \| null>\(null\)/,
+  "changeCount seeds as null (not yet loaded) so first-load dirt can't fake a fresh batch",
 );
 
 assert.match(
   source,
-  /<WorkspaceRail[\s\S]*?projectRoot=\{railProjectRoot\}/,
-  "WorkspaceRail Files tab receives the same active-session project root",
+  /<WorkspaceRail[\s\S]*?projectRoot=\{effectiveRailRoot\}/,
+  "WorkspaceRail Files tab receives the effective (override-aware) project root",
+);
+// The manual collapse handler ends a browse peek so reopening shows the session.
+assert.match(
+  source,
+  /onCollapse=\{\(\) => \{ setBrowseRootOverride\(null\); rail\.collapse\(\); \}\}/,
+  "collapsing the rail clears the browse override",
 );
 
 // Collapsed state renders a reopen strip.
 assert.match(
   source,
-  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label="Show code rail"[\s\S]*?rail\.reopen/,
+  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label=\{reopenChecksFailing \? "Show code rail — PR checks failing" : "Show code rail"\}[\s\S]*?rail\.reopen/,
   "a 'Show code rail' reopen strip is rendered when the rail is available but collapsed",
 );
 

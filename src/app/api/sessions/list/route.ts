@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
-import { loadState } from "@/lib/cave-config";
+import { loadState, type CaveState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
+import {
+  sweepAutoArchive,
+  sweepMergedPrAutoArchive,
+} from "@/lib/chat-auto-archive-sweep";
 import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
+import { createSwrCache } from "@/lib/swr-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import type { SessionGitContext, SessionInitiator, SessionRow } from "@/lib/types";
+import type { SessionInitiator, SessionRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -48,14 +52,21 @@ type SessionsListResult = {
   init?: ResponseInit;
 };
 
-type SessionsListCacheEntry = {
-  expiresAt: number;
-  result: SessionsListResult;
-};
-
+// Stale-while-revalidate cache (cave-5m1c). The old plain 2s TTL sat under
+// the workspace's 4s poll, so effectively EVERY poll missed and paid the full
+// daemon + git + archive-sweep recompute on the response path. Now a poll
+// inside the fresh window is a pure cache hit; a poll after it is served the
+// previous payload instantly while one background recompute refreshes it —
+// steady-state pollers never wait on the compute. Error payloads are never
+// served stale (a transient daemon failure must not pin a 503 for the whole
+// stale window), and concurrent callers still share one in-flight compute.
 const SESSIONS_LIST_CACHE_MS = 2000;
-let sessionsListCache: Map<string, SessionsListCacheEntry> = new Map();
-let sessionsListInFlight: Map<string, Promise<SessionsListResult>> = new Map();
+const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
+const sessionsListCache = createSwrCache<SessionsListResult>({
+  ttlMs: SESSIONS_LIST_CACHE_MS,
+  staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
+  canServeStale: (result) => result.payload.ok,
+});
 
 function isTrueProjectCwd(projectRoot: string): boolean {
   const trimmed = projectRoot.trim();
@@ -67,117 +78,48 @@ function isTrueProjectCwd(projectRoot: string): boolean {
   }
 }
 
-function git(projectRoot: string, args: string[]): string | null {
-  try {
-    const output = execFileSync("git", args, {
-      cwd: projectRoot,
-      encoding: "utf8",
-      timeout: 1000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const value = output.trim();
-    return value || null;
-  } catch {
-    return null;
+// Git enrichment (branch/worktree context, diffstat vs base, PR context) lives
+// in @/lib/session-git-enrich — fully async so the polled list request never
+// blocks the event loop on git subprocesses (cave-n37w).
+
+/**
+ * Rewrite `sessions` to reflect a sweep result: rows archived by the sweep
+ * are dropped from the active view and stamped `archived_at` in the archived
+ * view, so the rows returned by this request already reflect the sweep.
+ */
+function applySweptRows(
+  sessions: SessionRow[],
+  swept: Map<string, string>,
+  includeArchived: boolean,
+): SessionRow[] {
+  if (swept.size === 0) return sessions;
+  const next: SessionRow[] = [];
+  for (const row of sessions) {
+    const archivedAt = swept.get(row.id);
+    if (!archivedAt) next.push(row);
+    else if (includeArchived) next.push({ ...row, archived_at: archivedAt });
   }
-}
-
-function isGitWorkTree(projectRoot: string): boolean {
-  return git(projectRoot, ["rev-parse", "--is-inside-work-tree"]) === "true";
-}
-
-function resolveGitPath(projectRoot: string, value: string | null): string | null {
-  if (!value) return null;
-  return path.resolve(path.isAbsolute(value) ? value : path.join(projectRoot, value));
-}
-
-function readGitContext(projectRoot: string): SessionGitContext | null {
-  const trimmed = projectRoot.trim();
-  if (!isTrueProjectCwd(trimmed)) return null;
-  if (!isGitWorkTree(trimmed)) return null;
-
-  const branch =
-    git(trimmed, ["branch", "--show-current"]) ??
-    git(trimmed, ["rev-parse", "--short", "HEAD"]);
-  const worktreeRoot = git(trimmed, ["rev-parse", "--show-toplevel"]);
-  const gitDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-dir"]));
-  const commonDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-common-dir"]));
-  const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
-
-  if (!branch && !worktreeRoot && !isWorktree) return null;
-  return { branch, worktreeRoot, isWorktree };
-}
-
-type DiffStat = { additions: number; deletions: number };
-
-function parseShortstat(out: string | null): DiffStat | null {
-  if (out == null) return null;
-  const add = /(\d+) insertion/.exec(out);
-  const del = /(\d+) deletion/.exec(out);
-  return { additions: add ? Number(add[1]) : 0, deletions: del ? Number(del[1]) : 0 };
+  return next;
 }
 
 /**
- * The repo's default base ref (e.g. `origin/main`) to diff a session branch
- * against. Prefers `origin/HEAD`, then common fallbacks.
+ * Merged-chat auto-archive sweep, piggybacked on the session list read: any
+ * unarchived, non-active session whose branch PR is merged gets archived in
+ * cave state. One-shot per (session, PR) — summoning the chat later sticks —
+ * and the shared opt-outs (keep marks, extension windows) gate it like the
+ * policy sweep. IO wiring lives in @/lib/chat-auto-archive-sweep;
+ * best-effort — a sweep failure never breaks the listing.
  */
-function defaultBaseRef(root: string): string | null {
-  const originHead = git(root, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-  if (originHead) return originHead;
-  for (const ref of ["origin/main", "origin/master", "main", "master"]) {
-    if (git(root, ["rev-parse", "--verify", "--quiet", ref]) != null) return ref;
-  }
-  return null;
-}
-
-// Bound the per-request git work; sessions arrive most-recent-first, so the
-// roll-up's visible rows are covered well within this cap.
-const MAX_DIFF_CALLS = 32;
-
-function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
-  const gitContextByRoot = new Map<string, SessionGitContext | null>();
-  const baseByRoot = new Map<string, string | null>();
-  const diffByKey = new Map<string, DiffStat | null>();
-  let diffCalls = 0;
-
-  return sessions.map((session) => {
-    const root = session.project_root?.trim();
-    if (!root) return session;
-    if (!gitContextByRoot.has(root)) {
-      gitContextByRoot.set(root, readGitContext(root));
-    }
-    const gitContext = gitContextByRoot.get(root) ?? null;
-
-    // Per-session diff = the session's own branch vs the repo base (committed
-    // changes since it diverged), cached per (root, branch) so sessions on the
-    // same branch share the figure but different branches read distinctly.
-    let diff: DiffStat | null = null;
-    const branch = gitContext?.branch;
-    if (branch) {
-      const key = `${root}\u0000${branch}`;
-      if (diffByKey.has(key)) {
-        diff = diffByKey.get(key) ?? null;
-      } else if (diffCalls < MAX_DIFF_CALLS) {
-        if (!baseByRoot.has(root)) baseByRoot.set(root, defaultBaseRef(root));
-        const base = baseByRoot.get(root) ?? null;
-        let computed: DiffStat | null = null;
-        if (base) {
-          diffCalls += 1;
-          computed = parseShortstat(git(root, ["diff", `${base}...${branch}`, "--shortstat"])) ?? {
-            additions: 0,
-            deletions: 0,
-          };
-        }
-        diffByKey.set(key, computed);
-        diff = computed;
-      }
-    }
-
-    const enriched: SessionRow = { ...session };
-    if (gitContext) enriched.git = gitContext;
-    if (diff) enriched.diff = diff;
-    return enriched;
-  });
+async function applyMergedPrAutoArchive(
+  sessions: SessionRow[],
+  state: CaveState,
+  includeArchived: boolean,
+): Promise<SessionRow[]> {
+  return applySweptRows(
+    sessions,
+    await sweepMergedPrAutoArchive(sessions, state),
+    includeArchived,
+  );
 }
 
 /**
@@ -196,6 +138,24 @@ async function scopeForFamiliar(
   return scopeSessionsToFamiliarProjects(sessions, projects, permitted);
 }
 
+/**
+ * Policy auto-archive sweep (idle/external/etc.), piggybacked on the session
+ * list read. Sessions due per the configured policy are archived in cave
+ * state; the returned rows already reflect the sweep. Best-effort — sweep
+ * failures never break the listing.
+ */
+async function applyAutoArchiveSweep(
+  sessions: SessionRow[],
+  state: CaveState,
+  includeArchived: boolean,
+): Promise<SessionRow[]> {
+  return applySweptRows(
+    sessions,
+    await sweepAutoArchive(sessions, state),
+    includeArchived,
+  );
+}
+
 async function computeSessionsList(
   includeArchived: boolean,
   familiarId: string | null,
@@ -206,16 +166,28 @@ async function computeSessionsList(
     loadProjects(),
   ]);
   const localConversations = await listConversations();
+  // Backfill for local-only chat rows (UI chats the daemon never sees):
+  // map the conversation's recorded cwd to its registered project root so
+  // the sidebar's project groups pick new chats up immediately.
+  const projectRootForCwd = (cwd: string) => projectForRoot(cwd, projects)?.root ?? null;
   if (!res.ok || !res.data) {
-    const localSessions = localConversationSessionRows(localConversations, state, includeArchived);
+    const localSessions = await applyAutoArchiveSweep(
+      localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd),
+      state,
+      includeArchived,
+    );
     if (localSessions.length > 0) {
       return {
         payload: {
           ok: true,
           degraded: true,
           error: res.error ?? `daemon http ${res.status}`,
-          sessions: enrichSessionsWithGitContext(
-            await scopeForFamiliar(localSessions, projects, familiarId),
+          sessions: await applyMergedPrAutoArchive(
+            await enrichSessionsWithGitContext(
+              await scopeForFamiliar(localSessions, projects, familiarId),
+            ),
+            state,
+            includeArchived,
           ),
         },
       };
@@ -231,44 +203,30 @@ async function computeSessionsList(
     return isTrueProjectCwd(projectRoot);
   }
 
-  const sessions = mergeSessionRows({
-    daemonSessions: res.data,
-    localConversations,
+  const sessions = await applyAutoArchiveSweep(
+    mergeSessionRows({
+      daemonSessions: res.data,
+      localConversations,
+      state,
+      includeArchived,
+      isValidDaemonProjectRoot: isKnownProjectOrValidDir,
+      projectRootForCwd,
+    }),
     state,
     includeArchived,
-    isValidDaemonProjectRoot: isKnownProjectOrValidDir,
-  });
+  );
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
-  return { payload: { ok: true, sessions: enrichSessionsWithGitContext(scoped) } };
-}
-
-async function cachedSessionsList(
-  cacheKey: string,
-  includeArchived: boolean,
-  familiarId: string | null,
-): Promise<SessionsListResult> {
-  const now = Date.now();
-  const cached = sessionsListCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.result;
-  }
-  const inFlight = sessionsListInFlight.get(cacheKey);
-  if (inFlight) return inFlight;
-
-  const promise = computeSessionsList(includeArchived, familiarId).then((result) => {
-    sessionsListCache.set(cacheKey, {
-      expiresAt: Date.now() + SESSIONS_LIST_CACHE_MS,
-      result,
-    });
-    return result;
-  });
-  sessionsListInFlight.set(cacheKey, promise);
-  try {
-    return await promise;
-  } finally {
-    if (sessionsListInFlight.get(cacheKey) === promise) sessionsListInFlight.delete(cacheKey);
-  }
+  return {
+    payload: {
+      ok: true,
+      sessions: await applyMergedPrAutoArchive(
+        await enrichSessionsWithGitContext(scoped),
+        state,
+        includeArchived,
+      ),
+    },
+  };
 }
 
 export async function GET(req: Request) {
@@ -280,6 +238,8 @@ export async function GET(req: Request) {
   }
   // Cache per (archived, familiar) — scoped views differ by grant set.
   const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}`;
-  const result = await cachedSessionsList(cacheKey, includeArchived, familiarId);
+  const result = await sessionsListCache.get(cacheKey, () =>
+    computeSessionsList(includeArchived, familiarId),
+  );
   return NextResponse.json(result.payload, result.init);
 }

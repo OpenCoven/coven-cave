@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { ContractReport, ContractFile } from "@/lib/familiar-contract";
 import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
@@ -74,15 +75,16 @@ export function FamiliarStudioContractTab({ familiar }: Props) {
           </a>{" "}
           — the five-property identity spec a familiar must honor.
         </p>
-        <button
-          type="button"
-          className="familiar-studio-contract__rerun"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => void runCheck()}
+          loading={state === "loading"}
           disabled={state === "loading"}
+          leadingIcon="ph:arrows-clockwise"
         >
-          <Icon name="ph:arrows-clockwise" width={13} />
           {state === "loading" ? "Checking…" : "Re-run check"}
-        </button>
+        </Button>
       </div>
 
       {state === "loading" && !report ? (
@@ -125,9 +127,10 @@ export function FamiliarStudioContractTab({ familiar }: Props) {
               agent. This opens a chat seeded with a brief that instructs it to
               work with its human to close the gaps and cross to familiar. */}
           {!report.pass ? (
-            <button
-              type="button"
-              className="familiar-studio-contract__rehab"
+            <Button
+              variant="primary"
+              size="sm"
+              className="self-start"
               onClick={() =>
                 window.dispatchEvent(
                   new CustomEvent("cave:agents-new-chat", {
@@ -138,10 +141,10 @@ export function FamiliarStudioContractTab({ familiar }: Props) {
                   }),
                 )
               }
+              leadingIcon="ph:sparkle"
             >
-              <Icon name="ph:sparkle" width={14} aria-hidden />
               Work with {familiar.display_name} to fix this
-            </button>
+            </Button>
           ) : null}
 
           {/* Five-property coverage */}

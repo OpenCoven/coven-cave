@@ -43,10 +43,11 @@ export type ResolveChatModelStateInput = {
 
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
-const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
+const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
+  "copilot-local",
   "hermes-local",
   "openclaw-local",
 ]);

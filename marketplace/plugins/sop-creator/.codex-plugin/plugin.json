@@ -1,0 +1,25 @@
+{
+  "name": "sop-creator",
+  "version": "0.1.0",
+  "description": "Create runbooks, playbooks, and technical documentation that people actually follow \u2014 scannable, actionable, specific, testable, and maintained.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SOP & Runbook Creator",
+    "shortDescription": "Create runbooks, playbooks, and technical documentation that people actually follow \u2014 scannable, actionable, specific, testable, and maintained.",
+    "longDescription": "Use when documenting a repeatable technical or operational process \u2014 runbooks for incidents and on-call, deployment playbooks, troubleshooting guides, process SOPs, checklists, decision trees, and onboarding guides. Ships reference templates for each format plus writing rules that keep docs scannable and unambiguous: action-first numbered steps, exact names and thresholds instead of 'as needed', and a Definition of Done checklist near the top.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge & Docs",
+    "capabilities": [
+      "sop",
+      "runbook",
+      "playbook",
+      "documentation",
+      "process",
+      "operations"
+    ],
+    "defaultPrompt": "Help me use SOP & Runbook Creator safely."
+  }
+}

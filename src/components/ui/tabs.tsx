@@ -195,9 +195,11 @@ function segmentTabClass(isActive: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none rounded-md",
     sm ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[12px]",
-    "font-medium transition-colors",
+    // Every tab carries a transparent border so selecting one (which colours
+    // the border) never shifts layout.
+    "font-medium transition-colors border border-transparent",
     isActive
-      ? "bg-[var(--cv-tab-accent,var(--bg-raised))] text-[var(--text-primary)]"
+      ? "bg-[var(--cv-tab-accent,var(--bg-raised))] text-[var(--text-primary)] border-[var(--border-strong)]"
       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
     "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0",
   ].join(" ");

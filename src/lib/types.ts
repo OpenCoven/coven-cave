@@ -37,6 +37,17 @@ export type Familiar = {
   voiceModel?: string;
   voiceName?: string;
   autoSelfReport?: boolean;
+  /** Per-agent Asana assignment (see FamiliarBinding). Undefined = on when the
+   *  app is connected; false opts this familiar out. */
+  asanaEnabled?: boolean;
+  /** Optional Asana workspace gid this familiar is scoped to. */
+  asanaWorkspaceGid?: string;
+  /** Per-familiar Omnigent fleet defaults (agent / host / workspace on host). */
+  omnigent?: {
+    agentId?: string;
+    hostId?: string;
+    workspace?: string;
+  };
 };
 
 export type DaemonStatus = {
@@ -61,11 +72,30 @@ export type SessionRow = {
   updated_at: string;
   familiarId?: string | null;
   origin?: SessionOrigin;
+  /**
+   * True for daemon sessions with no Cave conversation behind them — runs
+   * spawned by generators (journal narratives, flows, automations, CLI runs)
+   * rather than by someone chatting. Chat lists hide these; the sessions stay
+   * reachable from their origination surfaces (Work Queue, Schedules, …).
+   */
+  generated?: boolean;
   initiator?: SessionInitiator;
   git?: SessionGitContext | null;
+  /**
+   * Branch recorded from the chat's own cwd when its last turn was saved —
+   * per-session attribution for PR context. Distinct from `git.branch`, which
+   * is whatever branch the project root happens to have checked out at poll
+   * time (a shared checkout churns branches, so that must never be treated as
+   * "this session's branch").
+   */
+  workBranch?: string | null;
   pullRequest?: SessionPullRequestContext | null;
   /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
   diff?: { additions: number; deletions: number } | null;
+  /** Keep mark from Cave state (never auto-archived when true). */
+  keep?: boolean;
+  /** Cave-local auto-archive defer-until timestamp, if set. */
+  archive_extended_until?: string | null;
 };
 
 export type SessionGitContext = {
@@ -89,7 +119,10 @@ export type SessionOrigin =
   | "board"
   | "cron"
   | "heartbeat"
-  | "call";
+  | "call"
+  | "canvas"
+  | "journal"
+  | "enhance";
 
 export type SessionInitiator = {
   kind: "human" | "familiar" | "system" | "unknown";

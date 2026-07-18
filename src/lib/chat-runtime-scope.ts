@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 type RuntimeScopeErrorCode =
+  | "project_root_required"
   | "project_root_outside_home"
   | "project_root_not_directory"
   | "project_root_unavailable";
@@ -31,7 +32,11 @@ export type RuntimeScope =
 function normalizePath(p: string): string {
   if (process.platform === "win32") {
     if (/^[a-zA-Z]:$/.test(p)) return p + "\\";
-    return p.replace(/\//g, "\\\\");
+    // Convert forward slashes to a SINGLE backslash. The earlier replacement
+    // used an escaped-backslash literal that expanded to TWO backslashes per
+    // slash, producing malformed Windows paths that broke the spawn cwd and the
+    // allow-list path comparison.
+    return p.replace(/\//g, "\\");
   }
   return p;
 }
@@ -56,7 +61,12 @@ export async function resolveLocalRuntimeCwd(
   const homePath = path.resolve(normalizePath(options.homeDir ?? homedir()));
   const homeRoot = await realpath(homePath);
   const trimmed = requested?.trim();
-  if (!trimmed) return homeRoot;
+  if (!trimmed) {
+    throw new RuntimeScopeError(
+      "project_root_required",
+      "projectRoot is required; refusing to start a homedir-scoped fallback session.",
+    );
+  }
 
   const candidate = path.resolve(normalizePath(trimmed));
   const relToHome = path.relative(homePath, candidate);

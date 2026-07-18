@@ -27,7 +27,34 @@ final class PtyTerminal {
     private var task: URLSessionWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
 
+    /// One shared session for WebSocket tasks — a `URLSession` is never
+    /// deallocated once created, so building one per (re)connect leaked them.
+    private static let wsSession = URLSession(configuration: .default)
+
+    /// Last connect parameters, kept for transparent auto-reconnect (the
+    /// server holds the shell through a detach grace window and replays
+    /// scrollback on reattach, so a transient drop is recoverable in place).
+    private var lastWsBase: URL?
+    private var lastThreadId = ""
+    private var lastProjectRoot: String?
+    private var lastCols = 80
+    private var lastRows = 24
+    private var reconnectAttempt = 0
+    private var reconnectTask: Task<Void, Never>?
+    private static let maxAutoReconnects = 3
+
     func connect(wsBase: URL, threadId: String, projectRoot: String?, cols: Int, rows: Int) {
+        lastWsBase = wsBase
+        lastThreadId = threadId
+        lastProjectRoot = projectRoot
+        lastCols = cols
+        lastRows = rows
+        reconnectAttempt = 0
+        open()
+    }
+
+    private func open() {
+        guard let wsBase = lastWsBase else { return }
         disconnect()
         exited = false
         exitCode = nil
@@ -39,29 +66,30 @@ final class PtyTerminal {
             error = "Bad terminal URL."
             return
         }
-        var items = [URLQueryItem(name: "threadId", value: threadId)]
-        if let projectRoot, !projectRoot.isEmpty {
+        var items = [URLQueryItem(name: "threadId", value: lastThreadId)]
+        if let projectRoot = lastProjectRoot, !projectRoot.isEmpty {
             items.append(URLQueryItem(name: "projectRoot", value: projectRoot))
         }
         comps.queryItems = items
         guard let url = comps.url else { error = "Bad terminal URL."; return }
 
-        let session = URLSession(configuration: .default)
         // Same credential as the REST client — the pty-ws upgrade passes
         // through the token gate too on a paired desktop.
         var wsRequest = URLRequest(url: url)
         if let token = CaveConnection.accessToken {
             wsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let ws = session.webSocketTask(with: wsRequest)
+        let ws = Self.wsSession.webSocketTask(with: wsRequest)
         task = ws
         ws.resume()
         connected = true
-        sendResize(cols: cols, rows: rows)
+        sendResize(cols: lastCols, rows: lastRows)
         startReceiving()
     }
 
     func disconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         receiveLoop?.cancel()
         receiveLoop = nil
         task?.cancel(with: .goingAway, reason: nil)
@@ -80,6 +108,8 @@ final class PtyTerminal {
 
     func sendResize(cols: Int, rows: Int) {
         guard let task, cols > 0, rows > 0 else { return }
+        lastCols = cols
+        lastRows = rows
         var frame = Data([0x04])
         var c = UInt16(min(cols, 0xFFFF)).littleEndian
         var r = UInt16(min(rows, 0xFFFF)).littleEndian
@@ -92,15 +122,19 @@ final class PtyTerminal {
 
     private func startReceiving() {
         // The closure inherits this class's @MainActor isolation, so member
-        // access is synchronous; only `task.receive()` actually suspends.
+        // access is synchronous; only `ws.receive()` actually suspends. The
+        // socket is pinned per loop: a replaced/cancelled socket's dangling
+        // receive resumes with a stale error after reconnect, and reporting
+        // it through fail() would clobber the live connection's state.
         receiveLoop = Task { [weak self] in
+            guard let ws = self?.task else { return }
             while !Task.isCancelled {
-                guard let self, let task = self.task else { break }
+                guard let self, self.task === ws else { break }
                 do {
-                    let message = try await task.receive()
+                    let message = try await ws.receive()
                     self.handle(message)
                 } catch {
-                    self.fail(error)
+                    if !Task.isCancelled, self.task === ws { self.fail(error) }
                     break
                 }
             }
@@ -108,6 +142,8 @@ final class PtyTerminal {
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
+        // Any server frame proves the link is live — refill the retry budget.
+        reconnectAttempt = 0
         switch message {
         case .data(let data):
             handleFrame(data)
@@ -138,7 +174,22 @@ final class PtyTerminal {
     private func fail(_ error: Error) {
         // A clean close after exit is not an error worth surfacing.
         if exited { return }
-        self.error = error.localizedDescription
         connected = false
+        // Transient drop (network handoff, backgrounding, desktop blip):
+        // retry with backoff before asking the user — the server's detach
+        // grace keeps the shell alive and replays scrollback on reattach.
+        if reconnectAttempt < Self.maxAutoReconnects, lastWsBase != nil {
+            reconnectAttempt += 1
+            self.error = "Connection lost — reconnecting…"
+            let delay = 1 << (reconnectAttempt - 1)   // 1s, 2s, 4s
+            reconnectTask?.cancel()
+            reconnectTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled, !self.connected, !self.exited else { return }
+                self.open()
+            }
+            return
+        }
+        self.error = error.localizedDescription
     }
 }

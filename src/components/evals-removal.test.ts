@@ -36,7 +36,8 @@ for (const rel of [
 }
 
 assert.match(analytics, /ThreadSignalsSection/, "familiar analytics keeps thread signal analytics");
-assert.match(analytics, /ResponseConfidenceSection/, "familiar analytics keeps response confidence analytics");
+assert.doesNotMatch(analytics, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
+assert.doesNotMatch(apiContracts, /response-confidence/, "API contract list should not include the retired response-confidence route");
 assert.doesNotMatch(analytics, /EvalLoopPanel/, "familiar analytics should not embed eval-loop UI");
 assert.doesNotMatch(threadSignals, /origin:\s*"eval"/, "thread signal discussions should not be tagged as eval threads");
 assert.match(threadSignals, /dashboard\/familiars\/\$\{encodeURIComponent\(familiarId\)\}\/analytics/, "thread signal follow-up stays tied to familiar analytics");

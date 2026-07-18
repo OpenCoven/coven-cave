@@ -11,12 +11,15 @@ export function SelectionToolbar({
   count,
   onToggleSelectAll,
   onCancel,
+  selectAllLabel = "Select all",
   children,
 }: {
   allSelected: boolean;
   count: number;
   onToggleSelectAll: () => void;
   onCancel: () => void;
+  /** Custom select-all copy (e.g. "Select all 12 matches" under a search). */
+  selectAllLabel?: string;
   /** Bulk-action buttons (e.g. Pause, Resume, Delete) shown before Cancel. */
   children?: ReactNode;
 }) {
@@ -32,9 +35,9 @@ export function SelectionToolbar({
           onClick={onToggleSelectAll}
           className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
-          {allSelected ? "Clear" : "Select all"}
+          {allSelected ? "Clear" : selectAllLabel}
         </button>
-        <span className="text-[11px] text-[var(--text-muted)]">{count} selected</span>
+        <span aria-live="polite" className="text-[11px] text-[var(--text-muted)]">{count} selected</span>
       </div>
       <div className="flex items-center gap-1">
         {children}

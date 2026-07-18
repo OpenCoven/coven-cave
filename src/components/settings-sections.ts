@@ -3,7 +3,10 @@
 // "what's in here" highlight strip). Kept in its own module so the shell nav and
 // the SettingsOverview header share one source of truth.
 //
+import type { FamiliarStudioTab } from "@/lib/familiar-studio-context";
+
 export type Section =
+  | "profile"
   | "general"
   | "daemon"
   | "familiars"
@@ -13,9 +16,17 @@ export type Section =
 
 export type SectionMeta = { id: Section; label: string; icon: string; description: string; accent: string };
 
-export type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
+// `familiarTab` marks an entry that lives inside the Familiars studio panel —
+// picking it activates that studio tab instead of scrolling to a SettingsGroup.
+export type SettingsIndexEntry = {
+  section: Section;
+  group?: string;
+  keywords: string;
+  familiarTab?: FamiliarStudioTab;
+};
 
 export const SECTIONS: SectionMeta[] = [
+  { id: "profile", label: "Profile", icon: "ph:user-circle", description: "Your name, image, and details familiars know you by.", accent: "#f0c987" },
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9a8ecd" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
   { id: "familiars", label: "Familiars", icon: "ph:users-three", description: "Roster, identity, permissions, and pin order.", accent: "#d8a9ff" },
@@ -25,7 +36,8 @@ export const SECTIONS: SectionMeta[] = [
 ];
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
-  general: ["Workspace path", "Launch behavior", "Default start view"],
+  profile: ["Display name & pronouns", "Profile image", "Bio, timezone & links"],
+  general: ["Workspace path", "Encrypted backup", "Launch behavior"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
@@ -34,22 +46,40 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 };
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
+  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you" },
+  { section: "profile", group: "Image", keywords: "avatar image photo picture upload face profile" },
+  { section: "profile", group: "Details", keywords: "bio about timezone time zone" },
+  { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
+  { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
+  { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
+  { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
-  { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
+  { section: "familiars", keywords: "familiars agents personas roster" },
+  { section: "familiars", group: "Identity", familiarTab: "identity", keywords: "identity name role pronouns description rename" },
+  { section: "familiars", group: "Look", familiarTab: "look", keywords: "look avatar image photo upload icon glyph color accent swatch palette" },
+  { section: "familiars", group: "Brain", familiarTab: "brain", keywords: "brain runtime harness model voice system prompt note capabilities" },
+  { section: "familiars", group: "Lifecycle", familiarTab: "lifecycle", keywords: "lifecycle archive unarchive reorder roster order reset overrides" },
+  { section: "familiars", group: "Memory", familiarTab: "memory", keywords: "memory memories daily notes recall" },
+  { section: "familiars", group: "Journal", familiarTab: "journal", keywords: "journal daily reflection reflections diary entries generate" },
+  { section: "familiars", group: "Projects", familiarTab: "projects", keywords: "projects access grants allow deny tool policy guard security audit requests permissions read write level" },
+  { section: "familiars", group: "Access groups", keywords: "access groups group grants base projects read write level team role shared membership permissions" },
+  { section: "familiars", group: "Vault", familiarTab: "vault", keywords: "vault secrets env environment keys tokens credentials 1password" },
   { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
   { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
   { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
-  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom background accent border" },
+  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom customize picker swatch background accent border" },
   { section: "appearance", group: "Import from tweakcn", keywords: "import tweakcn css variables theme" },
   { section: "appearance", group: "Familiar switcher", keywords: "familiar switcher style strip scope" },
   { section: "appearance", group: "Corners", keywords: "corners radius rounded sharp square" },
+  { section: "appearance", group: "Typography", keywords: "typography font pair typeface interface code terminal text size scale" },
   { section: "appearance", group: "Reading text", keywords: "font typeface family size reading text density relative time chat" },
+  { section: "appearance", group: "Date & time", keywords: "date time clock format relative density timestamps" },
   { section: "about", group: "CovenCave", keywords: "about version covencave build" },
   { section: "about", group: "OpenCoven tools", keywords: "tools update cli opencoven" },
   { section: "about", group: "Links", keywords: "links docs help github support" },

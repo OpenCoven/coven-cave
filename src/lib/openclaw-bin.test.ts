@@ -22,13 +22,18 @@ assert.match(
 );
 assert.match(
   src,
-  /export function openClawNeedsShell\(\): boolean[\s\S]*process\.platform === "win32"/,
-  "Windows OpenClaw npm shims should be spawned through shell mode",
+  /export function openClawNeedsShell\(bin = openClawBin\(\)\): boolean[\s\S]*process\.platform === "win32"[\s\S]*endsWith\("\.cmd"\)/,
+  "Only Windows OpenClaw .cmd npm shims should require shell mode",
 );
 assert.match(
   src,
-  /export function openClawSpawnArgs\(argv: string\[\]\): string\[\][\s\S]*openClawNeedsShell\(\)[\s\S]*quoteWindowsShellArg/,
+  /export function openClawSpawnArgs\(argv: string\[\], bin = openClawBin\(\)\): string\[\][\s\S]*openClawNeedsShell\(bin\)[\s\S]*quoteWindowsShellArg/,
   "Windows shell-mode OpenClaw spawn args should quote argv entries before Node joins them for cmd.exe",
+);
+assert.match(
+  src,
+  /export function openClawSupportsUntrustedArgs\(bin = openClawBin\(\)\): boolean[\s\S]*!openClawNeedsShell\(bin\)/,
+  "OpenClaw chat should be able to reject shell-only shims before passing untrusted prompts",
 );
 assert.match(
   src,

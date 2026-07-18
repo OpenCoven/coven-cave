@@ -59,11 +59,24 @@ assert.match(
   "MonthView cell must add ring-1 ring-inset on today",
 );
 
-// ───────── Task 5: Keyboard hints footer ─────────
-assert.match(
+// ───────── Task 5: Keyboard hints ─────────
+// The always-visible footer hint bar was retired (§8 chrome diet); the
+// bindings are documented in the canonical ⌘/ Shortcuts sheet instead.
+const shortcuts = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+assert.doesNotMatch(
   source,
-  /← → navigate · T today · D Day · W Week · M Month · A Agenda/,
-  "CalendarView must render the keyboard-hints footer string",
+  /← → navigate · T today/,
+  "CalendarView no longer renders a permanent keyboard-hints footer",
+);
+assert.match(
+  shortcuts,
+  /Calendar: Day \/ Week \/ Month \/ Agenda view/,
+  "the calendar view-switch keys are documented in the Shortcuts sheet catalog",
+);
+assert.match(
+  shortcuts,
+  /Calendar: jump to today/,
+  "the calendar Today key is documented in the Shortcuts sheet catalog",
 );
 
 // ───────── Task 6: + Add event toolbar button ─────────
@@ -129,8 +142,8 @@ assert.doesNotMatch(
 );
 assert.equal(
   (source.match(/Add event/g) ?? []).length,
-  2, // aria-label + button label of the single toolbar button
-  "Exactly one Add event button (toolbar), counted via its label + aria-label",
+  1, // the single toolbar button's visible label (now a shared <Button>, no redundant aria-label)
+  "Exactly one Add event button (toolbar)",
 );
 assert.match(
   source,
@@ -139,14 +152,22 @@ assert.match(
 );
 assert.match(
   source,
-  /inline-flex h-7 items-center rounded-md border[\s\S]{0,200}Today/,
-  "Today button matches the h-7 toolbar height",
+  /<Button[\s\S]{0,200}className="calendar-toolbar-button"\s*>\s*Today\s*<\/Button>/,
+  "Today is the shared Button primitive, keeping the toolbar mobile hook",
 );
 assert.match(
   source,
-  /aria-label="Add event"/,
-  "Toolbar Add event button is labeled",
+  /<Button[\s\S]{0,220}leadingIcon="ph:plus-bold"[\s\S]{0,160}>\s*Add event\s*<\/Button>/,
+  "Toolbar Add event is the shared Button primitive with its label",
 );
+
+// cave-4op toolbar slice: the nav arrows are shared IconButtons and the raw
+// hand-rolled toolbar control markup is gone. The segmented view switcher and
+// the heading / jump-to-date trigger stay bespoke (a segmented control and a
+// text trigger, not standard buttons).
+assert.match(source, /<IconButton[\s\S]{0,80}icon="ph:arrow-left-bold"[\s\S]{0,80}aria-label="Previous"/, "toolbar Previous is an IconButton");
+assert.match(source, /<IconButton[\s\S]{0,80}icon="ph:arrow-right-bold"[\s\S]{0,80}aria-label="Next"/, "toolbar Next is an IconButton");
+assert.doesNotMatch(source, /grid h-7 w-7 place-items-center rounded-md text-\[var\(--text-muted\)\]/, "no hand-rolled toolbar nav-arrow markup remains");
 
 // ───────── Mobile toolbar hit areas ─────────
 assert.match(source, /calendar-toolbar/, "Calendar toolbar should expose a stable mobile hook");
@@ -194,4 +215,83 @@ assert.match(source, /borderLeftColor: accent, borderLeftWidth: 3/, "the accent 
 assert.match(source, /legendFamiliars\.length >= 2/, "the colour legend only shows when ≥2 familiars are in view");
 assert.match(source, /aria-label="Familiar colour legend"/, "the legend is labelled");
 
-console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours ok");
+// ───────── cave-4op: action controls use the shared Button / IconButton primitives ─────────
+// The Calendar's *action controls* — the item detail panel (Close/Open/Done/
+// Dismiss) and the empty-state / agenda actions (Add task, Show past, Hide
+// past) — are standardized onto the shared primitives so their radius, height,
+// focus ring, and disabled treatment come from one place (cave-4op). Bespoke
+// *content* elements (item/deadline chips, draggable time-grid events, month &
+// mini-month date cells) and the tightly-pinned toolbar / segmented switcher
+// are deliberately out of scope here — they are not standard controls.
+assert.match(
+  source,
+  /import \{ Button \} from "@\/components\/ui\/button"/,
+  "calendar imports the shared Button primitive",
+);
+assert.match(
+  source,
+  /import \{ IconButton \} from "@\/components\/ui\/icon-button"/,
+  "calendar imports the shared IconButton primitive",
+);
+
+/** Slice out a top-level function body by name, up to the next function decl. */
+function fnRegion(name) {
+  const m = new RegExp(`function ${name}\\(`).exec(source);
+  assert.ok(m, `${name} must exist`);
+  const after = source.slice(m.index + m[0].length);
+  const next = /\n(?:export )?function \w+\(/.exec(after);
+  return after.slice(0, next ? next.index : after.length);
+}
+
+// No raw <button> survives in the standardized control clusters.
+for (const name of ["EmptyScheduleState", "AgendaView", "ItemDetailPanel"]) {
+  assert.doesNotMatch(
+    fnRegion(name),
+    /<button\b/,
+    `${name} action controls use <Button>/<IconButton>, not a raw <button>`,
+  );
+}
+
+const detail = fnRegion("ItemDetailPanel");
+assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Close"/, "detail panel Close is an IconButton");
+assert.match(detail, /<Button\b[\s\S]*?variant="primary"/, "detail panel Open is a primary Button");
+assert.match(detail, /<Button\b[\s\S]*?variant="secondary"[\s\S]*?Done/, "detail panel Done is a secondary Button");
+assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Dismiss"/, "detail panel Dismiss is an IconButton");
+
+// The empty-state / agenda actions keep their mobile hook while using the primitive.
+assert.match(
+  fnRegion("EmptyScheduleState"),
+  /<Button\b[\s\S]*?className="calendar-empty-action"/,
+  "empty-schedule Add action is a Button that keeps the mobile hook",
+);
+assert.match(
+  fnRegion("AgendaView"),
+  /<Button\b[\s\S]*?className="calendar-empty-action"/,
+  "agenda empty-state actions are Buttons that keep the mobile hook",
+);
+
+// cave-4op mini-month micro-slice: the jump-to-date popover's month nav arrows
+// and its Today shortcut use the shared primitives. The day-cell grid stays
+// bespoke (date cells with today/anchor states, not standard controls).
+assert.match(
+  source,
+  /<IconButton[\s\S]{0,80}icon="ph:arrow-left-bold"[\s\S]{0,80}aria-label="Previous month"/,
+  "mini-month Previous is an IconButton",
+);
+assert.match(
+  source,
+  /<IconButton[\s\S]{0,80}icon="ph:arrow-right-bold"[\s\S]{0,80}aria-label="Next month"/,
+  "mini-month Next is an IconButton",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}fullWidth[\s\S]{0,140}onClick=\{\(\) => onPick\(today\)\}[\s\S]{0,40}>\s*Today\s*<\/Button>/,
+  "mini-month Today is a fullWidth Button",
+);
+assert.doesNotMatch(
+  source,
+  /grid h-6 w-6 place-items-center rounded-md/,
+  "no hand-rolled mini-month nav-arrow markup remains",
+);
+
+console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours + cave-4op control primitives ok");

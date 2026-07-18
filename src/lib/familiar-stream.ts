@@ -1,3 +1,5 @@
+import type { ChatAttachment } from "./chat-attachments";
+import type { SessionOrigin } from "./types";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
 // sanctioned client-side LLM path — the same bridge evals, workflow-generate, and
@@ -13,15 +15,33 @@ import { parseSseFrame } from "@/lib/canvas-generate";
 export async function streamFamiliarText(opts: {
   familiarId: string;
   prompt: string;
+  /** Staged files riding with the prompt. The bridge owns composition (text
+   *  inlined, images written to temp files the harness can Read) — pass them
+   *  through pre-stripped (see stripPreviewOnlyAttachmentFieldsKeepingImages). */
+  attachments?: ChatAttachment[];
   sessionId?: string;
+  projectRoot?: string;
+  /** Per-send token so callers can stop this ephemeral run via /api/chat/stop. */
+  runId?: string;
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Advisory permission mode forwarded to the chat bridge. Use "read" for
+   *  hidden/meta generations so prompt-injected transcript text cannot trigger
+   *  privileged tool execution. */
+  permissionMode?: "read" | "full";
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
+  /** Session provenance — set by generator surfaces (e.g. "journal") so the
+   *  chat lists can hide the run; user-facing chats leave it unset. */
+  origin?: SessionOrigin;
   signal?: AbortSignal;
   /** Called with the accumulated assistant text after each streamed chunk,
    *  so callers can render the reply incrementally as it arrives. */
   onText?: (text: string) => void;
+  /** Called the moment the bridge announces the backing session id — before
+   *  the stream completes — so callers can keep the thread resumable even if
+   *  the run is aborted mid-stream. */
+  onSession?: (sessionId: string) => void;
 }): Promise<{ text: string; error: string | null; sessionId?: string }> {
   let res: Response;
   try {
@@ -31,11 +51,18 @@ export async function streamFamiliarText(opts: {
       body: JSON.stringify({
         familiarId: opts.familiarId,
         prompt: opts.prompt,
+        ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
         ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+        ...(opts.projectRoot ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.runId ? { runId: opts.runId } : {}),
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
         ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
         ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
+        // Provenance for generated runs (journal narratives, …) so the chat
+        // lists can keep them out of the conversation rail (#2719 model).
+        ...(opts.origin ? { origin: opts.origin } : {}),
       }),
       signal: opts.signal,
     });
@@ -50,27 +77,38 @@ export async function streamFamiliarText(opts: {
   let text = "";
   let error: string | null = null;
   let sessionId: string | undefined;
+
+  const noteSession = (id: string | undefined) => {
+    if (!id) return;
+    sessionId = id;
+    opts.onSession?.(id);
+  };
+  const handleFrame = (frame: string) => {
+    const ev = parseSseFrame(frame);
+    if (!ev) return;
+    if (ev.kind === "assistant_chunk") {
+      text += ev.text ?? "";
+      opts.onText?.(text);
+    } else if (ev.kind === "session") noteSession(ev.sessionId);
+    else if (ev.kind === "done") {
+      noteSession(ev.sessionId);
+      if (ev.isError) error = error ?? "the familiar reported an error";
+    } else if (ev.kind === "error") error = ev.message ?? "generation error";
+  };
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let idx;
     while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
+      handleFrame(buffer.slice(0, idx));
       buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      if (ev.kind === "assistant_chunk") {
-        text += ev.text ?? "";
-        opts.onText?.(text);
-      }
-      else if (ev.kind === "session") sessionId = ev.sessionId;
-      else if (ev.kind === "done") {
-        if (ev.sessionId) sessionId = ev.sessionId;
-        if (ev.isError) error = error ?? "the familiar reported an error";
-      }
-      else if (ev.kind === "error") error = ev.message ?? "generation error";
     }
   }
+  // Flush the decoder (a multi-byte character can straddle the final chunk)
+  // and process a last frame that arrived without its trailing blank line.
+  buffer += decoder.decode();
+  if (buffer.trim()) handleFrame(buffer);
   return { text, error, sessionId };
 }

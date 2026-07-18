@@ -1,7 +1,10 @@
-import { readFileSync, statSync } from "node:fs";
+import { createHmac } from "node:crypto";
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { parse } from "node:url";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
 import { WebSocket, WebSocketServer } from "ws";
 const require2 = createRequire(import.meta.url);
@@ -17,13 +20,36 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   } catch {
   }
 }
-const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+function persistedMobileAccessSecretFile() {
+  const port2 = (process.env.PORT || "3000").trim() || "3000";
+  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join(
+    process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+    "coven-cave"
+  );
+  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join(stateRoot, `mobile-tailscale-${port2}`);
+  return join(stateDir, "access-token");
+}
+if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+  }
+}
+function accessToken() {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
+const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
+const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-const DETACH_GRACE_MS = 6e4;
+const DETACH_GRACE_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 3e5;
+})();
 function appendScrollback(session, data) {
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
@@ -53,8 +79,26 @@ function timingSafeEqualString(a, b) {
   }
   return diff === 0;
 }
-function isExpectedToken(value) {
-  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+function isExpectedAccessToken(value) {
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
+}
+function isExpectedSidecarToken(value) {
+  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+function isExpectedPtyToken(value) {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
+}
+function isValidSignedAccessToken(value, secret) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -77,23 +121,72 @@ function sameOrigin(value, expectedOrigin) {
     const url = new URL(value);
     if (url.origin === expectedOrigin) return true;
     const expected = new URL(expectedOrigin);
+    if (url.host === expected.host) return true;
     return url.protocol === expected.protocol && url.port === expected.port && isLoopbackHost(url.host) && isLoopbackHost(expected.host);
   } catch {
     return false;
   }
 }
-function isAllowedUpgradeSource(req) {
+function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   const host = req.headers.host;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
+  if (!isLoopbackHost(host)) {
+    if (!host) return false;
+    if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
+    return false;
+  }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
+function firstQueryValue(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+const UPGRADE_URL_BASE = "http://localhost";
+const MAX_UPGRADE_QUERY_SEGMENTS = 1e3;
+const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+function boundedUpgradeQuery(suffix) {
+  if (!suffix.startsWith("?")) return "";
+  const fragmentStart = suffix.indexOf("#", 1);
+  const rawQuery = suffix.slice(1, fragmentStart === -1 ? void 0 : fragmentStart);
+  let segmentCount = 1;
+  for (let index = 0; index < rawQuery.length; index += 1) {
+    if (rawQuery[index] !== "&") continue;
+    if (segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS) return rawQuery.slice(0, index);
+    segmentCount += 1;
+  }
+  return rawQuery;
+}
+function parseUpgradeTarget(rawUrl) {
+  const pathEnd = rawUrl.search(/[?#]/);
+  const rawPath = pathEnd === -1 ? rawUrl : rawUrl.slice(0, pathEnd);
+  const suffix = pathEnd === -1 ? "" : rawUrl.slice(pathEnd);
+  const normalizedPath = rawPath.replaceAll("\\", "/");
+  const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
+  const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  const parsedUrl = absoluteForm ? new URL(normalizedPath) : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
+  parsedUrl.search = `?${boundedUpgradeQuery(suffix)}`;
+  let pathname = normalizedPath;
+  if (absoluteForm) {
+    const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);
+    pathname = pathStart === -1 ? "/" : normalizedPath.slice(pathStart);
+  }
+  const query = /* @__PURE__ */ Object.create(null);
+  for (const [key, value] of parsedUrl.searchParams) {
+    const current = query[key];
+    if (current === void 0) query[key] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else query[key] = [current, value];
+  }
+  return { pathname, query };
+}
+function isPtyAuthRequired() {
+  return Boolean(accessToken() || SIDECAR_TOKEN);
+}
 function isAuthorized(req, query) {
-  if (!ACCESS_TOKEN) return false;
-  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM]) ? query[ACCESS_QUERY_PARAM][0] : query[ACCESS_QUERY_PARAM];
-  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
-  return candidates.some(isExpectedToken);
+  if (!isPtyAuthRequired()) return false;
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
+  const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedPtyToken);
 }
 function defaultShell() {
   if (process.platform === "darwin") return "/bin/zsh";
@@ -142,12 +235,14 @@ function validateCwd(raw) {
   return raw;
 }
 const PTY_ENV_DROPPED = /* @__PURE__ */ new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+const PTY_ENV_DROPPED_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"];
 function sanitizedEnv() {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === void 0) continue;
     if (/^npm_/i.test(key)) continue;
     if (PTY_ENV_DROPPED.has(key)) continue;
+    if (PTY_ENV_DROPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
     env[key] = value;
   }
   return env;
@@ -225,6 +320,13 @@ function onWsMessage(threadId, data) {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 5) {
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
   }
 }
 function adoptSession(session, ws, cols, rows) {
@@ -283,11 +385,18 @@ const wss = new WebSocketServer({ noServer: true });
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 const server = createServer((req, res) => {
-  const parsedUrl = parse(req.url ?? "/", true);
-  void handle(req, res, parsedUrl);
+  void handle(req, res);
 });
 server.on("upgrade", (req, socket, head) => {
-  const { pathname, query } = parse(req.url ?? "/", true);
+  let pathname;
+  let query;
+  try {
+    ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
+  } catch {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   if (pathname !== "/api/pty-ws") {
     void nextUpgradeHandler(req, socket, head).catch((err) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
@@ -295,12 +404,13 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  if (!isAllowedUpgradeSource(req)) {
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -325,6 +435,70 @@ server.on("upgrade", (req, socket, head) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd);
   });
 });
+server.keepAliveTimeout = 75e3;
+server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);
 });
+server.once("error", (err) => {
+  console.error(err);
+  process.exit(1);
+});
+const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";
+const HEAP_MONITOR_INTERVAL_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_HEAP_MONITOR_INTERVAL_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 3e5;
+})();
+const HEAP_WARN_RATIO = 0.85;
+const HEAP_SNAPSHOT_RATIO = 0.95;
+const HEAP_SNAPSHOT_KEEP = 2;
+let heapSnapshotSeq = 0;
+function heapDiagnosticsDir() {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHome = process.env.COVEN_CAVE_HOME || join(covenHome, "cave");
+  return join(caveHome, "diagnostics");
+}
+const mb = (bytes) => `${Math.round(bytes / (1024 * 1024))}MB`;
+function pruneHeapSnapshots(dir) {
+  const snapshots = readdirSync(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
+  while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
+    const oldest = snapshots.shift();
+    try {
+      unlinkSync(join(dir, oldest));
+    } catch {
+    }
+  }
+}
+function startHeapMonitor() {
+  if (!HEAP_MONITOR_ENABLED) return;
+  let snapshotWritten = false;
+  const tick = () => {
+    const heap = getHeapStatistics();
+    const ratio = heap.used_heap_size / heap.heap_size_limit;
+    if (ratio < HEAP_WARN_RATIO) {
+      snapshotWritten = false;
+      return;
+    }
+    const usage = process.memoryUsage();
+    console.warn(
+      `[heap-monitor] heapUsed=${mb(heap.used_heap_size)} heapLimit=${mb(heap.heap_size_limit)} (${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`
+    );
+    if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
+    try {
+      const dir = heapDiagnosticsDir();
+      mkdirSync(dir, { recursive: true });
+      const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const seq = String(heapSnapshotSeq += 1).padStart(3, "0");
+      const file = join(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
+      writeHeapSnapshot(file);
+      snapshotWritten = true;
+      pruneHeapSnapshots(dir);
+      console.warn(`[heap-monitor] wrote heap snapshot ${file}`);
+    } catch (err) {
+      snapshotWritten = true;
+      console.warn(`[heap-monitor] failed to write heap snapshot`, err);
+    }
+  };
+  setInterval(tick, HEAP_MONITOR_INTERVAL_MS).unref();
+}
+startHeapMonitor();

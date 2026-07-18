@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-speech-stt-available"
+description = "Allows probing whether native speech recognition is supported."
+commands.allow = ["speech_stt_available"]
+
+[[permission]]
+identifier = "allow-speech-stt-start"
+description = "Allows starting a native speech recognition session (microphone capture + transcription)."
+commands.allow = ["speech_stt_start"]
+
+[[permission]]
+identifier = "allow-speech-stt-finish"
+description = "Allows ending the audio of a native speech recognition session to obtain its final transcript."
+commands.allow = ["speech_stt_finish"]
+
+[[permission]]
+identifier = "allow-speech-stt-stop"
+description = "Allows cancelling and tearing down a native speech recognition session."
+commands.allow = ["speech_stt_stop"]

@@ -1,12 +1,11 @@
 /**
  * group-chat.ts — pure model + reducers for the Group Chat ("coven") surface.
  *
- * A *coven* is a saved set of familiars you talk to together. Sending a prompt
- * fans it out to every participant in parallel (one `/api/chat/send` stream per
- * familiar — the same client-side broadcast model the iOS app uses, since the
- * daemon/coven CLI has no server-side "group session" concept). Each familiar
- * keeps its own resumable session; the group just remembers which session id
- * belongs to which familiar so every thread persists across reloads.
+ * A *coven* is a saved set of familiars you talk to together. Each Coven chooses
+ * whether a prompt fans out to everyone in parallel (broadcast) or moves through
+ * a rotating speaking order with peer-reply relay (round robin). Both modes use
+ * one `/api/chat/send` stream and resumable session per familiar because the
+ * daemon/Coven CLI has no server-side "group session" concept.
  *
  * Everything here is framework-free and deterministic (except the thin
  * localStorage + id/time wrappers at the bottom) so the streaming reducers and
@@ -15,6 +14,19 @@
 
 const GROUPS_KEY = "cave:group-chat:groups:v1";
 const TRANSCRIPTS_KEY_PREFIX = "cave:group-chat:transcript:";
+/** Max turns kept in a persisted transcript. The roundtable prompt already
+ *  windows history far tighter than this, so capping the stored tail loses
+ *  nothing the model sees — it only bounds localStorage growth (and the cost
+ *  of re-serializing the transcript on save). */
+export const TRANSCRIPT_CAP = 200;
+/** A human-originated Coven turn may trigger a small, bounded delegation tree.
+ *  Two hops supports A → B → C while preventing an open-ended agent loop. */
+export const MAX_COVEN_DELEGATION_DEPTH = 2;
+/** Independent cap for wide fan-out within one human turn. */
+export const MAX_COVEN_DELEGATIONS_PER_TURN = 4;
+
+export const COVEN_RESPONSE_MODES = ["broadcast", "round-robin"] as const;
+export type CovenResponseMode = (typeof COVEN_RESPONSE_MODES)[number];
 
 /** A saved group of familiars chatted with together. */
 export type CovenGroup = {
@@ -23,6 +35,10 @@ export type CovenGroup = {
   familiarIds: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
+  /** How a multi-recipient human turn is dispatched. */
+  responseMode: CovenResponseMode;
+  /** Familiar that should lead the next multi-recipient round-robin turn. */
+  nextRoundRobinLeadId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -38,6 +54,14 @@ export type GroupUserTurn = {
    * means it was broadcast to the whole coven.
    */
   targetFamiliarIds?: string[];
+  /** Present when this prompt was emitted by another familiar rather than the
+   *  human composer. These fields make the handoff attributable and idempotent
+   *  across transcript persistence and React re-renders. */
+  delegatedByFamiliarId?: string;
+  delegationSourceReplyId?: string;
+  delegationDepth?: number;
+  /** Snapshot at send time so retries keep the original turn semantics. */
+  responseMode?: CovenResponseMode;
   createdAt: string;
 };
 
@@ -160,6 +184,75 @@ export function defaultGroupName(names: string[]): string {
 /** A coven member as seen by the mention parser/autocomplete. */
 export type MentionableFamiliar = { id: string; name: string };
 
+export type CovenDelegation = {
+  targetFamiliarId: string;
+  task: string;
+};
+
+export type ExtractedCovenDelegations = {
+  visible: string;
+  delegations: CovenDelegation[];
+};
+
+const DELEGATION_OPEN = "<coven:delegation";
+const COMPLETE_DELEGATION_RE =
+  /<coven:delegation\s+target="([a-z0-9][a-z0-9_-]*)">([\s\S]*?)<\/coven:delegation>/gi;
+
+/** Ranges where marker-shaped text is documentation, not an instruction. */
+function delegationIgnoredRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  for (const re of [
+    /```[\s\S]*?(?:```|$)/g,
+    /~~~[\s\S]*?(?:~~~|$)/g,
+    /(`+)[^\n]*?\1/g,
+    /^[ \t]{0,3}>.*$/gm,
+    /^(?: {4,}|\t).*$/gm,
+  ]) {
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text))) ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+/**
+ * Extract explicit familiar-issued delegation controls while returning the
+ * human-readable reply without their hidden trailer. A plain `@Name` is never
+ * enough to dispatch work: only a complete, non-quoted control marker routes.
+ * The incomplete trailing marker is hidden during streaming so control markup
+ * does not flicker into the reply bubble.
+ */
+export function extractCovenDelegations(text: string): ExtractedCovenDelegations {
+  const ignored = delegationIgnoredRanges(text);
+  const isIgnored = (index: number) => ignored.some(([start, end]) => index >= start && index < end);
+  const delegations: CovenDelegation[] = [];
+  const remove: Array<[number, number]> = [];
+  const seenTargets = new Set<string>();
+  let match: RegExpExecArray | null;
+  COMPLETE_DELEGATION_RE.lastIndex = 0;
+  while ((match = COMPLETE_DELEGATION_RE.exec(text))) {
+    if (isIgnored(match.index)) continue;
+    remove.push([match.index, match.index + match[0].length]);
+    // Familiar ids are validated case-insensitively but remain case-sensitive
+    // identifiers on Linux filesystems and throughout the roster. Preserve the
+    // exact roster id emitted in the control instead of silently changing it.
+    const targetFamiliarId = match[1];
+    const task = match[2].trim();
+    if (!task || seenTargets.has(targetFamiliarId)) continue;
+    seenTargets.add(targetFamiliarId);
+    delegations.push({ targetFamiliarId, task });
+  }
+
+  let visible = text;
+  for (const [start, end] of remove.sort((a, b) => b[0] - a[0])) {
+    visible = visible.slice(0, start) + visible.slice(end);
+  }
+  const partial = visible.lastIndexOf(DELEGATION_OPEN);
+  if (partial >= 0 && !delegationIgnoredRanges(visible).some(([start, end]) => partial >= start && partial < end)) {
+    visible = visible.slice(0, partial);
+  }
+  return { visible: visible.trimEnd(), delegations };
+}
+
 /** True for a char that may not abut the end of a matched `@name` (a word char,
  *  so `@Alpha` does not greedily match a participant named `Al`). */
 function isWordChar(ch: string | undefined): boolean {
@@ -200,6 +293,37 @@ export function parseMentions(text: string, participants: MentionableFamiliar[])
     }
   }
   return ids;
+}
+
+/**
+ * Resolve the authoritative recipients for one coven message.
+ *
+ * Composer messages derive their targets from visible `@mentions`, falling
+ * back to the full coven when none are present. One-tap UI actions such as a
+ * familiar's next-path suggestion may instead provide explicit ids. In that
+ * case visible mentions are deliberately ignored so generated suggestion text
+ * cannot widen the destination set.
+ */
+export function resolveGroupMessageTargets(
+  text: string,
+  groupFamiliarIds: string[],
+  participants: MentionableFamiliar[],
+  explicitTargetFamiliarIds?: string[],
+): { targetIds: string[]; targeted: boolean } {
+  const mentioned = explicitTargetFamiliarIds === undefined ? parseMentions(text, participants) : [];
+  const requested = explicitTargetFamiliarIds ?? mentioned;
+  const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
+  return {
+    targetIds: targeted
+      ? groupFamiliarIds.filter((id) => requested.includes(id))
+      : [...groupFamiliarIds],
+    targeted,
+  };
+}
+
+/** Prefix a suggestion with the author mention shown in the user transcript. */
+export function mentionSuggestionAuthor(suggestion: string, displayName: string): string {
+  return `@${displayName.trim()} ${suggestion.trim()}`.trim();
 }
 
 /**
@@ -258,6 +382,8 @@ export function makeGroup(
     name: name.trim() || "New coven",
     familiarIds: dedupe(familiarIds),
     sessions: {},
+    responseMode: "broadcast",
+    nextRoundRobinLeadId: dedupe(familiarIds)[0],
     createdAt: now,
     updatedAt: now,
   };
@@ -297,7 +423,48 @@ export function setGroupParticipants(
   for (const id of ids) {
     if (group.sessions[id]) sessions[id] = group.sessions[id];
   }
-  return { ...group, familiarIds: ids, sessions, updatedAt: now };
+  const nextRoundRobinLeadId = ids.includes(group.nextRoundRobinLeadId ?? "")
+    ? group.nextRoundRobinLeadId
+    : ids[0];
+  return { ...group, familiarIds: ids, sessions, nextRoundRobinLeadId, updatedAt: now };
+}
+
+export function setGroupResponseMode(
+  group: CovenGroup,
+  responseMode: CovenResponseMode,
+  now: string,
+): CovenGroup {
+  return {
+    ...group,
+    responseMode,
+    nextRoundRobinLeadId:
+      group.nextRoundRobinLeadId && group.familiarIds.includes(group.nextRoundRobinLeadId)
+        ? group.nextRoundRobinLeadId
+        : group.familiarIds[0],
+    updatedAt: now,
+  };
+}
+
+/** Rotate selected recipients around the persisted Coven lead. */
+export function orderRoundRobinFamiliarIds(
+  familiarIds: string[],
+  targetIds: string[],
+  nextLeadId?: string,
+): string[] {
+  const roster = dedupe(familiarIds);
+  const targets = new Set(dedupe(targetIds));
+  if (roster.length === 0 || targets.size === 0) return [];
+  const start = Math.max(0, nextLeadId ? roster.indexOf(nextLeadId) : 0);
+  const rotated = [...roster.slice(start), ...roster.slice(0, start)];
+  return rotated.filter((id) => targets.has(id));
+}
+
+/** Advance the persisted lead one roster slot after the familiar that led. */
+export function nextRoundRobinLeadId(familiarIds: string[], leadId: string): string | undefined {
+  const roster = dedupe(familiarIds);
+  if (roster.length === 0) return undefined;
+  const leadIndex = roster.indexOf(leadId);
+  return roster[(leadIndex < 0 ? 0 : leadIndex + 1) % roster.length];
 }
 
 function dedupe(ids: string[]): string[] {
@@ -342,7 +509,7 @@ export function renderCovenRoster(
     if (p.kind === "human") return `- ${p.name} (human)`;
     const role = p.role.trim() ? ` — ${p.role.trim()}` : "";
     const you = p.id === receivingFamiliarId ? " (you)" : "";
-    return `- ${p.name}${role}${you}`;
+    return `- ${p.name}${role}${you} [familiar-id: ${p.id}]`;
   });
   return [
     "<coven_roster>",
@@ -359,6 +526,13 @@ export type CovenRoundtablePromptArgs = {
   userText: string;
   targeted: boolean;
 };
+
+const COVEN_DELEGATION_PROMPT_LINES = [
+  "Do not merely suggest that the human ask another familiar to do something.",
+  "When the human explicitly asks you to give, assign, delegate, or hand off a task to another familiar in this coven, address that familiar directly using their exact @display name and state the concrete task.",
+  'After the visible @mention task, append exactly one hidden routing trailer using the roster id: <coven:delegation target="familiar-id">the same concrete task</coven:delegation>.',
+  "Only emit that trailer for an explicit delegation request addressed to you; ordinary references to another familiar are not delegations.",
+] as const;
 
 /**
  * Build the default group-chat prompt for one familiar.
@@ -379,10 +553,68 @@ export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): st
       : "This is an independent first-pass group reply. Other familiars receive the same human request in parallel.",
     "Answer from your own identity, role, and judgment.",
     "Do not summarize, predict, imitate, or speak for other familiars.",
-    "If useful, state what you would hand off to another familiar, but keep your answer yours.",
+    ...COVEN_DELEGATION_PROMPT_LINES,
     "</coven_roundtable>",
   ].join("\n");
   return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
+}
+
+export type CovenRoundRobinPromptArgs = CovenRoundtablePromptArgs & {
+  transcript: GroupTurn[];
+  familiarNames: MentionableFamiliar[];
+};
+
+/** Build one sequential reply prompt with settled peer context. */
+export function renderCovenRoundRobinPrompt(args: CovenRoundRobinPromptArgs): string {
+  const roster = renderCovenRoster(args.participants, args.receivingFamiliarId);
+  const context = renderCovenContext(args.transcript, args.receivingFamiliarId, args.familiarNames);
+  const mode = [
+    "<coven_round_robin>",
+    args.targeted
+      ? "You were directly mentioned in this coven's round-robin conversation."
+      : "You are taking your turn in this coven's round-robin conversation.",
+    "Read the other participants' completed replies provided below, then answer as yourself.",
+    "Use your own identity, role, and judgment. You may agree, disagree, extend, or redirect the discussion.",
+    "Do not imitate another familiar or present their words as your own.",
+    ...COVEN_DELEGATION_PROMPT_LINES,
+    "</coven_round_robin>",
+  ].join("\n");
+  return [roster, mode, context, args.userText.trim()].filter(Boolean).join("\n\n");
+}
+
+export type CovenReplyRunner = (
+  reply: GroupReply,
+  settledBefore: GroupReply[],
+) => Promise<GroupReply>;
+
+/**
+ * Dispatch one Coven turn. Broadcast starts every reply together. Round robin
+ * waits for each reply before starting the next and exposes the settled prefix
+ * to the prompt builder. Aborted queued replies are settled as cancelled without
+ * invoking the runner, so Stop cannot leak another request after cancellation.
+ */
+export async function runCovenReplySchedule(args: {
+  mode: CovenResponseMode;
+  replies: GroupReply[];
+  signal: AbortSignal;
+  runReply: CovenReplyRunner;
+  onCancelled?: (reply: GroupReply) => void;
+}): Promise<GroupReply[]> {
+  if (args.mode === "broadcast") {
+    return Promise.all(args.replies.map((reply) => args.runReply(reply, [])));
+  }
+
+  const settled: GroupReply[] = [];
+  for (const reply of args.replies) {
+    if (args.signal.aborted) {
+      const cancelled = { ...reply, status: "error" as const, error: "cancelled", activity: undefined };
+      settled.push(cancelled);
+      args.onCancelled?.(cancelled);
+      continue;
+    }
+    settled.push(await args.runReply(reply, [...settled]));
+  }
+  return settled;
 }
 
 // ---------------------------------------------------------------------------
@@ -412,8 +644,9 @@ function escapeCovenPromptText(text: string): string {
  * Third-person, named, with an explicit stay-yourself guard (Coven canon).
  * Excludes the receiving familiar's own turns (already in its resumed session),
  * keeps only settled non-empty replies, and windows to the last N rounds. The
- * caller passes already-cleaned reply text (next-paths block stripped) so this
- * stays dependency-free. Returns "" when there is nothing to relay.
+ * The caller strips next-path controls; this helper strips delegation controls
+ * itself so hidden routing markup can never enter another familiar's prompt.
+ * Returns "" when there is nothing to relay.
  */
 export function renderCovenContext(
   transcript: GroupTurn[],
@@ -442,12 +675,14 @@ export function renderCovenContext(
   const kept = rounds
     .map((r) => ({
       user: r.user,
-      replies: r.replies.filter(
-        (rep) =>
-          rep.status === "done" &&
-          rep.text.trim() !== "" &&
-          rep.familiarId !== receivingFamiliarId,
-      ),
+      replies: r.replies
+        .map((rep) => ({ ...rep, text: extractCovenDelegations(rep.text).visible.trim() }))
+        .filter(
+          (rep) =>
+            rep.status === "done" &&
+            rep.text !== "" &&
+            rep.familiarId !== receivingFamiliarId,
+        ),
     }))
     .filter((r) => r.replies.length > 0);
 
@@ -461,7 +696,7 @@ export function renderCovenContext(
     const lines: string[] = [`(human) asked: "${escapeCovenPromptText(r.user.text.trim())}"`];
     for (const rep of r.replies) {
       lines.push(`${escapeCovenPromptText(nameOf(rep.familiarId))} said:`);
-      lines.push(escapeCovenPromptText(rep.text.trim()));
+      lines.push(escapeCovenPromptText(rep.text));
     }
     return lines.join("\n");
   });
@@ -480,7 +715,7 @@ export function loadGroups(): CovenGroup[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isCovenGroup);
+    return parsed.filter(isCovenGroup).map(normalizeCovenGroup);
   } catch {
     return [];
   }
@@ -501,10 +736,25 @@ export function loadTranscript(groupId: string): GroupTurn[] {
     const raw = localStorage.getItem(TRANSCRIPTS_KEY_PREFIX + groupId);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as GroupTurn[]) : [];
+    // Cap on load too so a legacy oversized transcript shrinks the first time
+    // it is opened instead of being re-serialized whole on every save.
+    return Array.isArray(parsed) ? capTranscript(parsed as GroupTurn[], TRANSCRIPT_CAP) : [];
   } catch {
     return [];
   }
+}
+
+/**
+ * Keep at most the trailing `max` turns, then drop any leading assistant
+ * replies whose user turn fell off the front — an orphaned reply has no
+ * thread to render under, so persisting it would only strand invisible data.
+ * Pure and exported for tests.
+ */
+export function capTranscript(turns: GroupTurn[], max: number): GroupTurn[] {
+  const tail = turns.length > max ? turns.slice(turns.length - max) : turns;
+  const firstUser = tail.findIndex((t) => t.role === "user");
+  if (firstUser <= 0) return firstUser === 0 ? tail : [];
+  return tail.slice(firstUser);
 }
 
 export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
@@ -515,7 +765,10 @@ export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
     const settled = turns.filter(
       (t) => t.role === "user" || (t as GroupReply).status === "done" || (t as GroupReply).status === "error",
     );
-    localStorage.setItem(TRANSCRIPTS_KEY_PREFIX + groupId, JSON.stringify(settled));
+    localStorage.setItem(
+      TRANSCRIPTS_KEY_PREFIX + groupId,
+      JSON.stringify(capTranscript(settled, TRANSCRIPT_CAP)),
+    );
   } catch {
     /* ignore */
   }
@@ -531,4 +784,17 @@ function isCovenGroup(value: unknown): value is CovenGroup {
     typeof g.sessions === "object" &&
     g.sessions !== null
   );
+}
+
+function normalizeCovenGroup(group: CovenGroup): CovenGroup {
+  const responseMode: CovenResponseMode = COVEN_RESPONSE_MODES.includes(group.responseMode)
+    ? group.responseMode
+    : "broadcast";
+  const nextLead = group.nextRoundRobinLeadId;
+  return {
+    ...group,
+    responseMode,
+    nextRoundRobinLeadId:
+      nextLead && group.familiarIds.includes(nextLead) ? nextLead : group.familiarIds[0],
+  };
 }

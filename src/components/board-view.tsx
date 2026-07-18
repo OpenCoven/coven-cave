@@ -1,7 +1,7 @@
 "use client";
 
 import "@/styles/board.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
@@ -12,9 +12,12 @@ import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } f
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -23,6 +26,7 @@ import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
@@ -30,6 +34,9 @@ import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 
 type ViewMode = "kanban" | "table" | "gantt";
 
@@ -41,6 +48,12 @@ function loadPref<T extends string>(key: string, fallback: T, valid: T[]): T {
 
 type Props = {
   familiars: Familiar[];
+  /** Work-queue merge (cave-oa1z): the queue rides the Tasks page as a tab.
+   *  The slot keeps BoardView ignorant of the queue's data plumbing (the
+   *  Schedules calendar-slot pattern), and `initialTab` lets the legacy
+   *  familiar-work-queue mode deep-link straight onto the tab. */
+  queueSlot?: ReactNode;
+  initialTab?: "tasks" | "queue";
   sessions: SessionRow[];
   activeFamiliarId: string | null;
   /** Multiselect scope (empty = All). When ≥2 are selected the board filters to
@@ -76,13 +89,20 @@ function BoardKanbanSkeleton() {
   );
 }
 
-export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl }: Props) {
+export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl, queueSlot, initialTab }: Props) {
   const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState<"tasks" | "queue">(
+    initialTab === "queue" && queueSlot ? "queue" : "tasks",
+  );
   const [cards, setCards] = useState<Card[]>([]);
   // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores them (mirrors chat/projects).
   const { pending: deletePending, scheduleDelete: scheduleCardDelete, undo: undoCardDelete, commit: commitCardDelete } = useUndoDelete<Card[]>();
   const [error, setError] = useState<string | null>(null);
+  // Quiet-poll degradation: ≥2 consecutive background refresh failures while
+  // last-good cards stay rendered (cave-x6k5). Non-blocking strip, not `error`.
+  const [stale, setStale] = useState(false);
+  const quietFailStreakRef = useRef(0);
   // Distinguish "still loading" from "loaded and empty" so the empty-state
   // CTA doesn't flash on every open before the first GET resolves.
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -110,6 +130,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
+  // The card whose chat start failed — the harness fix row needs it to know
+  // which familiar to rebind and which task chat to re-run.
+  const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
@@ -122,16 +145,38 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // aria-silent, and only kanban's drag flow had an announcer before.
   const { announce } = useAnnouncer();
   const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
+  // Card that just moved to Done — drives the kanban's one-shot reward flare,
+  // then clears so a re-render can't replay it.
+  const [rewardCardId, setRewardCardId] = useState<string | null>(null);
+  const rewardClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+  }, []);
 
   // `quiet` is for background polls: a transient poll failure must not blank
   // the board (setCards([])) or flash an error — leave the last-good cards in
   // place. Explicit loads (mount, focus, reload event) stay loud. Callers that
   // pass an event (e.g. useRefreshOnFocus) read as not-quiet, which is correct.
+  //
+  // Sequence guard: load() fires from five overlapping sources (mount, focus
+  // refresh, the reload event, the 15s poll, and the failure-revert paths in
+  // patchCard/deleteCards/handleClearDone). Without this, whichever GET
+  // *resolves* last wins — which may be an *older* request, so a slow poll can
+  // land after an optimistic move (drag/table edit, neither of which pauses the
+  // poll) and clobber it back to the pre-move state until the next tick. Abort
+  // the prior in-flight load before each new one and drop a superseded (aborted)
+  // response, so only the latest load ever touches state (mirrors
+  // capabilities-view / marketplace-configure).
+  const loadCtlRef = useRef<AbortController | null>(null);
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
     const quiet = opts?.quiet === true;
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
+      const res = await fetch("/api/board", { cache: "no-store", signal: ctl.signal });
       const json = await res.json();
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       if (json.ok) {
         const loaded = json.cards as Card[];
         // Poll ticks rebuild an identical array most of the time; keep the
@@ -140,21 +185,35 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         // as workspace.tsx's poll over this endpoint).
         setCards((prev) => (arrayContentEqual(prev, loaded) ? prev : loaded));
         setError(null);
+        quietFailStreakRef.current = 0;
+        setStale(false);
       } else if (!quiet) {
         setCards([]);
         setError(json.error ?? "load failed");
+      } else {
+        // Quiet polls used to swallow failures entirely — last-good cards
+        // stayed up with no freshness cue (cave-x6k5). Two consecutive
+        // failures flip a non-blocking "showing earlier data" strip.
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
       }
     } catch (err) {
+      if (ctl.signal.aborted) return; // aborted mid-flight — leave state to the newer load
       if (!quiet) {
         setCards([]);
         setError(err instanceof Error ? err.message : "load failed");
+      } else {
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
       }
     } finally {
-      setHasLoaded(true);
+      if (!ctl.signal.aborted) setHasLoaded(true);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // Abort any in-flight load when the board unmounts.
+  useEffect(() => () => loadCtlRef.current?.abort(), []);
 
   // "/" jumps to the task search (GitHub-style) while the board is shown,
   // unless the user is already typing in a field or holding a modifier.
@@ -287,6 +346,32 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) setSelectedCardId(null);
   }, [cards, selectedCardId]);
 
+  // Selection survives a view-mode switch (state lives here, not in the
+  // views), but the freshly mounted view renders from scroll 0 — the
+  // still-selected card the open inspector describes can sit far off-screen.
+  // After the new view commits, bring it back into view. Scroll only, no
+  // focus steal — the user's focus belongs on the toggle they just clicked.
+  const viewAreaRef = useRef<HTMLDivElement | null>(null);
+  const prevViewModeRef = useRef(viewMode);
+  useEffect(() => {
+    const switched = prevViewModeRef.current !== viewMode;
+    prevViewModeRef.current = viewMode;
+    if (!switched || !selectedCardId) return;
+    // Two-frame retry: the mounted view may still be revealing the
+    // default-collapsed group / unscheduled tray that holds the selection
+    // (cave-iote), so a missing node gets exactly one more frame to appear.
+    let attempts = 0;
+    let frame = requestAnimationFrame(function locate() {
+      const el = viewAreaRef.current?.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
+      if (attempts++ === 0) frame = requestAnimationFrame(locate);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewMode, selectedCardId]);
+
   const lifecycleForStatus = (status: CardStatus) => {
     if (status === "running") return "running" as const;
     if (status === "review") return "review" as const;
@@ -294,6 +379,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (status === "done") return "completed" as const;
     return "queued" as const;
   };
+
+  // (cave-381s) In-flight PATCH counter + deferred-reconcile flag: a failed
+  // patch inside a parallel bulk batch must not reload the board out from
+  // under its still-in-flight siblings. See patchCard's finally block.
+  const inFlightPatchesRef = useRef(0);
+  const reloadWhenPatchesSettleRef = useRef(false);
 
   const patchCard = async (id: string, patch: CardPatch, armUndo = true) => {
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
@@ -328,6 +419,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         ? { ...c, ...plain, ...applyCardOps(c, ops, new Date().toISOString()) }
         : { ...c, ...plain };
     }));
+    inFlightPatchesRef.current += 1;
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       const json = await res.json();
@@ -335,14 +427,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         // Revert to the server copy and tell the user — an optimistic change
         // that silently snaps back reads as a glitch.
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
-        await load();
+        reloadWhenPatchesSettleRef.current = true;
       } else {
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
     } catch {
       setActionError("Couldn't reach the server — your change was reverted.");
-      await load();
+      reloadWhenPatchesSettleRef.current = true;
+    } finally {
+      // (cave-381s) Bulk ops fire patchCard per id in parallel; a failure used
+      // to `await load()` IMMEDIATELY, which reverted the optimistic state of
+      // sibling patches still in flight (transient flicker as each settled and
+      // re-applied). The reconciling reload now waits for the whole batch:
+      // only the LAST settling patch runs it, once. A solo patch (count 1→0)
+      // still reloads right away — single-op behavior is unchanged.
+      inFlightPatchesRef.current -= 1;
+      if (inFlightPatchesRef.current === 0 && reloadWhenPatchesSettleRef.current) {
+        reloadWhenPatchesSettleRef.current = false;
+        await load();
+      }
     }
   };
 
@@ -351,15 +455,39 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (status === "running") (patch as Record<string, unknown>).runningSince = new Date().toISOString();
     const title = cards.find((c) => c.id === id)?.title;
     if (title) announce(`Moved '${title}' to ${status.charAt(0).toUpperCase()}${status.slice(1)}.`);
-    void patchCard(id, patch);
+    // One-shot completion flare on the card as it lands in Done (the announce
+    // above is the AT channel; this is purely visual). Gated on the
+    // celebrations pref; reduced-motion collapses the animation in CSS.
+    if (status === "done" && readCelebrationsEnabled()) {
+      setRewardCardId(id);
+      if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+      rewardClearRef.current = setTimeout(() => setRewardCardId(null), 900);
+    }
+    // Return the patch promise so bulkMove's Promise.all actually waits for
+    // the batch — bulkBusy used to clear while the PATCHes were still in
+    // flight (cave-381s). Fire-and-forget callers are unaffected.
+    return patchCard(id, patch);
   };
 
   const create = async (draft: NewCardDraft) => {
-    const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error ?? "create failed");
-    announce(`Created task '${draft.title.trim()}'.`);
-    await load();
+    try {
+      const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
+      // Guard the parse: a 500/HTML error page is not JSON and would otherwise
+      // throw an opaque parse error into the caller (which quick-add `void`s,
+      // silently dropping the failure).
+      const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
+      if (!json.ok) throw new Error(json.error ?? "create failed");
+      setActionError(null);
+      announce(`Created task '${draft.title.trim()}'.`);
+      await load();
+    } catch (err) {
+      // Surface to the board's inline error banner so a failed quick-add is
+      // never silent; rethrow so the New-card modal path can react too.
+      setActionError(
+        err instanceof Error ? `Couldn't create the task — ${err.message}` : "Couldn't create the task.",
+      );
+      throw err;
+    }
   };
 
   // Inline quick-add from a kanban column: title-only card in that column's
@@ -587,6 +715,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);
+    setChatLinkErrorCardId(null);
     try {
       const res = await fetch(`/api/board/${id}/chat`, {
         method: "POST",
@@ -604,6 +733,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       onJumpToSession?.(json.sessionId, json.familiarId);
     } catch (err) {
       setChatLinkError(err instanceof Error ? err.message : "failed to open task chat");
+      setChatLinkErrorCardId(id);
     } finally {
       setChatLinkingId(null);
     }
@@ -623,11 +753,57 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     await startTaskChat(id);
   };
 
+  // Recovery for a harness/runtime failure while starting a task chat: rebind
+  // the card's familiar to the chosen adapter via /api/config, then re-run the
+  // same task-chat start.
+  const useHarnessForTaskChat = async (runtime: string) => {
+    const id = chatLinkErrorCardId;
+    if (!id || chatLinkingId !== null) return;
+    const card = cards.find((candidate) => candidate.id === id);
+    const familiarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
+    if (!familiarId) return;
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+        }),
+      });
+      if (!res.ok) {
+        setChatLinkError(`Could not switch harness (${res.status}).`);
+        return;
+      }
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
+      await onOpenTaskChat(id);
+    } catch {
+      setChatLinkError("Could not switch harness.");
+    }
+  };
+  const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
+
   return (
     <section className="board-shell">
       {/* Header */}
       <header className="board-header">
         <span className="board-header-title">Tasks</span>
+        {queueSlot ? (
+          <Tabs
+            className="board-header-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Tasks tabs"
+            idPrefix="tasks"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { id: "tasks" as const, label: "Tasks" },
+              { id: "queue" as const, label: "Queue" },
+            ]}
+          />
+        ) : null}
+        {activeTab === "tasks" ? (
+        <>
         <div className="board-search-wrap">
           <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
           <label className="sr-only" htmlFor="board-search">Search tasks</label>
@@ -748,18 +924,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             </button>
           </div>
 
-          {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode && (
-            <button
-              type="button"
-              className="board-toolbar-btn"
-              onClick={() => cardSelect.setSelectMode(true)}
-              title="Select multiple tasks"
-            >
-              <Icon name="ph:check-square" width={13} />
-              Select
-            </button>
-          )}
-
+          {/* Chrome budget (§8): Select-multiple and Clear-done are occasional
+              verbs — they live in the overflow menu. The destructive clear
+              still routes through the inline confirm group, which temporarily
+              replaces the menu while deciding. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -779,16 +947,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="board-toolbar-btn"
-              onClick={() => setClearConfirm(true)}
-              disabled={doneCards.length === 0}
-              title="Remove all done tasks in view"
-            >
-              <Icon name="ph:trash" width={13} />
-              Clear done
-            </button>
+            <OverflowMenu ariaLabel="More task actions">
+              {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode ? (
+                <PopoverItem
+                  icon="ph:check-square"
+                  onSelect={() => cardSelect.setSelectMode(true)}
+                  title="Select multiple tasks"
+                >
+                  Select multiple
+                </PopoverItem>
+              ) : null}
+              <PopoverItem
+                icon="ph:trash"
+                danger
+                disabled={doneCards.length === 0}
+                onSelect={() => setClearConfirm(true)}
+                title="Remove all done tasks in view"
+              >
+                Clear done
+              </PopoverItem>
+            </OverflowMenu>
           )}
 
           <button
@@ -799,8 +977,25 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             + New task
           </button>
         </div>
+        </>
+        ) : null}
       </header>
 
+      {activeTab === "queue" && queueSlot ? (
+        <div
+          role="tabpanel"
+          id="tasks-panel-queue"
+          aria-labelledby="tasks-tab-queue"
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          {queueSlot}
+        </div>
+      ) : null}
+
+      {/* The board body stays mounted while the queue tab shows (polls keep
+          state warm for the switch back); display:contents preserves the
+          shell's flex layout when visible. */}
+      <div style={{ display: activeTab === "queue" ? "none" : "contents" }}>
       {error && (
         <div
           role="alert"
@@ -810,23 +1005,39 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
           </span>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
             Retry
-          </button>
+          </Button>
+        </div>
+      )}
+      {!error && stale && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:clock-countdown" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">Refresh is failing — showing earlier data.</span>
+          </span>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+            Retry
+          </Button>
         </div>
       )}
       {chatLinkError && (
         <div
           role="alert"
-          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+          className="flex flex-wrap items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
-          <span className="min-w-0 truncate">{chatLinkError}</span>
+          <span className="min-w-0 flex-1 truncate">{chatLinkError}</span>
+          {chatLinkFailure && chatLinkErrorCardId ? (
+            <HarnessFixActions
+              failure={chatLinkFailure}
+              busy={chatLinkingId !== null}
+              onUseHarness={useHarnessForTaskChat}
+            />
+          ) : null}
         </div>
       )}
       {clearedBanner && (
@@ -840,14 +1051,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               Cleared {clearedBanner.snapshot.length} done task{clearedBanner.snapshot.length === 1 ? "" : "s"}
             </span>
           </span>
-          <button
-            type="button"
-            onClick={() => void handleUndoClear()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={() => void handleUndoClear()}>
             Undo
-          </button>
+          </Button>
         </div>
       )}
       {rescheduleUndo && (
@@ -861,14 +1067,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               Rescheduled “{rescheduleUndo.title}”
             </span>
           </span>
-          <button
-            type="button"
-            onClick={handleUndoReschedule}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={handleUndoReschedule}>
             Undo
-          </button>
+          </Button>
         </div>
       )}
       {actionError && (
@@ -892,7 +1093,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       )}
 
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div ref={viewAreaRef} style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {cardSelect.selectMode && (
           <div className="px-5 pt-3">
             <SelectionToolbar
@@ -1004,7 +1205,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               <button
                 type="button"
                 onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
-                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-85"
               >
                 <Icon name="ph:plus-bold" width={12} />
                 New task
@@ -1058,6 +1259,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
+            rewardCardId={rewardCardId}
             wipLimits={wipLimits} onSetWipLimit={setWipLimitFor}
             onQuickAdd={quickAdd}
             onJumpToSession={onJumpToSession}
@@ -1096,11 +1298,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+          onUseHarnessFix={
+            chatLinkErrorCardId === selectedCard.id ? useHarnessForTaskChat : undefined
+          }
         />
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
-        familiars={familiars} sessions={sessions} projects={projects}
+        familiars={familiars} sessions={sessions}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
       {deletePending ? (
@@ -1112,6 +1317,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           onDismiss={commitCardDelete}
         />
       ) : null}
+      </div>
     </section>
   );
 }

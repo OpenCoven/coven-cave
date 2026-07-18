@@ -1,33 +1,23 @@
 // Pure view-model for the unified /dashboard surface. Composes the existing
-// daily-report helpers and decides, from the live inbox, how to order the
-// single-page layout: triage-first when something needs you, calm-first when
-// caught up. Today's daily summary (metrics, narrative, familiar updates) is
-// folded in here so the dashboard *is* the day's report — the standalone
-// /daily-report/[date] route remains for historical days.
+// daily-report helpers over the live inbox. Today's daily summary (narrative,
+// day-in-review facts) is folded in here so the dashboard *is* the day's
+// report — the standalone /daily-report/[date] route remains for historical
+// days. (The cockpit's panel order lives in its own Layout system; the old
+// zones-based dashboardLayout()/DashboardZone were removed as dead code —
+// cave-pbk4.)
 //
 // Kept free of `node:` imports — `InboxItem` is a type-only import — so the
 // client action-inbox island and the strip-types tests can import it safely.
 
 import type { InboxItem } from "./cave-inbox";
+import type { DailyReportPayload } from "./daily-report-facts";
 import {
   breakdownForDay,
   dateSlug,
-  liveSnapshot,
   parseRecentSessions,
   recentReports,
-  type DailyReportStats,
   type RecentReport,
 } from "./daily-report";
-
-/** Zones the dashboard can render, in display order. Presence varies by state. */
-export type DashboardZone =
-  | "caughtUpStrip"
-  | "actionInbox"
-  | "metrics"
-  | "todaySummary"
-  | "familiarUpdates"
-  | "launcher"
-  | "recentReports";
 
 /** Today's generated daily summary, surfaced inline on the dashboard. */
 export type TodaySummary = {
@@ -38,6 +28,10 @@ export type TodaySummary = {
   generatedAt: string | null;
   /** Read-only session names recovered from the frozen summary body. */
   recentSessions: string[];
+  /** Structured day-in-review facts — null on items generated before Phase B. */
+  report: DailyReportPayload | null;
+  /** Familiar-written narrative for today, or null before one generates. */
+  narrative: { text: string; familiarName?: string; generatedAt: string } | null;
 };
 
 export type DashboardModel = {
@@ -45,15 +39,10 @@ export type DashboardModel = {
   caughtUp: boolean;
   /** Open, actionable items — same set the old "Needs attention" list showed, capped. */
   needsAttention: InboxItem[];
-  /** Day-at-a-glance counts. Frozen (from today's report) when available, else live. */
-  metrics: DailyReportStats;
-  /** True when `metrics` is the live inbox snapshot rather than a frozen report. */
-  metricsLive: boolean;
-  /** Familiar updates fired today (live). */
-  familiarUpdates: InboxItem[];
+  /** True number of open items — `needsAttention` is capped for display, this isn't. */
+  openCount: number;
   /** Today's generated summary narrative, or null before one exists. */
   todaySummary: TodaySummary | null;
-  todaysReport: RecentReport | null;
   featuredReport: RecentReport | null;
   /** Reports other than the featured one (newest first). */
   recentReports: RecentReport[];
@@ -77,48 +66,22 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
         body: todayItem.body ?? "",
         imageUrl: todayItem.media?.imageUrl ?? null,
         alt: todayItem.media?.alt ?? "",
-        generatedAt: todayItem.firedAt ?? todayItem.updatedAt ?? null,
+        generatedAt: todayItem.media?.generatedAt ?? todayItem.firedAt ?? todayItem.updatedAt ?? null,
         recentSessions: parseRecentSessions(todayItem.body),
+        report: todayItem.media?.report ?? null,
+        narrative: todayItem.media?.narrative ?? null,
       }
     : null;
-
-  // Prefer the frozen counts captured when today's report ran (they include
-  // daemon-backed session counts the client can't see); fall back to the live
-  // snapshot before any report exists.
-  const frozen = todayItem?.media?.stats ?? null;
-  const metrics = frozen ?? liveSnapshot(items, now);
 
   return {
     date: now,
     caughtUp: breakdown.openItems.length === 0,
     needsAttention: breakdown.openItems.slice(0, NEEDS_ATTENTION_CAP),
-    metrics,
-    metricsLive: frozen === null,
-    familiarUpdates: breakdown.familiars,
+    openCount: breakdown.openItems.length,
     todaySummary,
-    todaysReport,
     featuredReport,
     recentReports: reports.filter((r) => r.slug !== featuredReport?.slug),
   };
-}
-
-/**
- * Ordered zones for the current state on the single unified page.
- *
- * - Busy → lead with the action inbox (triage), then the day at a glance,
- *   today's summary, the launcher, and recent reports.
- * - Caught up → lead with the calm strip, then metrics, today's story,
- *   familiar updates, the launcher, and recent reports.
- *
- * The `metrics` and `todaySummary` zones always render: `metrics` shows live
- * counts before a report exists, and `todaySummary` falls back to a callout
- * linking the latest report when today's hasn't generated yet.
- */
-export function dashboardLayout(model: DashboardModel): DashboardZone[] {
-  if (model.caughtUp) {
-    return ["caughtUpStrip", "metrics", "todaySummary", "familiarUpdates", "launcher", "recentReports"];
-  }
-  return ["actionInbox", "metrics", "todaySummary", "launcher", "recentReports"];
 }
 
 /**

@@ -1,22 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
-  parseYoutubeVideoId,
-  youtubeThumbnail,
   parseTweetRef,
   compactAge,
   formatStars,
 } from "./home-feed.ts";
-
-// parseYoutubeVideoId — every common URL form + bare id.
-assert.equal(parseYoutubeVideoId("dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-assert.equal(parseYoutubeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-assert.equal(parseYoutubeVideoId("https://youtu.be/dQw4w9WgXcQ?t=10"), "dQw4w9WgXcQ");
-assert.equal(parseYoutubeVideoId("https://www.youtube.com/embed/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-assert.equal(parseYoutubeVideoId("https://www.youtube.com/shorts/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-assert.equal(parseYoutubeVideoId("https://example.com/watch?v=dQw4w9WgXcQ"), null, "non-YouTube host rejected");
-assert.equal(parseYoutubeVideoId("not a url"), null);
-assert.equal(youtubeThumbnail("abc12345678"), "https://i.ytimg.com/vi/abc12345678/mqdefault.jpg");
 
 // parseTweetRef — handle + status id, host normalization, tracking strip.
 const t1 = parseTweetRef("https://twitter.com/jack/status/20?s=20");

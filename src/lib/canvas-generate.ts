@@ -31,6 +31,9 @@ export type GenerateResult = {
   text: string;
   sessionId: string | null;
   error: string | null;
+  /** Structured cause so Canvas can repair format failures without retrying
+   * transport/auth/runtime failures or parsing user-facing copy. */
+  failure: "transport" | "format" | null;
 };
 
 /**
@@ -43,6 +46,8 @@ export async function generateArtifactCode(opts: {
   prompt: string;
   familiarId: string;
   projectRoot?: string | null;
+  /** Resume the hidden Canvas-origin conversation (used by one-shot repair). */
+  sessionId?: string | null;
   signal?: AbortSignal;
   onText?: (fullText: string) => void;
 }): Promise<GenerateResult> {
@@ -54,62 +59,89 @@ export async function generateArtifactCode(opts: {
       body: JSON.stringify({
         familiarId: opts.familiarId,
         prompt: opts.prompt,
+        sessionId: opts.sessionId ?? undefined,
         projectRoot: opts.projectRoot ?? undefined,
+        // Provenance: these sends belong to the Canvas/artifact surface, so
+        // the chat lists can keep them out of the conversation rail.
+        origin: "canvas",
       }),
       signal: opts.signal,
     });
   } catch (err) {
-    return { code: null, kind: null, text: "", sessionId: null, error: (err as Error)?.message ?? "request failed" };
+    return {
+      code: null,
+      kind: null,
+      text: "",
+      sessionId: opts.sessionId ?? null,
+      error: opts.signal?.aborted ? "cancelled" : (err as Error)?.message ?? "request failed",
+      failure: "transport",
+    };
   }
   if (!res.ok || !res.body) {
-    return { code: null, kind: null, text: "", sessionId: null, error: `chat bridge ${res.status}` };
+    return {
+      code: null,
+      kind: null,
+      text: "",
+      sessionId: opts.sessionId ?? null,
+      error: `chat bridge ${res.status}`,
+      failure: "transport",
+    };
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
-  let sessionId: string | null = null;
+  let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      switch (ev.kind) {
-        case "assistant_chunk":
-          text += ev.text ?? "";
-          opts.onText?.(text);
-          break;
-        case "session":
-          sessionId = ev.sessionId ?? sessionId;
-          break;
-        case "done":
-          if (ev.sessionId) sessionId = ev.sessionId;
-          if (ev.isError) error = error ?? "the familiar reported an error";
-          break;
-        case "error":
-          error = ev.message ?? "generation error";
-          break;
+  // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
+  // unguarded loop turned that into a rejected promise that wedged callers'
+  // "generating" state forever (cave-v35w). Convert to a normal error result
+  // and keep any partial text.
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const ev = parseSseFrame(frame);
+        if (!ev) continue;
+        switch (ev.kind) {
+          case "assistant_chunk":
+            text += ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "session":
+            sessionId = ev.sessionId ?? sessionId;
+            break;
+          case "done":
+            if (ev.sessionId) sessionId = ev.sessionId;
+            if (ev.isError) error = error ?? "the familiar reported an error";
+            break;
+          case "error":
+            error = ev.message ?? "generation error";
+            break;
+        }
       }
     }
+  } catch (err) {
+    error = opts.signal?.aborted
+      ? "cancelled"
+      : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
   const extracted = extractArtifact(text);
-  if (!extracted && !error) {
-    error = "The familiar didn't return a renderable UI. Try rephrasing.";
-  }
+  const failure = error ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
     text,
     sessionId,
-    error,
+    error: error ?? (failure === "format" ? "response format could not be previewed" : null),
+    failure,
   };
 }

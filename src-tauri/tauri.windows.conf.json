@@ -1,0 +1,19 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "resources": [
+      "resources/server-archive/**/*",
+      "resources/node/**/*"
+    ],
+    "windows": {
+      "wix": {
+        "fragmentPaths": [
+          "./windows/fragments/sidecar-cache-cleanup.wxs"
+        ],
+        "componentRefs": [
+          "SidecarRuntimeCleanupAnchor"
+        ]
+      }
+    }
+  }
+}

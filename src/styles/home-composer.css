@@ -18,8 +18,8 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 40px 32px 56px;
-  gap: 16px;
+  padding: var(--space-10) var(--space-8) 56px;
+  gap: var(--space-4);
   overflow-y: auto;
   box-sizing: border-box;
   /* The composer fills the width of the area it resides in (the detail panel),
@@ -49,8 +49,8 @@
 
 @media (max-width: 520px) {
   .home-composer-root {
-    padding: 20px 16px 28px;
-    gap: 12px;
+    padding: var(--space-5) var(--space-4) 28px;
+    gap: var(--space-3);
   }
 }
 
@@ -60,18 +60,73 @@
   margin-bottom: 18px;
 }
 
+/* Mono presence eyebrow — the cave greets you before asking for intent. It
+   samples the client clock after mount, so it fades in via .is-ready (the
+   reserved min-height keeps the headline from shifting). */
+.home-composer-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 var(--space-3);
+  min-height: 15px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 400ms var(--ease-standard);
+}
+
+.home-composer-eyebrow.is-ready {
+  opacity: 1;
+}
+
+/* Presence dot — the brand accent means "something is alive here". */
+.home-composer-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-composer-eyebrow-dot {
+    animation: home-dot-pulse 4.5s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes home-dot-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 50%, transparent); }
+  50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
+}
+
+/* Cave home headline — Classic Coven identity moment.
+   Uses the canonical display face (EB Garamond) per OpenCoven DESIGN.md §4.
+   The serif is intentional: the home surface is where Val + her familiars
+   *arrive* every session, and the type should feel like a coven's field
+   manual, not a Vercel dashboard. */
 .home-composer-headline {
-  font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
+  font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(26px, 3.8vw, 44px);
-  line-height: 1.1;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.15;
   color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
-  letter-spacing: -0.02em;
+  /* EB Garamond's proportions already read tight — near-zero tracking
+     lets the letterforms breathe without the corporate feel of -0.02em. */
+  letter-spacing: -0.005em;
   margin: 0 0 6px;
 }
 
+/* The active project name carries the presence tint. */
+.home-composer-headline-project {
+  color: color-mix(in oklch, var(--accent-presence) 78%, var(--text-primary));
+}
+
 .home-composer-sub {
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--text-muted);
   margin: 0;
   letter-spacing: -0.01em;
@@ -87,19 +142,60 @@
   container-type: inline-size;
 }
 
-/* ── Composer card ───────────────────────────────────────────────────────── */
+/* ── Hearth glow — the page's signature ──────────────────────────────────────
+ *   A soft lavender halo behind the composer: the accent-is-presence rule made
+ *   ambient. It breathes slowly, brightens while the composer holds focus, and
+ *   holds still under prefers-reduced-motion. Kept inside the page padding so
+ *   it never trips horizontal overflow on the scrollable root. */
+.home-halo {
+  position: absolute;
+  inset: -110px -20px -70px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    46% 68% at 50% 44%,
+    color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    transparent 72%
+  );
+  opacity: 0.75;
+  transition: opacity 600ms var(--ease-standard);
+}
+
+.home-composer-card-wrap:focus-within .home-halo {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-halo {
+    animation: home-halo-breathe 9s var(--ease-standard) infinite alternate;
+  }
+}
+
+@keyframes home-halo-breathe {
+  from { transform: scale(0.97); }
+  to { transform: scale(1.04); }
+}
+
+/* Light mode: the halo tints rather than glows — damp it. */
+[data-mode="light"] .home-halo {
+  opacity: 0.5;
+}
+[data-mode="light"] .home-composer-card-wrap:focus-within .home-halo {
+  opacity: 0.75;
+}
+
+/* ── Composer card ─────────────────────────────────────────────────────────
+ *   Chrome comes from the shared .cave-composer-panel class (cave-chat.css) so
+ *   the home input stays visually identical to the chat composer. This rule
+ *   only keeps the home layout constraints. */
 .home-composer-card {
   position: relative;
   width: 100%;
   max-width: 100%;
-  background: color-mix(in oklch, var(--bg-raised) 70%, var(--bg-base));
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  overflow: hidden;
-  box-shadow: 0 12px 40px color-mix(in oklch, var(--text-primary) 14%, transparent),
-              0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
+
+/* While a file drag hovers the card, tint the panel border toward the accent
+   so the drop target reads before the overlay fades in. */
 .home-composer-card.is-drop-active {
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
 }
@@ -111,7 +207,7 @@
   z-index: 5;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-card);
+  border-radius: inherit;
   background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base) 88%);
   border: 2px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
   pointer-events: none;
@@ -119,107 +215,57 @@
 .hc-drop-overlay-inner {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: var(--text-base);
   font-weight: 500;
   color: var(--text-primary);
 }
 
 .home-composer-card:focus-within {
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
-  box-shadow: 0 8px 40px color-mix(in oklch, var(--text-primary) 15%, transparent),
-              0 0 0 1px color-mix(in oklch, var(--accent-presence) 20%, transparent);
 }
 
-/* ── Textarea ────────────────────────────────────────────────────────────── */
-.hc-textarea {
-  width: 100%;
-  resize: none;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-primary);
-  /* 16px floor so iOS Safari doesn't auto-zoom on focus. The desktop
-     baseline was 15px — the 1px bump is barely perceptible and not
-     worth a (pointer: coarse) gate. */
-  font-size: 16px;
-  line-height: 1.6;
-  padding: 22px 22px 8px;
-  font-family: inherit;
-  min-height: 92px;
-  max-height: 240px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hairline) transparent;
-  display: block;
+/* ── Footer band ────────────────────────────────────────────────────────────
+ * The darker strip attached to the card's underside (reference layout):
+ * context pickers (project · agent) on the left, run settings on the right.
+ * Last child of the card, so the panel's overflow clips it to the rounded
+ * bottom corners — it reads as part of the card, one tone deeper. */
+.hc-footer-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
 }
 
-.hc-textarea::placeholder {
-  color: var(--text-muted);
-  opacity: 0.7;
+.hc-footer-band-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
+/* Phone width: the band's pickers wrap instead of crushing each other. */
+@container (max-width: 620px) {
+  .hc-footer-band {
+    flex-wrap: wrap;
+  }
+  .hc-footer-band-left {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Textarea ──────────────────────────────────────────────────────────────
+ *   Sizing and chrome come from the shared .cave-composer-input class plus the
+ *   same utility classes the chat composer uses; .hc-textarea stays as a
+ *   stable hook (tests, e2e) with home-only bits. */
 .hc-textarea:disabled {
   opacity: 0.5;
 }
-
-/* ── Action bar ──────────────────────────────────────────────────────────────
- *   One balanced row: a compact "who" cluster anchored left and the "run"
- *   config cluster anchored right (pushed there with margin-left:auto). The
- *   intent switch (Chat/Task) no longer lives here — it leads the card as a
- *   mode strip above the textarea — so the bar reads as pure send config. The
- *   larger column gap (vs the intra-group gap) keeps the clusters distinct. */
-.hc-action-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 10px 14px 14px;
-}
-
-/* Groups never split internally — a cluster wraps as a whole unit (so Speed and
- * the send button can't orphan onto their own line, as they did before). */
-.hc-control-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-/* Side clusters are content-sized (no grow → no trailing/leading gap). */
-.hc-control-group--who {
-  flex: 0 1 auto;
-}
-
-/* The run cluster is content-sized and pinned to the right edge. */
-.hc-control-group--run {
-  flex: 0 1 auto;
-  justify-content: flex-end;
-  margin-left: auto;
-}
-
-/* ── Attach button (paperclip) ───────────────────────────────────────────── */
-.hc-add-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  border-radius: var(--radius-control);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.hc-add-btn:hover:not(:disabled) {
-  background: var(--bg-base);
-  border-color: var(--border-hairline);
-  color: var(--text-secondary);
-}
-.hc-add-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Hidden native file input driven by the paperclip button. */
 .hc-file-input {
@@ -234,17 +280,18 @@
   border: 0;
 }
 
-/* ── Attachment chips ────────────────────────────────────────────────────── */
+/* ── Attachment chips — chat-style strip above the textarea ──────────────── */
 .hc-attachments-wrap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
 .hc-attachments-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px 0;
 }
 .hc-attachments-count {
   font-size: 10.5px;
@@ -256,8 +303,8 @@
 .hc-attachments-clear {
   border: none;
   background: transparent;
-  padding: 2px 4px;
-  font-size: 11px;
+  padding: 2px var(--space-1);
+  font-size: var(--text-xs);
   color: var(--text-muted);
   cursor: pointer;
   border-radius: 5px;
@@ -271,14 +318,14 @@
   gap: 6px;
   list-style: none;
   margin: 0;
-  padding: 0 14px 0;
+  padding: 0;
 }
 .hc-attachment {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   max-width: 220px;
-  padding: 3px 6px 3px 8px;
+  padding: 3px 6px 3px var(--space-2);
   border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
   background: var(--bg-base);
@@ -317,233 +364,31 @@
 }
 .hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* ── Enhance button ──────────────────────────────────────────────────────── */
-.hc-enhance-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
+/* The picker's caret is INLINE, so no phantom right padding — the chip hugs
+ * its name + caret and only ever truncates on long names. Pill radius, 30px
+ * height, and 11px type match the runtime/model chip beside it so the footer
+ * band reads as one control family. */
+.home-composer-card .cave-project-picker__trigger.hc-project-selector {
   height: 30px;
-  padding: 0 10px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.hc-enhance-btn:hover:not(:disabled) {
-  background: var(--bg-base);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-.hc-enhance-btn:disabled { opacity: 0.5; cursor: default; }
-.hc-enhance-btn.loading { color: var(--accent-presence); }
-.hc-enhance-label { line-height: 1; }
-.hc-enhance-undo {
-  flex-shrink: 0;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.hc-enhance-undo:hover:not(:disabled) { background: var(--bg-base); color: var(--text-secondary); }
-.hc-enhance-undo:disabled { opacity: 0.5; cursor: default; }
-
-@media (max-width: 640px) {
-  .hc-enhance-label { display: none; }
-}
-
-/* ── Model chip ──────────────────────────────────────────────────────────── */
-.hc-model-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 4px 8px;
-  border-radius: var(--radius-control);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.hc-model-chip:hover {
-  background: var(--bg-base);
-  border-color: var(--border-hairline);
-  color: var(--text-secondary);
-}
-.hc-model-bolt {
-  color: var(--accent-presence);
-  flex-shrink: 0;
-}
-.hc-model-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── Familiar selector ───────────────────────────────────────────────────── */
-.hc-familiar-selector {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
   min-height: 30px;
-  box-sizing: border-box;
+  max-width: 200px;
+  padding: 0 11px 0 var(--space-2);
+  font-size: var(--text-xs);
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  padding: 3px 7px 3px 6px;
-  flex: 0 1 auto;
-  min-width: 0;
 }
 
-.hc-home-select-trigger {
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.hc-home-select-trigger:hover:not(:disabled),
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:hover:not(:disabled) {
   background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
   border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.hc-home-select-trigger:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.hc-command-select {
-  gap: 6px;
-}
-
-.hc-runtime-model-selector {
-  max-width: 172px;
-}
-
-.hc-command-select .hc-command-select-label {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 550;
-  color: var(--text-muted);
-}
-
-.hc-familiar-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-/* Avatar image variant of the selector glyph: passing a className to
-   FamiliarAvatar overrides its default img styling, so restore the rounded,
-   cover-fit avatar look at the selector's icon size. */
-.hc-familiar-avatar {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.hc-home-select-value {
-  min-width: 0;
-  max-width: 132px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  padding-right: 14px;
-}
-
-.hc-runtime-model-selector .hc-home-select-value {
-  max-width: 142px;
-}
-
-.hc-home-select-popover {
-  min-width: 220px;
-}
-
-.hc-home-select-group + .hc-home-select-group {
-  border-top: 1px solid var(--border-hairline);
-  margin-top: 4px;
-  padding-top: 4px;
-}
-
-.hc-home-select-popover .ui-popover-item > span {
-  min-width: 0;
-}
-
-.hc-home-select-option {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  text-align: left;
-}
-
-.hc-home-select-option__label,
-.hc-home-select-option__detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hc-home-select-option__detail {
-  font-size: 10.5px;
-  color: var(--text-secondary);
-}
-
-.home-composer-card .cave-project-picker__trigger.hc-project-selector {
-  min-height: 30px;
-  max-width: 178px;
-  padding: 3px 22px 3px 6px;
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 
 .home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
   max-width: 132px;
 }
 
-.hc-select-caret {
-  position: absolute;
-  right: 5px;
-  pointer-events: none;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* ── Mode strip (Chat / Task) ──────────────────────────────────────────────────
- *   The composer's primary intent switch, seated at the top of the card above
- *   the textarea. A compact segmented control so the Chat-vs-Task choice reads
- *   as the top-level mode, distinct from the per-send config in the action bar. */
-.hc-mode-strip {
-  display: flex;
-  align-items: center;
-  padding: 12px 14px 10px;
-  /* A whisper-faint hairline separates the mode switch from the prompt area. */
-  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 40%, transparent);
-}
-
-/* Destination pills — a segmented toggle inside the mode strip. */
+/* Destination pills — a segmented toggle for Chat vs Task. */
 .hc-dest-pills {
   display: inline-flex;
   gap: 2px;
@@ -555,17 +400,24 @@
   border: 1px solid var(--border-hairline);
 }
 
+/* Inline placement (reference layout): the pills sit inside the card's
+ * control row next to the + attach button — compact, no outer margin. */
+.hc-dest-pills--inline {
+  position: relative;
+  padding: 2px;
+}
+
 .hc-dest-pill {
   display: flex;
   align-items: center;
   gap: 5px;
   min-height: 28px;
   box-sizing: border-box;
-  font-size: 12px;
+  font-size: var(--text-sm);
   /* Inactive tabs recede: lighter weight + faded label so the solid-accent
    * active tab is unmistakably the selected one. Hover/active brighten. */
   font-weight: 450;
-  padding: 4px 14px;
+  padding: var(--space-1) 14px;
   border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
@@ -592,7 +444,7 @@
 .hc-dest-pill.active {
   background: var(--accent-presence);
   border-color: var(--accent-presence);
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   font-weight: 600;
   box-shadow: 0 2px 8px color-mix(in oklch, var(--accent-presence) 38%, transparent);
 }
@@ -600,205 +452,24 @@
 /* Label and icon sit on the solid accent fill, so both take the on-accent
  * foreground colour at full strength for legibility. */
 .hc-dest-pill.active svg {
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   opacity: 1;
 }
 
-@media (max-width: 520px) {
-  .hc-action-bar {
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px;
-  }
-
-  .hc-familiar-selector {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: var(--touch-target);
-    padding: 0 34px 0 12px;
-  }
-
-  .hc-familiar-glyph {
-    width: 20px;
-    height: 20px;
-  }
-
-  .hc-home-select-value {
-    width: 100%;
-    max-width: none;
-    min-height: var(--touch-target);
-    font-size: 15px;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .home-composer-card .cave-project-picker__trigger.hc-project-selector {
-    max-width: none;
-    min-height: var(--touch-target);
-    padding: 0 34px 0 12px;
-  }
-
-  .home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
-    max-width: none;
-  }
-
-  .hc-select-caret {
-    right: 12px;
-  }
-
-  .hc-send-btn {
-    min-height: var(--touch-target);
-    width: var(--touch-target);
-    border-radius: var(--radius-control);
-    padding-inline: 0;
-  }
-
-  .hc-dest-pills {
-    order: 3;
-    flex: 1 0 100%;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .hc-dest-pill {
-    min-height: var(--touch-target);
-    justify-content: center;
-    gap: 6px;
-    padding: 0 8px;
-    border-color: var(--border-hairline);
-    background: color-mix(in oklch, var(--bg-base) 72%, transparent);
-    font-size: 12px;
-  }
-
-  .hc-dest-label {
-    display: inline;
-  }
-}
-
+/* ── Phone-width composer (container query on the card wrap) ─────────────────
+ * The shared cave-composer footer rules (cave-chat.css) already adapt the icon
+ * buttons on small screens; the home-only destination pills also need
+ * thumb-sized touch targets. */
 @container (max-width: 620px) {
-  .hc-action-bar {
-    align-items: stretch;
-    gap: 8px;
-    padding: 10px;
-  }
-
-  .hc-control-group {
-    flex: 1 0 100%;
-    width: 100%;
-    align-items: stretch;
-    justify-content: stretch;
-  }
-
-  .hc-control-group--who,
-  .hc-control-group--run {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .hc-control-group--run {
-    order: 4;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--touch-target);
-    margin-left: 0;
-  }
-
-  .hc-familiar-selector {
-    min-height: var(--touch-target);
-    padding: 0 30px 0 10px;
-  }
-
-  .hc-command-select .hc-command-select-label {
-    display: none;
-  }
-
-  .hc-home-select-value {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
-    min-height: var(--touch-target);
-    font-size: 13px;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .home-composer-card .cave-project-picker__trigger.hc-project-selector {
-    width: 100%;
-    max-width: none;
-    min-height: var(--touch-target);
-    padding: 0 30px 0 10px;
-  }
-
-  .home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
-    max-width: none;
-  }
-
-  .hc-dest-pills {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    gap: 8px;
-  }
-
   .hc-dest-pill {
     min-height: var(--touch-target);
     justify-content: center;
     border-color: var(--border-hairline);
     background: color-mix(in oklch, var(--bg-base) 72%, transparent);
   }
-
-  .hc-send-btn {
-    min-height: var(--touch-target);
-    width: var(--touch-target);
-    height: var(--touch-target);
-  }
 }
 
-/* ── Send button (circular, icon-only — matches the Codex-style composer) ──── */
-.hc-send-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border-radius: var(--radius-control);
-  border: none;
-  background: var(--accent-presence);
-  color: #fff;
-  cursor: pointer;
-  margin-left: auto;
-  flex-shrink: 0;
-  transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
-}
-
-.hc-control-group--run .hc-send-btn {
-  margin-left: 0;
-}
-
-.hc-send-btn:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 85%, #000);
-  transform: scale(1.05);
-}
-
-/* Empty/disabled reads as a neutral grey disc (no green) until there's a prompt
- * to send — mirrors the screenshot's idle send affordance. */
-.hc-send-btn.empty,
-.hc-send-btn:disabled {
-  background: color-mix(in oklch, var(--text-muted) 24%, var(--bg-base));
-  color: var(--text-muted);
-  cursor: default;
-  transform: none;
-}
-
-.hc-send-btn.sending {
-  opacity: 0.75;
-  cursor: wait;
-  transform: none;
-}
-
-/* Spinner */
+/* Spinner — shown inside the send button while a submit is in flight. */
 .hc-spinner {
   display: inline-block;
   width: 13px;
@@ -830,9 +501,9 @@
 
 .home-feed {
   display: block;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 16px;
+  border-radius: var(--radius-panel);
   background: color-mix(in oklch, var(--bg-raised) 55%, var(--bg-base));
   overflow: hidden;
   text-align: left;
@@ -883,7 +554,7 @@
   height: 28px;
   flex-shrink: 0;
   margin-left: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -926,7 +597,7 @@
 .home-feed__rowtop { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .home-feed__rowicon { color: var(--text-muted); flex-shrink: 0; }
 .home-feed__rowtitle {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
@@ -934,7 +605,7 @@
   white-space: nowrap;
 }
 .home-feed__rowdesc {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.35;
   overflow: hidden;
@@ -953,20 +624,20 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 30px 16px;
+  gap: var(--space-2);
+  padding: 30px var(--space-4);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-base);
   text-align: center;
 }
 .home-feed__retry {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--accent-presence);
   background: transparent;
   border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
-  border-radius: 8px;
-  padding: 5px 12px;
+  border-radius: var(--radius-control);
+  padding: 5px var(--space-3);
   cursor: pointer;
   transition: background 0.12s ease;
 }
@@ -999,36 +670,19 @@
 
 /* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
 .hc-dest-pill,
-.hc-send-btn,
 .home-feed__tab,
 .home-feed__row,
 .home-feed__refresh,
 .home-feed__retry,
-.hc-add-btn,
-.hc-enhance-btn,
-.hc-enhance-undo,
-.hc-model-chip,
-.hc-home-select-trigger,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   outline: none;
 }
 .hc-dest-pill:focus-visible,
-.hc-send-btn:focus-visible,
 .home-feed__tab:focus-visible,
 .home-feed__row:focus-visible,
 .home-feed__refresh:focus-visible,
 .home-feed__retry:focus-visible,
-.hc-add-btn:focus-visible,
-.hc-enhance-btn:focus-visible,
-.hc-enhance-undo:focus-visible,
-.hc-model-chip:focus-visible,
-.hc-home-select-trigger:focus-visible,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: var(--ring-offset);
-}
-/* Ring the whole selector pill when a custom trigger is focused. */
-.hc-familiar-selector:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }
@@ -1045,10 +699,28 @@
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-2xl, 14px);
-  background: var(--bg-base);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:
     0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
     0 4px 18px -6px rgb(0 0 0 / 0.35);
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 /* Skills picker: option list + detail preview side by side. */
 .hc-slash-body { display: flex; align-items: stretch; min-height: 0; }
@@ -1057,7 +729,7 @@
 .hc-slash-list {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   max-height: 260px;
   overflow-y: auto;
 }
@@ -1066,7 +738,7 @@
   width: 100%;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border: 0;
   background: transparent;
   text-align: left;
@@ -1081,14 +753,14 @@
 }
 .hc-slash-name {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   min-width: 110px;
 }
 .hc-slash-desc {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1096,7 +768,7 @@
 }
 .hc-slash-arg {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   padding: 2px 6px;
   border-radius: 4px;
@@ -1105,9 +777,185 @@
 }
 .hc-slash-footer {
   border-top: 1px solid var(--border-hairline);
-  padding: 6px 12px;
-  font-size: 10px;
+  padding: 6px var(--space-3);
+  font-size: var(--text-2xs);
   color: var(--text-muted);
+}
+
+/* ── Suggested prompts / needs-you — both strips folded into the digest
+   carousel's chats track as tinted cards (see .home-digest__card--needs and
+   .home-digest__card--suggestion below). */
+
+/* ── Two-column footer (Continue · News) ─────────────────────────────────── */
+.home-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 860px;
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .home-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-col {
+  min-width: 0;
+}
+
+.home-col__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.home-col__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-col__empty {
+  margin: 0;
+  padding: 14px var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.home-col-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.home-col-card:hover {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+}
+
+/* The newest session is the resume card: presence-tinted, with a visible
+   Resume affordance (no hover-only reveal — it must read on touch too). */
+.home-col-card--primary {
+  background: color-mix(in oklch, var(--accent-presence) 7%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+}
+
+.home-col-card--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+}
+
+.home-col-card__go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-presence);
+  white-space: nowrap;
+}
+
+.home-col-card__go svg {
+  transition: transform 120ms var(--ease-standard);
+}
+
+.home-col-card--primary:hover .home-col-card__go svg {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-col-card--primary:hover .home-col-card__go svg {
+    transform: none;
+  }
+}
+
+.home-col-card__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.home-col-card--primary .home-col-card__icon {
+  color: var(--accent-presence);
+}
+
+.home-col-card__thumb {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.home-col-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-col-card__title {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-col-card__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Page-load choreography ───────────────────────────────────────────────────
+ *   One orchestrated entrance: hero, composer, pills, columns rise in sequence
+ *   (backwards fill keeps late rows invisible until their turn). Collapsed
+ *   entirely under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .home-composer-hero,
+  .home-columns {
+    animation: home-rise 460ms var(--ease-decelerate) backwards;
+  }
+  .home-composer-card-wrap {
+    animation: home-rise 460ms var(--ease-decelerate) 60ms backwards;
+  }
+  .home-columns { animation-delay: 220ms; }
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 /* ── Daily summary — an ambient, auto-scrolling digest of today's activity +
@@ -1134,43 +982,10 @@
    direction, so the two streams read as clearly separate. */
 .home-digest__media {
   position: relative;
+  margin-top: 10px;
 }
 .home-digest__track--media {
-  margin-top: 10px;
   animation-direction: reverse;
-}
-.home-digest__media-close {
-  position: absolute;
-  z-index: 2;
-  top: 16px;
-  right: 8%;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-elevated);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.14s, background 0.14s, color 0.14s, border-color 0.14s;
-}
-.home-digest__media:hover .home-digest__media-close,
-.home-digest__media:focus-within .home-digest__media-close {
-  opacity: 1;
-  pointer-events: auto;
-}
-.home-digest__media-close:hover,
-.home-digest__media-close:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-.home-digest__media-close:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
 }
 .home-digest:hover .home-digest__track,
 .home-digest:focus-within .home-digest__track {
@@ -1221,6 +1036,55 @@
   opacity: 1;
   background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+/* Needs-you cards — the attention tier leads the chats track in the warning
+   tint (design-language recipe: 6→12% fill, 30% border, solid warning icon). */
+.home-digest__card--needs {
+  opacity: 1;
+  background: color-mix(in oklch, var(--color-warning) 6%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--color-warning) 30%, var(--border-hairline));
+}
+.home-digest__card--needs .home-digest__icon {
+  color: var(--color-warning);
+}
+.home-digest__card--needs:hover {
+  background: color-mix(in oklch, var(--color-warning) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--color-warning) 45%, var(--border-hairline));
+}
+/* Live cards — the agentic-presence tier (cave-9j6a): a familiar is working
+   this session RIGHT NOW. Presence tint + a breathing status dot; the pulse
+   collapses to a static dot under prefers-reduced-motion (token durations
+   zero out globally). */
+.home-digest__card--live {
+  opacity: 1;
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
+}
+.home-digest__card--live:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-hairline));
+}
+.home-digest__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  flex-shrink: 0;
+  animation: home-digest-live-pulse 2s var(--ease-standard, ease-out) infinite;
+}
+@keyframes home-digest-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent-presence) 0%, transparent); }
+}
+/* Suggestion cards — quick actions trail the chats track in the presence
+   tint so "start this next" reads apart from resumable sessions. */
+.home-digest__card--suggestion {
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+}
+.home-digest__card--suggestion:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
 }
 .home-digest__icon {
   color: var(--accent-presence);

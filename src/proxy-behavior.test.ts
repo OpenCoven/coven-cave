@@ -16,12 +16,19 @@
 import assert from "node:assert/strict";
 import {
   isLoopbackHost,
+  isTailscaleServeHost,
   isAllowedApiHost,
   sameOrigin,
   isAllowedRequestSource,
+  isAllowedRequestSourceAny,
+  expectedRequestOrigins,
   bearerFromReferer,
+  bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
   timingSafeEqualString,
+  isHtmlNavigationRequest,
+  accessGatePage,
+  ACCESS_TOKEN_QUERY_PARAM,
 } from "./proxy-helpers.ts";
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
@@ -75,6 +82,32 @@ assert.equal(
   true,
   "mobile token authentication should not depend on a loopback Host header",
 );
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale Serve hostnames",
+);
+assert.equal(
+  isAllowedApiHost("100.100.100.100:3000", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale 100.64.0.0/10 IP fallback hosts",
+);
+assert.equal(
+  isAllowedApiHost("evil.example.com:3000", false, true),
+  false,
+  "tokenless tailnet trust must not bypass the loopback host gate for arbitrary hosts",
+);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net.evil.com", false, true),
+  false,
+  "tokenless tailnet trust must not allow suffix-smuggled Tailscale hostnames",
+);
+
+// ─── isTailscaleServeHost ──────────────────────────────────────────────────
+assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);
+assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net:8443"), true);
+assert.equal(isTailscaleServeHost("localhost:3000"), false);
+assert.equal(isTailscaleServeHost("127.0.0.1:3000"), false);
 
 // ─── sameOrigin ────────────────────────────────────────────────────────────
 const expected = "http://localhost:3000";
@@ -192,29 +225,120 @@ assert.equal(
   "normal same-origin browser dev mode remains allowed",
 );
 
-// ─── Native iOS app (tokenless, over Tailscale Serve) contract ─────────────
+// ─── expectedRequestOrigins / host-derived CSRF (cave-5sg) ────────────────
+// req.nextUrl.origin can stay pinned to the configured port while the real
+// browser Origin is carried by Host, so both origins remain accepted.
+{
+  // Host reports :3458 while nextUrl still says :3457.
+  const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
+  assert.deepEqual(
+    origins,
+    ["http://127.0.0.1:3457", "http://127.0.0.1:3458"],
+    "both the configured-port origin and the real Host-derived origin are accepted",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://127.0.0.1:3458", origins),
+    true,
+    "the browser Origin on the real fallback port is now allowed (the bug)",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://127.0.0.1:3457", origins),
+    true,
+    "the stale configured-port origin still passes (Serve/forwarded-host path)",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://evil.example", origins),
+    false,
+    "a cross-site Origin matches neither and is rejected",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny(null, origins),
+    true,
+    "an absent Origin/Referer still passes (matches sameOrigin null tolerance)",
+  );
+}
+{
+  // No Host header: fall back to nextUrl.origin alone, no phantom entries.
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", null),
+    ["http://127.0.0.1:3000"],
+  );
+  // Host equals the configured port: deduped to a single origin.
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", "127.0.0.1:3000"),
+    ["http://127.0.0.1:3000"],
+    "no duplicate when Host already matches nextUrl.origin",
+  );
+  // https preserved (never silently downgraded to http).
+  assert.deepEqual(
+    expectedRequestOrigins("https://cave.tailnet.example.ts.net", "https:", "cave.tailnet.example.ts.net"),
+    ["https://cave.tailnet.example.ts.net"],
+    "https scheme is preserved and deduped",
+  );
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", "evil.example:8080"),
+    ["http://127.0.0.1:3000"],
+    "non-loopback Host headers must not become accepted CSRF origins in tokenless tailnet mode",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny(
+      "http://evil.example:8080",
+      expectedRequestOrigins("http://127.0.0.1:3000", "http:", "evil.example:8080"),
+    ),
+    false,
+    "an Origin matching an arbitrary non-loopback Host is rejected",
+  );
+  // Missing protocol defaults to http (loopback is never TLS on the socket).
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3457", null, "127.0.0.1:3458"),
+    ["http://127.0.0.1:3457", "http://127.0.0.1:3458"],
+    "absent protocol falls back to http:",
+  );
+}
+{
+  // A referer carrying the real fallback port still yields its token.
+  const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
+  assert.equal(
+    bearerFromRefererAny("http://127.0.0.1:3458/x?covenCaveToken=tok", origins),
+    "tok",
+    "token is extracted from a referer on the real fallback port",
+  );
+  assert.equal(
+    bearerFromRefererAny("http://127.0.0.1:3457/x?covenCaveToken=tok", origins),
+    "tok",
+    "token is still extracted from a configured-port referer",
+  );
+  assert.equal(
+    bearerFromRefererAny("http://evil.example/x?covenCaveToken=tok", origins),
+    null,
+    "a cross-origin referer never yields its token",
+  );
+}
+
+// ─── Native iOS app (Tailscale Serve + mobile access token) contract ──────
 // The native SwiftUI client (pnpm mobile:tailscale:app) is NOT a browser: it
-// sends no Origin and no Referer, and Tailscale Serve forwards Host: 127.0.0.1
-// to the loopback server. With neither COVEN_CAVE_ACCESS_TOKEN nor
-// COVEN_CAVE_AUTH_TOKEN configured (and not bundled), proxy() falls through to
-// NextResponse.next() AFTER these source gates pass. These assertions pin the
-// gate-level behavior that flow depends on; the proxy() body ordering is pinned
-// by middleware.test.ts. A malicious same-machine BROWSER page is still blocked
-// because it always carries a cross-origin Origin (rejected just above).
+// sends no Origin and no Referer. Those absent source headers can pass the CSRF
+// helper, so the API Host gate must require the paired mobile access credential
+// before accepting a remote-looking Tailscale Serve Host.
 assert.equal(
-  isAllowedApiHost("127.0.0.1:3000", false),
+  isAllowedApiHost("cave.tailnet.example.ts.net", false),
+  false,
+  "native app: tailnet Host without mobile access auth is forbidden",
+);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", true),
   true,
-  "tokenless app: Tailscale Serve forwards loopback Host, which is allowed",
+  "native app: paired mobile access auth permits the Tailscale Serve Host",
 );
 assert.equal(
   isAllowedRequestSource(null, expected),
   true,
-  "tokenless app: native client sends no Origin → source gate passes",
+  "native app: absent Origin still passes the source helper",
 );
 assert.equal(
   isAllowedRequestSource(null, "http://127.0.0.1:3000"),
   true,
-  "tokenless app: absent Referer at the loopback Serve backend passes",
+  "native app: absent Referer still passes the source helper",
 );
 
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────
@@ -282,6 +406,45 @@ assert.equal(timingSafeEqualString("12345", "12346"), false);
   const right = "a".repeat(1023) + "b";
   assert.equal(timingSafeEqualString(left, right), false);
   assert.equal(timingSafeEqualString(left, left), true);
+}
+
+// ─── isHtmlNavigationRequest ───────────────────────────────────────────────
+// Only browser PAGE navigations (HTML-accepting GET outside /api/) qualify
+// for the HTML access gate; everything else must keep the JSON 401 envelope.
+const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+assert.equal(isHtmlNavigationRequest("GET", "/", BROWSER_ACCEPT), true);
+assert.equal(isHtmlNavigationRequest("GET", "/dashboard/familiars/growth", BROWSER_ACCEPT), true);
+assert.equal(
+  isHtmlNavigationRequest("GET", "/api/familiars", BROWSER_ACCEPT),
+  false,
+  "API routes keep JSON even for HTML-accepting clients",
+);
+assert.equal(isHtmlNavigationRequest("GET", "/api", BROWSER_ACCEPT), false, "bare /api is an API path");
+assert.equal(
+  isHtmlNavigationRequest("GET", "/apidocs", BROWSER_ACCEPT),
+  true,
+  "prefix match must not swallow non-API paths that merely start with 'api'",
+);
+assert.equal(isHtmlNavigationRequest("POST", "/", BROWSER_ACCEPT), false, "mutations keep JSON");
+assert.equal(isHtmlNavigationRequest("HEAD", "/", BROWSER_ACCEPT), false, "HEAD keeps JSON");
+assert.equal(isHtmlNavigationRequest("GET", "/", "application/json"), false, "fetch/curl keep JSON");
+assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header keeps JSON");
+
+// ─── accessGatePage ────────────────────────────────────────────────────────
+{
+  const page = accessGatePage();
+  assert.match(page, /Access token required/);
+  // The form re-enters the audited query-token exchange — the input MUST be
+  // named exactly ACCESS_TOKEN_QUERY_PARAM and submit via GET.
+  assert.match(page, new RegExp(`name="${ACCESS_TOKEN_QUERY_PARAM}"`));
+  assert.match(page, /method="get"/);
+  assert.match(page, /type="password"/, "token input must not echo on screen");
+  assert.doesNotMatch(page, /<script/i, "gate page must be script-free (CSP-immune, no new surface)");
+  assert.doesNotMatch(page, /didn&rsquo;t verify/, "neutral prompt shows no failure note");
+
+  const invalid = accessGatePage({ invalidToken: true });
+  assert.match(invalid, /didn&rsquo;t verify/, "supplied-but-invalid tokens get the expiry hint");
+  assert.match(invalid, /role="alert"/);
 }
 
 console.log("proxy-behavior.test.ts: ok");

@@ -6,11 +6,18 @@ const src = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8
 assert.match(src, /export function WorkspaceRail\(/, "exports WorkspaceRail");
 assert.match(src, /className=\{`workspace-rail\$\{isFullscreen \? " workspace-rail--fullscreen" : ""\}`\}/, "root class includes fullscreen modifier state");
 assert.match(src, /aria-label="Code rail"/, "labels the rail region");
-for (const t of ["Changes", "Files", "Terminal"]) {
+for (const t of ["Files", "Terminal"]) {
   assert.match(src, new RegExp(`aria-label="${t}"`), `has a ${t} tab`);
 }
+// Changes carries a conditional label — the failing-checks badge (cave-fpqx.12)
+// announces itself through the tab's accessible name.
+assert.match(
+  src,
+  /aria-label=\{checksFailing \? "Changes — PR checks failing" : "Changes"\}/,
+  "has a Changes tab (with the failing-checks announcement)",
+);
 assert.match(src, /SessionChangesPanel/, "Changes tab reuses SessionChangesPanel");
-// Files tab now renders the composed tree + read-only preview panel.
+// Files tab renders the composed tree + inline-editable file preview panel.
 assert.match(src, /RailFilesPanel/, "Files tab renders RailFilesPanel");
 assert.match(src, /activeTab === "files"/, "Files tab is branched on explicitly");
 assert.match(src, /projectRoot=\{projectRoot\}/, "threads projectRoot into the files panel");
@@ -29,4 +36,22 @@ assert.doesNotMatch(src, /workspace-rail__soon/, "Terminal placeholder is gone")
 assert.match(src, /onTogglePin/, "pin control wired");
 assert.match(src, /onCollapse/, "collapse control wired");
 assert.match(src, /changeCount > 0/, "shows a change-count badge");
+// Progressive disclosure (§8): pin + fullscreen reveal on header hover /
+// focus-within via the shared utility; collapse stays always visible.
+assert.match(src, /workspace-rail__head reveal-scope/, "rail header is the reveal scope");
+assert.match(
+  src,
+  /focus-ring reveal-on-hover\$\{pinned \? " is-on" : ""\}/,
+  "pin reveals on hover/focus (and stays visible while pinned via aria-pressed)",
+);
+assert.match(
+  src,
+  /focus-ring reveal-on-hover\$\{isFullscreen \? " is-on" : ""\}/,
+  "fullscreen toggle reveals on hover/focus",
+);
+assert.doesNotMatch(
+  src,
+  /aria-label="Collapse code rail"[\s\S]{0,120}reveal-on-hover|reveal-on-hover[^\n]*aria-label="Collapse code rail"/,
+  "collapse stays always visible (primary verb)",
+);
 console.log("workspace-rail.test.ts OK");

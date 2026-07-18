@@ -1,0 +1,24 @@
+{
+  "id": "cccccccc-0001-4001-8001-000000000001",
+  "familiar_id": "eeeeeeee-0000-4000-8000-000000000001",
+  "writer": "familiar:echo",
+  "channel": "Mutation",
+  "thread_id": "aaaaaaa2-0002-4002-8002-000000000001",
+  "fray": {
+    "Frayed": {
+      "strand": "bbbbbbb2-0002-4002-8002-000000000001",
+      "channel": "Mutation",
+      "reason": "ContentHashMismatch"
+    }
+  },
+  "edits": [
+    {
+      "surface": "MEMORY.md",
+      "contents": {
+        "encoding": "utf8",
+        "data": "## Session notes\n\nEcho proposes appending this line to durable memory.\n"
+      }
+    }
+  ],
+  "staged_at": [2026, 196, 9, 0, 2, 0, 0, 0, 0]
+}

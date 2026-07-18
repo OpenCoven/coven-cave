@@ -6,7 +6,7 @@ import path from "node:path";
 
 // Salem "Save to Board" seeds a card with checklist steps. createCard must
 // accept `steps: {text}[]` and round-trip them into CardStep[]. Isolated to a
-// temp home so it never touches the real ~/.coven/cave-board.json.
+// temp home so it never touches the real ~/.coven/cave/board.json.
 
 const tmpHome = await mkdtemp(path.join(tmpdir(), "cave-board-steps-"));
 process.env.HOME = tmpHome;

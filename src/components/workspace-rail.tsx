@@ -1,10 +1,14 @@
 "use client";
+
+import "@/styles/cave-chat.css";
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { RailFilesPanel } from "@/components/rail-files-panel";
 import { RailTerminalPanel } from "@/components/rail-terminal-panel";
 import type { CodeRailTab } from "@/lib/code-rail";
+import type { PendingCodeRailOpen as CodeRailFocus } from "@/lib/pending-code-rail-open";
+import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 
 const TAB_TITLE: Record<CodeRailTab, string> = {
   changes: "Changes",
@@ -19,6 +23,7 @@ export function WorkspaceRail({
   projectRoot,
   familiarId,
   sessionId,
+  focus,
   hidePin = false,
   onSelectTab,
   onTogglePin,
@@ -30,6 +35,7 @@ export function WorkspaceRail({
   projectRoot: string | null;
   familiarId?: string | null;
   sessionId: string | null;
+  focus?: CodeRailFocus | null;
   /** Hide the pin toggle (e.g. when hosted in a mobile sheet, where pinning a
    *  transient overlay open is meaningless). Defaults to false — desktop keeps
    *  the pin control. */
@@ -51,6 +57,9 @@ export function WorkspaceRail({
   }, [activeTab, isFullscreen]);
   const terminalVisible = isFullscreen && activeTab === "terminal";
   const title = activeTab === "terminal" && !isFullscreen ? TAB_TITLE.files : TAB_TITLE[activeTab];
+  // Failing-checks cue (cave-fpqx.12): fed by the stage header's broadcast —
+  // a peripheral dot only, no new tab, no reveal-logic changes.
+  const checksFailing = useStageChecksBadge(projectRoot);
 
   return (
     <section
@@ -61,13 +70,15 @@ export function WorkspaceRail({
       <nav className="workspace-rail__strip" aria-label="Code rail tabs">
         <button
           type="button"
-          aria-label="Changes"
+          aria-label={checksFailing ? "Changes — PR checks failing" : "Changes"}
+          title={checksFailing ? "PR checks failing" : undefined}
           aria-pressed={activeTab === "changes"}
           className={`workspace-rail__tab focus-ring${activeTab === "changes" ? " is-active" : ""}`}
           onClick={() => onSelectTab("changes")}
         >
           <Icon name="ph:git-diff" width={16} aria-hidden />
           {changeCount > 0 ? <span className="workspace-rail__badge">{changeCount}</span> : null}
+          {checksFailing ? <span className="workspace-rail__badge workspace-rail__badge--alert" aria-hidden /> : null}
         </button>
         <button
           type="button"
@@ -91,13 +102,16 @@ export function WorkspaceRail({
         )}
       </nav>
       <div className="workspace-rail__body">
-        <header className="workspace-rail__head">
+        {/* Progressive disclosure (§8): pin + fullscreen are occasional-use —
+            they reveal on header hover / focus-within (and stay visible on
+            touch); collapse remains the always-visible primary verb. */}
+        <header className="workspace-rail__head reveal-scope">
           <span className="workspace-rail__title">{title}</span>
           <span className="workspace-rail__actions">
             {!hidePin && (
               <button
                 type="button"
-                className={`workspace-rail__btn focus-ring${pinned ? " is-on" : ""}`}
+                className={`workspace-rail__btn focus-ring reveal-on-hover${pinned ? " is-on" : ""}`}
                 aria-label={pinned ? "Unpin code rail" : "Pin code rail open"}
                 aria-pressed={pinned}
                 onClick={onTogglePin}
@@ -107,7 +121,7 @@ export function WorkspaceRail({
             )}
             <button
               type="button"
-              className={`workspace-rail__btn focus-ring${isFullscreen ? " is-on" : ""}`}
+              className={`workspace-rail__btn focus-ring reveal-on-hover${isFullscreen ? " is-on" : ""}`}
               aria-label={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               aria-pressed={isFullscreen}
               onClick={() => setIsFullscreen((value) => !value)}
@@ -132,9 +146,19 @@ export function WorkspaceRail({
           {activeTab !== "terminal" ? (
             <div className="workspace-rail__panel" key={activeTab}>
               {activeTab === "changes" ? (
-                <SessionChangesPanel />
+                <SessionChangesPanel
+                  focusPath={focus?.kind === "changes" ? focus.path : null}
+                  focusNonce={focus?.kind === "changes" ? focus.nonce : undefined}
+                />
               ) : (
-                <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} isFullscreen={isFullscreen} />
+                <RailFilesPanel
+                  projectRoot={projectRoot}
+                  familiarId={familiarId}
+                  isFullscreen={isFullscreen}
+                  focusPath={focus?.kind === "files" ? focus.path : null}
+                  focusLine={focus?.kind === "files" ? focus.line : undefined}
+                  focusNonce={focus?.kind === "files" ? focus.nonce : undefined}
+                />
               )}
             </div>
           ) : null}

@@ -64,7 +64,11 @@ async function fetchPrChecks(repo: string, number: number, token: string | null)
 
 type ActivityResult = {
   ok: true;
-  authed: boolean;       // true = PAT used; false = public API
+  authed: boolean;       // true = a WORKING PAT was used; false = public API
+  /** The stored PAT was rejected by GitHub (revoked/expired). The client must
+   *  surface this — silently falling back rendered an authed-looking empty
+   *  state over a dead token (cave-cjgg). */
+  patInvalid?: boolean;
   login: string | null;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
@@ -85,22 +89,30 @@ async function ghFetch(path: string, token: string | null) {
 
 export async function GET() {
   // PAT is strictly local — read from env, never echoed back
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const storedToken = resolveSecret("GITHUB_PAT") ?? null;
   const envLogin = resolveSecret("GITHUB_USERNAME") ?? null;
 
   // ── Resolve login ────────────────────────────────────────────────────────
   let login: string | null = envLogin;
   let rateInfo: { remaining: number; limit: number } | null = null;
+  let patInvalid = false;
 
-  if (token) {
+  if (storedToken) {
     try {
-      const { data, rateRemaining, rateLimit } = await ghFetch("/user", token);
+      const { res, data, rateRemaining, rateLimit } = await ghFetch("/user", storedToken);
+      if (res.status === 401) {
+        // GitHub rejected the stored PAT (revoked/expired). Flag it and stop
+        // sending it — every downstream search would just 401 into empty
+        // arrays, rendering a convincing "nothing open" (cave-cjgg).
+        patInvalid = true;
+      }
       login = data?.login ?? login;
       if (rateRemaining >= 0) rateInfo = { remaining: rateRemaining, limit: rateLimit };
     } catch {
-      // PAT might be invalid — fall through to public
+      // Network failure probing /user — transient; keep using the token.
     }
   }
+  const token = patInvalid ? null : storedToken;
 
   if (!login) {
     return NextResponse.json(
@@ -218,6 +230,7 @@ export async function GET() {
   const result: ActivityResult = {
     ok: true,
     authed: !!token,
+    patInvalid: patInvalid || undefined,
     login,
     items,
     rateLimit: rateInfo,

@@ -86,13 +86,19 @@ function parseMarker(body: string): AttachmentMarker | null {
 
 function isWithinRoot(candidate: string, root: string): boolean {
   const relative = path.relative(root, candidate);
-  return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return !relative || (
+    relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative)
+  );
 }
 
 function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string[] = []): string | null {
+  // Marker paths and granted roots exist only at chat runtime and are bounded
+  // by the allowlist below; they are never server bundle inputs.
   let realMarkerPath: string;
   try {
-    realMarkerPath = fs.realpathSync(markerPath);
+    realMarkerPath = fs.realpathSync(/* turbopackIgnore: true */ markerPath);
   } catch {
     return null;
   }
@@ -100,7 +106,7 @@ function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string
   for (const root of allowedRoots) {
     let realRoot: string;
     try {
-      realRoot = fs.realpathSync(root);
+      realRoot = fs.realpathSync(/* turbopackIgnore: true */ root);
     } catch {
       continue;
     }
@@ -115,7 +121,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(resolved);
+    stat = fs.statSync(/* turbopackIgnore: true */ resolved);
   } catch {
     return null;
   }
@@ -128,7 +134,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
   const imageMime = IMAGE_EXT_MIME[ext];
   if (imageMime) {
     try {
-      const dataUrl = `data:${imageMime};base64,${fs.readFileSync(resolved).toString("base64")}`;
+      const dataUrl = `data:${imageMime};base64,${fs.readFileSync(/* turbopackIgnore: true */ resolved).toString("base64")}`;
       const image = cleanImageDataUrl(dataUrl);
       if (image) {
         return { name, size, type: imageMime, mimeType: image.mimeType, dataUrl: image.dataUrl };
@@ -141,7 +147,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
 
   if (TEXT_EXTS.has(ext)) {
     try {
-      const raw = fs.readFileSync(resolved, "utf8").replace(/\r\n/g, "\n");
+      const raw = fs.readFileSync(/* turbopackIgnore: true */ resolved, "utf8").replace(/\r\n/g, "\n");
       const text = raw.slice(0, MAX_ATTACHMENT_TEXT_CHARS);
       return {
         name,

@@ -1,46 +1,50 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import "@/styles/cave-chat.css";
 
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+
+// The Projects hub's styling (every `projects-hub`/`projects-list-row`/
+// `projects-detail-*` class) lives in projects.css. Import it directly so the
+// surface is always styled — it's reachable straight from the Chat → Projects
+// tab, before any other surface has ever mounted.
+import "@/styles/projects.css";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import { deriveProjectStatus } from "@/lib/project-status";
 import { addChatProject } from "@/lib/chat-add-project";
-import type { SessionRow } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { stripTaskPrefix } from "@/lib/projects/session-glyph";
-import {
-  applyManualOrder,
-  mergeVisibleOrder,
-  readSessionOrder,
-  writeSessionOrder,
-} from "@/lib/chat-session-order";
+import { applyManualOrder, readSessionOrder } from "@/lib/chat-session-order";
 import { applyProjectOverrides, setProjectOverride, clearProjectOverride } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
-import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import type { Card } from "@/lib/cave-board-types";
+import {
+  PROJECTS_SELECTED_KEY,
+  parseStoredProjectId,
+  resolveSelectedProjectId,
+} from "@/lib/projects/selected-project";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { UndoToast } from "@/components/ui/undo-toast";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  DndContext,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
-import { ProjectRow } from "./projects/project-row";
-import { shortRoot, openSessionById } from "./projects/projects-shared";
+import { ProjectList } from "./projects/project-list";
+import { ProjectDetail } from "./projects/project-detail";
+import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { isTauri } from "@/lib/tauri-platform";
 
@@ -51,15 +55,21 @@ function pathBasename(p: string): string {
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
+  /** Familiar roster for the detail pane's Grants section. */
+  familiars?: Familiar[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** When set, only projects this familiar has been granted are shown. */
   activeFamiliarId?: string | null;
 };
 
-export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, onSessionsDeleted, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  useMinuteTick(); // keep the per-project "last active" relative times current
+  const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
+  // Mutations that only show visually (create, undo) get announced here; move
+  // and bulk-delete already speak through the UndoToast's role="status".
+  const { announce } = useAnnouncer();
   const {
     projects,
     loading,
@@ -73,28 +83,76 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   } = useProjects({ familiarId: activeFamiliarId });
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
+  // Opt-in "Active" view filter (ephemeral — resets each visit so a project is
+  // never surprisingly hidden). It only narrows the list; it never reorders it,
+  // so the alphabetical order stays stable.
+  const [statusFilter, setStatusFilter] = useState<"all" | "active">("all");
+  // List order: alphabetical (stable, scannable) or most-recently-active first
+  // (find what you were just working on). Persisted per machine.
+  const [sortMode, setSortMode] = useState<"az" | "recent">(() => {
+    if (typeof window === "undefined") return "az";
+    try {
+      return window.localStorage.getItem("cave:projects:sort") === "recent" ? "recent" : "az";
+    } catch {
+      return "az";
+    }
+  });
+  const changeSortMode = (mode: "az" | "recent") => {
+    setSortMode(mode);
+    try {
+      window.localStorage.setItem("cave:projects:sort", mode);
+    } catch {
+      /* private mode — sort stays session-only */
+    }
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
   // Bulk delete is deferred + undoable: the rows hide immediately, the actual
   // DELETEs fire only after the undo window, and Undo restores the batch.
   const { pending: deletePending, scheduleDelete: scheduleSessionDelete, undo: undoSessionDelete, commit: commitSessionDelete } = useUndoDelete<SessionRow[]>();
   const projectOverrides = useProjectOverrides();
-  const { density, setDensity, isExpanded, setExpanded } = useProjectsUiState();
-  // Roving keyboard navigation (WAI-ARIA) over the flattened list of project
-  // headers + their visible session rows: ↑/↓ + Home/End move focus, Enter/Space
-  // open/select (per-row handlers), and →/← expand/collapse a focused header.
-  const listRef = useRef<HTMLElement>(null);
+
+  // ── Master-detail selection ─────────────────────────────────────────────────
+  // The selected project id persists across reloads; when nothing (valid) is
+  // stored, the most recently active project wins. Under the narrow single-pane
+  // collapse `pane` decides which side shows; wide layouts always show both.
+  const [storedSelection, setStoredSelection] = useState<string | null>(null);
+  const [pane, setPane] = useState<"list" | "detail">("list");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setStoredSelection(parseStoredProjectId(window.localStorage.getItem(PROJECTS_SELECTED_KEY)));
+  }, []);
+  const selectProject = (id: string) => {
+    setStoredSelection(id);
+    setPane("detail");
+    try {
+      window.localStorage.setItem(PROJECTS_SELECTED_KEY, id);
+    } catch {
+      // Storage unavailable (private mode / quota) — keep the in-memory value.
+    }
+  };
+
+  // Roving keyboard navigation (WAI-ARIA) over the project rows in the list
+  // pane: ↑/↓ + Home/End move focus, Enter/Space select (per-row handlers).
+  // ArrowRight on a row hands focus INTO the detail pane; ArrowLeft anywhere in
+  // the detail (outside a text field) hands it back to the selected row.
+  const listRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const focusDetailPane = () => {
+    // After selection the detail may still be re-rendering (and, under the
+    // narrow collapse, display:none until data-pane flips) — focus next frame.
+    window.requestAnimationFrame(() => detailRef.current?.focus());
+  };
   const { setActiveIndex } = useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
-  // Type-ahead: typing letters jumps focus to the next project / session whose
-  // label starts with what you typed (Finder-style), staying in sync with the
-  // roving tab stop. The buffer resets after a short pause.
+  // Type-ahead: typing letters jumps focus to the next project whose label
+  // starts with what you typed (Finder-style), staying in sync with the roving
+  // tab stop. The buffer resets after a short pause.
   const typeAheadRef = useRef<{ buffer: string; timer: number }>({ buffer: "", timer: 0 });
   useEffect(() => {
     const container = listRef.current;
@@ -128,10 +186,40 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     container.addEventListener("keydown", onKey);
     return () => container.removeEventListener("keydown", onKey);
   }, [setActiveIndex]);
+  // The shared manual session order is read (so the detail list matches the
+  // chat rail's drag order) but no longer written here — the rail owns dnd.
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
     setOrder(readSessionOrder());
   }, []);
+
+  // Board cards for the detail pane's Tasks section: ONE fetch per mount, then
+  // refetch on window refocus (throttled) — never per selection switch. The
+  // Tasks section filters client-side by projectId/cwd.
+  const [boardCards, setBoardCards] = useState<Card[]>([]);
+  // Abort the in-flight load per refetch (mount + every refocus): overlapping
+  // loads could land out of order and show stale board cards, and an unmount
+  // mid-flight leaked the setState (cave-psp8; mirrors useProjects.load).
+  const boardAbortRef = useRef<AbortController | null>(null);
+  const loadBoardCards = async () => {
+    boardAbortRef.current?.abort();
+    const controller = new AbortController();
+    boardAbortRef.current = controller;
+    try {
+      const res = await fetch("/api/board", { cache: "no-store", signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      if (json?.ok && Array.isArray(json.cards)) setBoardCards(json.cards as Card[]);
+    } catch {
+      /* transient — the Tasks section keeps the last known cards */
+    }
+  };
+  useEffect(() => {
+    void loadBoardCards();
+    return () => boardAbortRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useRefreshOnFocus(loadBoardCards);
 
   // "/" jumps to the projects filter (GitHub-style) while this surface is shown,
   // unless the user is already typing in a field or holding a modifier.
@@ -149,13 +237,8 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
   // Group sessions under their (override-aware) project root, applying the
-  // shared manual order, so each project card lists its chats in drag order.
+  // shared manual order, so the detail pane lists chats in the rail's order.
   const chatsByRoot = useMemo(() => {
     // Hide chats whose delete is pending in the undo window (still on the
     // server; restored if the user hits Undo).
@@ -173,65 +256,99 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     return byRoot;
   }, [sessions, projectOverrides, order, deletePending]);
 
-  const rootBySession = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [root, list] of chatsByRoot) for (const s of list) map.set(s.id, root);
+  const lastActiveByRootKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [root, list] of chatsByRoot) map.set(root, lastActiveMs(list));
     return map;
   }, [chatsByRoot]);
 
-  // Keep projects stable and scannable: alphabetical by project name/root.
-  // Session rows inside each project keep their own manual/recency ordering.
+  // List order per the sort toggle: alphabetical (stable, scannable) or by
+  // last session activity, newest first (alphabetical tiebreak so idle
+  // projects don't shuffle). Session rows inside the detail pane keep their
+  // own manual/recency ordering either way.
   const sortedProjects = useMemo(() => {
-    return sortProjectsAlphabetically(projects);
+    const az = sortProjectsAlphabetically(projects);
+    if (sortMode === "az") return az;
+    return [...az].sort(
+      (a, b) =>
+        (lastActiveByRootKey.get(normalizeProjectRoot(b.root)) ?? 0) -
+        (lastActiveByRootKey.get(normalizeProjectRoot(a.root)) ?? 0),
+    );
+  }, [projects, sortMode, lastActiveByRootKey]);
+
+  // Resolve the selection each render: the stored id when it still exists,
+  // otherwise the most recently active project (then the first). Deleting the
+  // selected project or a familiar-scope change re-runs this automatically.
+  const selectedProjectId = useMemo(
+    () =>
+      resolveSelectedProjectId(
+        storedSelection,
+        sortedProjects.map((p) => ({ id: p.id, rootKey: normalizeProjectRoot(p.root) })),
+        lastActiveByRootKey,
+      ),
+    [storedSelection, sortedProjects, lastActiveByRootKey],
+  );
+  const selectedProject = useMemo(
+    () => sortedProjects.find((p) => p.id === selectedProjectId) ?? null,
+    [sortedProjects, selectedProjectId],
+  );
+
+  // The command palette's "Open project" rows land here: select that project,
+  // reveal the detail pane, and scroll its list row into view.
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root) return;
+      const rootKey = normalizeProjectRoot(detail.root);
+      const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
+      if (!match) return;
+      selectProject(match.id);
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById(`pcard-el:${rootKey}`)
+          ?.scrollIntoView({ block: "nearest", behavior: smoothScrollBehavior() });
+      });
+    };
+    window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
+    return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
   }, [projects]);
 
+  // Roots with a live signal (running / recently-failed / active ≤24h) — powers
+  // the header's active count and the opt-in Active filter. Recomputed each
+  // minute (minuteTick) so "recent" ages out. Never reorders the list.
+  const activeRoots = useMemo(() => {
+    void minuteTick;
+    const set = new Set<string>();
+    for (const [root, list] of chatsByRoot) {
+      if (deriveProjectStatus(list) !== null) set.add(root);
+    }
+    return set;
+  }, [chatsByRoot, minuteTick]);
+  const activeCount = useMemo(
+    () => sortedProjects.reduce((n, p) => n + (activeRoots.has(normalizeProjectRoot(p.root)) ? 1 : 0), 0),
+    [sortedProjects, activeRoots],
+  );
+
   // Filter by name or path so the alphabetical list stays scannable when there
-  // are many projects.
+  // are many projects, then (opt-in) narrow to active projects only. Filtering
+  // only narrows the list pane — the detail keeps showing the selection.
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sortedProjects;
-    return sortedProjects.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
-    );
-  }, [sortedProjects, query]);
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over) return;
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    if (activeId === overId) return;
-    const sourceRoot = rootBySession.get(activeId);
-    if (sourceRoot === undefined) return;
-    const targetRoot = overId.startsWith("pcard:")
-      ? overId.slice("pcard:".length)
-      : rootBySession.get(overId);
-    if (targetRoot === undefined) return;
-
-    if (sourceRoot === targetRoot) {
-      if (overId.startsWith("pcard:")) return;
-      const ids = (chatsByRoot.get(targetRoot) ?? []).map((s) => s.id);
-      const from = ids.indexOf(activeId);
-      const to = ids.indexOf(overId);
-      if (from < 0 || to < 0) return;
-      const nextVisible = arrayMove(ids, from, to);
-      setOrder((prev) => {
-        const merged = mergeVisibleOrder(prev, nextVisible);
-        const live = new Set(sessions.map((s) => s.id));
-        const pruned = merged.filter((id) => live.has(id));
-        writeSessionOrder(pruned);
-        return pruned;
-      });
-      return;
+    let list = q
+      ? sortedProjects.filter(
+          (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
+        )
+      : sortedProjects;
+    if (statusFilter === "active") {
+      list = list.filter((p) => activeRoots.has(normalizeProjectRoot(p.root)));
     }
-    // Different project → move (cave-local override; agent cwd untouched).
-    moveSessionToProject(activeId, targetRoot);
-  }
+    return list;
+  }, [sortedProjects, query, statusFilter, activeRoots]);
 
-  // Move a session to another project (shared by drag-and-drop and the row's
-  // "Move to project" context-menu). targetRoot must be normalized. Captures the
-  // prior override first so the move can be undone precisely (restore the old
-  // override, or clear it if there wasn't one), then raises the undo toast.
+  // Move a session to another project (via the row's "Move to project" context
+  // menu). targetRoot must be normalized. Captures the prior override first so
+  // the move can be undone precisely (restore the old override, or clear it if
+  // there wasn't one), then raises the undo toast.
   const moveSessionToProject = (sessionId: string, targetRoot: string) => {
     const prevRoot = projectOverrides[sessionId] ?? null;
     const moved = sessions.find((s) => s.id === sessionId);
@@ -247,10 +364,10 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     if (moveToast.prevRoot) setProjectOverride(moveToast.sessionId, moveToast.prevRoot);
     else clearProjectOverride(moveToast.sessionId);
     setMoveToast(null);
+    announce("Move undone.");
   };
 
   function openCreateProjectForm() {
-    setCreatedProject(null);
     setShowForm(true);
     window.setTimeout(() => rootInputRef.current?.focus(), 0);
   }
@@ -278,9 +395,11 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     setNameDraft("");
     setRootDraft("");
     setShowForm(false);
-    setCreatedProject(project);
-    setExpanded(project.id, true);
     setQuery("");
+    // Land on the new project's detail pane — its New chat button is the
+    // follow-up action (replaces the old "Created X" banner).
+    selectProject(project.id);
+    announce(`Created project ${name}.`);
   };
 
   // A folder was chosen (native dialog or in-app browser) → fill the path, and
@@ -309,7 +428,8 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   };
 
   // Delete one chat, mirroring the Chats list delete (DELETE
-  // /api/chat/conversation/:id). Returns whether it succeeded; callers refetch.
+  // /api/chat/conversation/:id). Returns whether it succeeded; callers report
+  // confirmed ids to the Workspace-owned deletion boundary.
   const deleteOneSession = async (sessionId: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
@@ -325,15 +445,15 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     }
   };
 
-  // Delete a single chat from its project card, then ask the parent to refetch
-  // sessions so the row disappears everywhere.
+  // Delete a single chat from the detail pane, then report it so Workspace
+  // removes the row from every shared-session surface before reloading.
   const handleDeleteSession = async (sessionId: string) => {
     setSessionError(null);
-    if (await deleteOneSession(sessionId)) onSessionsChanged?.();
+    if (await deleteOneSession(sessionId)) onSessionsDeleted([sessionId]);
   };
 
-  // Bulk-delete the chats selected in a project card — deferred + undoable:
-  // hide them now, fire the DELETEs only after the undo window, refetch once.
+  // Bulk-delete the chats selected in the detail pane — deferred + undoable:
+  // hide them now, then report only confirmed ids after the undo window.
   const handleDeleteSessions = async (sessionIds: string[]) => {
     setSessionError(null);
     if (sessionIds.length === 0) return;
@@ -346,48 +466,109 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
       `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
       async () => {
         const results = await Promise.all(removed.map((s) => deleteOneSession(s.id)));
-        if (results.some(Boolean)) onSessionsChanged?.();
+        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
+        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
       },
     );
   };
 
+  const openBoard = () => {
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+  };
+
+  // ArrowLeft in the detail pane returns focus to the selected list row (and,
+  // under the narrow collapse, brings the list pane back). Guarded so it never
+  // steals the caret from a text field; menus render in portals, so their own
+  // arrow navigation never bubbles here.
+  const onDetailKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    e.preventDefault();
+    setPane("list");
+    if (!selectedProject) return;
+    const rootKey = normalizeProjectRoot(selectedProject.root);
+    window.requestAnimationFrame(() => document.getElementById(`pcard-el:${rootKey}`)?.focus());
+  };
+
   return (
-    <div className="flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[12px] text-[var(--text-muted)]">
-            {query.trim() && visibleProjects.length !== projects.length
-              ? `${visibleProjects.length} of ${projects.length} projects`
-              : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
-          </span>
-          <div className="flex items-center gap-2">
-            <div
-              role="group"
-              aria-label="List density"
-              className="flex items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
-            >
-              {([
-                { value: "comfortable", icon: "ph:rows", label: "Comfortable density" },
-                { value: "compact", icon: "ph:list-bullets-bold", label: "Compact density" },
-              ] as const).map((opt) => (
-                <Button
-                  key={opt.value}
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setDensity(opt.value)}
-                  aria-pressed={density === opt.value}
-                  aria-label={opt.label}
-                  title={opt.label}
-                  className={`flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] p-0 ${
-                    density === opt.value
-                      ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  }`}
-                  leadingIcon={opt.icon}
-                >
-                </Button>
-              ))}
-            </div>
+    <div className="projects-view flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
+      <header className="projects-toolbar shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
+        <div className="projects-toolbar__row flex items-center justify-between gap-3">
+          <div className="projects-toolbar__controls flex min-w-0 items-center gap-2.5">
+            <span className="shrink-0 text-[12px] text-[var(--text-muted)]">
+              {query.trim() && visibleProjects.length !== projects.length ? (
+                `${visibleProjects.length} of ${projects.length} projects`
+              ) : statusFilter === "active" ? (
+                `${activeCount} active project${activeCount === 1 ? "" : "s"}`
+              ) : (
+                <>
+                  {projects.length} {projects.length === 1 ? "project" : "projects"}
+                  {activeCount > 0 ? (
+                    <span className="text-[var(--accent-presence)]"> · {activeCount} active</span>
+                  ) : null}
+                </>
+              )}
+            </span>
+            {/* Opt-in Active filter — only useful (and shown) when there's a mix
+                of active and idle projects. Narrows without reordering. */}
+            {statusFilter === "active" || (projects.length > 1 && activeCount > 0 && activeCount < projects.length) ? (
+              <div
+                role="group"
+                aria-label="Filter by activity"
+                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
+              >
+                {([
+                  { value: "all", label: "All" },
+                  { value: "active", label: "Active" },
+                ] as const).map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setStatusFilter(opt.value)}
+                    aria-pressed={statusFilter === opt.value}
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                      statusFilter === opt.value
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {opt.value === "active" ? `Active ${activeCount}` : opt.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            {projects.length > 1 ? (
+              <div
+                role="group"
+                aria-label="Sort projects"
+                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
+              >
+                {([
+                  { value: "az", label: "A–Z", help: "Alphabetical" },
+                  { value: "recent", label: "Recent", help: "Most recently active first" },
+                ] as const).map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => changeSortMode(opt.value)}
+                    aria-pressed={sortMode === opt.value}
+                    title={opt.help}
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                      sortMode === opt.value
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="projects-toolbar__actions flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
@@ -453,7 +634,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           }}
           className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-4 py-3 sm:px-6"
         >
-          <div className="grid gap-2 lg:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
+          <div className="grid gap-2 @min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
             <input
               autoFocus
               value={nameDraft}
@@ -512,36 +693,44 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
         }}
       />
 
-      {createdProject && !showForm ? (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-4 py-2 text-[12px] sm:px-6">
-          <span className="min-w-0 truncate text-[var(--text-secondary)]">
-            Created <span className="font-medium text-[var(--text-primary)]">{createdProject.name}</span>
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            {onNewChat ? (
+      {(error && projects.length > 0) || sessionError ? (
+        <div className="shrink-0 space-y-2 px-4 pt-3 sm:px-6">
+          {error && projects.length > 0 ? (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+            >
+              <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
               <Button
-                variant="primary"
-                size="sm"
-                onClick={() => onNewChat?.(createdProject.root)}
-                className="h-8 rounded-[var(--radius-control)] px-2.5 text-[12px] font-medium"
-                leadingIcon="ph:chat-circle-dots-bold"
+                variant="danger-ghost"
+                size="xs"
+                onClick={() => void reload()}
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
               >
-                Start chat in {createdProject.name}
+                Retry
               </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              size="xs"
-              onClick={() => setCreatedProject(null)}
-              aria-label="Dismiss created project action"
-              className="grid h-8 w-8 place-items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              leadingIcon="ph:x"
-            />
-          </div>
+            </div>
+          ) : null}
+          {sessionError ? (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+            >
+              <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
+              <Button
+                variant="danger-ghost"
+                size="xs"
+                onClick={() => setSessionError(null)}
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+              >
+                Dismiss
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <main ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+      <main className="projects-shell">
         {error && projects.length === 0 ? (
           <ErrorState
             icon="ph:warning"
@@ -559,7 +748,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             }
           />
         ) : loading && projects.length === 0 ? (
-          <div className="flex w-full flex-col gap-2">
+          <div className="flex w-full flex-col gap-2 px-4 py-4 sm:px-6">
             <SkeletonRows count={4} />
           </div>
         ) : projects.length === 0 ? (
@@ -594,89 +783,57 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             }
           />
         ) : (
-          <div className="flex w-full flex-col">
-            {error ? (
-              <div
-                role="alert"
-                className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
-              >
-                <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
-                <Button
-                  variant="danger-ghost"
-                  size="xs"
-                  onClick={() => void reload()}
-                  className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
-                >
-                  Retry
-                </Button>
-              </div>
-            ) : null}
-            {sessionError ? (
-              <div
-                role="alert"
-                className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
-              >
-                <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
-                <Button
-                  variant="danger-ghost"
-                  size="xs"
-                  onClick={() => setSessionError(null)}
-                  className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
-                >
-                  Dismiss
-                </Button>
-              </div>
-            ) : null}
-            {visibleProjects.length === 0 ? (
-              <p className="px-2 py-6 text-center text-[12px] text-[var(--text-muted)]">
-                No projects match “{query.trim()}”.
-              </p>
-            ) : (
-              <DndContext id="projects-grid" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <div className="board-table-wrap projects-table-wrap">
-                  <table className="board-table board-table--grid projects-table">
-                    <colgroup>
-                      <col />
-                      <col style={{ width: "130px" }} />
-                      <col style={{ width: "110px" }} />
-                      <col style={{ width: "112px" }} />
-                      <col style={{ width: "180px" }} />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>Project</th>
-                        <th>Status</th>
-                        <th>Sessions</th>
-                        <th>Updated</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleProjects.map((project) => (
-                        <ProjectRow
-                          key={project.id}
-                          project={project}
-                          chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
-                          onRename={renameProject}
-                          onUpdateRoot={updateRoot}
-                          onUpdateColor={updateColor}
-                          onDelete={deleteProject}
-                          onNewChat={onNewChat}
-                          onOpenSession={openSessionById}
-                          onDeleteSession={handleDeleteSession}
-                          onDeleteSessions={handleDeleteSessions}
-                          density={density}
-                          expanded={isExpanded(project.id)}
-                          onSetExpanded={(next) => setExpanded(project.id, next)}
-                          allProjects={projects}
-                          onMoveSession={moveSessionToProject}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </DndContext>
-            )}
+          <div className="projects-hub" data-pane={pane}>
+            <div ref={listRef} className="projects-hub__list">
+              {visibleProjects.length === 0 ? (
+                <p className="px-2 py-6 text-center text-[12px] text-[var(--text-muted)]">
+                  {query.trim()
+                    ? `No projects match “${query.trim()}”.`
+                    : "No active projects right now."}
+                </p>
+              ) : (
+                <ProjectList
+                  projects={visibleProjects}
+                  chatsByRoot={chatsByRoot}
+                  selectedId={selectedProjectId}
+                  onSelect={selectProject}
+                  onEnterDetail={focusDetailPane}
+                  onNewChat={onNewChat}
+                />
+              )}
+            </div>
+            <div
+              ref={detailRef}
+              tabIndex={-1}
+              role="region"
+              aria-label={selectedProject ? `${selectedProject.name} details` : "Project details"}
+              onKeyDown={onDetailKeyDown}
+              className="projects-hub__detail"
+            >
+              {selectedProject ? (
+                <ProjectDetail
+                  key={selectedProject.id}
+                  project={selectedProject}
+                  chats={chatsByRoot.get(normalizeProjectRoot(selectedProject.root)) ?? []}
+                  allProjects={projects}
+                  boardCards={boardCards}
+                  familiars={familiars}
+                  onRename={renameProject}
+                  onUpdateRoot={updateRoot}
+                  onUpdateColor={updateColor}
+                  onDelete={deleteProject}
+                  onNewChat={onNewChat}
+                  onOpenSession={openSessionById}
+                  onDeleteSession={handleDeleteSession}
+                  onDeleteSessions={handleDeleteSessions}
+                  onMoveSession={moveSessionToProject}
+                  onOpenBoard={openBoard}
+                  onBack={() => setPane("list")}
+                />
+              ) : (
+                <div className="projects-detail-empty">Pick a project to see its details.</div>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -697,7 +854,10 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           key={deletePending.id}
           message={`Deleted ${deletePending.label}`}
           undoAriaLabel="Undo delete"
-          onUndo={undoSessionDelete}
+          onUndo={() => {
+            undoSessionDelete();
+            announce("Delete undone.");
+          }}
           onDismiss={commitSessionDelete}
         />
       ) : null}

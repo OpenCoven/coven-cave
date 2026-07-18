@@ -15,14 +15,23 @@
 //
 // Pure Node — no minisign CLI: ed25519 over a blake2b512 prehash, per the
 // minisign "ED" (prehashed) / "Ed" (legacy) formats Tauri emits.
+//
+// --allow-partial (cave-ef6f, CI use only): a missing PLATFORM downgrades to
+// a warning — the updater-manifest job now publishes honest partial
+// manifests when a build leg flakes, and CI verification of such a release
+// must judge what shipped, not what didn't. An EMPTY manifest, an invalid
+// signature, or version drift still fail either way.
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const TARGETS = ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"];
+const allowPartial = process.argv.includes("--allow-partial");
 let failures = 0;
+let partialWarnings = 0;
 const fail = (m) => { console.log("  ✗ " + m); failures++; };
+const warn = (m) => { console.log("  ! " + m); partialWarnings++; };
 const ok = (m) => console.log("  ✓ " + m);
 
 // ── minisign verification (pure node) ──────────────────────────────────
@@ -80,7 +89,10 @@ if (manifest) {
   if (!Object.keys(plats).length) fail("platforms{} is EMPTY — no signed artifacts (updater non-functional)");
   for (const t of TARGETS) {
     const p = plats[t];
-    if (!p) { fail(`missing platform "${t}"`); continue; }
+    if (!p) {
+      (allowPartial ? warn : fail)(`missing platform "${t}"${allowPartial ? " (tolerated: --allow-partial)" : ""}`);
+      continue;
+    }
     if (p.url && p.signature) ok(`${t}: url + signature present`);
     else fail(`${t}: missing ${!p.url ? "url" : "signature"}`);
   }
@@ -109,5 +121,6 @@ if (manifest) {
   }
 }
 
-console.log(`\n=== RESULT: ${failures === 0 ? "PASS — updater chain verified end to end" : failures + " FAILURE(S)"} ===`);
+const partialNote = partialWarnings ? ` (${partialWarnings} platform(s) tolerated by --allow-partial)` : "";
+console.log(`\n=== RESULT: ${failures === 0 ? `PASS — updater chain verified end to end${partialNote}` : failures + " FAILURE(S)"} ===`);
 process.exit(failures ? 1 : 0);

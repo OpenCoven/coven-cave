@@ -19,12 +19,11 @@ assert.match(exportFile, /struct ThreadMarkdownExport: Transferable/, "a Transfe
 assert.match(exportFile, /DataRepresentation\(exportedContentType: \.plainText\)/, "should export as data");
 assert.match(exportFile, /\.suggestedFileName \{ export in "\\\(export\.fileBaseName\)\.md" \}/, "should suggest a .md filename");
 
-// ChatView wires a share button to the export.
-assert.match(
-  chat,
-  /ShareLink\(item: ThreadMarkdownExport\(title: thread\.title,\s*markdown: app\.exportMarkdown\(thread\)\)/,
-  "ChatView should offer a ShareLink for the Markdown export",
-);
-assert.match(chat, /\.accessibilityLabel\("Export as Markdown"\)/, "the export button should be labelled");
+// The chat header stays lean (sim review feedback): no toolbar ShareLink or
+// Commands button — Commands lives in the composer's + menu, and Markdown
+// export stays on the thread-list flows.
+assert.doesNotMatch(chat, /ShareLink\(/, "the chat header's ShareLink stays removed");
+assert.doesNotMatch(chat, /accessibilityLabel\("Commands"\)/, "the toolbar Commands button stays removed");
+assert.match(chat, /FloatingAction\(id: "commands", systemImage: "command", label: "Commands"\)/, "Commands stays reachable via the composer + menu");
 
 console.log("ios-export-markdown.test.mjs: ok");

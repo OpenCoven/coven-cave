@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// PR 1 / Task 4: the code rail (WorkspaceRail) auto-reveals beside the chat
-// conversation on the standalone chat surface when the active session is
-// repo-linked, tracks the pending-edit count from /api/changes (re-polled on
-// the cave:changes-refresh edit signal), and collapses to a slim reopen strip.
+// The code rail (WorkspaceRail) rests CLOSED beside the chat conversation
+// (cave-xsq.7 — the conversation owns the pane); a repo-linked session shows
+// the slim reopen strip instead. The rail opens on demand (strip / pin /
+// explicit focus target) and auto-reveals only on a genuinely observed 0→N
+// edit batch from /api/changes (re-polled on the cave:changes-refresh signal).
 // Daemon-less — onboarding dismissed, all endpoints mocked via page.route.
 
 const ISO = "2026-06-12T10:00:00.000Z";
@@ -33,6 +34,10 @@ async function base(page: Page, sessions: unknown[]) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Keep the rail unpinned so its default open/collapse behaviour is exercised.
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");
+    // Nav is minimized-by-default; keep it expanded so the code rail keeps its
+    // room (a rail-width nav narrows the multi-pane chat layout).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
@@ -49,7 +54,7 @@ async function base(page: Page, sessions: unknown[]) {
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/?mode=chat");
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");
   await page.waitForSelector(".chat-surface", { timeout: 30_000 });
@@ -81,26 +86,30 @@ test.describe("code rail beside chat", () => {
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
   });
 
-  test("(b) repo session → rail visible; (c) edit signal reveals Changes badge; (d) collapse → reopen strip", async ({ page }) => {
+  test("(b) repo session → rail rests closed with the reopen strip; (c) a fresh 0→N edit batch auto-reveals with the Changes badge; (d) collapse → reopen strip", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
     await base(page, [REPO_SESSION]);
     await openSession(page, "Refactor auth flow");
 
-    // (b) The rail auto-reveals for a repo-linked session even with no edits.
-    const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 30_000 });
+    // (b) Closed by default (cave-xsq.7): a repo-linked session offers the slim
+    // reopen strip, but the conversation owns the pane — no rail at rest.
+    const reopen = page.locator(".workspace-rail-reopen");
+    await expect(reopen).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".workspace-rail")).toHaveCount(0);
 
-    // (c) A fresh edit batch (2 files) arrives via the cave:changes-refresh
-    // signal → the Changes tab badge shows 2.
+    // (c) A genuinely observed fresh edit batch (the mocked count was a real 0,
+    // now 2 files arrive via the cave:changes-refresh signal) AUTO-REVEALS the
+    // rail with the Changes tab badge showing 2.
+    const rail = page.locator(".workspace-rail");
     filesRef.count = 2;
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect(rail).toBeVisible({ timeout: 15_000 });
     await expect(rail.locator(".workspace-rail__badge")).toHaveText("2", { timeout: 15_000 });
 
     // (d) Collapsing hides the rail and surfaces the slim reopen strip.
     await rail.getByRole("button", { name: "Collapse code rail" }).click();
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
-    const reopen = page.locator(".workspace-rail-reopen");
     await expect(reopen).toBeVisible();
 
     // And the strip reopens the rail.
@@ -130,8 +139,10 @@ test.describe("code rail beside chat", () => {
     await base(page, [REPO_SESSION]);
     await openSession(page, "Refactor auth flow");
 
+    // Closed at rest (cave-xsq.7) — open the rail via the reopen strip.
+    await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
     const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(rail).toBeVisible({ timeout: 15_000 });
 
     // Switch to the Files tab — the placeholder is gone and the tree appears.
     await rail.getByRole("button", { name: "Files" }).click();
@@ -187,9 +198,10 @@ test.describe("code rail beside chat", () => {
     await routeChanges(page, filesRef);
     await base(page, [REPO_SESSION]);
     await openSession(page, "Refactor auth flow");
-    // Rail is the third-column Panel on desktop…
-    await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: 30_000 });
-    // …and the mobile toggle affordance is absent.
+    // Closed at rest (cave-xsq.7) — the strip reopens the third-column Panel…
+    await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
+    await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: 15_000 });
+    // …and the mobile toggle affordance is absent on desktop.
     await expect(page.locator(".mobile-code-rail-toggle")).toHaveCount(0);
   });
 
@@ -205,8 +217,10 @@ test.describe("code rail beside chat", () => {
     await base(page, [REPO_SESSION]);
     await openSession(page, "Refactor auth flow");
 
+    // Closed at rest (cave-xsq.7) — open the rail via the reopen strip.
+    await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
     const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(rail).toBeVisible({ timeout: 15_000 });
 
     // The normal side rail has Changes/Files only; Terminal is reserved for
     // the user-expanded fullscreen rail.
@@ -230,5 +244,53 @@ test.describe("code rail beside chat", () => {
     await terminalTab.click();
     await expect(rail.locator(".workspace-rail__terminal")).toBeVisible({ timeout: 15_000 });
     await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
+  });
+
+  test("(g) Changes tab Review button starts a new session carrying the commit-review prompt", async ({ page }) => {
+    const filesRef = { count: 2 };
+    await routeChanges(page, filesRef);
+
+    // Capture the auto-sent opening prompt of the review session. The button
+    // dispatches cave:agents-new-chat; ChatSurface opens a NEW chat whose
+    // initialPrompt auto-sends through /api/chat/send — the honest end of the
+    // wire. Reply with a minimal SSE stream so the chat settles.
+    const sends: Array<{ prompt?: string }> = [];
+    await page.route("**/api/chat/send", (route) => {
+      sends.push(JSON.parse(route.request().postData() ?? "{}"));
+      route.fulfill({
+        contentType: "text/event-stream",
+        body: 'data: {"type":"done"}\n\n',
+      });
+    });
+
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+
+    await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
+    const rail = page.locator(".workspace-rail");
+    await expect(rail).toBeVisible({ timeout: 15_000 });
+
+    await rail.getByRole("button", { name: "Changes" }).click();
+    const review = rail.getByRole("button", { name: "Review changes in a new session" });
+    await expect(review).toBeVisible({ timeout: 15_000 });
+    await expect(review).toBeEnabled();
+
+    await review.click();
+
+    // Background work (for example, the daily journal narrative) may share the
+    // chat endpoint, so wait for the review send rather than assuming it is the
+    // first request captured by this route.
+    await expect
+      .poll(
+        () => sends.find(({ prompt }) => prompt?.includes("Review the uncommitted changes in /repo/alpha"))?.prompt,
+        { timeout: 15_000 },
+      )
+      .toBeTruthy();
+    const prompt =
+      sends.find(({ prompt }) => prompt?.includes("Review the uncommitted changes in /repo/alpha"))?.prompt ?? "";
+    expect(prompt).toContain("Review the uncommitted changes in /repo/alpha");
+    expect(prompt).toContain("Changed files (2):");
+    expect(prompt).toContain("src/file-0.ts");
+    expect(prompt).toContain("git diff");
   });
 });

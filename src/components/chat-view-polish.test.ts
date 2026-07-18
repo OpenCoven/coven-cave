@@ -3,10 +3,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+// The empty state (the familiar's starting page) was extracted when it became
+// task-aware; its launch-screen pins now read the dedicated file.
+const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+// The staging state machine (cap, drag overlay, paste) lives in the shared hook.
+const attachStagingHook = readFileSync(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
+// The inline slash menus (options, dismiss, keyboard branches) live in theirs.
+const menusHookSource = readFileSync(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   globalsSrc,
@@ -66,7 +75,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible, suggestions: nextPaths \} = extractNextPaths\(reasoningSplit\.visible\)/,
+  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(skillSplit\.visible\)/,
   "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
 );
 
@@ -85,8 +94,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function HeaderThinkingToggle[\s\S]*useShowThinking\(\)[\s\S]*aria-pressed=\{showThinking\}/,
-  "A header toggle flips the global Show-thinking preference",
+  /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*checked=\{showThinking\}[\s\S]*\{showThinking \? "Hide thinking" : "Show thinking"\}/,
+  "The session overflow menu carries the global Show-thinking toggle",
 );
 
 assert.match(
@@ -175,6 +184,28 @@ assert.match(
 );
 assert.match(
   turnRow,
+  /const isEditCard = \(t: ToolEvent\) =>\s*toolInputAsDiff\(t\.name, t\.input\) != null;/,
+  "any structured file mutation diff stays visible inline, even when the tool input only has a relative path",
+);
+// Golden path 4 (cave-qva4): a multi-file turn gets ONE aggregate entry into
+// the working-tree review, riding the per-card cave:open-file-diff contract.
+assert.match(
+  turnRow,
+  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(t\) => toolTargetFile\(t\.name, t\.input\)\)/,
+  "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
+);
+assert.match(
+  turnRow,
+  /\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
+);
+assert.match(
+  turnRow,
+  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,300}?cave:open-file-diff/,
+  "Review all opens the Changes tab through the cards' existing event contract",
+);
+assert.match(
+  turnRow,
   /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the designated ToolGroup",
 );
@@ -187,8 +218,15 @@ assert.match(
 
 assert.match(
   source,
-  /<header className="cave-chat-linear-header"/,
-  "Chat header should use the dense linear session header",
+  /<header className="cave-chat-linear-header reveal-scope"/,
+  "Chat header uses the linear session header and is the reveal scope for its hover-quiet provenance (cave-xsq.3)",
+);
+// Slim header (cave-xsq.3): the settled provenance quiets to a reveal-on-hover
+// cluster so a resting header reads as just the conversation title.
+assert.match(
+  source,
+  /cave-chat-meta-line__provenance\$\{state === "complete" \? " reveal-on-hover" : ""\}/,
+  "the static meta provenance reveals on hover once the turn has settled (visible inline while streaming)",
 );
 
 assert.match(
@@ -205,7 +243,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*You[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
   "User turns should render a Discord-like avatar/name/badge/recency header",
 );
 assert.match(
@@ -216,8 +254,21 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-crest[\s\S]*cave-linear-turn-recency/,
-  "Assistant turns should render a large circular avatar with author identity and recency",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
+  "Assistant turns render a large circular avatar + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
+);
+// Lean meta (cave-xsq.2): the static extras collapse into a reveal-on-hover
+// cluster so the default row is just name + time; the turn content is the
+// reveal scope so hovering the message brings them back.
+assert.match(
+  turnRow,
+  /cave-linear-turn-content[^"]*reveal-scope/,
+  "the assistant turn content is the reveal scope for its meta extras",
+);
+assert.match(
+  turnRow,
+  /className="cave-linear-turn-meta-extra reveal-on-hover"/,
+  "crest/role/usage/peek live in a trailing reveal-on-hover cluster (name + time stay visible)",
 );
 
 assert.match(
@@ -240,8 +291,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /\{turn\.role === "user" \? "You" : "System"\}/,
-  "User and system turns should identify the speaker in the avatar row header",
+  /\{turn\.role === "user" \? operatorDisplayName : "System"\}/,
+  "User and system turns should identify the speaker in the avatar row header, using the operator profile name",
 );
 
 assert.doesNotMatch(
@@ -250,10 +301,18 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
+// The steady-state hint survives behind the recommended-next-path ghost fill
+// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
+// without one the classic `Message <familiar>…  ↵ to send` remains.
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
   "Composer placeholder should include ↵ to send hint in steady state",
+);
+assert.match(
+  source,
+  /busy\s*\? "Streaming… \(esc to cancel\)"/,
+  "Streaming keeps its own placeholder ahead of the recommendation branch",
 );
 
 assert.match(
@@ -270,32 +329,47 @@ assert.doesNotMatch(
 assert.match(
   source,
   /PERMISSION_MODES|permissionMode/,
-  "composer has a permission-mode chip",
+  "composer exposes the permission-mode (Access) control",
+);
+// The five response controls (Host · Access · Model · Thinking · Speed) collapse
+// into ONE icon-only Options menu instead of a row of inline pills.
+assert.match(
+  source,
+  /<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}[\s\S]*onHostPick=\{setRuntimeHost\}/,
+  "composer collapses host + response controls into the ComposerOptionsMenu",
 );
 assert.match(
   source,
-  /label="Model"/,
-  "composer has a model chip",
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerOptionsMenu/,
+  "composer utility row keeps attach + voice, then the collapsed Options menu",
+);
+// Composer core (cave-xsq.4): the dedicated Prompt-snippets button is folded
+// into the Options overflow, so the resting utility row is just attach · voice ·
+// overflow. Snippets are still reachable — the menu opens with the action.
+assert.doesNotMatch(
+  source,
+  /aria-label="Prompt snippets"/,
+  "the standalone Prompt-snippets utility button is gone (folded into the Options menu)",
 );
 assert.match(
   source,
-  /<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
-  "composer has a host chip (remote execution picker, shared with the home composer)",
+  /<ComposerOptionsMenu[\s\S]*onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/,
+  "the Options menu opens Prompt snippets as an action (nothing lost)",
 );
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
-  "composer utility row should keep attach, voice, and Host together before response controls",
+  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
+  "the Options menu carries Access, Model, Thinking, Speed sections in order",
+);
+assert.doesNotMatch(
+  source,
+  /cave-composer-settings-row/,
+  "the inline settings-row of control pills is gone (collapsed into the Options menu)",
 );
 assert.match(
   source,
-  /<div className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "composer response controls should render below the input in Access, Model, Thinking, Speed order",
-);
-assert.match(
-  source,
-  /<div className="cave-composer-submit-row">[\s\S]*aria-label="Enhance prompt"[\s\S]*<Icon name="ph:sparkle"[\s\S]*aria-label="Send message"/,
-  "Enhance should be an icon-only sparkle action immediately next to Send",
+  /<div className="cave-composer-submit-row">[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
+  "Enhance should be the shared sparkle control immediately next to Send",
 );
 assert.doesNotMatch(
   source,
@@ -304,9 +378,15 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
-  "composer footer should lay out utility, ordered response controls, and submit actions in one row below the input",
+  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+  "composer footer lays out the utility cluster and submit actions in one minimal row",
 );
+// The Options menu renders each control inline (no nested popover) and keeps the
+// connect-host dialog as a popover sibling so it survives the panel closing.
+const optionsMenu = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
+assert.match(optionsMenu, /role="radiogroup"/, "each control is an inline radiogroup");
+assert.match(optionsMenu, /ComposerHostChoices/, "host renders inline via the shared choices (no nested popover)");
+assert.match(optionsMenu, /ConnectHostDialog/, "connect-host dialog is rendered as a popover sibling");
 // The chip internals moved to the shared module — pin them there.
 const hostChip = readFileSync(new URL("./composer-host-chip.tsx", import.meta.url), "utf8");
 assert.match(
@@ -324,12 +404,14 @@ assert.match(
   /\(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
   "an explicit host pick (or the home composer's initial pick) rides the send body; auto stays absent",
 );
-// Home composer parity: the same chip, threading the pick into the opened chat.
+// Home composer: host pick is threaded into the opened chat via initialControls.
+// The ComposerHostChip was removed from the home toolbar (run-rail removed); runtimeHost
+// state persists so future sessions pick up the correct host via initialControls.
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 assert.match(
   homeComposer,
-  /<ComposerHostChip[\s\S]{0,200}onPick=\{\(id\) => setRuntimeHost\(id === LOCAL_HOST_ID \? null : id\)\}/,
-  "the home composer renders the shared host chip (local pick = auto)",
+  /const \[runtimeHost, setRuntimeHost\] = useState<string \| null>\(null\)/,
+  "the home composer still tracks runtimeHost for threading into initialControls",
 );
 assert.match(
   homeComposer,
@@ -340,6 +422,19 @@ assert.match(
   source,
   /ph:microphone/,
   "desktop composer has a mic/voice button",
+);
+// Voice can only attach to a live session, so pre-session the button is
+// hidden rather than disabled-forever (design language: hide, don't disable —
+// the zero-turn landing must not show a dead affordance).
+assert.match(
+  source,
+  /\{sessionId \? \([\s\S]{0,400}aria-label="Voice"/,
+  "the voice button is conditionally rendered on sessionId (hidden pre-session)",
+);
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice"[\s\S]{0,200}disabled=\{!sessionId\}/,
+  "the voice button must not be a permanently disabled affordance on the zero-turn landing",
 );
 
 assert.match(
@@ -412,14 +507,46 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*4px 10px 5px;/,
+  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*var\(--space-1\) 10px 5px;/,
   "Open chat header should be compressed for a streamlined session UI",
 );
 
+// The standalone header icon buttons (thinking/debug/reflect/delete) are gone —
+// their chrome went with them; the kebab and find affordance are the only
+// always-visible session actions.
+assert.doesNotMatch(
+  styles,
+  /\.cave-chat-icon-button/,
+  "Dead standalone icon-button chrome is removed with the buttons",
+);
+
+// Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions
+// collapse and reveal on hover / keyboard focus (touch devices show them).
+assert.match(
+  source,
+  /className="focus-ring cave-chat-actions-kebab"/,
+  "The overflow kebab is tagged so it stays visible while sibling actions collapse",
+);
 assert.match(
   styles,
-  /\.cave-chat-icon-button\s*\{[\s\S]*border:\s*1px solid transparent;[\s\S]*background:\s*transparent;/,
-  "Open chat header icon buttons should be chromeless until hover/focus",
+  /@media \(hover: hover\) and \(pointer: fine\)\s*\{[\s\S]*\.cave-chat-session-actions > \.focus-ring:not\(\.cave-chat-actions-kebab\):not\(\.cave-chat-find\)[\s\S]*opacity:\s*0;/,
+  "Quick header actions are hidden at rest on pointer devices",
+);
+assert.match(
+  styles,
+  /\.cave-chat-linear-header:hover \.cave-chat-session-actions > \.focus-ring[\s\S]*opacity:\s*1;/,
+  "Quick header actions reveal on header hover",
+);
+// "No plan limits" is suppressed — the plan chip only shows a real limit.
+assert.match(
+  source,
+  /availability === "unconfigured"\) return null;/,
+  "UsagePlanChip suppresses the uninformative 'No plan limits' chip",
+);
+assert.match(
+  source,
+  /function shortModelLabel\(/,
+  "Model id is shortened for the header (vendor/claude- prefix dropped)",
 );
 assert.match(
   source,
@@ -454,7 +581,20 @@ assert.match(
 assert.match(
   source,
   /<LinkedContextRow\b/,
-  "ChatView header should render LinkedContextRow for task/GitHub chips",
+  "ChatView should render LinkedContextRow for task/GitHub chips",
+);
+// Footer band (cave-8eo2): the linked-context strip rides the composer footer
+// band — beside the project, runtime, and git chips — not the header, so the
+// header stays one row and the metadata reads where the message is written.
+assert.match(
+  source,
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "The linked-context row rides the composer footer band",
+);
+assert.doesNotMatch(
+  source,
+  /hasLinkedChips/,
+  "The header no longer hosts the linked-context row (no chip-count gating)",
 );
 
 assert.doesNotMatch(
@@ -493,14 +633,22 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source,
+  emptyStateSource,
   /\{modKey\}↵ to send/,
   "Empty-state hint must not advertise a modifier — plain Enter sends (onComposerKey)",
 );
 assert.match(
-  source,
-  /Ready for the next thread\./,
+  emptyStateSource,
+  /Ready for the next thread — \/ for commands, @ for files\./,
   "Empty-state hint uses the redesigned launch-screen ready copy",
+);
+// Discoverability, dosed: one terse fragment for the composer's hidden powers.
+// ⌘K already lives in the hub footer and "↵ to send" in the placeholder —
+// repeating either here would exceed the dose.
+assert.match(
+  emptyStateSource,
+  /\/ for commands/,
+  "Empty-state hint surfaces the slash-command entry point (skills, prompts, /model)",
 );
 
 assert.match(
@@ -513,39 +661,52 @@ assert.match(
   /addEventListener\("cave:chat-rename", onRename\)[\s\S]{0,80}setEditing\(true\)|onRename = \(\) => setEditing\(true\)/,
   "ChatTitleEditable enters edit mode when the overflow menu fires cave:chat-rename",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /aria-label="Rename chat"/,
-  "The persistent pencil button is removed — the title is clean, rename is one click away in the menu",
+  /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
+  "Chat title carries an explicit, labeled rename button — click-to-rename and the overflow item alone are not discoverable",
+);
+assert.match(
+  source,
+  /aria-label="Rename chat"[\s\S]{0,400}ph:pencil-simple/,
+  "The title's rename button uses the same pencil icon as the overflow menu item",
 );
 
 // — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
+// The menu branches live in the shared use-inline-slash-menus hook; chat's
+// onComposerKey delegates to its dispatcher. Semantics pin the hook, ordering
+// pins chat's handler.
 const composerKey = source.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
-const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+const slashBranch = menusHookSource.match(/if \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\) \{[\s\S]*?\n      \}/)?.[0] ?? "";
 
 assert.match(
   slashBranch,
-  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*intentFromSlash\(cmd\.name\)/,
+  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*onRunCommand\(cmd\)/,
   "Slash-menu Enter must run the highlighted suggestion, not send the partially typed text",
 );
 assert.match(
+  source,
+  /onRunCommand: \(cmd\) => \{\s*\n\s*intentFromSlash\(cmd\.name\);\s*\n\s*\}/,
+  "chat routes a run command through intentFromSlash (home submits the typed text instead)",
+);
+assert.match(
   slashBranch,
-  /cmd\.argPlaceholder && canonicalize\(input\.trim\(\)\) !== cmd\.name[\s\S]*setInput\(cmd\.name \+ " "\)/,
+  /cmd\.argPlaceholder && canonicalize\(text\.trim\(\)\) !== cmd\.name[\s\S]*setText\(cmd\.name \+ " "\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
 );
 assert.match(
-  slashBranch,
-  /if \(e\.key === "Escape"\) \{[\s\S]*setSlashDismissed\(true\)/,
-  "Esc with the slash menu open must dismiss the menu",
+  menusHookSource,
+  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,400}setSlashDismissed\(true\);[\s\S]{0,40}return true;/,
+  "Esc with any inline menu open must dismiss the menu",
 );
 assert.ok(
-  composerKey.includes("setSlashDismissed(true)") &&
-    composerKey.indexOf("setSlashDismissed(true)") < composerKey.indexOf("cancelSend()"),
-  "Esc precedence: dismiss the slash menu before the busy-cancel branch can kill the stream",
+  composerKey.includes("handleMenuKey(e)") &&
+    composerKey.indexOf("handleMenuKey(e)") < composerKey.indexOf("cancelSend()"),
+  "Esc precedence: the menu dispatcher (which consumes Esc while open) runs before the busy-cancel branch can kill the stream",
 );
 assert.match(
-  source,
-  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);/,
+  menusHookSource,
+  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);\s*\n\s*\}, \[text\]\);/,
   "Editing the input must re-arm dismissed slash suggestions",
 );
 assert.match(
@@ -555,7 +716,7 @@ assert.match(
 );
 
 // — CHAT-D10-01 + CHAT-D13-03: instant scroll pin, intent-based release —
-const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns\]\);/)?.[0] ?? "";
+const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns, schedulePin\]\);/)?.[0] ?? "";
 assert.match(
   pinEffect,
   /requestAnimationFrame\(\(\) => \{[\s\S]*el\.scrollTop = el\.scrollHeight/,
@@ -583,8 +744,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(e\.deltaY < 0 && followingRef\.current\) updateFollowing\(false\)/,
-  "Wheel-up (negative deltaY) is the user intent that detaches following",
+  /if \(e\.deltaY < 0 && followingRef\.current && scrollable\(\)\) updateFollowing\(false\)/,
+  "Wheel-up (negative deltaY) on a scrollable transcript is the user intent that detaches following",
 );
 assert.match(
   source,
@@ -598,7 +759,7 @@ assert.match(
 );
 assert.match(
   source,
-  /y > lastTouchY && followingRef\.current\) updateFollowing\(false\)/,
+  /y > lastTouchY && followingRef\.current && scrollable\(\)\) \{\s*updateFollowing\(false\)/,
   "Touch drag toward earlier content (finger moving down) detaches following",
 );
 assert.match(
@@ -641,7 +802,14 @@ assert.equal(
 );
 
 // — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —
-const pasteHandler = source.match(/onPaste=\{\(e\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? "";
+// Paste-to-attach moved into the shared use-attachment-staging hook; the
+// composer pin holds the wiring, the hook pins hold the files-win semantics.
+assert.match(
+  source,
+  /onPaste=\{handlePaste\}/,
+  "Composer paste routes through the shared attachment-staging handler",
+);
+const pasteHandler = attachStagingHook.match(/const handlePaste = useCallback\([\s\S]*?\[addFiles\],\s*\);/)?.[0] ?? "";
 assert.match(
   pasteHandler,
   /e\.clipboardData\.items[\s\S]*item\.kind === "file"[\s\S]*item\.getAsFile\(\)/,
@@ -649,7 +817,7 @@ assert.match(
 );
 assert.match(
   pasteHandler,
-  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void attachFiles\(pastedFiles\);\s*\n\s*return;/,
+  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void addFiles\(pastedFiles\);/,
   "Pasted files win over any clipboard text and route through the existing attach pipeline; preventDefault only fires when files were consumed",
 );
 assert.doesNotMatch(
@@ -665,28 +833,35 @@ assert.match(
   "Drag file detection must normalize DataTransfer.types before calling includes for WebKit/WebView DOMStringList compatibility",
 );
 assert.doesNotMatch(
-  source,
+  source + attachStagingHook,
   /dataTransfer\.types\.includes\("Files"\)/,
   "Drag handlers must not call DataTransfer.types.includes directly; WebKit DOMStringList may not implement includes",
 );
+// The drag state machine lives in the shared use-attachment-staging hook; the
+// chat section spreads its handler bundle (whole-surface drop target).
 assert.match(
   source,
-  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
+  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.dropHandlers\}/,
+  "the whole chat section is the drop target (handlers spread from the shared hook)",
+);
+assert.match(
+  attachStagingHook,
+  /onDragEnter: \(e: DragEvent\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
   "dragenter must guard on a Files-type drag (text selections must not hijack) and use counter-based depth tracking",
 );
 assert.match(
-  source,
-  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;\s*\n\s*e\.preventDefault\(\);/,
+  attachStagingHook,
+  /onDragOver: \(e: DragEvent\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;\s*\n\s*e\.preventDefault\(\);/,
   "dragover must preventDefault (only for file drags) so the browser allows the drop",
 );
 assert.match(
-  source,
-  /onDragLeave=\{\(e\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  attachStagingHook,
+  /onDragLeave: \(e: DragEvent\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
   "dragleave must decrement the depth counter and only hide the overlay at depth 0 — child-element transitions must not flicker it",
 );
 assert.match(
-  source,
-  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
+  attachStagingHook,
+  /onDrop: \(e: DragEvent\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?void addFiles\(e\.dataTransfer\.files\);/,
   "drop must reset the overlay state and route dataTransfer.files through the existing attach pipeline",
 );
 assert.match(
@@ -694,7 +869,9 @@ assert.match(
   /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
   "A visible drop overlay must render while a file drag is over the chat surface",
 );
-const caveChatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   caveChatCss,
   /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,
@@ -903,17 +1080,20 @@ assert.match(
   /if \(mentionOpen\) \{[\s\S]*?setMentionDismissed\(true\)/,
   "Esc with the mention picker open must dismiss the picker",
 );
+// The slash branches live behind the shared hook's dispatcher, so the #402
+// ordering contract anchors on the dispatch call: mention branch → menu
+// dispatcher (consumes Esc while any menu is open) → busy-cancel.
 assert.ok(
   mentionComposerKey.indexOf("if (mentionOpen) {") <
-    mentionComposerKey.indexOf("if (slashSuggestions.length > 0) {"),
-  "The mention branch must run before the slash branch in onComposerKey",
+    mentionComposerKey.indexOf("handleMenuKey(e)"),
+  "The mention branch must run before the slash-menu dispatcher in onComposerKey",
 );
 assert.ok(
   mentionComposerKey.indexOf("setMentionDismissed(true)") <
-    mentionComposerKey.indexOf("setSlashDismissed(true)") &&
-    mentionComposerKey.indexOf("setSlashDismissed(true)") <
+    mentionComposerKey.indexOf("handleMenuKey(e)") &&
+    mentionComposerKey.indexOf("handleMenuKey(e)") <
       mentionComposerKey.indexOf("cancelSend()"),
-  "Esc precedence: mention dismiss before slash dismiss before busy-cancel",
+  "Esc precedence: mention dismiss before slash dismiss (inside the dispatcher) before busy-cancel",
 );
 assert.match(
   mentionComposerKey,
@@ -944,7 +1124,7 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /setInput\(""\);\s*\n\s*setAttachments\(\[\]\);\s*\n\s*setMentionedFiles\(\[\]\);/,
+  /setInput\(""\);[\s\S]{0,400}?clearAttachments\(\);\s*\n\s*setMentionedFiles\(\[\]\);/,
   "Sending must clear staged mentions with the composer",
 );
 
@@ -997,6 +1177,29 @@ assert.match(
   "the first follow-up is marked as the recommended next step",
 );
 
+// Suggestion pills lay out in UNIFORM rows keyed off the chip count: 2 and 4
+// chips pair into two columns (4 = 2×2, never a 3+1 orphan wrap); every other
+// count — legacy 3-chip transcripts included — stacks full-width (cave-wrso,
+// cave-98bs).
+assert.match(
+  source,
+  /className="cave-next-paths" data-count=\{nextPaths\.length\}/,
+  "the chip row stamps its count so CSS can key columns off it",
+);
+assert.match(
+  globalsSrc,
+  /\.cave-next-paths\[data-count="2"\],\s*\n\s*\.cave-next-paths\[data-count="4"\] \{ grid-template-columns: repeat\(2, 1fr\); \}/,
+  "2 and 4 chips pair into two columns (4 renders 2×2)",
+);
+assert.ok(
+  !/\.cave-next-paths\[data-count="3"\]/.test(globalsSrc),
+  "no exactly-3 column rule: the chatturn container (46rem reading column, ~672px inner) can never reach a width where three chips fit, so legacy 3-chip rows stack (cave-98bs)",
+);
+assert.ok(
+  !/\.cave-next-paths \{ grid-template-columns: repeat\(/.test(globalsSrc),
+  "no count-blind multi-column rule survives (it produced 3+1 orphan wraps)",
+);
+
 // File picker resets its value synchronously so re-selecting the same file (or
 // re-attaching after the CSV / 10-cap early returns) still fires onChange.
 assert.ok(
@@ -1009,11 +1212,41 @@ assert.ok(
 );
 
 // Codex inline file-edit card: Edit/Write/MultiEdit/NotebookEdit tool calls
-// render as a compact `Edited <file>  +N −M  Review` card in the transcript.
+// render as a visible details card in the transcript. The collapsed summary
+// shows when/status + what file changed; expanding the same card shows the
+// actual diff, matching the Bash/tool-use disclosure pattern.
 assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex edit card");
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+
+// Review adapts to where the edit can actually be reviewed: a file under the
+// session's project root jumps to the code rail's Changes diff; anything else
+// (familiar-workspace docs, repo-less sessions, relative paths) opens an
+// in-chat modal with this edit's diff instead of dispatching an event nothing
+// can service. The actions row renders on every edit card — not only when an
+// absolute target path exists — so Review is always available.
+assert.match(
+  source,
+  /if \(relPath && targetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
+  "Review falls back to the in-chat diff modal when the Changes panel can't show the file",
+);
+assert.match(
+  source,
+  /<Modal[\s\S]{0,200}open=\{reviewOpen\}[\s\S]{0,600}<SyntaxBlock text=\{diff\} lang="diff" \/>/,
+  "the review modal renders this edit's structured diff",
+);
+assert.match(
+  source,
+  /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
+  "edit-card actions render unconditionally (Review works without an absolute target path)",
+);
+assert.match(globalsSrc, /\.cave-review-modal/, "review modal styling exists");
+assert.match(
+  source,
+  /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,
+  "edit cards should use the same expandable tool details pattern and include the code diff in chat",
+);
 
 // Inline "Undo" reverts the edited file to its last committed state via the
 // changes revert API, resolving the repo-relative path through a context, and
@@ -1023,3 +1256,21 @@ assert.match(source, /ToolProjectRootContext/, "edit card resolves project root 
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
 assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists");
+
+// cave-zvr: composer send hygiene + picker Escape.
+// (3) send() clears the persisted draft synchronously — the 250ms debounced
+//     writer is cancelled if ChatView unmounts right after send, else the
+//     pre-send text reappears as a draft on return.
+assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?clearDraft\(\);/, "send clears the persisted composer draft synchronously");
+// (2) send() resets the enhance strip so it doesn't linger over an empty
+//     composer and let Revert repopulate the already-sent message.
+assert.match(source, /clearDraft\(\);[\s\S]{0,400}?promptEnhance\.reset\(\);/, "send resets the enhance strip state");
+// (1) the slash, /model, /skill and /prompt pickers all dismiss on Escape
+//     (their footers advertise "esc cancel"); previously Esc fell through and
+//     cancelled a live stream. The shared hook guards ONE Escape branch on
+//     menuOpen — the union of all four pickers — so none can leak Esc through.
+assert.match(
+  menusHookSource,
+  /if \(e\.key === "Escape" && menuOpen\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSlashDismissed\(true\);\s*\n\s*return true;\s*\n\s*\}/,
+  "the slash, model, skill and prompt pickers all dismiss on Escape (setSlashDismissed behind menuOpen)",
+);

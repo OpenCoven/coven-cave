@@ -5,6 +5,7 @@
  */
 
 import type { IconName } from "@/lib/icon";
+import { INTERNAL_COVEN_FAMILIAR_IDS } from "./familiar-roster-guard.ts";
 
 export type RoleAffinity = { familiar: string; roles: string[] };
 
@@ -12,9 +13,53 @@ export type MarketplaceJsonPlugin = {
   name: string;
   displayName?: string;
   category?: string;
+  kind?: PluginKind;
   trust?: string;
   policy?: { installation?: string; authentication?: string };
   roleAffinity?: RoleAffinity[];
+};
+
+export type CraftProvenance = {
+  source: string;
+  commit: string;
+  license: string;
+  licensePath: string;
+};
+
+export type CraftSourcedResource = {
+  id: string;
+  sourcePath: string;
+  upstreamPath: string;
+  contentHash: string;
+  modifications: string[];
+};
+
+export type CraftPromptResource = {
+  id: string;
+  name: string;
+  description?: string;
+  body: string;
+};
+
+export type CraftWorkflowResource = {
+  id: string;
+  name: string;
+  description?: string;
+  steps: string[];
+};
+
+export type CraftSpecification = {
+  schemaVersion: "opencoven.craft.v1";
+  components: { required: string[]; optional: string[] };
+  bundled: {
+    skills: CraftSourcedResource[];
+    prompts: CraftPromptResource[];
+    workflows: CraftWorkflowResource[];
+  };
+  requiredCapabilities: string[];
+  recommendedRoles: string[];
+  provenance: CraftProvenance;
+  mcpServers?: Record<string, { url?: string; type?: string; command?: string; args?: string[] }>;
 };
 
 export type PluginUserConfigField = {
@@ -29,6 +74,7 @@ export type PluginUserConfigField = {
 };
 
 export type PluginManifest = {
+  kind?: PluginKind;
   version?: string;
   description?: string;
   author?: { name?: string } | string;
@@ -37,7 +83,12 @@ export type PluginManifest = {
   keywords?: string[];
   capabilities?: string[];
   userConfig?: Record<string, PluginUserConfigField>;
-  mcpServers?: Record<string, { url?: string; type?: string; command?: string }>;
+  mcpServers?: Record<string, { url?: string; type?: string; command?: string; args?: string[] }>;
+  craft?: CraftSpecification;
+  /** Prompt-template ids shipped by this plugin (a prompt pack). The files
+   *  live at marketplace/plugins/<id>/prompts/<pid>.md and are resolved by
+   *  /api/prompts at scan time once the pack is installed. */
+  prompts?: string[];
 };
 
 export type RequiredConfigField = {
@@ -81,9 +132,18 @@ export function remoteUrlFromManifest(manifest: PluginManifest): string | undefi
   return undefined;
 }
 
-export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
+export type MarketplaceInstallationState = {
+  version: string;
+  source: string;
+  installedAt: string;
+  runtime?: string;
+  verifiedAt?: string;
+  craftVersion?: string;
+};
 
-export type PluginKind = "api" | "mcp" | "skill";
+export type InstalledMap = Record<string, MarketplaceInstallationState>;
+
+export type PluginKind = "api" | "mcp" | "skill" | "prompt" | "craft" | "knowledge-pack";
 
 export type MarketplacePlugin = {
   id: string;
@@ -101,22 +161,48 @@ export type MarketplacePlugin = {
   kind: PluginKind;
   version: string;
   installed: boolean;
+  /** Persisted install/verification metadata. Legacy records omit Craft fields. */
+  installation?: MarketplaceInstallationState;
+  updateAvailable: boolean;
   requiresSetup: boolean;
   available: boolean;
   requiredConfig: RequiredConfigField[];
   configured: boolean;
   remoteUrl?: string;
+  /** Prompt-template ids for kind "prompt" packs (listed in the detail pane). */
+  prompts?: string[];
+  /** Versioned composition and provenance for kind "craft" entries. */
+  craft?: CraftSpecification;
+  /** Local, unpublished Craft authoring draft created inside Cave. */
+  draft?: boolean;
+  draftId?: string;
 };
+
+export function isCraftInstallationVerified(
+  plugin: Pick<MarketplacePlugin, "kind" | "installed" | "installation" | "version">,
+): boolean {
+  const installation = plugin.installation;
+  return plugin.kind === "craft"
+    && plugin.installed
+    && installation?.runtime === "codex"
+    && typeof installation.verifiedAt === "string"
+    && installation.verifiedAt.length > 0
+    && installation.craftVersion === plugin.version;
+}
 
 /**
  * "mcp" when the manifest declares any MCP server (stdio command or remote
- * url); "api" when it represents an HTTP/API-backed integration without an
- * MCP server; otherwise "skill" — a first-party procedure that runs inside
- * Coven Cave without an external server.
+ * url); "prompt" when it ships prompt templates (a prompt pack); "api" when
+ * it represents an HTTP/API-backed integration without an MCP server;
+ * otherwise "skill" — a first-party procedure that runs inside Coven Cave
+ * without an external server.
  */
 export function deriveKind(manifest: PluginManifest): PluginKind {
+  if (manifest.kind === "craft") return "craft";
+  if (manifest.kind === "knowledge-pack") return "knowledge-pack";
   const servers = manifest.mcpServers ?? {};
   if (Object.keys(servers).length > 0) return "mcp";
+  if ((manifest.prompts?.length ?? 0) > 0) return "prompt";
   const tags = [...(manifest.capabilities ?? []), ...(manifest.keywords ?? [])]
     .map((value) => value.toLowerCase());
   return tags.includes("api") ? "api" : "skill";
@@ -133,12 +219,15 @@ function authorName(author: PluginManifest["author"]): string {
   return "OpenCoven";
 }
 
-const FAMILIAR_MARKETPLACE_NAMES = new Set(["nova", "kitty", "cody", "charm", "sage", "astra", "echo"]);
-const FAMILIAR_PLUGIN_RE = /^coven-(nova|kitty|cody|charm|sage|astra|echo)$/i;
-const FAMILIAR_NAME_RE = /\b(nova|kitty|cody|charm|sage|astra|echo)\b/i;
+// One source of truth for the internal coven familiar names that must never
+// leak into the shared catalog: the roster guard's list (ids are plain
+// lowercase alphanumerics, so joining them into a regex needs no escaping).
+const FAMILIAR_NAME_ALTERNATION = [...INTERNAL_COVEN_FAMILIAR_IDS].join("|");
+const FAMILIAR_PLUGIN_RE = new RegExp(`^coven-(${FAMILIAR_NAME_ALTERNATION})$`, "i");
+const FAMILIAR_NAME_RE = new RegExp(`\\b(${FAMILIAR_NAME_ALTERNATION})\\b`, "i");
 
 function hasHardcodedFamiliarName(value: string): boolean {
-  return FAMILIAR_MARKETPLACE_NAMES.has(value.trim().toLowerCase());
+  return INTERNAL_COVEN_FAMILIAR_IDS.has(value.trim().toLowerCase());
 }
 
 export function sanitizeMarketplacePlugins(
@@ -169,7 +258,16 @@ export function mergeCatalog(
     .map((p) => {
       const manifest = manifests[p.name] ?? {};
       const installation = p.policy?.installation ?? "AVAILABLE";
+      const installedState = installed[p.name];
       const requiredConfig = requiredConfigFromManifest(manifest);
+      const kind = p.kind === "craft" || p.kind === "knowledge-pack" ? p.kind : deriveKind(manifest);
+      const version = manifest.version ?? "0.0.0";
+      const craftVerified = isCraftInstallationVerified({
+        kind,
+        installed: Boolean(installedState),
+        ...(installedState ? { installation: installedState } : {}),
+        version,
+      });
       return {
         id: p.name,
         displayName: p.displayName ?? p.name,
@@ -186,14 +284,24 @@ export function mergeCatalog(
         homepage: manifest.homepage,
         repository: manifest.repository,
         roleAffinity: p.roleAffinity ?? [],
-        kind: deriveKind(manifest),
-        version: manifest.version ?? "0.0.0",
-        installed: Boolean(installed[p.name]),
+        kind,
+        version,
+        installed: Boolean(installedState),
+        ...(installedState ? { installation: { ...installedState } } : {}),
+        updateAvailable: Boolean(
+          installedState
+          && (
+            (kind === "craft" && !craftVerified)
+            || (installedState.craftVersion ?? installedState.version) !== version
+          ),
+        ),
         requiresSetup: requiredConfig.length > 0,
         available: installation === "AVAILABLE",
         requiredConfig,
         configured: false,
         remoteUrl: remoteUrlFromManifest(manifest),
+        ...(manifest.prompts?.length ? { prompts: manifest.prompts } : {}),
+        ...(manifest.craft ? { craft: manifest.craft } : {}),
       };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -266,22 +374,37 @@ export function sortPlugins(plugins: MarketplacePlugin[], sort: SortKey): Market
   );
 }
 
-export function countByKind(plugins: MarketplacePlugin[]): { api: number; mcp: number; skill: number } {
+export type PluginKindCounts = {
+  api: number;
+  mcp: number;
+  skill: number;
+  prompt: number;
+  craft: number;
+  "knowledge-pack": number;
+};
+
+export function countByKind(plugins: MarketplacePlugin[]): PluginKindCounts {
   let api = 0;
   let mcp = 0;
   let skill = 0;
+  let prompt = 0;
+  let craft = 0;
+  let knowledgePack = 0;
   for (const p of plugins) {
     if (p.kind === "api") api += 1;
     else if (p.kind === "mcp") mcp += 1;
+    else if (p.kind === "prompt") prompt += 1;
+    else if (p.kind === "craft") craft += 1;
+    else if (p.kind === "knowledge-pack") knowledgePack += 1;
     else skill += 1;
   }
-  return { api, mcp, skill };
+  return { api, mcp, skill, prompt, craft, "knowledge-pack": knowledgePack };
 }
 
 export type MarketplaceCategoryGroup = {
   category: string;
   plugins: MarketplacePlugin[];
-  counts: { api: number; mcp: number; skill: number };
+  counts: PluginKindCounts;
 };
 
 export function groupPluginsByCategory(plugins: MarketplacePlugin[]): MarketplaceCategoryGroup[] {

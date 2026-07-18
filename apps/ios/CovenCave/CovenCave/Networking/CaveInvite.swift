@@ -6,7 +6,7 @@ import Foundation
 ///   (tap on device, or scan its QR)
 /// - any http(s) invite URL carrying `coven_access_token`/`covenCaveToken` —
 ///   the browser-invite QR payload, pasted or scanned
-/// - a bare host / host:port / full URL, with no credential (tokenless mode)
+/// - a bare host / host:port / full URL, with no credential (local/dev mode)
 struct CaveInvite: Equatable {
     var host: String
     var token: String?

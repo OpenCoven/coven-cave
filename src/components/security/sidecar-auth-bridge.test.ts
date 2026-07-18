@@ -11,16 +11,33 @@ const match = source.match(/SIDECAR_AUTH_BRIDGE = `([\s\S]*?)`;/);
 assert.ok(match, "should find the SIDECAR_AUTH_BRIDGE script literal");
 const SCRIPT = match[1];
 
-assert.match(source, /import Script from "next\/script"/, "sidecar auth bridge uses Next Script, not a raw script tag");
-assert.match(source, /strategy="beforeInteractive"/, "sidecar auth bridge should run before hydration");
+assert.doesNotMatch(source, /import Script from "next\/script"/, "sidecar auth bridge must render a plain server script, not next/script");
+assert.match(source, /<script\b/, "sidecar auth bridge renders an inline server document script");
 
 const TOKEN_HEADER = "x-coven-cave-token";
 
 function makeWindow({ search = "", hash = "", origin = "http://localhost:3210" }) {
   const store = new Map();
   const fetchCalls = [];
+  const webSocketCalls = [];
+  function NativeWebSocket(url, protocols) {
+    this.url = url.toString();
+    this.protocols = protocols;
+    webSocketCalls.push({ url: this.url, protocols });
+  }
+  NativeWebSocket.CONNECTING = 0;
+  NativeWebSocket.OPEN = 1;
+  NativeWebSocket.CLOSING = 2;
+  NativeWebSocket.CLOSED = 3;
   const win = {
-    location: { search, hash, pathname: "/", origin, href: origin + "/" + search + hash },
+    location: {
+      search,
+      hash,
+      pathname: "/",
+      origin,
+      host: origin.replace(/^https?:\/\//, ""),
+      href: origin + "/" + search + hash,
+    },
     sessionStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
@@ -28,9 +45,11 @@ function makeWindow({ search = "", hash = "", origin = "http://localhost:3210" }
     history: { state: { a: 1 }, replaceState(_s, _t, url) { win.__replacedUrl = url; } },
     fetch: (input, init) => { fetchCalls.push({ input, init }); return Promise.resolve("ok"); },
     EventSource: function NativeES() {},
+    WebSocket: NativeWebSocket,
   };
   win.__store = store;
   win.__fetchCalls = fetchCalls;
+  win.__webSocketCalls = webSocketCalls;
   return win;
 }
 
@@ -67,6 +86,37 @@ test("attaches the token header to same-origin /api/ fetches", async () => {
   const last = win.__fetchCalls.at(-1);
   const headers = last.init.headers;
   assert.equal(headers.get(TOKEN_HEADER), "tok_api", "/api/ requests carry the sidecar token header");
+});
+
+test("attaches the token query param to same-host PTY WebSockets", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_ws" });
+  run(win);
+  // Same absolute ws:// URL shape as src/lib/pty-ws-bridge.ts: the WS origin
+  // (ws://…) never equals the page origin (http://…), so the bridge must
+  // match on host, not origin.
+  const ws = new win.WebSocket("ws://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24");
+  assert.equal(
+    ws.url,
+    "ws://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24&covenCaveToken=tok_ws",
+    "PTY WebSockets carry the sidecar token because browsers cannot set custom WS headers",
+  );
+});
+
+test("keeps the WebSocket readyState statics on the patched constructor", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_static" });
+  run(win);
+  // pty-ws-bridge checks readyState === WebSocket.OPEN off the constructor.
+  assert.equal(win.WebSocket.CONNECTING, 0);
+  assert.equal(win.WebSocket.OPEN, 1);
+  assert.equal(win.WebSocket.CLOSING, 2);
+  assert.equal(win.WebSocket.CLOSED, 3);
+});
+
+test("does not inject the token into cross-host WebSockets", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_cross" });
+  run(win);
+  const ws = new win.WebSocket("ws://evil.example.com/api/pty-ws");
+  assert.equal(ws.url, "ws://evil.example.com/api/pty-ws", "cross-host sockets must not receive the token");
 });
 
 test("does not touch non-/api/ or cross-origin fetches", async () => {

@@ -19,10 +19,9 @@ const messageBubbleSource = readFileSync(
   "utf8",
 );
 
-const caveChatCss = readFileSync(
-  new URL("../styles/cave-chat.css", import.meta.url),
-  "utf8",
-);
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 1: Turn index map for O(1) lookup (CHAT-D10-02 fix)
@@ -142,7 +141,7 @@ assert.match(
 // ── 2026-07-03 chat perf/a11y batch ──────────────────────────────────────────
 assert.match(chatViewSource, /const siblingIndex = useMemo\(\(\) => buildSiblingIndex\(turns\), \[turns\]\)/, "branch-nav siblings are precomputed once per turns change, not scanned per row");
 assert.doesNotMatch(chatViewSource, /siblingsOf\(turns/, "no per-row siblingsOf(turns) scans remain in render");
-assert.match(chatViewSource, /text: appendCollapsingNewlines\(t\.text, ev\.text\)/, "streaming append collapses newlines incrementally, not by re-scanning the whole buffer");
+assert.match(chatViewSource, /text: appendCollapsingNewlines\(t\.text, text\)/, "streaming append collapses newlines incrementally, not by re-scanning the whole buffer");
 assert.match(chatViewSource, /role="log"[\s\S]{0,80}aria-busy=\{busy \|\| undefined\}/, "the transcript log is aria-busy while streaming so AT doesn't re-announce the growing message");
 assert.match(chatViewSource, /aria-controls=\{panelId\}/, "RunActivityStrip's disclosure references its panel");
 

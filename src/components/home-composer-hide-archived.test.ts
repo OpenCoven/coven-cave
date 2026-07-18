@@ -1,8 +1,9 @@
 // @ts-nocheck
 //
-// Guard: the home-composer "new session" surface must hide archived familiars
-// from the picker dropdown AND default to the first non-archived familiar
-// when the user has not explicitly selected one yet.
+// Guard: the home-composer "new session" surface must default to the first
+// non-archived familiar when the previously-active one is archived. (The old
+// home familiar picker is gone — the side panel owns selection — but the
+// default used for sending must still skip archived familiars.)
 //
 // Archived familiars are tracked by `cave-familiar-archive.ts` (localStorage,
 // per-Cave). Showing them in a "start a new chat" picker is a footgun — the
@@ -72,20 +73,13 @@ assert.match(
   "HomeComposer should check whether activeFamiliarId points at an archived familiar",
 );
 
-// 5. Dropdown renders visibleFamiliars, not raw familiars.
-assert.match(
+// 5. The familiar picker itself is gone from home (selection lives in the side
+//    panel), so no dropdown may render familiars — visibleFamiliars only feeds
+//    the default-selection fallback above.
+assert.doesNotMatch(
   source,
-  /visibleFamiliars\.map\(\(familiar\)\s*=>\s*\{[\s\S]{0,500}value:\s*familiar\.id[\s\S]{0,500}label:\s*familiar\.display_name/,
-  "HomeComposer dropdown should build custom select options from visibleFamiliars (non-archived only)",
-);
-
-// 6. The empty-state check should also reflect that there might be zero visible
-//    familiars even if there are archived ones — guard that the disabled-when-
-//    empty check uses the visible list.
-assert.match(
-  source,
-  /disabled=\{visibleFamiliars\.length\s*===\s*0\s*\|\|\s*sending\}/,
-  "HomeComposer dropdown should be disabled when there are no visible (non-archived) familiars",
+  /HomeSelect|Choose chat agent/,
+  "HomeComposer should not render a familiar picker (side panel owns selection)",
 );
 
 console.log("home-composer-hide-archived.test.ts: ok");

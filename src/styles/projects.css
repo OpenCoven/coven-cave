@@ -1,0 +1,207 @@
+/* Projects hub — master-detail styling. Imported directly by projects-view.tsx
+   so the surface is styled straight from Chat → Projects on first paint; this
+   file is the Projects surface's only stylesheet (it no longer leans on
+   board.css). */
+
+/* container: projects — the narrow-layout rules below query the surface's own
+   width, not the viewport, so the single-pane collapse also fires when the
+   chat pane is dragged narrow (same pattern as .board-shell's
+   `container: board`). The container sits on the shell WRAPPER (the <main>
+   around the hub), not on the hub grid itself: an element's own @container
+   rules only match against an ANCESTOR container, so `.projects-hub { … }`
+   inside `@container projects` would silently never apply if the hub were the
+   container. */
+.projects-view {
+  container: projects-view / inline-size;
+}
+
+.projects-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  container: projects / inline-size;
+}
+
+.projects-hub {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── List pane ─────────────────────────────────────────────────────────────── */
+.projects-hub__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+  border-right: 1px solid var(--border-hairline);
+}
+
+/* Motion audit: the only transitions on this surface are color-only (no
+   movement), and globals.css collapses every transition/animation duration
+   under prefers-reduced-motion; scrolling goes through smoothScrollBehavior().
+   Nothing here needs its own reduced-motion override. */
+.projects-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.projects-list-row:hover { background: var(--bg-hover); color: var(--text-primary); }
+.projects-list-row[aria-selected="true"] {
+  background: var(--bg-hover);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
+}
+.projects-list-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.projects-list-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.projects-list-row__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* Status dot — color never carries the meaning alone; rows pair it with an
+   accessible label and the detail head repeats the status in words. */
+.projects-status-dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
+
+/* ── Detail pane ───────────────────────────────────────────────────────────── */
+.projects-hub__detail {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.projects-detail-head { display: flex; flex-direction: column; gap: 10px; }
+.projects-detail-head__row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.projects-detail-head__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.projects-detail-head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.projects-detail-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-hairline); }
+.projects-detail-section__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Dashed = invitation (design language §3): empty sections invite the next
+   action instead of dead-ending. */
+.projects-detail-empty {
+  padding: 10px var(--space-3);
+  border: 1px dashed var(--border-hairline);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+/* Back to the list — only exists under the narrow single-pane collapse. */
+.projects-detail-back { display: none; }
+
+/* The toolbar responds to the Projects pane itself, not the window: split
+   tiles can be phone-narrow on a desktop viewport. Give summary/sort and the
+   action pair separate rows before either group can compress or overlap. */
+@container projects-view (max-width: 640px) {
+  .projects-toolbar__row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .projects-toolbar__controls {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .projects-toolbar__actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ── Session chips (shared with the old table; canonical home is now here) ── */
+.projects-session-count { display: inline-flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.projects-session-count > svg { color: var(--text-muted); }
+.projects-session-chip { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 1px 6px; border-radius: 999px; white-space: nowrap; background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.projects-session-chip--running { color: var(--accent-presence); background: color-mix(in oklch, var(--accent-presence) 12%, transparent); font-weight: 600; }
+
+/* ── Narrow collapse: one pane at a time, driven by data-pane ─────────────── */
+@container projects (max-width: 640px) {
+  .projects-hub { grid-template-columns: minmax(0, 1fr); }
+  .projects-hub__list { border-right: 0; }
+  .projects-hub[data-pane="detail"] .projects-hub__list { display: none; }
+  .projects-hub[data-pane="list"] .projects-hub__detail { display: none; }
+  .projects-detail-back { display: inline-flex; }
+  /* The head row wraps so the action cluster drops below the title instead of
+     crushing it or clipping off the pane's edge. The title keeps a readable
+     minimum — flex-1 + min-width:0 alone would shrink it to nothing and the
+     row would never wrap. */
+  .projects-detail-head__row { flex-wrap: wrap; }
+  .projects-detail-head__title { min-width: 10rem; }
+}
+
+/* Sidebar-band widths: the chat split can pinch this surface to ~200–480px.
+   Only one pane shows down here (the 640px collapse already fired), so give
+   its content the chrome's padding back. */
+@container projects (max-width: 420px) {
+  .projects-hub__list { padding: 6px; }
+  .projects-hub__detail { padding: 12px 12px 20px; }
+}

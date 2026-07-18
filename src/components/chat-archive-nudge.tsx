@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 /**
  * ChatArchiveNudge — the inline "final nudge" rendered at the bottom of a
  * chat transcript when the chat is tied to a task whose execution lifecycle

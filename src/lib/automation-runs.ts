@@ -1,13 +1,13 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import path from "node:path";
 
 /**
  * Local run-history store for Codex automations — records app-triggered
  * "run now" executions (the daemon's scheduled runs are separate). Newest-first,
- * capped, JSON on disk. Path: `~/.coven/cave-automation-runs.json`, overridable
+ * capped, JSON on disk. Path: `~/.coven/cave/automation-runs.json`, overridable
  * via `COVEN_AUTOMATION_RUNS_PATH` (tests).
  */
 export const AUTOMATION_RUNS_CAP = 200;
@@ -30,12 +30,12 @@ type RunsFile = { version: 1; runs: AutomationRunRecord[] };
 function runsPath(): string {
   const override = process.env.COVEN_AUTOMATION_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "cave-automation-runs.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "automation-runs.json");
 }
 
 async function loadRunsFile(): Promise<RunsFile> {
   try {
-    const text = await readFile(runsPath(), "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ runsPath(), "utf8");
     const parsed = JSON.parse(text) as RunsFile;
     if (parsed && Array.isArray(parsed.runs)) return { version: 1, runs: parsed.runs };
   } catch {
@@ -52,8 +52,9 @@ function withRunsLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function persist(file: RunsFile): Promise<void> {
-  await mkdir(path.dirname(runsPath()), { recursive: true });
-  await writeJsonAtomic(runsPath(), file);
+  // Run history is runtime user state, never a build input.
+  await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+  await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
 }
 
 export async function recordRun(input: Omit<AutomationRunRecord, "id">): Promise<AutomationRunRecord> {

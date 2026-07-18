@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
+import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   listSkillDirectoryEntriesWithLocal,
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
       cwd: process.cwd(),
       timeout: USE_TIMEOUT_MS,
       maxBuffer: MAX_USE_BUFFER,
-      env: { ...process.env, npm_config_yes: "true" },
+      env: scrubSidecarInternalEnv({ ...process.env, npm_config_yes: "true" }),
     });
     const prompt = stdout.trim();
     if (!prompt) {

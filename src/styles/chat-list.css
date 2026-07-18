@@ -1,0 +1,66 @@
+/* chat-list.css — sidebar conversation list rows, threads and scope
+ * controls. Split out of cave-chat.css (#3264): the list renders in
+ * the shell sidebar on every surface, independent of an open chat. */
+
+/* ── Codex-style chat thread rail (chat-project-sidebar) ─────────────────────
+   Drag-to-reorder visual state for the flat all-chats list. The row markup is
+   Tailwind-driven; only the lifted/translucent drag affordance lives here so
+   it reads consistently with the familiar-avatar-rail dnd. */
+.chat-thread-row[data-dragging="true"] {
+  z-index: 2;
+  opacity: 0.9;
+}
+.chat-thread-row[data-dragging="true"] > div {
+  background: var(--bg-raised);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--shadow-color, #000) 30%, transparent);
+}
+.chat-thread-handle {
+  cursor: grab;
+}
+.chat-thread-row[data-dragging="true"] .chat-thread-handle {
+  cursor: grabbing;
+}
+
+/* Full chat list rows use the same persisted drag intent as the thread rail,
+   but keep their larger row surface as the open target. */
+.chat-list-sortable-row[data-dragging="true"] {
+  position: relative;
+  z-index: 2;
+  opacity: 0.94;
+}
+.chat-list-sortable-row[data-dragging="true"] > .chat-list-row {
+  background: var(--bg-raised);
+  box-shadow: 0 8px 22px color-mix(in oklch, var(--shadow-color, #000) 26%, transparent);
+}
+.chat-list-drag-handle {
+  cursor: grab;
+}
+.chat-list-sortable-row[data-dragging="true"] .chat-list-drag-handle {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+/* Demoted Group entry (cave-xsq.5): a quiet icon on the right of the scope-tab
+   row, muted at rest, accent-tinted when Group is the active scope — so Group
+   stays one click away without competing with Sessions / Projects as a tab. */
+.chat-scope-group-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.chat-scope-group-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}

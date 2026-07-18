@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { buildChangesReviewPrompt } from "@/lib/changes-review";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -199,16 +203,15 @@ function FileRow({
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[10px] tabular-nums">{diffCounts}</td>
         <td className="px-2 py-1.5 text-right">
           {confirmRevert ? null : (
-            <button
-              type="button"
+            <IconButton
+              icon={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"}
+              size="sm"
+              danger
               onClick={() => setConfirmRevert(true)}
               disabled={reverting}
               title={untracked ? `Delete ${file.path}` : `Revert ${file.path}`}
               aria-label={untracked ? `Delete untracked file ${file.path}` : `Revert ${file.path}`}
-              className="focus-ring inline-flex h-6 w-6 items-center justify-center rounded border border-[var(--border-hairline)] text-[var(--text-muted)] transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] disabled:opacity-40"
-            >
-              <Icon name={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"} width={11} aria-hidden />
-            </button>
+            />
           )}
         </td>
       </tr>
@@ -295,8 +298,6 @@ function CheckpointRow({
   // it's a single click.
   const [confirmRestore, setConfirmRestore] = useState(false);
   const label = checkpointLabel(cp.name);
-  const btn =
-    "focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40";
 
   return (
     <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-2 py-1.5">
@@ -331,26 +332,25 @@ function CheckpointRow({
         </span>
       ) : (
         <>
-          <button
-            type="button"
+          <IconButton
+            icon="ph:arrow-counter-clockwise"
+            size="sm"
+            className="shrink-0"
             disabled={busy}
             onClick={() => setConfirmRestore(true)}
             title={`Restore checkpoint ${label}`}
             aria-label={`Restore checkpoint ${label}`}
-            className={btn}
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
-          </button>
-          <button
-            type="button"
+          />
+          <IconButton
+            icon="ph:trash"
+            size="sm"
+            danger
+            className="shrink-0"
             disabled={busy}
             onClick={onDelete}
             title={`Delete checkpoint ${label}`}
             aria-label={`Delete checkpoint ${label}`}
-            className={btn + " hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:text-[var(--color-danger)]"}
-          >
-            <Icon name="ph:trash" width={11} aria-hidden />
-          </button>
+          />
         </>
       )}
     </div>
@@ -451,16 +451,22 @@ export function SessionChangesInner({
   const [creatingPr, setCreatingPr] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Default is a FORCED fetch through the shared changes-summary gate
+  // (cave-v8hh): the mount/visibility/`cave:changes-refresh`/post-mutation
+  // callers all follow a state change and must not reuse a cached response.
+  // Only the 5s running poll passes shared:true — that's the call that piles
+  // up with the chip/header/badge pollers on the same root, and one real
+  // request per window is exactly what it needs.
+  const load = useCallback(async (opts?: { shared?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, {
-        cache: "no-store",
+      const { httpOk, status, json: raw } = await fetchChangesSummary(projectRoot, {
+        force: !opts?.shared,
       });
-      const json = (await res.json()) as ChangesResponse;
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      const json = raw as ChangesResponse;
+      if (!httpOk || !json.ok) throw new Error(json.error ?? `http ${status}`);
       setNotARepo(json.repo === false);
       setRepoRoot(json.repoRoot ?? null);
       // Content-guard: an unchanged 5s poll keeps the previous reference so the
@@ -510,7 +516,7 @@ export function SessionChangesInner({
   useEffect(() => {
     if (!running) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ shared: true });
     }, POLL_MS);
     return () => window.clearInterval(id);
   }, [load, running]);
@@ -582,14 +588,24 @@ export function SessionChangesInner({
 
   // Jump-to-diff: when a transcript edit tool is clicked, expand that file's
   // diff. The changes list is repo-relative while focusPath may be absolute (or
-  // vice versa), so match on exact path or suffix. Keyed on focusNonce + the
-  // file list so it retries once the just-edited file appears in the diff list.
+  // vice versa), so match on exact path or a /-boundary suffix (a bare string
+  // suffix would let `utils/foo.ts` match a sibling `s/foo.ts`). Keyed on
+  // focusNonce + the file list so it retries once the just-edited file appears
+  // in the diff list — but each nonce applies exactly ONCE: filesSig churns on
+  // every 5s poll while an agent is editing (+/- counts change), and without
+  // the consumed guard the stale focus re-expanded its file on every refresh,
+  // snapping the panel away from whichever diff the user had selected.
+  const appliedFocusNonceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (!focusPath) return;
+    if (!focusPath || focusNonce === undefined) return;
+    if (appliedFocusNonceRef.current === focusNonce) return;
+    const suffixMatch = (long: string, short: string) =>
+      long === short || long.endsWith(`/${short}`);
     const match = files.find(
-      (f) => f.path === focusPath || focusPath.endsWith(f.path) || f.path.endsWith(focusPath),
+      (f) => suffixMatch(focusPath, f.path) || suffixMatch(f.path, focusPath),
     );
     if (!match) return;
+    appliedFocusNonceRef.current = focusNonce;
     setExpandedPath(match.path);
     if (!diffs[match.path]) void fetchDiff(match.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -774,6 +790,23 @@ export function SessionChangesInner({
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
+  // Commit review — start a NEW chat session whose opening prompt reviews the
+  // working-tree changes. Dispatched through the cave:agents-new-chat bridge:
+  // the Workspace opens the chat when this panel lives on a non-chat surface
+  // (the Code view), and ChatSurface handles it directly when already in chat.
+  const startReviewSession = useCallback(() => {
+    const root = repoRoot ?? projectRoot;
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: {
+          projectRoot: root,
+          initialPrompt: buildChangesReviewPrompt({ repoRoot: root, files }),
+        },
+      }),
+    );
+    announce("Review session started on the working-tree changes.");
+  }, [repoRoot, projectRoot, files, announce]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: honest scope copy + refresh */}
@@ -803,17 +836,27 @@ export function SessionChangesInner({
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:git-diff"
+              className="shrink-0"
+              onClick={startReviewSession}
+              disabled={!canCommit}
+              title="Start a new session that reviews these changes like a commit review"
+              aria-label="Review changes in a new session"
+            >
+              Review
+            </Button>
+            <IconButton
+              icon="ph:archive"
+              size="sm"
+              className="shrink-0"
               onClick={() => void saveCheckpoint()}
               disabled={checkpointing || notARepo || !!error}
               title="Save patch checkpoint"
               aria-label="Save patch checkpoint"
-              className="focus-ring inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
-            >
-              <Icon name="ph:archive" width={11} aria-hidden />
-              <span className="sr-only">{checkpointing ? "Saving checkpoint" : "Checkpoint"}</span>
-            </button>
+            />
             <button
               type="button"
               onClick={() => void load()}
@@ -856,14 +899,13 @@ export function SessionChangesInner({
         {checkpointMessage && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
             <span className="min-w-0 truncate" title={checkpointMessage}>{checkpointMessage}</span>
-            <button
-              type="button"
-              className="focus-ring shrink-0"
+            <IconButton
+              icon="ph:x-bold"
+              size="xs"
+              className="shrink-0"
               aria-label="Dismiss checkpoint message"
               onClick={() => setCheckpointMessage(null)}
-            >
-              <Icon name="ph:x-bold" width={10} aria-hidden />
-            </button>
+            />
           </div>
         )}
 
@@ -878,14 +920,13 @@ export function SessionChangesInner({
                 revert: {actionError}
               </span>
             </span>
-            <button
-              type="button"
-              className="focus-ring shrink-0"
+            <IconButton
+              icon="ph:x-bold"
+              size="xs"
+              className="shrink-0"
               aria-label="Dismiss revert error"
               onClick={() => setActionError(null)}
-            >
-              <Icon name="ph:x-bold" width={10} aria-hidden />
-            </button>
+            />
           </div>
         )}
 
@@ -983,23 +1024,24 @@ export function SessionChangesInner({
                     {postCommit.sha} · {postCommit.branch}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  className="focus-ring shrink-0"
+                <IconButton
+                  icon="ph:x-bold"
+                  size="xs"
+                  className="shrink-0"
                   aria-label="Dismiss commit result"
                   onClick={() => setPostCommit(null)}
-                >
-                  <Icon name="ph:x-bold" width={10} aria-hidden />
-                </button>
+                />
               </div>
               {!prOpen && !postCommit.onDefaultBranch ? (
-                <button
-                  type="button"
-                  className="focus-ring mt-1.5 inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:git-pull-request"
+                  className="mt-1.5"
                   onClick={() => setPrOpen(true)}
                 >
-                  <Icon name="ph:git-pull-request" width={12} aria-hidden /> Create PR
-                </button>
+                  Create PR
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -1022,22 +1064,22 @@ export function SessionChangesInner({
                 className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
               />
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
+                  size="xs"
+                  leadingIcon="ph:git-pull-request"
                   disabled={!prTitle.trim() || creatingPr}
                   onClick={() => void createPr()}
-                  className="focus-ring inline-flex items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
                 >
-                  <Icon name="ph:git-pull-request" width={12} aria-hidden />
                   {creatingPr ? "Opening…" : "Create pull request"}
-                </button>
-                <button
-                  type="button"
-                  className="focus-ring rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setPrOpen(false)}
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -1055,16 +1097,17 @@ export function SessionChangesInner({
                 disabled={!canCommit || committing}
                 className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)] disabled:opacity-40"
               />
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="xs"
+                leadingIcon="ph:git-diff"
                 disabled={!canCommit || !commitMsg.trim() || committing}
                 onClick={() => void commitChanges()}
                 title="Stage all changes and commit"
-                className="focus-ring inline-flex shrink-0 items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
+                className="shrink-0"
               >
-                <Icon name="ph:git-diff" width={12} aria-hidden />
                 {committing ? "Committing…" : "Commit"}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -1077,7 +1120,13 @@ export function SessionChangesInner({
 
 /** Resolves the active session's project root the same way DebugPane resolves
  *  its session context: via the chat debug store bridge from ChatView. */
-export function SessionChangesPanel() {
+export function SessionChangesPanel({
+  focusPath,
+  focusNonce,
+}: {
+  focusPath?: string | null;
+  focusNonce?: number;
+} = {}) {
   const snapshot = useChatDebugSnapshot();
   const projectRoot = snapshot.session?.project_root ?? null;
   if (!projectRoot) {
@@ -1093,6 +1142,8 @@ export function SessionChangesPanel() {
       key={projectRoot}
       projectRoot={projectRoot}
       running={snapshot.session?.status === "running"}
+      focusPath={focusPath}
+      focusNonce={focusNonce}
     />
   );
 }

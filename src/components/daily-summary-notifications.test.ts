@@ -61,15 +61,19 @@ assert.match(
   "Notification bell should render daily summaries with the same distinct icon",
 );
 
+// The old Schedules reminders list (and its isScheduleInboxItem gate) is gone —
+// daily summaries now ride the FULL inbox feed alongside every other kind,
+// grouped via the pure buildInboxGroups (attention/kind/familiar) and badged
+// by inboxKindLabel, so they stay visible after their popup dismisses.
 assert.match(
   automations,
-  /function isScheduleInboxItem\(item: InboxItem\)/,
-  "Schedules should centralize which inbox kinds appear in the reminders list",
+  /buildInboxGroups\(inboxVisible/,
+  "the inbox feed groups every item kind — daily summaries included",
 );
 assert.match(
   automations,
-  /item\.kind === "reminder" \|\| item\.kind === "daily-summary"/,
-  "Schedules should retain daily summary notifications after their popup dismisses",
+  /<InboxKindBadge kind=\{item\.kind\} \/>/,
+  "feed rows badge their kind so summaries stay distinguishable",
 );
 
 assert.match(
@@ -91,6 +95,72 @@ assert.match(
   workspace,
   /link\.kind === "url"[\s\S]*link\.ref\.startsWith\("\/"\)[\s\S]*nextRouter\.push\(link\.ref\)/,
   "Internal daily report links should navigate in-app instead of opening the browser pane",
+);
+
+// ── Bell a11y/polish (cave-jm6t) ─────────────────────────────────────────────
+// The trigger names its popup + state; sound/mute chips are real toggles;
+// item times stay live while the popover is open (per-row minute tick, zero
+// cost while closed); outside-close covers pen/touch via pointerdown.
+assert.match(bell, /aria-haspopup="dialog"\s*\n\s*aria-expanded=\{open\}/, "the bell trigger exposes its dialog + open state");
+assert.match(bell, /aria-pressed=\{active\}/, "sound chips announce the selected mode");
+assert.match(bell, /aria-pressed=\{muted\}/, "mute chips are real toggles");
+assert.match(bell, /function BellItemTime\(\{ iso, waiting \}[\s\S]{0,120}useMinuteTick\(\)/, "item timestamps tick while mounted");
+assert.match(bell, /<RelativeTime iso=\{iso\} fallback="—" \/>/, "timestamps render through the shared RelativeTime");
+assert.match(bell, /addEventListener\("pointerdown", onDown\)/, "outside-close listens to pointerdown (mouse + pen + touch)");
+assert.doesNotMatch(bell, /addEventListener\("mousedown", onDown\)/, "the mouse-only closer stays gone");
+
+// ── Toast urgency + pausable auto-hide + single dismiss (cave-bj68) ─────────
+assert.match(toast, /const urgent = t\.kind === "response-needed"/, "reply requests announce assertively, everything else politely");
+assert.match(toast, /role=\{urgent \? "alert" : "status"\}/, "the live-region role follows urgency");
+assert.match(toast, /\.filter\(\(g\) => !g\.ids\.some\(\(id\) => pausedIds\.has\(id\)\)\)/, "hover/focus pauses the group's auto-hide (WCAG 2.2.1)");
+assert.match(toast, /setTimeout\(\(\) => g\.ids\.forEach\(\(id\) => expire\(id\)\), AUTO_DISMISS_MS\)/, "one timer per group — members expire together, not one re-arm at a time");
+assert.match(toast, /onMouseEnter=\{\(\) => setPaused\(g\.ids, true\)\}/, "hover pauses (the whole group — every member id)");
+assert.match(toast, /e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)/, "focus-within keeps the pause until focus leaves the toast");
+assert.match(toast, /aria-label=\{`Dismiss: \$\{title\}`\}/, "the dismiss control names its toast (normalized title)");
+assert.doesNotMatch(toast, />\s*Dismiss\s*<\/button>/, "the duplicate text Dismiss button stays gone");
+assert.match(toast, /kind: item\.kind,/, "toastFromItem carries the inbox kind for urgency");
+
+// ── Toast vibe pass (cave-18nk): glass surface + kind-tinted chip + pill actions ──
+assert.match(
+  toast,
+  /className="glass-overlay pointer-events-auto/,
+  "toasts sit on the shared glass surface like the bell popover",
+);
+assert.match(
+  toast,
+  /"daily-summary": "var\(--accent-presence\)"/,
+  "the daily report toast tints with presence, not the warning hue",
+);
+assert.match(
+  toast,
+  /\["--toast-accent" as string\]: KIND_ACCENT\[t\.kind \?\? "reminder"\]/,
+  "each toast carries its kind's accent as a CSS var",
+);
+assert.match(
+  toast,
+  /bg-\[color-mix\(in_oklch,var\(--toast-accent\)_14%,transparent\)\] text-\[var\(--toast-accent\)\]/,
+  "the icon chip wears the tint recipe (solid glyph over a 14% fill)",
+);
+assert.match(
+  toast,
+  /rounded-full border border-\[color-mix\(in_oklch,var\(--toast-accent\)_35%,transparent\)\]/,
+  "Open is a tinted pill, not a solid accent block (accent = presence, not CTA)",
+);
+
+// ── Bell "Open" lands on the Inbox surface (cave-ipze) ──────────────────────
+// The popover is a triage list, not a chat launcher: a row's Open marks the
+// item read, scopes to its familiar, and opens the Inbox (Schedules) view.
+// Session jumps stay on the chat surface and Home needs-you paths, which
+// share openInspectorInboxItem.
+assert.match(
+  workspace,
+  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);\s*\}\}/,
+  "the bell's Open routes to the Inbox view (mark read, scope familiar, mode inbox)",
+);
+assert.doesNotMatch(
+  workspace,
+  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{[\s\S]{0,200}?openFamiliarSession/,
+  "the bell's Open never jumps straight into a chat session",
 );
 
 console.log("daily-summary-notifications.test.ts: ok");

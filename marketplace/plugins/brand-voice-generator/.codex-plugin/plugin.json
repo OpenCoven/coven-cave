@@ -1,0 +1,25 @@
+{
+  "name": "brand-voice-generator",
+  "version": "0.1.0",
+  "description": "Generate brand-system and tone-of-voice files \u2014 colors, typography, assets, and writing voice \u2014 that power the PPTX Generator and other brand-aware skills.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Brand & Voice Generator",
+    "shortDescription": "Generate brand-system and tone-of-voice files \u2014 colors, typography, assets, and writing voice \u2014 that power the PPTX Generator and other brand-aware skills.",
+    "longDescription": "Use when defining a brand identity or writing voice for content generation. Walks through brand basics, a ten-color system, typography, assets, voice discovery (five example voice templates from Technical Educator to Contrarian Thinker), and design philosophy, then generates brand.json, config.json, brand-system.md, and tone-of-voice.md \u2014 the source-of-truth files consumed by pptx-generator and other brand-aware skills.",
+    "developerName": "OpenCoven",
+    "category": "Design",
+    "capabilities": [
+      "brand",
+      "voice",
+      "tone-of-voice",
+      "design-system",
+      "identity",
+      "content"
+    ],
+    "defaultPrompt": "Help me use Brand & Voice Generator safely."
+  }
+}

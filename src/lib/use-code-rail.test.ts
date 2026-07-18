@@ -33,3 +33,17 @@ test("serializePinned round-trips", () => {
   assert.equal(parsePinned(serializePinned(true)), true);
   assert.equal(parsePinned(serializePinned(false)), false);
 });
+
+// Closed-by-default rail (cave-xsq.7): the hook seeds `dismissed` as TRUE so a
+// repo-linked session opens with the conversation owning the pane; the rail
+// opens on demand (pin / reopen / explicit focus target / a genuinely observed
+// fresh edit batch). Source pin — the initial useState is the contract.
+test("the rail rests closed: dismissed seeds true", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./use-code-rail.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /const \[dismissed, setDismissed\] = useState\(true\)/,
+    "dismissed defaults to true — the rail is closed at rest (cave-xsq.7)",
+  );
+});

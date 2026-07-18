@@ -51,4 +51,9 @@ assert.match(source, /Same runtime/, "Look tab should expose same-runtime color 
 assert.match(source, /Palette by familiar/, "Look tab should expose per-familiar palette distribution");
 assert.match(source, /Palette by runtime/, "Look tab should expose per-runtime palette distribution");
 
+// ── A11y state on color controls + toast live region (2026-07-06) ───────────
+assert.match(source, /aria-pressed=\{currentColor === preset\.color\}/, "accent swatches expose pressed state");
+assert.match(source, /aria-pressed=\{colorScope === "familiar"\}/, "scope buttons expose pressed state");
+assert.match(source, /className="familiar-studio-look__toast" role="status"/, "the upload toast is a live region");
+
 console.log("familiar-studio-look-tab.test.ts: ok");

@@ -69,7 +69,8 @@ function item(overrides) {
   assert.equal(itemHref(item({ link: { kind: "session", ref: "s1" } })), "/#chat-s1");
   assert.equal(
     itemHref(item({ link: { kind: "memory", ref: "a/b c" } })),
-    "/#memory:a%2Fb%20c",
+    // Memory rides the Grimoire hash — `#memory:` never had a consumer (cave-aka2).
+    "/#grimoire:memory:a%2Fb%20c",
   );
   assert.equal(itemHref(item({ link: { kind: "url", ref: "https://x" } })), "https://x");
   assert.equal(itemHref(item({ sessionId: "sess9", link: null })), "/#chat-sess9");
@@ -159,6 +160,16 @@ function item(overrides) {
   // no count lines → null (don't fabricate zeros for a non-summary body)
   assert.equal(parseStatsFromBody("just some prose, nothing countable"), null);
   assert.equal(parseStatsFromBody(undefined), null);
+
+  // day-in-review lines (Phase B) are optional: parsed when present, absent —
+  // not zero — when the body predates them or the source wasn't consulted.
+  const enriched = parseStatsFromBody(
+    "0 reminders fired\n0 responses waiting\n0 familiar updates\n3 sessions updated\n12 PRs merged\n1 card completed",
+  );
+  assert.equal(enriched.prsMerged, 12);
+  assert.equal(enriched.cardsCompleted, 1);
+  const legacy = parseStatsFromBody("1 reminder fired\n1 session updated");
+  assert.equal("prsMerged" in legacy, false, "old bodies must not grow fabricated zero counts");
 
   // recentReports recovers stats from the body when media.stats is absent
   const reports = recentReports([

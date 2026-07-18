@@ -1,5 +1,9 @@
 # Coven Cave — Claude Code project notes
 
+> **Primary agent guide: [`AGENTS.md`](AGENTS.md).** Start there for the branch/PR
+> workflow, worktree conventions, Beads protocol, and contributor attribution.
+> This file adds Claude-specific depth on branch protection and CI gotchas.
+
 ## Branch protection on `main` — all changes go through a PR
 
 **Rule:** `main` is a protected branch. There are **no direct pushes** — not for collaborators, not for admins, not for Claude sessions (which push as the `BunsDev` admin). Every change lands via a pull request whose required checks are green. `git push origin main` (or `HEAD:main`) will be **rejected** with `GH006: Protected branch update failed`.
@@ -49,6 +53,52 @@ cd .worktrees/<branch> && pnpm install   # ~10s with pnpm's CAS store
 - `git worktree remove --force` when status is dirty — investigate first; uncommitted edits may belong to another live session.
 
 **After `gh pr merge --squash --delete-branch`:** remote-side cleanup is automatic; local-side is NOT. Manually `git worktree remove <path>` then `git branch -D <branch>`, then `git worktree list` to verify.
+
+## Starting the Tauri desktop app
+
+Use the desktop shell when validating native-only surfaces such as the terminal,
+browser pane, window chrome, sidecar behavior, updater wiring, or Tauri
+permissions. Do not open Codex browser previews for this repo; use the native
+Tauri window, or the user's default browser for web-only checks.
+
+Preferred dev command:
+
+```bash
+bash scripts/dev-app.sh
+```
+
+Run it in the foreground from your repo checkout or worktree and leave that
+terminal attached. Stop it with `Ctrl-C`. The wrapper:
+
+- picks the first free loopback port in `3000..3010`, or honors `PORT=3001`
+- starts the Next custom dev server on that port when needed
+- writes a temporary Tauri config so `devUrl` points at the actual port
+- runs `pnpm exec tauri dev` against the desktop shell
+
+Expected early output looks like:
+
+```text
+[dev:app] port 3001 is free
+[dev:app] starting dev server on 3001
+Running BeforeDevCommand (`PORT=3001 pnpm dev`)
+> Ready on http://127.0.0.1:3001
+Running DevCommand (`cargo run --no-default-features --color always --`)
+```
+
+First launch may spend several minutes downloading and compiling Rust crates
+before the window appears. Treat Cargo `Compiling ...` lines as progress, not a
+hang. If port `3000` is occupied, for example by Docker, the wrapper should move
+to `3001`; if all ports in the range are occupied, free one or run with an
+explicit port:
+
+```bash
+PORT=3007 bash scripts/dev-app.sh
+```
+
+`pnpm dev:app` calls the same wrapper. Prefer the direct `bash` form in agent
+handoffs because its logs make the startup sequence and selected port obvious.
+Do not background the command when the goal is to verify the app started; a
+detached wrapper can exit without leaving useful Tauri logs.
 
 ## Diagnosing concurrent sessions
 

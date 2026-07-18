@@ -16,6 +16,11 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     var createdAt: Date = Date()
     /// Image attachments sent with this (user) message, as `data:` URLs.
     var attachmentDataUrls: [String] = []
+    /// Composed while the desktop was unreachable; waiting for reconnect.
+    /// Optional so messages persisted before offline compose still decode.
+    var queued: Bool?
+
+    var isQueued: Bool { queued == true }
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
@@ -101,8 +106,9 @@ final class ChatThread: Identifiable, Hashable {
             $0.isEmpty ? nil : $0
         } ?? trimmed
 
-        messages.append(DisplayMessage(role: .user, familiarId: nil, text: shown,
-                                       attachmentDataUrls: attachments.map(\.dataUrl)))
+        let userMessage = DisplayMessage(role: .user, familiarId: nil, text: shown,
+                                         attachmentDataUrls: attachments.map(\.dataUrl))
+        messages.append(userMessage)
         updatedAt = Date()
         onChange()
 
@@ -113,7 +119,61 @@ final class ChatThread: Identifiable, Hashable {
             let messageId = placeholder.id
             Task { await self.stream(familiarId: familiarId, prompt: trimmed,
                                      attachments: attachments, into: messageId,
+                                     userMessageId: userMessage.id,
                                      client: client, onChange: onChange) }
+        }
+    }
+
+    /// Offline compose: park the prose on the thread as a `queued` user
+    /// message — no placeholder bubbles, nothing touches the network. It
+    /// persists with the thread and `replayQueued` sends it on the next
+    /// reconnect. Prose only: slash commands never route here.
+    func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = []) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        var message = DisplayMessage(role: .user, familiarId: nil, text: trimmed,
+                                     attachmentDataUrls: attachments.map(\.dataUrl))
+        message.queued = true
+        messages.append(message)
+        updatedAt = Date()
+    }
+
+    /// Send every queued (offline-composed) message through the normal
+    /// fan-out, oldest first, now that the desktop is reachable. Before
+    /// re-sending, ask the server whether the turn already landed — the
+    /// original send may have reached it right as the transport died — and
+    /// adopt the existing reply instead of doubling the turn. Sequential so
+    /// turns land in compose order; a re-drop mid-replay re-queues through
+    /// the stream error path and the next reconnect picks it back up.
+    func replayQueued(client: CaveClient, onChange: @escaping () -> Void) async {
+        guard !replayingQueued else { return }
+        replayingQueued = true
+        defer { replayingQueued = false }
+        while let queuedMessage = messages.first(where: { $0.isQueued }) {
+            let queuedId = queuedMessage.id
+            let prompt = queuedMessage.text
+            let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
+            mutate(queuedId) { $0.queued = false }
+            updatedAt = Date()
+            onChange()
+            for familiarId in familiarIds {
+                if await adoptServerTurnIfPresent(prompt: prompt, familiarId: familiarId,
+                                                  client: client) {
+                    onChange()
+                    continue
+                }
+                let placeholder = DisplayMessage(role: .assistant, familiarId: familiarId,
+                                                 text: "", streaming: true)
+                // Replies slot in before any still-queued later prompts so the
+                // transcript keeps compose order.
+                let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
+                messages.insert(placeholder, at: insertAt)
+                await stream(familiarId: familiarId, prompt: prompt,
+                             attachments: attachments, into: placeholder.id,
+                             userMessageId: queuedId, client: client, onChange: onChange)
+                // Re-queued mid-replay (offline again) — stop; don't spin.
+                if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
+            }
         }
     }
 
@@ -186,41 +246,206 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    private var replayingQueued = false
+
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
+                        userMessageId: String? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
+        // Per-send token: the server keys its resumable run buffer under this
+        // (cave-h40l), so even a brand-new chat (no sessionId yet) can
+        // re-attach mid-turn after a transport drop.
+        let runId = UUID().uuidString
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
                                        sessionId: sessionIds[familiarId],
-                                       attachments: attachments.isEmpty ? nil : attachments)
+                                       attachments: attachments.isEmpty ? nil : attachments,
+                                       runId: runId)
+        var receivedAnyEvent = false
+        // Resume cursor: the last applied frame's SSE id (run-buffer seq).
+        var cursor = 0
+        var sawDone = false
         do {
-            for try await event in client.sendStream(body) {
-                switch event {
-                case .session(let sid):
-                    if !sid.isEmpty { sessionIds[familiarId] = sid }
-                case .assistantChunk(let chunk):
-                    mutate(messageId) { $0.text += chunk }
-                    onChange()
-                case .done(let isError, let sid):
-                    if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
-                    mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
-                case .error(let message):
-                    mutate(messageId) {
-                        if $0.text.isEmpty { $0.text = message }
-                        $0.isError = true; $0.streaming = false
-                    }
-                default:
-                    break
-                }
+            for try await frame in client.sendStream(body) {
+                receivedAnyEvent = true
+                apply(frame.event, into: messageId, familiarId: familiarId,
+                      sawDone: &sawDone, onChange: onChange)
+                if let id = frame.id { cursor = id }
             }
             mutate(messageId) { $0.streaming = false }
         } catch {
-            mutate(messageId) {
-                if $0.text.isEmpty { $0.text = error.localizedDescription }
-                $0.isError = true; $0.streaming = false
+            // Transport interruption (network handoff, backgrounding, desktop
+            // blip). The run is usually STILL LIVE server-side — re-attach to
+            // its buffered stream first and keep rendering in real time
+            // (cave-h40l). Only when no resumable run exists (finished long
+            // ago / server restarted) fall back to adopting the persisted
+            // transcript.
+            let resumed = await resumeInterruptedStream(runId: runId, cursor: cursor,
+                                                        into: messageId, familiarId: familiarId,
+                                                        sawDone: &sawDone,
+                                                        client: client, onChange: onChange)
+            var recovered = resumed
+            if !recovered {
+                recovered = await resyncInterruptedTurn(familiarId: familiarId, prompt: prompt,
+                                                        into: messageId, client: client)
+            }
+            if !recovered {
+                if let userMessageId, !receivedAnyEvent, Self.isOfflineTransportError(error) {
+                    // The send never reached the server (no route, DNS failure,
+                    // refused connection — and not a single SSE event came
+                    // back): queue the prompt for the next reconnect instead
+                    // of dead-ending in a red bubble. Ambiguous failures
+                    // (timeouts, drops after first byte) stay on the error
+                    // path — replaying those could double the turn.
+                    messages.removeAll { $0.id == messageId }
+                    mutate(userMessageId) { $0.queued = true }
+                } else {
+                    mutate(messageId) {
+                        if $0.text.isEmpty { $0.text = error.localizedDescription }
+                        $0.isError = true; $0.streaming = false
+                    }
+                }
             }
         }
         updatedAt = Date()
         onChange()
+    }
+
+    /// Apply one stream event to the thread — shared by the original send
+    /// stream and the mid-turn resume stream so both render identically.
+    private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
+                       sawDone: inout Bool, onChange: @escaping () -> Void) {
+        switch event {
+        case .session(let sid):
+            if !sid.isEmpty { sessionIds[familiarId] = sid }
+        case .assistantChunk(let chunk):
+            mutate(messageId) { $0.text += chunk }
+            onChange()
+        case .done(let isError, let sid):
+            if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
+            mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
+            sawDone = true
+        case .error(let message):
+            mutate(messageId) {
+                if $0.text.isEmpty { $0.text = message }
+                $0.isError = true; $0.streaming = false
+            }
+        default:
+            break
+        }
+    }
+
+    /// Re-attach to the still-live run after a transport drop: replay past
+    /// the cursor, then tail live until the turn ends. A few short-backoff
+    /// attempts ride out the network still settling (Wi-Fi handoff, tunnel
+    /// re-established). Returns true when the bubble finished live; false
+    /// falls back to the post-hoc transcript resync.
+    private func resumeInterruptedStream(runId: String, cursor: Int, into messageId: String,
+                                         familiarId: String, sawDone: inout Bool,
+                                         client: CaveClient, onChange: @escaping () -> Void) async -> Bool {
+        var nextCursor = cursor
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .milliseconds(600 * Int64(attempt)))
+            }
+            do {
+                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
+                    apply(frame.event, into: messageId, familiarId: familiarId,
+                          sawDone: &sawDone, onChange: onChange)
+                    if let id = frame.id { nextCursor = id }
+                }
+                // The resume stream closes when the run finishes. Without a
+                // done event the run may still be live (our tail dropped
+                // again) — retry from the advanced cursor.
+                if sawDone {
+                    mutate(messageId) { $0.streaming = false }
+                    return true
+                }
+            } catch is CaveClient.NoResumableRun {
+                // Nothing buffered under that run — turn ended long ago or
+                // the server restarted. Post-hoc resync owns recovery.
+                return false
+            } catch {
+                // Transport still flaky — back off and retry from the cursor.
+            }
+        }
+        return false
+    }
+
+    /// After a transport failure mid-stream, pull the persisted conversation
+    /// and adopt the server's copy of the interrupted reply. Anchors on the
+    /// prompt: the reply must be an assistant turn AFTER a final user turn
+    /// carrying exactly what we sent, and must extend what already streamed
+    /// into the bubble. Anything else means the reply never persisted (or
+    /// belongs to an older exchange) and the caller falls back to the error
+    /// path. Returns true when the bubble recovered.
+    private func resyncInterruptedTurn(familiarId: String, prompt: String, into messageId: String,
+                                       client: CaveClient) async -> Bool {
+        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
+        // Give the server a beat to flush the transcript after the drop.
+        try? await Task.sleep(for: .milliseconds(600))
+        guard let convo = try? await client.conversation(sessionId: sessionId),
+              let lastUser = convo.turns.lastIndex(where: { $0.role == "user" }),
+              convo.turns[lastUser].text == prompt,
+              let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" })
+        else { return false }
+        let streamed = messages.first(where: { $0.id == messageId })?.text ?? ""
+        guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
+        mutate(messageId) {
+            $0.text = reply.text
+            $0.isError = reply.isError ?? false
+            $0.streaming = false
+        }
+        return true
+    }
+
+    /// Connect-level failures where the request provably never reached the
+    /// server — safe to queue without risking a duplicate turn. Anything
+    /// ambiguous (timeouts, drops after first byte) is excluded: for those
+    /// the resync/error path decides.
+    nonisolated static func isOfflineTransportError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+             .dnsLookupFailed, .networkConnectionLost, .dataNotAllowed,
+             .internationalRoamingOff:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// True when the conversation's tail already carries this exact prompt —
+    /// the original send made it through before the transport died, so
+    /// replaying would double the turn. Adopts the server's reply (when the
+    /// harness already answered) into the transcript. New sessions can't
+    /// have the turn.
+    private func adoptServerTurnIfPresent(prompt: String, familiarId: String,
+                                          client: CaveClient) async -> Bool {
+        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
+        guard let convo = try? await client.conversation(sessionId: sessionId),
+              let lastUser = convo.turns.lastIndex(where: { $0.role == "user" }),
+              convo.turns[lastUser].text == prompt else { return false }
+        if let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" }) {
+            let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
+            messages.insert(DisplayMessage(role: .assistant, familiarId: familiarId,
+                                           text: reply.text, isError: reply.isError ?? false),
+                            at: insertAt)
+            updatedAt = Date()
+        }
+        return true
+    }
+
+    /// Rebuild sendable attachments from persisted `data:` URLs (the only
+    /// attachment form a queued message keeps). Names are synthesized — the
+    /// server only needs the mime type and payload.
+    nonisolated static func attachments(fromDataUrls dataUrls: [String]) -> [CaveClient.ChatAttachment] {
+        dataUrls.enumerated().map { index, dataUrl in
+            let mime = dataUrl.dropFirst("data:".count).prefix(while: { $0 != ";" && $0 != "," })
+            let ext = mime.split(separator: "/").last.map(String.init) ?? "png"
+            return CaveClient.ChatAttachment(name: "queued-\(index + 1).\(ext)",
+                                             mimeType: mime.isEmpty ? "image/png" : String(mime),
+                                             dataUrl: dataUrl)
+        }
     }
 
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {

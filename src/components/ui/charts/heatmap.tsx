@@ -18,18 +18,25 @@ export function Heatmap({
   cells,
   colorFor,
   height = 160,
+  ariaLabel,
+  cellTitle,
 }: {
   rows: string[];
   cols: string[];
   cells: HeatCell[];
   colorFor: (value: number) => string;
   height?: number;
+  /** When set, the chart SVG is exposed to AT as role="img" with this label (a
+   *  text summary of the data). Without it the SVG stays aria-hidden. */
+  ariaLabel?: string;
+  /** Hover/focus detail per cell; defaults to "row · col: value". */
+  cellTitle?: (cell: HeatCell) => string;
 }) {
   return (
     <div className="cave-chart cave-chart--heatmap" style={{ height }}>
       <ParentSize>
         {({ width }) => (
-          <HeatInner width={width} height={height} rows={rows} cols={cols} cells={cells} colorFor={colorFor} />
+          <HeatInner width={width} height={height} rows={rows} cols={cols} cells={cells} colorFor={colorFor} ariaLabel={ariaLabel} cellTitle={cellTitle} />
         )}
       </ParentSize>
     </div>
@@ -43,6 +50,8 @@ function HeatInner({
   cols,
   cells,
   colorFor,
+  ariaLabel,
+  cellTitle,
 }: {
   width: number;
   height: number;
@@ -50,6 +59,8 @@ function HeatInner({
   cols: string[];
   cells: HeatCell[];
   colorFor: (value: number) => string;
+  ariaLabel?: string;
+  cellTitle?: (cell: HeatCell) => string;
 }) {
   const margin = { top: 2, right: 2, bottom: 2, left: 2 };
   const iw = Math.max(0, width - margin.left - margin.right);
@@ -62,7 +73,7 @@ function HeatInner({
   const yScale = scaleBand({ domain: rows, range: [0, ih], padding: 0.06 });
 
   return (
-    <svg width={width} height={height} aria-hidden>
+    <svg width={width} height={height} {...(ariaLabel ? { role: "img", "aria-label": ariaLabel } : { "aria-hidden": true })}>
       <Group left={margin.left} top={margin.top}>
         {cells.map((c) => {
           const cx = xScale(c.col);
@@ -78,7 +89,10 @@ function HeatInner({
               height={yScale.bandwidth()}
               rx={2}
               fill={colorFor(c.value)}
-            />
+            >
+              {/* Native SVG hover detail per cell. */}
+              <title>{cellTitle ? cellTitle(c) : `${c.row} · ${c.col}: ${c.value}`}</title>
+            </rect>
           );
         })}
       </Group>

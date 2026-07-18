@@ -31,6 +31,11 @@ async function gotoChat(page: Page) {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // The nav is minimized-by-default; pre-seed the applied-flag so it stays
+    // expanded here — this suite drives the chat session navigator, which needs
+    // the nav's full width (a rail-width nav narrows the multi-pane chat layout).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
@@ -38,7 +43,7 @@ async function gotoChat(page: Page) {
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
-  await page.goto("/");
+  await page.goto("/?mode=chat");
   // Switch to the Chat surface (⌘2) — default landing is Home.
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");

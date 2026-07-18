@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
   source,
@@ -92,8 +95,14 @@ assert.match(
 
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
+  /const applyAssistantChunk = \([\s\S]*?setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
+);
+
+assert.match(
+  source,
+  /case "assistant_chunk": \{[\s\S]{0,400}?applyAssistantChunk\(ev\.text, assistantId, liveGeneration\)/,
+  "The assistant_chunk event delegates to the shared streaming-lifecycle application",
 );
 
 assert.match(
@@ -128,7 +137,7 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?clearAttachments\(\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
   "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
 );
 
@@ -140,19 +149,19 @@ assert.match(
 
 assert.match(
   source,
-  /const liveChatGenerations = new Map<string, LiveChatGenerationSnapshot>\(\)/,
+  /const liveChatRegistry = createLiveGenerationRegistry<Turn>\(cloneLiveTurn\)/,
   "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
 );
 
 assert.match(
   source,
-  /function subscribeLiveChatGeneration\(sessionId: string, listener: LiveChatGenerationListener\)/,
+  /function subscribeLiveChatGeneration\(\s*sessionId: string,\s*listener: \(snapshot: LiveChatGenerationSnapshot \| null\) => void,\s*\)/,
   "ChatView should subscribe to live generation snapshots when returning to a session",
 );
 
 assert.match(
   source,
-  /const liveGeneration = \{ sessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
+  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
   "sendRaw should persist the active stream snapshot with its abort controller",
 );
 
@@ -228,7 +237,7 @@ assert.match(
 
 assert.match(
   source,
-  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => editTurnInComposer\(t\) : undefined\}/,
+  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => handlers\(\)\.editTurnInComposer\(t\) : undefined\}/,
   "Only user turns with text get the Edit affordance (CHAT-D6-01)",
 );
 
@@ -246,7 +255,7 @@ assert.match(
 
 assert.match(
   source,
-  /onRegenerate=\{regenerateFor\(t\)\}/,
+  /onRegenerate=\{handlers\(\)\.regenerateFor\(t\)\}/,
   "Assistant turns get the Regenerate affordance via the gated helper (CHAT-D6-02)",
 );
 
@@ -335,8 +344,8 @@ const usageTurnRow =
 assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
 assert.match(
   usageTurnRow,
-  /className="cave-linear-turn-recency"[\s\S]{0,220}?title=\{exactTime\}[\s\S]{0,220}?\{recency\}[\s\S]{0,220}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
-  "Assistant turn meta row appends the muted usage/cost readout after the visible recency timestamp (CHAT-D12-02)",
+  /className="cave-linear-turn-recency"[\s\S]{0,220}?title=\{exactTime\}[\s\S]{0,220}?\{recency\}[\s\S]{0,700}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
+  "Assistant turn meta row keeps the muted usage/cost readout after the visible recency timestamp, now inside the reveal-on-hover extras cluster (CHAT-D12-02 / cave-xsq.2)",
 );
 
 // ── CHAT-D9-04: find highlight timer cleanup ──
@@ -422,10 +431,12 @@ assert.doesNotMatch(
 // (b) The synthetic "Receiving response" progress row settles at the first
 // assistant chunk instead of staying "running" for the whole stream — the
 // streamed text itself is the live signal, and the auto-open ProgressGroup
-// quiets down to real connect/tool events.
+// quiets down to real connect/tool events. (The chunk application lives in
+// applyAssistantChunk; both the coalesced stream-loop path and handleEvent's
+// assistant_chunk case delegate to it — see chat-view-chunk-coalescing.)
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
+  /const applyAssistantChunk = \([\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
   "The synthetic Receiving-response row settles (done) at first chunk (CHAT-D12-01)",
 );
 
@@ -469,42 +480,53 @@ assert.match(
 
 // The composer draft survives a reload: input initialises from localStorage
 // and is written back on change (and cleared when emptied, e.g. after a send).
+// The plumbing lives in the shared use-composer-draft hook (parity with home);
+// these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(\)\)/,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
   "composer input initialises from the persisted draft",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, COMPOSER_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[input\]\)/,
-  "the draft is debounced so mobile typing does not write localStorage on every keystroke",
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
 );
 assert.match(
-  source,
-  /if \(text\) window\.localStorage\.setItem\(COMPOSER_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(COMPOSER_DRAFT_KEY\)/,
+  draftHook,
+  /if \(text\) window\.localStorage\.setItem\(key, text\);\s*else window\.localStorage\.removeItem\(key\)/,
   "an emptied draft removes the key (sent messages don't reappear on reload)",
 );
 
-// The ↑/↓ prompt-history survives a reload: it initialises from localStorage
-// and is persisted whenever it changes.
+// The ↑/↓ prompt-history survives a reload — shared hook; the pin holds the
+// keyed call site, the hook test holds the recall/persist semantics.
 assert.match(
   source,
-  /const \[inputHistory, setInputHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(COMPOSER_HISTORY_KEY\)\)/,
-  "input history initialises from the persisted recall stack",
+  /const \{ push: pushHistory, handleArrowKey \} = useComposerHistory\(COMPOSER_HISTORY_KEY\)/,
+  "input history rides the shared persisted recall stack",
 );
 assert.match(
   source,
-  /writeComposerHistory\(COMPOSER_HISTORY_KEY, inputHistory\)/,
-  "input history is persisted when it changes",
+  /if \(handleArrowKey\(e, input, setInput\)\) return;/,
+  "↑/↓ recall is delegated to the shared hook from the composer keyboard handler",
 );
 
 // ── Mid-stream thread switch must not cross wires (2026-07-03 audit P0) ───────
-// A background stream updates its OWN registry snapshot, never the displayed
-// transcript — otherwise switching threads renders/persists the wrong session.
+// A live stream accumulates in its session's registry snapshot — module scope,
+// so it survives thread switches AND full surface unmounts (cave-0er). Only a
+// view currently showing that session mirrors the update into setTurns.
 assert.match(
   source,
-  /if \(targetSessionId && targetSessionId !== currentSessionRef\.current\) \{[\s\S]*?const snap = readLiveChatGeneration\(targetSessionId\);[\s\S]*?recordLiveChatGeneration\(\{[\s\S]*?turns: updater\(snap\.turns\)/,
-  "updateLiveTurns routes background-stream updates to the streaming session's snapshot, not setTurns",
+  /if \(targetSessionId\) \{[\s\S]*?const stored = liveChatRegistry\.advance\(targetSessionId, updater, nextActiveLeafId\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
+  "updateLiveTurns accumulates in the module-scope registry first so unmounted views can't drop chunks, mirroring into setTurns only for the on-screen session",
+);
+// A view that adopted (not started) a stream reconciles from disk on settle —
+// it never sees the stream's "done" event, and the server only persists the
+// exchange when the harness exits (cave-0er).
+assert.match(
+  source,
+  /if \(!live && refetchOnSettleRef\.current === sessionId && !streamOwnerRef\.current\) \{[\s\S]*?setHistoryRetryKey\(\(k\) => k \+ 1\);/,
+  "a non-owner view refetches the conversation from disk when an adopted/orphaned stream settles",
 );
 // Switching threads releases the previous thread's streaming lock so its busy
 // state / Esc-cancel don't bleed onto the newly displayed thread.
@@ -512,6 +534,80 @@ assert.match(
   source,
   /release streaming state owned by the PREVIOUS thread[\s\S]{0,400}?setBusy\(false\);\s*\n\s*abortRef\.current = null;/,
   "the history-load effect clears streaming state inherited from the previous thread",
+);
+
+// Thread-switch composer isolation (cave chat audit): ChatView is a single
+// instance reused across threads, so per-thread composer context must be reset
+// on session switch or it bleeds a reply-quote / attachments / branch-parent /
+// enhance-draft into the next conversation's next send.
+assert.match(
+  source,
+  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
+  "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
+);
+
+// Stream teardown must be ownership-scoped: a settling BACKGROUND stream must
+// not clobber a newer concurrent stream's abort/stop wiring or unlock the composer.
+assert.match(
+  source,
+  /if \(abortRef\.current === controller\) \{\s*\n\s*streamOwnerRef\.current = false;\s*\n\s*abortRef\.current = null;\s*\n\s*stopKeysRef\.current = \{ runId: null, sessionId: null \};\s*\n\s*setBusy\(false\);/,
+  "sendRaw's finally only tears down the shared stream wiring when it still owns the active controller",
+);
+
+// IME composition safety: the Enter that confirms a CJK/kana candidate must not send.
+assert.match(
+  source,
+  /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
+  "the composer's Enter-to-send is gated on !isComposing so IME candidate-confirm doesn't fire a half-composed message",
+);
+
+// New-chat background-generation isolation (cave-8zq): a generation started on
+// a brand-new chat carries an immutable originSessionId, and both the "session"
+// and "done" events only adopt the server-assigned id into the displayed
+// thread's currentSessionRef when the view is STILL on that origin thread.
+// Otherwise (user switched away during first-token latency) the late id would
+// splice the background stream into the wrong thread and mis-address the next
+// send — while onSessionStarted still fires so the router can register it.
+assert.match(
+  source,
+  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}/,
+  "each generation records the immutable thread it started on (originSessionId)",
+);
+{
+  const guarded = source.match(
+    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+  );
+  assert.ok(
+    guarded && guarded.length === 2,
+    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
+  );
+}
+
+// cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
+// caller predicate so a fetch resolving after a thread switch can't overwrite
+// the new thread's model/plan; the effects pass () => !cancelled.
+assert.match(
+  source,
+  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  "refreshModelState only applies its result when the caller's shouldApply() allows it",
+);
+assert.match(
+  source,
+  /void refreshModelState\(\(\) => !cancelled\);/,
+  "the model-state effect vetoes a stale apply via () => !cancelled",
+);
+assert.match(
+  source,
+  /void refreshUsagePlan\(undefined, \(\) => !cancelled\);/,
+  "the usage-plan effect vetoes a stale apply via () => !cancelled",
+);
+
+// cave-b63 (4): /clear tears down any in-flight stream first (cancelSend) so the
+// live registry doesn't mirror the cleared turns back on the next chunk.
+assert.match(
+  source,
+  /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
+  "/clear cancels an in-flight stream before clearing the transcript",
 );
 
 console.log("chat-view-lifecycle.test.ts: ok");

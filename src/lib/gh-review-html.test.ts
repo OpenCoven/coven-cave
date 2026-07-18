@@ -24,7 +24,7 @@ const html = buildReviewHtml({
   number: 42,
   title: "Add <reviewer>",
   state: "merged",
-  author: "buns",
+  author: "octocat",
   url: "https://github.com/OpenCoven/coven-cave/pull/42",
   body: "Body with <html> & <script>alert(1)</script>",
   comments: [{ author: "rev", body: "looks good", createdAt: "2026-06-29" }],
@@ -101,6 +101,6 @@ const actions = readFileSync(new URL("../components/gh-review-actions.tsx", impo
 assert.match(actions, /generateArtifactCode/, "familiar review streams via generateArtifactCode");
 assert.match(actions, /saveCanvasArtifact/, "saves the result as a Canvas artifact");
 assert.match(actions, /buildReviewArtifact/, "builds the artifact from the review HTML");
-assert.match(actions, /cave:navigate-mode/, "jumps to Canvas to view the artifact");
+assert.match(actions, /openArtifactHtml/, "opens the artifact in a browser tab instead of navigating to Canvas");
 
 console.log("gh-review-html.test.ts: ok");

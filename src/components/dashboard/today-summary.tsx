@@ -1,6 +1,7 @@
 import { Icon } from "@/lib/icon";
 import { SectionHead } from "@/components/daily-report-ui";
 import { relativeTime, type RecentReport } from "@/lib/daily-report";
+import { extractNextPaths } from "@/lib/next-paths";
 import type { TodaySummary } from "@/lib/dashboard-model";
 import { ReportCallout } from "./report-callout";
 
@@ -29,11 +30,29 @@ export function TodaySummary({
       <SectionHead
         icon="ph:newspaper"
         title="Today's report"
-        hint={summary.generatedAt ? `Generated ${relativeTime(summary.generatedAt, now)}` : undefined}
+        hint={
+          summary.generatedAt
+            ? `Updated ${relativeTime(summary.generatedAt, now)} · live`
+            : "Live — refreshes today"
+        }
       />
       <div className="dash-today__grid">
         <div className="dr-panel dash-today__panel">
-          {hasBody ? (
+          {summary.narrative?.text ? (
+            <>
+              <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
+                {/* Narratives stored before the pipeline stripped the
+                    piggybacked next-paths block are cleaned at render. */}
+                {extractNextPaths(summary.narrative.text).visible}
+              </p>
+              <p className="dr-narrative-byline">
+                <Icon name="ph:sparkle" aria-hidden />
+                Written by {summary.narrative.familiarName || "a familiar"}
+                {" · "}
+                {relativeTime(summary.narrative.generatedAt, now)}
+              </p>
+            </>
+          ) : hasBody ? (
             <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
               {summary.body}
             </p>
@@ -42,6 +61,28 @@ export function TodaySummary({
               Today&apos;s summary is still taking shape — it fills in as activity lands.
             </p>
           )}
+          {summary.report?.prsMerged && summary.report.prsMerged.length > 0 ? (
+            <div className="dash-today__sessions" aria-label="Merged pull requests">
+              <span className="dash-today__sessions-label">
+                <Icon name="ph:git-pull-request" aria-hidden />
+                Shipped
+              </span>
+              <div className="dash-today__chips">
+                {summary.report.prsMerged.map((pr) => (
+                  <a
+                    key={`${pr.repo}#${pr.number}`}
+                    className="dash-today__chip dash-today__chip--link"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={pr.title}
+                  >
+                    {pr.repo.split("/").pop()}#{pr.number}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {summary.recentSessions.length > 0 ? (
             <div className="dash-today__sessions" aria-label="Recent sessions">
               <span className="dash-today__sessions-label">

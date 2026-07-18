@@ -6,10 +6,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const tsx = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
-const css = readFileSync(
-  new URL("../styles/cave-chat.css", import.meta.url),
-  "utf8",
-);
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 // --- component wiring -------------------------------------------------------
 // The non-terminal panel body carries the animation hook class so it eases in.

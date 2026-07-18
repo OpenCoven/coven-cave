@@ -1,19 +1,24 @@
 import {
+  ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type CovenMemoryEntry,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
-import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
+import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
+import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
+import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
+import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
 import {
-  aggregateResponseConfidenceEvents,
-  type ResponseConfidenceEvent,
-  type ResponseConfidenceRollup,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
+import {
+  EMPTY_FEEDBACK_ROLLUP,
+  type MessageFeedbackRollup,
+} from "@/lib/message-feedback-rollup";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -40,9 +45,13 @@ type SelfReportsResponse =
   | { ok: true; reports: ThreadSelfReport[]; total: number }
   | { ok: false; reports?: ThreadSelfReport[]; total?: number; error?: string };
 
-type ResponseConfidenceResponse =
-  | { ok: true; events: ResponseConfidenceEvent[]; total: number }
-  | { ok: false; events?: ResponseConfidenceEvent[]; total?: number; error?: string };
+type MetricSnapshotsResponse =
+  | { ok: true; snapshots: ThreadMetricSnapshot[]; total: number }
+  | { ok: false; snapshots?: ThreadMetricSnapshot[]; total?: number; error?: string };
+
+type MessageFeedbackResponse =
+  | { ok: true; rollup: MessageFeedbackRollup }
+  | { ok: false; rollup?: MessageFeedbackRollup; error?: string };
 
 export type FamiliarAnalyticsData = {
   familiarId: string;
@@ -52,7 +61,10 @@ export type FamiliarAnalyticsData = {
   covenEntries: CovenMemoryEntry[];
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
-  responseConfidenceEvents: ResponseConfidenceEvent[];
+  /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
+  metricSnapshots: ThreadMetricSnapshot[];
+  /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
+  modelFeedback: MessageFeedbackRollup;
   errors: string[];
 };
 
@@ -61,13 +73,30 @@ export type FamiliarAnalyticsModel = {
   familiar: Familiar | null;
   contractReport: ContractReport | null;
   growthReport: FamiliarGrowthReport | null;
-  confidence: ConfidenceScore;
+  /** Headline confidence, derived from real thread self-reports. */
+  confidence: ThreadConfidence;
+  /** Metric changes over time — "is the familiar improving?" */
+  signalTrends: SignalTrends;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
-  responseConfidenceEvents: ResponseConfidenceEvent[];
-  responseConfidenceRollup: ResponseConfidenceRollup;
+  /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
+  modelFeedback: MessageFeedbackRollup;
+  /**
+   * Renown + ritual streak — the progression system's read of this familiar
+   * (same derivation as the roster cards, so the surfaces always agree).
+   * Null when the familiar itself couldn't be resolved.
+   */
+  progression: { renown: FamiliarRenown; streakDays: number } | null;
+  /** Per-day session counts for the trailing 14 days (oldest first). */
+  sessionPulse: PulseDay[];
+  /** This familiar's sessions, newest first, capped for the drill-through list. */
+  recentSessions: SessionRow[];
   errors: string[];
 };
+
+/** Cap on the drill-through session list — enough history to trace without
+ *  turning the analytics page into a full session browser. */
+const RECENT_SESSIONS_CAP = 40;
 
 const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -89,8 +118,11 @@ function emptyStats(): FamiliarCardStats {
     memoryCount: 0,
     latestMemory: null,
     lastSessionAt: null,
+    sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    streakDays: 0,
+    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
 
@@ -108,7 +140,8 @@ async function fetchResource<T extends ApiEnvelope>(url: string, fallback: T): P
     if (!res.ok) {
       return { ...fallback, error: `HTTP ${res.status}` } as T;
     }
-    return (await res.json()) as T;
+    // A null/undefined body degrades like a failed endpoint, not a crash.
+    return ((await res.json()) ?? { ...fallback, error: "empty response" }) as T;
   } catch (err) {
     return { ...fallback, error: err instanceof Error ? err.message : "request failed" } as T;
   }
@@ -131,7 +164,8 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     memoryJson,
     retroJson,
     selfReportsJson,
-    responseConfidenceJson,
+    metricSnapshotsJson,
+    feedbackJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -139,7 +173,8 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
-    fetchResource<ResponseConfidenceResponse>(`/api/familiars/${encodedId}/response-confidence?limit=100`, { ok: false, events: [], total: 0 }),
+    fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
+    fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);
 
   const errors = [
@@ -148,7 +183,8 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(sessionsJson, "sessions unavailable"),
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
-    responseError(responseConfidenceJson, "response confidence unavailable"),
+    responseError(metricSnapshotsJson, "metric snapshots unavailable"),
+    responseError(feedbackJson, "message feedback unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -159,20 +195,26 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
-    responseConfidenceEvents: responseConfidenceJson.ok ? responseConfidenceJson.events : [],
+    metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
+    modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
   };
 }
 
-export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): FamiliarAnalyticsModel {
+export function buildFamiliarAnalyticsModel(
+  data: FamiliarAnalyticsData,
+  now: number = Date.now(),
+): FamiliarAnalyticsModel {
   const familiar = data.familiars.find((item) => item.id === data.familiarId) ?? null;
+  const familiarSessions = data.sessions.filter((session) => session.familiarId === data.familiarId);
   // Scope the stats computation to the single familiar this view renders rather
   // than bucketing every familiar's sessions/memory just to read one entry.
   const stats = familiar
     ? buildFamiliarCardStats({
         familiars: [familiar],
-        sessions: data.sessions.filter((session) => session.familiarId === familiar.id),
+        sessions: familiarSessions,
         covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+        now,
       }).get(familiar.id) ?? emptyStats()
     : emptyStats();
   const growthReport = familiar
@@ -180,13 +222,11 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
         familiar,
         stats,
         retroState: retroStateFor(data.retroSnapshot, familiar.id),
+        now,
       })
     : null;
-  const confidence = deriveConfidenceScore({
-    contractReport: data.contractReport,
-    growthReport,
-    familiar,
-  });
+  const confidence = deriveThreadConfidence(data.threadReports);
+  const signalTrends = deriveSignalTrends(data.metricSnapshots, now);
   const healRequests = deriveHealRequests({
     familiarId: data.familiarId,
     contractReport: data.contractReport,
@@ -199,10 +239,20 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
     contractReport: data.contractReport,
     growthReport,
     confidence,
+    signalTrends,
     healRequests,
     threadReports: data.threadReports,
-    responseConfidenceEvents: data.responseConfidenceEvents,
-    responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
+    modelFeedback: data.modelFeedback,
+    progression: familiar
+      ? {
+          renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
+          streakDays: stats.streakDays,
+        }
+      : null,
+    sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
+    recentSessions: [...familiarSessions]
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+      .slice(0, RECENT_SESSIONS_CAP),
     errors: data.errors,
   };
 }

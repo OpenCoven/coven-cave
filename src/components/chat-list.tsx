@@ -1,18 +1,26 @@
 "use client";
 
+import "@/styles/chat-list.css";
+
 import { Fragment, useMemo, useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
+import { sessionPrStatus } from "@/lib/session-pr-status";
+import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
+import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
@@ -35,12 +43,11 @@ import {
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
   sortPinnedFirst,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import {
   applyManualOrder,
   mergeVisibleOrder,
@@ -74,11 +81,19 @@ type Props = {
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
+  /** Open a URL in the in-app browser (the PR-status badge's click-through).
+   *  Falls back to a new tab when absent. */
+  onOpenUrl?: (url: string) => void;
   /** false while the workspace's first /api/sessions/list fetch is in
    *  flight — gates the list on a skeleton instead of flashing the
    *  "no chats yet" empty state. Defaults true for callers that load
    *  sessions before mounting. */
   sessionsLoaded?: boolean;
+  /** The last session-list load failed. With no rows this swaps the "Ready
+   *  for a new thread" empty state for a can't-load state — a failed list is
+   *  not evidence there are no chats (cave-x6k5). */
+  sessionsError?: boolean;
   /** When true, hides the project sidebar rail so the list fits in a narrow
    *  companion panel (e.g. the Browser right-rail). */
   compact?: boolean;
@@ -233,7 +248,7 @@ function ChatListSection({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
@@ -256,9 +271,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     });
   }, []);
   const [unreadsOnly, setUnreadsOnly] = useState(false);
-  // Pins are Cave-local UI state (localStorage), same idiom as the project
-  // sidebar persistence below — the daemon never learns about them.
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  // Pins are Cave-local UI state (localStorage) shared across every chat
+  // surface through one subscribable store — the daemon never learns about
+  // them, and no surface holds a private copy that could clobber another's.
+  const pinnedIds = usePinnedSessions();
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   // Archived rows are excluded server-side by /api/sessions/list; the toggle
   // opts into them with its own includeArchived fetch (the workspace's list
@@ -290,6 +306,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
   const isMobile = useIsMobile();
+  // Touch devices can't hover-reveal the per-row controls, and rendering all
+  // five permanently (the old .touch-always-visible behaviour) ate most of
+  // each row — one ⋯ menu carries them instead.
+  const coarsePointer = useIsCoarsePointer();
   const allFamiliars = familiar ? [familiar] : familiars;
   const resolvedFamiliars = useResolvedFamiliars(allFamiliars, { includeArchived: true });
   const resolvedFamiliar = familiar ? resolvedFamiliars[0] : null;
@@ -318,8 +338,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     // server; restored if the user hits Undo).
     const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
     if (hidden.size) rows = rows.filter((s) => !hidden.has(s.id));
-    return filterVisibleChatSessions(rows, familiar?.id ?? null);
+    return filterVisibleChatSessions(rows, familiar?.id ?? null, { includeArchived: showArchived });
   }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
+
+  // The siderail never shows archived chats: even while the list's "Show
+  // archived" toggle is on, rail groups build from an archive-free view.
+  const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
 
   const filtered = useMemo(() => {
     let rows = mine;
@@ -348,7 +372,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(mine, projectOverrides), projects), [mine, projects, projectOverrides]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(railSessions, projectOverrides), projects), [railSessions, projects, projectOverrides]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
@@ -396,7 +420,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
-    setPinnedIds(readPinnedSessions());
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
   }, [sessionsLoaded, sidebarGroups]);
@@ -413,9 +436,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [sidebarHydrated, pinnedIds]);
 
   // Archived sessions only load while the toggle is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change.
@@ -507,6 +527,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
     [displayGroups],
   );
+  // `displayIds` keeps rows in collapsed sections (they stay in DOM order for
+  // drag/sort). Bulk select/delete must act only on rows the user can actually
+  // SEE, or "Select all" + Delete would silently remove chats hidden inside a
+  // collapsed section (data loss). The collapsible Pinned/Sessions sections only
+  // exist in the flat "All" view; there a row is hidden when its section is
+  // collapsed. Mirrors the per-row `rowCollapsed` computed during render.
+  const visibleIds = useMemo(() => {
+    if (effectiveSelection !== "all" || collapsedSections.size === 0) return displayIds;
+    return displayIds.filter(
+      (id) => !collapsedSections.has(isSessionPinned(pinnedIds, id) ? "pinned" : "sessions"),
+    );
+  }, [displayIds, effectiveSelection, collapsedSections, pinnedIds]);
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -549,12 +581,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }
   // ── Row actions ──────────────────────────────────────────────────────────
 
-  const debugSession = (e: React.MouseEvent, session: SessionRow) => {
-    e.stopPropagation();
+  const debugSession = (e: React.MouseEvent | null, session: SessionRow) => {
+    e?.stopPropagation();
     setActiveId(session.id);
     onOpen(session.id, session.familiarId);
+    // Latched request: notifies a mounted ChatView via the window event and
+    // survives until one mounts — a bare rAF dispatch was lost whenever the
+    // open above had not rendered ChatView (and its listener) yet.
     window.requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("cave:debug-open"));
+      requestDebugOpen();
     });
   };
 
@@ -573,7 +608,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       }
       setConfirmDeleteId(null);
       setActiveId((current) => (current === sessionId ? null : current));
-      onSessionsChanged?.();
+      onSessionsDeleted([sessionId]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -583,33 +618,66 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   // ── Pin (Cave-local) + archive (sessions PATCH) ──────────────────────────
 
-  const togglePin = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+  const togglePin = (e: React.MouseEvent | null, sessionId: string) => {
+    e?.stopPropagation();
+    toggleStoredPinnedSession(sessionId);
   };
 
-  const setSessionArchived = async (e: React.MouseEvent, sessionId: string, archived: boolean) => {
-    e.stopPropagation();
-    setArchivingId(sessionId);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ archived }),
-      });
-      const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
-        return;
+  const patchSessionArchivePrefs = useCallback(
+    async (
+      sessionId: string,
+      patch: Record<string, unknown>,
+      fallbackError: string,
+    ): Promise<boolean> => {
+      setArchivingId(sessionId);
+      setError(null);
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (!res.ok || !json.ok) {
+          setError(json.error ?? fallbackError);
+          return false;
+        }
+        setArchiveNonce((n) => n + 1);
+        onSessionsChanged?.();
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : fallbackError);
+        return false;
+      } finally {
+        setArchivingId(null);
       }
-      setArchiveNonce((n) => n + 1);
-      onSessionsChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "archive failed");
-    } finally {
-      setArchivingId(null);
-    }
+    },
+    [onSessionsChanged],
+  );
+
+  const setSessionArchived = async (e: React.MouseEvent | null, sessionId: string, archived: boolean) => {
+    e?.stopPropagation();
+    await patchSessionArchivePrefs(
+      sessionId,
+      { archived },
+      archived ? "archive failed" : "unarchive failed",
+    );
+  };
+
+  const setSessionKeep = async (sessionId: string, keep: boolean) => {
+    await patchSessionArchivePrefs(
+      sessionId,
+      { keep },
+      keep ? "keep failed" : "clear keep failed",
+    );
+  };
+
+  const extendSessionAutoArchive = async (sessionId: string, days: number) => {
+    await patchSessionArchivePrefs(
+      sessionId,
+      { extendDays: days },
+      "extend archive deadline failed",
+    );
   };
 
   // ── Bulk-select actions (reuse the per-row delete/archive endpoints) ───────
@@ -621,21 +689,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return next;
     });
   const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
-  // Visible-aware select-all: acts on the rows currently shown (displayIds).
-  const allVisibleSelected = displayIds.length > 0 && displayIds.every((id) => selectedIds.has(id));
+  // Visible-aware select-all: acts on the rows currently shown (visibleIds,
+  // which excludes rows in a collapsed section).
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const toggleSelectAllVisible = () =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allVisibleSelected) displayIds.forEach((id) => next.delete(id));
-      else displayIds.forEach((id) => next.add(id));
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
       return next;
     });
-  const selectedVisibleCount = displayIds.filter((id) => selectedIds.has(id)).length;
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
 
   // Deferred + undoable: hide the selected chats now, fire the DELETEs only
-  // after the undo window, refetch once. Undo restores the whole batch.
+  // after the undo window, then report confirmed ids. Undo restores the batch.
   const bulkDelete = () => {
-    const idSet = new Set(displayIds.filter((id) => selectedIds.has(id)));
+    // Only delete rows that are both selected AND currently visible — a section
+    // collapsed after selecting must protect its now-hidden chats from deletion.
+    const idSet = new Set(visibleIds.filter((id) => selectedIds.has(id)));
     const removed = mine.filter((s) => idSet.has(s.id));
     if (removed.length === 0) return;
     setError(null);
@@ -648,19 +719,22 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         const results = await Promise.all(
           removed.map((s) =>
             fetch(`/api/chat/conversation/${encodeURIComponent(s.id)}`, { method: "DELETE" })
-              .then((r) => r.json().catch(() => ({ ok: false })))
-              .then((j) => !!j.ok)
+              .then(async (response) => {
+                const json = await response.json().catch(() => ({ ok: false }));
+                return response.ok && Boolean(json.ok);
+              })
               .catch(() => false),
           ),
         );
-        if (results.some(Boolean)) onSessionsChanged?.();
+        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
+        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
         if (results.some((ok) => !ok)) setError("Some chats couldn't be deleted.");
       },
     );
   };
 
   const bulkArchive = async (archived: boolean) => {
-    const ids = displayIds.filter((id) => selectedIds.has(id));
+    const ids = visibleIds.filter((id) => selectedIds.has(id));
     if (ids.length === 0) return;
     setBulkBusy(true);
     setError(null);
@@ -767,7 +841,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Session
@@ -883,7 +957,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Session
@@ -918,15 +992,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         {!sessionsLoaded && !hasAny ? (
           <div aria-hidden className="space-y-px px-4 py-3">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse flex gap-3 px-0 py-3.5">
-                <span className="mt-1 block h-2 w-2 rounded-full bg-[var(--bg-hover)]" />
+              <div key={i} className="flex gap-3 px-0 py-3.5">
+                <span className="ui-skeleton ui-skeleton--avatar mt-1" style={{ height: 8, width: 8 }} />
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="h-2.5 w-1/4 rounded bg-[var(--bg-hover)] opacity-70" />
-                  <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
-                  <span className="h-2.5 w-1/3 rounded bg-[var(--bg-hover)] opacity-50" />
+                  <span className="ui-skeleton h-2.5 w-1/4" />
+                  <span className="ui-skeleton h-3 w-1/2" />
+                  <span className="ui-skeleton h-2.5 w-1/3 opacity-60" />
                 </span>
               </div>
             ))}
+          </div>
+        ) : sessionsError && !hasAny ? (
+          /* The session list FAILED to load — existing chats may be intact but
+             unreadable. "Ready for a new thread" here read as "your chats are
+             gone" (cave-x6k5). The 4s poll retries automatically. */
+          <div className="flex h-full flex-col justify-between px-4 py-4">
+            <EmptyState
+              compact
+              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon="ph:plugs"
+              headline="Can't load chats right now"
+              subtitle="Your chats are safe — the list didn't load. Retrying automatically; check the daemon banner if this persists."
+            />
           </div>
         ) : !hasAny ? (
           /* Empty state */
@@ -1074,6 +1161,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <ul className="divide-y divide-[var(--border-hairline)]">
                   {rows.map((s, idx) => {
                     const st = statusStyle(s.status);
+                    const prStatus = sessionPrStatus(s.pullRequest);
                     const rel = relativeTime(s.updated_at);
                     const project = repoName(s.project_root ?? "");
                     const isActive = activeId === s.id;
@@ -1112,6 +1200,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           aria-current={!selectMode && isActive ? "true" : undefined}
                           tabIndex={0}
                           onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
+                          onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
+                          onMouseLeave={cancelHoverPrefetch}
+                          onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
+                          onBlur={cancelHoverPrefetch}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || (selectMode && e.key === " ")) {
                               e.preventDefault();
@@ -1140,7 +1232,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               aria-hidden
                               className={`mt-[3px] grid h-4 w-4 shrink-0 place-items-center rounded border ${
                                 selectedIds.has(s.id)
-                                  ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                  ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                   : "border-[var(--border-strong)] text-transparent"
                               }`}
                             >
@@ -1160,13 +1252,36 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </button>
                           )}
 
-                          {/* Status dot (top-aligned) */}
-                          <span className="chat-list-status-dot mt-[5px] shrink-0">
-                            <span
-                              className={`block h-2 w-2 rounded-full ${st.dot}`}
-                              title={st.label}
-                            />
-                          </span>
+                          {/* Status signal (top-aligned): the GitHub PR-status
+                              icon when the thread's work reached a pull
+                              request, else the plain session-status dot.
+                              Clicking the PR badge opens the PR (in-app
+                              browser when wired) without opening the chat. */}
+                          {prStatus ? (
+                            <span className="chat-list-status-dot mt-[3px] shrink-0">
+                              <button
+                                type="button"
+                                className="chat-list-pr-badge focus-ring"
+                                data-pr-state={prStatus.key}
+                                title={`Open ${prStatus.label}`}
+                                aria-label={`Open pull request (${prStatus.label})`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onOpenUrl) onOpenUrl(prStatus.url);
+                                  else window.open(prStatus.url, "_blank", "noopener,noreferrer");
+                                }}
+                              >
+                                <Icon name={prStatus.icon} width={12} aria-hidden />
+                              </button>
+                            </span>
+                          ) : (
+                            <span className="chat-list-status-dot mt-[5px] shrink-0">
+                              <span
+                                className={`block h-2 w-2 rounded-full ${st.dot}`}
+                                title={st.label}
+                              />
+                            </span>
+                          )}
 
                           {/* Content */}
                           <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">
@@ -1223,6 +1338,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
                             {/* Row 3: status preview */}
                             <span className={`chat-list-row-preview truncate text-[12px] ${st.preview}`}>
+                              {s.keep ? <span className="text-[var(--accent-presence)]">Keep · </span> : null}
+                              {!s.keep && s.archive_extended_until ? (
+                                <span
+                                  className="text-[var(--text-muted)]"
+                                  title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}
+                                >
+                                  Extended ·{" "}
+                                </span>
+                              ) : null}
                               {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
                               {st.label === "running"
                                 ? "Active now…"
@@ -1266,6 +1390,54 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 {deletingId === s.id ? "…" : "Delete"}
                               </button>
                             </span>
+                          ) : coarsePointer ? (
+                            /* Touch: one ⋯ menu carries every row action —
+                               five permanent buttons per row ate the list. */
+                            <span
+                              className="chat-list-row-actions chat-list-row-actions--compact flex shrink-0 items-center self-center"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            >
+                              <OverflowMenu
+                                ariaLabel={`Actions for chat ${rowName}`}
+                                disabled={archivingId !== null}
+                                className="h-9 w-9 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)]"
+                                minWidth={224}
+                              >
+                                <PopoverItem
+                                  icon={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"}
+                                  onSelect={() => togglePin(null, s.id)}
+                                >
+                                  {pinned ? "Unpin chat" : "Pin chat"}
+                                </PopoverItem>
+                                <PopoverItem
+                                  icon={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"}
+                                  onSelect={() => void setSessionArchived(null, s.id, !s.archived_at)}
+                                >
+                                  {s.archived_at ? "Unarchive chat" : "Archive chat"}
+                                </PopoverItem>
+                                <PopoverSeparator />
+                                <PopoverItem
+                                  checked={Boolean(s.keep)}
+                                  onSelect={() => void setSessionKeep(s.id, !s.keep)}
+                                >
+                                  {s.keep ? "Remove keep mark" : "Keep chat"}
+                                </PopoverItem>
+                                <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 7)}>
+                                  Extend auto-archive +7 days
+                                </PopoverItem>
+                                <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 30)}>
+                                  Extend auto-archive +30 days
+                                </PopoverItem>
+                                <PopoverSeparator />
+                                <PopoverItem icon="ph:bug-bold" onSelect={() => debugSession(null, s)}>
+                                  Debug chat
+                                </PopoverItem>
+                                <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmDeleteId(s.id)}>
+                                  Delete chat…
+                                </PopoverItem>
+                              </OverflowMenu>
+                            </span>
                           ) : (
                             /* Row actions — pin (Cave-local), archive (PATCH), debug, delete.
                                Keyboard Enter on a button must not bubble into the
@@ -1299,6 +1471,32 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               >
                                 <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
                               </button>
+                              <span
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <OverflowMenu
+                                  ariaLabel={`Archive controls for chat ${rowName}`}
+                                  icon="ph:clock-counter-clockwise"
+                                  disabled={archivingId !== null}
+                                  className="touch-always-visible h-6 w-6 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                  minWidth={208}
+                                >
+                                  <PopoverItem
+                                    checked={Boolean(s.keep)}
+                                    onSelect={() => void setSessionKeep(s.id, !s.keep)}
+                                  >
+                                    {s.keep ? "Remove keep mark" : "Keep chat"}
+                                  </PopoverItem>
+                                  <PopoverSeparator />
+                                  <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 7)}>
+                                    Extend auto-archive +7 days
+                                  </PopoverItem>
+                                  <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 30)}>
+                                    Extend auto-archive +30 days
+                                  </PopoverItem>
+                                </OverflowMenu>
+                              </span>
                               <button
                                 type="button"
                                 onClick={(e) => debugSession(e, s)}
@@ -1349,9 +1547,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               {contentLoading && contentMatches.length === 0 ? (
                 <div aria-hidden className="space-y-px px-4 py-2">
                   {[0, 1].map((i) => (
-                    <div key={i} className="animate-pulse flex flex-col gap-1.5 py-2.5">
-                      <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
-                      <span className="h-2.5 w-3/4 rounded bg-[var(--bg-hover)] opacity-60" />
+                    <div key={i} className="flex flex-col gap-1.5 py-2.5">
+                      <span className="ui-skeleton h-3 w-1/2" />
+                      <span className="ui-skeleton h-2.5 w-3/4 opacity-60" />
                     </div>
                   ))}
                 </div>

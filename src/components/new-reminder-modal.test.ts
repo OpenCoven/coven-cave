@@ -26,6 +26,22 @@ assert.match(modal, /function presetForRecurrence/, "should map a stored recurre
 assert.match(modal, /setRecurPreset\(preset\)/, "edit prefill should restore the recurrence preset");
 assert.match(modal, /setLink\(editing\.link \?\? null\)/, "edit prefill should restore the link");
 
+// ── Phrase → plan tracking (cave-rdfc) ───────────────────────────────────────
+// A parsed schedule that no named preset represents must survive as the
+// "custom" preset carrying the exact recurrence — never silently downgrade to
+// a one-shot (the old mon,wed,fri bug).
+assert.match(modal, /return \{ preset: "custom", customRec: rec \};/, "unrepresentable recurrences map to the custom preset");
+assert.match(modal, /if \(preset === "custom"\) return customRec \?\? \{ type: "none" \};/, "submit honors the custom recurrence verbatim");
+assert.match(modal, /whenText: whenText\.trim\(\) \|\| null,/, "the human phrase is persisted with the draft");
+assert.match(modal, /const \[whenDirty, setWhenDirty\] = useState\(false\);/, "edit mode tracks phrase dirtiness");
+assert.match(modal, /if \(isEditing && !whenDirty\) return;/, "retyping the phrase in edit mode retakes the picker");
+
+// The plan echo shows the cadence sentence and upcoming fires, announced to AT.
+assert.match(modal, /describeRecurrence\(planRecurrence, \{ hour12 \}\)/, "plan echo describes the cadence in words");
+assert.match(modal, /nextOccurrences\(planRecurrence, Date\.now\(\), 3\)/, "plan echo lists the next 3 concrete fires");
+assert.match(modal, /aria-live="polite"/, "plan echo is announced politely to AT");
+assert.match(modal, /\{planCadence \? "Repeats" : "Once"\}/, "plan echo distinguishes one-shots from repeats");
+
 // ── Both paths carry link ────────────────────────────────────────────────────
 assert.match(modal, /link,/, "draft submitted to create/update should include the link");
 
