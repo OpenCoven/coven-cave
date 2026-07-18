@@ -34,6 +34,10 @@ extension Notification.Name {
 /// markdown WebView's message handler) can request a full-screen zoom without
 /// threading a closure all the way up the view tree.
 enum ContentZoom {
+    /// Prevent generated zoom documents from resolving relative URLs against
+    /// local files or an attacker-controlled origin.
+    static let safeHTMLBaseURL = URL(string: "about:blank")!
+
     static func present(_ target: ZoomTarget) {
         NotificationCenter.default.post(name: .caveZoomContent, object: target)
     }
@@ -159,7 +163,10 @@ private struct ZoomableHTMLView: UIViewRepresentable {
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         // Pinch-zoom comes from the user-scalable viewport in the document below.
-        webView.loadHTMLString(Self.document(for: html), baseURL: nil)
+        webView.loadHTMLString(
+            Self.document(for: html),
+            baseURL: ContentZoom.safeHTMLBaseURL
+        )
         return webView
     }
 
@@ -205,7 +212,10 @@ private struct ZoomableCodeView: UIViewRepresentable {
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.indicatorStyle = .white
-        webView.loadHTMLString(Self.document(for: html), baseURL: nil)
+        webView.loadHTMLString(
+            Self.document(for: html),
+            baseURL: ContentZoom.safeHTMLBaseURL
+        )
         return webView
     }
 
