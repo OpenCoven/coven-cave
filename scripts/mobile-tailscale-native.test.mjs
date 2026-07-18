@@ -57,8 +57,18 @@ assert.match(
 );
 assert.match(
   swiftChatThread,
-  /case \.assistantChunk\(let chunk\):\s*\n\s*mutate\(messageId\) \{ \$0\.text \+= chunk \}\s*\n\s*onChange\(\)/,
-  "native SwiftUI chat should notify/persist after assistant chunks so responses render while streaming",
+  /case \.assistantChunk\(let chunk\):[\s\S]*?coalescer\.append\(chunk\)[\s\S]*?if coalescer\.shouldFlush\(\) \{\s*\n\s*flush\(coalescer, into: messageId, onChange: onChange\)/,
+  "native SwiftUI chat should buffer assistant chunks and periodically notify/persist while streaming",
+);
+assert.match(
+  swiftChatThread,
+  /catch \{[\s\S]*?flush\(coalescer, into: messageId, onChange: onChange\)\s*\n\s*let resumed = await resumeInterruptedStream/,
+  "native SwiftUI chat should flush buffered assistant text before recovering a dropped send stream",
+);
+assert.match(
+  swiftChatThread,
+  /} catch is CaveClient\.NoResumableRun \{\s*\n\s*flush\(coalescer, into: messageId, onChange: onChange\)[\s\S]*?} catch \{\s*\n\s*flush\(coalescer, into: messageId, onChange: onChange\)/,
+  "native SwiftUI chat should retain buffered text when a resumed stream cannot continue",
 );
 assert.match(
   swiftChatThread,

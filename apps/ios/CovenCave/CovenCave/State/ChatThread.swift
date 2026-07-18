@@ -281,6 +281,7 @@ final class ChatThread: Identifiable, Hashable {
             // (cave-h40l). Only when no resumable run exists (finished long
             // ago / server restarted) fall back to adopting the persisted
             // transcript.
+            flush(coalescer, into: messageId, onChange: onChange)
             let resumed = await resumeInterruptedStream(runId: runId, cursor: cursor,
                                                         into: messageId, familiarId: familiarId,
                                                         sawDone: &sawDone, coalescer: coalescer,
@@ -386,10 +387,12 @@ final class ChatThread: Identifiable, Hashable {
                     return true
                 }
             } catch is CaveClient.NoResumableRun {
+                flush(coalescer, into: messageId, onChange: onChange)
                 // Nothing buffered under that run — turn ended long ago or
                 // the server restarted. Post-hoc resync owns recovery.
                 return false
             } catch {
+                flush(coalescer, into: messageId, onChange: onChange)
                 // Transport still flaky — back off and retry from the cursor.
             }
         }
