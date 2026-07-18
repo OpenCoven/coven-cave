@@ -481,8 +481,9 @@ function ShellInner({
   //
   // NOTE: on multi-pane surfaces (chat: nav · session-list · detail · code-rail)
   // the panel solver squeezes the session list when the nav is at the rail — a
-  // known trade-off of minimizing globally. ⌘B / hover-peek expands the nav to
-  // restore the sidebar.
+  // known trade-off of minimizing globally. Chat's visit-collapsed policy keeps
+  // that rail closed for the visit and disables hover-peek; other remembered
+  // groups can still restore the nav from the global shortcut / hover-peek.
   const minimizedGroupsRef = useRef(new Set<string>());
   useEffect(() => {
     if (!settled || isMobile) return;
@@ -500,12 +501,14 @@ function ShellInner({
   }, [settled, isMobile, groupId]);
 
   // Apply the remembered sidebar state on boot and on every panel-group switch
-  // (Home's two-pane shell and Chat's three-pane shell persist their layouts
-  // separately, so without this the OTHER group's stale width wins). Runs after
-  // the minimize-by-default effect above so a saved preference beats the
-  // first-run rail. onResize only writes the preference once this effect has
-  // armed the CURRENT group — the layout churn a group swap fires must never
-  // clobber the user's choice with the incoming group's stale width.
+  // (Home's two-pane shell and the non-Chat remembered groups persist their
+  // layouts separately, so without this the OTHER group's stale width wins).
+  // Runs after the minimize-by-default effect above so a saved preference beats
+  // the first-run rail. Chat's visit-collapsed visits skip this effect entirely
+  // (they stay collapsed for that visit and do not consult or overwrite the
+  // global nav-open preference). onResize only writes the preference once this
+  // effect has armed the CURRENT group — the layout churn a group swap fires
+  // must never clobber the user's choice with the incoming group's stale width.
   const navPrefArmedGroupRef = useRef<string | null>(null);
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
