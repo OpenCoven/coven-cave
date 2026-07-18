@@ -122,7 +122,7 @@ import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
 import {
   clearPendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
-  reconcilePendingFirstProjectAccessSnapshot,
+  resolvePendingFirstProjectAccessSnapshot,
   type PendingFirstProjectAccessSnapshot,
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
@@ -337,6 +337,7 @@ export function Workspace() {
     projects: registeredProjects,
     loading: projectsLoading,
     error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
     reload: reloadProjects,
     createProjectOrThrow,
   } = useProjects();
@@ -1403,14 +1404,15 @@ export function Workspace() {
     if (!projectsLoading) setProjectsInitiallyResolved(true);
   }, [projectsLoading]);
 
-  const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsInitiallyResolved;
-  const reconciledPendingFirstProjectGrant = canReconcilePendingFirstProjectGrant
-    ? reconcilePendingFirstProjectAccessSnapshot(
-      pendingFirstProjectGrant,
-      registeredProjects,
-      visibleFamiliars,
-    )
-    : pendingFirstProjectGrant;
+  const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsLoadedSuccessfully;
+  const reconciledPendingFirstProjectGrant = resolvePendingFirstProjectAccessSnapshot({
+    snapshot: pendingFirstProjectGrant,
+    projects: registeredProjects,
+    visibleFamiliars,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+    projectsLoadedSuccessfully,
+  });
 
   useEffect(() => {
     if (!canReconcilePendingFirstProjectGrant || !pendingFirstProjectGrant || reconciledPendingFirstProjectGrant) return;
@@ -2850,6 +2852,7 @@ export function Workspace() {
       />
     );
 
+  const detailContent = renderSurface(mode);
   const detail = (
     <div
       ref={detailFadeRef}
@@ -2872,9 +2875,7 @@ export function Workspace() {
           reloadProjects={reloadProjects}
         />
       ) : null}
-      <div aria-hidden={firstProjectGateOpen || undefined} inert={firstProjectGateOpen || undefined}>
-        {renderSurface(mode)}
-      </div>
+      {detailContent}
     </div>
   );
 

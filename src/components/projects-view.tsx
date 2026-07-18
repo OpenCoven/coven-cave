@@ -387,6 +387,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
         familiarId: activeFamiliarId,
         createProject,
         existingProjectId: project.id,
+        projectJustCreated: true,
       });
       if (!granted.ok) setSessionError(`Project created, but grant failed: ${granted.error}`);
     }

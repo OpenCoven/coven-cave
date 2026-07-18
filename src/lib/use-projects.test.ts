@@ -123,6 +123,27 @@ assert.match(
 
 assert.match(
   source,
+  /const \[loadedSuccessfully, setLoadedSuccessfully\] = useState\(false\);/,
+  "useProjects tracks whether the current scope has ever completed a successful load",
+);
+assert.match(
+  source,
+  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(sortProjectsAlphabetically\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\)\);[\s\S]*setLoadedSuccessfully\(true\);[\s\S]*\}/,
+  "loadedSuccessfully only flips true after a successful payload, not on error payloads",
+);
+assert.match(
+  source,
+  /catch \(err\) \{\s*if \(generationRef\.current === gen\) \{\s*setError\(err instanceof Error \? err\.message : "Failed to load projects"\);\s*\}\s*\}/,
+  "later refresh failures only surface the error and do not clear the sticky successful-load flag",
+);
+assert.match(
+  source,
+  /return \{[\s\S]*loading,[\s\S]*error,[\s\S]*loadedSuccessfully,[\s\S]*reload,/,
+  "the hook returns loadedSuccessfully so callers can distinguish first-settle from verified-success",
+);
+
+assert.match(
+  source,
   /error: typeof data\?\.error === "string" \? data\.error : `Could not create project \(HTTP \$\{res\.status\}\)`/,
   "the throwing create path preserves the safe API error string or falls back to a clear HTTP message",
 );

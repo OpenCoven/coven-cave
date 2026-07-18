@@ -38,8 +38,8 @@ assert.match(
 );
 assert.match(
   projectsView,
-  /addChatProject\(\{[\s\S]{0,160}?familiarId: activeFamiliarId,[\s\S]{0,160}?existingProjectId: project\.id/,
-  "Creating a project should also grant it to the scoped familiar — register alone left it 403ing in chat",
+  /addChatProject\(\{[\s\S]{0,220}?familiarId: activeFamiliarId,[\s\S]{0,220}?existingProjectId: project\.id,[\s\S]{0,220}?projectJustCreated: true/,
+  "Creating a project should also grant it to the scoped familiar and mark partial grant failures as newly-created registry entries",
 );
 assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
 assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");

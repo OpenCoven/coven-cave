@@ -29,6 +29,7 @@ export type ProjectsState = {
   projects: CaveProject[];
   loading: boolean;
   error: string | null;
+  loadedSuccessfully: boolean;
   reload: () => void;
   createProject: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject | null>;
   createProjectOrThrow: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject>;
@@ -53,6 +54,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const [loadedSuccessfully, setLoadedSuccessfully] = useState(false);
   // Generation guard: bumped on every load() call, scope change, and disable,
   // so a stale response can't write into newer state. (Replaces the previous
   // per-instance AbortController — the shared, coalesced request can't be
@@ -72,6 +74,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
         setError(data.error ?? "Failed to load projects");
       } else {
         setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
+        setLoadedSuccessfully(true);
       }
     } catch (err) {
       if (generationRef.current === gen) {
@@ -95,6 +98,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     // so this effect only re-runs when the scope or `enabled` actually changes;
     // a manual reload() after a mutation calls load() directly and is
     // unaffected, so an in-place refresh never blanks the list.
+    setLoadedSuccessfully(false);
     setProjects([]);
     load();
     return () => {
@@ -222,6 +226,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     projects,
     loading,
     error,
+    loadedSuccessfully,
     reload,
     createProject,
     createProjectOrThrow,

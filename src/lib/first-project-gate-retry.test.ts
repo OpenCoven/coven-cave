@@ -8,6 +8,7 @@ import {
   parsePendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
   reconcilePendingFirstProjectAccessSnapshot,
+  resolvePendingFirstProjectAccessSnapshot,
   writePendingFirstProjectAccessSnapshot,
 } from "./first-project-gate-retry.ts";
 
@@ -113,5 +114,58 @@ test("pending first-project access snapshots reconcile against live projects and
     reconcilePendingFirstProjectAccessSnapshot(snapshot, projects, [{ id: "sage" }]),
     null,
     "familiars that are no longer visible/non-archived clear the pending retry",
+  );
+});
+
+test("pending first-project access snapshots stay sticky through failed project loads and reconcile after later success", () => {
+  const snapshot = {
+    familiarId: "ember",
+    project: { id: "p1", name: "Old name", root: "/old" },
+  };
+  const projects = [
+    { id: "p1", name: "Current name", root: "/repo/current", createdAt: "now", updatedAt: "now" },
+  ];
+  const visibleFamiliars = [{ id: "sage" }, { id: "ember" }];
+
+  assert.deepEqual(
+    resolvePendingFirstProjectAccessSnapshot({
+      snapshot,
+      projects: [],
+      visibleFamiliars,
+      familiarsLoaded: true,
+      familiarRosterLoadedSuccessfully: true,
+      projectsLoadedSuccessfully: false,
+    }),
+    snapshot,
+    "an initial failed/unverified unscoped project load keeps the pending retry snapshot intact",
+  );
+
+  assert.deepEqual(
+    resolvePendingFirstProjectAccessSnapshot({
+      snapshot,
+      projects,
+      visibleFamiliars,
+      familiarsLoaded: true,
+      familiarRosterLoadedSuccessfully: true,
+      projectsLoadedSuccessfully: true,
+    }),
+    {
+      familiarId: "ember",
+      project: { id: "p1", name: "Current name", root: "/repo/current" },
+    },
+    "a later successful unscoped project load reconciles the stored retry target against live data",
+  );
+
+  assert.equal(
+    resolvePendingFirstProjectAccessSnapshot({
+      snapshot,
+      projects: [],
+      visibleFamiliars,
+      familiarsLoaded: true,
+      familiarRosterLoadedSuccessfully: true,
+      projectsLoadedSuccessfully: true,
+    }),
+    null,
+    "once the unscoped load succeeds, a missing project clears the stale pending retry",
   );
 });

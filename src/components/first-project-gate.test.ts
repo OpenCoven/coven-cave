@@ -58,12 +58,12 @@ test("workspace wires the first-project gate through pending-aware policy and re
   assert.match(src, /import \{ resolveFirstProjectGatePolicy \} from "@\/lib\/first-project-gate-policy";/, "workspace uses a shared gate policy helper");
   assert.match(
     src,
-    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*reconcilePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*resolvePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
     "workspace owns pending retry hydration and reconciliation",
   );
   assert.match(
     src,
-    /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
+    /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
     "workspace destructures the unscoped projects hook with collision-safe names",
   );
   assert.match(src, /const \[onboardingResolved, setOnboardingResolved\] = useState\(false\);/, "onboarding resolution starts false");
@@ -81,13 +81,13 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
-    /const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsInitiallyResolved;/,
-    "pending retry reconciliation waits for both the roster and projects to load successfully",
+    /const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsLoadedSuccessfully;/,
+    "pending retry reconciliation waits for both the roster and a successful unscoped projects load",
   );
   assert.match(
     src,
-    /const reconciledPendingFirstProjectGrant = canReconcilePendingFirstProjectGrant\s*\?\s*reconcilePendingFirstProjectAccessSnapshot\(\s*pendingFirstProjectGrant,\s*registeredProjects,\s*visibleFamiliars,\s*\)\s*:\s*pendingFirstProjectGrant;/,
-    "workspace reconciles pending retry targets against the live unscoped projects and non-archived roster",
+    /const reconciledPendingFirstProjectGrant = resolvePendingFirstProjectAccessSnapshot\(\{[\s\S]*snapshot: pendingFirstProjectGrant,[\s\S]*projects: registeredProjects,[\s\S]*visibleFamiliars,[\s\S]*familiarsLoaded,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*projectsLoadedSuccessfully,[\s\S]*\}\);/,
+    "workspace preserves pending retries through failed project loads, then reconciles them once the unscoped projects list succeeds",
   );
   assert.match(
     src,
@@ -106,9 +106,17 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
-    /const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div aria-hidden=\{firstProjectGateOpen \|\| undefined\} inert=\{firstProjectGateOpen \|\| undefined\}>[\s\S]*\{renderSurface\(mode\)\}[\s\S]*<\/div>/,
-    "workspace renders the gate inside the relative detail container before the Home/Chat detail content and makes the covered surface inert",
+    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*\{detailContent\}[\s\S]*<\/div>/,
+    "workspace renders the gate as an absolute sibling overlay inside the detail container while leaving the surface itself as the same direct child",
   );
+  assert.doesNotMatch(
+    src,
+    /<div aria-hidden=\{firstProjectGateOpen \|\| undefined\} inert=\{firstProjectGateOpen \|\| undefined\}>[\s\S]*\{renderSurface\(mode\)\}[\s\S]*<\/div>/,
+    "workspace no longer inserts an intermediate detail wrapper between cave-mode-fade and the rendered surface",
+  );
+  assert.match(src, /mode === "chat" \? \(\s*<ChatSurface/, "Chat stays a direct render branch");
+  assert.match(src, /mode === "browser" \? \(\s*<BrowserPane/, "Browser stays a direct render branch");
+  assert.match(src, /\) : \(\s*<HomeComposer/, "Home stays the fallback direct render branch");
   assert.doesNotMatch(
     src,
     /\{\(onboardingOpen \|\| onboardingMounted\) && \([\s\S]*<OnboardingOverlay[\s\S]*\)\}\s*\n\s*<FirstProjectGate/,

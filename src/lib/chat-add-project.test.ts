@@ -116,6 +116,38 @@ assert.equal(projectNameForRoot(""), "");
   unsubscribe();
 }
 
+// Caller created the project first (ProjectsView's scoped create path) → a grant
+// failure should still publish the new project to unscoped consumers.
+{
+  resetProjectRegistryListenersForTests();
+  let notifications = 0;
+  const unsubscribe = subscribeProjectRegistryMutation(() => {
+    notifications += 1;
+  });
+  let created = false;
+  const createProject = async () => {
+    created = true;
+    return null;
+  };
+  const fetchImpl = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({ error: "grant failed" }),
+  });
+  const result = await addChatProject({
+    root: "/scoped/new-project",
+    familiarId: "sage",
+    createProject,
+    existingProjectId: "known-id",
+    projectJustCreated: true,
+    fetchImpl,
+  });
+  assert.equal(created, false, "a caller-owned precreated project should not be re-created");
+  assert.equal(result.ok, false);
+  assert.equal(notifications, 1, "failed scoped grants still fan out one generic registry refresh for the newly created project");
+  unsubscribe();
+}
+
 // Blank root → guarded before any I/O.
 {
   let touched = false;

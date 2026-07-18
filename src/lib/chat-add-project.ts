@@ -29,7 +29,9 @@ export function projectNameForRoot(root: string): string {
  * caller's local project list updates in place. Creation suppresses its normal
  * registry notification here; this helper emits once after the bundled grant
  * completes. When the root is already registered (only the grant is missing)
- * pass `existingProjectId` to skip creation. `fetchImpl` is injectable for tests.
+ * pass `existingProjectId` to skip creation. Callers that created the project
+ * immediately before the grant can pass `projectJustCreated` so failed grants
+ * still fan out the new registry entry. `fetchImpl` is injectable for tests.
  */
 export async function addChatProject(args: {
   root: string;
@@ -40,6 +42,7 @@ export async function addChatProject(args: {
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
   existingProjectId?: string | null;
+  projectJustCreated?: boolean;
   name?: string;
   fetchImpl?: typeof fetch;
 }): Promise<AddChatProjectResult> {
@@ -68,7 +71,7 @@ export async function addChatProject(args: {
     if (!res.ok) {
       // Creation still succeeded, so publish that partial registry mutation
       // even though the bundled grant did not complete.
-      if (createdProject) emitProjectRegistryMutation();
+      if (createdProject || args.projectJustCreated) emitProjectRegistryMutation();
       const data = (await res.json().catch(() => ({}))) as { error?: unknown };
       return {
         ok: false,
