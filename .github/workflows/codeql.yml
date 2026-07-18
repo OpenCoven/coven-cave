@@ -13,10 +13,10 @@ concurrency:
   # Key on the full ref so each PR/branch has its own group. Do NOT cancel
   # in-progress runs: the repo ruleset's code_scanning gate evaluates CodeQL
   # against the PR merge commit, which regenerates whenever main moves. Cancelling
-  # in-flight PR runs (esp. the ~30min swift build) made the gate unsatisfiable
-  # under merge load — every main move murdered the run before it could report.
-  # Letting runs finish (and queueing the next) preserves full 5-language required
-  # coverage and dissolves that deadlock, at the cost of some extra runner minutes.
+  # in-flight PR runs made the gate unsatisfiable under merge load — every main
+  # move murdered the run before it could report. Letting runs finish (and
+  # queueing the next) preserves required coverage and dissolves that deadlock,
+  # at the cost of some extra runner minutes.
   group: codeql-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
@@ -51,20 +51,18 @@ jobs:
             build-mode: none
             runner: ubuntu-latest
             timeout: 20
-          # swift/macos-15 leg removed from PR CI: GitHub-hosted macOS minutes
-          # were exhausting the org Actions limit and queuing indefinitely,
-          # making the Analyze (swift) check unsatisfiable. Restore
-          # this entry once macOS Actions budget is sorted.
+          # swift is NOT in this matrix on purpose. It runs out-of-band in the
+          # analyze-swift-audit job below (schedule/dispatch only, no upload).
+          # Gate-parity invariant: the ruleset's code_scanning rule derives its
+          # "expected" analysis categories from what has been uploaded to main.
+          # Uploading swift from main-only runs while PRs analyze four languages
+          # made the gate permanently unsatisfiable — every PR merge stalled on
+          # "still expecting 1 result from CodeQL" (issue #3285). Only re-add a
+          # swift matrix entry if it runs on pull_request too (macOS budget).
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      # Install build tooling before CodeQL initializes its Swift tracer. On
-      # Apple Silicon, Homebrew rejects installs invoked through Rosetta.
-      - name: Install XcodeGen
-        if: matrix.language == 'swift'
-        run: brew install xcodegen
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
@@ -72,8 +70,40 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          # Default setup rejects advanced SARIF uploads. Keep the migration
+          # workflow green in analysis-only mode until an administrator
+          # disables default setup and sets this repository variable to always.
+          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD || 'never' }}
+
+  # Out-of-band swift security audit: weekly + on demand. Scans the generated
+  # iOS project on a macOS runner but NEVER uploads to code scanning, so the
+  # swift category stays out of the merge gate's expected set (see the matrix
+  # comment above). Findings surface in the run's step summary and as a SARIF
+  # artifact. Cost: one macOS run per week (~30 min) instead of one per PR.
+  analyze-swift-audit:
+    name: Analyze (swift audit)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Install build tooling before CodeQL initializes its Swift tracer. On
+      # Apple Silicon, Homebrew rejects installs invoked through Rosetta.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          languages: swift
+          build-mode: manual
+
       - name: Generate and build the iOS project
-        if: matrix.language == 'swift'
         env:
           DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
         run: |
@@ -90,10 +120,34 @@ jobs:
             ARCHS=arm64 \
             build
 
-      - name: Perform CodeQL analysis
+      - name: Perform CodeQL analysis (no upload)
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
-          # Default setup rejects advanced SARIF uploads. Keep the migration
-          # workflow green in analysis-only mode until an administrator
-          # disables default setup and sets this repository variable to always.
-          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD || 'never' }}
+          # Hard-coded on purpose — do NOT switch to the repository variable.
+          # An uploaded swift analysis on main re-poisons the merge gate for
+          # every four-language PR run (gate-parity invariant above).
+          upload: never
+          output: swift-sarif
+
+      - name: Summarize swift findings
+        run: |
+          set -euo pipefail
+          SARIF=swift-sarif/swift.sarif
+          COUNT=$(jq '[.runs[].results[]] | length' "$SARIF")
+          {
+            echo "## CodeQL swift audit"
+            echo
+            echo "Findings: **$COUNT** (SARIF attached as a run artifact)"
+            if [ "$COUNT" -gt 0 ]; then
+              echo
+              jq -r '.runs[].results[] | "- `\(.ruleId)` \(.locations[0].physicalLocation.artifactLocation.uri // "?"):\(.locations[0].physicalLocation.region.startLine // 0)"' "$SARIF"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload swift SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codeql-swift-sarif
+          path: swift-sarif
+          retention-days: 30
