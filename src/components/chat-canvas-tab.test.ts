@@ -76,13 +76,12 @@ assert.notEqual(formatArtifactWhen("2026-07-12T00:00:00Z"), "", "real timestamps
 
 // ── Add tile (cave-fema): in-grid sketch creation ────────────────────────────
 // The gallery owns its add affordance: a ghost tile leads the grid (and IS
-// the empty state), expanding in-place into the Describe/Paste/Blank
-// composer. Save is explicit; nothing hits /api/canvas mid-stream.
+// the empty state), expanding in-place into the describe-first composer.
 const addTile = readFileSync(new URL("./canvas-add-tile.tsx", import.meta.url), "utf8");
 
 assert.match(
   view,
-  /<CanvasAddTile hero=\{artifacts\.length === 0\} familiarId=\{familiarId\} onSaved=\{handleSaved\} \/>/,
+  /<CanvasAddTile[\s\S]{0,300}?hero=\{galleryArtifacts\.length === 0\}[\s\S]{0,300}?onArtifactsChanged=\{handleSaved\}/,
   "ONE stable tile mount leads the grid — hero-styled when empty, so crossing zero never remounts the composer",
 );
 assert.doesNotMatch(view, /<CanvasAddTile hero familiarId/, "no second, remount-prone hero mount remains");
@@ -91,17 +90,27 @@ assert.match(view, /chat-canvas-card--new/, "a kept sketch settles in with a one
 
 assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
 assert.match(addTile, /generateArtifactCode\(\{/, "describe streams through the existing chat bridge");
+assert.match(addTile, /What would you like to create\?/, "default path asks for intent, not an implementation mode");
+assert.match(addTile, /Create preview/, "primary action creates a preview");
 assert.match(addTile, /buildSketchPrompt\(state\.prompt\)/, "prompts are wrapped with the shared sketch contract");
 assert.match(addTile, /buildRefinePrompt\(state\.result\.code, ask, state\.result\.kind\)/, "refine reuses the shared refine contract");
+assert.match(addTile, /buildArtifactRepairPrompt/, "format recovery uses the bounded repair prompt");
+assert.match(addTile, /sessionId: result\.sessionId/, "repair resumes the same hidden Canvas session");
 assert.match(addTile, /abortRef\.current\?\.abort\(\)/, "collapse/unmount aborts an in-flight generation");
 assert.match(addTile, /sandbox="allow-scripts"/, "the in-tile preview keeps the opaque-origin sandbox");
+assert.doesNotMatch(addTile, /allow-same-origin/, "preview remains opaque-origin");
 assert.match(addTile, /detectPastedKind\(state\.pastedCode\)/, "pasted code kind is detected, not asked");
 assert.match(addTile, /useAnnouncer/, "completion and saves are announced to AT");
+assert.match(addTile, /aria-haspopup="menu"/, "Start from code is an accessible secondary menu");
+assert.match(addTile, /Blank HTML/, "explicit blank HTML remains available");
+assert.match(addTile, /Blank React component/, "explicit blank React remains available");
+assert.doesNotMatch(addTile, /const MODES/, "equal-weight implementation mode switcher is removed");
 assert.match(
   addTile,
   /method: "POST",[\s\S]{0,200}?body: JSON\.stringify\(\{ artifact \}\)/,
-  "saving posts one artifact to the existing canvas store route",
+  "autosave posts one artifact to the existing canvas store route",
 );
-assert.doesNotMatch(addTile, /fetch\("\/api\/canvas"[\s\S]{0,80}?onText/, "no save happens mid-stream — explicit Keep only");
+assert.doesNotMatch(addTile, />\s*Keep\s*</, "generated previews no longer require an ambiguous Keep action");
+assert.match(view, /artifact\.id !== activeComposerId/, "the active autosaved artifact is hidden from gallery cards to prevent duplicates");
 
 console.log("chat canvas tab wiring: ok");

@@ -18,6 +18,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { useCodeRail } from "@/lib/use-code-rail";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -214,17 +215,21 @@ export function ChatSurface({
     // root only. A previous cross-run ref wrongly blocked the new root's first
     // load when the old root's fetch was still in flight, leaving a stale count.
     let inFlight = false;
-    const load = async () => {
+    // The fetch goes through the shared changes-summary gate (cave-v8hh) so
+    // this badge, the composer git chip, the stage header, and the Changes
+    // panel — all polling the same root — cost one request per 5s window, not
+    // four. The refresh signal forces so a just-made edit can't reuse a
+    // pre-mutation response.
+    const load = async (opts?: { force?: boolean }) => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(root)}`, { cache: "no-store" });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; files?: unknown[] };
+        const { httpOk, json } = await fetchChangesSummary(root, opts);
         if (cancelled) return;
         // Failures stay `null` (unknown), never a fake zero — a transient
         // error followed by a successful load must not read as a fresh 0→N
         // edit batch and pop the closed-by-default rail open (cave-xsq.7).
-        setChangeCount(res.ok && json.ok ? (json.files?.length ?? 0) : null);
+        setChangeCount(httpOk && json.ok ? (json.files?.length ?? 0) : null);
       } catch {
         if (!cancelled) setChangeCount(null);
       } finally {
@@ -232,7 +237,7 @@ export function ChatSurface({
       }
     };
     void load();
-    const onRefresh = () => { void load(); };
+    const onRefresh = () => { void load({ force: true }); };
     window.addEventListener("cave:changes-refresh", onRefresh);
     let intervalId: number | undefined;
     if (sessionRunning) {

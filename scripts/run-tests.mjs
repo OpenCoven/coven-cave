@@ -687,6 +687,7 @@ export const SUITES = {
     "src/lib/composer-history.test.ts",
     "src/lib/appearance-corner-radius.test.ts",
     "src/lib/use-changes-summary.test.ts",
+    "src/lib/changes-summary-fetch.test.ts",
     "src/lib/use-familiar-contracts.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
@@ -994,6 +995,7 @@ export const SUITES = {
     "src/lib/server/skill-build.test.ts",
     "src/lib/server/prompt-scan.test.ts",
     "src/lib/server/adapter-conflict-heal.test.ts",
+    "src/lib/server/mobile-access-provision.test.ts",
   ],
   mobile: [
     "src/lib/mobile-access-token.test.ts",

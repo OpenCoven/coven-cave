@@ -64,8 +64,14 @@ assert.match(
 
 assert.match(
   source,
+  /fetchChangesSummary\(root/,
+  "chat-surface loads /api/changes for the active root through the shared changes-summary gate (cave-v8hh)",
+);
+
+assert.doesNotMatch(
+  source,
   /fetch\(`\/api\/changes\?projectRoot=\$\{encodeURIComponent\(/,
-  "chat-surface fetches /api/changes for the active session's project root",
+  "no private /api/changes summary fetch remains — the gate owns the request",
 );
 
 assert.match(

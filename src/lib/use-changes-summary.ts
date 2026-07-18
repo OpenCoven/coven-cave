@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 /**
@@ -14,6 +15,11 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
  * same 5s interval, document-visibility gating, and a single-flight guard. It is
  * `active`-gated so it pauses (no redundant polling) once the full panel is
  * shown and takes over polling itself.
+ *
+ * The fetch itself goes through the shared changes-summary gate (cave-v8hh):
+ * several subscribers poll the same root at once (composer git chip, stage
+ * header, code-rail badge, Changes panel), and the gate collapses each 5s
+ * window onto one real request instead of 2-4 identical ones.
  */
 const POLL_MS = 5000;
 
@@ -29,16 +35,9 @@ type ChangesSummary = {
   /** Linked-worktree name (checkout dir basename) — null in the primary checkout. */
   worktree: string | null;
   /** Immediate refetch — for callers that just mutated git state (e.g. the
-   *  composer's branch switch) and shouldn't wait out the 5s poll. */
+   *  composer's branch switch) and shouldn't wait out the 5s poll. Forces
+   *  through the shared gate so it never reuses a pre-mutation response. */
   reload: () => void;
-};
-
-type ChangesResponse = {
-  ok?: boolean;
-  repo?: boolean;
-  files?: unknown[];
-  branch?: string | null;
-  worktree?: string | null;
 };
 
 export function useChangesSummary(
@@ -56,20 +55,16 @@ export function useChangesSummary(
   // into the new root's state.
   const generation = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { force?: boolean }) => {
     if (!active || !projectRoot) return;
     if (inFlight.current) return;
     if (document.visibilityState !== "visible") return;
     const gen = generation.current;
     inFlight.current = true;
     try {
-      const res = await fetch(
-        `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
-        { cache: "no-store" },
-      );
-      const json = (await res.json()) as ChangesResponse;
+      const { httpOk, json } = await fetchChangesSummary(projectRoot, opts);
       if (generation.current !== gen) return;
-      if (res.ok && json.ok) {
+      if (httpOk && json.ok) {
         setNotARepo(json.repo === false);
         setCount(Array.isArray(json.files) ? json.files.length : 0);
         setBranch(typeof json.branch === "string" ? json.branch : null);
@@ -96,7 +91,7 @@ export function useChangesSummary(
   usePausablePoll(() => void load(), POLL_MS, { enabled: active && Boolean(projectRoot) });
 
   const reload = useCallback(() => {
-    void load();
+    void load({ force: true });
   }, [load]);
 
   return { count, loaded, notARepo, branch, worktree, reload };

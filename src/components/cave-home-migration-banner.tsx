@@ -129,8 +129,10 @@ export function CaveHomeMigrationBannerTrigger() {
 
   // Ordinary Windows mirrors can be changed by an older tool after Cave has
   // started. Re-check while the shell is visible so those writes are surfaced
-  // without requiring an app restart.
-  usePausablePoll(() => void refresh(), 30_000, { pauseWhileInputActive: true });
+  // without requiring an app restart. 5 minutes: the endpoint scans the legacy
+  // home on every hit and the drift it watches for is rare and non-urgent, so
+  // a tighter cadence is pure overhead (cave-v8hh).
+  usePausablePoll(() => void refresh(), 5 * 60_000, { pauseWhileInputActive: true });
 
   useEffect(() => {
     let cancelled = false;
