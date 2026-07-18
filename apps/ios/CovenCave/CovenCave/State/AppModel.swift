@@ -1492,6 +1492,11 @@ final class AppModel {
 
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
+    /// Serializes writes so an older background snapshot cannot overwrite a
+    /// newer one. The foreground path never waits on this queue.
+    @ObservationIgnored private let threadsPersistenceQueue = DispatchQueue(
+        label: "ai.opencoven.cave.thread-persistence", qos: .utility
+    )
 
     func persistThreads() {
         // Debounce: many call sites (message send/receive, edits, archive,
@@ -1503,25 +1508,39 @@ final class AppModel {
         persistThreadsTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
-            self?.flushThreads()
+            self?.enqueueThreadPersistence()
         }
     }
 
-    /// Snapshot on the main actor (cheap value-type map), then encode + write
-    /// off-main. Call directly when a synchronous flush is required (e.g. app
-    /// moving to the background).
+    /// Snapshot on the main actor (cheap value-type map), then enqueue the
+    /// encode + write off-main.
+    private func enqueueThreadPersistence() {
+        persistThreadsTask = nil
+        let snapshots = threads.map(\.snapshot)
+        let url = threadsFileURL
+        threadsPersistenceQueue.async {
+            Self.writeThreadSnapshots(snapshots, to: url)
+        }
+    }
+
+    /// Finish queued persistence before the app can be suspended. This blocks
+    /// only during a lifecycle transition; normal saves remain off-main.
     func flushThreads() {
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
         let url = threadsFileURL
-        Task.detached(priority: .utility) {
-            do {
-                let data = try JSONEncoder().encode(snapshots)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                // Non-fatal: persistence is best-effort.
-            }
+        threadsPersistenceQueue.sync {
+            Self.writeThreadSnapshots(snapshots, to: url)
+        }
+    }
+
+    nonisolated private static func writeThreadSnapshots(_ snapshots: [ThreadSnapshot], to url: URL) {
+        do {
+            let data = try JSONEncoder().encode(snapshots)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Non-fatal: persistence is best-effort.
         }
     }
 
