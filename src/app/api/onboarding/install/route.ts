@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
 import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -412,6 +413,10 @@ function finishInstallJobError(job: InstallJob, err: unknown) {
 }
 
 export async function GET(req: Request) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "local origin required" }, { status: 403 });
+  }
+
   const target = new URL(req.url).searchParams.get("target");
   if (!isInstallTarget(target)) {
     return NextResponse.json(
@@ -425,7 +430,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { target?: unknown };
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "local origin required" }, { status: 403 });
+  }
+
+  let body: { target?: unknown; confirmInstall?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -441,6 +450,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (body.confirmInstall !== true) {
+    return NextResponse.json(
+      { ok: false, error: "explicit install confirmation required" },
+      { status: 400 },
+    );
+  }
+
   const targetName = body.target;
   const target = INSTALL_TARGETS[targetName];
 

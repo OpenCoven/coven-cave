@@ -42,6 +42,18 @@ assert.match(
 
 assert.match(
   source,
+  /if \(!isLocalOrigin\(req\)\)[\s\S]*?status: 403/,
+  "installer status and start requests require a loopback desktop origin",
+);
+
+assert.match(
+  source,
+  /if \(body\.confirmInstall !== true\)/,
+  "POST requires the desktop UI to send an explicit install confirmation flag",
+);
+
+assert.match(
+  source,
   /if \(!isInstallTarget\(body\.target\)\)/,
   "unknown targets are rejected before any spawn",
 );
