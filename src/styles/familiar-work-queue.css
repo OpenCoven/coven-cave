@@ -19,8 +19,8 @@
 .fwq-familiars {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px var(--space-5);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border-hairline);
 }
 
@@ -34,11 +34,11 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 .fwq-toolbar-search { flex: 1 1 240px; min-width: 180px; max-width: 380px; }
-.fwq-toolbar-group { display: inline-flex; gap: 6px; }
+.fwq-toolbar-group { display: inline-flex; gap: var(--space-2); }
 .fwq-toolbar-sort {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -532,6 +532,24 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* Claim-for-familiar picker (cave-p63a): a compact ghost control sitting
+   beside the xs Claim button, matching its 22px height. */
+.fwq-claim-for {
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 8px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  gap: var(--space-1);
+}
+
+.fwq-claim-for:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 /* Handoff-note affordances (cave-hlv.2): a full-width hint + inline composer

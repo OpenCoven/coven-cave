@@ -32,8 +32,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" }/,
-  "Mobile bottom tabs should use the canonical Rituals name for both the visible label and the accessible name",
+  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)/,
+  "Mobile bottom tabs should derive from the desktop sidebar's primary cluster, inheriting canonical names (Rituals included) by construction",
 );
 
 assert.match(

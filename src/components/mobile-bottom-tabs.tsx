@@ -2,33 +2,27 @@
 
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
- * viewports. Surfaces the most-used destinations (Home, Chat, Tasks, Rituals)
- * as a tablist with icon + label and an active highlight. Labels use the
- * canonical surface names shared with the desktop sidebar (issue #3283 —
- * one surface, one name).
+ * viewports. Surfaces the desktop sidebar's primary cluster (the non-quiet,
+ * non-hidden FOLDER_MODES rows — Home, Chat, Tasks, Rituals) as a tablist
+ * with icon + label and an active highlight. Tabs are DERIVED from
+ * FOLDER_MODES rather than hand-copied so desktop and mobile present the
+ * same conceptual hierarchy by construction (issue #3283 — one surface, one
+ * name; the quiet cluster and footer stay reachable via the nav drawer,
+ * which hosts the full sidebar).
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
  * check viewport.
  */
 
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
+import { FOLDER_MODES } from "@/components/sidebar-minimal";
 
-type TabId = "home" | "chat" | "board" | "inbox";
-
-type TabDef = {
-  id: TabId;
-  label: string;
-  ariaLabel: string;
-  iconName: IconName;
-};
-
-const TABS: TabDef[] = [
-  { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
-  { id: "chat", label: "Chat", ariaLabel: "Chat", iconName: "ph:chats" },
-  { id: "board", label: "Tasks", ariaLabel: "Tasks", iconName: "ph:kanban" },
-  { id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" },
-];
+// Primary daily destinations: exactly the rows the desktop sidebar promotes
+// (quiet rows live in the drawer's full sidebar; navHidden are on-demand).
+const TABS = FOLDER_MODES.filter((fm) => !fm.quiet && !fm.navHidden).map(
+  (fm) => ({ id: fm.id, label: fm.label, ariaLabel: fm.label, iconName: fm.iconName }),
+);
 
 export type MobileBottomTabsProps = {
   mode: string;
