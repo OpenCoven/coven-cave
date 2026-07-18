@@ -12,6 +12,11 @@ const execFileAsync = promisify(execFile);
 const root = await mkdtemp(path.join(os.tmpdir(), "cave-preferences-store-"));
 const preferencesFile = path.join(root, "cave-preferences.json");
 const legacyThemeFile = path.join(root, "cave-theme.json");
+// Hermetic coven home: reconciliation walks <covenHome> for legacy entries, so
+// without this the test trips over the REAL ~/.coven compatibility symlinks
+// (their canonical targets != the temp override paths below) and fails on any
+// machine that has been migrated (threads-wro).
+process.env.COVEN_HOME = path.join(root, "coven-home");
 process.env.COVEN_PREFERENCES_PATH = preferencesFile;
 process.env.COVEN_THEME_PATH = legacyThemeFile;
 
@@ -197,6 +202,7 @@ try {
 
   console.log("preferences-store.test.ts: ok");
 } finally {
+  delete process.env.COVEN_HOME;
   delete process.env.COVEN_PREFERENCES_PATH;
   delete process.env.COVEN_THEME_PATH;
   await rm(root, { recursive: true, force: true });
