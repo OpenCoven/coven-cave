@@ -40,6 +40,7 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
+import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize } from "@/lib/slash-commands";
@@ -162,6 +163,17 @@ export function HomeComposer({
   // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
   // home records slash commands in history too, so pushes stay at call sites.
   const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
+  // Composer dictation (voice new-chat): finals append to the draft for
+  // review — never auto-sent. The mic hides when no ears engine exists.
+  const dictation = useDictation(
+    (finalText) => {
+      setText((prev) => {
+        const sep = prev && !/\s$/.test(prev) ? " " : "";
+        return `${prev}${sep}${finalText}`;
+      });
+    },
+    (code, hint) => onToast(hint ?? `Dictation stopped: ${code}`),
+  );
   // Time-of-day greeting for the hero eyebrow. Sampled after mount (client
   // clock) so SSR markup stays deterministic — the eyebrow fades in once set.
   const [greeting, setGreeting] = useState<string | null>(null);
@@ -854,6 +866,12 @@ export function HomeComposer({
           onCancel={promptEnhance.cancel}
         />
 
+        {dictation.listening ? (
+          <div className="hc-dictation-caption" aria-live="polite">
+            {dictation.partial || "Listening…"}
+          </div>
+        ) : null}
+
         {/* Controls — reference layout: `+` attach and the Chat/Task pills sit
             bottom-left inside the card; the model chip, voice, enhance, and
             send hug the right. Context pickers move to the footer band. */}
@@ -907,6 +925,19 @@ export function HomeComposer({
               {/* Voice: phone = live call in a brand-new chat (voice
                   new-chat); the dictation mic renders beside it when an
                   ears engine exists. */}
+              {dictation.available ? (
+                <button
+                  type="button"
+                  className={`cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40${dictation.listening ? " hc-mic-live" : ""}`}
+                  title={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                  aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                  aria-pressed={dictation.listening}
+                  disabled={sending}
+                  onClick={dictation.toggle}
+                >
+                  <Icon name="ph:microphone" width={15} aria-hidden />
+                </button>
+              ) : null}
               {onStartVoiceCall ? (
                 <button
                   type="button"

@@ -202,3 +202,12 @@ test("chat-view: closing an auto-created call discards the session when empty", 
     /voiceAutoCreatedRef\.current = false;[\s\S]*?discardVoiceSessionIfEmpty\(sessionId\)[\s\S]*?onSessionsChanged\?\.\(\)/,
   );
 });
+
+test("both composers mount dictation with fill-and-review append", () => {
+  for (const [name, src] of [["chat-view", chatView], ["home-composer", homeComposer]] as const) {
+    assert.match(src, /useDictation\(/, `${name} mounts useDictation`);
+    assert.match(src, /aria-label=\{dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, `${name} mic label`);
+    assert.match(src, /dictation\.available \?/, `${name} hides the mic when no ears exist`);
+    assert.match(src, /hc-dictation-caption/, `${name} renders the live partial caption`);
+  }
+});

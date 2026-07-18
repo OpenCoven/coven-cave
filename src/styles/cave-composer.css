@@ -732,3 +732,29 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+
+/* Composer dictation (voice new-chat): live-partial caption + pulsing mic. */
+.hc-dictation-caption {
+  padding: 0 14px 6px;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-mic-live {
+  color: var(--accent-presence);
+  border-color: var(--accent-presence);
+  animation: hc-mic-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hc-mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-mic-live { animation: none; }
+}

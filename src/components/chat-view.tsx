@@ -89,6 +89,7 @@ import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } f
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { discardVoiceSessionIfEmpty, startVoiceConversation } from "@/lib/voice/start-voice-chat";
+import { useDictation } from "@/lib/voice/use-dictation";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { readUserProfileSnapshot, useUserProfile, userDisplayName } from "@/lib/user-profile";
@@ -2604,6 +2605,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setVoiceCallPending(false);
     }
   }, [sessionId, voiceCallPending, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
+  // Composer dictation (voice new-chat): finals append to the draft for
+  // review — never auto-sent. The mic hides when no ears engine exists.
+  const dictation = useDictation(
+    (finalText) => {
+      setInput((prev) => {
+        const sep = prev && !/\s$/.test(prev) ? " " : "";
+        return `${prev}${sep}${finalText}`;
+      });
+    },
+    (code, hint) => announce(hint ?? `Dictation stopped: ${code}`, "assertive"),
+  );
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
@@ -5943,6 +5955,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onRevert={promptEnhance.revert}
               onCancel={promptEnhance.cancel}
             />
+            {dictation.listening ? (
+              <div className="hc-dictation-caption" aria-live="polite">
+                {dictation.partial || "Listening…"}
+              </div>
+            ) : null}
             <div className="cave-composer-controls">
               <input
                 ref={fileInputRef}
@@ -5976,6 +5993,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       zero. Mic = dictation, phone = call, on every surface.
                       Disabled while a mint is in flight so rapid clicks can't
                       fire multiple startVoiceConversation calls. */}
+                  {dictation.available ? (
+                    <button
+                      type="button"
+                      className={`cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40${dictation.listening ? " hc-mic-live" : ""}`}
+                      title={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                      aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                      aria-pressed={dictation.listening}
+                      disabled={busy}
+                      onClick={dictation.toggle}
+                    >
+                      <Icon name="ph:microphone" width={15} aria-hidden />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
