@@ -867,7 +867,7 @@ export function HomeComposer({
         />
 
         {dictation.listening ? (
-          <div className="hc-dictation-caption" aria-live="polite">
+          <div className="hc-dictation-caption">
             {dictation.partial || "Listening…"}
           </div>
         ) : null}
@@ -932,7 +932,7 @@ export function HomeComposer({
                   title={dictation.listening ? "Stop dictation" : "Dictate your message"}
                   aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
                   aria-pressed={dictation.listening}
-                  disabled={sending}
+                  disabled={sending && !dictation.listening}
                   onClick={dictation.toggle}
                 >
                   <Icon name="ph:microphone" width={15} aria-hidden />

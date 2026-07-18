@@ -209,5 +209,25 @@ test("both composers mount dictation with fill-and-review append", () => {
     assert.match(src, /aria-label=\{dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, `${name} mic label`);
     assert.match(src, /dictation\.available \?/, `${name} hides the mic when no ears exist`);
     assert.match(src, /hc-dictation-caption/, `${name} renders the live partial caption`);
+    // The streaming partial would re-announce on every update if it carried
+    // aria-live — SR hostile. The mic's aria-pressed already announces toggle
+    // state (repo convention: voice-call-overlay.tsx live-announces only
+    // coarse state, not the fast-changing text underneath it).
+    assert.doesNotMatch(src, /hc-dictation-caption" aria-live/, `${name} caption has no aria-live`);
   }
+  // A live toggle must always accept "stop": a disabled mic mid-listen would
+  // leave the user with a hot mic they can't turn off for the whole agent
+  // turn (chat) or send window (home). Only START stays gated on busy/sending.
+  assert.match(chatView, /disabled=\{busy && !dictation\.listening\}/, "chat-view mic allows stop while busy");
+  assert.match(homeComposer, /disabled=\{sending && !dictation\.listening\}/, "home-composer mic allows stop while sending");
+
+  // A live call and composer dictation can't share the mic engine: opening
+  // the call overlay — direct fast path, the auto-create nonce path, or any
+  // future setVoiceCallOpen site — must stop dictation. Home needs no
+  // equivalent: its phone button navigates away, and unmounting the composer
+  // closes dictation.
+  assert.match(
+    chatView,
+    /useEffect\(\(\) => \{\s*\n\s*if \(voiceCallOpen && dictation\.listening\) dictation\.toggle\(\);\s*\n\s*\}, \[voiceCallOpen, dictation\.listening, dictation\.toggle\]\);/,
+  );
 });

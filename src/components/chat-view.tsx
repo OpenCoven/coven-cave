@@ -2616,6 +2616,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     },
     (code, hint) => announce(hint ?? `Dictation stopped: ${code}`, "assertive"),
   );
+  // A live call and composer dictation can't share the mic: stop dictation
+  // whenever the call overlay is (or becomes) open.
+  useEffect(() => {
+    if (voiceCallOpen && dictation.listening) dictation.toggle();
+  }, [voiceCallOpen, dictation.listening, dictation.toggle]);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
@@ -5956,7 +5961,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onCancel={promptEnhance.cancel}
             />
             {dictation.listening ? (
-              <div className="hc-dictation-caption" aria-live="polite">
+              <div className="hc-dictation-caption">
                 {dictation.partial || "Listening…"}
               </div>
             ) : null}
@@ -6000,7 +6005,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       title={dictation.listening ? "Stop dictation" : "Dictate your message"}
                       aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
                       aria-pressed={dictation.listening}
-                      disabled={busy}
+                      disabled={busy && !dictation.listening}
                       onClick={dictation.toggle}
                     >
                       <Icon name="ph:microphone" width={15} aria-hidden />
