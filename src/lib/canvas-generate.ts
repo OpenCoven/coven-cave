@@ -31,6 +31,9 @@ export type GenerateResult = {
   text: string;
   sessionId: string | null;
   error: string | null;
+  /** Structured cause so Canvas can repair format failures without retrying
+   * transport/auth/runtime failures or parsing user-facing copy. */
+  failure: "transport" | "format" | null;
 };
 
 /**
@@ -43,6 +46,8 @@ export async function generateArtifactCode(opts: {
   prompt: string;
   familiarId: string;
   projectRoot?: string | null;
+  /** Resume the hidden Canvas-origin conversation (used by one-shot repair). */
+  sessionId?: string | null;
   signal?: AbortSignal;
   onText?: (fullText: string) => void;
 }): Promise<GenerateResult> {
@@ -54,6 +59,7 @@ export async function generateArtifactCode(opts: {
       body: JSON.stringify({
         familiarId: opts.familiarId,
         prompt: opts.prompt,
+        sessionId: opts.sessionId ?? undefined,
         projectRoot: opts.projectRoot ?? undefined,
         // Provenance: these sends belong to the Canvas/artifact surface, so
         // the chat lists can keep them out of the conversation rail.
@@ -62,17 +68,31 @@ export async function generateArtifactCode(opts: {
       signal: opts.signal,
     });
   } catch (err) {
-    return { code: null, kind: null, text: "", sessionId: null, error: (err as Error)?.message ?? "request failed" };
+    return {
+      code: null,
+      kind: null,
+      text: "",
+      sessionId: opts.sessionId ?? null,
+      error: opts.signal?.aborted ? "cancelled" : (err as Error)?.message ?? "request failed",
+      failure: "transport",
+    };
   }
   if (!res.ok || !res.body) {
-    return { code: null, kind: null, text: "", sessionId: null, error: `chat bridge ${res.status}` };
+    return {
+      code: null,
+      kind: null,
+      text: "",
+      sessionId: opts.sessionId ?? null,
+      error: `chat bridge ${res.status}`,
+      failure: "transport",
+    };
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
-  let sessionId: string | null = null;
+  let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
 
   // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
@@ -115,14 +135,13 @@ export async function generateArtifactCode(opts: {
   }
 
   const extracted = extractArtifact(text);
-  if (!extracted && !error) {
-    error = "The familiar didn't return a renderable UI. Try rephrasing.";
-  }
+  const failure = error ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
     text,
     sessionId,
-    error,
+    error: error ?? (failure === "format" ? "response format could not be previewed" : null),
+    failure,
   };
 }

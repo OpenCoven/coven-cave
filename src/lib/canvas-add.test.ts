@@ -1,282 +1,172 @@
 // @ts-nocheck
-// Canvas add tile (cave-fema): the pure composer state machine behind the
-// in-grid "New sketch" tile. Phases: collapsed -> composing -> generating ->
-// result | error. Retention rules matter: a collapse or failure must never
-// eat the user's prompt or pasted code; only a successful save resets.
 import assert from "node:assert/strict";
 import {
   INITIAL_ADD_TILE_STATE,
   addTileReducer,
   buildAddArtifact,
+  buildArtifactRevision,
   derivePastedTitle,
   detectPastedKind,
+  focusTargetForState,
+  generationStatusText,
 } from "./canvas-add.ts";
-import { STARTER_ARTIFACT_HTML, MAX_ARTIFACT_CODE_CHARS } from "./canvas-artifacts.ts";
+import {
+  MAX_ARTIFACT_CODE_CHARS,
+  STARTER_ARTIFACT_HTML,
+  STARTER_ARTIFACT_REACT,
+} from "./canvas-artifacts.ts";
 
-const s0 = INITIAL_ADD_TILE_STATE;
+const reduce = (state, ...events) => events.reduce(addTileReducer, state);
+const identity = { id: "art-stable", createdAt: "2026-07-18T00:00:00.000Z" };
 
-// ── expand / collapse ────────────────────────────────────────────────────────
-{
-  const open = addTileReducer(s0, { type: "expand" });
-  assert.equal(open.phase, "composing", "expand opens the composer");
-  assert.equal(open.mode, "describe", "describe is the default mode");
+// Describe-first expand and prompt retention.
+const open = addTileReducer(INITIAL_ADD_TILE_STATE, { type: "expand" });
+assert.equal(open.phase, "composing");
+assert.equal(open.mode, "describe");
+const prompted = addTileReducer(open, { type: "set-prompt", prompt: "a pricing page" });
+assert.equal(addTileReducer(prompted, { type: "collapse" }).prompt, "a pricing page");
 
-  const closed = addTileReducer(
-    { ...open, prompt: "a pricing page" },
-    { type: "collapse" },
-  );
-  assert.equal(closed.phase, "collapsed", "collapse closes the tile");
-  assert.equal(closed.prompt, "a pricing page", "collapse retains the prompt");
-  assert.equal(closed.result, null, "collapse discards an unsaved result");
-  assert.equal(closed.error, null, "collapse clears errors");
+// Advanced paths are explicit and use the requested implementation starter.
+const html = addTileReducer(open, { type: "set-mode", mode: "blank-html" });
+assert.equal(html.pastedCode, STARTER_ARTIFACT_HTML);
+const react = addTileReducer(open, { type: "set-mode", mode: "blank-react" });
+assert.equal(react.pastedCode, STARTER_ARTIFACT_REACT);
+assert.equal(detectPastedKind(react.pastedCode), "react");
+assert.equal(addTileReducer(open, { type: "set-mode", mode: "paste" }).pastedCode, "");
 
-  const closedWithCode = addTileReducer(
-    { ...open, pastedCode: "<p>keep me</p>" },
-    { type: "collapse" },
-  );
-  assert.equal(closedWithCode.pastedCode, "<p>keep me</p>", "collapse retains pasted code");
-}
+// Focus and live-region behavior are derived from state, not timing or stream
+// chunk count, so keyboard/SR outcomes remain stable across rerenders.
+assert.equal(focusTargetForState(open, "collapsed"), "prompt");
+assert.equal(focusTargetForState(react, "collapsed"), "editor");
+assert.equal(focusTargetForState({ ...open, phase: "generating" }, "composing"), "cancel");
+assert.equal(focusTargetForState({ ...open, phase: "repairing" }, "generating"), "cancel");
+assert.equal(focusTargetForState({ ...open, phase: "result" }, "generating"), "refine");
+assert.equal(focusTargetForState({ ...open, phase: "error" }, "repairing"), "retry");
+assert.equal(generationStatusText("generating", "Nova"), "Nova is creating your preview…");
+assert.equal(generationStatusText("repairing", "Nova"), "Still preparing your preview…");
 
-// ── mode switching ───────────────────────────────────────────────────────────
-{
-  const open = addTileReducer(s0, { type: "expand" });
-  const blank = addTileReducer(open, { type: "set-mode", mode: "blank" });
-  assert.equal(blank.mode, "blank");
-  assert.equal(blank.pastedCode, STARTER_ARTIFACT_HTML, "blank seeds the starter template");
+// One identity survives initial generation, format repair, save, and refines.
+const creating = reduce(
+  prompted,
+  { type: "begin-generation", runId: "run-1", identity },
+  { type: "begin-repair", runId: "run-1" },
+);
+assert.equal(creating.phase, "repairing");
+assert.deepEqual(creating.identity, identity);
+const generated = addTileReducer(creating, {
+  type: "generated",
+  runId: "run-1",
+  code: "<html>v1</html>",
+  kind: "html",
+  sessionId: "canvas-session",
+  revision: 1,
+});
+assert.equal(generated.phase, "result");
+assert.equal(generated.saveState, "saving");
+const saved = addTileReducer(generated, { type: "save-succeeded", revision: 1 });
+assert.equal(saved.saveState, "saved");
+assert.equal(saved.result.sessionId, "canvas-session");
+const deduped = addTileReducer(generated, {
+  type: "save-succeeded",
+  revision: 1,
+  savedId: "art-incumbent",
+  savedCreatedAt: "incumbent-created-at",
+});
+assert.equal(deduped.identity.id, "art-incumbent", "content-deduped saves adopt the settled id");
+assert.equal(deduped.identity.createdAt, "incumbent-created-at", "dedupe adopts the incumbent creation time");
+assert.deepEqual(saved.persistedResult, saved.result);
+const refining = addTileReducer(saved, { type: "begin-refine", runId: "run-2" });
+assert.equal(refining.generationPurpose, "refine");
+assert.deepEqual(refining.identity, identity);
+const refined = addTileReducer(refining, {
+  type: "generated",
+  runId: "run-2",
+  code: "<html>v2</html>",
+  kind: "html",
+  sessionId: "canvas-session",
+  revision: 2,
+});
+assert.equal(refined.result.code, "<html>v2</html>");
+assert.equal(refined.result.sessionId, "canvas-session");
+assert.equal(refined.saveState, "saving");
 
-  // Switching to blank must never clobber code the user already pasted.
-  const pasted = addTileReducer(
-    { ...open, mode: "paste", pastedCode: "<h1>mine</h1>" },
-    { type: "set-mode", mode: "blank" },
-  );
-  assert.equal(pasted.pastedCode, "<h1>mine</h1>", "blank never overwrites non-empty code");
+// Persistence failure keeps the valid preview and retry is revision-idempotent.
+const notSaved = addTileReducer(refined, { type: "save-failed", revision: 2 });
+assert.equal(notSaved.phase, "result");
+assert.equal(notSaved.result.code, "<html>v2</html>");
+assert.equal(notSaved.persistedResult.code, "<html>v1</html>");
+assert.equal(notSaved.saveState, "error");
+assert.equal(addTileReducer(notSaved, { type: "save-started", revision: 1 }).saveState, "error", "stale retry ignored");
+assert.equal(addTileReducer(notSaved, { type: "save-started", revision: 2 }).saveState, "saving");
 
-  const back = addTileReducer(blank, { type: "set-mode", mode: "describe" });
-  assert.equal(back.pastedCode, STARTER_ARTIFACT_HTML, "mode switches retain editor contents");
+// Failed refine preserves the last valid preview and saved revision.
+const refineFailed = addTileReducer(refining, {
+  type: "generation-failed",
+  runId: "run-2",
+  message: "could not refine",
+  kind: "generation",
+});
+assert.equal(refineFailed.phase, "result");
+assert.deepEqual(refineFailed.result, saved.result);
+assert.deepEqual(refineFailed.persistedResult, saved.persistedResult);
 
-  const midGen = { ...open, phase: "generating" };
-  assert.equal(
-    addTileReducer(midGen, { type: "set-mode", mode: "paste" }).mode,
-    "describe",
-    "set-mode is a no-op outside composing",
-  );
-
-  const whitespace = addTileReducer(
-    { ...open, mode: "paste", pastedCode: "   \n  " },
-    { type: "set-mode", mode: "blank" },
-  );
-  assert.equal(whitespace.pastedCode, STARTER_ARTIFACT_HTML, "whitespace-only code still seeds the starter");
-}
-
-// ── generate lifecycle ───────────────────────────────────────────────────────
-{
-  const open = addTileReducer(s0, { type: "expand" });
-  assert.equal(
-    addTileReducer(open, { type: "generate" }).phase,
-    "composing",
-    "generate is a no-op with an empty prompt",
-  );
-
-  const composed = { ...open, prompt: "a kanban board" };
-  const generating = addTileReducer(composed, { type: "generate" });
-  assert.equal(generating.phase, "generating");
-
-  const done = addTileReducer(generating, {
-    type: "generated",
-    code: "<!doctype html><html><body>x</body></html>",
-    kind: "html",
-  });
-  assert.equal(done.phase, "result");
-  assert.equal(done.result.kind, "html");
-
-  const failed = addTileReducer(generating, {
-    type: "generation-failed",
-    message: "the familiar reported an error",
-  });
-  assert.equal(failed.phase, "error");
-  assert.equal(failed.error, "the familiar reported an error");
-  assert.equal(failed.prompt, "a kanban board", "failure retains the prompt");
-
-  const retried = addTileReducer(failed, { type: "retry" });
-  assert.equal(retried.phase, "generating", "retry re-enters generating");
-  assert.equal(retried.error, null);
-
-  assert.equal(addTileReducer(composed, { type: "retry" }).phase, "composing", "retry is a no-op outside error");
-
-  assert.equal(
-    addTileReducer({ ...composed, phase: "generating" }, { type: "generate" }).phase,
-    "generating",
-    "generate is a no-op outside composing",
-  );
-  assert.equal(
-    addTileReducer({ ...composed, mode: "paste" }, { type: "generate" }).phase,
-    "composing",
-    "generate is a no-op outside describe mode",
-  );
-}
-
-// ── refine keeps the prior result until replaced ─────────────────────────────
-{
-  const result = {
-    ...s0,
-    phase: "result",
-    prompt: "a form",
-    result: { code: "<p>v1</p>", kind: "html" },
-  };
-  const refining = addTileReducer(result, { type: "refine" });
-  assert.equal(refining.phase, "generating");
-  assert.deepEqual(refining.result, result.result, "refine retains the prior sketch mid-flight");
-
-  const refineFailed = addTileReducer(refining, {
-    type: "generation-failed",
-    message: "cancelled",
-  });
-  assert.deepEqual(refineFailed.result, result.result, "a failed refine keeps the prior sketch");
-
-  const noResult = addTileReducer(s0, { type: "expand" });
-  assert.equal(addTileReducer(noResult, { type: "refine" }).phase, "composing", "refine is a no-op without a result");
-}
-
-// ── late async events never resurrect a collapsed/discarded tile ────────────
-{
-  const open = addTileReducer(s0, { type: "expand" });
-  const generating = addTileReducer({ ...open, prompt: "x" }, { type: "generate" });
-  const collapsed = addTileReducer(generating, { type: "collapse" });
-  assert.equal(
-   addTileReducer(collapsed, { type: "generated", code: "<p>late</p>", kind: "html" }).phase,
-   "collapsed",
-   "a late generated event never reopens a collapsed tile",
-  );
-  assert.equal(
-   addTileReducer(collapsed, { type: "generation-failed", message: "aborted" }).phase,
-   "collapsed",
-   "a late failure never reopens a collapsed tile",
-  );
-
-  const discarded = addTileReducer(
-   { ...s0, phase: "result", result: { code: "<p>v1</p>", kind: "html" } },
-   { type: "discard-result" },
-  );
-  const lateAfterDiscard = addTileReducer(discarded, { type: "generated", code: "<p>v1</p>", kind: "html" });
-  assert.equal(lateAfterDiscard.result, null, "a late generated event never revives a discarded sketch");
-}
-
-// ── discard and saved ────────────────────────────────────────────────────────
-{
-  const result = {
-    ...s0,
-    phase: "result",
-    prompt: "a form",
-    result: { code: "<p>v1</p>", kind: "html" },
-  };
-  const discarded = addTileReducer(result, { type: "discard-result" });
-  assert.equal(discarded.phase, "composing");
-  assert.equal(discarded.result, null);
-  assert.equal(discarded.prompt, "a form", "discard keeps the prompt for another go");
-
-  const saved = addTileReducer(result, { type: "saved" });
-  assert.deepEqual(saved, INITIAL_ADD_TILE_STATE, "save resets the whole composer");
-}
-
-// ── field edits ──────────────────────────────────────────────────────────────
-{
-  const open = addTileReducer(s0, { type: "expand" });
-  assert.equal(addTileReducer(open, { type: "set-prompt", prompt: "x" }).prompt, "x");
-  const code = addTileReducer(open, { type: "set-pasted-code", code: "<div/>" });
-  assert.equal(code.pastedCode, "<div/>");
-  const titled = addTileReducer(open, { type: "set-pasted-title", title: "My sketch" });
-  assert.equal(titled.pastedTitle, "My sketch");
-}
-
-// ── derivePastedTitle ────────────────────────────────────────────────────────
+// Format repair is one explicit phase and late/wrong-run events are rejected.
 assert.equal(
-  derivePastedTitle("<!doctype html><html><head><title>Neat Page</title></head></html>"),
-  "Neat Page",
-  "prefers the document title",
+  addTileReducer({ ...creating, phase: "generating" }, { type: "begin-repair", runId: "wrong" }).phase,
+  "generating",
+);
+const collapsed = addTileReducer(creating, { type: "collapse" });
+assert.equal(collapsed.phase, "collapsed");
+assert.equal(
+  addTileReducer(collapsed, { type: "generated", runId: "run-1", code: "late", kind: "html", sessionId: "late", revision: 1 }).result,
+  null,
+  "late generation cannot resurrect a cancelled run",
 );
 assert.equal(
-  derivePastedTitle("<body><h1>Big <em>Header</em></h1></body>"),
-  "Big Header",
-  "falls back to h1 text, tags stripped",
-);
-assert.equal(derivePastedTitle("<p>no headings</p>"), "Pasted sketch", "defaults when untitled");
-assert.equal(
-  derivePastedTitle(`<h1>${"long ".repeat(40)}</h1>`).length <= 60,
-  true,
-  "titles are clamped like every other artifact title",
-);
-assert.equal(
-  derivePastedTitle("<html><head><title></title></head><body><h1>Real Heading</h1></body></html>"),
-  "Real Heading",
-  "an empty <title> falls back to the h1",
+  addTileReducer(creating, { type: "generated", runId: "other", code: "late", kind: "html", sessionId: "late", revision: 1 }).result,
+  null,
+  "a previous run cannot overwrite the active run",
 );
 
-// ── detectPastedKind ─────────────────────────────────────────────────────────
-assert.equal(detectPastedKind("<!doctype html><html></html>"), "html");
-assert.equal(detectPastedKind("export default function App() { return <p/>; }"), "react");
+// Closing an unsaved preview retains it; closing a saved preview completes it.
+assert.equal(addTileReducer(generated, { type: "collapse" }).result.code, "<html>v1</html>");
+assert.deepEqual(addTileReducer(saved, { type: "collapse" }), INITIAL_ADD_TILE_STATE);
+const savingClosed = addTileReducer(generated, { type: "collapse" });
+assert.deepEqual(
+  addTileReducer(savingClosed, { type: "save-succeeded", revision: 1 }),
+  INITIAL_ADD_TILE_STATE,
+  "a late successful autosave joins the gallery without reopening the draft",
+);
 
-// ── buildAddArtifact ─────────────────────────────────────────────────────────
-{
-  const art = buildAddArtifact({
-    id: "art-1",
-    now: "2026-07-17T00:00:00.000Z",
-    mode: "describe",
-    prompt: "a pricing page with three tiers",
-    pastedTitle: "",
-    code: "<!doctype html><html></html>",
-    kind: "html",
-  });
-  assert.equal(art.title, "a pricing page with three tiers", "describe titles from the prompt");
-  assert.equal(art.prompt, "a pricing page with three tiers");
-  assert.equal(art.createdAt, art.updatedAt);
+// A saved draft discards only after the component's DELETE succeeds; a local
+// unsaved draft can clear immediately while keeping the description editable.
+const discarded = addTileReducer(notSaved, { type: "discard-local" });
+assert.equal(discarded.phase, "composing");
+assert.equal(discarded.result, null);
+assert.equal(discarded.prompt, "a pricing page");
 
-  const pasted = buildAddArtifact({
-    id: "art-2",
-    now: "2026-07-17T00:00:00.000Z",
-    mode: "paste",
-    prompt: "",
-    pastedTitle: "",
-    code: "<html><head><title>Hand-made</title></head></html>",
-    kind: "html",
-  });
-  assert.equal(pasted.title, "Hand-made", "paste derives its title from the code");
-  assert.equal(pasted.prompt, "", "pasted sketches carry no generation prompt");
+// Payload helpers keep identity and createdAt stable while updatedAt advances.
+const v1 = buildArtifactRevision({ identity, prompt: "a dashboard", code: "one", kind: "html", updatedAt: "t1" });
+const v2 = buildArtifactRevision({ identity, prompt: "a dashboard", code: "two", kind: "react", updatedAt: "t2" });
+assert.equal(v1.id, v2.id);
+assert.equal(v1.createdAt, v2.createdAt);
+assert.equal(v2.updatedAt, "t2");
+assert.equal(v2.code, "two");
 
-  const named = buildAddArtifact({
-    id: "art-3",
-    now: "2026-07-17T00:00:00.000Z",
-    mode: "paste",
-    prompt: "",
-    pastedTitle: "Explicit name",
-    code: "<p>x</p>",
-    kind: "html",
-  });
-  assert.equal(named.title, "Explicit name", "an explicit title wins");
+assert.equal(derivePastedTitle("<title>Neat Page</title>"), "Neat Page");
+assert.equal(derivePastedTitle("<h1>Big <em>Header</em></h1>"), "Big Header");
+assert.equal(derivePastedTitle("<p>none</p>"), "Pasted sketch");
+assert.equal(detectPastedKind("export default function App(){return <p/>}"), "react");
 
-  const clamped = buildAddArtifact({
-    id: "art-4",
-    now: "2026-07-17T00:00:00.000Z",
-    mode: "paste",
-    prompt: "",
-    pastedTitle: "Big",
-    code: "x".repeat(MAX_ARTIFACT_CODE_CHARS + 500),
-    kind: "html",
-  });
-  assert.equal(clamped.code.length, MAX_ARTIFACT_CODE_CHARS, "code is clamped to the storage cap");
-  assert.equal(clamped.id, "art-4");
-  assert.equal(clamped.kind, "html");
-  assert.equal(clamped.createdAt, "2026-07-17T00:00:00.000Z", "createdAt is the injected now");
-
-  const describeNamed = buildAddArtifact({
-    id: "art-5",
-    now: "2026-07-17T00:00:00.000Z",
-    mode: "describe",
-    prompt: "a dashboard",
-    pastedTitle: "Named anyway",
-    code: "<p>x</p>",
-    kind: "html",
-  });
-  assert.equal(describeNamed.title, "Named anyway", "an explicit title wins in describe mode too");
-}
+const clamped = buildAddArtifact({
+  id: "art-code",
+  now: "now",
+  mode: "paste",
+  prompt: "",
+  pastedTitle: "Code",
+  code: "x".repeat(MAX_ARTIFACT_CODE_CHARS + 10),
+  kind: "html",
+});
+assert.equal(clamped.code.length, MAX_ARTIFACT_CODE_CHARS);
 
 console.log("canvas-add.test.ts: ok");

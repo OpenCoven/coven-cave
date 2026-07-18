@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildPreviewSrcDoc,
+  buildArtifactRepairPrompt,
   buildRefinePrompt,
   buildSketchPrompt,
   clampArtifactCode,
@@ -12,6 +13,7 @@ import {
   MAX_ARTIFACT_CODE_CHARS,
   sanitizeArtifacts,
   STARTER_ARTIFACT_HTML,
+  STARTER_ARTIFACT_REACT,
   titleFromPrompt,
 } from "./canvas-artifacts.ts";
 
@@ -74,6 +76,13 @@ assert.match(refine, /<!doctype html><html><\/html>/, "refine prompt embeds the 
 assert.match(refine, /FULL updated document/, "refine asks for the full document, not a diff");
 
 assert.match(STARTER_ARTIFACT_HTML, /^<!doctype html>/i, "starter template is a full document");
+assert.match(STARTER_ARTIFACT_REACT, /export default function App/, "React starter is a complete default-exported component");
+
+const repair = buildArtifactRepairPrompt("a responsive dashboard");
+assert.match(repair, /a responsive dashboard/, "repair carries the original intent");
+assert.match(repair, /one complete `html` or `tsx` fenced artifact/, "repair requests exactly one supported artifact");
+assert.doesNotMatch(repair, /previous response[\s\S]*```/, "repair does not echo an arbitrarily large malformed response");
+assert.match(buildArtifactRepairPrompt("add a button", "react"), /one complete `tsx` fenced artifact/);
 
 // ── sanitizeArtifacts: trust boundary for disk + request bodies ────────────
 

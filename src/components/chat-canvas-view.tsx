@@ -30,6 +30,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [state, setState] = useState<LoadState>("loading");
   const [openId, setOpenId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
   const confirm = useConfirm();
 
   // The id a just-kept sketch settles in with — drives a one-shot highlight.
@@ -98,6 +99,11 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     [openId, artifacts],
   );
 
+  const galleryArtifacts = useMemo(
+    () => activeComposerId ? artifacts.filter((artifact) => artifact.id !== activeComposerId) : artifacts,
+    [activeComposerId, artifacts],
+  );
+
   if (state === "error") {
     return (
       <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
@@ -129,8 +135,13 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
             never remounts the composer (which would wipe typed input and
             abort an in-flight generation). Empty gallery = hero-styled tile:
             the add tile IS the empty state. */}
-        <CanvasAddTile hero={artifacts.length === 0} familiarId={familiarId} onSaved={handleSaved} />
-        {artifacts.map((artifact) => {
+        <CanvasAddTile
+          hero={galleryArtifacts.length === 0}
+          familiarId={familiarId}
+          onArtifactsChanged={handleSaved}
+          onActiveArtifactChange={setActiveComposerId}
+        />
+        {galleryArtifacts.map((artifact) => {
           const srcDoc =
             artifact.kind === "react" ? buildReactSrcDoc(artifact.code) : buildPreviewSrcDoc(artifact.code);
           return (
