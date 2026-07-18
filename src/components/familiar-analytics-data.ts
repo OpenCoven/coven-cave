@@ -214,6 +214,7 @@ export function buildFamiliarAnalyticsModel(
         familiars: [familiar],
         sessions: familiarSessions,
         covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+        now,
       }).get(familiar.id) ?? emptyStats()
     : emptyStats();
   const growthReport = familiar
