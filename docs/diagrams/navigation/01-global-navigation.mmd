@@ -1,0 +1,138 @@
+%% CovenCave global navigation and route topology
+%% Sources: workspace.tsx, sidebar-minimal.tsx, sidebar-footer.tsx,
+%% mobile-bottom-tabs.tsx, top-bar.tsx, src/lib/workspace-mode.ts,
+%% src/app/route-inventory.test.ts, src/app/**/page.tsx
+%% Regenerated from main@bcf9f8bdbcb1 (2026-07-18) — final IA for issue #3283.
+%%{init: {
+  "theme": "base",
+  "flowchart": { "curve": "basis", "nodeSpacing": 30, "rankSpacing": 58, "padding": 14 },
+  "themeVariables": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "fontSize": "16px",
+    "primaryColor": "#241b31",
+    "primaryTextColor": "#f7f2ff",
+    "primaryBorderColor": "#b995e8",
+    "lineColor": "#927db1",
+    "secondaryColor": "#17332d",
+    "tertiaryColor": "#35233f",
+    "clusterBkg": "#120f19",
+    "clusterBorder": "#5f4a78",
+    "edgeLabelBackground": "#120f19"
+  }
+}}%%
+flowchart TB
+  ENTRY([Launch CovenCave]):::entry --> ROOT["/ · Workspace shell"]:::route
+
+  subgraph CHROME["Persistent shell chrome"]
+    direction LR
+    ROOT --> DESKTOP["Desktop ≥1024px"]:::platform
+    ROOT --> MOBILE["Mobile / tablet"]:::platform
+
+    DESKTOP --> DTOP["Top bar"]:::menu
+    DTOP --> HISTORY["Back · Forward"]:::utility
+    DTOP --> SEARCH["Search / Ask Salem · ⌘K"]:::launcher
+    DTOP --> QUICK["Quick chat · ⌘J"]:::launcher
+    DTOP --> DTASK["Enhance · Tasks · Rituals"]:::launcher
+
+    DESKTOP --> DSIDE["Left navigation"]:::menu
+    DSIDE --> SCOPE["Familiar scope switcher"]:::launcher
+    DSIDE --> NEWCHAT["New chat"]:::launcher
+    DSIDE --> DAILY["Daily"]:::group
+    DAILY --> HOME["Home · ⌘1"]:::surface
+    DAILY --> CHAT["Chat · ⌘2"]:::surface
+    DAILY --> TASKS["Tasks · ⌘3"]:::surface
+    DAILY --> RITUALS["Rituals · ⌘4"]:::surface
+    DSIDE --> QUIET["Quiet destinations"]:::group
+    QUIET --> MEMORIES["Memories"]:::surface
+    QUIET --> MARKET["Marketplace"]:::surface
+    QUIET --> GITHUB["GitHub"]:::surface
+    DSIDE --> ROOMS["Rooms · role-dependent"]:::conditional
+    DSIDE --> RECENT["Recent activity / sessions"]:::group
+    DSIDE --> FOOTER["Footer"]:::group
+    FOOTER --> DASH["Dashboard · /dashboard"]:::route
+    FOOTER --> SETTINGS["Settings · /settings"]:::route
+
+    MOBILE --> MTOP["Mobile top bar"]:::menu
+    MTOP --> DRAWER["Navigation drawer"]:::launcher
+    MTOP --> MSEARCH["Search / Ask Salem"]:::launcher
+    MTOP --> MSCOPE["Familiar switcher"]:::launcher
+    MTOP --> MCHAT["Quick chat"]:::launcher
+    MTOP --> MACTIONS["More actions<br/>Enhance · View tasks"]:::menu
+    MTOP --> PHONE["Open on phone"]:::launcher
+    MTOP --> BELL["Notifications"]:::menu
+    MTOP --> ACCOUNT["Account / Settings"]:::route
+    MOBILE --> MBOTTOM["Bottom tabs<br/>derived from sidebar FOLDER_MODES"]:::menu
+    MBOTTOM --> MHOME["Home"]:::surface
+    MBOTTOM --> MCHAT2["Chat"]:::surface
+    MBOTTOM --> MBOARD["Tasks"]:::surface
+    MBOTTOM --> MRITES["Rituals"]:::surface
+  end
+
+  subgraph HIDDEN["On-demand modes and typed aliases · MODE_ALIASES, workspace-mode.ts"]
+    direction TB
+    PALETTE["Command palette / deep link"]:::launcher --> BROWSER["Browser · ⌘5"]:::surface
+    PALETTE --> AGENTS["Familiars roster · mode: agents<br/>canonical, palette / deep link only"]:::surface
+    PALETTE --> JOURNAL["Journal"]:::alias
+    PALETTE --> CALENDAR["Calendar"]:::alias
+    PALETTE --> GROUPCHAT["Group Chat"]:::alias
+    PALETTE --> QUEUE["Familiar work queue<br/>mode: familiar-work-queue"]:::alias
+    PALETTE --> ROLES["Roles"]:::alias
+    PALETTE --> CAPS["Capabilities"]:::alias
+    PALETTE --> FLOW["Flow"]:::alias
+    PALETTE --> SUBMIT["Submissions"]:::hidden
+    JOURNAL -. "journal → grimoire · Journal tab" .-> MEMORIES
+    CALENDAR -. "calendar → inbox · Calendar tab" .-> RITUALS
+    GROUPCHAT -. "groupchat → chat · Group tab" .-> CHAT
+    QUEUE -. "familiar-work-queue → board · Queue tab" .-> TASKS
+    ROLES -. "roles → marketplace" .-> MARKET
+    CAPS -. "capabilities → marketplace" .-> MARKET
+    FLOW -. "flow → inbox · retired" .-> RITUALS
+  end
+
+  SEARCH -. "launcher" .-> PALETTE
+
+  subgraph ROUTES["Standalone production routes · pinned by route-inventory.test.ts"]
+    direction TB
+    DASH --> REPORT["Daily report · /daily-report/:date"]:::route
+    DASH --> DCOCKPIT["Cockpit panels<br/>Vitals · Familiars · Tasks · GitHub<br/>Up next · Inbox · Space"]:::group
+    DCOCKPIT --> DQUICK["Quick links<br/>Home · Tasks · Growth · Calendar · Settings"]:::launcher
+    DASH --> GROWTH["Familiar growth · /dashboard/familiars/growth"]:::route
+    DASH --> FANALYTICS["Familiar analytics<br/>/dashboard/familiars/:id/analytics"]:::route
+    DASH --> FPROFILE["Familiar profile<br/>/dashboard/familiars/:id/profile"]:::route
+    ROOT --> PROFILE["Human profile · /profile"]:::route
+    ROOT --> PROPOSALS["Proposals · /proposals"]:::route
+    ROOT --> WEAVES["Weaves · /weaves"]:::route
+    ROOT --> QCHAT["Tray / notch quick chat · /quick-chat"]:::route
+    REPORT --> REPORTBACK["Breadcrumb: Dashboard<br/>Actions: Dashboard · Home"]:::utility
+    FANALYTICS --> ANALYTICSRAIL["Analytics route rail<br/>Home · Chat · Tasks · Rituals · Journal<br/>Memories · Marketplace · GitHub · Dashboard"]:::menu
+    FPROFILE --> ANALYTICSRAIL
+    PROFILE --> ANALYTICSRAIL
+    PROPOSALS --> BACKHOME["Breadcrumb → CovenCave"]:::utility
+    WEAVES --> BACKHOME
+    ALIASA["/familiars/:id/analytics"]:::alias -. "redirect + query forward" .-> FANALYTICS
+    ALIASP["/familiars/:id/profile"]:::alias -. "redirect + query forward" .-> FPROFILE
+    OLDG["/familiars/growth · /retro<br/>/dashboard/retro"]:::alias -. "redirect" .-> GROWTH
+  end
+
+  subgraph DEV["Developer / design review routes · excluded from all nav hosts"]
+    direction TB
+    AESTHETIC["/aesthetic · token reference"]:::dev
+    MOCKUP["/mockup · aesthetic mockup"]:::dev
+    CHATOUT["/mockup/familiar-chatout-codex"]:::dev
+    FONTS["/preview/fonts · font review"]:::dev
+  end
+
+  ROOT -. "review-only routes" .-> DEV
+
+  classDef entry fill:#a46bea,stroke:#e5d0ff,color:#160d22,stroke-width:3px;
+  classDef platform fill:#203d37,stroke:#6bd1b1,color:#effff9,stroke-width:2px;
+  classDef menu fill:#382448,stroke:#c6a1ed,color:#fbf7ff,stroke-width:2px;
+  classDef group fill:#26202f,stroke:#766487,color:#eee5f8;
+  classDef surface fill:#241b31,stroke:#b995e8,color:#f7f2ff,stroke-width:2px;
+  classDef route fill:#19312d,stroke:#66c7aa,color:#effff9,stroke-width:2px;
+  classDef launcher fill:#3b2e1c,stroke:#e3ba6a,color:#fff6df;
+  classDef utility fill:#222734,stroke:#8293b7,color:#eef3ff;
+  classDef conditional fill:#30253b,stroke:#db8fff,color:#f9edff,stroke-dasharray:5 4;
+  classDef alias fill:#2a2630,stroke:#9688a6,color:#eee8f4,stroke-dasharray:5 4;
+  classDef hidden fill:#30232b,stroke:#c77c9d,color:#ffeaf2,stroke-dasharray:5 4;
+  classDef dev fill:#202329,stroke:#687482,color:#dce4eb,stroke-dasharray:4 4;
