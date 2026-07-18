@@ -92,6 +92,49 @@ assert.equal(
   "a missing title is derived from the prompt",
 );
 
+// ── sanitizeArtifact hardening (cave-byr5) ──────────────────────────────────
+
+import { MAX_ARTIFACT_PROMPT_CHARS } from "./canvas-artifacts.ts";
+
+{
+  const [longPrompt] = sanitizeArtifacts([{ id: "p", prompt: "x".repeat(MAX_ARTIFACT_PROMPT_CHARS + 500) }]);
+  assert.equal(
+    longPrompt.prompt.length,
+    MAX_ARTIFACT_PROMPT_CHARS,
+    "an unbounded prompt is clamped — it rides every store read and card tooltip",
+  );
+
+  assert.equal(
+    sanitizeArtifacts([{ id: "i".repeat(300), prompt: "p" }]).length,
+    0,
+    "an absurdly long id is rejected outright (truncating could collide)",
+  );
+
+  const [badDates] = sanitizeArtifacts([
+    { id: "d", prompt: "p", createdAt: "not-a-date", updatedAt: "also-not" },
+  ]);
+  assert.equal(badDates.createdAt, "", "unparseable createdAt is coerced to empty");
+  assert.equal(
+    badDates.updatedAt,
+    "",
+    "unparseable updatedAt is coerced too — garbage sorted a sketch as newest forever",
+  );
+
+  const [fallback] = sanitizeArtifacts([
+    { id: "f", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "garbage" },
+  ]);
+  assert.equal(
+    fallback.updatedAt,
+    "2026-07-18T00:00:00Z",
+    "a garbage updatedAt falls back to the valid createdAt",
+  );
+
+  const [kept] = sanitizeArtifacts([
+    { id: "k", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "2026-07-18T01:00:00Z" },
+  ]);
+  assert.equal(kept.updatedAt, "2026-07-18T01:00:00Z", "valid timestamps pass through untouched");
+}
+
 // ── extractArtifact: classify React vs HTML ────────────────────────────────
 
 assert.deepEqual(

@@ -1,12 +1,10 @@
-// Persistence for Triage Canvas node positions.
-//
-// Positions live in their own file (`~/.coven/cave/canvas.json`) keyed by card
-// id, deliberately separate from the board file. The canvas is a *view* of
-// the board's cards — keeping layout out of the Card schema means the board
-// owner (and the many other sessions that mutate it) never has to know the
-// canvas exists, and a canvas write can never clobber card data.
+// Persistence for the Canvas store (`~/.coven/cave/canvas.json`): saved sketch
+// artifacts plus their (legacy standalone-canvas) node positions. Kept separate
+// from the board file so a canvas write can never clobber card data. Artifacts
+// are user content with no undo — the load path must never let a bad read turn
+// into an empty save that destroys them (see loadCanvas).
 
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
@@ -59,15 +57,38 @@ async function ensureDir() {
 }
 
 export async function loadCanvas(): Promise<CanvasFile> {
+  let raw: string;
+  try {
+    raw = await readFile(CANVAS_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      // No store yet — a fresh start, nothing to protect.
+      return { ...EMPTY };
+    }
+    // The file exists but can't be read (permissions, IO). Treating that as
+    // empty would let the next save overwrite sketches we merely failed to
+    // read — surface the error instead; mutations abort, nothing is lost.
+    throw err;
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readFile(CANVAS_PATH, "utf8"));
+    parsed = JSON.parse(raw);
   } catch {
-    // Missing file or torn/invalid JSON — start from an empty layout. Nothing
-    // is lost: positions are cosmetic and rebuild from the cards' statuses.
-    return { ...EMPTY };
+    parsed = null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    // The file holds bytes that aren't a canvas store (torn write, foreign
+    // content). This store now carries user sketches with no undo — reading
+    // it as empty made the NEXT save silently destroy all of them. Move the
+    // bad file aside (bytes preserved for recovery) and start fresh.
+    const aside = `${CANVAS_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    try {
+      await rename(CANVAS_PATH, aside);
+      console.error(`cave-canvas: unreadable store moved aside to ${aside}`);
+    } catch {
+      // Rename raced another writer (who may have just replaced the file
+      // with a good one) or failed outright — leave the path alone either way.
+    }
     return { ...EMPTY };
   }
   const file = parsed as Partial<CanvasFile>;
