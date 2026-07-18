@@ -241,8 +241,13 @@ assert.doesNotMatch(
   const librs = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
   assert.match(
     shell,
-    /const trafficLightsVisible = navOpen \|\| navPeeking \|\| isMobile;/,
-    "lights show whenever the panel is open, hover-peeked, or the layout is mobile",
+    /const navPeekVisible = navPeekEnabled && navPeeking;/,
+    "traffic-light visibility is fed by the synchronously gated visible-peek state",
+  );
+  assert.match(
+    shell,
+    /const trafficLightsVisible = navOpen \|\| navPeekVisible \|\| isMobile;/,
+    "lights show whenever the panel is open, visibly hover-peeked, or the layout is mobile",
   );
   assert.match(
     shell,

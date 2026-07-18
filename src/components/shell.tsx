@@ -350,9 +350,10 @@ function ShellInner({
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
   const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
-    if (navOpen || isMobile || navPolicy !== "remembered") setNavPeeking(false);
-  }, [navOpen, isMobile, navPolicy]);
+    if (!navPeekEnabled) setNavPeeking(false);
+  }, [navPeekEnabled]);
 
   // Dia-style traffic lights: on the macOS desktop shell the native
   // close/minimize/zoom buttons float over the side panel's top edge. With
@@ -368,7 +369,7 @@ function ShellInner({
   // case: a roomy bar), but marking "hidden" before the buttons actually
   // vanish — pre-update shell without the command, an AppKit hiccup — slid
   // the nav toggle + history chevrons underneath still-visible lights.
-  const trafficLightsVisible = navOpen || navPeeking || isMobile;
+  const trafficLightsVisible = navOpen || navPeekVisible || isMobile;
   useEffect(() => {
     const root = document.documentElement;
     // Only the macOS desktop Tauri shell overlays the title bar; everywhere
@@ -502,9 +503,11 @@ function ShellInner({
   // clobber the user's choice with the incoming group's stale width.
   const navPrefArmedGroupRef = useRef<string | null>(null);
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+  const visitCollapsedGroupRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!mounted) return;
     if (navPolicy !== "visit-collapsed") {
+      visitCollapsedGroupRef.current = null;
       previousNavPolicyRef.current = navPolicy;
       return;
     }
@@ -514,9 +517,10 @@ function ShellInner({
     }
     if (
       previousNavPolicyRef.current !== navPolicy ||
-      navPrefArmedGroupRef.current !== groupId
+      visitCollapsedGroupRef.current !== groupId
     ) {
       navPrefArmedGroupRef.current = null;
+      visitCollapsedGroupRef.current = groupId;
       navRef.current?.collapse();
       setNavOpen(false);
     }
@@ -707,7 +711,7 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? (navPeeking ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
           onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
           onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}

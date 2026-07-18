@@ -69,9 +69,11 @@ assert.equal(
   compactWhitespace(visitCollapseEffect),
   compactWhitespace(`
     const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+    const visitCollapsedGroupRef = useRef<string | null>(null);
     useLayoutEffect(() => {
       if (!mounted) return;
       if (navPolicy !== "visit-collapsed") {
+        visitCollapsedGroupRef.current = null;
         previousNavPolicyRef.current = navPolicy;
         return;
       }
@@ -81,16 +83,17 @@ assert.equal(
       }
       if (
         previousNavPolicyRef.current !== navPolicy ||
-        navPrefArmedGroupRef.current !== groupId
+        visitCollapsedGroupRef.current !== groupId
       ) {
         navPrefArmedGroupRef.current = null;
+        visitCollapsedGroupRef.current = groupId;
         navRef.current?.collapse();
         setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
     }, [mounted, groupId, isMobile, navPolicy]);
   `),
-  "entering visit-collapsed collapses once per desktop visit only after mount, while mobile skips desktop panel mutation and preserves the armed-group reset",
+  "entering visit-collapsed collapses once per desktop visit only after mount, preserves the visit marker across breakpoint round-trips, and resets that marker when leaving Chat",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
@@ -113,6 +116,11 @@ assert.match(
   shell,
   /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/,
   "hover-to-peek is disabled for visit-collapsed routes",
+);
+assert.match(
+  shell,
+  /const navPeekVisible = navPeekEnabled && navPeeking;/,
+  "peek visibility is synchronously gated so stale state cannot leak onto the first Chat paint",
 );
 assert.match(
   shell,
