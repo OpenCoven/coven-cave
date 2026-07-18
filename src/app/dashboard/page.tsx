@@ -1,6 +1,6 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
-import { DashboardCockpit } from "@/components/dashboard/dashboard-cockpit";
+import { BentoDashboard } from "@/components/dashboard/bento-dashboard";
 import { buildDashboardModel } from "@/lib/dashboard-model";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   const model = buildDashboardModel(inbox.items, new Date());
 
   return (
-    <main className="dr-page">
+    <main className="dr-page dr-page--bento">
       <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/">
@@ -22,7 +22,7 @@ export default async function DashboardPage() {
         </nav>
       </div>
 
-      <DashboardCockpit model={model} />
+      <BentoDashboard model={model} />
     </main>
   );
 }
