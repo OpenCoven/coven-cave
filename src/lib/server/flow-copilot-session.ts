@@ -35,6 +35,15 @@ export type CopilotFlowLaunch = {
   familiarId: string | null;
   familiarName?: string;
   familiarRole?: string;
+  /**
+   * Directories to trust at the harness level (repeatable `--add-dir`) —
+   * typically the familiar's own workspace, which flow prompts direct memory
+   * and self-report writes into. Without this the one-shot CLI cannot prompt
+   * for permission and every shell/tool access outside the spawn cwd
+   * hard-fails. The spawn cwd (projectRoot) is already trusted and must not
+   * be listed (cave-n1yc contract).
+   */
+  addDirs?: string[];
 };
 
 export type CopilotFlowStart = {
@@ -65,6 +74,13 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     ? copilotIdentityPreamble(launch.familiarId, launch.familiarName, launch.familiarRole)
     : "";
   const prompt = identity ? `${identity}\n\n${launch.prompt}` : launch.prompt;
+  const addDirs = Array.from(
+    new Set(
+      (launch.addDirs ?? [])
+        .map((root) => root.trim())
+        .filter((root) => root && root !== launch.projectRoot),
+    ),
+  );
   const args = buildCopilotStreamArgs({
     spec: launch.spec,
     prompt,
@@ -72,9 +88,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     newSessionId: sessionId,
     model: null,
     permissionMode: "full",
-    // Flow runs have no granted-roots concept; the spawn cwd (projectRoot)
-    // is already trusted and must not be listed (cave-n1yc contract).
-    addDirs: [],
+    addDirs,
   });
 
   const child = spawn(launch.spec.executable, args, {
