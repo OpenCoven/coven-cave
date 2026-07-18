@@ -555,6 +555,7 @@ export const SUITES = {
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
     "src/components/directory-picker.test.ts",
+    "src/components/first-project-gate.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
     "src/components/daemon-start-button.test.ts",
