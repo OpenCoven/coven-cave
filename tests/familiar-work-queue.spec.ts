@@ -107,7 +107,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     const cleanup = fwq.getByRole("region", { name: "Post-merge cleanup" });
     await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeVisible();
     const noPr = fwq.getByRole("region", { name: "No open PR" });
-    await expect(noPr.getByRole("button", { name: "Claim" })).toBeVisible();
+    await expect(noPr.getByRole("button", { name: "Claim", exact: true })).toBeVisible();
 
     // Filtering by Nova drops Kitty-owned lanes (checks-failing was Kitty's).
     await page.getByRole("button", { name: /Nova/ }).click();
@@ -129,8 +129,26 @@ test.describe("familiar work queue (PR control tower)", () => {
     await gotoWorkQueue(page);
 
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
-    await noPr.getByRole("button", { name: "Claim" }).click();
+    await noPr.getByRole("button", { name: "Claim", exact: true }).click();
     await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2" });
+  });
+
+  test("claiming for a familiar posts the selected assignee", async ({ page }) => {
+    let claimBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() === "POST") {
+        claimBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-bb2", status: "in_progress" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+
+    const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
+    await noPr.getByRole("button", { name: "Claim for familiar…" }).click();
+    await page.getByRole("menuitemradio", { name: "Kitty" }).click();
+    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", assignee: "kitty" });
   });
 
   test("cleanup Close is gated on a handoff note; adding one posts a comment and unlocks it", async ({ page }) => {

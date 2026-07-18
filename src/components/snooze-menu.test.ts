@@ -1,14 +1,12 @@
 // @ts-nocheck
 // cave-1y0d: the shared SnoozeMenu is a real menu to assistive tech, and it is
-// the ONLY snooze menu — the dashboard's ActionInbox used to hand-roll its own
-// copy, and both drifted (the shared one had zero semantics; the local one had
-// them but nowhere else did). These pins keep the semantics on the shared
-// component and the dashboard on the shared component.
+// the ONLY snooze menu — surfaces used to hand-roll their own copies, and they
+// drifted (the shared one had zero semantics; the local ones had them but
+// nowhere else did). These pins keep the semantics on the shared component.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const menu = await readFile(new URL("./snooze-menu.tsx", import.meta.url), "utf8");
-const inbox = await readFile(new URL("./dashboard/action-inbox.tsx", import.meta.url), "utf8");
 const ws = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // ── Shared component: menu semantics + focus trap ────────────────────────────
@@ -28,35 +26,6 @@ assert.match(
   "onSnooze carries both currencies: untilIso for timestamp APIs, minutes for duration APIs",
 );
 assert.match(menu, /options\?: SnoozeOption\[\]/, "surfaces can supply their own durations");
-
-// ── Dashboard: consolidated onto the shared component ────────────────────────
-assert.match(
-  inbox,
-  /import \{ SnoozeMenu, minutesUntilTomorrowMorning, type SnoozeOption \} from "@\/components\/snooze-menu"/,
-  "ActionInbox uses the shared SnoozeMenu instead of a local copy",
-);
-assert.doesNotMatch(inbox, /function SnoozeMenu\(/, "the hand-rolled dashboard copy stays deleted");
-assert.doesNotMatch(inbox, /useFocusTrap/, "trap ownership moved into the shared component");
-
-// ── Dashboard: actions are audible (WCAG 4.1.3) ──────────────────────────────
-// done/dismiss/snooze optimistically REMOVE the row — silent to AT without an
-// announcement (errors already had the role=alert banner).
-assert.match(inbox, /useAnnouncer/, "ActionInbox announces action outcomes");
-assert.match(
-  inbox,
-  /announce\(`\$\{ACTION_PAST_TENSE\[action\]\} '\$\{item\.title\}'\.`\)/,
-  "single-item actions announce with the item title",
-);
-assert.match(
-  inbox,
-  /announce\(`\$\{ACTION_PAST_TENSE\[action\]\} \$\{ids\.length\}/,
-  "bulk actions announce the affected count",
-);
-assert.match(
-  inbox,
-  /aria-label=\{`Dismiss '\$\{item\.title\}'`\}/,
-  "the icon-only dismiss button names its item",
-);
 
 // ── Workspace inbox callbacks (calendar et al) announce too ──────────────────
 // The writes are now VERIFIED (cave-x6k5): failure re-syncs from the server

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -310,6 +311,69 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     [announce, load],
   );
 
+  // Claim-for-familiar: same claim action, but the bead lands on the picked
+  // familiar (the API turns assignee into --assignee/--status flags) instead
+  // of the connected user (cave-p63a).
+  const runClaimFor = useCallback(
+    async (item: WorkQueueItem, familiar: ResolvedFamiliar) => {
+      const id = item.bead?.id;
+      if (!id) return;
+      setBusyId(item.key);
+      try {
+        const res = await fetch("/api/beads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "claim", id, assignee: familiar.id }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "claim failed");
+        announce(`Claimed ${id} for ${familiar.display_name}.`);
+        await load();
+      } catch (err) {
+        announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [announce, load],
+  );
+
+  // File a bead for an unlinked attention-strip PR: bd create with the PR's
+  // title, a description carrying the PR URL (the queue's ref join reads it —
+  // ready output has no external_ref), and externalRef gh-<n> for the
+  // visibility layer. Returns whether it landed so the strip's per-row button
+  // can drop its busy state truthfully (cave-p63a).
+  const runFileBead = useCallback(
+    async (pr: PullRequestSummary): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/beads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            title: pr.title,
+            description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
+            externalRef: `gh-${pr.number}`,
+            labels: ["from-pr"],
+          }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "create failed");
+        const beadId = (json.data as { id?: string } | null)?.id;
+        announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
+        await load();
+        return true;
+      } catch (err) {
+        announce(
+          err instanceof Error ? err.message : `Could not file a bead for PR #${pr.number}`,
+          "assertive",
+        );
+        return false;
+      }
+    },
+    [announce, load],
+  );
+
   const visibleLanes = useMemo(() => {
     if (!queue) return [];
     if (!familiarFilter) return queue.lanes;
@@ -432,7 +496,9 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
       ) : null}
 
-      {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
+      {q.attention.length > 0 ? (
+        <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
+      ) : null}
 
       <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} familiarId={activeFamiliarId} />
 
@@ -492,6 +558,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                           key={item.key}
                           item={item}
                           familiarLabel={familiarName(item.familiar)}
+                          familiars={familiars}
                           busy={busyId === item.key}
                           hasEvidence={
                             !!item.bead &&
@@ -499,6 +566,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                           }
                           onOpenUrl={onOpenUrl}
                           onClaim={() => void runAction(item, "claim")}
+                          onClaimFor={(familiar) => void runClaimFor(item, familiar)}
                           onClose={() => void runAction(item, "close")}
                           onComment={(text) => runComment(item, text)}
                         />
@@ -543,10 +611,27 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 function AttentionStrip({
   items,
   onOpenUrl,
+  onFileBead,
 }: {
   items: AttentionItem[];
   onOpenUrl?: (url: string) => void;
+  /** Files a bead for an unlinked PR; resolves once the queue reloaded (or the
+   *  attempt failed) so the row's button can drop its busy state. */
+  onFileBead?: (pr: PullRequestSummary) => Promise<boolean>;
 }) {
+  // Per-row busy: only the clicked File-bead button spins while the create +
+  // queue reload are in flight.
+  const [filingPr, setFilingPr] = useState<number | null>(null);
+  const fileBead = async (pr: PullRequestSummary) => {
+    if (!onFileBead || filingPr != null) return;
+    setFilingPr(pr.number);
+    try {
+      await onFileBead(pr);
+    } finally {
+      setFilingPr(null);
+    }
+  };
+
   const unlinkedCount = items.filter((i) => i.unlinked).length;
   const staleCount = items.filter((i) => i.stale).length;
   const summary = [
@@ -578,6 +663,19 @@ function AttentionStrip({
               ) : null}
               {stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
             </div>
+            {unlinked ? (
+              <Button
+                variant="secondary"
+                size="xs"
+                leadingIcon="ph:plus-circle"
+                loading={filingPr === pr.number}
+                onClick={() => void fileBead(pr)}
+                disabled={!onFileBead || filingPr != null}
+                title="File a bead for this PR so it joins the queue"
+              >
+                File bead
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="xs"
@@ -597,19 +695,23 @@ function AttentionStrip({
 function WorkQueueCard({
   item,
   familiarLabel,
+  familiars,
   busy,
   hasEvidence,
   onOpenUrl,
   onClaim,
+  onClaimFor,
   onClose,
   onComment,
 }: {
   item: WorkQueueItem;
   familiarLabel: string;
+  familiars: ResolvedFamiliar[];
   busy: boolean;
   hasEvidence: boolean;
   onOpenUrl?: (url: string) => void;
   onClaim: () => void;
+  onClaimFor: (familiar: ResolvedFamiliar) => void;
   onClose: () => void;
   onComment: (text: string) => Promise<boolean>;
 }) {
@@ -714,16 +816,36 @@ function WorkQueueCard({
           </Button>
         ) : null}
         {item.lane === "no-open-PR" && beadId ? (
-          <Button
-            variant="secondary"
-            size="xs"
-            loading={busy}
-            leadingIcon="ph:hand"
-            onClick={onClaim}
-            title="Take this work item (bead) — marks it in progress under your name"
-          >
-            Claim
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              leadingIcon="ph:hand"
+              onClick={onClaim}
+              title="Take this work item (bead) — marks it in progress under your name"
+            >
+              Claim
+            </Button>
+            {/* Split control: bare Claim assigns the connected user; the picker
+                claims on a familiar's behalf instead (cave-p63a). */}
+            {familiars.length > 0 ? (
+              <StandardSelect
+                label="Claim for familiar…"
+                title="Claim this bead for a familiar instead of yourself"
+                value=""
+                placeholder="For…"
+                showCaret
+                className="fwq-claim-for focus-ring-inset"
+                disabled={busy}
+                options={familiars.map((f) => ({ value: f.id, label: f.display_name }))}
+                onChange={(id) => {
+                  const familiar = familiars.find((f) => f.id === id);
+                  if (familiar) onClaimFor(familiar);
+                }}
+              />
+            ) : null}
+          </>
         ) : null}
         {isCleanup && beadId ? (
           <Button

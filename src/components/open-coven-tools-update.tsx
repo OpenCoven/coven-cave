@@ -66,11 +66,13 @@ type InstallJobView = {
   error?: string;
   daemon?: {
     wasRunning: boolean;
+    supervised?: boolean;
     phase:
       | "checking"
       | "not-running"
       | "stopping"
       | "stopped"
+      | "supervised"
       | "stop-failed"
       | "installing"
       | "restarting"
@@ -121,10 +123,14 @@ function daemonLifecycleText(daemon: NonNullable<InstallJobView["daemon"]>): str
       return "Stopping local daemon before the CLI update";
     case "stopped":
       return "Local daemon stopped; preparing the CLI update";
+    case "supervised":
+      return "Local daemon is supervised and restarted itself; it will relaunch on the updated CLI";
     case "stop-failed":
       return "Local daemon is still running; update was not started";
     case "installing":
-      return "Updating CLI; local daemon will restart afterward";
+      return daemon.supervised
+        ? "Updating CLI; the supervised daemon will relaunch afterward"
+        : "Updating CLI; local daemon will restart afterward";
     case "restarting":
       return "Refreshing CLI environment and restarting local daemon";
     case "healthy":

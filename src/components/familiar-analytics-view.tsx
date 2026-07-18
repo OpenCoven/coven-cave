@@ -608,6 +608,7 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
     <FaSection
       id="fa-contract"
       title="Contract compliance"
+      wide
       count={report ? `${passCount}/${report.properties.length} · ${report.pass ? "passing" : "needs review"}` : "no report"}
     >
       {report ? (
@@ -994,10 +995,19 @@ export function FamiliarAnalyticsContent({
           />
         </FaSection>
 
-        {/* Contract compliance pairs with recent sessions on the first row —
-            the full-width thread-analysis panel below would otherwise leave an
-            empty cell beside the sessions list. The #fa-contract KPI
-            drill-through keeps working wherever the section lives. */}
+        {/* Self-heal requests pair with recent sessions on the first row —
+            contract compliance is full width now, so it would otherwise leave
+            an empty cell beside the sessions list. The #fa-heal and
+            #fa-contract KPI drill-throughs keep working wherever the sections
+            live. */}
+        <FaSection
+          id="fa-heal"
+          title="Self-heal requests"
+          count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
+        >
+          <SelfHealList requests={healRequests} />
+        </FaSection>
+
         <ContractCompliance report={model.contractReport} />
 
         <ThreadAnalysisSection
@@ -1006,14 +1016,6 @@ export function FamiliarAnalyticsContent({
           familiar={model.familiar}
           onSelfReportEnabled={onRefresh}
         />
-
-        <FaSection
-          id="fa-heal"
-          title="Self-heal requests"
-          count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
-        >
-          <SelfHealList requests={healRequests} />
-        </FaSection>
 
         <FaSection
           id="fa-thread-signals"

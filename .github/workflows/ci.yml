@@ -150,7 +150,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS runners removed from PR CI: GitHub-hosted macOS minutes were
+        # exhausting the org Actions limit and queuing indefinitely, stalling
+        # every required check. macOS is still covered by the release pipeline
+        # (release.yml). Restore macos-latest here once macOS budget is sorted.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -182,7 +186,7 @@ jobs:
             echo "::error::Cross-environment matrix result: ${{ needs.conformance.result }}"
             exit 1
           fi
-          echo "Cross-environment matrix passed on ubuntu-latest, windows-latest, and macos-latest."
+          echo "Cross-environment matrix passed on ubuntu-latest and windows-latest."
 
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
@@ -191,7 +195,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS removed from PR CI (see conformance matrix note). Release
+        # pipeline still exercises macOS. Restore once macOS budget is sorted.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -344,4 +350,4 @@ jobs:
             echo "::error::Sidecar runtime matrix result: ${{ needs.sidecar-runtime.result }}"
             exit 1
           fi
-          echo "Sidecar runtime matrix passed on ubuntu-latest, windows-latest, and macos-latest."
+          echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest."

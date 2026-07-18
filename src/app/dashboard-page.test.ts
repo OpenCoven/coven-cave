@@ -1,281 +1,110 @@
 // @ts-nocheck
+// Source-regex pins for the /dashboard bento surface (Claude Design import,
+// cave-g9os). The pure derivations behind every panel are behavior-tested in
+// src/lib/bento-dashboard.test.ts; these pins cover the React wiring — which
+// data sources feed the surface, which helpers drive each panel, and the
+// interaction/a11y contract of the design (collapsibles, carousel, roster).
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+
+// ── Page (server shell) ───────────────────────────────────────────────────────
 
 const pageUrl = new URL("./dashboard/page.tsx", import.meta.url);
 assert.equal(existsSync(pageUrl), true, "dashboard route should exist at /dashboard");
 const page = readFileSync(pageUrl, "utf8");
 
-assert.match(page, /loadInbox/, "dashboard should load persisted inbox data");
-assert.match(page, /buildDashboardModel/, "dashboard should build the view-model");
-assert.match(page, /DashboardCockpit/, "dashboard should render the power cockpit");
-assert.match(page, /dr-page/, "dashboard should use the shared surface styling");
+assert.match(page, /loadInbox/, "dashboard seeds from the persisted inbox");
+assert.match(page, /buildDashboardModel/, "dashboard builds the first-paint view-model");
+assert.match(page, /BentoDashboard/, "dashboard renders the bento surface");
+assert.match(page, /dr-page dr-page--bento/, "page opts into the flex shell so the frame fills the viewport");
+assert.match(page, /dr-topbar/, "the sticky breadcrumb topbar stays");
 
-const cockpitUrl = new URL("../components/dashboard/dashboard-cockpit.tsx", import.meta.url);
-assert.equal(existsSync(cockpitUrl), true, "DashboardCockpit component should exist");
-// The cockpit is split across the data/layout root, the presentational panel
-// layer, the pure label helpers (cave-tsoz), and the contract-fetch hook
-// (cave-hwux) — this contract covers the whole surface, so read the split as
-// one source.
-const cockpit = [
-  readFileSync(cockpitUrl, "utf8"),
-  readFileSync(new URL("../components/dashboard/cockpit-panels.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("../lib/dashboard-cockpit-format.ts", import.meta.url), "utf8"),
-  readFileSync(new URL("../lib/use-familiar-contracts.ts", import.meta.url), "utf8"),
-].join("\n");
+// ── Component wiring ──────────────────────────────────────────────────────────
 
-// The cockpit folds the original triage/summary zones in…
-assert.match(cockpit, /ActionInbox/, "cockpit keeps the action inbox (triage) panel");
-assert.match(cockpit, /TodaySummary/, "cockpit folds in today's daily summary");
-assert.match(cockpit, /RecentReports/, "cockpit keeps recent daily reports");
-// …and pulls the full set of live data sources for a power cockpit.
-assert.match(cockpit, /\/api\/board/, "cockpit pulls the board snapshot");
-assert.match(cockpit, /\/api\/familiars/, "cockpit pulls the familiar roster");
-assert.match(cockpit, /\/api\/github/, "cockpit pulls GitHub activity");
-assert.match(cockpit, /\/api\/sessions\/list/, "cockpit pulls sessions for usage analytics");
-assert.match(cockpit, /\/api\/coven-memory/, "cockpit pulls coven memory so confidence/freshness are real");
-assert.doesNotMatch(cockpit, /\/api\/library\/reading/, "integrated cockpit should not pull the feature-branch Library queue");
-assert.match(cockpit, /cockpit-kpis/, "cockpit renders the vitals KPI rail");
+const bentoUrl = new URL("../components/dashboard/bento-dashboard.tsx", import.meta.url);
+assert.equal(existsSync(bentoUrl), true, "BentoDashboard component should exist");
+const bento = readFileSync(bentoUrl, "utf8");
 
-// World-class additions
-assert.match(cockpit, /DonutChart/, "board status uses a donut chart");
-assert.match(cockpit, /familiarMiniProfiles/, "familiars panel shows per-familiar trends");
-assert.match(cockpit, /familiarLoadSeries/, "renders a familiar-load trend panel");
-assert.match(cockpit, /usePausablePoll/, "cockpit polls for live updates");
-assert.doesNotMatch(cockpit, /\?view=evals/, "dead ?view=evals link removed");
-
-// Predictive signals strip + confidence heatmap (deferred from #2098).
-assert.match(cockpit, /dashboardSignals/, "cockpit derives predictive signals");
-assert.match(cockpit, /case "signals"/, "a Signals panel is wired into the layout switch");
-assert.match(cockpit, /case "confidence"/, "a Confidence/performance panel is wired into the layout switch");
-assert.match(cockpit, /Heatmap/, "confidence renders the visx heatmap primitive");
-// Confidence is the thread metric — real self-reports scored by the same
-// helper the familiar analytics page reads — not the retired synthetic
-// weighted-factor score (familiar-confidence.ts).
-assert.match(cockpit, /deriveThreadConfidence/, "confidence derives from real thread self-reports");
-assert.doesNotMatch(cockpit, /familiar-confidence/, "the synthetic weighted-factor lib is gone from the cockpit");
-assert.doesNotMatch(cockpit, /deriveConfidenceScore/, "no synthetic confidence scoring remains");
-assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/self-reports\?limit=/, "confidence pulls each familiar's thread self-reports");
-assert.match(cockpit, /deriveGrowthReport/, "growth report still derives the health badge");
-assert.match(cockpit, /\/api\/retro-runs/, "vitals pull the shared retro-runs snapshot");
-assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "the contract column pulls each familiar's contract");
+// Live data sources — every panel is real data, none of the design's fixtures.
+assert.match(bento, /\/api\/board/, "board panel pulls the live board");
+assert.match(bento, /\/api\/familiars/, "roster pulls the familiar list");
+assert.match(bento, /\/api\/inbox/, "needs-you pulls the live inbox");
+assert.match(bento, /\/api\/sessions\/list/, "stats/heatmap/carousel pull sessions");
+assert.match(bento, /\/api\/coven-memory/, "familiar card stats pull coven memory");
+assert.match(bento, /\/api\/projects/, "the projects stat pulls the project registry");
+assert.match(bento, /\/api\/github\/activity/, "github rail pulls activity");
+assert.match(bento, /\/api\/github\/assigned/, "github rail merges assigned items");
+assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared pausable interval");
+assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
-  readFileSync(cockpitUrl, "utf8"),
-  /useFamiliarContracts\(data\.familiars\)/,
-  "the root sources contracts/retro through the extracted hook (cave-hwux), not an inline effect",
+  bento,
+  /inboxReady \? buildDashboardModel\(data\.inbox, new Date\(\)\) : initialModel/,
+  "the server model is only the first-paint seed — polls rebuild it from the fresh inbox",
 );
 
-// ── Insights reframe: the dashboard leads with coven-wide analytics ──
+// Pure helpers drive every panel — no inline derivation drift.
+assert.match(bento, /sessionTotals\(/, "stat tiles derive from sessionTotals");
+assert.match(bento, /covenStreak\(/, "streak tile uses the shared covenStreak");
+assert.match(bento, /longestStreak\(/, "streak tile shows the personal best");
+assert.match(bento, /streakPips\(/, "streak pips fill against the best");
+assert.match(bento, /heatmapCells\(/, "heatmap derives from heatmapCells");
+assert.match(bento, /activityFeed\(/, "feed derives from activityFeed");
+assert.match(bento, /boardBuckets\(/, "board columns derive from boardBuckets");
+assert.match(bento, /buildFamiliarCardStats\(/, "roster stats derive from buildFamiliarCardStats");
+assert.match(bento, /carouselSlides\(/, "carousel derives from carouselSlides");
+assert.match(bento, /sparkPath\(/, "carousel charts render sparkPath SVGs");
+assert.match(bento, /useFamiliarContracts\(data\.familiars\)/, "matrix sources self-reports through the shared hook");
+assert.match(bento, /matrixRows\(/, "matrix derives from matrixRows");
+assert.match(bento, /githubByRepo\(/, "github rail groups by repo");
+assert.match(bento, /ciSummary\(/, "github footer rolls up CI status");
+assert.match(bento, /topCollaborators\(/, "footer ranks collaborators by session volume");
+assert.match(bento, /useUserProfile\(\)/, "human card reads the operator profile store");
+assert.match(bento, /userAvatarUrl\(/, "human avatar uses the authed object URL, never a raw /api src");
 
-// Plain-language coven read + coven-wide aggregations (pure, unit-tested).
-assert.match(cockpit, /deriveCovenVitals/, "cockpit rolls per-familiar rows into coven vitals");
-assert.match(cockpit, /deriveCovenInsight/, "cockpit derives the plain-language coven insight");
-assert.match(cockpit, /covenSessionsSeries/, "cockpit builds the coven usage-over-time series");
-assert.match(cockpit, /CovenInsightBanner/, "the coven insight is rendered as a banner");
-assert.match(cockpit, /buildFamiliarCardStats/, "per-familiar activity stats feed the insight rows");
+// Design interactions.
+assert.match(bento, /aria-expanded=\{heatOpen\}/, "heatmap header is a collapsible button");
+assert.match(bento, /aria-expanded=\{famOpen\}/, "familiars header is a collapsible button");
+assert.match(bento, /aria-pressed=\{selFam === f\.id\}/, "roster selection is a toggle button");
+assert.match(bento, /scrollBy\(\{ left: dir \* el\.clientWidth, behavior: "smooth" \}\)/, "‹› page the roster a viewport at a time");
+assert.match(bento, /suppressClickRef/, "grab-to-scroll suppresses the click that ends a drag");
+assert.match(bento, /setInterval\(\(\) => \{/, "carousel auto-advances");
+assert.match(bento, /, 6000\)/, "…every 6 seconds");
+assert.match(bento, /onMouseEnter=\{\(\) => setPaused\(true\)\}/, "hovering the carousel pauses auto-advance");
+assert.match(bento, /aria-current=\{i === slide\}/, "carousel dots expose the active slide");
+assert.match(bento, /href="\/dashboard\/familiars\/growth"/, "matrix links through to the growth dashboard");
+assert.match(bento, /openExternalUrl\(g\.url\)/, "github rows open externally (Tauri-safe)");
+assert.match(bento, /<time/, "timestamps render as <time> elements");
 
-// The centerpiece: a scannable per-familiar insights table (confidence, health,
-// usage, contract) — beginners scan it; power users drill each row through.
-assert.match(cockpit, /FamiliarInsightsTable/, "renders the familiar insights table");
-assert.match(cockpit, /cockpit-fam/, "the insights table has its own layout class");
-assert.match(cockpit, /case "usage"/, "a usage-over-time panel is wired into the layout switch");
+// A11y conventions: interactive things are buttons/links, not clickable divs.
+assert.doesNotMatch(bento, /<div[^>]*onClick/, "no clickable divs");
+assert.match(bento, /focus-ring/, "interactive elements carry the shared focus ring");
 
-// Vitals KPIs are analytics figures, not just workload queues.
-assert.match(cockpit, /Coven confidence/, "a coven-confidence vital is surfaced");
-assert.match(cockpit, /Active familiars/, "an active-familiars vital is surfaced");
-assert.match(cockpit, /Sessions · 7d/, "a weekly-sessions usage vital is surfaced");
-assert.match(cockpit, /Retro accept rate/, "a retro accept-rate performance vital is surfaced");
-assert.match(cockpit, /Contract health/, "a contract-health performance vital is surfaced");
-assert.match(cockpit, /Needs you/, "the attention vital is kept");
-assert.match(cockpit, /contractFetchPartial/, "capped contract/confidence KPI coverage is explicitly tracked");
-assert.match(cockpit, /first \$\{fetched\}\/\$\{total\} \$\{verb\}/, "partial KPI subtitles show first-N familiar coverage");
-assert.match(cockpit, /familiarsLoaded: ready\.has\("familiars"\)/, "empty-coven insight is gated until familiars load");
+// ── Styles ────────────────────────────────────────────────────────────────────
 
-// ── Truthful freshness + drill-throughs everywhere ──
+const cssUrl = new URL("../styles/bento-dashboard.css", import.meta.url);
+assert.equal(existsSync(cssUrl), true, "bento stylesheet should exist");
+const css = readFileSync(cssUrl, "utf8");
 
-// The "Updated…" pill reflects when fetched data actually LANDED (not render
-// time), ticks between polls, and doubles as a manual refresh.
-assert.match(cockpit, /const \[lastUpdated, setLastUpdated\] = useState<Date \| null>\(null\)/, "freshness is stamped from real data arrivals");
-assert.match(cockpit, /setLastUpdated\(new Date\(\)\)/, "each landing fetch bumps the freshness stamp");
-assert.match(cockpit, /useMinuteTick\(\)/, "the freshness label ticks between polls");
-assert.match(cockpit, /className="cockpit-pill cockpit-pill--refresh"[\s\S]{0,80}onClick=\{load\}/, "the freshness pill is the manual refresh button");
-assert.doesNotMatch(cockpit, /Updated \{relativeTime\(now\.toISOString\(\)/, "the pill no longer reads the static render time (was pinned at 'just now')");
+assert.match(css, /\.dr-page--bento/, "defines the page flex modifier");
+assert.match(css, /--accent-presence/, "accent ramp derives from the theme accent token");
+assert.match(css, /--glow-numeral/, "stat values use the shared light-mode-safe glow token");
+assert.match(css, /grid-auto-flow: column/, "heatmap grid is column-major (weeks as columns)");
+assert.match(css, /prefers-reduced-motion/, "carousel transition respects reduced motion");
+assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "no hard-coded hex colors — theme tokens only");
 
-// Dead links are gone: KPI tiles, panels, and quick links all deep-link to the
-// surface that owns the number (`/?mode=<WorkspaceMode>` is the SPA deep link).
-assert.doesNotMatch(cockpit, /href: "\/#card-"/, "KPI tiles no longer point at the dead bare /#card- hash");
-assert.doesNotMatch(cockpit, /href: "\/\?mode=library"/, "integrated cockpit should not route to the feature-branch Library");
-assert.match(cockpit, /href: "\/dashboard\/familiars\/growth"/, "performance vitals drill into the growth page");
-assert.match(cockpit, /href: "\/\?mode=agents"/, "usage vitals drill into the familiars roster");
-assert.match(cockpit, /href="\/\?mode=board"/, "the board panel drills into the board");
-assert.match(cockpit, /href="\/\?mode=github"/, "the GitHub panel drills into GitHub");
-assert.match(cockpit, /href="\/\?mode=calendar"/, "the agenda panel drills into the calendar");
-assert.match(cockpit, /href="\/\?mode=agents"/, "the familiars panel drills into the roster");
-assert.match(cockpit, /href="\/dashboard\/familiars\/growth"/, "load/confidence drill into the growth page");
-assert.doesNotMatch(cockpit, /QuickLink href="\/" icon="ph:calendar-bold"/, "the Calendar quick link no longer dead-ends at /");
-assert.doesNotMatch(cockpit, /icon="ph:books-bold" label="Library"/, "Library quick link is isolated to feature/library");
+// ── The cockpit stays deleted ─────────────────────────────────────────────────
 
-// Rows are destinations, not dead ends.
-assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/analytics`\}/, "familiar rows open the familiar's analytics");
-assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(r\.id\)\}\/analytics`\}/, "insight/confidence rows open the familiar's analytics");
-assert.match(cockpit, /s\.href \?/, "actionable signals render as links");
-assert.match(cockpit, /openExternalUrl\(s\.href!\)/, "external signal links route through the external-URL helper");
-
-// Signals stay scannable: the list is capped and the overflow drills through.
-assert.match(cockpit, /const SIGNALS_CAP = 8/, "signals panel caps the visible list");
-assert.match(cockpit, /signals\.slice\(0, SIGNALS_CAP\)/, "only the top signals render");
-assert.match(cockpit, /\+\{hidden\} more — review on the GitHub surface/, "overflow collapses into a drill-through row");
-
-// KPI deltas carry meaning, not just direction: each vital declares the
-// direction that reads as "good", so a rise in confidence is colored as
-// progress while a rise in "Needs you" is colored as load.
-assert.match(cockpit, /good: "up"/, "vitals declare their beneficial direction");
-assert.match(cockpit, /good: "down"/, "the attention vital's beneficial direction is down");
-assert.match(cockpit, /cockpit-kpi__delta--\$\{beneficial \? "good" : "bad"\}/, "delta color reflects benefit, not raw direction");
-
-// Action inbox supports bulk triage: select several items → done/dismiss/snooze together.
-const inboxUrl = new URL("../components/dashboard/action-inbox.tsx", import.meta.url);
-const inbox = readFileSync(inboxUrl, "utf8");
-assert.match(inbox, /const \[selectMode, setSelectMode\] = useState\(false\)/, "action inbox has a select mode");
-assert.match(inbox, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected ids live in a Set");
-assert.match(inbox, /async function bulkAct\(action: Action, minutes = 60\)/, "a bulk action applies to every selected item");
-assert.match(inbox, /Promise\.all\(\s*ids\.map\(\(id\) => fetch\(`\/api\/inbox\/\$\{id\}\/\$\{action\}`/, "bulk action POSTs each item in parallel");
-assert.match(inbox, /onClick=\{selectMode \? \(\) => toggleSelect\(item\.id\) : undefined\}/, "rows select on click in select mode");
-assert.match(inbox, /\{allSelected \? "Clear" : "Select all"\}/, "the bulk bar offers select-all / clear");
-assert.match(inbox, /onClick=\{\(\) => void bulkAct\("done"\)\}/, "bulk Done is wired");
-assert.match(inbox, /void bulkAct\("snooze", minutes\)/, "bulk Snooze is wired through the menu");
-
-// ── cave-89b close-out: sortable/filterable tables + space usage + hoverable charts ──
-
-// The centerpiece table is sortable (accessible headers) and filterable.
-assert.match(cockpit, /sortInsightRows/, "insights table sorts through the pure helper");
-assert.match(cockpit, /filterInsightRows/, "insights table filters through the pure helper");
-assert.match(cockpit, /defaultInsightOrder/, "unsorted table keeps the curated ranking");
-assert.match(cockpit, /aria-sort=\{ariaSort\("confidence"\)\}/, "sortable headers expose aria-sort");
-assert.match(cockpit, /cockpit-sorthead/, "column headers are real buttons, not dead labels");
-assert.match(cockpit, /Filter familiars by name, role, or health/, "the filter input is labelled for AT");
-
-// Space usage: bounded local scan → sortable rows with cleanup drill-throughs.
-assert.match(cockpit, /\/api\/space-usage/, "cockpit pulls the bounded space-usage scan");
-assert.match(cockpit, /case "space"/, "a Space usage panel is wired into the layout switch");
-assert.match(cockpit, /SpaceUsagePanel/, "renders the space usage panel");
-assert.match(cockpit, /sortSpaceRows/, "space rows sort through the pure helper");
-assert.match(cockpit, /spaceUsageRows/, "space rows derive share + cleanup destinations");
-assert.match(cockpit, /formatBytes/, "sizes render as human-readable bytes");
-
-const spaceRouteUrl = new URL("./api/space-usage/route.ts", import.meta.url);
-assert.equal(existsSync(spaceRouteUrl), true, "space-usage API route exists");
-const spaceRoute = readFileSync(spaceRouteUrl, "utf8");
-assert.match(spaceRoute, /collectSpaceUsage/, "route delegates to the bounded server scanner");
-assert.match(spaceRoute, /force-dynamic/, "space-usage snapshot is never statically cached");
-
-// Diagrams expose hover/focus details and accessible summaries.
-const donut = readFileSync(new URL("../components/ui/charts/donut-chart.tsx", import.meta.url), "utf8");
-assert.match(donut, /<title>/, "donut slices carry native hover titles");
-assert.match(donut, /role: "img"/, "donut can expose an accessible summary");
-const heatmap = readFileSync(new URL("../components/ui/charts/heatmap.tsx", import.meta.url), "utf8");
-assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
-assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
-assert.match(cockpit, /ariaLabel=\{`Task status:/, "Tasks donut passes a canonical data summary to AT");
-assert.match(cockpit, /ariaLabel=\{`Thread confidence metrics by familiar:/, "confidence heatmap passes a data summary to AT");
-
-// ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────
-// dnd-kit's default announcements read the raw widget ids; the cockpit supplies
-// its own with human panel titles + 1-based positions, and each grip names its
-// panel instead of a generic "Drag to rearrange".
-assert.match(cockpit, /const dragAnnouncements: Announcements = \{/, "cockpit defines custom drag announcements");
-assert.match(cockpit, /accessibility=\{\{ announcements: dragAnnouncements \}\}/, "DndContext receives the custom announcements");
-assert.match(cockpit, /moved to position \$\{pos\.index\} of \$\{pos\.count\}/, "drops announce the panel's new position");
-assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each grip names its panel");
-// The titles map must cover every layout id, or announcements degrade to ids.
-{
-  const layoutIds = cockpit.match(/DEFAULT_LAYOUT: Layout = \{\s*main: \[([^\]]*)\],\s*rail: \[([^\]]*)\]/s);
-  const ids = `${layoutIds[1]},${layoutIds[2]}`.match(/"([^"]+)"/g).map((q) => q.slice(1, -1));
-  for (const id of ids) {
-    assert.match(cockpit, new RegExp(`^  ${id}: "`, "m"), `PANEL_TITLES covers "${id}"`);
-  }
+for (const rel of [
+  "../components/dashboard/dashboard-cockpit.tsx",
+  "../components/dashboard/cockpit-panels.tsx",
+  "../components/dashboard/action-inbox.tsx",
+  "../components/dashboard/today-summary.tsx",
+  "../components/dashboard/recent-reports.tsx",
+  "../components/dashboard/report-callout.tsx",
+  "../lib/dashboard-cockpit-format.ts",
+]) {
+  assert.equal(existsSync(new URL(rel, import.meta.url)), false, `${rel} stays deleted`);
 }
-
-// ── ActionInbox follows the cockpit's 30s repoll (cave-bzch) ─────────────────
-// The widget froze on its mount-time copy; it now adopts each fresh
-// needsAttention list, with locally-acted ids filtered until the incoming
-// list confirms removal (a racing poll can't resurrect a cleared row).
-{
-  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
-  assert.match(inbox, /setItems\(initialItems\.filter\(\(it\) => !actedIdsRef\.current\.has\(it\.id\)\)\)/, "prop updates sync into the widget minus acted ids");
-  assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
-  assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
-}
-// ── The model is live, not a first-paint fossil (cave-456r) ──────────────────
-// cave-bzch's adoption only matters if fresh props ever arrive: the server
-// model is just the seed — each poll pulls the full inbox and rebuilds the
-// model client-side, so cleared items leave, newly fired ones appear, and
-// caught-up flips truthfully.
-assert.match(cockpit, /getJson<\{ items: InboxItem\[\] \}>\("\/api\/inbox"\)/, "cockpit polls the full inbox (fired items included), not just status=pending");
-assert.match(cockpit, /if \(r\?\.items\) \{\s*\n\s*put\("inbox", r\.items\);/, "a failed inbox poll keeps the last known good list instead of flashing 'all clear'");
-assert.match(cockpit, /buildDashboardModel\(data\.inbox, new Date\(\)\)/, "each poll rebuilds the dashboard model from the live inbox");
-assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pending filter the old query param provided");
-{
-  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
-  // Caught up is a designed state: the section stays (stable grid slot, calm
-  // all-clear read) instead of vanishing — and the bare-widget mount means no
-  // outer Panel is left husking a stale count over an empty body.
-  assert.match(cockpit, /case "needs": return <ActionInbox initialItems=\{model\.needsAttention\} openCount=\{model\.openCount\} onOpenCount=\{setLiveOpen\} \/>;/, "needs widget mounts ActionInbox bare — no double chrome, no husk Panel");
-  assert.doesNotMatch(inbox, /if \(items\.length === 0\) return null/, "an empty list no longer unmounts the section");
-  assert.match(inbox, /All clear — nothing needs you right now\./, "caught-up renders an honest all-clear state");
-  assert.match(inbox, /caughtUp \? "ph:check-circle-bold" : "ph:warning-circle"/, "the section icon relaxes when caught up");
-  assert.match(inbox, /\{caughtUp \? null : <span className="dr-count">\{liveTotal\}<\/span>\}/, "the live count hides at zero instead of reading 0");
-}
-// ── Counts are truthful past the display cap (cave-ckxk) ─────────────────────
-// needsAttention is capped at 8 for display; the true open total is
-// DashboardModel.openCount. The widget badge, its caught-up read, and the
-// Needs-you vital all use the uncapped total — an emptied visible page with
-// more items behind it is NOT "all clear" — and overflow drills into the
-// owning Rituals surface instead of silently truncating.
-{
-  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
-  const model = readFileSync(new URL("../lib/dashboard-model.ts", import.meta.url), "utf8");
-  assert.match(model, /openCount: breakdown\.openItems\.length/, "the model carries the uncapped open total");
-  assert.match(inbox, /const optimisticRemovals = Math\.max\(0, initialItems\.length - items\.length\)/, "the removal delta clamps at 0 so a failed-action revert can't overshoot");
-  assert.match(inbox, /const liveTotal = Math\.max\(0, openCount - optimisticRemovals\)/, "the widget derives a live total that tracks optimistic removals");
-  assert.match(inbox, /const caughtUp = liveTotal === 0/, "all-clear reads the uncapped total, not the visible page");
-  assert.match(inbox, /const hidden = Math\.max\(0, liveTotal - items\.length\)/, "overflow counts the items beyond the visible cap");
-  assert.match(inbox, /\+\{hidden\} more — open Rituals/, "overflow drills through instead of silently truncating");
-  assert.match(inbox, /className="dash-inbox__more focus-ring" href="\/\?mode=inbox"/, "the drill-through targets the Rituals surface");
-  assert.match(inbox, /onOpenCountRef\.current\?\.\(liveTotal\)/, "the widget reports its live total up");
-  assert.match(cockpit, /value: liveOpen \?\? model\.openCount, label: "Needs you"/, "the Needs-you vital reads the uncapped live total");
-  assert.match(cockpit, /metric: "needs", good: "down", href: "\/\?mode=inbox"/, "the Needs-you vital drills into Rituals like every other tile");
-  assert.match(cockpit, /needs: model\.openCount/, "trend snapshots record the uncapped total");
-  assert.doesNotMatch(cockpit, /model\.needsAttention\.length/, "nothing reads the capped list length as if it were the open total");
-}
-// The workspace SSE 'updated' branch bails on content-equal echoes, so an
-// optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
-// of every inboxItemsWithEphemeral consumer.
-{
-  const ws = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
-  assert.match(ws, /if \(JSON\.stringify\(prev\[idx\]\) === JSON\.stringify\(e\.item\)\) return prev;/, "SSE update echoes keep the array identity");
-  // Same guard for the reconnect path: a snapshot that matches current state
-  // must not re-render every inboxItemsWithEphemeral consumer.
-  assert.match(
-    ws,
-    /setInboxItems\(\(prev\) => \(arrayContentEqual\(prev, e\.items\) \? prev : e\.items\)\);/,
-    "SSE reconnect snapshots keep the array identity when content-identical",
-  );
-}
-
-// The dashboard's inline today-summary renders the stored narrative; legacy
-// narratives may still carry the piggybacked <coven:next-paths> block, so the
-// render must exclude it.
-{
-  const todaySummary = readFileSync(
-    new URL("../components/dashboard/today-summary.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    todaySummary,
-    /extractNextPaths\(summary\.narrative\.text\)\.visible/,
-    "today-summary should exclude the next-paths suggestions block from the narrative",
-  );
-}
+assert.doesNotMatch(page, /DashboardCockpit/, "page no longer references the cockpit");
 
 console.log("dashboard-page.test.ts: ok");
