@@ -18,6 +18,7 @@ import {
   spaceUsageRows, formatBytes,
 } from "@/lib/dashboard-analytics";
 import type { SpaceUsageArea } from "@/lib/server/space-usage";
+import { covenStreak } from "@/lib/familiar-renown";
 import {
   deriveCovenVitals, deriveCovenInsight, covenSessionsSeries,
   type FamiliarInsightRow, type CovenVitals,
@@ -44,7 +45,7 @@ import {
   SpaceUsagePanel, UsagePanel, type ConfidenceRow, type KpiTileProps,
 } from "@/components/dashboard/cockpit-panels";
 import {
-  DEFAULT_LAYOUT, STATUS_ORDER, coverageSub, contractSub, dayKey, longDate, panelTitle,
+  DEFAULT_LAYOUT, STATUS_ORDER, buildTrendSnapshot, coverageSub, contractSub, dayKey, longDate, panelTitle,
   reconcileLayout, retroSub, seriesFor, wowSub,
   type DaySnap, type Layout, type TrendKey, type TrendStore,
 } from "@/lib/dashboard-cockpit-format";
@@ -278,6 +279,9 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     [vitals, insightRows, ready],
   );
   const covenSeries = useMemo(() => covenSessionsSeries(data.sessions, nowMs, 14), [data.sessions, nowMs]);
+  // Coven ritual streak — consecutive active days across the whole coven
+  // (familiar-renown's bucketing, so it agrees with the roster streak tiles).
+  const streakDays = useMemo(() => covenStreak(data.sessions, nowMs), [data.sessions, nowMs]);
 
   // ── Vitals KPI specs. Every tile is a live analytics figure with a 7-day
   //    trend; each carries the direction that reads as "good" so the delta is
@@ -290,6 +294,8 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "fills in after thread reflections", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:sparkle", value: vitals.activeFamiliars, label: "Active familiars", sub: `${vitals.familiarCount} in coven`, accent: "green", metric: "active", good: "up", src: "familiars", href: "/?mode=agents" },
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
+    // Dignity rule: a broken streak reads as an invitation, never a reprimand.
+    { icon: "ph:flame", value: streakDays, suffix: "d", label: "Ritual streak", sub: streakDays > 0 ? "consecutive active days" : "a session today starts one", accent: "green", metric: "streak", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractFetchPartial ? contractCoverageSub : contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:warning-circle", value: liveOpen ?? model.openCount, label: "Needs you", sub: (liveOpen ?? model.openCount) === 0 ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down", href: "/?mode=inbox" },
@@ -302,16 +308,18 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     try { const raw = localStorage.getItem(TRENDS_KEY); if (raw) setTrends(JSON.parse(raw) as TrendStore); } catch { /* ignore */ }
   }, []);
   const vitalsReady = ready.has("cards") && ready.has("familiars") && (confidenceRaw !== null || data.familiars.length === 0);
+  const sessionsReady = ready.has("sessions");
   useEffect(() => {
     if (!vitalsReady) return;
-    const snap: DaySnap = {
+    const snap: DaySnap = buildTrendSnapshot({
       confidence: vitals.avgConfidence ?? 0,
       active: vitals.activeFamiliars,
       sessions: vitals.sessions7d,
       accept: acceptPct ?? 0,
       contract: contractPct ?? 0,
       needs: model.openCount,
-    };
+      streak: streakDays,
+    }, sessionsReady);
     setTrends((prev) => {
       const store: TrendStore = { ...prev, [dayKey(now)]: snap };
       const days = Object.keys(store).sort();
@@ -320,7 +328,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       return store;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount]);
+  }, [vitalsReady, sessionsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount, streakDays]);
 
   // ── Draggable secondary layout ──
   const sensors = useSensors(

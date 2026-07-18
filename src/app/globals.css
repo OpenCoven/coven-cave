@@ -6784,6 +6784,59 @@ a.mobile-handoff__link:hover {
   scroll-margin-top: 112px;
 }
 
+.familiar-scope-overview__header,
+.familiar-scope-overview {
+  container-type: inline-size;
+}
+
+.familiar-scope-overview {
+  border-block: 1px solid var(--border-hairline);
+}
+
+.familiar-scope-overview > [role="listitem"] + [role="listitem"] {
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+
+.familiar-scope-overview__row {
+  min-height: 72px;
+  border-radius: var(--radius-control);
+  transition: background-color 120ms ease;
+}
+
+.familiar-scope-overview__row:hover {
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+
+.familiar-scope-overview__avatar {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 62%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 65%, transparent);
+}
+
+.familiar-scope-overview__notice {
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 28%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 8%, transparent);
+}
+
+@container (max-width: 430px) {
+  .familiar-scope-overview__row {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding-inline: var(--space-2);
+  }
+
+  .familiar-scope-overview__caret {
+    display: none;
+  }
+
+  .familiar-scope-overview__metrics {
+    gap: var(--space-1) var(--space-2);
+  }
+}
+
 .familiar-tab__hero {
   position: sticky;
   top: 0;
@@ -11150,6 +11203,78 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .fa-insight__action:hover { color: var(--text-primary); background: var(--bg-hover); }
 .fa-insight__action svg { width: 12px; height: 12px; color: currentColor; }
+
+/* Progression band — tier chip + renown meter + streak, one quiet row
+   between the insight banner and the KPI tiles. Tint recipe on the tier
+   (accent = presence: earned standing, not a CTA). */
+.fa-progression {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+.fa-progression__tier {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+}
+.fa-progression__score {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.fa-progression__meter {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--border-hairline) 60%, transparent);
+  overflow: hidden;
+}
+.fa-progression__meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+.fa-progression__next,
+.fa-progression__streak {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.fa-progression__streak { display: inline-flex; align-items: center; gap: 4px; }
+.fa-progression__streak svg { width: 12px; height: 12px; color: var(--color-warning); }
+
+/* One-shot PR-merge flare (cave-hshy) — the board's card-done bloom retold
+   on the chat GitHub card. Border/shadow only (no layout shift), announce()
+   is the AT channel, reduced motion collapses it entirely. */
+.cave-gh-card--reward { animation: cave-gh-reward-flare 700ms var(--ease-decelerate) forwards; }
+@keyframes cave-gh-reward-flare {
+  0% {
+    border-color: color-mix(in oklch, var(--color-success) 70%, var(--border-hairline));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-success) 45%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-success) 40%, transparent);
+  }
+  100% {
+    border-color: var(--border-hairline);
+    box-shadow: 0 0 0 10px transparent, 0 0 34px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-gh-card--reward { animation: none; }
+}
 
 .fa-kpis {
   display: grid;

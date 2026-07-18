@@ -24,11 +24,11 @@ assert.match(
   "workspace should provide exitChatMode so the sidebar back control returns to the prior surface",
 );
 
-// ── Chat-first IA (cave-hsa6): the app boots straight into the conversation. ──
+// ── Home-first boot: the app opens on Home; chat is one step away. ──
 assert.match(
   workspace,
-  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
-  "workspace should boot into chat mode, not home",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
+  "workspace should boot into home mode",
 );
 assert.match(
   workspace,

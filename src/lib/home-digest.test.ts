@@ -48,6 +48,30 @@ assert.ok(summary.lines.includes("1 session"), "one non-archived session today")
 assert.ok(summary.lines.includes("1 reminder"), "one reminder fired today");
 assert.ok(summary.lines.includes("1 waiting"), "one response waiting today");
 
+// ── Ritual streak chip (cave-qvox): only a real chain earns the line ─────────
+assert.ok(
+  !summary.lines.some((l) => l.includes("streak")),
+  "a single active day is just 'today' — no streak line, no zero-shame",
+);
+{
+  const chained = buildDigestCards({
+    items,
+    sessions: [
+      ...sessions,
+      { id: "s4", title: "Yesterday's ritual", updated_at: hoursAgo(26), created_at: hoursAgo(26), familiarId: "f1" },
+    ],
+    rssItems,
+    familiarNameById,
+    nowMs: NOW,
+  });
+  const chainedSummary = chained.find((card) => card.kind === "summary");
+  assert.ok(chainedSummary, "a streak contributes to the daily summary");
+  assert.ok(
+    chainedSummary.lines.includes("2-day streak"),
+    "two consecutive active days surface as the ambient streak chip",
+  );
+}
+
 // ── Session cards: today only, archived + yesterday excluded ──────────────────
 const sessionCards = cards.filter((c) => c.kind === "session");
 assert.equal(sessionCards.length, 1, "only today's non-archived session");

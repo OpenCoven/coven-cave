@@ -9,8 +9,10 @@
  */
 
 import { useEffect, useState } from "react";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
@@ -233,11 +235,15 @@ function CardActions({
   descriptor,
   item,
   onMutated,
+  onMerged,
 }: {
   descriptor: GitHubBlockDescriptor;
   item: ItemDetail;
   onMutated: () => void;
+  /** Fired once on a confirmed merge — the parent card plays the reward flare. */
+  onMerged?: () => void;
 }) {
+  const { announce } = useAnnouncer();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [phase, setPhase] = useState<ActionPhase>("idle");
@@ -318,6 +324,11 @@ function CardActions({
             }),
           );
     if (ok) {
+      // The flare is visual-only on top of this announcement (AT channel).
+      if (pending.kind === "merge") {
+        announce(`Merged ${descriptor.repo}#${descriptor.number}.`);
+        onMerged?.();
+      }
       setPending(null);
       setReviewBody("");
       onMutated();
@@ -643,9 +654,19 @@ export function GitHubCard({
     else window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  // One-shot merge flare (cave-hshy) — the board's card-done bloom retold on
+  // the PR card. Celebrations-pref gated; self-clears so re-renders can't
+  // replay it; reduced-motion collapses the animation in CSS.
+  const [justMerged, setJustMerged] = useState(false);
+  useEffect(() => {
+    if (!justMerged) return;
+    const t = setTimeout(() => setJustMerged(false), 900);
+    return () => clearTimeout(t);
+  }, [justMerged]);
+
   return (
     <div
-      className="cave-gh-card flex items-start gap-2.5 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-2"
+      className={`cave-gh-card flex items-start gap-2.5 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-2${justMerged ? " cave-gh-card--reward" : ""}`}
       data-gh-kind={descriptor.kind}
     >
       <span aria-hidden className="mt-[2px] inline-flex shrink-0" style={{ color: glyph.color }}>
@@ -701,7 +722,7 @@ export function GitHubCard({
             <ReviewThreadBody descriptor={descriptor} onOpenUrl={onOpenUrl} />
           </div>
         ) : null}
-        {item ? <CardActions descriptor={descriptor} item={item} onMutated={state.refresh} /> : null}
+        {item ? <CardActions descriptor={descriptor} item={item} onMutated={state.refresh} onMerged={() => { if (readCelebrationsEnabled()) setJustMerged(true); }} /> : null}
         {expanded && checks.phase === "ready" ? (
           <div className="mt-2 border-t border-[var(--border-hairline)] pt-2">
             <CheckRunList runs={checks.data.runs} onOpenUrl={onOpenUrl} />

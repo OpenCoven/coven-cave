@@ -43,7 +43,7 @@ type DaemonStatusPayload = {
 
 export type DaemonStatusPollResult =
   | { kind: "running" }
-  | { kind: "offline" }
+  | { kind: "offline"; targetMode: "local" }
   | { kind: "auth-expired" }
   | { kind: "unavailable"; reason: string };
 
@@ -97,7 +97,9 @@ export function classifyDaemonStatusPoll(input: {
     reason?.toLowerCase() === "daemon offline";
   const explicitLocalOffline =
     availability === "offline" && payload.target?.mode === "local";
-  if (explicitLocalOffline || legacyLocalOffline) return { kind: "offline" };
+  if (explicitLocalOffline || legacyLocalOffline) {
+    return { kind: "offline", targetMode: "local" };
+  }
 
   return {
     kind: "unavailable",

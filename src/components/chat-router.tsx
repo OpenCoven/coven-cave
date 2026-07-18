@@ -69,6 +69,7 @@ type Props = {
   onSetActiveFamiliar?: (id: string) => void;
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
   sessionsError?: boolean;
@@ -135,6 +136,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSetActiveFamiliar,
     onSessionStarted,
     onSessionsChanged,
+    onSessionsDeleted,
     sessionsLoaded,
     sessionsError,
     familiarsLoaded,
@@ -661,6 +663,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessionsError={sessionsError}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
+        onSessionsDeleted={onSessionsDeleted}
         onOpenUrl={onOpenUrl}
         onOpen={(sessionId, familiarId, findQuery) => {
           const next = selectFamiliarForChat(familiarId);
@@ -722,6 +725,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       daemonRunning={daemonRunning}
       sessions={sessions}
       onSessionsChanged={onSessionsChanged}
+      onSessionsDeleted={onSessionsDeleted}
       onBack={() => setView({ kind: "list" })}
       onSessionStarted={(sid) => {
         // Only promote the sessionId in the view state when the current chat
@@ -767,6 +771,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               daemonRunning={daemonRunning}
               sessions={sessions}
               onSessionsChanged={onSessionsChanged}
+              onSessionsDeleted={onSessionsDeleted}
               onOpenTask={onOpenTask}
               onOpenUrl={onOpenUrl}
             />

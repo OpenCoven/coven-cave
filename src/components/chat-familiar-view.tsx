@@ -18,7 +18,8 @@ import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { deriveFamiliarTabState } from "@/lib/familiar-tab-state";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -350,6 +351,203 @@ function FamiliarIdentityHero({
 
 // ── Capability panel ─────────────────────────────────────────────────────────
 
+type CapabilitySnapshot = {
+  roles: RoleEntry[];
+  localSkills: LocalSkillEntry[];
+  harnessCapabilities: HarnessCapabilityManifest[];
+  harnesses: AdapterReport[];
+  loading: boolean;
+  errors: string[];
+};
+
+/** One shared capability loader serves both the overview and detail states. */
+function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
+  const [snapshot, setSnapshot] = useState<CapabilitySnapshot>({
+    roles: [],
+    localSkills: [],
+    harnessCapabilities: [],
+    harnesses: [],
+    loading: true,
+    errors: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setSnapshot((current) => ({ ...current, loading: true, errors: [] }));
+    const capabilitiesUrl = harnessId
+      ? `/api/capabilities?harness=${encodeURIComponent(harnessId)}`
+      : "/api/capabilities";
+
+    void Promise.all([
+      fetch("/api/roles", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ ok: boolean; roles?: RoleEntry[]; error?: string }>)
+        .catch(() => ({ ok: false as const, error: "roles fetch failed" })),
+      fetch("/api/skills/local", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ ok: boolean; skills?: LocalSkillEntry[]; error?: string }>)
+        .catch(() => ({ ok: false as const, error: "skills/local fetch failed" })),
+      fetch(capabilitiesUrl, { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ ok: boolean; harness_capabilities?: HarnessCapabilityManifest[]; error?: string }>)
+        .catch(() => ({ ok: false as const, error: "capabilities fetch failed" })),
+      fetch("/api/harnesses", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>)
+        .catch(() => ({ ok: false as const, error: "harnesses fetch failed" })),
+    ]).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
+      if (cancelled) return;
+      const errors: string[] = [];
+      if (!rolesRes.ok) errors.push(rolesRes.error ?? "roles unavailable");
+      if (!skillsRes.ok) errors.push(skillsRes.error ?? "local skills unavailable");
+      if (!capsRes.ok) errors.push(capsRes.error ?? "capabilities unavailable");
+      if (!harnessesRes.ok) errors.push(harnessesRes.error ?? "harnesses unavailable");
+      setSnapshot({
+        roles: rolesRes.ok ? rolesRes.roles ?? [] : [],
+        localSkills: skillsRes.ok ? skillsRes.skills ?? [] : [],
+        harnessCapabilities: capsRes.ok ? capsRes.harness_capabilities ?? [] : [],
+        harnesses: harnessesRes.ok ? harnessesRes.harnesses ?? [] : [],
+        loading: false,
+        errors,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [harnessId]);
+
+  return snapshot;
+}
+
+function FamiliarRosterWarning({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      className="familiar-scope-overview__notice flex items-center justify-between gap-3 px-4 py-2 text-[11px] text-[var(--color-warning)]"
+      role="status"
+    >
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <Icon name="ph:warning-circle" width={13} aria-hidden />
+        <span className="truncate">Roster refresh failed. Showing the last known roster.</span>
+      </span>
+      {onRetry ? (
+        <button type="button" className="focus-ring shrink-0 rounded px-1.5 py-1 underline underline-offset-2" onClick={onRetry}>
+          Retry
+        </button>
+      ) : null}
+      <span className="sr-only">{message}</span>
+    </div>
+  );
+}
+
+function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: CapabilitySnapshot) {
+  const harnessId = familiar.harness ?? "codex";
+  const roles = snapshot.roles.filter(
+    (role) => role.active && (role.familiar === familiar.id || role.familiar === "all" || role.familiar === "global"),
+  );
+  const roleSkills = roles.flatMap((role) => role.skills);
+  const localSkills = snapshot.localSkills.filter(
+    (skill) => skill.familiar === "global" || (skill.familiar as string) === familiar.id,
+  );
+  const manifest = snapshot.harnessCapabilities.find((item) => item.harness_id === harnessId);
+  const skillIds = new Set([
+    ...roleSkills,
+    ...localSkills.map((skill) => skill.id),
+    ...(manifest?.skills ?? []).map((skill) => skill.id),
+  ]);
+  const enabledPlugins = (manifest?.plugins ?? []).filter((plugin) => plugin.enabled).length;
+  const harness = snapshot.harnesses.find((item) => item.id === harnessId);
+  return {
+    roleCount: roles.length,
+    skillCount: skillIds.size,
+    capabilityCount: enabledPlugins,
+    runtime: [harness?.label ?? harnessId, familiar.model].filter(Boolean).join(" · "),
+    installed: harness?.installed,
+  };
+}
+
+function FamiliarScopeOverview({
+  kind,
+  familiars,
+  missingCount,
+  daemonRunning,
+  rosterWarning,
+  onRetry,
+  onSelect,
+}: {
+  kind: "all" | "subset";
+  familiars: ResolvedFamiliar[];
+  missingCount?: number;
+  daemonRunning?: boolean;
+  rosterWarning?: string | null;
+  onRetry?: () => void;
+  onSelect: (familiarId: string) => void;
+}) {
+  const snapshot = useCapabilitySnapshot();
+  const title = kind === "all" ? "All familiars" : "Selected familiars";
+  return (
+    <section className="chat-familiar-view flex h-full min-h-0 flex-col overflow-y-auto" aria-label={`${title} overview`}>
+      {rosterWarning ? <FamiliarRosterWarning message={rosterWarning} onRetry={onRetry} /> : null}
+      <header className="familiar-scope-overview__header px-4 pb-3 pt-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="font-serif text-[22px] font-medium text-[var(--text-primary)]">{title}</h2>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              {kind === "all"
+                ? `${familiars.length} in the active roster. Choose one to inspect its full capabilities.`
+                : `${familiars.length} in this scope. Opening the tab has not changed your selection.`}
+            </p>
+          </div>
+          {snapshot.loading ? <span className="text-[10px] text-[var(--text-muted)]" role="status">Scanning capabilities…</span> : null}
+        </div>
+        {missingCount ? (
+          <p className="mt-2 text-[11px] text-[var(--color-warning)]" role="status">
+            {missingCount} selected familiar{missingCount === 1 ? " is" : "s are"} no longer in the active roster.
+          </p>
+        ) : null}
+        {snapshot.errors.length > 0 ? (
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]" role="status">
+            Some capability summaries are unavailable; familiar details remain accessible.
+          </p>
+        ) : null}
+      </header>
+      <div className="familiar-scope-overview mx-4 mb-4" role="list" aria-label={title}>
+        {familiars.map((familiar) => {
+          const summary = familiarCapabilitySummary(familiar, snapshot);
+          const activeSessions = familiar.active_sessions ?? 0;
+          return (
+            <div key={familiar.id} role="listitem">
+              <button
+                type="button"
+                className="familiar-scope-overview__row focus-ring group grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 text-left"
+                aria-label={`View ${familiar.display_name} familiar details`}
+                onClick={() => onSelect(familiar.id)}
+              >
+                <span className="familiar-scope-overview__avatar" aria-hidden="true">
+                  <FamiliarAvatar familiar={familiar} size="lg" />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="truncate font-mono text-[13px] font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                      <span className={`h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`} aria-hidden />
+                      {daemonRunning ? "online" : "offline"}
+                    </span>
+                  </span>
+                  <span className="mt-1 block truncate text-[11px] text-[var(--text-secondary)]">
+                    {familiar.role || "No role"} · {summary.runtime}
+                  </span>
+                  <span className="familiar-scope-overview__metrics mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                    <span>{summary.roleCount} role{summary.roleCount === 1 ? "" : "s"}</span>
+                    <span>{summary.skillCount} skill{summary.skillCount === 1 ? "" : "s"}</span>
+                    <span>{summary.capabilityCount} runtime capabilit{summary.capabilityCount === 1 ? "y" : "ies"}</span>
+                    {activeSessions > 0 ? <span>{activeSessions} active</span> : null}
+                    {summary.installed === false ? <span className="text-[var(--color-warning)]">runtime unavailable</span> : null}
+                  </span>
+                </span>
+                <Icon name="ph:caret-right" width={14} className="familiar-scope-overview__caret text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function FamiliarCapabilityPanel({
   familiar,
   daemonRunning,
@@ -359,64 +557,13 @@ function FamiliarCapabilityPanel({
   daemonRunning?: boolean;
   onStartChat?: (familiarId: string) => void;
 }) {
-  const [roles, setRoles] = useState<RoleEntry[]>([]);
-  const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
-  const [harnessCapabilities, setHarnessCapabilities] = useState<HarnessCapabilityManifest[]>([]);
-  const [harnesses, setHarnesses] = useState<AdapterReport[]>([]);
-  // Start in the shimmer state: the first paint must not flash a fully
-  // populated grid of empty-state copy before the fetch effect runs.
-  const [loading, setLoading] = useState(true);
-  const [errors, setErrors] = useState<string[]>([]);
-
   // Collapsible state per sub-group
   const [skillsRoleOpen, setSkillsRoleOpen] = useState(true);
   const [skillsFamiliarOpen, setSkillsFamiliarOpen] = useState(true);
   const [skillsGlobalOpen, setSkillsGlobalOpen] = useState(true);
 
   const harnessId = familiar.harness ?? "codex";
-
-  useEffect(() => {
-    // Guard against stale / post-unmount responses: switching familiars
-    // remounts the panel (keyed host), but a slow response from THIS mount
-    // must still not apply after cleanup.
-    let cancelled = false;
-    setLoading(true);
-    setErrors([]);
-
-    const errs: string[] = [];
-
-    void Promise.all([
-      fetch("/api/roles", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; roles?: RoleEntry[]; error?: string }>)
-        .catch(() => ({ ok: false as const, error: "roles fetch failed" })),
-      fetch("/api/skills/local", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; skills?: LocalSkillEntry[]; error?: string }>)
-        .catch(() => ({ ok: false as const, error: "skills/local fetch failed" })),
-      fetch(`/api/capabilities?harness=${encodeURIComponent(harnessId)}`, { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; harness_capabilities?: HarnessCapabilityManifest[]; error?: string }>)
-        .catch(() => ({ ok: false as const, error: "capabilities fetch failed" })),
-      fetch("/api/harnesses", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>)
-        .catch(() => ({ ok: false as const, error: "harnesses fetch failed" })),
-    ]).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
-      if (cancelled) return;
-      if (rolesRes.ok) setRoles(rolesRes.roles ?? []);
-      else errs.push(rolesRes.error ?? "roles unavailable");
-
-      if (skillsRes.ok) setLocalSkills(skillsRes.skills ?? []);
-      else errs.push(skillsRes.error ?? "local skills unavailable");
-
-      if (capsRes.ok) setHarnessCapabilities(capsRes.harness_capabilities ?? []);
-      else errs.push(capsRes.error ?? "capabilities unavailable");
-
-      if (harnessesRes.ok) setHarnesses(harnessesRes.harnesses ?? []);
-      else errs.push(harnessesRes.error ?? "harnesses unavailable");
-
-      setErrors(errs);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [familiar.id, harnessId]);
+  const { roles, localSkills, harnessCapabilities, harnesses, loading, errors } = useCapabilitySnapshot(harnessId);
 
   // The identity hero needs nothing from the capability fetches — paint it
   // immediately and keep the shimmer for the capability grid alone, shaped
@@ -740,39 +887,141 @@ function FamiliarCapabilityPanel({
  */
 export function ChatFamiliarView({
   familiar,
+  familiars,
+  selectedFamiliarIds,
+  familiarsLoaded = true,
+  familiarsError,
   daemonRunning,
+  onRetryFamiliars,
+  onCreateFamiliar,
+  onOpenOnboarding,
+  onFamiliarScopeChange,
   onStartChat,
 }: {
   familiar: Familiar | null;
+  familiars: Familiar[];
+  selectedFamiliarIds: ReadonlySet<string>;
+  familiarsLoaded?: boolean;
+  familiarsError?: string | null;
   daemonRunning?: boolean;
+  onRetryFamiliars?: () => void;
+  onCreateFamiliar?: () => void;
+  onOpenOnboarding?: () => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { preserveSurface?: boolean }) => void;
   onStartChat?: (familiarId: string) => void;
 }) {
-  if (!familiar) {
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const selectableFamiliars = resolvedFamiliars.filter((item) => !item.archived);
+  const selectedFamiliar = familiar
+    ? resolvedFamiliars.find((item) => item.id === familiar.id) ?? null
+    : null;
+  const state = deriveFamiliarTabState({
+    familiars: selectableFamiliars,
+    selectedIds: selectedFamiliarIds,
+    selectedFamiliar,
+    loaded: familiarsLoaded,
+    error: familiarsError,
+  });
+
+  if (state.kind === "loading") {
     return (
       <section
-        className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-2 px-6 py-8 text-center"
-        aria-label="Familiar profile"
+        className="chat-familiar-view h-full min-h-0 px-4 py-5"
+        aria-label="Loading familiars"
+        role="status"
       >
-        <span className="text-[var(--text-muted)]" aria-hidden>
-          <Icon name="ph:sparkle" width={20} />
-        </span>
-        <p className="text-[12px] font-medium text-[var(--text-secondary)]">
-          No familiar selected
-        </p>
-        <p className="max-w-[28ch] text-[11px] leading-snug text-[var(--text-muted)]">
-          Pick a familiar to see its roles, skills, and runtime capabilities.
-        </p>
+        <span className="sr-only">Loading familiar roster</span>
+        <SkeletonRows count={4} />
       </section>
     );
   }
+
+  if (state.kind === "error") {
+    return (
+      <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Familiar roster unavailable" role="alert">
+        <Icon name="ph:plugs" width={22} className="text-[var(--text-muted)]" aria-hidden />
+        <div>
+          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Can&apos;t reach your familiars</h2>
+          <p className="mt-1 max-w-[38ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+            Your roster could not be loaded. Your familiars are safe; retry when the daemon is available.
+          </p>
+          <span className="sr-only">{state.message}</span>
+        </div>
+        {onRetryFamiliars ? (
+          <button type="button" onClick={onRetryFamiliars} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+            <Icon name="ph:arrow-clockwise" width={13} aria-hidden /> Retry
+          </button>
+        ) : null}
+      </section>
+    );
+  }
+
+  if (state.kind === "empty") {
+    return (
+      <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Empty familiar roster">
+        <Icon name="ph:sparkle" width={22} className="text-[var(--text-muted)]" aria-hidden />
+        <div>
+          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Summon your first familiar</h2>
+          <p className="mt-1 max-w-[38ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+            A familiar has its own identity, memory, roles, skills, and runtime. Create one to begin.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {onCreateFamiliar ? (
+            <button type="button" onClick={onCreateFamiliar} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+              <Icon name="ph:magic-wand-fill" width={13} aria-hidden /> Summon familiar
+            </button>
+          ) : null}
+          {onOpenOnboarding ? (
+            <button type="button" onClick={onOpenOnboarding} className="focus-ring inline-flex min-h-9 items-center rounded-md border border-[var(--border-hairline)] px-3 text-[11px] text-[var(--text-secondary)]">
+              Run full setup
+            </button>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  if (state.kind === "unavailable") {
+    return (
+      <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Selected familiars unavailable" role="status">
+        <Icon name="ph:warning-circle" width={22} className="text-[var(--text-muted)]" aria-hidden />
+        <div>
+          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Selected familiar unavailable</h2>
+          <p className="mt-1 max-w-[40ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+            The saved scope references {state.selectedIds.length === 1 ? "a familiar that is" : "familiars that are"} no longer in the active roster.
+          </p>
+        </div>
+        <button type="button" onClick={() => onFamiliarScopeChange(null, { preserveSurface: true })} className="focus-ring inline-flex min-h-9 items-center rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+          View all familiars
+        </button>
+      </section>
+    );
+  }
+
+  if (state.kind === "all" || state.kind === "subset") {
+    return (
+      <FamiliarScopeOverview
+        kind={state.kind}
+        familiars={state.familiars}
+        missingCount={state.kind === "subset" ? state.missingIds.length : 0}
+        daemonRunning={daemonRunning}
+        rosterWarning={state.rosterWarning}
+        onRetry={onRetryFamiliars}
+        onSelect={(id) => onFamiliarScopeChange(id, { preserveSurface: true })}
+      />
+    );
+  }
+
   return (
     <section
       className="chat-familiar-view flex h-full min-h-0 flex-col overflow-y-auto"
       aria-label="Familiar profile"
     >
+      {state.rosterWarning ? <FamiliarRosterWarning message={state.rosterWarning} onRetry={onRetryFamiliars} /> : null}
       <FamiliarCapabilityPanel
-        key={familiar.id}
-        familiar={familiar}
+        key={state.familiar.id}
+        familiar={state.familiar}
         daemonRunning={daemonRunning}
         onStartChat={onStartChat}
       />

@@ -779,6 +779,49 @@ const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   );
 });
 
+/**
+ * Progression band — the renown system's read of this familiar (same
+ * derivation as the roster card, so the two surfaces always agree): tier,
+ * score, progress toward the next rung, and the ritual streak. A broken
+ * streak reads as an invitation, never a reprimand.
+ */
+const ProgressionBand = memo(function ProgressionBand({
+  progression,
+}: {
+  progression: FamiliarAnalyticsModel["progression"];
+}) {
+  if (!progression) return null;
+  const { renown, streakDays } = progression;
+  const pct = Math.round(renown.progress * 100);
+  return (
+    <section className="fa-progression" aria-label="Progression">
+      <span className="fa-progression__tier">{renown.tier.label}</span>
+      <span className="fa-progression__score">{renown.score} renown</span>
+      <div
+        className="fa-progression__meter"
+        role="img"
+        aria-label={
+          renown.next
+            ? `${renown.next.remaining} renown to ${renown.next.tier.label}`
+            : "Top of the ladder"
+        }
+        title={renown.next ? `${renown.next.remaining} to ${renown.next.tier.label}` : "Top of the ladder"}
+      >
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      <span className="fa-progression__next">
+        {renown.next ? `${renown.next.remaining} to ${renown.next.tier.label}` : "top of the ladder"}
+      </span>
+      <span className="fa-progression__streak">
+        <Icon name="ph:flame" aria-hidden />
+        {streakDays > 0
+          ? `${streakDays}-day streak`
+          : "a session today starts a streak"}
+      </span>
+    </section>
+  );
+});
+
 /** Scannable KPI row — each tile drills through to the section it summarizes. */
 const FamiliarKpis = memo(function FamiliarKpis({
   model,
@@ -930,6 +973,8 @@ export function FamiliarAnalyticsContent({
       </header>
 
       <AnalyticsInsightBanner model={model} healRequestCount={healRequests.length} />
+
+      <ProgressionBand progression={model.progression} />
 
       <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 

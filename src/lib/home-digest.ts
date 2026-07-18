@@ -20,6 +20,7 @@
  */
 
 import type { InboxItem } from "@/lib/cave-inbox";
+import { covenStreak } from "@/lib/familiar-renown";
 import type { SessionRow } from "@/lib/types";
 import { hostFromUrl, relativeAge, type FeedItem } from "@/lib/rss";
 
@@ -288,6 +289,10 @@ export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
 
   const summaryLines: string[] = [];
   if (todayTouchedCount) summaryLines.push(plural(todayTouchedCount, "session"));
+  // Ambient ritual-streak presence (cave-qvox): only once it's a real chain —
+  // a single active day is just "today", and absence never reads as shame.
+  const streakDays = covenStreak(sessions, nowMs);
+  if (streakDays >= 2) summaryLines.push(`${streakDays}-day streak`);
   if (remindersFired) summaryLines.push(plural(remindersFired, "reminder"));
   if (responsesWaiting) summaryLines.push(`${responsesWaiting} waiting`);
   if (familiarUpdates) summaryLines.push(plural(familiarUpdates, "familiar update"));

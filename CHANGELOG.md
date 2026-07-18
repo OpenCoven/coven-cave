@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Home-first launch + sidebar memory** — every fresh launch opens on the Home surface (chat stays one step away via ⌘2 / the composer; `?mode=` deep links and `#chat-…` hashes still land where they point), and the sidebar's open/collapsed state is now remembered across launches AND surfaces: one global preference (`cave:shell:nav-open`) replaces the per-panel-group layouts that let Home and Chat disagree about the nav (cave-igs4).
+
 ## [0.1.3] - 2026-07-18
 
 > 🧭 **A more capable, resilient Cave.** Coven conversations gain selectable dispatch modes and durable task handoffs, live chats reconnect cleanly across desktop and iOS, and a broad security and performance pass makes everyday work faster and safer.

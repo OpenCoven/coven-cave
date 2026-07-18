@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the chat boot landing (cave-qvwu): booting into `/` paints the
+// Verifies the chat surface landing (cave-qvwu): opening chat (home-first
+// boot means via ?mode=chat) paints the
 // zero-turn compose view (ChatEmptyState + composer) without waiting for
 // /api/sessions/list — the fetch that used to gate the boot-compose effect
 // and left users on the ChatList skeleton wall for its full duration. Also
@@ -80,7 +81,7 @@ test.describe("chat boot landing", () => {
       await route.fulfill({ json: { ok: true, sessions: [SESSION_S1] } });
     });
 
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     await expect(page.locator(".cave-chat-empty")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
@@ -117,7 +118,7 @@ test.describe("chat boot landing", () => {
       route.fulfill({ json: { ok: true, sessions: [] } }),
     );
 
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     const empty = page.locator(".cave-chat-empty");
     await expect(empty).toBeVisible({ timeout: 45_000 });
 

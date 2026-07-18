@@ -65,6 +65,14 @@ assert.match(source, /recentSearches\.map/, "empty-query browse mode exposes rec
 assert.match(source, /Clear recent searches/, "recent search history is explicitly clearable");
 assert.match(source, /aria-label="Clear search query"/, "the palette offers a visible clear-query action");
 
+// (cave-lzk2) Archived chats never resurface in the browse-mode "Recent chats"
+// jump list; only an explicit typed query can find them.
+assert.match(
+  source,
+  /if \(!q && s\.archived_at\) return false;/,
+  "empty-query Recent chats excludes archived sessions",
+);
+
 assert.match(
   source,
   /kind:\s*"salem-answer"/,

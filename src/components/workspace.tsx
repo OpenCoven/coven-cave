@@ -6,7 +6,7 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
-import { filterDeletedSessions } from "@/lib/session-list-deletes";
+import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -45,6 +45,12 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  createDaemonDesktopAutoStartCoordinator,
+  createDaemonStatusRequestGate,
+  runWorkspaceDaemonStart,
+} from "@/lib/daemon-desktop-auto-start";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
@@ -273,6 +279,7 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
 
 export function Workspace() {
   const nextRouter = useRouter();
+  const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
@@ -321,12 +328,13 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Chat-first boot (cave-hsa6): the app opens on the conversation — the chat
-  // surface with the thread sidebar (a fresh session lands on the task-aware
-  // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
-  // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
-  // #chat-…) and cave:navigate-mode override this as before.
-  const [mode, setModeRaw] = useState<CaveMode>("chat");
+  // Home-first boot: every fresh launch (desktop app window or web tab)
+  // opens on the Home surface — the daily overview with the universal
+  // composer — per operator direction (this reverses cave-hsa6's chat-first
+  // boot). Chat stays one step away (⌘2 / nav / the composer submit), and
+  // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
+  // before, so restored sessions and share links still land where they point.
+  const [mode, setModeRaw] = useState<CaveMode>("home");
   // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
@@ -389,7 +397,17 @@ export function Workspace() {
   const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
-  const daemonStatusRequestRef = useRef(0);
+  const daemonStatusRequestGateRef = useRef<ReturnType<typeof createDaemonStatusRequestGate> | null>(null);
+  if (daemonStatusRequestGateRef.current === null) {
+    daemonStatusRequestGateRef.current = createDaemonStatusRequestGate();
+  }
+  const startDaemonRef = useRef<() => Promise<void>>(async () => {});
+  const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
+  if (daemonAutoStartCoordinatorRef.current === null) {
+    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(() => {
+      void startDaemonRef.current();
+    });
+  }
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const browserNavigationIdRef = useRef(Date.now() * 1024);
   const [browserNavigationQueue, setBrowserNavigationQueue] = useState<BrowserNavigationRequest[]>([]);
@@ -594,7 +612,8 @@ export function Workspace() {
   useMilestoneWatch();
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    const requestId = ++daemonStatusRequestRef.current;
+    const requestGate = daemonStatusRequestGateRef.current!;
+    const requestId = requestGate.begin();
     let result: ReturnType<typeof classifyDaemonStatusPoll>;
     let credentialAccepted = false;
     try {
@@ -619,7 +638,10 @@ export function Workspace() {
     // An explicit refresh after Start can overtake an older background poll.
     // Only the newest request may publish state, or that stale offline result
     // can put the banner back after the daemon is already healthy.
-    if (requestId !== daemonStatusRequestRef.current) return;
+    if (!requestGate.isLatest(requestId)) return;
+    // The coordinator pins this first accepted decision. Later polls may update
+    // live UI state, but can never turn into a delayed automatic restart.
+    daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (credentialAccepted) setAuthExpired(false);
 
     setDaemonStatusResolved(true);
@@ -653,26 +675,22 @@ export function Workspace() {
   }, []);
 
   const startDaemon = useCallback(async () => {
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      dismissBanner("daemon-start-error");
-      // Trusted: the user just started it and the API reported success, so a
-      // single healthy status poll is enough to dismiss the offline banner now.
-      await refreshDaemonStatus({ trusted: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "daemon did not start";
-      pushBanner({
+    await runWorkspaceDaemonStart({
+      fetchImpl: fetch,
+      dismissError: () => dismissBanner("daemon-start-error"),
+      reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
         title: `Daemon start failed — ${message}`,
-      });
-      await refreshDaemonStatus();
-    }
+      }),
+      refreshStatus: refreshDaemonStatus,
+    });
   }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  startDaemonRef.current = startDaemon;
+
+  useEffect(() => {
+    daemonAutoStartCoordinatorRef.current!.observePlatform(tauriPlatform);
+  }, [tauriPlatform]);
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -897,12 +915,12 @@ export function Workspace() {
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
-  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
+  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // A multi-toggle shouldn't yank the surface around — only a plain single
     // select restores that familiar's last-viewed surface.
-    if (opts?.multi) return;
+    if (opts?.multi || opts?.preserveSurface) return;
     const last = getLastSurface(id);
     // Guard against retired/unknown persisted modes (e.g. the removed
     // "projects" standalone surface). Only restore if the stored string is
@@ -1008,6 +1026,25 @@ export function Workspace() {
       }
     })();
   }, [activeId]);
+
+  const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
+    const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
+    if (confirmedIds.length === 0) return;
+
+    baseSessionsRef.current = filterDeletedSessions(
+      baseSessionsRef.current,
+      locallyDeletedSessionIdsRef.current,
+    );
+    setSessions((currentSessions) => {
+      const nextSessions = filterDeletedSessions(
+        currentSessions,
+        locallyDeletedSessionIdsRef.current,
+      );
+      return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
+    });
+    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    void loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     loadFamiliars();
@@ -2489,14 +2526,7 @@ export function Workspace() {
           throw new Error(json.error ?? "delete failed");
         }
 
-        locallyDeletedSessionIdsRef.current.add(session.id);
-        baseSessionsRef.current = filterDeletedSessions(baseSessionsRef.current, locallyDeletedSessionIdsRef.current);
-        setSessions((currentSessions) => {
-          const nextSessions = filterDeletedSessions(currentSessions, locallyDeletedSessionIdsRef.current);
-          return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
-        });
-        invalidateConversation(session.id);
-        void loadSessions();
+        handleSessionsDeleted([session.id]);
       }}
       onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
@@ -2551,6 +2581,7 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         activeFamiliarId={activeId}
+        selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
         hideThreadRail
@@ -2563,6 +2594,7 @@ export function Workspace() {
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
         onSetActiveFamiliar={setActiveId}
+        onFamiliarScopeChange={selectFamiliarScope}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
@@ -2570,6 +2602,7 @@ export function Workspace() {
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
       />

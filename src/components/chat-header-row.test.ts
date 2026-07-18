@@ -108,8 +108,8 @@ assert.doesNotMatch(
 
 // In-chat delete lives ONLY in the session overflow (kebab) menu now — the
 // danger "Delete chat…" item swaps the menu body to a confirm view, the
-// explicit Delete commits via deleteChat, and success refreshes the session
-// list and navigates back. No standalone header trash button remains.
+// explicit Delete commits via deleteChat, and success reports the confirmed id
+// to Workspace and navigates back. No standalone header trash button remains.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -117,8 +117,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\);\s*\n\s*onBack\?\.\(\);/,
-  "Successful delete refreshes sessions and navigates back to the list",
+  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onBack\?\.\(\);/,
+  "Successful delete reaches the shared boundary and navigates back to the list",
 );
 
 // The kebab's delete is a two-step guard: the danger item arms a confirm view

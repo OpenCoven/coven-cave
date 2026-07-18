@@ -189,11 +189,13 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
         body: JSON.stringify({ artifact }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
+      const data = (await res.json()) as { artifacts?: CanvasArtifact[]; savedId?: string | null };
       announce(`Saved '${artifact.title}' to Canvas.`);
       dispatch({ type: "saved" });
       setRefineText("");
-      onSaved(data.artifacts ?? [], artifact.id);
+      // The store content-dedupes: re-keeping an unchanged sketch settles into
+      // the existing record's id, so highlight where the save actually landed.
+      onSaved(data.artifacts ?? [], data.savedId ?? artifact.id);
     } catch {
       setSaveError("Couldn't save to the Canvas — try again.");
     } finally {
