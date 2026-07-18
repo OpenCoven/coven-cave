@@ -120,10 +120,17 @@ describe("decisionOutcomeFromResponse — refusals are visible, never quiet", ()
     assert.match(outcome.kind === "refused" ? outcome.message : "", /stays pending/i);
   });
 
-  it("409 proposal-corrupt = refused, daemon never asked", () => {
+  it("409 proposal-corrupt = refused without assuming where corruption was detected", () => {
     const outcome = decisionOutcomeFromResponse("reject", 409, { blocked: true, why: "proposal-corrupt" });
     assert.equal(outcome.kind, "refused");
-    assert.match(outcome.kind === "refused" ? outcome.message : "", /never asked/i);
+    assert.match(outcome.kind === "refused" ? outcome.message : "", /decision was not applied/i);
+    assert.doesNotMatch(outcome.kind === "refused" ? outcome.message : "", /never asked/i);
+  });
+
+  it("409 proposal-refused warns that daemon revalidation may consume the pending proposal", () => {
+    const outcome = decisionOutcomeFromResponse("approve", 409, { blocked: true, why: "proposal-refused" });
+    assert.equal(outcome.kind, "refused");
+    assert.match(outcome.kind === "refused" ? outcome.message : "", /may no longer be pending/i);
   });
 
   it("an unrecognized failure still reads as a refusal with nothing applied", () => {

@@ -84,6 +84,8 @@ export type KnowledgeEntry = {
   /** Stitch provenance: the pins this entry was sewn from (absent when the
    *  entry was written by hand). */
   pins?: StitchPinRef[];
+  /** File mtime (ISO) — list responses only; powers recency surfaces. */
+  modified?: string;
 };
 
 // ── Parse / serialize (pure) ─────────────────────────────────────────────────
@@ -324,7 +326,14 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
       if (!isValidKnowledgeId(id)) continue;
       try {
         const raw = await readFile(path.join(/* turbopackIgnore: true */ dir, name), "utf8");
-        entries.push(parseKnowledgeFile(id, raw, entryCollection));
+        const entry = parseKnowledgeFile(id, raw, entryCollection);
+        try {
+          const st = await stat(path.join(/* turbopackIgnore: true */ dir, name));
+          entry.modified = st.mtime.toISOString();
+        } catch {
+          // Recency is best-effort — a raced delete just omits it.
+        }
+        entries.push(entry);
       } catch {
         // Skip unreadable entries rather than failing the whole list.
       }
@@ -343,7 +352,14 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
       if (!isValidKnowledgeId(id)) continue;
       try {
         const raw = await readFile(/* turbopackIgnore: true */ full, "utf8");
-        entries.push(parseKnowledgeFile(id, raw));
+        const entry = parseKnowledgeFile(id, raw);
+        try {
+          const st = await stat(/* turbopackIgnore: true */ full);
+          entry.modified = st.mtime.toISOString();
+        } catch {
+          // Recency is best-effort — a raced delete just omits it.
+        }
+        entries.push(entry);
       } catch {
         // Skip unreadable entries rather than failing the whole list.
       }
