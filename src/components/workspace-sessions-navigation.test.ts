@@ -55,3 +55,12 @@ assert.match(
   /id: "daemon-status-unavailable"[\s\S]{0,300}label: "Retry"/,
   "inconclusive daemon checks should be retryable without offering Start daemon",
 );
+
+const unavailableBranch = workspace.match(
+  /if \(result\.kind === "unavailable"\) \{([\s\S]*?)\n    \}/,
+)?.[1] ?? "";
+assert.doesNotMatch(
+  unavailableBranch,
+  /setDaemonOffline\(false\)/,
+  "an inconclusive check must not clear a previously confirmed sticky offline state",
+);

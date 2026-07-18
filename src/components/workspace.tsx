@@ -630,7 +630,6 @@ export function Workspace() {
     }
     if (result.kind === "unavailable") {
       daemonHealthyStreakRef.current = 0;
-      setDaemonOffline(false);
       setDaemonStatusUnavailable(result.reason);
       return;
     }
