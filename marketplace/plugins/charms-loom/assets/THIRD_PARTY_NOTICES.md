@@ -9,7 +9,7 @@ License: MIT
 ### slidev-deck-pipeline
 
 - Upstream path: `skills/slidev-deck-pipeline/SKILL.md`
-- Adapted source content hash: `sha256:3b29b2f4cca5b3b478194a2be57b7716fb0041e7eb4d18139f5e560b6eebbf72`
+- Adapted source content hash: `sha256:b9f3b5fc0166dfd1f5a155ebe9c7a93ca7c7a757941a46116a7febf9c56a5136`
 - Coven modifications:
   - Authored by Charm from the live open-coven-weekly Slidev pipeline.
   - Audited for local capability boundaries, deterministic scripts, and reviewable deploy workflow.

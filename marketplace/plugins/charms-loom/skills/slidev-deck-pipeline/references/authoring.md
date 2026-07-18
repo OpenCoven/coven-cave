@@ -41,11 +41,12 @@ layout: default
 <!-- One or two sentences you'd actually say out loud. -->
 `
 
-writeFileSync(new URL('./slides/' + date + '.md', import.meta.url).pathname, deck)
+writeFileSync(new URL('./slides/' + date + '.md', import.meta.url), deck)
 console.log('wrote', date)
 ```
 
-Run it from the repo root so the relative `slides/` path resolves, or use an absolute path.
+Save `write-deck.mjs` in the repo root: the `slides/` URL resolves relative to the script file,
+regardless of the shell's current directory.
 
 ## Template variables (when scaffolding via `pnpm new`)
 

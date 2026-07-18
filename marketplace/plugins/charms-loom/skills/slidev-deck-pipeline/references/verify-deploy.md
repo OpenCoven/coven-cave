@@ -5,7 +5,7 @@ Deterministic tail of the pipeline. Run from the repo root.
 ## 1. Verify (the gate)
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/open-coven-weekly
+cd /path/to/open-coven-weekly
 pnpm install            # once, or when deps changed
 pnpm verify             # test + verify-week + build + build:vercel + verify:dist
 ```
@@ -41,7 +41,8 @@ git commit -m "slides: add YYYY-MM-DD Show'n Spells deck"
 git push origin main
 ```
 
-Commit directly to `main` for weekly decks. For a rebuild:
+These commands apply to `OpenCoven/open-coven-weekly`; its weekly-deck workflow commits directly
+to `main`. For a rebuild:
 `git commit -m "slides: rebuild YYYY-MM-DD deck — <brief reason>"`.
 
 ## 4. Confirm live

@@ -16,7 +16,7 @@
         "id": "slidev-deck-pipeline",
         "sourcePath": "craft-sources/charms-loom/slidev-deck-pipeline/SKILL.md",
         "upstreamPath": "skills/slidev-deck-pipeline/SKILL.md",
-        "contentHash": "sha256:3b29b2f4cca5b3b478194a2be57b7716fb0041e7eb4d18139f5e560b6eebbf72",
+        "contentHash": "sha256:b9f3b5fc0166dfd1f5a155ebe9c7a93ca7c7a757941a46116a7febf9c56a5136",
         "modifications": [
           "Authored by Charm from the live open-coven-weekly Slidev pipeline.",
           "Audited for local capability boundaries, deterministic scripts, and reviewable deploy workflow."

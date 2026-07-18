@@ -30,7 +30,7 @@
     ],
     "websiteURL": "https://opencoven.ai",
     "defaultPrompt": [
-      "Use Charm's Loom to open a bounded research direction."
+      "Use Charm's Loom to author, verify, export, or deploy an OpenCoven Slidev deck."
     ]
   }
 }

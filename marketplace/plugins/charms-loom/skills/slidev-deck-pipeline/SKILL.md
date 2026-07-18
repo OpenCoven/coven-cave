@@ -27,7 +27,7 @@ scripts to verify and build. Never eyeball-ship.
 
 ## Repo facts (canonical)
 
-- **Repo:** `/Users/buns/Documents/GitHub/OpenCoven/open-coven-weekly`
+- **Repo:** `OpenCoven/open-coven-weekly` (local checkout path varies by machine)
 - **Decks:** `slides/YYYY-MM-DD.md` (a `-slug` suffix is allowed: `YYYY-MM-DD-slug.md`)
 - **Template:** `slides/template.md`
 - **Theme:** `theme/` = `@opencoven/slidev-theme-coven`; referenced from a deck as `theme: ../theme`
@@ -64,9 +64,9 @@ latest date and the shortest name.
    (`theme: ../theme`, `layout: cover`, `layout: default`, `discord.gg/opencoven`), a frontmatter
    `title:`, and the deck's date present in the body.
 5. **Preview** — `pnpm dev`, spot-check every slide and every image renders in-browser.
-6. **Commit & push** — `git add slides/YYYY-MM-DD.md slides/public/img/<new>` then
+6. **Commit & push in `OpenCoven/open-coven-weekly`** — `git add slides/YYYY-MM-DD.md slides/public/img/<new>` then
    `git commit -m "slides: add YYYY-MM-DD Show'n Spells deck"` and `git push origin main`.
-   Vercel auto-deploys. Commit directly to `main` for weekly decks.
+   Vercel auto-deploys. This repo's weekly-deck workflow commits directly to its `main` branch.
 7. **Confirm live** — curl the production URL, assert HTTP 200 on `index` and every referenced image.
 
 ## House slide idiom (match it exactly)
