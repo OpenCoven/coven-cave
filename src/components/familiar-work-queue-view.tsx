@@ -478,6 +478,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <button
           type="button"
           className="fwq-chip fwq-toolbar-sort"
+          aria-pressed={sortMode === "recent"}
           onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
           title="Toggle lane ordering"
         >

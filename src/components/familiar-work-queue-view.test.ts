@@ -52,6 +52,7 @@ assert.match(view, /useState<"all" \| "p0" \| "p1" \| "p2plus">\("all"\)/);
 assert.match(view, /useState<"priority" \| "recent">\("priority"\)/, "priority-oldest is the default order");
 assert.match(view, /if \(sortMode === "recent"\) items = \[\.\.\.items\]\.sort/, "recent re-sorts a copy — queue identity untouched");
 assert.match(view, /setSortMode\(\(cur\) => \(cur === "priority" \? "recent" : "priority"\)\)/);
+assert.match(view, /aria-pressed=\{sortMode === "recent"\}/, "sort toggle exposes its active state");
 // The filtered-empty state clears everything at once.
 assert.match(view, /setFamiliarFilter\(null\);\s*setSearch\(""\);\s*setPriorityFilter\("all"\);/);
 
@@ -63,5 +64,8 @@ assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses
 assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
 assert.match(view, /import\("@\/lib\/clipboard"\)/, "copy-id uses the shared clipboard helper");
 assert.match(css, /\.fwq-detail-desc \{/, "description block has real styles");
+assert.match(css, /\.fwq-card-name--link \{[\s\S]*?border: 0;/, "inspector links reset native button borders");
+assert.match(css, /\.fwq-lane-toggle \{[\s\S]*?border: 0;/, "lane toggles reset native button borders");
+assert.match(css, /\.fwq-lane-more \{[\s\S]*?border: 0;[\s\S]*?border-top:/, "lane footer keeps only its divider");
 
 console.log("familiar-work-queue-view.test.ts: ok");

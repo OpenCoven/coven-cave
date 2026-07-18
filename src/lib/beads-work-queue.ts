@@ -258,8 +258,9 @@ export function buildWorkQueue(
   };
 }
 
-// Stable, deterministic ordering within a lane: PRs by number, beads by
-// priority then id — no wall-clock, so the render is reproducible.
+// Stable, deterministic ordering within a lane: PRs by number; beads by
+// priority, oldest update, then id. The timestamp comes from the item data,
+// not the wall clock, so identical inputs remain reproducible.
 function itemSortKey(item: WorkQueueItem): string {
   if (item.pr) return `0:${String(item.pr.number).padStart(8, "0")}`;
   if (item.merged) return `0:${String(item.merged.number).padStart(8, "0")}`;

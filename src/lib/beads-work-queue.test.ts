@@ -259,8 +259,6 @@ assert.equal(
   }
 }
 
-console.log("beads-work-queue.test.ts: ok");
-
 // ── no-open-PR triage order: priority asc, then oldest update first (cave-19jy)
 {
   const at = (h) => new Date(NOW - h * HOURS).toISOString();
@@ -279,3 +277,5 @@ console.log("beads-work-queue.test.ts: ok");
     "P0 first; within a priority the stalest update leads; undated beads sort after dated peers",
   );
 }
+
+console.log("beads-work-queue.test.ts: ok");
