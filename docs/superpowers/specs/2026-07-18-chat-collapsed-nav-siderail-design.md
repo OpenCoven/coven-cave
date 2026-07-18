@@ -1,7 +1,7 @@
 # Chat collapsed navigation and persistent siderail design
 
 **Date:** 2026-07-18
-**Status:** Approved design; written specification awaiting review
+**Status:** Approved specification; implementation planned
 **Bead:** `cave-0oqu`
 
 ## Goal
