@@ -9,11 +9,11 @@ const sidebar = await read("../sidebar-minimal.tsx");
 const projects = await read("../projects-view.tsx");
 const boardRoute = await read("../../app/api/board/route.ts");
 
-// Card: Save-to-Board is an explicit two-click confirm with save/saved/error feedback.
+// Card: Save-to-Tasks is an explicit two-click confirm with save/saved/error feedback.
 assert.match(card, /onSave\?: \(card: SalemPathfinderCard\) => Promise<boolean> \| void/, "onSave reports success");
 assert.match(card, /"idle" \| "confirm" \| "saving" \| "saved" \| "error"/, "tracks save lifecycle");
 assert.match(card, /if \(saveState === "idle"\)[\s\S]{0,80}setSaveState\("confirm"\)/, "first click arms confirm");
-assert.match(card, /Confirm — save to Board/, "second click confirms the save");
+assert.match(card, /Confirm — save to Tasks/, "second click confirms the save");
 assert.match(card, /salem-pf__action--save/, "renders a dedicated save button");
 
 // Salem panel: home card is wired to save to the Board with labels + steps.

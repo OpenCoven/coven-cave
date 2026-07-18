@@ -94,10 +94,10 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
     }
   };
   const SAVE_LABEL: Record<string, string> = {
-    idle: "Save to Board",
-    confirm: "Confirm — save to Board",
+    idle: "Save to Tasks",
+    confirm: "Confirm — save to Tasks",
     saving: "Saving…",
-    saved: "Saved to Board",
+    saved: "Saved to Tasks",
     error: "Save failed — retry",
   };
   const slim = density === "slim";

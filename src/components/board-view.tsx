@@ -231,7 +231,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
-  // The command palette can switch the board view directly (e.g. "Board: Gantt
+  // The command palette can switch the board view directly (e.g. "Tasks: Gantt
   // timeline"); honor it live when the board is already mounted.
   useEffect(() => {
     const onSetView = (e: Event) => {

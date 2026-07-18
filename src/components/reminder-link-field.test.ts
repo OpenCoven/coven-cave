@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 const field = readFileSync(new URL("./reminder-link-field.tsx", import.meta.url), "utf8");
 const modal = readFileSync(new URL("./new-reminder-modal.tsx", import.meta.url), "utf8");
 
-// ── Kind options: None / URL / Board card / Chat session, NO Memory ──────────
+// ── Kind options: None / URL / Task card / Chat session, NO Memory ───────────
 assert.match(field, /value: "none", label: "No link"/, "should offer a None option");
 assert.match(field, /value: "url", label: "URL"/, "should offer a URL option");
-assert.match(field, /value: "card", label: "Board card"/, "should offer a Board card option");
+assert.match(field, /value: "card", label: "Task card"/, "should offer a Task card option");
 assert.match(field, /value: "session", label: "Chat session"/, "should offer a Chat session option");
 assert.doesNotMatch(
   field,

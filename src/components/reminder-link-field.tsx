@@ -16,7 +16,7 @@ let sessionCache: Option[] | null = null;
 const KIND_OPTIONS: { value: LinkKind; label: string }[] = [
   { value: "none", label: "No link" },
   { value: "url", label: "URL" },
-  { value: "card", label: "Board card" },
+  { value: "card", label: "Task card" },
   { value: "session", label: "Chat session" },
 ];
 
@@ -155,7 +155,7 @@ export function ReminderLinkField({
             <div className={hintClass}>No board cards yet.</div>
           ) : (
             <StandardSelect
-              label="Board card"
+              label="Task card"
               value={value?.kind === "card" ? value.ref : ""}
               onChange={(next) => onChange(next ? { kind: "card", ref: next } : null)}
               options={cardOptions}
