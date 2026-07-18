@@ -82,5 +82,20 @@ assert.match(
   /No image uploaded — the app backdrop image is used\./,
   "the on-without-image state explains the app-image fallback",
 );
+assert.match(
+  source,
+  /appImagePresent\s*\?\s*"No image uploaded — the app backdrop image is used\."/,
+  "the app-image claim is made only when an app image actually exists",
+);
+assert.match(
+  source,
+  /only the backdrop tint shows until an image is set here or in Settings → Appearance\./,
+  "the no-image-anywhere state tells the truth about the tint-only render",
+);
+assert.match(
+  source,
+  /familiars\[familiarId\] !== true\) \{\s*setFamiliarBackdropEnabled\(familiarId, true\);/,
+  "uploading an image records an explicit on (guarded against redundant writes)",
+);
 
 console.log("familiar-studio-look-tab.test.ts: ok");

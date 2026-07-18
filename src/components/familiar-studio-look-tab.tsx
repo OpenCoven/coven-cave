@@ -7,11 +7,14 @@ import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import { useFamiliarImages } from "@/lib/cave-familiar-images";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
+import { readAppPreferences } from "@/lib/app-preferences";
 import {
   isFamiliarBackdropOn,
   prepareBackdropImage,
+  readBackdropPrefs,
   readFamiliarBackdropImage,
   setFamiliarBackdropEnabled,
+  useBackdropImageRevision,
   useBackdropPrefs,
   useFamiliarBackdropRevision,
   writeFamiliarBackdropImage,
@@ -304,6 +307,8 @@ function colorInputValue(color: string | null): string {
 function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
   const revision = useFamiliarBackdropRevision(familiarId);
   const prefs = useBackdropPrefs();
+  useBackdropImageRevision();
+  const appImagePresent = readAppPreferences().appearance.backdrop.image.present;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const enabled = isFamiliarBackdropOn(prefs, familiarId, previewUrl !== null);
   const [busy, setBusy] = useState(false);
@@ -339,7 +344,9 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
       const { blob } = await prepareBackdropImage(file);
       await writeFamiliarBackdropImage(familiarId, blob);
       setNote("Backdrop set — shows in chat while this familiar is active.");
-      setFamiliarBackdropEnabled(familiarId, true);
+      if (readBackdropPrefs().familiars[familiarId] !== true) {
+        setFamiliarBackdropEnabled(familiarId, true);
+      }
     } catch (err) {
       const heicLike = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
       setNote(
@@ -425,7 +432,9 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
         {enabled
           ? previewUrl
             ? "Shows in chat while this familiar is active — this image overrides the app backdrop."
-            : "No image uploaded — the app backdrop image is used."
+            : appImagePresent
+              ? "No image uploaded — the app backdrop image is used."
+              : "No image uploaded — only the backdrop tint shows until an image is set here or in Settings → Appearance."
           : "Off — the app backdrop (Settings → Appearance) applies as usual."}
       </p>
       {note ? <p className="familiar-studio-look__toast" role="status">{note}</p> : null}
