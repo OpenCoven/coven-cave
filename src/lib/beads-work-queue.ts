@@ -21,7 +21,55 @@ export type ReadyBead = {
    *  the verification-evidence signal: a recorded handoff/verification comment
    *  must exist before the queue exposes Close (cave-hlv.2). */
   comment_count?: number | null;
+  /** External ticket/PR ref (`gh-123`, `gh:owner/repo#123`, or a URL). NOT in
+   *  `bd ready --json` output today — populated only when the caller enriches
+   *  rows from `bd show`/`bd list`; the description fallback below covers the
+   *  ready-only path (cave-p63a). */
+  external_ref?: string | null;
+  /** Bead body. `bd ready --json` DOES include this — the File-bead flow writes
+   *  the source PR URL here, so the ref join works from ready output alone. */
+  description?: string | null;
 };
+
+/**
+ * True when a bead's external ref points at PR `prNumber`. Accepts the shapes
+ * beads carry in the wild: `gh-123`, `#123` (also as the `gh:owner/repo#123`
+ * suffix), and a PR URL ending in `/pull/123` (cave-p63a).
+ */
+export function beadRefMatchesPr(ref: string | null | undefined, prNumber: number): boolean {
+  const trimmed = ref?.trim();
+  if (!trimmed) return false;
+  const n = String(prNumber);
+  if (trimmed === `gh-${n}`) return true;
+  // `#123` alone or as the tail of `gh:owner/repo#123` — the `#` anchors the
+  // whole number, so `#4123` never matches PR 123.
+  if (trimmed.endsWith(`#${n}`)) return true;
+  return new RegExp(`/pull/${n}/?$`).test(trimmed);
+}
+
+// Description fallback for the ref join, anchored to what the queue's
+// File-bead flow actually writes: the PR's own URL (repo-qualified), or the
+// `Filed from unlinked PR #<n>` signature. A casual mention — "Follow-up to
+// PR #88", a foreign repo's /pull/88 URL — must NOT consume the bead as PR
+// 88's link (cave-opld; review of #3426). Digit-boundary-guarded so PR 123
+// never matches PR 1234's URL or token.
+function beadDescriptionMatchesPr(
+  description: string | null | undefined,
+  pr: Pick<PullRequestSummary, "number" | "url">,
+): boolean {
+  if (!description) return false;
+  const url = pr.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    new RegExp(`${url}(?!\\d)`).test(description) ||
+    new RegExp(`\\bFiled from unlinked PR #${pr.number}(?!\\d)`).test(description)
+  );
+}
+
+// Prefer the explicit external_ref when it names the PR; otherwise fall back
+// to the File-bead description signature (ready output carries no external_ref).
+function beadMatchesPr(bead: ReadyBead, pr: Pick<PullRequestSummary, "number" | "url">): boolean {
+  return beadRefMatchesPr(bead.external_ref, pr.number) || beadDescriptionMatchesPr(bead.description, pr);
+}
 
 /**
  * True when a bead carries recorded verification evidence — i.e. at least one
@@ -176,10 +224,18 @@ export function buildWorkQueue(
 
   // 1. Open PRs → their lane, joined to a ready bead when one is referenced.
   for (const pr of openPrs) {
-    const isUnlinked = pr.beadIds.length === 0;
+    let bead = pr.beadIds.map((id) => beadById.get(id)).find(Boolean);
+    // A PR mentioning no bead may still be claimed by one: a bead filed FROM
+    // the PR carries `gh-<n>`/URL in its external_ref or description
+    // (cave-p63a). That ref-join links the PR — familiar/surface/bead chip and
+    // all — instead of leaving it flagged unlinked.
+    if (pr.beadIds.length === 0 && !bead) {
+      bead = readyBeads.find((b) => beadMatchesPr(b, pr));
+    }
+    const isUnlinked = pr.beadIds.length === 0 && !bead;
     if (isUnlinked) unlinked.push(pr.number);
-    const bead = pr.beadIds.map((id) => beadById.get(id)).find(Boolean);
     for (const id of pr.beadIds) beadIdsWithOpenPr.add(id);
+    if (bead) beadIdsWithOpenPr.add(bead.id.toLowerCase());
     const stale = isStalePr(pr, opts.nowMs, staleAfterHours);
     if (stale) staleCount += 1;
     if (isUnlinked || stale) attention.push({ pr, unlinked: isUnlinked, stale });
@@ -258,8 +314,9 @@ export function buildWorkQueue(
   };
 }
 
-// Stable, deterministic ordering within a lane: PRs by number, beads by
-// priority then id — no wall-clock, so the render is reproducible.
+// Stable, deterministic ordering within a lane: PRs by number; beads by
+// priority, oldest update, then id. The timestamp comes from the item data,
+// not the wall clock, so identical inputs remain reproducible.
 function itemSortKey(item: WorkQueueItem): string {
   if (item.pr) return `0:${String(item.pr.number).padStart(8, "0")}`;
   if (item.merged) return `0:${String(item.merged.number).padStart(8, "0")}`;

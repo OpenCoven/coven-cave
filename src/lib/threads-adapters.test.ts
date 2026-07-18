@@ -3,8 +3,7 @@
 // with an injected daemon call and temp coven homes — the real socket and a
 // live daemon belong to the Phase 4 E2E lane (threads-986.17.6).
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 
@@ -25,14 +24,15 @@ const THREAD_FRAYED = "aaaaaaa2-0002-4002-8002-000000000001";
 const FRAYED_STRAND = "bbbbbbb2-0002-4002-8002-000000000001";
 const PROPOSAL_OK = "cccccccc-0001-4001-8001-000000000001";
 
-const tempDirs: string[] = [];
+const tempRoot = path.join(process.cwd(), "artifacts", "test-tmp", `threads-adapters-${process.pid}`);
+let tempCounter = 0;
 function tempDir(prefix: string): string {
-  const dir = mkdtempSync(path.join(tmpdir(), prefix));
-  tempDirs.push(dir);
+  const dir = path.join(tempRoot, `${prefix}${++tempCounter}`);
+  mkdirSync(dir, { recursive: true });
   return dir;
 }
 after(() => {
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  rmSync(tempRoot, { recursive: true, force: true });
 });
 
 function assertMeta(envelope: ThreadsEnvelope<unknown>, adapter: "fixtures" | "daemon") {
@@ -50,9 +50,13 @@ describe("fixtures adapter — weave states", () => {
     assertMeta(res, "fixtures");
     assert.equal(res.blocked, false);
     assert.equal(res.data?.length, 1);
-    assert.equal(res.data?.[0]?.id, WEAVE_HOLDS);
-    assert.deepEqual(res.data?.[0]?.tensionRollup, { state: "holds" });
-    assert.equal(res.data?.[0]?.coherence, "coherent");
+    assert.equal(res.data?.[0]?.familiarId, "sage");
+    assert.equal("kind" in res.data![0]!, false);
+    const weave = res.data?.[0];
+    assert.ok(weave && !("kind" in weave));
+    assert.equal(weave.id, WEAVE_HOLDS);
+    assert.deepEqual(weave.tensionRollup, { state: "holds" });
+    assert.equal(weave.coherence, "coherent");
     assert.equal(res.meta.verified, true);
   });
 
@@ -103,6 +107,16 @@ describe("fixtures adapter — weave states", () => {
     const res = await empty.listWeaves();
     assert.equal(res.blocked, true);
     assert.equal(res.why, "no-fixture");
+  });
+
+  it("degraded fixture is served beside healthy weaves for daemon-absent R12 exercise", async () => {
+    const res = await adapter.listWeaves("charm");
+    assert.equal(res.blocked, false);
+    assert.equal(res.data?.length, 1);
+    const degraded = res.data?.[0];
+    assert.ok(degraded && "kind" in degraded);
+    assert.equal(degraded.familiarId, "charm");
+    assert.equal(degraded.reason, "ward-config-unparseable");
   });
 });
 
@@ -260,9 +274,49 @@ describe("daemon adapter — weave reads fail closed without a daemon", () => {
     });
     const res = await adapter.listWeaves();
     assert.equal(res.blocked, false);
-    assert.equal(res.data?.[0]?.familiarId, "sage");
+    const weave = res.data?.[0];
+    assert.ok(weave && !("kind" in weave));
+    assert.equal(weave.familiarId, "sage");
     // An empty weave still rolls up unknown, not healthy.
-    assert.equal(res.data?.[0]?.tensionRollup.state, "unknown");
+    assert.equal(weave.tensionRollup.state, "unknown");
+  });
+
+  it("a daemon mixed response carries both healthy weaves and degraded familiars", async () => {
+    let degradedError = "missing field `principal_key_fingerprint`";
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() =>
+        ({
+          ok: true,
+          status: 200,
+          data: [
+            {
+              weave: { id: WEAVE_HOLDS, familiar_id: "sage", threads: [], weave_hash: [1, 2] },
+              coherence: "Coherent",
+            },
+            {
+              degraded: {
+                familiarId: "charm",
+                reason: "ward-config-unparseable",
+                error: degradedError,
+              },
+            },
+          ] as unknown as T,
+        }) as { ok: true; status: number; data: T },
+      covenHomeDir: tempDir("phase4-home-"),
+    });
+    const res = await adapter.listWeaves();
+    assert.equal(res.blocked, false);
+    assert.equal(Array.isArray(res.data), true, "the additive route keeps its list response contract");
+    assert.equal(res.data?.length, 2);
+    const degraded = res.data?.find((entry) => "kind" in entry);
+    assert.equal(degraded?.familiarId, "charm");
+    degradedError = "invalid type: integer, expected a string";
+    const changed = await adapter.listWeaves();
+    assert.notEqual(
+      changed.meta.sourceCursor,
+      res.meta.sourceCursor,
+      "the trace cursor covers changed error evidence",
+    );
   });
 });
 
@@ -569,7 +623,9 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
 
   it("fixture weave-unknown rolls up unknown at the rail — R1 end to end", async () => {
     const res = await new FixturesThreadsAdapter().listWeaves("cody");
-    assert.equal(res.data?.[0]?.tensionRollup.state, "unknown");
-    assert.equal(res.data?.[0]?.coherence, "unknown");
+    const weave = res.data?.[0];
+    assert.ok(weave && !("kind" in weave));
+    assert.equal(weave.tensionRollup.state, "unknown");
+    assert.equal(weave.coherence, "unknown");
   });
 });

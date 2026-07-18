@@ -14,6 +14,9 @@ type BeadsPostBody = {
   id?: string;
   comment?: string;
   reason?: string;
+  /** claim action: claim on behalf of a familiar instead of the connected
+   *  user — becomes `--assignee <value> --status in_progress` (cave-p63a). */
+  assignee?: string;
   projectRoot?: string;
   /** create action: the new bead's title (required). */
   title?: string;
@@ -144,9 +147,16 @@ export async function POST(req: Request) {
 
   let args: string[];
   switch (parsed.body.action) {
-    case "claim":
-      args = ["update", id, "--claim", "--json"];
+    case "claim": {
+      // Bare claim assigns the connected user (`--claim`); with an assignee the
+      // claim lands on that familiar instead — bd exposes this as explicit
+      // --assignee/--status flags rather than a claim-for variant (cave-p63a).
+      const assignee = parsed.body.assignee?.trim();
+      args = assignee
+        ? ["update", id, "--assignee", assignee, "--status", "in_progress", "--json"]
+        : ["update", id, "--claim", "--json"];
       break;
+    }
     case "comment": {
       const comment = parsed.body.comment?.trim();
       if (!comment) return NextResponse.json({ ok: false, error: "comment required" }, { status: 400 });

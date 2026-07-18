@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * Global stop phrase — a safety valve for running chat tasks.
+ * Global stop phrases — a safety valve for running chat tasks.
  *
  * While a familiar is mid-task the composer normally swallows plain sends
- * (CHAT-D5-01 keeps the draft intact instead of destroying it). Typing the
+ * (CHAT-D5-01 keeps the draft intact instead of destroying it). Typing a
  * configured stop phrase is the exception: it is treated as a command, not a
  * prompt — the running turn is cancelled exactly as if the Stop button were
- * pressed. The phrase lives in the synced preferences file
- * (`general.stopPhrase`, default "stop"); Settings → General owns the input.
- * Clearing the phrase disables the interception entirely.
+ * pressed. The preference is a comma-separated list of phrases living in the
+ * synced preferences file (`general.stopPhrase`, default
+ * "stop, cancel, halt, abort"); Settings → General owns the input. Clearing
+ * the field disables the interception entirely.
  *
  * Matching is deliberately exact (after normalization): "stop" halts the
  * task, but "stop using tabs" is an instruction for the model and must never
@@ -43,14 +44,31 @@ export function normalizeStopUtterance(raw: string): string {
 }
 
 /**
- * True when `text` IS the stop phrase (not merely contains it). An empty or
- * unset phrase never matches — that is the off switch.
+ * The preference stores one or more comma-separated phrases
+ * ("stop, cancel, halt"). Returns the normalized, de-duplicated candidates;
+ * an empty result means the feature is off.
+ */
+export function parseStopPhrases(phrase: string): string[] {
+  if (typeof phrase !== "string") return [];
+  const candidates = new Set<string>();
+  for (const part of phrase.split(",")) {
+    const normalized = normalizeStopUtterance(part);
+    if (normalized) candidates.add(normalized);
+  }
+  return [...candidates];
+}
+
+/**
+ * True when `text` IS one of the configured stop phrases (not merely contains
+ * one). An empty or unset phrase list never matches — that is the off switch.
  */
 export function matchesStopPhrase(text: string, phrase: string): boolean {
-  const normalizedPhrase = normalizeStopUtterance(phrase);
-  if (!normalizedPhrase) return false;
+  const candidates = parseStopPhrases(phrase);
+  if (candidates.length === 0) return false;
   if (typeof text !== "string" || text.length > STOP_PHRASE_MAX_LENGTH * 4) return false;
-  return normalizeStopUtterance(text) === normalizedPhrase;
+  const normalizedText = normalizeStopUtterance(text);
+  if (!normalizedText) return false;
+  return candidates.includes(normalizedText);
 }
 
 const listeners = new Set<() => void>();

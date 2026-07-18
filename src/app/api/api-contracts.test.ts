@@ -36,6 +36,7 @@ const contracts: RouteContract[] = [
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/chat/conversation", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },

@@ -7,9 +7,10 @@ import {
   NativeUpdateCoordinator,
 } from "../lib/native-update-coordinator.ts";
 
-const [src, preparationSrc] = await Promise.all([
+const [src, preparationSrc, layoutSrc] = await Promise.all([
   readFile(new URL("./update-available.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/native-update-preparation.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
 ]);
 
 // Desktop-only: both surfaces gate on the Tauri desktop hook.
@@ -27,6 +28,11 @@ assert.doesNotMatch(
 assert.match(src, /@tauri-apps\/plugin-updater/, "uses the native Tauri updater plugin");
 assert.match(preparationSrc, /update\.download\(/, "downloads through the native updater");
 assert.match(src, /update\.install\(\)/, "installs the prepared native update");
+assert.match(
+  src,
+  /await updateDaemonForCaveUpdate\(update\.version, \{ confirmInstall: true \}\);\s*await update\.install\(\)/,
+  "updates and verifies the Coven daemon before replacing the Cave app",
+);
 assert.doesNotMatch(src, /downloadAndInstall/, "does not combine download with immediate process exit");
 assert.match(src, /@tauri-apps\/plugin-process/, "relaunches via the process plugin");
 assert.match(src, /relaunch\(\)/, "relaunches the app after install");
@@ -54,6 +60,18 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
+assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
+assert.match(src, /updateDaemonForCaveUpdate\(APP_VERSION/, "startup reconciliation targets the running Cave version");
+assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
+assert.match(src, /const start = \(confirmInstall = false\)/, "startup reconciliation never silently confirms a global install");
+assert.match(src, /result === "confirmation-required"/, "startup reconciliation offers confirmation instead of reporting a failed install");
+assert.match(src, /start\(true\)/, "the daemon update CTA records the user's install confirmation");
+assert.match(src, /\.then\(\(result\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "a successful retry clears the failure banner even when the CLI is already current");
+assert.match(
+  layoutSrc,
+  /<ShellBannersProvider>[\s\S]{0,100}<DaemonReleaseAlignmentTrigger \/>/,
+  "every app route mounts post-update daemon reconciliation inside the banner provider",
+);
 assert.match(src, /export function UpdateSettingsRow/, "exports the settings row");
 assert.match(src, /async function resolveUpdate/, "resolves native-first, then fallback");
 assert.match(src, /kind:\s*"native-unavailable"/, "preserves native updater check failures as a distinct update state");
@@ -95,6 +113,7 @@ assert.match(src, /Download update/, "native path prepares the update without ex
 assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Verifying signature…/, "shows signature verification progress");
 assert.match(src, /Restart &amp; install/, "prepared update offers an explicit restart action");
+assert.match(src, /Updating daemon &amp; installing/, "install state explains that the daemon is updated first");
 assert.match(src, />\s*Cancel\s*</, "settings row allows preparation cancellation");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");

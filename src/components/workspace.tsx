@@ -50,6 +50,7 @@ import {
   createDaemonStatusRequestGate,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
+import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
@@ -120,6 +121,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
@@ -680,6 +682,10 @@ export function Workspace() {
   }, []);
 
   const startDaemon = useCallback(async () => {
+    // The release-alignment trigger may be replacing the CLI after observing
+    // this same offline state. Starting the old binary during that window can
+    // lock coven.exe on Windows and make the update fail.
+    await waitForDaemonUpdateIdle();
     await runWorkspaceDaemonStart({
       fetchImpl: fetch,
       dismissError: () => dismissBanner("daemon-start-error"),
@@ -1816,6 +1822,25 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Voice new-chat: create the empty conversation the call will attach to,
+  // then route to chat with autoVoice so the overlay opens on arrival. On
+  // failure stay on Home — no navigation, no orphan state. The mint is an
+  // awaited round-trip, so re-check modeRef before navigating: if the user
+  // already left Home while it was in flight, don't yank them back into a
+  // chat they didn't ask for.
+  const startVoiceChat = useCallback(async (familiarId: string, projectRoot: string | null) => {
+    const result = await startVoiceConversation(familiarId, projectRoot);
+    if (!result.ok) {
+      pushToast(voiceChatStartErrorMessage(result.error));
+      return;
+    }
+    if (modeRef.current !== "home") return;
+    setActiveId(familiarId);
+    setPendingProjectChatRoot(projectRoot ?? null);
+    setPendingChatAction({ kind: "open", sessionId: result.sessionId, familiarId, autoVoice: true, nonce: Date.now() });
+    setMode("chat");
+  }, [pushToast]);
+
   // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
   // familiar" — startFamiliarChat handles both the off-chat (switch + new
   // thread) and in-chat (new thread) cases (cave-xsq.6).
@@ -2727,6 +2752,7 @@ export function Workspace() {
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
+        onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
