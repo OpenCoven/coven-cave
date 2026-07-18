@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 const deps: VoiceChatCreateDeps = {
   loadFamiliarBinding: async (familiarId) => {
     const config = await loadConfig();
-    if (!config.familiars?.[familiarId]) return null;
+    if (!Object.hasOwn(config.familiars ?? {}, familiarId)) return null;
     const binding = bindingFor(config, familiarId);
     return { harness: binding.harness };
   },
