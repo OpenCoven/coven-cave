@@ -57,6 +57,18 @@ export function isOmnigentServerUrlConfigured(): boolean {
 }
 
 /**
+ * Master feature switch: the Omnigent fleet is active only when
+ * `OMNIGENT_SERVER_URL` is set up in the Cave Vault AND the user explicitly
+ * enabled the fleet in Cave config (the Settings → Daemon toggle, off by
+ * default). The Vault key alone merely surfaces the enable toggle; the toggle
+ * without the Vault key activates nothing. While inactive, every Omnigent
+ * surface stays hidden and the API routes refuse to contact any server.
+ */
+export function isOmnigentFleetActive(omnigent: { enabled?: boolean } | undefined): boolean {
+  return omnigent?.enabled === true && isOmnigentServerUrlConfigured();
+}
+
+/**
  * The effective Omnigent base URL: `OMNIGENT_SERVER_URL` from the Cave Vault
  * wins over the Cave-config value (which remains a fallback for a configured
  * ref that fails to resolve). Returns "" when neither source has a URL.

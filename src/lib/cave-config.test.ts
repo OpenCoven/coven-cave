@@ -267,3 +267,14 @@ try {
   assert.match(src, /async function withConfigLock<T>/, "cave-config has a config mutex helper");
   assert.equal((src.match(/return withConfigLock\(async \(\) => \{/g) || []).length, 5, "all config writers run under the lock");
 }
+
+// ── Omnigent enable toggle (explicit opt-in) ─────────────────────────────────
+// The fleet master switch defaults OFF: pre-toggle configs (no `enabled`
+// field) and non-boolean input normalize to false; only literal true persists.
+// The Settings → Daemon toggle PATCHes exactly this field.
+{
+  assert.equal(config.normalizeOmnigentConfig(undefined).enabled, false, "absent omnigent config → fleet off");
+  assert.equal(config.normalizeOmnigentConfig({}).enabled, false, "missing enabled field → fleet off");
+  assert.equal(config.normalizeOmnigentConfig({ enabled: "yes" }).enabled, false, "non-boolean enabled → fleet off");
+  assert.equal(config.normalizeOmnigentConfig({ enabled: true }).enabled, true, "explicit true persists");
+}
