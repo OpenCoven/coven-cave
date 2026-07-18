@@ -1,9 +1,9 @@
 // @ts-nocheck
-// Sidebar open-state memory: the nav panel's open/collapsed state is one
-// GLOBAL user preference (cave:shell:nav-open) applied on boot and on every
-// panel-group switch, so a fresh desktop launch restores the sidebar exactly
-// as the user left it — regardless of which surface (two-pane Home group vs
-// three-pane Chat group) last persisted its own panel-library layout.
+// Sidebar open-state memory: the GLOBAL nav panel's open/collapsed state
+// (cave:shell:nav-open) is separate from the persistent Chats list pane.
+// Remembered routes restore that nav state on boot and group switches, while
+// visit-collapsed chat routes temporarily collapse the global nav without
+// overwriting the saved preference or the list pane's own layout.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

@@ -80,6 +80,21 @@ assert.match(
   /collapsible=\{isMobile \|\| listPolicy === "collapsible"\}/,
   "List panel is drawer-capable on mobile but non-collapsible on desktop under the persistent policy",
 );
+assert.match(
+  shell,
+  /if \(meta && key === "\\\\" && !twoPane\) \{[\s\S]{0,140}?if \(isMobile\) toggleDrawerSlot\("list"\);[\s\S]{0,140}?else if \(listPolicy === "collapsible"\) togglePanel\(listRef\.current\);/,
+  "Cmd/Ctrl+\\ toggles the mobile list drawer, and only toggles the desktop list when policy is collapsible",
+);
+assert.match(
+  shell,
+  /closeList: \(\) => \{\s*if \(isMobile\) \{ setMobileDrawer\(\(c\) => \(c === "list" \? null : c\)\); return; \}\s*if \(listPolicy === "persistent"\) return;\s*listRef\.current\?\.collapse\(\);/,
+  "closeList dismisses the mobile list drawer but no-ops on a persistent desktop list",
+);
+assert.match(
+  shell,
+  /toggleList: \(\) => \{\s*if \(isMobile\) \{ toggleDrawer\("list"\); return; \}\s*if \(listPolicy === "persistent"\) return;\s*togglePanel\(listRef\.current\);/,
+  "toggleList toggles the mobile list drawer but no-ops on a persistent desktop list",
+);
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —
 // if one side changes, this keeps the other honest.

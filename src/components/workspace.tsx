@@ -430,8 +430,9 @@ export function Workspace() {
     }
     setModeRaw(next);
   }, []);
-  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
-  // Its back control returns to the surface the user came from.
+  // Chat mode keeps the global nav in the nav pane and mounts the project-
+  // grouped Chats list beside it. The Chats header back control returns to the
+  // last non-chat surface the user came from.
   const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.

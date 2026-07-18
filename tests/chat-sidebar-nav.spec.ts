@@ -41,9 +41,9 @@ async function gotoChat(page: Page) {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
-    // Chat visits keep the global nav collapsed; seed the shared preference the
-    // same way so reloads stay deterministic while the Chats list remains open.
-    window.localStorage.setItem("cave:shell:nav-open", "0");
+    // Seed the remembered global-nav preference OPEN; chat visits must still
+    // collapse the nav for the visit while keeping the separate Chats list open.
+    window.localStorage.setItem("cave:shell:nav-open", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
@@ -58,20 +58,37 @@ async function gotoChat(page: Page) {
 }
 
 test.describe("chat sidebar (session navigator)", () => {
-  test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
+  test("chat visit collapses remembered nav but keeps the persistent Chats list", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
     const nav = page.locator('aside[aria-label="Sidebar"]');
+    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
 
-    // Chat mode keeps the global nav separate and collapsed while the Chats
-    // sidebar lives in the dedicated list pane.
+    // Chat mode keeps the global nav separate and temporarily collapsed even if
+    // the remembered preference is open; the persistent Chats list remains live.
     await expect(sidebar).toBeVisible();
+    await expect(search).toBeVisible();
     await expect(nav).toBeVisible();
     await expect(nav.locator(".chat-sidebar")).toHaveCount(0);
+    await expect(page.locator(".chat-thread-rail")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
     const navToggle = page.getByRole("button", { name: "Expand navigation" });
     await expect(navToggle).toHaveAttribute("aria-expanded", "false");
+
+    // The desktop list shortcut must not collapse the persistent Chats list.
+    await page.keyboard.press("Control+\\");
+    await expect(search).toBeVisible();
+    await expect(navToggle).toHaveAttribute("aria-expanded", "false");
+
     await navToggle.click();
-    await expect(page.getByRole("button", { name: "Collapse navigation to icons" })).toBeVisible();
+    await expect(search).toBeVisible();
+    await expect(page.getByRole("button", { name: /Expand navigation|Collapse navigation to icons/ })).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
+  });
+
+  test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
 
     // Search control survives in both views.
     await expect(sidebar.getByRole("searchbox", { name: "Search projects and threads" })).toBeVisible();
@@ -98,6 +115,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await page.reload();
     await ensureChatSurface(page);
     const reloadedSidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
+    await expect(page.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");
     await expect(reloadedSidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
     await expect(reloadedSidebar.getByText("Today", { exact: true })).toHaveCount(0);
   });
