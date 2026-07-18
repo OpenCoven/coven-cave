@@ -669,7 +669,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       const res = await fetch("/api/onboarding/install", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target }),
+        body: JSON.stringify({ target, confirmInstall: true }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         started?: boolean;

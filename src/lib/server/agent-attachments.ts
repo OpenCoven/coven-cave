@@ -84,17 +84,33 @@ function parseMarker(body: string): AttachmentMarker | null {
   };
 }
 
+function isWithinRoot(candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate);
+  return !relative || (
+    relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative)
+  );
+}
+
 function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string[] = []): string | null {
   // Marker paths and granted roots exist only at chat runtime and are bounded
   // by the allowlist below; they are never server bundle inputs.
-  const resolvedMarkerPath = path.resolve(/* turbopackIgnore: true */ markerPath);
+  let realMarkerPath: string;
+  try {
+    realMarkerPath = fs.realpathSync(/* turbopackIgnore: true */ markerPath);
+  } catch {
+    return null;
+  }
+
   for (const root of allowedRoots) {
-    const resolvedRoot = path.resolve(/* turbopackIgnore: true */ root);
-    const relative = path.relative(/* turbopackIgnore: true */ resolvedRoot, resolvedMarkerPath);
-    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
-      return resolvedMarkerPath;
+    let realRoot: string;
+    try {
+      realRoot = fs.realpathSync(/* turbopackIgnore: true */ root);
+    } catch {
+      continue;
     }
-    if (!relative) return resolvedMarkerPath;
+    if (isWithinRoot(realMarkerPath, realRoot)) return realMarkerPath;
   }
   return null;
 }

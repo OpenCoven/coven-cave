@@ -5,6 +5,7 @@ import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   globalNpmInstallOwner,
   releaseGlobalNpmInstall,
@@ -899,6 +900,9 @@ async function runInstallJob(
 }
 
 export async function GET(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const target = new URL(req.url).searchParams.get("target");
   // Client surfaces poll this lightweight lane view so a job started from a
   // different surface/window disables its own npm actions immediately.
@@ -917,6 +921,9 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const target = new URL(req.url).searchParams.get("target");
   if (!isInstallTarget(target)) {
     return NextResponse.json(
@@ -941,7 +948,10 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { target?: unknown };
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
+  let body: { target?: unknown; confirmInstall?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -954,6 +964,12 @@ export async function POST(req: Request) {
   if (!isInstallTarget(body.target)) {
     return NextResponse.json(
       { ok: false, error: "unknown install target" },
+      { status: 400 },
+    );
+  }
+  if (body.confirmInstall !== true) {
+    return NextResponse.json(
+      { ok: false, error: "explicit install confirmation required" },
       { status: 400 },
     );
   }
