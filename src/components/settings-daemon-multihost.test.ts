@@ -107,6 +107,10 @@ const statusRoute = readFileSync(
   new URL("../app/api/omnigent/status/route.ts", import.meta.url),
   "utf8",
 );
+const fleetGateHook = readFileSync(
+  new URL("../lib/omnigent/use-fleet-gate.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
   shell,
   /if \(serverUrlInVault !== true\) return null;/,
@@ -126,6 +130,26 @@ assert.match(
   shell,
   /JSON\.stringify\(\{ omnigent: \{ enabled: next \} \}\)/,
   "the enable toggle PATCHes exactly omnigent.enabled — nothing else",
+);
+assert.match(
+  shell,
+  /if \(!next\) publishFleetTokenStatus\(null\);/,
+  "disabling immediately hides Fleet controls that are already mounted",
+);
+assert.match(
+  shell,
+  /publishFleetTokenStatus\(st\);/,
+  "a successful enable refresh publishes the new gate to mounted Fleet controls",
+);
+assert.match(
+  shell,
+  /The config PATCH already succeeded[\s\S]*setStatusLine\("Status unavailable · try again later"\);/,
+  "a failed follow-up status refresh does not report the already-persisted toggle as failed",
+);
+assert.match(
+  fleetGateHook,
+  /for \(const listener of listeners\) listener\(enabled\);/,
+  "published gate changes update every mounted Fleet control instead of leaving the page-load cache stale",
 );
 assert.match(
   shell,

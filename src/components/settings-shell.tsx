@@ -79,6 +79,7 @@ import {
   reapplyIndependentAppearance,
 } from "@/lib/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
+import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -804,13 +805,30 @@ function OmnigentSettingsGroup() {
       }
       setEnabled(next);
       announce(next ? "Omnigent fleet enabled." : "Omnigent fleet disabled.");
-      const st = await fetch("/api/omnigent/status", { cache: "no-store" }).then((r) => r.json());
-      setActiveBaseUrl(typeof st?.baseUrl === "string" ? st.baseUrl : "");
-      if (!st?.configured) setStatusLine("Not configured");
-      else if (st?.online) {
-        const mode = st.authMode || (st.hasToken ? "jwt" : "none");
-        setStatusLine(mode === "none" ? "Online · local/unauthenticated" : `Online · auth ${mode}`);
-      } else setStatusLine(st?.error ? `Offline · ${st.error}` : "Offline");
+      // Disabling must hide already-mounted Fleet controls immediately. Enabling
+      // publishes the refreshed status below only after the server confirms the
+      // token/auth gate, so dependent surfaces continue to fail closed.
+      if (!next) publishFleetTokenStatus(null);
+      try {
+        const statusRes = await fetch("/api/omnigent/status", { cache: "no-store" });
+        const st = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok || st?.ok === false) {
+          throw new Error(st?.error || `status failed (${statusRes.status})`);
+        }
+        publishFleetTokenStatus(st);
+        setActiveBaseUrl(typeof st?.baseUrl === "string" ? st.baseUrl : "");
+        if (!st?.configured) setStatusLine("Not configured");
+        else if (st?.online) {
+          const mode = st.authMode || (st.hasToken ? "jwt" : "none");
+          setStatusLine(mode === "none" ? "Online · local/unauthenticated" : `Online · auth ${mode}`);
+        } else setStatusLine(st?.error ? `Offline · ${st.error}` : "Offline");
+      } catch {
+        // The config PATCH already succeeded, so do not report the toggle as
+        // failed merely because this optional status refresh was unavailable.
+        publishFleetTokenStatus(null);
+        setActiveBaseUrl("");
+        setStatusLine("Status unavailable · try again later");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "could not save";
       setError(msg);
