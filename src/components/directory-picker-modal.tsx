@@ -55,8 +55,10 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [createBusy, setCreateBusy] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
   const newFolderTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const modalSessionRef = useRef(0);
+  const loadGenerationRef = useRef(0);
   const newFolderHintId = "directory-picker-new-folder-help";
   const newFolderErrorId = "directory-picker-new-folder-error";
 
@@ -69,13 +71,14 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
     if (sessionGeneration !== modalSessionRef.current) return;
+    const loadGeneration = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
     try {
       const url = dir ? `/api/fs-browse?dir=${encodeURIComponent(dir)}` : "/api/fs-browse";
       const res = await fetch(url, { cache: "no-store" });
       const body = (await res.json()) as BrowseResponse;
-      if (sessionGeneration !== modalSessionRef.current) return;
+      if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       if (!res.ok || !body.ok || !body.cwd) {
         setError(body.error ?? "Could not read that folder");
         return;
@@ -85,10 +88,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setParent(body.parent ?? null);
       setEntries(body.entries ?? []);
     } catch {
-      if (sessionGeneration !== modalSessionRef.current) return;
+      if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       setError("Could not reach the folder browser");
     } finally {
-      if (sessionGeneration === modalSessionRef.current) setLoading(false);
+      if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
+      setLoading(false);
     }
   }, []);
 
@@ -98,6 +102,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     const sessionGeneration = modalSessionRef.current;
     if (open) void load(null, sessionGeneration);
     else {
+      loadGenerationRef.current += 1;
       setHome(null);
       setCwd(null);
       setParent(null);
@@ -130,8 +135,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!cwd || createBusy) return;
     const sessionGeneration = modalSessionRef.current;
     let shouldRefocusInput = false;
-    let shouldRefocusTrigger = false;
-    newFolderTriggerRef.current?.focus({ preventScroll: true });
+    let shouldRefocusCloseButton = false;
+    closeButtonRef.current?.focus({ preventScroll: true });
     setCreateBusy(true);
     setNewFolderError(null);
     try {
@@ -151,7 +156,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       }
       resetCreateFolderState({ preserveBusy: true });
       await load(body.path, sessionGeneration);
-      if (sessionGeneration === modalSessionRef.current) shouldRefocusTrigger = true;
+      if (sessionGeneration === modalSessionRef.current) shouldRefocusCloseButton = true;
     } catch {
       if (sessionGeneration !== modalSessionRef.current) return;
       shouldRefocusInput = true;
@@ -159,8 +164,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     } finally {
       if (sessionGeneration !== modalSessionRef.current) return;
       setCreateBusy(false);
-      if (shouldRefocusTrigger) {
-        requestAnimationFrame(() => newFolderTriggerRef.current?.focus({ preventScroll: true }));
+      if (shouldRefocusCloseButton) {
+        requestAnimationFrame(() => closeButtonRef.current?.focus({ preventScroll: true }));
       }
       if (shouldRefocusInput) {
         requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
@@ -214,6 +219,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
         <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
           <span className="text-[13px] font-semibold text-[var(--text-primary)]">Choose a project folder</span>
           <Button
+            ref={closeButtonRef}
             variant="ghost"
             size="xs"
             onClick={onClose}

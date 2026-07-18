@@ -74,10 +74,21 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
     "no hooks appear after the closed-modal early return",
   );
   assert.match(src, /const modalSessionRef = useRef\(0\);/, "tracks a modal session generation");
+  assert.match(src, /const loadGenerationRef = useRef\(0\);/, "tracks per-load ordering within a modal session");
   assert.match(
     src,
     /modalSessionRef\.current \+= 1;[\s\S]*if \(open\) void load\(null, sessionGeneration\);/,
     "opening or closing the modal bumps the session generation before loading",
+  );
+  assert.match(
+    src,
+    /const loadGeneration = \+\+loadGenerationRef\.current;[\s\S]*if \(sessionGeneration !== modalSessionRef\.current \|\| loadGeneration !== loadGenerationRef\.current\) return;[\s\S]*finally \{\s*if \(sessionGeneration !== modalSessionRef\.current \|\| loadGeneration !== loadGenerationRef\.current\) return;\s*setLoading\(false\);/,
+    "load ignores stale same-session responses and stale finally writes",
+  );
+  assert.match(
+    src,
+    /else \{\s*loadGenerationRef\.current \+= 1;[\s\S]*setHome\(null\);[\s\S]*setLoading\(false\);/,
+    "closing the modal invalidates pending loads before resetting state",
   );
   assert.match(
     src,
@@ -86,10 +97,12 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(src, /const newFolderTriggerRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the New folder trigger");
   assert.match(src, /ref=\{newFolderTriggerRef\}/, "wires the trigger ref to the New folder button");
+  assert.match(src, /const closeButtonRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the header Close button");
+  assert.match(src, /ref=\{closeButtonRef\}/, "wires the stable ref to the header Close button");
   assert.match(
     src,
-    /newFolderTriggerRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
-    "submit keeps focus on the New folder trigger before busy disables inline controls",
+    /closeButtonRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
+    "submit moves focus to the stable Close button before busy disables inline controls",
   );
   assert.match(
     src,
@@ -103,8 +116,23 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(
     src,
-    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) shouldRefocusTrigger = true;/,
-    "successful creation refocuses the New folder trigger after navigation",
+    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) shouldRefocusCloseButton = true;/,
+    "successful creation refocuses the stable Close button after navigation",
+  );
+  assert.match(
+    src,
+    /if \(shouldRefocusCloseButton\) \{\s*requestAnimationFrame\(\(\) => closeButtonRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
+    "post-navigation focus lands on the stable Close button",
+  );
+  assert.doesNotMatch(
+    src,
+    /newFolderTriggerRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
+    "the disabled New folder trigger is not used as the submit focus target",
+  );
+  assert.doesNotMatch(
+    src,
+    /shouldRefocusTrigger = true/,
+    "success focus no longer targets the New folder trigger",
   );
   assert.doesNotMatch(
     src,
