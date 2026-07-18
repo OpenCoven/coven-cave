@@ -2997,7 +2997,30 @@ details[open] > .cave-tool-summary::before {
 .familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff); outline-offset: var(--ring-offset, 2px); }
 .familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
 .familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.familiar-inline-card__memory-item { display: flex; flex-direction: column; gap: 1px; }
+/* Peek rows are cards: the whole row is a button that opens the doc in the
+   Grimoire. Quiet at rest; hairline + wash raise on hover/focus. */
+.familiar-inline-card__memory-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.familiar-inline-card__memory-item:hover {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+}
+.familiar-inline-card__memory-time { display: inline-flex; align-items: center; gap: var(--space-1); }
+.familiar-inline-card__memory-open { opacity: 0; color: var(--text-muted); transition: opacity 120ms ease; }
+.familiar-inline-card__memory-item:hover .familiar-inline-card__memory-open,
+.familiar-inline-card__memory-item:focus-visible .familiar-inline-card__memory-open { opacity: 1; }
 .familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
 .familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
