@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -105,6 +105,57 @@ try {
   assert.deepEqual(reusedPidResult.errors, []);
   assert.ok(Date.now() - reusedPidStartedAt < 2_000, "aged claim is reclaimed despite PID reuse");
   assert.deepEqual(JSON.parse(await readFile(path.join(reusedPidCave, "config.json"), "utf8")), { windows: true });
+
+  // Persistent Windows EPERM while publishing candidate directories must stop
+  // at the documented deadline and remove every contender-owned candidate.
+  const candidateFailureHome = path.join(root, "candidate-eperm", ".coven");
+  process.env.COVEN_HOME = candidateFailureHome;
+  const candidateFailureCave = path.join(candidateFailureHome, "cave");
+  await mkdir(candidateFailureCave, { recursive: true });
+  let candidateAttempts = 0;
+  const persistentEperm = async () => {
+    candidateAttempts += 1;
+    const error = new Error("injected persistent Windows EPERM") as NodeJS.ErrnoException;
+    error.code = "EPERM";
+    throw error;
+  };
+  await assert.rejects(
+    migrateCaveHome({ lockTimeoutMs: 150, lockCandidateRename: persistentEperm }),
+    (error) => error?.code === "ETIMEDOUT",
+  );
+  assert.ok(candidateAttempts >= 2);
+  assert.equal(
+    (await readdir(candidateFailureCave)).some((name) => name.startsWith(".migration.lock.candidate-")),
+    false,
+  );
+
+  // The same bound applies when Windows repeatedly refuses to fence a lock
+  // whose owner has published release intent.
+  const reclaimFailureHome = path.join(root, "reclaim-eperm", ".coven");
+  process.env.COVEN_HOME = reclaimFailureHome;
+  const reclaimFailureCave = path.join(reclaimFailureHome, "cave");
+  const reclaimFailureLock = path.join(reclaimFailureCave, ".migration.lock");
+  await mkdir(reclaimFailureLock, { recursive: true });
+  await writeFile(path.join(reclaimFailureLock, "owner.json"), JSON.stringify({
+    pid: process.pid,
+    token: "released-owner",
+    releasedAt: new Date().toISOString(),
+  }));
+  let reclaimAttempts = 0;
+  await assert.rejects(
+    migrateCaveHome({
+      lockTimeoutMs: 150,
+      lockFenceRename: async () => {
+        reclaimAttempts += 1;
+        const error = new Error("injected persistent Windows reclaim EPERM") as NodeJS.ErrnoException;
+        error.code = "EPERM";
+        throw error;
+      },
+    }),
+    (error) => error?.code === "ETIMEDOUT",
+  );
+  assert.ok(reclaimAttempts >= 2);
+  assert.equal((await lstat(reclaimFailureLock)).isDirectory(), true);
   console.log("cave-home-migration-windows.test.ts: ok");
 } finally {
   await rm(root, { recursive: true, force: true });

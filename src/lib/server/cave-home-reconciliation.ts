@@ -116,6 +116,14 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only unlock rename override. */
   lockReleaseRename?: typeof rename;
+  /** Test-only candidate publication rename override. */
+  lockCandidateRename?: typeof rename;
+  /** Test-only stale-lock fencing rename override. */
+  lockFenceRename?: typeof rename;
+  /** Test-only acquisition deadline override. */
+  lockTimeoutMs?: number;
+  /** Test-only lock diagnostic observer. */
+  lockDiagnostic?: (diagnostic: ReconciliationLockDiagnostic) => void;
   /** Test-only hook after an exclusive takeover claim is published. */
   takeoverPublishProbe?: (takeoverToken: string) => void | Promise<void>;
   /** Test-only hook before a reclaimable takeover claim is advanced. */
@@ -126,6 +134,13 @@ export type ReconciliationOptions = {
   managedMirrorProbe?: (canonicalPath: string) => void | Promise<void>;
   /** Test-only hook before an explicit/automatic canonical replacement. */
   resolutionProbe?: (canonicalPath: string) => void | Promise<void>;
+};
+
+export type ReconciliationLockDiagnostic = {
+  phase: "waiting" | "acquired" | "failed";
+  durationMs: number;
+  result: "pending" | "acquired" | "timeout" | "error";
+  errorCode?: string;
 };
 
 type PathInfo = {
@@ -143,6 +158,9 @@ const JOURNAL_VERSION = 1 as const;
 const MIGRATION_VERSION = 2 as const;
 const BACKUP_RETENTION = 10;
 const LOCK_STALE_MS = 5 * 60_000;
+/** Hard upper bound for publishing or reclaiming the cross-process lock. */
+export const RECONCILIATION_LOCK_TIMEOUT_MS = 15_000;
+const LOCK_SLOW_DIAGNOSTIC_MS = 1_000;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -395,9 +413,13 @@ function takeoverFencePath(
   return `${lock}.reclaimed-${digest}`;
 }
 
-async function renameLockToFence(lock: string, fence: string): Promise<boolean> {
+async function renameLockToFence(
+  lock: string,
+  fence: string,
+  renameOperation: typeof rename = rename,
+): Promise<boolean> {
   try {
-    await rename(lock, fence);
+    await renameOperation(lock, fence);
     return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "";
@@ -410,15 +432,23 @@ async function renameLockToFence(lock: string, fence: string): Promise<boolean> 
           throw statError;
         },
       );
+      // Whether another contender published the fence or Windows deferred the
+      // directory rename, no unsafe mutation occurred. Retry under the bounded
+      // acquisition deadline instead of either busy-looping or waiting forever.
       if (fenceExists) return false;
+      return false;
     }
     throw error;
   }
 }
 
-async function renameLockCandidate(candidate: string, lock: string): Promise<void> {
+async function renameLockCandidate(
+  candidate: string,
+  lock: string,
+  renameOperation: typeof rename = rename,
+): Promise<void> {
   try {
-    await rename(candidate, lock);
+    await renameOperation(candidate, lock);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "";
     // Windows reports EPERM (rather than EEXIST/ENOTEMPTY) when a directory
@@ -445,14 +475,63 @@ async function renameLockCandidate(candidate: string, lock: string): Promise<voi
 
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
+  const startedAt = Date.now();
+  const timeoutMs = Math.max(1, options.lockTimeoutMs ?? RECONCILIATION_LOCK_TIMEOUT_MS);
+  const deadline = startedAt + timeoutMs;
+  let slowDiagnosticEmitted = false;
+  const diagnostic = (
+    phase: ReconciliationLockDiagnostic["phase"],
+    result: ReconciliationLockDiagnostic["result"],
+    error?: unknown,
+    log = false,
+  ) => {
+    const event: ReconciliationLockDiagnostic = {
+      phase,
+      result,
+      durationMs: Date.now() - startedAt,
+      ...(error && typeof error === "object" && "code" in error
+        ? { errorCode: String((error as NodeJS.ErrnoException).code ?? "") }
+        : {}),
+    };
+    try {
+      options.lockDiagnostic?.(event);
+    } catch {
+      // Diagnostics must never change lock ownership or acquisition behavior.
+    }
+    // Successful uncontended store reads are intentionally silent. Only slow
+    // waits and terminal failures reach logs, with no home paths or file data.
+    if (log && phase === "waiting") console.warn("[cave-home-reconciliation] lock", event);
+    else if (log && phase === "failed") console.warn("[cave-home-reconciliation] lock", event);
+    else if (event.durationMs >= LOCK_SLOW_DIAGNOSTIC_MS) console.info("[cave-home-reconciliation] lock", event);
+  };
+  const terminalError = (error: unknown): unknown => {
+    diagnostic(
+      "failed",
+      (error as NodeJS.ErrnoException).code === "ETIMEDOUT" ? "timeout" : "error",
+      error,
+      true,
+    );
+    return error;
+  };
+  diagnostic("waiting", "pending");
+
   for (;;) {
+    if (Date.now() >= deadline) {
+      const timeout = new Error(`timed out acquiring cave home reconciliation lock after ${timeoutMs}ms`) as NodeJS.ErrnoException;
+      timeout.code = "ETIMEDOUT";
+      throw terminalError(timeout);
+    }
+    if (!slowDiagnosticEmitted && Date.now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
+      slowDiagnosticEmitted = true;
+      diagnostic("waiting", "pending", undefined, true);
+    }
     const token = randomBytes(16).toString("hex");
     const candidate = `${lock}.candidate-${token}`;
     try {
       await mkdir(candidate);
       try {
         await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
-        await renameLockCandidate(candidate, lock);
+        await renameLockCandidate(candidate, lock, options.lockCandidateRename);
       } catch (error) {
         await rm(candidate, { recursive: true, force: true });
         throw error;
@@ -508,10 +587,13 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         await release().catch(() => {});
         throw error;
       }
+      diagnostic("acquired", "acquired");
       return release;
     } catch (error) {
       await rm(candidate, { recursive: true, force: true }).catch(() => {});
-      if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      if (!["EEXIST", "ENOTEMPTY", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+        throw terminalError(error);
+      }
       try {
         const info = await stat(lock);
         const owner = await readLockOwner(lock);
@@ -576,6 +658,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
               await renameLockToFence(
                 lock,
                 takeoverFencePath(lock, inspected, currentOwner, generationAfter.birthtimeMs),
+                options.lockFenceRename,
               )
             ) continue;
           } catch (takeoverError) {
@@ -585,8 +668,11 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           }
         }
       } catch (lockError) {
-        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw lockError;
+        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") {
+          await delay(50);
+          continue;
+        }
+        throw terminalError(lockError);
       }
       await delay(50);
     }

@@ -24,7 +24,6 @@ import { PerfOverlay } from "@/components/perf/perf-overlay";
 import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
 import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
 import { createDefaultPreferences } from "@/lib/preferences-schema";
-import { loadPreferences } from "@/lib/server/preferences-store";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -59,12 +58,16 @@ export const viewport: Viewport = {
 
 export const dynamic = "force-dynamic";
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const preferences = await loadPreferences().catch(() => createDefaultPreferences(false));
+  // First shell delivery must never enter the reconciled preference store. The
+  // uninitialized snapshot is paint-only: ThemeScript may combine it with this
+  // origin's compatibility cache, while PreferencesBootstrapController fetches
+  // the canonical snapshot after the shell has mounted.
+  const preferences = createDefaultPreferences(false);
   return (
     <html
       lang="en"
@@ -75,7 +78,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <ThemeScript preferences={preferences} />
+        <ThemeScript preferences={preferences} authoritative={false} />
       </head>
       <body className="h-full flex flex-col">
         <DevCacheResetScript />
