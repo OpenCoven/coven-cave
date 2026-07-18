@@ -6,7 +6,13 @@ import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pickDefaultAgentId, pickDefaultHostId } from "./client.ts";
-import { isOmnigentEnvConfigured, normalizeOmnigentBaseUrl, resolveOmnigentAuth } from "./token.ts";
+import {
+  isOmnigentEnvConfigured,
+  isOmnigentServerUrlConfigured,
+  normalizeOmnigentBaseUrl,
+  resolveOmnigentAuth,
+  resolveOmnigentBaseUrl,
+} from "./token.ts";
 
 // Sandbox the Cave Vault: OMNIGENT_TOKEN resolves through it (process env →
 // .env.local → encrypted store → op/dl ref), so point every vault path at a
@@ -19,6 +25,7 @@ process.env.COVEN_CAVE_ENV_FILE = path.join(vaultSandbox, ".env.local");
 process.env.COVEN_CAVE_LOCAL_VAULT_FILE = path.join(vaultSandbox, "local-vault.enc.json");
 process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = path.join(vaultSandbox, "local-vault.key");
 delete process.env.OMNIGENT_TOKEN;
+delete process.env.OMNIGENT_SERVER_URL;
 
 test("normalizeOmnigentBaseUrl strips path and trailing slash", () => {
   assert.equal(
@@ -239,4 +246,59 @@ test("resolveOmnigentAuth resolves OMNIGENT_TOKEN through the Cave Vault", async
     delete process.env.OMNIGENT_TOKEN; // resolveSecret caches into process.env
     process.env.HOME = prevHome;
   }
+});
+
+test("isOmnigentServerUrlConfigured reflects vault state", async () => {
+  delete process.env.OMNIGENT_SERVER_URL;
+  // Sandboxed vault is empty → not configured, Daemon-tab group stays hidden.
+  assert.equal(isOmnigentServerUrlConfigured(), false);
+
+  const { setLocalEncryptedSecret, deleteLocalEncryptedSecret } = await import(
+    "../local-encrypted-vault.ts"
+  );
+  setLocalEncryptedSecret("OMNIGENT_SERVER_URL", "https://omni.example.com");
+  try {
+    assert.equal(isOmnigentServerUrlConfigured(), true);
+  } finally {
+    deleteLocalEncryptedSecret("OMNIGENT_SERVER_URL");
+    delete process.env.OMNIGENT_SERVER_URL;
+  }
+  assert.equal(isOmnigentServerUrlConfigured(), false);
+});
+
+test("isOmnigentServerUrlConfigured sees process env", async () => {
+  process.env.OMNIGENT_SERVER_URL = "https://env.example.com";
+  try {
+    assert.equal(isOmnigentServerUrlConfigured(), true);
+  } finally {
+    delete process.env.OMNIGENT_SERVER_URL;
+  }
+});
+
+test("resolveOmnigentBaseUrl prefers the vault URL over Cave config", async () => {
+  delete process.env.OMNIGENT_SERVER_URL;
+  const { setLocalEncryptedSecret, deleteLocalEncryptedSecret } = await import(
+    "../local-encrypted-vault.ts"
+  );
+  setLocalEncryptedSecret("OMNIGENT_SERVER_URL", "omni.example.com/api/");
+  try {
+    // Vault value wins over the config fallback and is normalized.
+    assert.equal(
+      resolveOmnigentBaseUrl("https://config.example.com"),
+      "https://omni.example.com",
+    );
+  } finally {
+    deleteLocalEncryptedSecret("OMNIGENT_SERVER_URL");
+    delete process.env.OMNIGENT_SERVER_URL; // resolveSecret caches into process.env
+  }
+});
+
+test("resolveOmnigentBaseUrl falls back to config when vault is empty", async () => {
+  delete process.env.OMNIGENT_SERVER_URL;
+  assert.equal(
+    resolveOmnigentBaseUrl("  https://config.example.com  "),
+    "https://config.example.com",
+  );
+  assert.equal(resolveOmnigentBaseUrl(undefined), "");
+  assert.equal(resolveOmnigentBaseUrl(""), "");
 });
