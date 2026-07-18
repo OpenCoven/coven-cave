@@ -278,6 +278,16 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
   });
 }
 
+// Voice new-chat mint failures come back as machine codes (start-voice-chat.ts /
+// voice-chat-create.ts: "familiar_not_found", "save_failed", "missing_familiarId",
+// "network", or "create_failed_http_<n>") — translate the common ones to human
+// copy for the toast and fall back to a generic-but-legible message for the rest.
+function voiceChatStartErrorMessage(code: string): string {
+  if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
+  if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
+  return `Couldn't start a voice chat (${code}).`;
+}
+
 export function Workspace() {
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
@@ -1819,13 +1829,17 @@ export function Workspace() {
 
   // Voice new-chat: create the empty conversation the call will attach to,
   // then route to chat with autoVoice so the overlay opens on arrival. On
-  // failure stay on Home — no navigation, no orphan state.
+  // failure stay on Home — no navigation, no orphan state. The mint is an
+  // awaited round-trip, so re-check modeRef before navigating: if the user
+  // already left Home while it was in flight, don't yank them back into a
+  // chat they didn't ask for.
   const startVoiceChat = useCallback(async (familiarId: string, projectRoot: string | null) => {
     const result = await startVoiceConversation(familiarId, projectRoot);
     if (!result.ok) {
-      pushToast(`Couldn't start a voice chat: ${result.error}`);
+      pushToast(voiceChatStartErrorMessage(result.error));
       return;
     }
+    if (modeRef.current !== "home") return;
     setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
     setPendingChatAction({ kind: "open", sessionId: result.sessionId, familiarId, autoVoice: true, nonce: Date.now() });
@@ -2743,7 +2757,7 @@ export function Workspace() {
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
-        onStartVoiceCall={(fid, projectRoot) => { void startVoiceChat(fid, projectRoot); }}
+        onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}

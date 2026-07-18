@@ -78,6 +78,28 @@ test("workspace: startVoiceChat creates the session then routes with autoVoice",
     /startVoiceConversation\(familiarId, projectRoot\)[\s\S]*?kind: "open", sessionId: result\.sessionId, familiarId, autoVoice: true/,
   );
   assert.match(workspace, /onStartVoiceCall=\{/);
+  // The mint is awaited before navigating; the prop must return that promise
+  // (not void-swallow it) so HomeComposer's in-flight guard can await it too.
+  assert.match(workspace, /onStartVoiceCall=\{\(fid, projectRoot\) => startVoiceChat\(fid, projectRoot\)\}/);
+  assert.doesNotMatch(workspace, /onStartVoiceCall=\{\(fid, projectRoot\) => \{ void startVoiceChat/);
+});
+
+test("workspace: startVoiceChat bails on stale navigation instead of yanking the user back to chat", () => {
+  // Bounded to startVoiceChat's own body, and ordered ok-check -> staleness
+  // bail -> navigation, so this can't false-pass against one of the unrelated
+  // modeRef.current === "chat" checks elsewhere in the file.
+  assert.match(
+    workspace,
+    /const startVoiceChat = useCallback\(async \(familiarId: string, projectRoot: string \| null\) => \{[\s\S]*?if \(!result\.ok\) \{[\s\S]*?return;\s*\n\s*\}[\s\S]*?if \(modeRef\.current !== "home"\) return;[\s\S]*?setActiveId\(familiarId\)/,
+  );
+});
+
+test("workspace: voice chat mint errors are translated to human toast copy", () => {
+  assert.match(
+    workspace,
+    /function voiceChatStartErrorMessage\(code: string\): string \{[\s\S]*?"network"[\s\S]*?"familiar_not_found"[\s\S]*?\$\{code\}/,
+  );
+  assert.match(workspace, /pushToast\(voiceChatStartErrorMessage\(result\.error\)\)/);
 });
 
 test("home-composer: call button starts a voice chat, summoning when no familiar", () => {
@@ -85,6 +107,24 @@ test("home-composer: call button starts a voice chat, summoning when no familiar
   assert.match(homeComposer, /"ph:phone"/);
   assert.match(
     homeComposer,
-    /if \(!selectedFamiliarId\) \{[\s\S]*?requestSummonFamiliar\(\);[\s\S]*?\}\s*\n\s*onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
+    /if \(voiceCallPending\) return;[\s\S]*?if \(!selectedFamiliarId\) \{[\s\S]*?requestSummonFamiliar\(\);[\s\S]*?\}/,
+  );
+});
+
+test("home-composer: voice call button gates itself on an in-flight mint and always resets", () => {
+  assert.match(homeComposer, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
+  assert.match(homeComposer, /disabled=\{sending \|\| voiceCallPending\}/);
+  // The mint must be gated start-to-finish: set pending before the call,
+  // reset it in .finally so a rejected/failed mint can't leave the button
+  // permanently disabled.
+  assert.match(
+    homeComposer,
+    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\(onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\)\)\.finally\(\(\) =>\s*setVoiceCallPending\(false\)/,
+  );
+  // The prop type must allow returning a promise, or callers couldn't chain
+  // .finally onto it to reset the pending flag.
+  assert.match(
+    homeComposer,
+    /onStartVoiceCall\?: \(familiarId: string, projectRoot: string \| null\) => void \| Promise<void>/,
   );
 });

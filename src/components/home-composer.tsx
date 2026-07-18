@@ -119,8 +119,10 @@ type Props = {
   /** Jump to the Schedules surface for the full feed. */
   onOpenSchedules: () => void;
   /** Voice new-chat: start a live voice call in a brand-new chat with this
-   *  familiar. The workspace pre-creates the session and routes to chat. */
-  onStartVoiceCall?: (familiarId: string, projectRoot: string | null) => void;
+   *  familiar. The workspace pre-creates the session and routes to chat.
+   *  May return a promise so the button can gate itself against rapid
+   *  double-clicks while the mint is in flight. */
+  onStartVoiceCall?: (familiarId: string, projectRoot: string | null) => void | Promise<void>;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -150,6 +152,10 @@ export function HomeComposer({
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
+  // In-flight guard for the voice-call mint: onStartVoiceCall is an async
+  // network round-trip with no guard of its own, so N rapid clicks would mint
+  // N sessions and leak N-1 orphaned conversations into the thread rail.
+  const [voiceCallPending, setVoiceCallPending] = useState(false);
   // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
   // into the modal so edits while it is open don't mutate the form seed.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
@@ -907,14 +913,16 @@ export function HomeComposer({
                   className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                   title="Start a voice call in a new chat"
                   aria-label="Start a voice call in a new chat"
-                  disabled={sending}
+                  disabled={sending || voiceCallPending}
                   onClick={() => {
+                    if (voiceCallPending) return;
                     if (!selectedFamiliarId) {
                       onToast("No familiar yet — summon one to start a voice chat.");
                       requestSummonFamiliar();
                       return;
                     }
-                    onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null);
+                    setVoiceCallPending(true);
+                    void Promise.resolve(onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null)).finally(() => setVoiceCallPending(false));
                   }}
                 >
                   <Icon name="ph:phone" width={15} aria-hidden />
