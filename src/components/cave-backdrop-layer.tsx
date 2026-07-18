@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import "@/styles/backdrop.css";
 import {
   applyBackdropToDocument,
+  isFamiliarBackdropOn,
   readBackdropImage,
   readFamiliarBackdropImage,
   useBackdropImageRevision,
@@ -18,9 +19,11 @@ import {
  * the frontmost surface wants the backdrop (home/chat) — the layer stays
  * mounted and crossfades via CSS.
  *
- * `familiarId` is the active chat scope: a familiar with its own backdrop
- * override takes over the layer while it is selected (even when the app-wide
- * backdrop is off); everything else falls back to the generic image.
+ * `familiarId` is the active chat scope: a familiar switched on (explicitly,
+ * or by having its own backdrop image) takes over the layer while it is
+ * selected — even when the app-wide backdrop is off. Its own image wins;
+ * the app image is the fallback. Explicitly-off familiars are dormant and
+ * follow the app-wide prefs.
  *
  * The derived accent is re-fit whenever the theme mode flips (dark ↔ light
  * changes --bg-base, and the contrast fit depends on it).
@@ -40,12 +43,26 @@ export function CaveBackdropLayer({
   const urlRef = useRef<string | null>(null);
   const familiarUrlRef = useRef<string | null>(null);
 
+  // Per-familiar enablement (cave-kf8p): the explicit switch wins; with no
+  // entry, an uploaded image means on (cave-j0dz compat). The switch only
+  // ADDS enablement — off means the app-wide prefs govern (dormant).
+  const familiarOn = familiarId
+    ? isFamiliarBackdropOn(prefs, familiarId, familiarUrl !== null)
+    : false;
+  // The app image is wanted when the app backdrop is on, or as the fallback
+  // for a familiar explicitly switched on without its own image.
+  const wantsAppImage =
+    prefs.enabled || (familiarId ? prefs.familiars[familiarId] === true : false);
+  const familiarImageShowing = familiarOn && familiarUrl !== null;
+  const effectiveUrl = familiarImageShowing ? familiarUrl : imageUrl;
+  const effectiveEnabled = prefs.enabled || familiarOn;
+
   // Load (or clear) the stored image whenever the backdrop is toggled or its
   // bytes change. writeBackdropImage publishes the latter independently from
   // the enabled preference, so replacing an enabled image updates live.
   useEffect(() => {
     let cancelled = false;
-    if (!prefs.enabled) {
+    if (!wantsAppImage) {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
       setImageUrl(null);
@@ -60,7 +77,7 @@ export function CaveBackdropLayer({
     return () => {
       cancelled = true;
     };
-  }, [prefs.enabled, imageRevision]);
+  }, [wantsAppImage, imageRevision]);
 
   // Load (or clear) the active familiar's override. Independent of the
   // app-wide enablement: a familiar backdrop shows even when the generic one
@@ -86,23 +103,19 @@ export function CaveBackdropLayer({
     };
   }, [familiarId, familiarRevision]);
 
-  // The familiar override wins while present; the generic image is the
-  // fallback/default. Enablement follows the same rule.
-  const effectiveUrl = familiarUrl ?? imageUrl;
-  const effectiveEnabled = prefs.enabled || familiarUrl !== null;
-
   // Push prefs + image to <html>; re-fit the accent when the mode flips.
-  // Under a familiar override the generic image's sampled accent seed is
-  // suppressed — the familiar's own accent (Look tab) governs its color.
+  // While the familiar's own image shows, the generic image's sampled accent
+  // seed is suppressed — the familiar's accent (Look tab) governs its color.
+  // Under the app-image fallback, app-wide accent matching applies as usual.
   useEffect(() => {
-    const effectivePrefs = familiarUrl
+    const effectivePrefs = familiarImageShowing
       ? { ...prefs, enabled: true, matchAccent: false, accentSeed: null }
       : { ...prefs, enabled: effectiveEnabled };
     applyBackdropToDocument(effectivePrefs, effectiveUrl);
     const observer = new MutationObserver(() => applyBackdropToDocument(effectivePrefs, undefined));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode", "data-theme"] });
     return () => observer.disconnect();
-  }, [prefs, familiarUrl, effectiveUrl, effectiveEnabled]);
+  }, [prefs, familiarImageShowing, effectiveUrl, effectiveEnabled]);
 
   // Flag the document while a backdrop surface is frontmost, so the shell's
   // opaque panes (shell-root/detail, chat roots) go translucent only then.

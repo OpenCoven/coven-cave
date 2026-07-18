@@ -270,8 +270,25 @@ assert.match(layer, /data-on=\{active \? "true" : "false"\}/, "the layer crossfa
 assert.match(layer, /useBackdropImageRevision\(\)/, "the mounted layer subscribes to image replacements");
 assert.match(
   layer,
-  /\[prefs\.enabled, imageRevision\]/,
-  "an enabled backdrop reloads when its durable bytes are replaced",
+  /\[wantsAppImage, imageRevision\]/,
+  "the app image loads when app-enabled OR a familiar explicitly opted in (fallback), and reloads on byte replacement",
+);
+// Per-familiar switch semantics (cave-kf8p): explicit entry wins, image
+// presence is the compat default, and the switch only ADDS enablement.
+assert.match(
+  layer,
+  /familiarOn = familiarId\s*\?\s*isFamiliarBackdropOn\(prefs, familiarId, familiarUrl !== null\)\s*:\s*false/,
+  "the layer derives familiar enablement through the shared default rule",
+);
+assert.match(
+  layer,
+  /effectiveEnabled = prefs\.enabled \|\| familiarOn/,
+  "a familiar can enable the backdrop, never suppress the app-wide one",
+);
+assert.match(
+  layer,
+  /familiarImageShowing \? familiarUrl : imageUrl/,
+  "a dormant familiar image never shows — the app image is the fallback",
 );
 
 {
