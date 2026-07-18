@@ -94,7 +94,10 @@ export type CavePreferences = {
   };
   general: {
     newsHeadlines: boolean;
-    /** Composer phrase that halts a running chat task; "" disables it. */
+    /**
+     * Comma-separated composer phrases, any of which halts a running chat
+     * task; "" disables the feature.
+     */
     stopPhrase: string;
     /**
      * Progression celebrations — milestone toasts and completion flourishes.
@@ -135,10 +138,13 @@ const DEFAULT_THEME: CaveThemePreferences = {
   updatedAt: "",
 };
 
-/** Default composer stop phrase; "" (after trim) turns the feature off. */
-export const DEFAULT_STOP_PHRASE = "stop";
-/** Longest phrase the preference stores; UI and matcher share this bound. */
-export const STOP_PHRASE_MAX_LENGTH = 64;
+/**
+ * Default composer stop phrases (comma-separated options); "" (after trim)
+ * turns the feature off.
+ */
+export const DEFAULT_STOP_PHRASE = "stop, cancel, halt, abort";
+/** Longest phrase list the preference stores; UI and matcher share this bound. */
+export const STOP_PHRASE_MAX_LENGTH = 160;
 
 function normalizeStopPhrase(value: unknown): string {
   if (typeof value !== "string") return DEFAULT_STOP_PHRASE;

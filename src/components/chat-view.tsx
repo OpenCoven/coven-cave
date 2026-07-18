@@ -4679,7 +4679,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
-    // Global stop phrase (cave-uf2x): while a task is running, typing the
+    // Global stop phrases (cave-uf2x): while a task is running, typing any
     // configured phrase is a command — halt the turn (same path as the Stop
     // button) instead of leaving the draft stranded behind the busy bail.
     if (busy && matchesStopPhrase(text, readStopPhrase())) {
