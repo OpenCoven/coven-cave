@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
 import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
+import { resolveOmnigentBaseUrl } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,10 @@ export async function GET(req: Request) {
   if (forbidden) return forbidden;
 
   const config = await loadConfig();
-  if (!config.omnigent.baseUrl) {
+  const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
+  if (!baseUrl) {
     return NextResponse.json(
-      { ok: false, error: "omnigent.baseUrl is not configured" },
+      { ok: false, error: "Omnigent server URL is not configured (OMNIGENT_SERVER_URL)" },
       { status: 400 },
     );
   }
@@ -22,7 +24,7 @@ export async function GET(req: Request) {
   try {
     // Do not require a local token: single-user Omnigent accepts unauthenticated
     // calls; multi-user servers return 401 from Omnigent itself.
-    const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
+    const client = await OmnigentClient.fromBaseUrl(baseUrl);
     const hosts = await client.listHosts();
     return NextResponse.json({
       ok: true,

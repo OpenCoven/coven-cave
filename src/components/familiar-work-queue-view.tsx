@@ -57,6 +57,39 @@ const LANE_TONE: Record<WorkQueueLaneKey, "urgent" | "ready" | "neutral" | "quie
   "post-merge-cleanup": "ready",
 };
 
+/** Long lanes mount this many cards until the operator asks for the rest —
+ *  the triage view stays scannable (and cheap) at N-many beads (cave-19jy). */
+const LANE_VISIBLE_CAP = 8;
+
+const COLLAPSED_LANES_KEY = "cave:fwq:collapsed:v1";
+
+/** Lanes collapsed on first run — `waiting` is explicitly non-actionable. */
+const DEFAULT_COLLAPSED: readonly WorkQueueLaneKey[] = ["waiting"];
+
+function readCollapsedLanes(): Set<WorkQueueLaneKey> {
+  if (typeof window === "undefined") return new Set(DEFAULT_COLLAPSED);
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_LANES_KEY);
+    if (!raw) return new Set(DEFAULT_COLLAPSED);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_COLLAPSED);
+    return new Set(parsed.filter((k): k is WorkQueueLaneKey => typeof k === "string" && k in LANE_TITLES_GUARD));
+  } catch {
+    return new Set(DEFAULT_COLLAPSED);
+  }
+}
+
+function writeCollapsedLanes(keys: Set<WorkQueueLaneKey>): void {
+  try {
+    window.localStorage.setItem(COLLAPSED_LANES_KEY, JSON.stringify([...keys]));
+  } catch {
+    /* storage unavailable — collapse state stays session-local */
+  }
+}
+
+// Key-guard for the storage parse above (LANE_ICON covers every lane key).
+const LANE_TITLES_GUARD = LANE_ICON;
+
 type FetchedQueue = {
   queue: WorkQueue;
   /** False when the beads adapter failed and the queue is PRs-only. */
@@ -127,6 +160,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
+  // Per-lane disclosure + show-all state. Collapse persists across sessions;
+  // "show all" is per-visit intent and resets on reload (cave-19jy).
+  const [collapsedLanes, setCollapsedLanes] = useState<Set<WorkQueueLaneKey>>(() => new Set(DEFAULT_COLLAPSED));
+  const [expandedLanes, setExpandedLanes] = useState<Set<WorkQueueLaneKey>>(() => new Set());
   // Beads that got a handoff note THIS session — Close unlocks immediately
   // without waiting for the poll to re-read comment_count (cave-hlv.2).
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
@@ -140,6 +177,22 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
   useMinuteTick();
+
+  // Collapse state hydrates after mount so SSR and the first client render
+  // agree (same idiom as the chat sidebar's organize view).
+  useEffect(() => {
+    setCollapsedLanes(readCollapsedLanes());
+  }, []);
+
+  const toggleLane = useCallback((key: WorkQueueLaneKey) => {
+    setCollapsedLanes((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      writeCollapsedLanes(next);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -406,33 +459,75 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             }
           />
         ) : (
-          visibleLanes.map((lane) => (
-            <section key={lane.key} className={`fwq-lane fwq-lane--${LANE_TONE[lane.key]}`} aria-label={lane.title}>
-              <header className="fwq-lane-head">
-                <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
-                <span className="fwq-lane-title">{lane.title}</span>
-                <span className="fwq-lane-count">{lane.items.length}</span>
-              </header>
-              <ul className="fwq-cards">
-                {lane.items.map((item) => (
-                  <WorkQueueCard
-                    key={item.key}
-                    item={item}
-                    familiarLabel={familiarName(item.familiar)}
-                    busy={busyId === item.key}
-                    hasEvidence={
-                      !!item.bead &&
-                      (hasVerificationEvidence(item.bead) || evidenceAdded.has(item.bead.id.toLowerCase()))
-                    }
-                    onOpenUrl={onOpenUrl}
-                    onClaim={() => void runAction(item, "claim")}
-                    onClose={() => void runAction(item, "close")}
-                    onComment={(text) => runComment(item, text)}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))
+          visibleLanes.map((lane) => {
+            const collapsed = collapsedLanes.has(lane.key);
+            const showAll = expandedLanes.has(lane.key);
+            const capped = !showAll && lane.items.length > LANE_VISIBLE_CAP;
+            const visibleItems = capped ? lane.items.slice(0, LANE_VISIBLE_CAP) : lane.items;
+            return (
+              <section key={lane.key} className={`fwq-lane fwq-lane--${LANE_TONE[lane.key]}`} aria-label={lane.title}>
+                <header className="fwq-lane-head">
+                  <button
+                    type="button"
+                    className="fwq-lane-toggle focus-ring-inset"
+                    aria-expanded={!collapsed}
+                    onClick={() => toggleLane(lane.key)}
+                  >
+                    <Icon
+                      name="ph:caret-right-bold"
+                      width={11}
+                      className={`fwq-lane-caret${collapsed ? "" : " is-open"}`}
+                      aria-hidden
+                    />
+                    <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
+                    <span className="fwq-lane-title">{lane.title}</span>
+                    <span className="fwq-lane-count">{lane.items.length}</span>
+                  </button>
+                </header>
+                {collapsed ? null : (
+                  <>
+                    <ul className="fwq-cards">
+                      {visibleItems.map((item) => (
+                        <WorkQueueCard
+                          key={item.key}
+                          item={item}
+                          familiarLabel={familiarName(item.familiar)}
+                          busy={busyId === item.key}
+                          hasEvidence={
+                            !!item.bead &&
+                            (hasVerificationEvidence(item.bead) || evidenceAdded.has(item.bead.id.toLowerCase()))
+                          }
+                          onOpenUrl={onOpenUrl}
+                          onClaim={() => void runAction(item, "claim")}
+                          onClose={() => void runAction(item, "close")}
+                          onComment={(text) => runComment(item, text)}
+                        />
+                      ))}
+                    </ul>
+                    {lane.items.length > LANE_VISIBLE_CAP ? (
+                      <button
+                        type="button"
+                        className="fwq-lane-more focus-ring-inset"
+                        aria-expanded={showAll}
+                        onClick={() =>
+                          setExpandedLanes((cur) => {
+                            const next = new Set(cur);
+                            if (next.has(lane.key)) next.delete(lane.key);
+                            else next.add(lane.key);
+                            return next;
+                          })
+                        }
+                      >
+                        {showAll
+                          ? `Show top ${LANE_VISIBLE_CAP}`
+                          : `Show all ${lane.items.length}`}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </section>
+            );
+          })
         )}
       </div>
     </div>
@@ -562,7 +657,7 @@ function WorkQueueCard({
           {item.surface ? <span className="fwq-tag">{item.surface}</span> : null}
           {beadId ? <span className="fwq-tag fwq-tag--bead">{beadId}</span> : null}
           {item.bead && !item.pr && !item.merged ? (
-            <span className="fwq-tag">P{item.bead.priority}</span>
+            <span className={`fwq-tag fwq-tag--p${Math.min(item.bead.priority, 3)}`}>P{item.bead.priority}</span>
           ) : null}
           {item.pr ? (
             <>
@@ -584,6 +679,11 @@ function WorkQueueCard({
           {item.merged?.mergedAt ? (
             <span className="fwq-card-time" title={new Date(item.merged.mergedAt).toLocaleString()}>
               merged {relativeTime(item.merged.mergedAt)}
+            </span>
+          ) : null}
+          {!item.pr && !item.merged && item.bead?.updated_at ? (
+            <span className="fwq-card-time" title={new Date(item.bead.updated_at).toLocaleString()}>
+              updated {relativeTime(item.bead.updated_at)}
             </span>
           ) : null}
         </div>

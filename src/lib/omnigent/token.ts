@@ -38,6 +38,40 @@ export function normalizeOmnigentBaseUrl(url: string): string {
 /** The Cave Vault env key that opts a user into the Omnigent fleet. */
 export const OMNIGENT_TOKEN_ENV = "OMNIGENT_TOKEN";
 
+/** The Cave Vault env key that supplies — and gates — the Omnigent server URL. */
+export const OMNIGENT_SERVER_URL_ENV = "OMNIGENT_SERVER_URL";
+
+/**
+ * True when `OMNIGENT_SERVER_URL` is set up in this user's Cave Vault (process
+ * env, writable .env.local, local encrypted secret, or an op://-style
+ * reference). The entire Omnigent fleet group in Settings → Daemon is gated on
+ * exactly this: without the Vault env the group does not render at all.
+ * Metadata-only — never resolves or caches the secret value.
+ */
+export function isOmnigentServerUrlConfigured(): boolean {
+  try {
+    return hasConfiguredSecretMetadata(OMNIGENT_SERVER_URL_ENV);
+  } catch {
+    return Boolean(process.env[OMNIGENT_SERVER_URL_ENV]?.trim());
+  }
+}
+
+/**
+ * The effective Omnigent base URL: `OMNIGENT_SERVER_URL` from the Cave Vault
+ * wins over the Cave-config value (which remains a fallback for a configured
+ * ref that fails to resolve). Returns "" when neither source has a URL.
+ */
+export function resolveOmnigentBaseUrl(configBaseUrl?: string | null): string {
+  let vaultUrl: string | null;
+  try {
+    vaultUrl = resolveSecret(OMNIGENT_SERVER_URL_ENV)?.trim() || null;
+  } catch {
+    vaultUrl = process.env[OMNIGENT_SERVER_URL_ENV]?.trim() || null;
+  }
+  if (vaultUrl) return normalizeOmnigentBaseUrl(vaultUrl);
+  return (configBaseUrl ?? "").trim();
+}
+
 /**
  * True when `OMNIGENT_TOKEN` is set up in this user's Cave Vault (process env,
  * writable .env.local, local encrypted secret, or an op://‑style reference).

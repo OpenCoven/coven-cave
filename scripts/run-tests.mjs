@@ -115,6 +115,7 @@ export const SUITES = {
     "src/lib/beads-pr-management.test.ts",
     "src/lib/beads-pr-patrol.test.ts",
     "src/lib/beads-work-queue.test.ts",
+    "src/components/familiar-work-queue-view.test.ts",
     "src/components/gh-review-actions.test.ts",
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
