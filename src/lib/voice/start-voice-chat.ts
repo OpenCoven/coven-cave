@@ -5,6 +5,16 @@
 // attaches to; discardVoiceSessionIfEmpty cleans up when the call ends with
 // nothing said, so cancelled calls don't litter the thread rail. Deleting is
 // safe: chat/send recreates the file on demand for the same session id.
+//
+// discardVoiceSessionIfEmpty never sacrifices the session id (server-side
+// ?ifEmpty=1, route.ts). A client-side "GET turns, then DELETE" round trip
+// left a window where an in-flight first exchange could recreate the file
+// between the two calls — the DELETE used to sacrifice unconditionally, so
+// the recreated file (holding the user's real conversation) was permanently
+// hidden from every list. The single ifEmpty request makes the emptiness
+// check and the delete atomic from the caller's point of view, and the
+// route never sacrifices on this path, so a recreated file simply resurfaces
+// in the rail instead of vanishing.
 
 export type StartVoiceChatResult =
   | { ok: true; sessionId: string }
@@ -33,22 +43,22 @@ export async function startVoiceConversation(
   }
 }
 
-/** Delete the session's conversation when it holds zero turns. Returns true
- *  when a delete was issued. Never throws. */
+/** Delete the session's conversation when it holds zero turns. The
+ *  emptiness check happens server-side (?ifEmpty=1) in the same request as
+ *  the delete, so there's no client-side GET→DELETE gap for an in-flight
+ *  first exchange to land in. That server path also never sacrifices the
+ *  session id — only a genuinely empty conversation is removed, and nothing
+ *  is left behind to permanently hide a session that gets recreated a
+ *  moment later. Returns true when a delete was issued. Never throws. */
 export async function discardVoiceSessionIfEmpty(
   sessionId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
   try {
     const encoded = encodeURIComponent(sessionId);
-    const res = await fetchImpl(`/api/chat/conversation/${encoded}`);
-    const json = (await res.json().catch(() => null)) as
-      | { ok?: boolean; conversation?: { turns?: unknown[] } | null }
-      | null;
-    if (!json?.ok || !json.conversation) return false;
-    if ((json.conversation.turns ?? []).length > 0) return false;
-    await fetchImpl(`/api/chat/conversation/${encoded}`, { method: "DELETE" });
-    return true;
+    const res = await fetchImpl(`/api/chat/conversation/${encoded}?ifEmpty=1`, { method: "DELETE" });
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; deleted?: boolean } | null;
+    return json?.ok === true && json.deleted === true;
   } catch {
     return false;
   }

@@ -12,6 +12,7 @@ const pendingChatAction = read("../lib/pending-chat-action.ts");
 const chatSurface = read("./chat-surface.tsx");
 const chatRouter = read("./chat-router.tsx");
 const chatView = read("./chat-view.tsx");
+const startVoiceChat = read("../lib/voice/start-voice-chat.ts");
 
 test("pending-chat-action: open kind carries autoVoice", () => {
   // Bounded so the match can't cross into a later union member if autoVoice
@@ -60,9 +61,12 @@ test("chat-router: pendingVoice is scoped to its session and clears when the vie
 test("chat-view: voice nonce effect opens the overlay for the routed session", () => {
   assert.match(chatView, /openVoiceNonce\?: number;/);
   assert.match(chatView, /const openVoiceNonceRef = useRef\(0\)/);
+  // The ref is armed with the SESSION ID the call was opened for (not a bare
+  // boolean) — onClose later discards exactly this session, never whatever
+  // sessionId happens to be current when the user hangs up.
   assert.match(
     chatView,
-    /openVoiceNonceRef\.current = openVoiceNonce;[\s\S]*?voiceAutoCreatedRef\.current = true;[\s\S]*?setVoiceCallOpen\(true\)/,
+    /openVoiceNonceRef\.current = openVoiceNonce;[\s\S]*?voiceAutoCreatedRef\.current = sessionId;[\s\S]*?setVoiceCallOpen\(true\)/,
   );
 });
 
@@ -153,13 +157,17 @@ test("chat-view: call button works pre-session by creating the conversation firs
   );
 });
 
-test("chat-view: voice call button disables itself while a mint is in flight", () => {
+test("chat-view: voice call button disables itself while a mint is in flight, and pre-session while busy", () => {
   // Without this, N rapid clicks before the first mint resolves fire N
   // startVoiceConversation calls: N-1 sessions are orphaned, and if two
   // resolutions land in the same render batch the last one wins, which can
   // promote a session the nonce effect never consumes (overlay never opens).
   assert.match(chatView, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
-  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending\}/);
+  // Also disabled pre-session while a first send is streaming (busy, no
+  // sessionId yet) — a click there would mint an unrelated second session
+  // and the null-guarded promotion effect would swap the view onto it
+  // mid-stream. Mid-session (sessionId set) stays available while busy.
+  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}/);
 });
 
 test("chat-view: openVoiceCall always clears the pending flag, even on failure or an early bail", () => {
@@ -196,10 +204,42 @@ test("chat-view: voice mint failure announce is assertive, not the default polit
   assert.match(chatView, /announce\(voiceChatStartErrorMessage\(result\.error\), "assertive"\)/);
 });
 
-test("chat-view: closing an auto-created call discards the session when empty", () => {
+test("chat-view: closing an auto-created call discards exactly the session it was created for, not whatever is current", () => {
+  // Task 6/8 pin, updated for Finding 3: the ref stores the target session
+  // id (not a bare boolean, see the nonce-effect test above) so a ⌘K switch
+  // behind the overlay can't make onClose discard the WRONG (currently
+  // active) session while leaking the one actually auto-created for this
+  // call. Captured and cleared up front so the async discard always targets
+  // that snapshot, never a live re-read of the ref or the sessionId prop.
   assert.match(
     chatView,
-    /voiceAutoCreatedRef\.current = false;[\s\S]*?discardVoiceSessionIfEmpty\(sessionId\)[\s\S]*?onSessionsChanged\?\.\(\)/,
+    /const target = voiceAutoCreatedRef\.current;\s*\n\s*voiceAutoCreatedRef\.current = null;\s*\n\s*if \(target\) \{\s*\n\s*void discardVoiceSessionIfEmpty\(target\)\.then\(\(deleted\) => \{\s*\n\s*if \(deleted\) \{\s*\n\s*onSessionsChanged\?\.\(\);/,
+  );
+  assert.match(chatView, /const voiceAutoCreatedRef = useRef<string \| null>\(null\)/);
+  // Finding 1: the server-side ?ifEmpty=1 check is authoritative — no more
+  // client GET-then-DELETE. That gap was the actual race: a client-read
+  // "empty" could go stale by the time the DELETE landed, seconds after
+  // chat/send had already recreated the file with the real exchange, and
+  // the old DELETE sacrificed unconditionally, permanently hiding it.
+  assert.match(startVoiceChat, /\/api\/chat\/conversation\/\$\{encoded\}\?ifEmpty=1/);
+  assert.match(startVoiceChat, /method: "DELETE"/);
+  // Finding 2: the view is only yanked back to compose when the discarded
+  // session is still the active one — if the user already switched away,
+  // the discard happens silently in the background with no view reset.
+  assert.match(
+    chatView,
+    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) onVoiceSessionDiscarded\?\.\(\);/,
+  );
+  // Finding 4: the phone button can't fork a streaming first send by
+  // minting a second, unrelated session underneath it (pre-session only —
+  // mid-session stays available while busy).
+  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}/);
+  // Router side: the callback resets to a fresh compose state for the same
+  // familiar/project, mirroring the onVoiceSessionCreated promotion shape
+  // but back to sessionId: null.
+  assert.match(
+    chatRouter,
+    /onVoiceSessionDiscarded=\{\(\) => \{[\s\S]*?prev\.kind === "chat"[\s\S]*?sessionId: null, projectRoot: prev\.projectRoot, familiarId: prev\.familiarId/,
   );
 });
 

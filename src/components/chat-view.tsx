@@ -367,6 +367,11 @@ type Props = {
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
+  /** An auto-created call session was discarded (empty, hung up) while the
+   *  view was still parked on it — the router returns the view to a fresh
+   *  compose state instead of leaving the user composing into a deleted
+   *  session. Not called when the user had already switched away. */
+  onVoiceSessionDiscarded?: () => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   onBack?: () => void;
@@ -2340,7 +2345,7 @@ function voiceChatStartErrorMessage(code: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2560,9 +2565,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [projectRootMissing, setProjectRootMissing] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
-  // True when the current overlay session was created FOR the call (voice
-  // new-chat) — close with zero turns then discards the empty conversation.
-  const voiceAutoCreatedRef = useRef(false);
+  // The session id the OPEN overlay was auto-created for (voice new-chat), or
+  // null when the overlay was opened mid-session with an existing chat. Close
+  // with zero turns then discards exactly this session — not whatever
+  // sessionId is current, since ⌘K session switching stays live behind the
+  // overlay and would otherwise discard an unrelated session while leaking
+  // this one.
+  const voiceAutoCreatedRef = useRef<string | null>(null);
   // Guards the pre-session mint against rapid re-clicks: without it, N clicks
   // before the first mint resolves fire N startVoiceConversation calls, each
   // minting its own session — N-1 are orphaned, and if two resolutions land
@@ -2585,6 +2594,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setVoiceCallOpen(true);
       return;
     }
+    // Pre-session only: a first send flips busy=true before its `session`
+    // event promotes sessionId (mid-session calls already returned above,
+    // so they stay available while busy). A phone click in that gap would
+    // mint a second, unrelated session — the null-guarded promotion effect
+    // would then swap this view onto it mid-stream, wiping the in-flight
+    // reply.
+    if (busy) return;
     if (voiceCallPending) return;
     setVoiceCallPending(true);
     try {
@@ -2604,7 +2620,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, voiceCallPending, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
+  }, [sessionId, busy, voiceCallPending, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -3219,7 +3235,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
     if (!sessionId || sessionId !== openVoiceSessionId) return;
     openVoiceNonceRef.current = openVoiceNonce;
-    voiceAutoCreatedRef.current = true;
+    voiceAutoCreatedRef.current = sessionId;
     setVoiceCallOpen(true);
   }, [openVoiceNonce, sessionId, openVoiceSessionId]);
 
@@ -5997,7 +6013,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       first (voice new-chat), so the button renders from turn
                       zero. Mic = dictation, phone = call, on every surface.
                       Disabled while a mint is in flight so rapid clicks can't
-                      fire multiple startVoiceConversation calls. */}
+                      fire multiple startVoiceConversation calls, and — only
+                      pre-session, since mid-session stays available — while
+                      busy, so a streaming first send can't be forked by
+                      minting a second, unrelated session underneath it. */}
                   {dictation.available ? (
                     <button
                       type="button"
@@ -6016,7 +6035,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                     title="Voice call"
                     aria-label="Voice call"
-                    disabled={voiceCallPending}
+                    disabled={voiceCallPending || (busy && !sessionId)}
                     onClick={() => {
                       void openVoiceCall();
                     }}
@@ -6144,10 +6163,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Voice new-chat: a call that ended with nothing said leaves an
             // empty pre-created conversation — discard it so the thread rail
             // stays clean. Safe: chat/send recreates the file on demand.
-            if (voiceAutoCreatedRef.current) {
-              voiceAutoCreatedRef.current = false;
-              void discardVoiceSessionIfEmpty(sessionId).then((deleted) => {
-                if (deleted) onSessionsChanged?.();
+            // Target the session the overlay was auto-created FOR, captured
+            // before the async discard — not the live `sessionId` prop,
+            // which may have moved on if the user ⌘K-switched sessions while
+            // the call was still up.
+            const target = voiceAutoCreatedRef.current;
+            voiceAutoCreatedRef.current = null;
+            if (target) {
+              void discardVoiceSessionIfEmpty(target).then((deleted) => {
+                if (deleted) {
+                  onSessionsChanged?.();
+                  // Only yank the view back to compose when it's still
+                  // parked on the session we just discarded — if the user
+                  // has already switched away, leave them where they are.
+                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                }
               });
             }
           }}

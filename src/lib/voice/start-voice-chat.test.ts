@@ -45,31 +45,43 @@ test("startVoiceConversation maps a thrown fetch to a network error", async () =
   assert.deepEqual(result, { ok: false, error: "network" });
 });
 
-test("discardVoiceSessionIfEmpty deletes only zero-turn conversations", async () => {
-  const { impl, calls } = fetchStub([
-    { json: { ok: true, conversation: { turns: [] } } },
-    { json: { ok: true, deleted: true } },
-  ]);
+test("discardVoiceSessionIfEmpty issues a single ifEmpty DELETE and reports deleted:true", async () => {
+  const { impl, calls } = fetchStub([{ json: { ok: true, deleted: true } }]);
   const deleted = await discardVoiceSessionIfEmpty("s-1", impl);
   assert.equal(deleted, true);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].url, "/api/chat/conversation/s-1");
-  assert.equal(calls[1].url, "/api/chat/conversation/s-1");
-  assert.equal(calls[1].init?.method, "DELETE");
+  // One call only — the server checks emptiness and deletes atomically, so
+  // there's no client-side GET→DELETE gap for an in-flight first exchange
+  // to land in.
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/chat/conversation/s-1?ifEmpty=1");
+  assert.equal(calls[0].init?.method, "DELETE");
 });
 
-test("discardVoiceSessionIfEmpty keeps conversations that have turns", async () => {
-  const { impl, calls } = fetchStub([
-    { json: { ok: true, conversation: { turns: [{ id: "t1" }] } } },
-  ]);
-  const deleted = await discardVoiceSessionIfEmpty("s-1", impl);
-  assert.equal(deleted, false);
-  assert.equal(calls.length, 1); // no DELETE issued
-});
-
-test("discardVoiceSessionIfEmpty is a no-op when the conversation is missing", async () => {
-  const { impl, calls } = fetchStub([{ status: 404, json: { ok: false, error: "not found" } }]);
+test("discardVoiceSessionIfEmpty reports false when the server left a non-empty conversation alone", async () => {
+  const { impl, calls } = fetchStub([{ json: { ok: true, deleted: false } }]);
   const deleted = await discardVoiceSessionIfEmpty("s-1", impl);
   assert.equal(deleted, false);
   assert.equal(calls.length, 1);
+});
+
+test("discardVoiceSessionIfEmpty treats an unparsable response as not deleted", async () => {
+  const impl = (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => { throw new Error("bad json"); },
+  })) as unknown as typeof fetch;
+  const deleted = await discardVoiceSessionIfEmpty("s-1", impl);
+  assert.equal(deleted, false);
+});
+
+test("discardVoiceSessionIfEmpty maps a thrown fetch to false", async () => {
+  const impl = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  const deleted = await discardVoiceSessionIfEmpty("s-1", impl);
+  assert.equal(deleted, false);
+});
+
+test("discardVoiceSessionIfEmpty URI-encodes the session id in the path", async () => {
+  const { impl, calls } = fetchStub([{ json: { ok: true, deleted: true } }]);
+  await discardVoiceSessionIfEmpty("s/1 weird?id", impl);
+  assert.equal(calls[0].url, `/api/chat/conversation/${encodeURIComponent("s/1 weird?id")}?ifEmpty=1`);
 });

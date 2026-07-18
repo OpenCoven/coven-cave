@@ -765,6 +765,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         );
         setPendingVoice({ nonce: Date.now(), sessionId: sid });
       }}
+      onVoiceSessionDiscarded={() => {
+        // The auto-created session was empty and got discarded while the
+        // view was still parked on it — return to a fresh compose state for
+        // the same familiar/project (same reset shape as the promotion
+        // above, but back to sessionId: null) instead of leaving the user
+        // typing into a session that no longer exists.
+        setView((prev) =>
+          prev.kind === "chat"
+            ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            : prev,
+        );
+      }}
       onSlashCommand={onSlashFromChat}
       onOpenOnboarding={onOpenOnboarding}
       onOpenTask={onOpenTask}

@@ -814,6 +814,7 @@ export const SUITES = {
     "src/app/api/cave-home-migration/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
+    "src/app/api/chat/conversation/[id]/route.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/app/api/config/route.test.ts",
     "src/app/api/opencoven-executions-route.test.ts",
@@ -1207,6 +1208,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/chat-task-autofill.test.ts",
   "src/lib/voice/hydrate-instructions.test.ts",
   "src/app/api/voice/session/route.test.ts",
+  "src/app/api/chat/conversation/[id]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",
