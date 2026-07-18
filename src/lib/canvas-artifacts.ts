@@ -27,6 +27,12 @@ export type CanvasArtifact = {
 // can't bloat the canvas store. Generous enough for a real standalone page.
 export const MAX_ARTIFACT_CODE_CHARS = 200_000;
 const MAX_TITLE_CHARS = 60;
+// Prompts are short descriptions (the composer's ask or a refine request);
+// clamping keeps a runaway/buggy caller from bloating every store read.
+export const MAX_ARTIFACT_PROMPT_CHARS = 4_000;
+// Ids are client-minted (`art-<uuid>`, ghreview slugs); anything this long is
+// garbage and would pollute the positions map keyed by it.
+const MAX_ARTIFACT_ID_CHARS = 200;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -242,13 +248,16 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   const id = typeof v.id === "string" ? v.id.trim() : "";
-  if (!id) return null;
-  const prompt = typeof v.prompt === "string" ? v.prompt : "";
+  if (!id || id.length > MAX_ARTIFACT_ID_CHARS) return null;
+  const prompt = (typeof v.prompt === "string" ? v.prompt : "").slice(0, MAX_ARTIFACT_PROMPT_CHARS);
   const code = clampArtifactCode(typeof v.code === "string" ? v.code : "");
   const title = typeof v.title === "string" && v.title.trim() ? v.title.trim().slice(0, MAX_TITLE_CHARS) : titleFromPrompt(prompt);
   const kind: ArtifactKind = v.kind === "react" ? "react" : "html";
-  const createdAt = typeof v.createdAt === "string" ? v.createdAt : "";
-  const updatedAt = typeof v.updatedAt === "string" ? v.updatedAt : createdAt;
+  // Timestamps feed the gallery's lexicographic recency sort and the card's
+  // date label — garbage strings sort a sketch as if newest forever. Coerce
+  // unparseable values to "" (renders dateless, sorts last).
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
   return { id, title, prompt, code, kind, createdAt, updatedAt };
 }
 

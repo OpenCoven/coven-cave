@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 // assignment and point every store call at the REAL ~/.coven store (which is
 // exactly how a test artifact once leaked into live data), so the module is
 // imported dynamically below.
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -122,6 +122,47 @@ const art = (id, code, extra = {}) => ({
 
   await deleteCanvasArtifact("art-react");
   assert.equal((await loadCanvas()).artifacts.length, 2, "delete by id still works");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Corrupt-store protection (cave-byr5). loadCanvas once read ANY failure as
+// an empty store — written when the file held only cosmetic positions. The
+// file now holds user sketches with no undo: reading a torn file as empty
+// meant the NEXT save destroyed every sketch. A provably-bad file must be
+// moved aside (bytes preserved) instead.
+// ═══════════════════════════════════════════════════════════════════════════
+
+{
+  const storePath = path.join(tmpHome, "canvas.json");
+  const corruptFiles = () => readdirSync(tmpHome).filter((f) => f.startsWith("canvas.json.corrupt-"));
+
+  // Torn JSON: moved aside, bytes preserved, store reads empty.
+  writeFileSync(storePath, "{{{ not json");
+  const afterCorrupt = await loadCanvas();
+  assert.equal(afterCorrupt.artifacts.length, 0, "a corrupt store reads as empty");
+  assert.equal(corruptFiles().length, 1, "the corrupt file is moved aside, not deleted");
+  assert.equal(
+    readFileSync(path.join(tmpHome, corruptFiles()[0]), "utf8"),
+    "{{{ not json",
+    "the original bytes survive for recovery",
+  );
+
+  // A save after the corruption starts a fresh store and leaves the preserved
+  // file alone — this exact sequence used to destroy every sketch.
+  const saved = await upsertCanvasArtifact(art("art-after-corrupt", "<!doctype html>x"));
+  assert.equal(saved.file.artifacts.length, 1, "saving after corruption starts a fresh store");
+  assert.equal(corruptFiles().length, 1, "the preserved corrupt file is untouched by the save");
+
+  // Valid-JSON-wrong-shape (an array) is just as unreadable — same treatment.
+  writeFileSync(storePath, "[1,2,3]");
+  await loadCanvas();
+  assert.equal(corruptFiles().length, 2, "shape-invalid JSON is also preserved aside");
+
+  // ENOENT is a genuine fresh start: no corrupt file is minted.
+  rmSync(storePath, { force: true });
+  const fresh = await loadCanvas();
+  assert.equal(fresh.artifacts.length, 0, "a missing file is an empty fresh start");
+  assert.equal(corruptFiles().length, 2, "a missing file mints no corrupt-aside");
 }
 
 rmSync(tmpHome, { recursive: true, force: true });
