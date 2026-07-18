@@ -8,7 +8,7 @@ regenerated against.
 
 | Map | Covers |
 | --- | --- |
-| `00-navigation-legend.mmd` | Shared semantic palette (node classes/colors) used by the whole set |
+| `00-navigation-legend.mmd` | Core semantic palette (shared base node classes/colors); diagrams may define additional per-map classes as needed |
 | `01-global-navigation.mmd` | Shell chrome (desktop sidebar + mobile drawer/tabs), route topology, aliases, redirects, dev-only routes |
 | `02-workspace-surfaces.mmd` | Every workspace surface `renderSurface` can show, with its internal tabs/panels |
 | `03-settings-navigation.mmd` | Settings IA (`settings-sections.ts` sections and nested editors) |
