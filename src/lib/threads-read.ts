@@ -131,6 +131,20 @@ export type WeaveSummary = {
   weaveHash: string;
 };
 
+export type DegradedFamiliarView = {
+  kind: "degraded-familiar";
+  familiarId: string;
+  /**
+   * Forward-compatible: the daemon owns this enum. Unknown reason strings still
+   * render blocked rather than disappearing.
+   */
+  reason: string;
+  /** Sanitized daemon parse error; full paths and raw config stay out of Cave. */
+  error: string;
+};
+
+export type WeaveListEntry = WeaveSummary | DegradedFamiliarView;
+
 export type PatternDescriptorView = {
   derived: true;
   name: string;
@@ -511,9 +525,10 @@ export function normalizeThread(v: unknown, weaveId: string): ThreadView | null 
  * predicate's coherence result and optional verifier observations.
  */
 export type RawWeaveEntry = {
-  weave: unknown;
-  coherence: unknown;
+  weave?: unknown;
+  coherence?: unknown;
   observed?: ObservedMap;
+  degraded?: unknown;
 };
 
 export function normalizeWeaveSummary(entry: RawWeaveEntry): WeaveSummary | null {
@@ -531,6 +546,21 @@ export function normalizeWeaveSummary(entry: RawWeaveEntry): WeaveSummary | null
     coherence,
     degradedSurfaces,
     weaveHash: bytesToHex(w.weave_hash) ?? "",
+  };
+}
+
+export function normalizeDegradedFamiliar(entry: RawWeaveEntry): DegradedFamiliarView | null {
+  // Daemon should never emit both shapes. If it does, preserve the older healthy
+  // path when it normalizes: a valid predicate-bearing weave is authoritative.
+  if (normalizeWeaveSummary(entry) !== null) return null;
+  if (!isRecord(entry.degraded)) return null;
+  const familiarId = entry.degraded.familiarId;
+  if (typeof familiarId !== "string" || familiarId.length === 0) return null;
+  return {
+    kind: "degraded-familiar",
+    familiarId,
+    reason: typeof entry.degraded.reason === "string" ? entry.degraded.reason : "ward-config-unparseable",
+    error: typeof entry.degraded.error === "string" ? entry.degraded.error : "",
   };
 }
 
