@@ -191,8 +191,7 @@ export function FirstProjectGate({
           aria-labelledby={titleId}
           aria-describedby={copyId}
           tabIndex={-1}
-          className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none"
-          style={{ background: "var(--bg-panel)" }}
+          className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-xl focus:outline-none"
         >
           <div className="border-b border-[var(--border-hairline)] px-6 py-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
