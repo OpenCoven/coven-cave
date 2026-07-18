@@ -431,9 +431,8 @@ export function Workspace() {
     setModeRaw(next);
   }, []);
   // Chat mode keeps the global nav in the nav pane and mounts the project-
-  // grouped Chats list beside it. The Chats header back control returns to the
-  // last non-chat surface the user came from.
-  const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
+  // grouped Chats list beside it. The Chats header button explicitly routes
+  // back Home rather than restoring a prior surface.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -609,15 +608,6 @@ export function Workspace() {
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-
-  useEffect(() => {
-    if (mode !== "chat") setLastNonChatMode(mode);
-  }, [mode]);
-
-  const exitChatMode = useCallback(() => {
-    setMode(lastNonChatMode === "chat" ? "home" : lastNonChatMode);
-    shellRef.current?.dismissNavMobile();
-  }, [lastNonChatMode]);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -2666,6 +2656,10 @@ export function Workspace() {
         startFamiliarChat(activeId, projectRoot);
         shellRef.current?.dismissListMobile();
       }}
+      onNavigate={(nextMode) => {
+        setMode(nextMode);
+        shellRef.current?.dismissListMobile();
+      }}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
@@ -2675,7 +2669,10 @@ export function Workspace() {
 
         handleSessionsDeleted([session.id]);
       }}
-      onOpenUrl={openUrlInApp}
+      onOpenUrl={(url) => {
+        shellRef.current?.dismissListMobile();
+        openUrlInApp(url);
+      }}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
         shellRef.current?.dismissListMobile();

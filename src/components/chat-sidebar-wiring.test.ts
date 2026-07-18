@@ -35,9 +35,9 @@ assert.match(
   "workspace should keep SidebarMinimal in nav and pass Chats separately as list content",
 );
 assert.match(
-  workspace,
-  /const exitChatMode = useCallback/,
-  "workspace should provide exitChatMode so the sidebar back control returns to the prior surface",
+  workspaceSidebar,
+  /aria-label="Go to Home"/,
+  "the chat sidebar header control is explicitly a Go to Home button",
 );
 
 // ── Home-first boot: the app opens on Home; chat is one step away. ──
@@ -46,11 +46,8 @@ assert.match(
   /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
   "workspace should boot into home mode",
 );
-assert.match(
-  workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
-  "the chat back-control still falls back to home when no other surface was visited",
-);
+assert.doesNotMatch(workspace, /const exitChatMode = useCallback/, "workspace should not keep the unused prior-surface exit helper");
+assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track a stale prior-surface contract");
 
 // ── Subpanel removal: the in-surface thread rail is dropped in chat mode,
 //    because the outer WorkspaceSidebar already owns the project-grouped list. ─
