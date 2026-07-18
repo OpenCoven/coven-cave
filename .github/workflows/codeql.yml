@@ -51,10 +51,10 @@ jobs:
             build-mode: none
             runner: ubuntu-latest
             timeout: 20
-          - language: swift
-            build-mode: manual
-            runner: macos-15
-            timeout: 40
+          # swift/macos-15 leg removed from PR CI: GitHub-hosted macOS minutes
+          # were exhausting the org Actions limit and queuing indefinitely,
+          # making the Analyze (swift) check unsatisfiable. Restore
+          # this entry once macOS Actions budget is sorted.
 
     steps:
       - name: Checkout repository
