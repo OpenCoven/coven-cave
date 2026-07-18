@@ -26,8 +26,9 @@ export function resolveWorkspaceActiveFamiliarId(
   activeId: string | null,
   familiars: readonly Pick<Familiar, "id">[],
   familiarsLoaded: boolean,
+  familiarRosterLoadedSuccessfully: boolean,
 ): string | null {
-  return familiarsLoaded
+  return familiarsLoaded && familiarRosterLoadedSuccessfully
     ? resolveLoadedActiveFamiliarId(activeId, familiars)
     : activeId;
 }

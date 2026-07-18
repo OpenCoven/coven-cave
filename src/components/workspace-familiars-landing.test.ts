@@ -167,13 +167,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(requestedActiveId, visibleFamiliars, familiarsLoaded\);/,
-  "workspace keeps the requested familiar through roster hydration and only consumes the loaded fallback once familiars have resolved",
+  /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(\s*requestedActiveId,\s*visibleFamiliars,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\);/,
+  "workspace keeps the requested familiar through roster hydration and only consumes the loaded fallback once the roster has successfully loaded",
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, requestedActiveId, loadedActiveId\]\);/,
-  "Workspace only heals and persists a stale single-familiar selection after the async roster has loaded",
+  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId\]\);/,
+  "Workspace only heals and persists a stale single-familiar selection after the async roster has loaded successfully",
 );
 assert.match(
   workspace,
@@ -187,8 +187,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const projectGateFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
-  "the first-project gate also falls back from a stale persisted familiar id to the first loaded non-archived familiar",
+  /const projectGateFamiliarId = familiarRosterLoadedSuccessfully \? \(activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null\) : null;/,
+  "the first-project gate only targets a familiar after the roster has successfully loaded",
 );
 assert.doesNotMatch(
   workspace,

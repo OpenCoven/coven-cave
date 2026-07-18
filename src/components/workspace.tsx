@@ -315,8 +315,14 @@ export function Workspace() {
   // lets the chat boot view hold a quiet frame instead of flashing the
   // "choose a familiar" empty-state copy while the roster is in flight.
   const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
+  const [familiarRosterLoadedSuccessfully, setFamiliarRosterLoadedSuccessfully] = useState(false);
   const loadedActiveId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
-  const activeId = resolveWorkspaceActiveFamiliarId(requestedActiveId, visibleFamiliars, familiarsLoaded);
+  const activeId = resolveWorkspaceActiveFamiliarId(
+    requestedActiveId,
+    visibleFamiliars,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+  );
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -751,11 +757,12 @@ export function Workspace() {
     if (
       !activeFamiliarHydrated
       || !familiarsLoaded
+      || !familiarRosterLoadedSuccessfully
       || requestedActiveId === null
       || requestedActiveId === loadedActiveId
     ) return;
     setScopeIds(loadedActiveId ? new Set([loadedActiveId]) : new Set());
-  }, [activeFamiliarHydrated, familiarsLoaded, requestedActiveId, loadedActiveId]);
+  }, [activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId]);
 
   useEffect(() => {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
@@ -925,12 +932,15 @@ export function Workspace() {
         // familiars right now", not "there are none". Clearing here made three
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
+        setFamiliarRosterLoadedSuccessfully(false);
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
+      setFamiliarRosterLoadedSuccessfully(true);
     } catch (err) {
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+      setFamiliarRosterLoadedSuccessfully(false);
     } finally {
       setFamiliarsLoaded(true);
     }
@@ -2340,11 +2350,12 @@ export function Workspace() {
 
   const active = visibleFamiliars.find((f) => f.id === activeId) ?? null;
   const calendarFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
-  const projectGateFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
+  const projectGateFamiliarId = familiarRosterLoadedSuccessfully ? (activeId ?? visibleFamiliars[0]?.id ?? null) : null;
   const firstProjectGateOpen = onboardingResolved
     && !onboardingOpen
     && (mode === "home" || mode === "chat")
     && familiarsLoaded
+    && familiarRosterLoadedSuccessfully
     && projectGateFamiliarId !== null
     && projectsInitiallyResolved
     && registeredProjects.length === 0;

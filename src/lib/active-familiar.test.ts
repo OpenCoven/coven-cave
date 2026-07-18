@@ -24,12 +24,12 @@ test("resolveLoadedActiveFamiliarId returns null when no visible familiars are l
   assert.equal(resolveLoadedActiveFamiliarId("ghost", []), null);
 });
 
-test("resolveWorkspaceActiveFamiliarId keeps a valid persisted id through the initial empty roster", () => {
-  assert.equal(resolveWorkspaceActiveFamiliarId("salem", [], false), "salem");
-  assert.equal(resolveWorkspaceActiveFamiliarId("salem", familiars, true), "salem");
+test("resolveWorkspaceActiveFamiliarId keeps a valid persisted id through a failed roster settlement", () => {
+  assert.equal(resolveWorkspaceActiveFamiliarId("salem", [], true, false), "salem");
+  assert.equal(resolveWorkspaceActiveFamiliarId("salem", familiars, true, true), "salem");
 });
 
-test("resolveWorkspaceActiveFamiliarId only falls back after the roster has loaded", () => {
-  assert.equal(resolveWorkspaceActiveFamiliarId("ghost", [], false), "ghost");
-  assert.equal(resolveWorkspaceActiveFamiliarId("ghost", familiars, true), "sage");
+test("resolveWorkspaceActiveFamiliarId restores the loaded fallback after a later successful roster load", () => {
+  assert.equal(resolveWorkspaceActiveFamiliarId("ghost", [], true, false), "ghost");
+  assert.equal(resolveWorkspaceActiveFamiliarId("ghost", familiars, true, true), "sage");
 });

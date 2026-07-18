@@ -71,8 +71,8 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(
     src,
-    /const projectGateFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
-    "the gate uses the loaded active familiar, otherwise the first non-archived fallback",
+    /const projectGateFamiliarId = familiarRosterLoadedSuccessfully \? \(activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null\) : null;/,
+    "the gate only targets a familiar after the roster has successfully loaded",
   );
   assert.match(
     src,
@@ -92,8 +92,8 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(
     src,
-    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& familiarsLoaded\s*&& projectGateFamiliarId !== null\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
-    "the gate only opens for home or chat after onboarding, familiars, and the first project load have resolved with an available non-archived familiar target",
+    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& familiarsLoaded\s*&& familiarRosterLoadedSuccessfully\s*&& projectGateFamiliarId !== null\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
+    "the gate only opens for home or chat after onboarding, familiars, and a successful roster load have resolved with an available non-archived familiar target",
   );
   assert.doesNotMatch(src, /const firstProjectGateOpen =[^;]*!projectsLoading/, "later reloads do not hide the gate while Retry is in flight");
   assert.match(
