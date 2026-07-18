@@ -11204,6 +11204,25 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-progression__streak { display: inline-flex; align-items: center; gap: 4px; }
 .fa-progression__streak svg { width: 12px; height: 12px; color: var(--color-warning); }
 
+/* One-shot PR-merge flare (cave-hshy) — the board's card-done bloom retold
+   on the chat GitHub card. Border/shadow only (no layout shift), announce()
+   is the AT channel, reduced motion collapses it entirely. */
+.cave-gh-card--reward { animation: cave-gh-reward-flare 700ms var(--ease-decelerate) forwards; }
+@keyframes cave-gh-reward-flare {
+  0% {
+    border-color: color-mix(in oklch, var(--color-success) 70%, var(--border-hairline));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-success) 45%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-success) 40%, transparent);
+  }
+  100% {
+    border-color: var(--border-hairline);
+    box-shadow: 0 0 0 10px transparent, 0 0 34px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-gh-card--reward { animation: none; }
+}
+
 .fa-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));

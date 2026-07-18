@@ -459,6 +459,7 @@ export const SUITES = {
     "src/app/accent-token-usage.test.ts",
     "src/app/globals-reveal-on-hover.test.ts",
     "src/components/board-reward-flare.test.ts",
+    "src/components/github-card-reward.test.ts",
     "src/components/familiar-roster-card.test.ts",
     "src/components/workspace-milestone-quiet.test.ts",
     "src/lib/familiar-growth-signals.test.ts",
