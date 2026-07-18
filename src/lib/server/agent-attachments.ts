@@ -84,15 +84,27 @@ function parseMarker(body: string): AttachmentMarker | null {
   };
 }
 
+function isWithinRoot(candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate);
+  return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string[] = []): string | null {
-  const resolvedMarkerPath = path.resolve(markerPath);
+  let realMarkerPath: string;
+  try {
+    realMarkerPath = fs.realpathSync(markerPath);
+  } catch {
+    return null;
+  }
+
   for (const root of allowedRoots) {
-    const resolvedRoot = path.resolve(root);
-    const relative = path.relative(resolvedRoot, resolvedMarkerPath);
-    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
-      return resolvedMarkerPath;
+    let realRoot: string;
+    try {
+      realRoot = fs.realpathSync(root);
+    } catch {
+      continue;
     }
-    if (!relative) return resolvedMarkerPath;
+    if (isWithinRoot(realMarkerPath, realRoot)) return realMarkerPath;
   }
   return null;
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -97,6 +97,18 @@ try {
     assert.equal(out.text, "nope");
   }
 
+  // --- symlink escaping runtime-granted root → dropped ---
+  {
+    const outsideTextPath = path.join(outside, "secret.env");
+    const symlinkPath = path.join(allowed, "linked-secret.env");
+    await writeFile(outsideTextPath, "TOP_SECRET_TOKEN=symlink_escape");
+    await symlink(outsideTextPath, symlinkPath);
+
+    const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: symlinkPath })}\n\`\`\``;
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+    assert.equal(out.attachments.length, 0, "symlink target outside allowed root is dropped");
+    assert.equal(out.text, "nope");
+  }
 
   // --- globally allowed but not runtime-granted root → dropped ---
   {
