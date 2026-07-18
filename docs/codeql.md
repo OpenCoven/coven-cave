@@ -1,38 +1,71 @@
 # CodeQL configuration
 
-The advanced workflow is configured to scan GitHub Actions,
-JavaScript/TypeScript, Python, Rust, and Swift. It is required because the
-native iOS project is generated from
-`apps/ios/CovenCave/project.yml`; default setup cannot run `xcodegen` before
-Swift autobuild searches for an Xcode project.
+CodeQL runs through the checked-in advanced workflow
+(`.github/workflows/codeql.yml`); GitHub default setup is disabled. The
+migration and enforcement work is tracked in issue #3285.
 
-## Activating advanced setup
+## Current state
 
-GitHub default setup overrides checked-in CodeQL workflows and rejects their
-result uploads. Until cutover, the advanced workflow defaults
-`CODEQL_ADVANCED_UPLOAD` to `never`, so it can prove that every language builds
-and analyzes without making the migration pull request fail at upload time. A
-repository administrator must perform this transition after
-`.github/workflows/codeql.yml` reaches `main`:
+- **Gated languages (push + PR, ubuntu):** GitHub Actions,
+  JavaScript/TypeScript, Python, Rust. These upload SARIF (repository variable
+  `CODEQL_ADVANCED_UPLOAD=always`) and feed the merge gate.
+- **Swift (audit-only, weekly + on demand):** the `Analyze (swift audit)` job
+  builds the generated iOS project (`xcodegen` from
+  `apps/ios/CovenCave/project.yml`, then `xcodebuild`) on `macos-15` for
+  `schedule`/`workflow_dispatch` events only, with `upload: never`. Findings
+  appear in the run's step summary and as a `codeql-swift-sarif` artifact
+  (30-day retention). Swift needs the advanced workflow because default setup
+  cannot run `xcodegen` before Swift autobuild looks for an Xcode project.
+- **Merge gate:** branch ruleset **CodeQL merge gate** (id 19123333) on `main`
+  requires code scanning results from CodeQL with security threshold **High or
+  higher** (alerts threshold **None**), plus the standard required CI checks.
+  Repository admins can bypass for pull requests; direct pushes cannot bypass.
 
-1. In **Settings > Security > Code security**, disable CodeQL default setup.
-2. In **Settings > Secrets and variables > Actions > Variables**, create the
-   repository variable `CODEQL_ADVANCED_UPLOAD` with value `always`.
-3. In **Actions**, enable the **CodeQL Advanced** workflow if GitHub left it
-   disabled, then run it with **Run workflow** on `main`.
-4. Confirm all five `Analyze (...)` jobs succeed and that the latest code
-   scanning analyses contain these categories:
-   `/language:actions`, `/language:javascript-typescript`, `/language:python`,
-   `/language:rust`, and `/language:swift`.
-5. Add an active branch ruleset for `main` with **Require code scanning
-   results** set to tool `CodeQL`, security threshold **High or higher**, and
-   alerts threshold **None**. Do not remove the existing required CI checks.
-6. Open a pull request and confirm merge is blocked until the CodeQL analysis
-   finishes, and when a new High or Critical security result is reported.
+## The gate-parity invariant (read before touching the matrix)
 
-If the advanced workflow cannot upload results, first verify that default setup
-is disabled and `CODEQL_ADVANCED_UPLOAD` is `always`. For rollback, set the
-variable to `never` before re-enabling default setup so the two configurations
-do not compete. Re-enable default setup immediately if the advanced workflow
-cannot be made healthy, so the existing four-language security coverage is not
-left inactive.
+The ruleset's `code_scanning` rule derives the set of *expected* analysis
+categories from what has been uploaded to `main`. A pull request only
+satisfies the gate when its merge/head commit has results for **every**
+expected category.
+
+Uploading a category from main-only runs while PRs don't produce it makes the
+gate **permanently unsatisfiable**: every PR fails with *"Code scanning is
+still expecting N results from CodeQL"*, and only admin bypass can merge. This
+happened when the swift matrix leg was removed from PR runs (macOS budget)
+while its analyses remained on `main` — see issue #3285. Recovery required
+deleting the stale swift analyses from `main` via
+`DELETE /repos/{owner}/{repo}/code-scanning/analyses/{id}?confirm_delete=true`.
+
+Rules that follow from this:
+
+1. Every category uploaded on `push` to `main` must also be produced by
+   `pull_request` runs (keep the trigger pair symmetric for gated legs).
+2. Audit-only legs (swift) must keep `upload: never` hard-coded.
+3. To promote swift to a gated language, add it back to the matrix for both
+   push **and** PR events — accepting one macOS run per PR — and never
+   main-only.
+
+The workflow also sets `cancel-in-progress: false`: the gate evaluates the PR
+*merge commit*, which regenerates whenever `main` moves, so cancelling
+in-flight runs under merge load re-creates the same deadlock from the other
+side. Expect the gate to lag `main` by one CodeQL run (~10 min) during rapid
+merge trains; re-running the PR's CodeQL workflow (or waiting for the
+merge-commit run) clears it.
+
+## Verifying the gate
+
+- List recent evaluations: `gh api repos/{owner}/{repo}/rulesets/rule-suites`
+  — merges show `result: pass` (or `bypass` with the `code_scanning` rule's
+  failure detail while a run is still in flight).
+- A PR with all analyses uploaded and no open High/Critical alerts merges
+  without bypass; a PR whose CodeQL run is still executing is blocked with
+  *"still expecting N results"*.
+
+## Rollback
+
+If the advanced workflow cannot be kept healthy: set
+`CODEQL_ADVANCED_UPLOAD=never`, re-enable default setup (Settings > Security >
+Code security) so the four ubuntu languages stay covered, and delete or
+deactivate the **CodeQL merge gate** ruleset (default setup categories differ,
+so the old expected set would block PRs). Never run default setup and advanced
+uploads side by side — they compete for the same categories.

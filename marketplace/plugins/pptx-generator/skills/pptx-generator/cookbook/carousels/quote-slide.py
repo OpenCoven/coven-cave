@@ -85,7 +85,7 @@ def main() -> None:
         Inches(2.0), Inches(2.0)
     )
     p = open_quote.text_frame.paragraphs[0]
-    p.text = """
+    p.text = "\u201C"  # Left double quote mark
     p.font.name = BRAND_HEADING_FONT
     p.font.size = Pt(180)
     p.font.bold = True
