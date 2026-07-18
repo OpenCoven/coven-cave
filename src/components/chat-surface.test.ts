@@ -41,7 +41,7 @@ assert.doesNotMatch(
 
 assert.match(
   workspace,
-  /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
+  /runWorkspaceDaemonStart\(\{[\s\S]*fetchImpl: fetch/,
   "Workspace should make the offline daemon state actionable via the shared banner channel",
 );
 

@@ -66,7 +66,7 @@ assert.deepEqual(
       target: { mode: "local" },
     },
   }),
-  { kind: "offline" },
+  { kind: "offline", targetMode: "local" },
   "the explicit local-offline classification keeps the Start daemon path",
 );
 
@@ -76,7 +76,7 @@ assert.deepEqual(
     responseOk: true,
     payload: { running: false, reason: "daemon offline", target: { mode: "local" } },
   }),
-  { kind: "offline" },
+  { kind: "offline", targetMode: "local" },
   "an older status route's exact local-offline payload remains compatible",
 );
 
