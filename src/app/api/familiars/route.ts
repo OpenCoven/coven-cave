@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { callDaemon, callDaemonTarget, daemonTargetForConfig } from "@/lib/coven-daemon";
-import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import { callDaemon } from "@/lib/coven-daemon";
+import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
-import { filterInstallSeedFamiliars } from "@/lib/familiar-roster-guard";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
+import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
   normalizeFamiliarDraft,
-  parseFamiliarsToml,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
@@ -32,32 +31,14 @@ export type DaemonFamiliar = {
 };
 
 export async function GET() {
-  const covenDir = covenHome();
-  const familiarsToml = path.join(covenDir, "familiars.toml");
-  // Resolve the daemon target once from a single config snapshot, so the
-  // roster call and the mode-aware shaping below can't disagree about which
-  // authority (local daemon vs Server hub) answered.
-  const config = await loadConfig();
-  const target = daemonTargetForConfig(config);
-  const [res, removedIds, declaredEntries] = await Promise.all([
-    callDaemonTarget<(DaemonFamiliar & { emoji?: string; icon?: string })[]>(target, {
-      path: "/api/v1/familiars",
-    }),
-    removedFamiliarIds().catch(() => new Set<string>()),
-    readFile(familiarsToml, "utf8")
-      .then(parseFamiliarsToml)
-      .catch(() => []),
-  ]);
-  // Ids the user has explicitly declared in the local familiars.toml —
-  // exempt from the install-seed heuristics below.
-  const explicitIds = new Set(declaredEntries.map((entry) => entry.id.toLowerCase()));
-  if (!res.ok) {
+  const rosterResult = await loadVisibleFamiliarRoster();
+  if (!rosterResult.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
     // — typically a stale or missing token after a hub reconnect. Surface
     // that distinctly and actionably instead of collapsing every daemon
     // failure into a bare 503/401 code in the notch ("Failed to load
     // familiars (401)"), which tells the user nothing about how to recover.
-    if (res.status === 401 || res.status === 403) {
+    if (rosterResult.status === 401 || rosterResult.status === 403) {
       return NextResponse.json(
         {
           ok: false,
@@ -66,14 +47,15 @@ export async function GET() {
           reason: "unauthorized",
           familiars: [],
         },
-        { status: res.status },
+        { status: rosterResult.status },
       );
     }
     return NextResponse.json(
-      { ok: false, error: res.error ?? `daemon http ${res.status}`, familiars: [] },
+      { ok: false, error: rosterResult.error, familiars: [] },
       { status: 503 },
     );
   }
+  const { config } = rosterResult;
   // Pass `emoji` through — it's the daemon-provided default glyph the
   // glyph picker uses as the starting value. The Cave-local override store
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
@@ -82,41 +64,8 @@ export async function GET() {
   // when one exists, cache-busted by file mtime plus renderer format so both
   // content changes and server-side encoding changes refetch in desktop
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
-  //
-  // A removed familiar (DELETE /api/familiars/[id]) can linger in the daemon's
-  // in-memory roster until it re-reads familiars.toml — hide tombstoned ids so
-  // Remove takes effect immediately in every client.
-  //
-  // Roster shaping is mode-aware (the list must reflect the coven's REAL
-  // state, not just this machine's — cave-7cv4):
-  //  - hub mode: the roster comes from the remote hub, where every entry is a
-  //    real registered familiar. The install-seed guard judges entries against
-  //    the LOCAL familiars.toml, which says nothing about a remote coven — a
-  //    hub familiar genuinely named Sage or Salem must not be hidden here.
-  //  - local mode: filter the daemon's seeded first-install suggestions as
-  //    before (entries with live activity state are never hidden).
-  //  - either mode: familiars declared in the local familiars.toml but missing
-  //    from the daemon roster (daemon hasn't re-read the file yet, or the hub
-  //    doesn't know this machine's file) are merged in, so every id the POST
-  //    duplicate check can 409 on is VISIBLE in the list instead of looking
-  //    summonable again.
-  const daemonRoster =
-    target.mode === "hub"
-      ? (res.data ?? [])
-      : filterInstallSeedFamiliars(res.data ?? [], explicitIds);
-  const visibleRoster = daemonRoster.filter((f) => !removedIds.has(f.id));
-  const rosterIds = new Set(visibleRoster.map((f) => f.id.toLowerCase()));
-  const declaredOnly: (DaemonFamiliar & { emoji?: string; icon?: string })[] = declaredEntries
-    .filter((entry) => !rosterIds.has(entry.id.toLowerCase()) && !removedIds.has(entry.id))
-    .map((entry) => ({
-      id: entry.id,
-      display_name: entry.displayName ?? entry.id,
-      role: entry.role ?? "Familiar",
-      ...(entry.description ? { description: entry.description } : {}),
-      ...(entry.emoji ? { emoji: entry.emoji } : {}),
-    }));
   const familiars = await Promise.all(
-    [...visibleRoster, ...declaredOnly].map(async (f) => {
+    rosterResult.roster.map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);

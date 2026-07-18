@@ -187,8 +187,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const projectGateFamiliarId = familiarRosterLoadedSuccessfully \? \(activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null\) : null;/,
-  "the first-project gate only targets a familiar after the roster has successfully loaded",
+  /const \{ open: firstProjectGateOpen, familiarId: projectGateFamiliarId \} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
+  "the first-project gate target and visibility are derived together from the loaded non-archived roster through the shared policy helper",
 );
 assert.doesNotMatch(
   workspace,

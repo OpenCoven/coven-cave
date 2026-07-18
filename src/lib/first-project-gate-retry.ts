@@ -97,3 +97,18 @@ export function clearPendingFirstProjectAccessSnapshot(storage?: StorageLike | n
     // private mode / blocked storage — nothing to do
   }
 }
+
+export function reconcilePendingFirstProjectAccessSnapshot(
+  snapshot: PendingFirstProjectAccessSnapshot | null,
+  projects: readonly CaveProject[],
+  visibleFamiliars: readonly { id: string }[],
+): PendingFirstProjectAccessSnapshot | null {
+  if (!snapshot) return null;
+  const project = projects.find((entry) => entry.id === snapshot.project.id);
+  if (!project) return null;
+  if (!visibleFamiliars.some((familiar) => familiar.id === snapshot.familiarId)) return null;
+  return {
+    familiarId: snapshot.familiarId,
+    project: { id: project.id, name: project.name, root: project.root },
+  };
+}

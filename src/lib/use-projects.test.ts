@@ -4,11 +4,17 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
 const cacheSource = readFileSync(new URL("./use-projects-cache.ts", import.meta.url), "utf8");
+const mutationSource = readFileSync(new URL("./project-registry-mutation.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ emitProjectRegistryMutation, subscribeProjectRegistryReload \} from "\.\/project-registry-events\.ts";/,
+  /import \{ emitProjectRegistryMutation, subscribeProjectRegistryMutation \} from "\.\/project-registry-events\.ts";/,
   "useProjects imports the shared project-registry notification helpers",
+);
+assert.match(
+  source,
+  /import \{ applyProjectRegistryMutation \} from "\.\/project-registry-mutation\.ts";/,
+  "useProjects imports the shared optimistic mutation reducer",
 );
 assert.match(
   source,
@@ -78,13 +84,23 @@ assert.match(
 );
 assert.equal(
   (source.match(/emitProjectRegistryMutation\(\);/g) ?? []).length,
-  5,
-  "all five successful mutations notify every mounted projects hook scope",
+  4,
+  "four successful non-delete mutations still notify every mounted projects hook scope with a generic refresh",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*if \(!enabled\) return;\s*return subscribeProjectRegistryReload\(\(\) => load\(\)\);\s*\}, \[enabled, load\]\);/,
-  "each enabled hook instance subscribes to shared project-registry notifications and re-reads through the new shared generation",
+  /emitProjectRegistryMutation\(\{ kind: "delete", projectId: id \}\);/,
+  "successful deletes emit a typed delete mutation",
+);
+assert.match(
+  mutationSource,
+  /export function applyProjectRegistryMutation\(projects: CaveProject\[], mutation: ProjectRegistryMutation\): CaveProject\[] \{\s*return mutation\.kind === "delete"\s*\? projects\.filter\(\(project\) => project\.id !== mutation\.projectId\)\s*:\s*projects;\s*\}/,
+  "typed delete mutations have a shared optimistic local-state reducer",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*if \(!enabled\) return;\s*return subscribeProjectRegistryMutation\(\(\{ mutation \}\) => \{[\s\S]*setProjects\(\(prev\) => applyProjectRegistryMutation\(prev, mutation\)\);[\s\S]*void load\(\);[\s\S]*\}\);\s*\}, \[enabled, load\]\);/,
+  "each enabled hook instance applies the optimistic mutation locally before reloading through the shared cache generation",
 );
 
 assert.match(
@@ -95,13 +111,13 @@ assert.match(
 
 assert.match(
   source,
-  /const applyCreatedProject = useCallback\(\(project: CaveProject, emitMutation = true\): CaveProject => \{[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*if \(emitMutation\) emitProjectRegistryMutation\(\);[\s\S]*return project;/,
-  "successful project creation shares one local-state path with optional bundled-mutation notification suppression",
+  /const applyCreatedProject = useCallback\(\(project: CaveProject, options\?: CreateProjectOptions\): CaveProject => \{[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*if \(options\?\.emitMutation !== false\) emitProjectRegistryMutation\(\);[\s\S]*return project;/,
+  "successful project creation shares one local-state path that fans out through the shared mutation event",
 );
 
 assert.match(
   source,
-  /const requestCreateProject = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CreateProjectResult> => \{/,
+  /const requestCreateProject = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CreateProjectResult> => \{/,
   "createProject and createProjectOrThrow share one request path",
 );
 
@@ -113,13 +129,13 @@ assert.match(
 
 assert.match(
   source,
-  /const createProject = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CaveProject \| null> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*return result\.ok \? result\.project : null;/,
+  /const createProject = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject \| null> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*return result\.ok \? result\.project : null;/,
   "the existing createProject API stays nullable/back-compatible for current callers",
 );
 
 assert.match(
   source,
-  /const createProjectOrThrow = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
+  /const createProjectOrThrow = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
   "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
 );
 

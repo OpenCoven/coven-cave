@@ -118,6 +118,13 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import { FirstProjectGate } from "@/components/first-project-gate";
+import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
+import {
+  clearPendingFirstProjectAccessSnapshot,
+  readPendingFirstProjectAccessSnapshot,
+  reconcilePendingFirstProjectAccessSnapshot,
+  type PendingFirstProjectAccessSnapshot,
+} from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
@@ -510,6 +517,7 @@ export function Workspace() {
   // in-flight install is not forgotten and daemon auto-start stays one-shot.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
+  const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -1394,6 +1402,21 @@ export function Workspace() {
   useEffect(() => {
     if (!projectsLoading) setProjectsInitiallyResolved(true);
   }, [projectsLoading]);
+
+  const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsInitiallyResolved;
+  const reconciledPendingFirstProjectGrant = canReconcilePendingFirstProjectGrant
+    ? reconcilePendingFirstProjectAccessSnapshot(
+      pendingFirstProjectGrant,
+      registeredProjects,
+      visibleFamiliars,
+    )
+    : pendingFirstProjectGrant;
+
+  useEffect(() => {
+    if (!canReconcilePendingFirstProjectGrant || !pendingFirstProjectGrant || reconciledPendingFirstProjectGrant) return;
+    clearPendingFirstProjectAccessSnapshot();
+    setPendingFirstProjectGrant(null);
+  }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
 
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared
@@ -2375,15 +2398,18 @@ export function Workspace() {
 
   const active = visibleFamiliars.find((f) => f.id === activeId) ?? null;
   const calendarFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
-  const projectGateFamiliarId = familiarRosterLoadedSuccessfully ? (activeId ?? visibleFamiliars[0]?.id ?? null) : null;
-  const firstProjectGateOpen = onboardingResolved
-    && !onboardingOpen
-    && (mode === "home" || mode === "chat")
-    && familiarsLoaded
-    && familiarRosterLoadedSuccessfully
-    && projectGateFamiliarId !== null
-    && projectsInitiallyResolved
-    && registeredProjects.length === 0;
+  const { open: firstProjectGateOpen, familiarId: projectGateFamiliarId } = resolveFirstProjectGatePolicy({
+    activeFamiliarId: activeId,
+    visibleFamiliars,
+    registeredProjects,
+    pendingGrant: reconciledPendingFirstProjectGrant,
+    onboardingResolved,
+    onboardingOpen,
+    mode,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+    projectsInitiallyResolved,
+  });
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
@@ -2834,7 +2860,21 @@ export function Workspace() {
           ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
           : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
       </h1>
-      {renderSurface(mode)}
+      {firstProjectGateOpen ? (
+        <FirstProjectGate
+          open={firstProjectGateOpen}
+          familiarId={projectGateFamiliarId}
+          pendingGrant={reconciledPendingFirstProjectGrant}
+          onPendingGrantChange={setPendingFirstProjectGrant}
+          loadingProjects={projectsLoading}
+          projectsError={projectsError}
+          createProjectOrThrow={createProjectOrThrow}
+          reloadProjects={reloadProjects}
+        />
+      ) : null}
+      <div aria-hidden={firstProjectGateOpen || undefined} inert={firstProjectGateOpen || undefined}>
+        {renderSurface(mode)}
+      </div>
     </div>
   );
 
@@ -2988,15 +3028,6 @@ export function Workspace() {
           }}
         />
       )}
-
-      <FirstProjectGate
-        open={firstProjectGateOpen}
-        familiarId={projectGateFamiliarId}
-        loadingProjects={projectsLoading}
-        projectsError={projectsError}
-        createProjectOrThrow={createProjectOrThrow}
-        reloadProjects={reloadProjects}
-      />
 
       {reminderModalOpen && (
         <NewReminderModal

@@ -7,6 +7,7 @@ import {
   clearPendingFirstProjectAccessSnapshot,
   parsePendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
+  reconcilePendingFirstProjectAccessSnapshot,
   writePendingFirstProjectAccessSnapshot,
 } from "./first-project-gate-retry.ts";
 
@@ -81,4 +82,36 @@ test("pending first-project access snapshots tolerate blocked sessionStorage", (
   assert.equal(writePendingFirstProjectAccessSnapshot(snapshot, storage), false);
   assert.equal(readPendingFirstProjectAccessSnapshot(storage), null);
   assert.doesNotThrow(() => clearPendingFirstProjectAccessSnapshot(storage));
+});
+
+test("pending first-project access snapshots reconcile against live projects and the visible familiar roster", () => {
+  const snapshot = {
+    familiarId: "ember",
+    project: { id: "p1", name: "Old name", root: "/old" },
+  };
+  const projects = [
+    { id: "p1", name: "Current name", root: "/repo/current", createdAt: "now", updatedAt: "now" },
+    { id: "p2", name: "Other", root: "/repo/other", createdAt: "now", updatedAt: "now" },
+  ];
+  const visibleFamiliars = [{ id: "sage" }, { id: "ember" }];
+
+  assert.deepEqual(
+    reconcilePendingFirstProjectAccessSnapshot(snapshot, projects, visibleFamiliars),
+    {
+      familiarId: "ember",
+      project: { id: "p1", name: "Current name", root: "/repo/current" },
+    },
+    "a valid pending retry adopts the current registered project fields while keeping its original familiar",
+  );
+
+  assert.equal(
+    reconcilePendingFirstProjectAccessSnapshot(snapshot, projects.slice(1), visibleFamiliars),
+    null,
+    "missing projects clear the pending retry",
+  );
+  assert.equal(
+    reconcilePendingFirstProjectAccessSnapshot(snapshot, projects, [{ id: "sage" }]),
+    null,
+    "familiars that are no longer visible/non-archived clear the pending retry",
+  );
 });

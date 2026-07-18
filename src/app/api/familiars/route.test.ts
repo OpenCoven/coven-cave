@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+const rosterHelper = readFileSync(new URL("../../../lib/server/familiar-roster.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -26,8 +27,13 @@ assert.match(
 );
 assert.match(
   source,
+  /import \{ loadVisibleFamiliarRoster \} from "@\/lib\/server\/familiar-roster";/,
+  "Familiars API should delegate roster loading to the shared helper",
+);
+assert.match(
+  rosterHelper,
   /parseFamiliarsToml/,
-  "Familiars API should read the locally-declared familiars so they can be merged and exempted",
+  "the shared familiar-roster helper should read the locally-declared familiars so they can be merged and exempted",
 );
 
 // ── GET: the list must reflect the coven's real state (cave-7cv4) ────────────
@@ -35,7 +41,7 @@ assert.match(
 // entries against the LOCAL familiars.toml, which knows nothing about a
 // remote coven, so it must not run in hub mode.
 assert.match(
-  source,
+  rosterHelper,
   /target\.mode === "hub"\s*\?\s*\(res\.data \?\? \[\]\)\s*:\s*filterInstallSeedFamiliars\(/,
   "hub rosters bypass the local-toml install-seed guard",
 );
@@ -43,29 +49,29 @@ assert.match(
 // roster (not re-read yet / hub unaware) merge into the response — everything
 // the POST duplicate check can 409 on must be visible in the list.
 assert.match(
-  source,
+  rosterHelper,
   /const declaredOnly[^=]*= declaredEntries\s*\.filter\(\(entry\) => !rosterIds\.has\(entry\.id\.toLowerCase\(\)\) && !removedIds\.has\(entry\.id\)\)/,
   "locally-declared familiars missing from the daemon roster are merged in (minus tombstones)",
 );
 assert.match(
   source,
-  /\[\.\.\.visibleRoster, \.\.\.declaredOnly\]\.map\(/,
-  "daemon roster and declared-only familiars flow through the same enrichment",
+  /rosterResult\.roster\.map\(/,
+  "daemon roster and declared-only familiars still flow through the same enrichment path",
 );
 assert.match(
-  source,
+  rosterHelper,
   /const target = daemonTargetForConfig\(config\);/,
-  "Familiars API should resolve the roster authority from the same config snapshot used for the daemon call",
+  "the shared familiar-roster helper resolves the roster authority from the same config snapshot used for the daemon call",
 );
 assert.match(
-  source,
+  rosterHelper,
   /callDaemonTarget[\s\S]{0,80}\(target, \{/,
-  "Familiars API should query the roster against the resolved target, not re-derive it",
+  "the shared familiar-roster helper queries the roster against the resolved target, not a re-derived authority",
 );
 assert.equal(
-  source.match(/const covenDir = covenHome\(\)/g)?.length,
+  (source.match(/const covenDir = covenHome\(\)/g)?.length ?? 0) + (rosterHelper.match(/const covenDir = covenHome\(\)/g)?.length ?? 0),
   2,
-  "Familiars GET and POST should honor a custom COVEN_HOME",
+  "Familiars GET helper and POST should honor a custom COVEN_HOME",
 );
 
 // ── POST: in-app "create a familiar" write path ──────────────────────────────
