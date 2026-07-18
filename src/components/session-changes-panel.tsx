@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -450,16 +451,22 @@ export function SessionChangesInner({
   const [creatingPr, setCreatingPr] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Default is a FORCED fetch through the shared changes-summary gate
+  // (cave-v8hh): the mount/visibility/`cave:changes-refresh`/post-mutation
+  // callers all follow a state change and must not reuse a cached response.
+  // Only the 5s running poll passes shared:true — that's the call that piles
+  // up with the chip/header/badge pollers on the same root, and one real
+  // request per window is exactly what it needs.
+  const load = useCallback(async (opts?: { shared?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, {
-        cache: "no-store",
+      const { httpOk, status, json: raw } = await fetchChangesSummary(projectRoot, {
+        force: !opts?.shared,
       });
-      const json = (await res.json()) as ChangesResponse;
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      const json = raw as ChangesResponse;
+      if (!httpOk || !json.ok) throw new Error(json.error ?? `http ${status}`);
       setNotARepo(json.repo === false);
       setRepoRoot(json.repoRoot ?? null);
       // Content-guard: an unchanged 5s poll keeps the previous reference so the
@@ -509,7 +516,7 @@ export function SessionChangesInner({
   useEffect(() => {
     if (!running) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ shared: true });
     }, POLL_MS);
     return () => window.clearInterval(id);
   }, [load, running]);

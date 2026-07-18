@@ -21,6 +21,13 @@
 
 export type SwrCache<T> = {
   get(key: string, compute: () => Promise<T>): Promise<T>;
+  /**
+   * Drop one key's cached entry so the next `get` recomputes. An in-flight
+   * compute for the key is left to finish and is shared by that next `get` —
+   * it started after the caller's mutation-triggering read, so it is as fresh
+   * as a brand-new request would be.
+   */
+  invalidate(key: string): void;
   /** Drop every cached entry (state resets in tests / config changes). */
   clear(): void;
 };
@@ -69,6 +76,9 @@ export function createSwrCache<T>(options: {
         return entry.value;
       }
       return revalidate(key, compute);
+    },
+    invalidate(key) {
+      entries.delete(key);
     },
     clear() {
       entries.clear();

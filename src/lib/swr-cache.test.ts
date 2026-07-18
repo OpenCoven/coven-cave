@@ -15,6 +15,9 @@
  *  7. background revalidation failure keeps serving the stale value
  *  8. keys are independent
  *  9. clear() drops entries
+ * 10. invalidate(key) drops that key only — next get recomputes
+ * 11. invalidate during an in-flight compute shares that compute (it is as
+ *     fresh as a new request) instead of stacking another
  */
 
 import assert from "node:assert/strict";
@@ -149,6 +152,39 @@ const STALE = 30_000;
   cache.clear();
   assert.equal(await cache.get("k", compute.fn), "v2");
   assert.equal(compute.count(), 2);
+}
+
+// ── 10. invalidate(key) drops that key only ──────────────────────────────────
+{
+  const clock = makeClock();
+  const cache = createSwrCache({ ttlMs: TTL, staleServeMs: STALE, now: clock.now });
+  const computeA = makeCompute(["a1", "a2"]);
+  const computeB = makeCompute(["b1", "b2"]);
+  await cache.get("a", computeA.fn);
+  await cache.get("b", computeB.fn);
+  cache.invalidate("a");
+  assert.equal(await cache.get("a", computeA.fn), "a2", "invalidated key recomputes while fresh");
+  assert.equal(await cache.get("b", computeB.fn), "b1", "other keys keep their fresh entries");
+  assert.equal(computeA.count(), 2);
+  assert.equal(computeB.count(), 1);
+}
+
+// ── 11. invalidate during an in-flight compute shares that compute ───────────
+{
+  const clock = makeClock();
+  const cache = createSwrCache({ ttlMs: TTL, staleServeMs: STALE, now: clock.now });
+  await cache.get("k", async () => "v1");
+  let calls = 0;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const compute = async () => { calls += 1; await gate; return "v2"; };
+  cache.invalidate("k");
+  const first = cache.get("k", compute); // starts the fresh compute
+  cache.invalidate("k"); // a second force while that compute is mid-flight…
+  const second = cache.get("k", compute);
+  release();
+  assert.deepEqual(await Promise.all([first, second]), ["v2", "v2"]);
+  assert.equal(calls, 1, "a force during an in-flight compute must piggyback, not stack requests");
 }
 
 console.log("swr-cache.test.ts: all assertions passed");
