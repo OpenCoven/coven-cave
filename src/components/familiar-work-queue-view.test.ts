@@ -1,0 +1,44 @@
+// @ts-nocheck
+// Familiar Work Queue view (cave-19jy) — source pins for the triage-at-scale
+// affordances: collapsible lanes with persisted state, the visible cap with a
+// Show-all toggle, bead-row age stamps, and priority-tinted chips. The pure
+// lane model is behaviorally tested in src/lib/beads-work-queue.test.ts.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const view = readFileSync(new URL("./familiar-work-queue-view.tsx", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/familiar-work-queue.css", import.meta.url), "utf8");
+
+// Lane headers are real disclosure controls, not decorative rows.
+assert.match(view, /className="fwq-lane-toggle focus-ring-inset"/, "the whole lane head toggles");
+assert.match(view, /aria-expanded=\{!collapsed\}/, "disclosure state is exposed to AT");
+assert.match(view, /onClick=\{\(\) => toggleLane\(lane\.key\)\}/);
+assert.match(css, /\.fwq-lane-caret\.is-open \{ transform: rotate\(90deg\); \}/, "caret signals open state");
+
+// Collapse persists per lane; `waiting` starts collapsed; hydration is
+// post-mount so SSR and the first client render agree.
+assert.match(view, /const COLLAPSED_LANES_KEY = "cave:fwq:collapsed:v1"/);
+assert.match(view, /DEFAULT_COLLAPSED: readonly WorkQueueLaneKey\[\] = \["waiting"\]/);
+assert.match(view, /setCollapsedLanes\(readCollapsedLanes\(\)\);\s*\}, \[\]\)/, "storage hydrates after mount");
+assert.match(view, /writeCollapsedLanes\(next\)/, "toggles persist");
+
+// Long lanes mount a capped card list until asked — the N-bead perf fix.
+assert.match(view, /const LANE_VISIBLE_CAP = 8/);
+assert.match(view, /lane\.items\.slice\(0, LANE_VISIBLE_CAP\)/);
+assert.match(view, /`Show all \$\{lane\.items\.length\}`/, "cap toggle names the hidden count");
+assert.match(view, /`Show top \$\{LANE_VISIBLE_CAP\}`/, "and collapses back");
+assert.match(view, /aria-expanded=\{showAll\}/, "cap toggle is a disclosure for AT");
+assert.match(css, /\.fwq-lane-more \{/, "the foot row has real styles");
+
+// Bead-only rows carry a truthful age stamp (PR rows already had one).
+assert.match(
+  view,
+  /\{!item\.pr && !item\.merged && item\.bead\?\.updated_at \? \(\s*<span className="fwq-card-time"/,
+  "bead rows show updated-relative time",
+);
+
+// P0/P1 read at a glance in a mixed lane.
+assert.match(view, /fwq-tag--p\$\{Math\.min\(item\.bead\.priority, 3\)\}/);
+assert.match(css, /\.fwq-tag--p0,\s*\.fwq-tag--p1 \{/, "warm tint for high priorities");
+
+console.log("familiar-work-queue-view.test.ts: ok");
