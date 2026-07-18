@@ -9,7 +9,7 @@ import {
   shortHash,
   type TensionPill,
 } from "@/lib/weave-rail";
-import type { ThreadsMeta, WeaveSummary } from "@/lib/threads-read";
+import type { DegradedFamiliarView, ThreadsMeta, WeaveSummary } from "@/lib/threads-read";
 
 const PILL_CLASSES: Record<TensionPill["tone"], string> = {
   holds: "bg-[var(--ok-soft,rgba(80,180,120,0.15))] text-[var(--ok,#4dbd7a)] border-[var(--ok,#4dbd7a)]/40",
@@ -17,6 +17,13 @@ const PILL_CLASSES: Record<TensionPill["tone"], string> = {
   snapped: "bg-[var(--danger-soft,rgba(220,90,90,0.15))] text-[var(--danger,#d95a5a)] border-[var(--danger,#d95a5a)]/40",
   blocked: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-[var(--border-strong,#555)]",
   stale: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-dashed border-[var(--border-strong,#555)]",
+};
+
+const DEGRADED_FAMILIAR_PILL: TensionPill = {
+  tone: "blocked",
+  label: "Blocked",
+  detail: "Ward config is unreadable, so protection cannot be verified.",
+  icon: "ph:shield-slash",
 };
 
 export function StatusPill({
@@ -54,6 +61,7 @@ export function StatusPill({
 
 export function WeaveRail({
   weaves,
+  degraded,
   familiars,
   familiarFilter,
   selectedWeaveId,
@@ -61,8 +69,10 @@ export function WeaveRail({
   onSelect,
   onFilter,
   onTrace,
+  onTraceDegraded,
 }: {
   weaves: WeaveSummary[];
+  degraded: DegradedFamiliarView[];
   familiars: string[];
   familiarFilter: string | null;
   selectedWeaveId: string | null;
@@ -70,8 +80,10 @@ export function WeaveRail({
   onSelect: (id: string) => void;
   onFilter: (familiar: string | null) => void;
   onTrace: (weave: WeaveSummary) => void;
+  onTraceDegraded: (degraded: DegradedFamiliarView) => void;
 }) {
   const visible = familiarFilter ? weaves.filter((w) => w.familiarId === familiarFilter) : weaves;
+  const visibleDegraded = familiarFilter ? degraded.filter((d) => d.familiarId === familiarFilter) : degraded;
   return (
     <section aria-label="Weave rail" className="flex min-w-0 flex-col gap-2">
       <header className="flex items-center justify-between gap-2 px-1">
@@ -92,7 +104,7 @@ export function WeaveRail({
           </select>
         </label>
       </header>
-      {visible.length === 0 ? (
+      {visible.length === 0 && visibleDegraded.length === 0 ? (
         <p className="px-2 py-4 text-xs text-[var(--text-muted)]">
           No weaves under this filter — verified empty, not blocked. A familiar&apos;s enforced
           pattern of threads appears here once it is woven.
@@ -140,6 +152,28 @@ export function WeaveRail({
               </li>
             );
           })}
+          {visibleDegraded.map((entry) => (
+            <li
+              key={`degraded:${entry.familiarId}`}
+              className="rounded border-l-2 border-[var(--border-strong,#555)] bg-[var(--bg-raised)]/40 px-2 py-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-[var(--text-primary)]">{entry.familiarId}</span>
+                  <span className="block truncate text-xs text-[var(--text-muted)]">
+                    ward unreadable — protection not verifiable
+                  </span>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <StatusPill
+                    pill={DEGRADED_FAMILIAR_PILL}
+                    onTrace={() => onTraceDegraded(entry)}
+                    traceLabel={`Trace ${entry.familiarId} ward unreadable to source`}
+                  />
+                </div>
+              </div>
+            </li>
+          ))}
         </ul>
       )}
       <footer className="px-2 text-[10px] text-[var(--text-muted)]">
