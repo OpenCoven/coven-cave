@@ -60,8 +60,53 @@ test("the modal keeps a stable panel and creates folders inline", () => {
     /body: JSON\.stringify\(\{ dir: cwd, name: newFolderName \}\)/,
     "folder creation posts the current directory and draft name",
   );
-  assert.match(src, /await load\(body\.path\)/, "successful creation enters the returned folder");
+  assert.match(src, /await load\(body\.path, sessionGeneration\)/, "successful creation enters the returned folder");
   assert.match(src, /role="alert"/, "inline creation errors announce via role=alert");
+});
+
+test("the modal keeps inline folder creation hooks, session guards, and focus targets stable", () => {
+  const src = read("./directory-picker-modal.tsx");
+  const earlyReturn = src.indexOf("if (!open) return null;");
+  assert.ok(earlyReturn > 0, "the closed-modal early return exists");
+  assert.doesNotMatch(
+    src.slice(earlyReturn),
+    /use(?:State|Effect|Callback|Memo|Ref)\(/,
+    "no hooks appear after the closed-modal early return",
+  );
+  assert.match(src, /const modalSessionRef = useRef\(0\);/, "tracks a modal session generation");
+  assert.match(
+    src,
+    /modalSessionRef\.current \+= 1;[\s\S]*if \(open\) void load\(null, sessionGeneration\);/,
+    "opening or closing the modal bumps the session generation before loading",
+  );
+  assert.match(
+    src,
+    /const sessionGeneration = modalSessionRef\.current;[\s\S]*if \(sessionGeneration !== modalSessionRef\.current\) return;[\s\S]*await load\(body\.path, sessionGeneration\);[\s\S]*finally \{\s*if \(sessionGeneration !== modalSessionRef\.current\) return;\s*setCreateBusy\(false\);/,
+    "folder creation ignores stale completion and finally writes from prior modal sessions",
+  );
+  assert.match(src, /const newFolderTriggerRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the New folder trigger");
+  assert.match(src, /ref=\{newFolderTriggerRef\}/, "wires the trigger ref to the New folder button");
+  assert.match(src, /focusDialog\(\);\s*setCreateBusy\(true\);/, "focus moves to the dialog before busy disables inline controls");
+  assert.match(
+    src,
+    /requestAnimationFrame\(\(\) => newFolderTriggerRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
+    "cancel returns focus to the New folder trigger",
+  );
+  assert.match(
+    src,
+    /if \(shouldRefocusInput\) \{\s*requestAnimationFrame\(\(\) => newFolderInputRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
+    "current-request errors refocus the folder-name input",
+  );
+  assert.match(
+    src,
+    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) focusDialog\(\);/,
+    "successful creation leaves focus on the modal after navigation",
+  );
+  assert.match(
+    src,
+    /if \(event\.key === "Escape"\) \{[\s\S]*cancelCreatingFolder\(\);[\s\S]*return;/,
+    "Escape still cancels inline creation without closing the modal",
+  );
 });
 
 // cave-lj6j: the modal mounts inside arbitrary hosts (home composer card,

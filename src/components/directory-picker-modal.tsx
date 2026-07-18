@@ -54,23 +54,32 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const newFolderTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const modalSessionRef = useRef(0);
   const newFolderHintId = "directory-picker-new-folder-help";
   const newFolderErrorId = "directory-picker-new-folder-error";
 
-  const resetCreateFolderState = useCallback(() => {
+  const resetCreateFolderState = useCallback(({ preserveBusy = false }: { preserveBusy?: boolean } = {}) => {
     setCreatingFolder(false);
     setNewFolderName("");
     setNewFolderError(null);
-    setCreateBusy(false);
+    if (!preserveBusy) setCreateBusy(false);
   }, []);
 
-  const load = useCallback(async (dir: string | null) => {
+  const focusDialog = useCallback(() => {
+    dialogRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
+    if (sessionGeneration !== modalSessionRef.current) return;
     setLoading(true);
     setError(null);
     try {
       const url = dir ? `/api/fs-browse?dir=${encodeURIComponent(dir)}` : "/api/fs-browse";
       const res = await fetch(url, { cache: "no-store" });
       const body = (await res.json()) as BrowseResponse;
+      if (sessionGeneration !== modalSessionRef.current) return;
       if (!res.ok || !body.ok || !body.cwd) {
         setError(body.error ?? "Could not read that folder");
         return;
@@ -80,50 +89,52 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setParent(body.parent ?? null);
       setEntries(body.entries ?? []);
     } catch {
+      if (sessionGeneration !== modalSessionRef.current) return;
       setError("Could not reach the folder browser");
     } finally {
-      setLoading(false);
+      if (sessionGeneration === modalSessionRef.current) setLoading(false);
     }
   }, []);
 
   // Load $HOME each time the modal opens; reset when it closes.
   useEffect(() => {
-    if (open) void load(null);
+    modalSessionRef.current += 1;
+    const sessionGeneration = modalSessionRef.current;
+    if (open) void load(null, sessionGeneration);
     else {
+      setHome(null);
       setCwd(null);
+      setParent(null);
       setEntries([]);
+      setLoading(false);
       setError(null);
       resetCreateFolderState();
     }
   }, [open, load, resetCreateFolderState]);
 
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   // This is a true modal (aria-modal, covers the page). Trap focus inside it,
   // close on Escape, and restore focus to the trigger on close — the hook does
   // all three, replacing the old window-level Escape listener (which left focus
   // free to Tab out to the page behind the scrim).
   useFocusTrap(open, dialogRef, { onEscape: onClose });
-  if (!open) return null;
-
-  // Display the current path with $HOME collapsed to `~`.
-  const display =
-    cwd && home && (cwd === home || cwd.startsWith(home + "/"))
-      ? "~" + cwd.slice(home.length)
-      : cwd ?? "…";
 
   const beginCreatingFolder = () => {
     setCreatingFolder(true);
     setNewFolderError(null);
-    requestAnimationFrame(() => newFolderInputRef.current?.focus());
+    requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
   };
 
   const cancelCreatingFolder = () => {
     if (createBusy) return;
     resetCreateFolderState();
+    requestAnimationFrame(() => newFolderTriggerRef.current?.focus({ preventScroll: true }));
   };
 
   const createFolder = useCallback(async () => {
     if (!cwd || createBusy) return;
+    const sessionGeneration = modalSessionRef.current;
+    let shouldRefocusInput = false;
+    focusDialog();
     setCreateBusy(true);
     setNewFolderError(null);
     try {
@@ -135,18 +146,27 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       });
       const json = await res.json();
       const body = isCreateFolderResponse(json) ? json : null;
+      if (sessionGeneration !== modalSessionRef.current) return;
       if (!res.ok || !body?.ok || !body.path) {
+        shouldRefocusInput = true;
         setNewFolderError(body?.error ?? "Could not create that folder");
         return;
       }
-      resetCreateFolderState();
-      await load(body.path);
+      resetCreateFolderState({ preserveBusy: true });
+      await load(body.path, sessionGeneration);
+      if (sessionGeneration === modalSessionRef.current) focusDialog();
     } catch {
+      if (sessionGeneration !== modalSessionRef.current) return;
+      shouldRefocusInput = true;
       setNewFolderError("Could not reach the folder browser");
     } finally {
+      if (sessionGeneration !== modalSessionRef.current) return;
       setCreateBusy(false);
+      if (shouldRefocusInput) {
+        requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
+      }
     }
-  }, [createBusy, cwd, load, newFolderName, resetCreateFolderState]);
+  }, [createBusy, cwd, focusDialog, load, newFolderName, resetCreateFolderState]);
 
   const onCreateRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
@@ -161,6 +181,14 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       if (!createBusy) void createFolder();
     }
   };
+
+  if (!open) return null;
+
+  // Display the current path with $HOME collapsed to `~`.
+  const display =
+    cwd && home && (cwd === home || cwd.startsWith(home + "/"))
+      ? "~" + cwd.slice(home.length)
+      : cwd ?? "…";
 
   // Portal to <body>: this modal mounts inside arbitrary hosts (the home
   // composer card, the projects form), and a transformed/backdrop-filtered
@@ -212,6 +240,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             {display}
           </span>
           <Button
+            ref={newFolderTriggerRef}
             variant="secondary"
             size="xs"
             disabled={loading || createBusy || !cwd || creatingFolder}
