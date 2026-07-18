@@ -7,9 +7,10 @@ import {
   NativeUpdateCoordinator,
 } from "../lib/native-update-coordinator.ts";
 
-const [src, preparationSrc] = await Promise.all([
+const [src, preparationSrc, shellSrc] = await Promise.all([
   readFile(new URL("./update-available.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/native-update-preparation.ts", import.meta.url), "utf8"),
+  readFile(new URL("./shell.tsx", import.meta.url), "utf8"),
 ]);
 
 // Desktop-only: both surfaces gate on the Tauri desktop hook.
@@ -59,6 +60,10 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
+assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
+assert.match(src, /updateDaemonForCaveUpdate\(APP_VERSION/, "startup reconciliation targets the running Cave version");
+assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
+assert.match(shellSrc, /<DaemonReleaseAlignmentTrigger \/>/, "the shell mounts post-update daemon reconciliation");
 assert.match(src, /export function UpdateSettingsRow/, "exports the settings row");
 assert.match(src, /async function resolveUpdate/, "resolves native-first, then fallback");
 assert.match(src, /kind:\s*"native-unavailable"/, "preserves native updater check failures as a distinct update state");

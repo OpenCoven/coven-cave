@@ -13,7 +13,10 @@ import {
 } from "react-resizable-panels";
 import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
-import { UpdateBannerTrigger } from "@/components/update-available";
+import {
+  DaemonReleaseAlignmentTrigger,
+  UpdateBannerTrigger,
+} from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -640,6 +643,7 @@ function ShellInner({
       <Panel id="detail" className="shell-detail-panel">
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           <UpdateBannerTrigger />
+          <DaemonReleaseAlignmentTrigger />
           <OpenCovenToolsBannerTrigger />
           <CaveHomeMigrationBannerTrigger />
           <ShellBannerStrip />

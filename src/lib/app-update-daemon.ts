@@ -1,5 +1,3 @@
-import { compareSemver, parseSemver } from "./app-update.ts";
-
 type ToolStatus = {
   id?: string;
   installed?: boolean;
@@ -14,6 +12,9 @@ type InstallJob = {
   error?: string;
   hint?: string;
   tail?: string;
+  verification?: {
+    current?: string | null;
+  };
 };
 
 type Dependencies = {
@@ -21,6 +22,7 @@ type Dependencies = {
   wait?: (ms: number) => Promise<void>;
   pollIntervalMs?: number;
   maxPollAttempts?: number;
+  onUpdateStart?: () => void;
 };
 
 const UPDATE_ROUTE = "/api/onboarding/update";
@@ -38,6 +40,46 @@ function safeFailure(body: Record<string, unknown>, fallback: string): string {
   return fallback;
 }
 
+type Semver = {
+  core: [number, number, number];
+  prerelease: string[];
+};
+
+function releaseSemver(version: string): Semver | null {
+  const match = /^\s*v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?\s*$/.exec(version);
+  if (!match) return null;
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    prerelease: match[4]?.split(".") ?? [],
+  };
+}
+
+/** Compare full release versions, including SemVer prerelease precedence. */
+export function compareCaveDaemonVersions(left: string, right: string): number | null {
+  const a = releaseSemver(left);
+  const b = releaseSemver(right);
+  if (!a || !b) return null;
+  for (let index = 0; index < a.core.length; index += 1) {
+    if (a.core[index] !== b.core[index]) return a.core[index] < b.core[index] ? -1 : 1;
+  }
+  if (a.prerelease.length === 0 || b.prerelease.length === 0) {
+    return a.prerelease.length === b.prerelease.length ? 0 : a.prerelease.length === 0 ? 1 : -1;
+  }
+  const length = Math.max(a.prerelease.length, b.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const av = a.prerelease[index];
+    const bv = b.prerelease[index];
+    if (av === undefined || bv === undefined) return av === undefined ? -1 : 1;
+    if (av === bv) continue;
+    const aNumeric = /^\d+$/.test(av);
+    const bNumeric = /^\d+$/.test(bv);
+    if (aNumeric && bNumeric) return Number(av) < Number(bv) ? -1 : 1;
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    return av < bv ? -1 : 1;
+  }
+  return 0;
+}
+
 /**
  * Before Cave replaces and relaunches itself, bring the separately installed
  * Coven CLI up to date. The existing install route owns the safety-sensitive
@@ -52,6 +94,9 @@ export async function updateDaemonForCaveUpdate(
   const wait = dependencies.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const pollIntervalMs = dependencies.pollIntervalMs ?? 1_000;
   const maxPollAttempts = dependencies.maxPollAttempts ?? 300;
+  if (!releaseSemver(caveVersion)) {
+    throw new Error("Cave could not verify the release version before updating the daemon.");
+  }
 
   const checkResponse = await request(UPDATE_ROUTE, {
     method: "POST",
@@ -65,16 +110,20 @@ export async function updateDaemonForCaveUpdate(
   const tools = Array.isArray(checkBody.tools) ? (checkBody.tools as ToolStatus[]) : [];
   const cli = tools.find((tool) => tool.id === "coven-cli");
   if (!cli) throw new Error("Cave could not find the Coven CLI update status.");
+  const currentComparison =
+    typeof cli.current === "string"
+      ? compareCaveDaemonVersions(cli.current, caveVersion)
+      : null;
   if (
     cli.installed &&
     cli.compatible !== false &&
-    typeof cli.current === "string" &&
-    parseSemver(cli.current) &&
-    compareSemver(cli.current, caveVersion) >= 0
+    currentComparison !== null &&
+    currentComparison >= 0
   ) {
     return "current";
   }
 
+  dependencies.onUpdateStart?.();
   const startResponse = await request(INSTALL_ROUTE, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -93,7 +142,16 @@ export async function updateDaemonForCaveUpdate(
       throw new Error(safeFailure(job as Record<string, unknown>, "Cave lost the Coven daemon update status."));
     }
     if (job.status === "done") {
-      if (job.ok) return "updated";
+      if (job.ok) {
+        const installedVersion = job.verification?.current;
+        const comparison = typeof installedVersion === "string"
+          ? compareCaveDaemonVersions(installedVersion, caveVersion)
+          : null;
+        if (comparison !== null && comparison >= 0) return "updated";
+        throw new Error(
+          `Cave updated the Coven CLI, but could not verify version ${caveVersion} or newer on PATH.`,
+        );
+      }
       throw new Error(safeFailure(job as Record<string, unknown>, "The Coven daemon update failed."));
     }
     if (attempt + 1 < maxPollAttempts) await wait(pollIntervalMs);

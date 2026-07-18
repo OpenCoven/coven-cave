@@ -81,6 +81,7 @@ assert.equal(findOpenStampPr([{ title: "feat: x" }, { title: "chore(release): st
 const yml = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 assert.match(yml, /daemon-package:\s*\n\s+name: Verify matching Coven daemon package/, "release has a daemon package gate");
 assert.match(yml, /npm view "@opencoven\/cli@\$\{VERSION\}" version/, "daemon gate requires the matching CLI version");
+assert.match(yml, /npm view "@opencoven\/cli@latest" version/, "daemon gate verifies the package installed by the client");
 assert.match(yml, /build:[\s\S]{0,100}needs: daemon-package/, "desktop builds wait for the daemon package gate");
 assert.match(
   yml,

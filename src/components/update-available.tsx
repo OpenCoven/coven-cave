@@ -25,8 +25,10 @@ import {
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
 import { updateDaemonForCaveUpdate } from "@/lib/app-update-daemon";
+import { APP_VERSION } from "@/lib/app-version";
 
 const BANNER_ID = "update-available";
+const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
 const DISMISS_KEY = (version: string) => `cave:update:dismissed:${version}`;
 
@@ -93,6 +95,65 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
   // desktop platforms return and need an explicit relaunch.
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
+}
+
+/**
+ * The updater that installs a release belongs to the previous Cave version.
+ * Reconcile once after the new shell starts so the first release containing
+ * this behavior also aligns the separately installed CLI/daemon.
+ */
+export function DaemonReleaseAlignmentTrigger() {
+  const isDesktop = useIsTauriDesktop();
+  const { pushBanner, dismissBanner } = useShellBanners();
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !isDesktop || attempted.current) return;
+    let active = true;
+    let running = false;
+
+    const start = () => {
+      if (!active || running) return;
+      attempted.current = true;
+      running = true;
+      void updateDaemonForCaveUpdate(APP_VERSION, {
+        onUpdateStart: () => {
+          if (active) {
+            pushBanner({
+              id: DAEMON_ALIGNMENT_BANNER_ID,
+              severity: "info",
+              title: `Updating Coven daemon to match Cave v${APP_VERSION}…`,
+            });
+          }
+        },
+      }).then((result) => {
+        running = false;
+        if (active && result === "updated") dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+      }).catch((error) => {
+        running = false;
+        if (!active) return;
+        pushBanner({
+          id: DAEMON_ALIGNMENT_BANNER_ID,
+          severity: "warning",
+          title: `Coven daemon update failed (${errorMessage(error, "update failed")})`,
+          cta: {
+            label: "Retry daemon update",
+            onClick: () => {
+              attempted.current = false;
+              start();
+            },
+          },
+        });
+      });
+    };
+
+    start();
+    return () => {
+      active = false;
+    };
+  }, [dismissBanner, isDesktop, pushBanner]);
+
+  return null;
 }
 
 /** Lightweight fallback: ask the server route what the latest release is. */
