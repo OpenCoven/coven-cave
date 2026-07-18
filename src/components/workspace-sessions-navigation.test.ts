@@ -46,7 +46,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /requestId !== daemonStatusRequestRef\.current/,
+  /!requestGate\.isLatest\(requestId\)/,
   "an older status poll must not overwrite a newer post-start result",
 );
 

@@ -62,6 +62,7 @@ export const SUITES = {
     "src/lib/app-update.test.ts",
     "src/lib/about-status.test.ts",
     "src/lib/daemon-status-classification.test.ts",
+    "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/about-diagnostics.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
     "src/lib/open-external.test.ts",
