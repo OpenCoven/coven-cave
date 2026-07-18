@@ -40,6 +40,7 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
+import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize } from "@/lib/slash-commands";
@@ -118,6 +119,11 @@ type Props = {
   onOpenInboxItem: (item: InboxItem) => void;
   /** Jump to the Schedules surface for the full feed. */
   onOpenSchedules: () => void;
+  /** Voice new-chat: start a live voice call in a brand-new chat with this
+   *  familiar. The workspace pre-creates the session and routes to chat.
+   *  May return a promise so the button can gate itself against rapid
+   *  double-clicks while the mint is in flight. */
+  onStartVoiceCall?: (familiarId: string, projectRoot: string | null) => void | Promise<void>;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -142,16 +148,32 @@ export function HomeComposer({
   needsYou,
   onOpenInboxItem,
   onOpenSchedules,
+  onStartVoiceCall,
 }: Props) {
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
+  // In-flight guard for the voice-call mint: onStartVoiceCall is an async
+  // network round-trip with no guard of its own, so N rapid clicks would mint
+  // N sessions and leak N-1 orphaned conversations into the thread rail.
+  const [voiceCallPending, setVoiceCallPending] = useState(false);
   // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
   // into the modal so edits while it is open don't mutate the form seed.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
   // home records slash commands in history too, so pushes stay at call sites.
   const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
+  // Composer dictation (voice new-chat): finals append to the draft for
+  // review — never auto-sent. The mic hides when no ears engine exists.
+  const dictation = useDictation(
+    (finalText) => {
+      setText((prev) => {
+        const sep = prev && !/\s$/.test(prev) ? " " : "";
+        return `${prev}${sep}${finalText}`;
+      });
+    },
+    (code, hint) => onToast(hint ?? `Dictation stopped: ${code}`),
+  );
   // Time-of-day greeting for the hero eyebrow. Sampled after mount (client
   // clock) so SSR markup stays deterministic — the eyebrow fades in once set.
   const [greeting, setGreeting] = useState<string | null>(null);
@@ -582,7 +604,7 @@ export function HomeComposer({
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard(); }
-          else onToast("Board card creation failed.");
+          else onToast("Task card creation failed.");
           break;
         }
       }
@@ -844,6 +866,12 @@ export function HomeComposer({
           onCancel={promptEnhance.cancel}
         />
 
+        {dictation.listening ? (
+          <div className="hc-dictation-caption">
+            {dictation.partial || "Listening…"}
+          </div>
+        ) : null}
+
         {/* Controls — reference layout: `+` attach and the Chat/Task pills sit
             bottom-left inside the card; the model chip, voice, enhance, and
             send hug the right. Context pickers move to the footer band. */}
@@ -894,8 +922,43 @@ export function HomeComposer({
               </div>
             </div>
             <div className="cave-composer-submit-row">
-              {/* Voice input is hidden until it actually works — a permanently
-                  disabled mic reads as broken, not "coming soon". */}
+              {/* Voice: phone = live call in a brand-new chat (voice
+                  new-chat); the dictation mic renders beside it when an
+                  ears engine exists. */}
+              {dictation.available ? (
+                <button
+                  type="button"
+                  className={`cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40${dictation.listening ? " hc-mic-live" : ""}`}
+                  title={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                  aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
+                  aria-pressed={dictation.listening}
+                  disabled={sending && !dictation.listening}
+                  onClick={dictation.toggle}
+                >
+                  <Icon name="ph:microphone" width={15} aria-hidden />
+                </button>
+              ) : null}
+              {onStartVoiceCall ? (
+                <button
+                  type="button"
+                  className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                  title="Start a voice call in a new chat"
+                  aria-label="Start a voice call in a new chat"
+                  disabled={sending || voiceCallPending}
+                  onClick={() => {
+                    if (voiceCallPending) return;
+                    if (!selectedFamiliarId) {
+                      onToast("No familiar yet — summon one to start a voice chat.");
+                      requestSummonFamiliar();
+                      return;
+                    }
+                    setVoiceCallPending(true);
+                    void Promise.resolve(onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null)).finally(() => setVoiceCallPending(false));
+                  }}
+                >
+                  <Icon name="ph:phone" width={15} aria-hidden />
+                </button>
+              ) : null}
               <EnhanceControl
                 state={promptEnhance.state}
                 onEnhance={promptEnhance.enhance}

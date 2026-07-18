@@ -232,7 +232,7 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
             {enabled
               ? `${familiar.display_name} sees your assigned Asana tasks${
                   workspaceGid ? " in the selected workspace" : ""
-                } on the board and in the Queue.`
+                } in Tasks and in the Queue.`
               : `${familiar.display_name} is opted out of Asana. Other familiars keep their access.`}
             {login ? ` · Connected as ${login}.` : ""}
           </p>

@@ -353,7 +353,7 @@ export function GitHubActionPopover({
   useFocusTrap(true, ref, { onEscape: onClose });
 
   const TITLES: Record<PopoverMode, string> = {
-    board: "Add to board",
+    board: "Add to Tasks",
     chat: "Start chat",
     assign: "Assign to familiar",
   };

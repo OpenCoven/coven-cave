@@ -126,9 +126,10 @@ assert.match(artifactViewer, /Saved to Canvas/, "save-to-canvas confirms inline 
 // a hard-navigate to Settings that no longer exists) was removed (cave-nwi8).
 assert.match(
   ws,
-  /"journal" restores fine: setMode remaps it/,
+  /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
   "journal restore relies on the setMode remap instead of a stale skip-branch",
 );
+assert.doesNotMatch(ws, /last === "journal"/, "no journal skip-branch remains in the restore path");
 assert.match(
   ws,
   /if \(next === "journal"\) \{/,

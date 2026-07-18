@@ -56,4 +56,51 @@ assert.match(source, /aria-pressed=\{currentColor === preset\.color\}/, "accent 
 assert.match(source, /aria-pressed=\{colorScope === "familiar"\}/, "scope buttons expose pressed state");
 assert.match(source, /className="familiar-studio-look__toast" role="status"/, "the upload toast is a live region");
 
+// ── per-familiar backdrop switch (cave-kf8p) ─────────────────────────────────
+assert.match(
+  source,
+  /isFamiliarBackdropOn\(prefs, familiarId, previewUrl !== null\)/,
+  "the switch reflects effective state: explicit entry, else image presence",
+);
+assert.match(
+  source,
+  /setFamiliarBackdropEnabled\(familiarId, !enabled\)/,
+  "toggling records an explicit per-familiar choice",
+);
+assert.match(
+  source,
+  /role="switch"[\s\S]{0,120}aria-checked=\{enabled\}/,
+  "the backdrop switch is an accessible switch control",
+);
+assert.match(
+  source,
+  /aria-checked=\{enabled\}\s*aria-label="Show backdrop while this familiar is active"/,
+  "the switch carries its own accessible name — a label element doesn't name a button",
+);
+assert.match(
+  source,
+  /Show backdrop while this familiar is active/,
+  "the switch label names the behavior",
+);
+assert.match(
+  source,
+  /No image uploaded — the app backdrop image is used\./,
+  "the on-without-image state explains the app-image fallback",
+);
+assert.match(
+  source,
+  /appImagePresent\s*\?\s*"No image uploaded — the app backdrop image is used\."/,
+  "the app-image claim is made only when an app image actually exists",
+);
+assert.match(
+  source,
+  /only the backdrop tint shows until an image is set here or in Settings → Appearance\./,
+  "the no-image-anywhere state tells the truth about the tint-only render",
+);
+assert.match(
+  source,
+  /familiars\[familiarId\] !== true\) \{\s*setFamiliarBackdropEnabled\(familiarId, true\);/,
+  "uploading an image records an explicit on (guarded against redundant writes)",
+);
+
 console.log("familiar-studio-look-tab.test.ts: ok");

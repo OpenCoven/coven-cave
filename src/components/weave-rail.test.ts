@@ -28,6 +28,10 @@ assert.match(rail, /meta\.observedAt/, "rail shows the observation time");
 // referent-bound vocabulary: weave counts threads, never conversations
 assert.match(rail, /thread\{weave\.threadCount === 1 \? "" : "s"\}/, "rail counts threads");
 assert.match(rail, /read-only until repair/, "degraded surfaces render the read-only rule");
+assert.match(rail, /ward unreadable — protection not verifiable/, "R12 degraded familiar row renders exact blocked copy");
+assert.match(rail, /visibleDegraded\.map/, "R12 degraded rows render separately from healthy weaves");
+const degradedRowsSource = rail.slice(rail.indexOf("{visibleDegraded.map"));
+assert.doesNotMatch(degradedRowsSource, /onSelect/, "R12 degraded rows do not expose selection/action affordances");
 // familiar filter
 assert.match(rail, /familiarFilter/, "rail filters by familiar");
 
@@ -41,7 +45,7 @@ assert.match(view, /daemon-unreachable/, "fetch failure maps to a blocked state"
 // banners render for ready states (fixture-data + stale)
 assert.match(view, /Banners/, "banner strip present");
 assert.match(view, /TraceDrawer/, "trace drawer renders pill evidence");
-assert.match(view, /traceForWeave|traceForTension/, "traces come from the view-model");
+assert.match(view, /traceForWeave|traceForTension|traceForDegradedFamiliar/, "traces come from the view-model");
 // empty selection guidance keeps the referent binding
 assert.match(view, /binds one protected surface to one\s+writer/, "thread referent stated in empty state");
 

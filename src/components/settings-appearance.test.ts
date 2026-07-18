@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   layout,
-  /<head>\s*<ThemeScript preferences=\{preferences\} \/>[\s\S]*<\/head>/,
-  "Root layout should pass the canonical server preference snapshot to ThemeScript before paint",
+  /<head>\s*<ThemeScript preferences=\{preferences\} authoritative=\{false\} \/>[\s\S]*<\/head>/,
+  "Root layout should pass an explicit paint-only snapshot to ThemeScript before paint",
 );
 
 assert.match(

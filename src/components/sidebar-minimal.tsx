@@ -26,25 +26,11 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
+import type { WorkspaceMode } from "@/lib/workspace-mode";
 
-export type FolderMode =
-  | "agents"
-  | "home"
-  | "chat"
-  | "groupchat"
-  | "board"
-  | "calendar"
-  | "inbox"
-  | "browser"
-  | "github"
-  | "roles"
-  | "marketplace"
-  | "flow"
-  | "submissions"
-  | "capabilities"
-  | "familiar-work-queue"
-  | "journal"
-  | "grimoire";
+/** The sidebar's mode vocabulary IS the workspace's — one union, no copy.
+ *  (Was a hand-maintained duplicate that drifted; cave-m4ih.3.) */
+export type FolderMode = WorkspaceMode;
 
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never

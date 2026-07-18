@@ -74,6 +74,13 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     ? copilotIdentityPreamble(launch.familiarId, launch.familiarName, launch.familiarRole)
     : "";
   const prompt = identity ? `${identity}\n\n${launch.prompt}` : launch.prompt;
+  const addDirs = Array.from(
+    new Set(
+      (launch.addDirs ?? [])
+        .map((root) => root.trim())
+        .filter((root) => root && root !== launch.projectRoot),
+    ),
+  );
   const args = buildCopilotStreamArgs({
     spec: launch.spec,
     prompt,
@@ -81,7 +88,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     newSessionId: sessionId,
     model: null,
     permissionMode: "full",
-    addDirs: launch.addDirs ?? [],
+    addDirs,
   });
 
   const child = spawn(launch.spec.executable, args, {

@@ -315,8 +315,8 @@ describe("signal table UX — sticky header, coarse-pointer overflow, empty disc
     assert.match(source, /coarsePointer \? \(/, "coarse pointers take the consolidated branch");
     assert.match(source, /<OverflowMenu ariaLabel=\{`Actions for signal \$\{row\.signal\}`\}/, "the ⋯ trigger names its signal");
     assert.match(source, /Resolve in a thread/, "menu carries the resolve action");
-    assert.match(source, /Add task to board/, "menu carries the task action");
-    assert.match(source, /Task already on board/, "settled rows read as settled inside the menu");
+    assert.match(source, /Add task to Tasks/, "menu carries the canonical task action");
+    assert.match(source, /Task already in Tasks/, "settled rows use the canonical Tasks name");
   });
 
   it("shows one empty state when the aggregate carries no signals at all", () => {

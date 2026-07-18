@@ -1108,6 +1108,91 @@ try {
     assert.equal(await kind(lock), "missing");
   }
 
+  // An active owner has a hard acquisition deadline. Timing out removes every
+  // contender-owned candidate and emits bounded, data-free terminal telemetry.
+  {
+    const { cave } = await home("active-lock-timeout");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.ppid,
+      token: "active-parent-owner",
+      startedAt: new Date().toISOString(),
+    }));
+    const diagnostics = [];
+    const startedAt = Date.now();
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockDiagnostic: (event) => diagnostics.push(event) }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(Date.now() - startedAt >= 100 && Date.now() - startedAt < 1_500);
+    assert.equal(diagnostics[0]?.phase, "waiting");
+    assert.deepEqual(diagnostics.at(-1), {
+      phase: "failed",
+      result: "timeout",
+      durationMs: diagnostics.at(-1).durationMs,
+      errorCode: "ETIMEDOUT",
+    });
+    assert.equal(
+      (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
+      false,
+      "timed-out contenders remove their own candidate directories",
+    );
+  }
+
+  // Persistent Windows EPERM while publishing a candidate is retryable but
+  // bounded. No lock is published and no candidate debris survives timeout.
+  {
+    const { cave } = await home("candidate-eperm-timeout");
+    await mkdir(cave, { recursive: true });
+    let renameAttempts = 0;
+    const epermRename = async () => {
+      renameAttempts += 1;
+      const error = new Error("injected Windows candidate failure") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    };
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockCandidateRename: epermRename }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(renameAttempts >= 2, "candidate publication retries until the deadline");
+    assert.equal(
+      (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
+      false,
+    );
+  }
+
+  // Persistent Windows EPERM while fencing a released lock likewise stops at
+  // the deadline without deleting or replacing the still-owned lock directory.
+  {
+    const { cave } = await home("reclaim-eperm-timeout");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.ppid,
+      token: "released-owner",
+      startedAt: new Date().toISOString(),
+      releasedAt: new Date().toISOString(),
+    }));
+    let fenceAttempts = 0;
+    const epermRename = async () => {
+      fenceAttempts += 1;
+      const error = new Error("injected Windows reclaim failure") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    };
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockFenceRename: epermRename }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(fenceAttempts >= 2, "released-lock fencing retries until the deadline");
+    assert.equal(await kind(lock), "dir", "failed fencing never removes the owned lock");
+    assert.equal((await json(path.join(lock, "owner.json"))).token, "released-owner");
+  }
+
   // Store transactions share the cross-process migration lock. A writer that
   // already passed startup reconciliation must not read an old snapshot while
   // a manual recovery is replacing canonical storage and overwrite it later.

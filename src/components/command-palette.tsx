@@ -612,12 +612,12 @@ export function CommandPalette({
             intent: { kind: "open-project", root: p.root },
           }));
 
-    // "Board: …" rows jump to the board and switch its view directly. Hidden
-    // while scoped or typing a slash command.
+    // "Tasks: …" rows jump to the Tasks board and switch its view directly.
+    // Hidden while scoped or typing a slash command.
     const BOARD_VIEWS: Array<{ view: "kanban" | "table" | "gantt"; label: string; hint: string; terms: string }> = [
-      { view: "kanban", label: "Board: Kanban", hint: "Columns by status", terms: "board kanban columns" },
-      { view: "table", label: "Board: Table", hint: "Sortable task table", terms: "board table list" },
-      { view: "gantt", label: "Board: Gantt timeline", hint: "Schedule timeline", terms: "board gantt timeline schedule" },
+      { view: "kanban", label: "Tasks: Kanban", hint: "Columns by status", terms: "tasks board kanban columns" },
+      { view: "table", label: "Tasks: Table", hint: "Sortable task table", terms: "tasks board table list" },
+      { view: "gantt", label: "Tasks: Gantt timeline", hint: "Schedule timeline", terms: "tasks board gantt timeline schedule" },
     ];
     const boardViewRows: Row[] = (scoped || slashToken)
       ? []
@@ -1211,7 +1211,7 @@ export function CommandPalette({
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Create task: {row.title}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          New card on the board, scoped to the active familiar
+                          New task in Tasks, scoped to the active familiar
                         </span>
                       </span>
                       {active ? <span className="text-[10px] text-[var(--text-muted)]">create</span> : null}

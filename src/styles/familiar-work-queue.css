@@ -19,10 +19,64 @@
 .fwq-familiars {
   display: flex;
   flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+/* Triage toolbar (cave-u2p1): search field + priority bands + sort toggle. */
+.fwq-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   padding: 10px var(--space-5);
   border-bottom: 1px solid var(--border-hairline);
 }
+.fwq-toolbar-search { flex: 1 1 240px; min-width: 180px; max-width: 380px; }
+.fwq-toolbar-group { display: inline-flex; gap: var(--space-2); }
+.fwq-toolbar-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* Bead titles that open the inspector read as links, not decorations. */
+.fwq-card-name--link {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border-radius: var(--radius-sm);
+}
+.fwq-card-name--link:hover { color: var(--accent-presence); text-decoration: underline; }
+
+/* Bead inspector body (rides the shared Modal chrome). */
+.fwq-detail { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.fwq-detail-title { margin: 0; font-size: var(--text-lg); line-height: 1.3; }
+.fwq-detail-desc {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.fwq-detail-empty, .fwq-detail-deps { margin: 0; color: var(--text-muted); font-size: var(--text-xs); }
+.fwq-detail-error { margin: 0; color: var(--color-danger); font-size: var(--text-sm); }
+.fwq-detail-actions { display: flex; gap: var(--space-2); }
 
 .fwq-chip {
   display: inline-flex;
@@ -269,11 +323,61 @@
 .fwq-lane-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 9px var(--space-3);
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+
+/* The whole head row is the disclosure control (cave-19jy). */
+.fwq-lane-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 9px var(--space-3);
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+}
+.fwq-lane-toggle:hover .fwq-lane-title { color: var(--text-primary); }
+.fwq-lane-caret {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast, 120ms) ease;
+}
+.fwq-lane-caret.is-open { transform: rotate(90deg); }
+
+/* Show all N / Show top N — quiet full-width foot row on capped lanes. */
+.fwq-lane-more {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+}
+.fwq-lane-more:hover { color: var(--accent-presence); background: var(--bg-hover); }
+
+/* Priority tint — P0/P1 must pop in a mixed lane; P2+ stays quiet. */
+.fwq-tag--p0,
+.fwq-tag--p1 {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+.fwq-tag--p0 {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
 }
 
 .fwq-lane-title {
@@ -428,6 +532,24 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* Claim-for-familiar picker (cave-p63a): a compact ghost control sitting
+   beside the xs Claim button, matching its 22px height. */
+.fwq-claim-for {
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 8px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  gap: var(--space-1);
+}
+
+.fwq-claim-for:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 /* Handoff-note affordances (cave-hlv.2): a full-width hint + inline composer
