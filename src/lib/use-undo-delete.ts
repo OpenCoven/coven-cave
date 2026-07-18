@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const UNDO_WINDOW_MS = 4_000;
 
+export function scheduleDeferredDelete(
+  deleteFn: () => Promise<void>,
+  delayMs = UNDO_WINDOW_MS,
+): ReturnType<typeof setTimeout> {
+  return setTimeout(() => {
+    void deleteFn();
+  }, delayMs);
+}
+
 export type UndoEntry<T> = {
   id: string;       // unique key for this pending deletion
   item: T;          // the item being deleted, for potential restore
@@ -41,10 +50,10 @@ export function useUndoDelete<T>() {
       }
 
       const id = `undo-${Date.now()}`;
-      const timeoutId = setTimeout(() => {
+      const timeoutId = scheduleDeferredDelete(async () => {
         setPending(null);
-        void deleteFn();
-      }, UNDO_WINDOW_MS);
+        await deleteFn();
+      });
 
       const entry: UndoEntry<T> = { id, item, label, deleteFn, timeoutId };
       setPending(entry);

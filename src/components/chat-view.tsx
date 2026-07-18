@@ -355,6 +355,7 @@ type Props = {
   sessions?: SessionRow[];
   onSessionStarted?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   onBack?: () => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
@@ -2314,7 +2315,7 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -5143,8 +5144,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setError(json.error ?? "delete failed");
         return;
       }
-      invalidateConversation(sessionId);
-      onSessionsChanged?.();
+      onSessionsDeleted([sessionId]);
       onBack?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");

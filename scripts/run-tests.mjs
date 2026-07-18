@@ -24,6 +24,7 @@ export const SUITES = {
     "src/lib/array-content-equal.test.ts",
     "src/lib/session-list-equal.test.ts",
     "src/lib/session-list-deletes.test.ts",
+    "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
     "src/lib/chat-split.test.ts",

@@ -138,11 +138,12 @@ test("hovering another row re-arms the singleton timer onto the new session", as
 const chatList = await readFile(new URL("../components/chat-list.tsx", import.meta.url), "utf8");
 const chatRail = await readFile(new URL("../components/chat-project-sidebar.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 
-test("chat-list rows arm hover prefetch and invalidate on delete", () => {
+test("chat-list rows arm hover prefetch and report confirmed deletes", () => {
   assert.match(chatList, /onMouseEnter=\{\(\) => \{ if \(!selectMode\) hoverPrefetchConversation\(s\.id\); \}\}/);
   assert.match(chatList, /onMouseLeave=\{cancelHoverPrefetch\}/);
-  assert.match(chatList, /invalidateConversation\(sessionId\)/);
+  assert.match(chatList, /onSessionsDeleted\(\[sessionId\]\)/);
 });
 
 test("thread-rail rows arm hover prefetch", () => {
@@ -150,7 +151,7 @@ test("thread-rail rows arm hover prefetch", () => {
   assert.match(chatRail, /onMouseLeave=\{cancelHoverPrefetch\}/);
 });
 
-test("chat-view paints cached payloads, revalidates, and invalidates on send/delete", () => {
+test("chat-view paints cached payloads and mutations invalidate at their shared owner", () => {
   // Cached paint goes through the same apply path as a fresh fetch…
   assert.match(chatView, /readCachedConversation\(sessionId\)/);
   assert.match(chatView, /applyConversationPayload\(cachedConversation\)/);
@@ -159,4 +160,7 @@ test("chat-view paints cached payloads, revalidates, and invalidates on send/del
   // …and mutations drop the entry so stale history can't be painted.
   assert.match(chatView, /invalidateConversation\(liveGeneration\.sessionId\)/);
   assert.match(chatView, /invalidateConversation\(sessionId\)/);
+  // Confirmed deletion invalidation is centralized so list, project, header,
+  // sidebar, and split-pane deletes cannot drift apart.
+  assert.match(workspace, /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\)/);
 });

@@ -157,7 +157,8 @@ assert.match(
   /Promise\.all\(removed\.map\(\(s\) => deleteOneSession\(s\.id\)\)\)/,
   "bulk delete runs the per-chat deletes in parallel",
 );
-assert.match(projectsView, /results\.some\(Boolean\)\) onSessionsChanged/, "bulk delete refetches once if any chat was deleted");
+assert.match(projectsView, /successfulSessionIds\(removed\.map\(\(session\) => session\.id\), results\)/, "bulk delete selects only confirmed ids");
+assert.match(projectsView, /if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/, "bulk delete reports confirmed ids once");
 // Bulk delete is deferred + undoable (shared useUndoDelete + UndoToast).
 assert.match(projectsView, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
 assert.match(projectsView, /scheduleSessionDelete\(\s*removed,/, "the batch is scheduled through the undo window");

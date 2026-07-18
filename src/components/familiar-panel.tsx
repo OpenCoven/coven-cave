@@ -9,6 +9,7 @@ type Props = {
   sessions: SessionRow[];
   daemonRunning: boolean;
   onSessionStarted: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
 };
@@ -23,6 +24,7 @@ export const FamiliarPanel = forwardRef<ChatRouterHandle, Props>(function Famili
     sessions,
     daemonRunning,
     onSessionStarted,
+    onSessionsDeleted,
     onSlashFromChat,
   } = props;
 
@@ -48,6 +50,7 @@ export const FamiliarPanel = forwardRef<ChatRouterHandle, Props>(function Famili
             sessions={sessions}
             daemonRunning={daemonRunning}
             onSessionStarted={onSessionStarted}
+            onSessionsDeleted={onSessionsDeleted}
             onSlashFromChat={onSlashFromChat}
             onOpenOnboarding={onOpenOnboarding}
             compact
