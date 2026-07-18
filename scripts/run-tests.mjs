@@ -518,6 +518,7 @@ export const SUITES = {
     "src/components/rituals-tabs.test.ts",
     "src/components/canonical-nav-names.test.ts",
     "src/components/workspace-alias-modes.test.ts",
+    "src/components/palette-canonical-names.test.ts",
     "src/lib/automations/automation-entry.test.ts",
     "src/lib/automations/list-input.test.ts",
     "src/lib/automations/run-status.test.ts",
