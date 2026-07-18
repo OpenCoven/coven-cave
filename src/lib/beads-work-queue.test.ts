@@ -333,6 +333,40 @@ assert.equal(
   );
 }
 
+{
+  // cave-opld (review of #3426): the description fallback is anchored to the
+  // File-bead signature + the PR's own URL. A bead that merely MENTIONS a PR
+  // ("Follow-up to PR #88") or carries a FOREIGN repo's /pull/88 URL must not
+  // be consumed as PR 88's link — that silently dropped real work out of the
+  // no-open-PR lane and suppressed the unlinked flag.
+  const mentionBead = {
+    ...bead("cave-mention", { labels: ["familiar:kitty"] }),
+    description: "Follow-up to PR #88 — tighten the join later",
+  };
+  const foreignBead = {
+    ...bead("cave-foreign"),
+    description: "Port the upstream fix https://github.com/vercel/next.js/pull/88",
+  };
+  const q = buildWorkQueue([mentionBead, foreignBead], [pr(88, "needs-review", { beads: [] })], [], {
+    nowMs: NOW,
+  });
+  assert.deepEqual(q.unlinked, [88], "casual mentions and foreign URLs leave the PR unlinked");
+  assert.deepEqual(
+    q.lanes.find((l) => l.key === "no-open-PR").items.map((i) => i.bead.id).sort(),
+    ["cave-foreign", "cave-mention"],
+    "both beads keep waiting as their own work items",
+  );
+
+  // The File-bead signature alone (URL elided) still links — it is what the
+  // queue's own flow writes.
+  const signatureBead = {
+    ...bead("cave-signed"),
+    description: "Filed from unlinked PR #88 — see the PR for context",
+  };
+  const q2 = buildWorkQueue([signatureBead], [pr(88, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q2.unlinked, [], "the File-bead signature is an anchor on its own");
+}
+
 // ── beadRefMatchesPr: the pure ref shapes ────────────────────────────────────
 assert.equal(beadRefMatchesPr("gh-123", 123), true, "gh-<n>");
 assert.equal(beadRefMatchesPr("#123", 123), true, "#<n>");
