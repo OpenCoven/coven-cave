@@ -88,7 +88,11 @@ import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models"
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
-import { discardVoiceSessionIfEmpty, startVoiceConversation } from "@/lib/voice/start-voice-chat";
+import {
+  discardVoiceSessionIfEmpty,
+  startVoiceConversation,
+  voiceChatStartErrorMessage,
+} from "@/lib/voice/start-voice-chat";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
@@ -2328,18 +2332,6 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
     // Keep the status-only fallback if the response body cannot be read.
   }
   return detail ? `${base}: ${detail}` : base;
-}
-
-// Voice new-chat mint failures come back as machine codes (start-voice-chat.ts /
-// voice-chat-create.ts: "familiar_not_found", "save_failed", "missing_familiarId",
-// "network", or "create_failed_http_<n>") — translate the common ones to human
-// copy for the announcement and fall back to a generic-but-legible message for
-// the rest. Mirrors workspace.tsx's voiceChatStartErrorMessage for the Home
-// call button, kept local here since that helper isn't exported.
-function voiceChatStartErrorMessage(code: string): string {
-  if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
-  if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
-  return `Couldn't start a voice chat (${code}).`;
 }
 
 // ── ChatView ──────────────────────────────────────────────────────────────────

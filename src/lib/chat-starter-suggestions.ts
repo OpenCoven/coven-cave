@@ -80,8 +80,8 @@ export function deriveStarterSuggestions(opts: {
     });
     out.push({
       id: "plan-feature",
-      label: "Plan a feature and break it into board cards",
-      text: "Plan a feature and break it into board cards",
+      label: "Plan a feature and break it into task cards",
+      text: "Plan a feature and break it into task cards",
     });
   }
 

@@ -69,7 +69,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // more files by design, fewer bytes parsed everywhere. CI measured 5,512
   // on Windows. Raised to 5,522: ten files of headroom, byte ceiling
   // untouched.
-  fileCount: 5_522,
+  // 2026-07-18 (Charm's Loom): the bundled Marketplace craft adds five traced
+  // files on Windows. CI measured 5,527; retain ten files of headroom without
+  // relaxing the expanded-byte ceiling.
+  fileCount: 5_537,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

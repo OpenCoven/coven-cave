@@ -102,13 +102,17 @@ test("an ears error forwards and auto-stops", async () => {
 
 test("close() tears down; start() after close is a no-op", async () => {
   const ears = fakeEars();
-  const { handlers } = recordingHandlers();
+  const { handlers, events } = recordingHandlers();
   const controller = await createDictationController(handlers, async () => ears.factory);
   assert.ok(controller);
   controller.start();
   controller.close();
   controller.start();
   assert.deepEqual(ears.calls, ["create", "listen", "close"]);
+  assert.deepEqual(events, [
+    { kind: "listening", value: "true" },
+    { kind: "listening", value: "false" },
+  ]);
   assert.equal(controller.isListening(), false);
 });
 
@@ -141,5 +145,5 @@ test("finals and errors after close() are dropped", async () => {
   ears.fire().onFinal("after close");
   ears.fire().onError("stt_network");
   const kinds = events.map((entry) => entry.kind);
-  assert.deepEqual(kinds, ["listening"]); // only the initial listening:true
+  assert.deepEqual(kinds, ["listening", "listening"]); // close reports listening:false
 });

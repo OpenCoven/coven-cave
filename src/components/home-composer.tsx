@@ -604,7 +604,7 @@ export function HomeComposer({
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard(); }
-          else onToast("Board card creation failed.");
+          else onToast("Task card creation failed.");
           break;
         }
       }

@@ -112,9 +112,10 @@ test("workspace: startVoiceChat bails on stale navigation instead of yanking the
 
 test("workspace: voice chat mint errors are translated to human toast copy", () => {
   assert.match(
-    workspace,
-    /function voiceChatStartErrorMessage\(code: string\): string \{[\s\S]*?"network"[\s\S]*?"familiar_not_found"[\s\S]*?\$\{code\}/,
+    startVoiceChat,
+    /export function voiceChatStartErrorMessage\(code: string\): string \{[\s\S]*?"network"[\s\S]*?"familiar_not_found"[\s\S]*?\$\{code\}/,
   );
+  assert.match(workspace, /import \{ startVoiceConversation, voiceChatStartErrorMessage \} from "@\/lib\/voice\/start-voice-chat"/);
   assert.match(workspace, /pushToast\(voiceChatStartErrorMessage\(result\.error\)\)/);
 });
 

@@ -21,6 +21,7 @@ import {
   normalizeThread,
   normalizeWeaveDetail,
   normalizeWeaveSummary,
+  normalizeDegradedFamiliar,
   tensionRollup,
   timeArrayToIso,
   THREADS_STALE_TTL_MS,
@@ -299,6 +300,49 @@ describe("normalizeWeaveSummary / normalizeWeaveDetail", () => {
 
   it("returns null for a shapeless weave instead of fabricating one", () => {
     assert.equal(normalizeWeaveSummary({ weave: { no: "id" }, coherence: "Coherent" }), null);
+  });
+
+  it("normalizes a degraded familiar entry with its sanitized daemon error (R12)", () => {
+    assert.deepEqual(
+      normalizeDegradedFamiliar({
+        degraded: {
+          familiarId: "nova",
+          reason: "ward-config-unparseable",
+          error: "missing field `principal_key_fingerprint`",
+        },
+      }),
+      {
+        kind: "degraded-familiar",
+        familiarId: "nova",
+        reason: "ward-config-unparseable",
+        error: "missing field `principal_key_fingerprint`",
+      },
+    );
+  });
+
+  it("returns null for degraded entries without a familiar id", () => {
+    assert.equal(
+      normalizeDegradedFamiliar({ degraded: { reason: "ward-config-unparseable", error: "missing" } }),
+      null,
+    );
+  });
+
+  it("surfaces unknown degraded reason strings for forward compatibility", () => {
+    const degraded = normalizeDegradedFamiliar({
+      degraded: { familiarId: "echo", reason: "future-daemon-reason", error: "future parse failure" },
+    });
+    assert.equal(degraded?.reason, "future-daemon-reason");
+    assert.equal(degraded?.error, "future parse failure");
+  });
+
+  it("lets a valid weave win when an impossible entry carries both weave and degraded", () => {
+    const entry = {
+      weave: rawWeave,
+      coherence: "Coherent",
+      degraded: { familiarId: "nova", reason: "ward-config-unparseable", error: "ignored" },
+    };
+    assert.equal(normalizeWeaveSummary(entry)?.id, rawWeave.id);
+    assert.equal(normalizeDegradedFamiliar(entry), null);
   });
 });
 

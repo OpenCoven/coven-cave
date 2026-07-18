@@ -82,7 +82,7 @@ export async function createDictationController(
     },
     close() {
       closed = true;
-      listening = false;
+      setListening(false);
       ears?.close();
       ears = null;
     },

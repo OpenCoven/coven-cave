@@ -11,7 +11,7 @@ import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
-import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
+import { isWorkspaceMode, type WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -120,7 +120,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import { startVoiceConversation } from "@/lib/voice/start-voice-chat";
+import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
@@ -167,11 +167,13 @@ function splitTargetTitle(target: SplitTarget): string {
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
 // title, so the detail pane carries a visually-hidden h1 naming the active
-// surface. Labels mirror the sidebar's vocabulary.
+// surface. Labels mirror the sidebar's canonical vocabulary (issue #3283 —
+// one surface, one name): alias modes that render another surface's view
+// (calendar, familiar-work-queue) reuse that surface's name.
 const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   agents: "Familiars",
   home: "Home",
-  chat: "Familiars",
+  chat: "Chat",
   groupchat: "Group Chat",
   board: "Tasks",
   calendar: "Rituals",
@@ -183,7 +185,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
-  "familiar-work-queue": "Queue",
+  "familiar-work-queue": "Tasks",
   journal: "Journal",
   grimoire: "Memories",
 };
@@ -219,15 +221,13 @@ function clearChatHash() {
 // Mode deep links: workspace modes live inside this SPA shell and aren't
 // URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
 // external links land directly on a surface.
-// Only modes the shell can actually render are honoured — validated against
-// WORKSPACE_MODE_TITLES, which is keyed by every WorkspaceMode — so unknown
-// values are ignored silently.
+// Only real modes are honoured — canonical surfaces and the compatibility
+// aliases in MODE_ALIASES (setMode routes those onto their canonical
+// surface/tab) — so unknown values are ignored silently.
 function readModeParam(): WorkspaceMode | null {
   if (typeof window === "undefined") return null;
   const raw = new URLSearchParams(window.location.search).get("mode");
-  if (raw && Object.prototype.hasOwnProperty.call(WORKSPACE_MODE_TITLES, raw)) {
-    return raw as WorkspaceMode;
-  }
+  if (raw && isWorkspaceMode(raw)) return raw;
   return null;
 }
 
@@ -276,16 +276,6 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
       },
     };
   });
-}
-
-// Voice new-chat mint failures come back as machine codes (start-voice-chat.ts /
-// voice-chat-create.ts: "familiar_not_found", "save_failed", "missing_familiarId",
-// "network", or "create_failed_http_<n>") — translate the common ones to human
-// copy for the toast and fall back to a generic-but-legible message for the rest.
-function voiceChatStartErrorMessage(code: string): string {
-  if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
-  if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
-  return `Couldn't start a voice chat (${code}).`;
 }
 
 export function Workspace() {
@@ -350,10 +340,15 @@ export function Workspace() {
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
   const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
-  // Group Chat retired its standalone page — it's now a tab inside the Chat
-  // surface. Any request for the legacy `groupchat` mode (nav, deep link,
-  // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
-  // tab, so `mode` is never actually "groupchat" and the surface never flashes.
+  // Alias funnel: MODE_ALIASES (src/lib/workspace-mode.ts) is the single
+  // source of truth for where every compatibility mode lands. groupchat /
+  // journal / flow are rewritten HERE so `mode` never holds them (Group Chat
+  // is a tab inside the Chat surface; Journal a tab inside Memories; Flow is
+  // retired). The other aliases (calendar, familiar-work-queue, roles,
+  // capabilities) pass through untouched: the render branches mount their
+  // canonical surface on the matching tab, keyed by the alias so deep links
+  // remount onto it. workspace-alias-modes.test.ts pins these branches to
+  // the table.
   const setMode = useCallback((next: CaveMode) => {
     // Native child WebViews render above React. Deactivate the primary pane
     // before committing a non-Browser surface so there is no paint where the
@@ -933,16 +928,13 @@ export function Workspace() {
     // select restores that familiar's last-viewed surface.
     if (opts?.multi || opts?.preserveSurface) return;
     const last = getLastSurface(id);
-    // Guard against retired/unknown persisted modes (e.g. the removed
-    // "projects" standalone surface). Only restore if the stored string is
-    // still a valid WorkspaceMode; otherwise fall back to the default.
-    const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
-    if (last === "flow") setMode("inbox");
+    // Guard against retired/unknown persisted modes (e.g. removed standalone
+    // surfaces). Any real mode is safe to hand to setMode — its alias funnel
+    // routes compatibility modes (flow, journal, groupchat, …) onto their
+    // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
     // A persisted Role Surface mode restores too — if this familiar no longer
     // holds the role, the visibility effect below falls back generically.
-    // ("journal" restores fine: setMode remaps it to Grimoire's Journal tab —
-    // the old no-op predated that remap; cave-nwi8.)
-    else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
+    if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -1722,10 +1714,8 @@ export function Workspace() {
         }
         return;
       }
-      if (targetMode === "flow") {
-        setMode("inbox");
-        return;
-      }
+      // Alias modes (flow, journal, groupchat, …) need no special-casing:
+      // setMode's alias funnel routes them via MODE_ALIASES.
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);

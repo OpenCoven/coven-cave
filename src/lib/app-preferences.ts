@@ -44,16 +44,20 @@ const LEGACY_KEYS = [
 declare global {
   interface Window {
     __COVEN_CAVE_PREFERENCES__?: unknown;
+    __COVEN_CAVE_PREFERENCES_AUTHORITATIVE__?: boolean;
   }
 }
 
 function readBootstrap(): CavePreferences | null {
   if (typeof window === "undefined") return null;
   const direct = window.__COVEN_CAVE_PREFERENCES__;
-  if (direct) return normalizeCavePreferences(direct);
+  if (direct && window.__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__ !== false) {
+    return normalizeCavePreferences(direct);
+  }
   if (typeof document === "undefined") return null;
   const node = document.getElementById(BOOTSTRAP_ID);
   if (!node?.textContent) return null;
+  if (node.getAttribute("data-authoritative") === "false") return null;
   try {
     return normalizeCavePreferences(JSON.parse(node.textContent));
   } catch {
@@ -90,6 +94,17 @@ function hasOwnKeys(value: object): boolean {
   return Object.keys(value).length > 0;
 }
 
+function isCanonicalPreferencesPayload(value: unknown): value is CavePreferences {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<CavePreferences>;
+  return candidate.version === 1 &&
+    typeof candidate.initialized === "boolean" &&
+    typeof candidate.revision === "number" &&
+    Boolean(candidate.appearance && typeof candidate.appearance === "object") &&
+    Boolean(candidate.general && typeof candidate.general === "object") &&
+    Boolean(candidate.phone && typeof candidate.phone === "object");
+}
+
 function mergePatch(left: CavePreferencesPatch, right: CavePreferencesPatch): CavePreferencesPatch {
   const merge = (a: unknown, b: unknown): unknown => {
     if (!b || typeof b !== "object" || Array.isArray(b)) return b;
@@ -106,6 +121,7 @@ function mergePatch(left: CavePreferencesPatch, right: CavePreferencesPatch): Ca
 let authoritativeBootstrap = readBootstrap();
 let snapshot = authoritativeBootstrap ?? createDefaultPreferences(false);
 let canonicalInitialized = authoritativeBootstrap?.initialized === true;
+let canonicalLoaded = authoritativeBootstrap !== null;
 let legacyPatch: CavePreferencesPatch | null = null;
 let storageIdentity = activeStorage();
 
@@ -187,7 +203,9 @@ function broadcast() {
 }
 
 function commitCanonical(preferences: unknown) {
+  if (!isCanonicalPreferencesPayload(preferences)) return false;
   const canonical = normalizeCavePreferences(preferences);
+  canonicalLoaded = true;
   canonicalInitialized = canonical.initialized;
   snapshot = hasOwnKeys(pendingPatch)
     ? applyPreferencesPatch(canonical, pendingPatch)
@@ -195,6 +213,12 @@ function commitCanonical(preferences: unknown) {
   if (!canonicalInitialized) snapshot = { ...snapshot, initialized: false };
   mirrorLegacy(snapshot);
   notify();
+  try {
+    performance.mark("cave:canonical-preferences-applied");
+  } catch {
+    // User Timing is optional in tests and older embedded webviews.
+  }
+  return true;
 }
 
 function retryableStatus(status: number): boolean {
@@ -215,7 +239,7 @@ async function sendPatch(
     const data = (await response.json().catch(() => null)) as
       | { ok?: boolean; preferences?: CavePreferences }
       | null;
-    if (!response.ok || !data?.ok || !data.preferences) {
+    if (!response.ok || !data?.ok || !isCanonicalPreferencesPayload(data.preferences)) {
       return { ok: false, retryable: retryableStatus(response.status) };
     }
     commitCanonical(data.preferences);
@@ -345,7 +369,7 @@ export async function refreshAppPreferences(): Promise<CavePreferences> {
     const data = (await response.json().catch(() => null)) as
       | { ok?: boolean; preferences?: CavePreferences }
       | null;
-    if (response.ok && data?.ok && data.preferences) {
+    if (response.ok && data?.ok && isCanonicalPreferencesPayload(data.preferences)) {
       authoritativeBootstrap = normalizeCavePreferences(data.preferences);
       commitCanonical(authoritativeBootstrap);
     }
@@ -365,6 +389,10 @@ export function initializeAppPreferences(): Promise<CavePreferences> {
   initializedPromise = (async () => {
     ensureChannel();
     if (!authoritativeBootstrap) await refreshAppPreferences();
+    // A paint-only snapshot is never permission to initialize or write. If the
+    // canonical read failed or returned malformed data, preserve every queued
+    // edit locally and let the shell's explicit retry path try the GET again.
+    if (!canonicalLoaded) return snapshot;
     if (!canonicalInitialized) {
       const migration = legacyPatch ?? legacyStorageToPreferencesPatch(readLegacyValues());
       // The legacy snapshot is the base; any interaction queued while the app

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { loadConfig, bindingFor, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { saveConversation } from "@/lib/cave-conversations";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";

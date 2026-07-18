@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startVoiceConversation, discardVoiceSessionIfEmpty } from "./start-voice-chat.ts";
+import {
+  startVoiceConversation,
+  discardVoiceSessionIfEmpty,
+  voiceChatStartErrorMessage,
+} from "./start-voice-chat.ts";
 
 type FetchCall = { url: string; init?: RequestInit };
 
@@ -43,6 +47,15 @@ test("startVoiceConversation maps a thrown fetch to a network error", async () =
   const impl = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
   const result = await startVoiceConversation("fam-1", null, impl);
   assert.deepEqual(result, { ok: false, error: "network" });
+});
+
+test("voiceChatStartErrorMessage translates common codes and preserves unknown context", () => {
+  assert.equal(voiceChatStartErrorMessage("network"), "Couldn't start a voice chat — is the daemon running?");
+  assert.equal(
+    voiceChatStartErrorMessage("familiar_not_found"),
+    "Couldn't start a voice chat: that familiar no longer exists.",
+  );
+  assert.equal(voiceChatStartErrorMessage("save_failed"), "Couldn't start a voice chat (save_failed).");
 });
 
 test("discardVoiceSessionIfEmpty issues a single ifEmpty DELETE and reports deleted:true", async () => {

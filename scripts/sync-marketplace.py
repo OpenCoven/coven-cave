@@ -180,6 +180,8 @@ def validate_craft(
         raise ValueError(f'Craft "{name}" mcpServers must be an object')
     if plugin.get("visibility", "public") not in {"public", "hidden"}:
         raise ValueError(f'Craft "{name}" visibility must be public or hidden')
+    if plugin.get("defaultPrompt") is not None:
+        _require_text(plugin, "defaultPrompt", f'Craft "{name}"')
 
 
 def validate_knowledge_pack(plugin: dict[str, Any], marketplace_dir: Path) -> None:
@@ -504,7 +506,12 @@ def codex_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
                 "category": plugin["category"],
                 "capabilities": craft["requiredCapabilities"],
                 "websiteURL": "https://opencoven.ai",
-                "defaultPrompt": [f"Use {plugin['displayName']} to open a bounded research direction."],
+                "defaultPrompt": [
+                    plugin.get(
+                        "defaultPrompt",
+                        f"Use {plugin['displayName']} to open a bounded research direction.",
+                    )
+                ],
             },
         }
         if craft.get("mcpServers"):

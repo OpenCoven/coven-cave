@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -88,6 +88,18 @@ try {
     assert.equal(out.attachments[0].dataUrl, undefined, "text attachment has no data URL");
   }
 
+  // --- in-root names beginning with two dots remain allowed ---
+  {
+    const dotPrefixedDir = path.join(allowed, "..notes");
+    const dotPrefixedPath = path.join(dotPrefixedDir, "notes.txt");
+    await mkdir(dotPrefixedDir);
+    await writeFile(dotPrefixedPath, "still allowed");
+
+    const text = `\`\`\`coven:attachment\n${JSON.stringify({ path: dotPrefixedPath })}\n\`\`\``;
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+    assert.equal(out.attachments[0]?.text, "still allowed", "in-root '..name' path is accepted");
+  }
+
   // --- path outside allowed roots → dropped, but marker still stripped ---
   {
     const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: outsidePath })}\n\`\`\``;
@@ -97,6 +109,23 @@ try {
     assert.equal(out.text, "nope");
   }
 
+  // --- symlink escaping runtime-granted root → dropped ---
+  {
+    const outsideTextPath = path.join(outside, "secret.env");
+    const symlinkPath = path.join(allowed, "linked-secret.env");
+    await writeFile(outsideTextPath, "TOP_SECRET_TOKEN=symlink_escape");
+    try {
+      await symlink(outsideTextPath, symlinkPath);
+
+      const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: symlinkPath })}\n\`\`\``;
+      const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+      assert.equal(out.attachments.length, 0, "symlink target outside allowed root is dropped");
+      assert.equal(out.text, "nope");
+    } catch (error) {
+      if (!["EPERM", "EACCES", "ENOSYS"].includes(error?.code)) throw error;
+      console.warn(`agent-attachments.test.ts: symlink confinement skipped (${error.code})`);
+    }
+  }
 
   // --- globally allowed but not runtime-granted root → dropped ---
   {

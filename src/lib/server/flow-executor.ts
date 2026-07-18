@@ -21,6 +21,9 @@ import {
   type FlowTriggerInput,
 } from "@/lib/flow/flow-compile";
 import { flowMissingRequiredInputs } from "@/lib/required-inputs";
+import { realpath, stat } from "node:fs/promises";
+import { familiarWorkspace } from "@/lib/coven-paths";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun } from "@/lib/server/flow-store";
@@ -49,6 +52,35 @@ function flowFamiliar(flow: FlowDoc): string | null {
     if (typeof familiar === "string" && familiar.trim()) return familiar.trim();
   }
   return null;
+}
+
+/**
+ * The familiar's own workspace as a harness-level trust grant for the direct
+ * copilot flow spawn. Flow prompts direct familiars to write memory and
+ * self-reports into their workspace, but the spawn cwd is the project root —
+ * and a non-interactive run can't prompt for permission, so every access to
+ * an untrusted workspace hard-fails (the recurring "filesystem access to own
+ * workspace" familiar self-report). Resolved conservatively: strict slug id,
+ * an existing real directory, and never the spawn cwd itself (cave-n1yc).
+ */
+async function flowFamiliarAddDirs(
+  familiarId: string | null,
+  projectRoot: string,
+): Promise<string[]> {
+  if (!familiarId || !isValidFamiliarId(familiarId)) return [];
+  try {
+    const workspace = await realpath(await familiarWorkspace(familiarId));
+    if (!(await stat(workspace)).isDirectory()) return [];
+    let root = projectRoot;
+    try {
+      root = await realpath(projectRoot);
+    } catch {
+      /* keep the normalized form for comparison */
+    }
+    return workspace === root ? [] : [workspace];
+  } catch {
+    return [];
+  }
 }
 
 function initialFlowRunStepStatus(
@@ -205,6 +237,7 @@ export async function startFlowSession(
         familiarId,
         familiarName: "display_name" in binding ? binding.display_name : undefined,
         familiarRole: "role" in binding ? binding.role : undefined,
+        addDirs: await flowFamiliarAddDirs(familiarId, projectRoot),
       });
       return finishStart(sessionId);
     }

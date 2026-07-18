@@ -260,3 +260,22 @@ assert.equal(
 }
 
 console.log("beads-work-queue.test.ts: ok");
+
+// ── no-open-PR triage order: priority asc, then oldest update first (cave-19jy)
+{
+  const at = (h) => new Date(NOW - h * HOURS).toISOString();
+  const beads = [
+    { ...bead("cave-fresh-p1", { priority: 1 }), updated_at: at(2) },
+    { ...bead("cave-old-p1", { priority: 1 }), updated_at: at(90) },
+    { ...bead("cave-old-p0", { priority: 0 }), updated_at: at(50) },
+    { ...bead("cave-any-p2", { priority: 2 }), updated_at: at(200) },
+    { ...bead("cave-undated-p1", { priority: 1 }), updated_at: null },
+  ];
+  const q = buildWorkQueue(beads, [], [], { nowMs: NOW });
+  const lane = q.lanes.find((l) => l.key === "no-open-PR");
+  assert.deepEqual(
+    lane.items.map((i) => i.bead.id),
+    ["cave-old-p0", "cave-old-p1", "cave-fresh-p1", "cave-undated-p1", "cave-any-p2"],
+    "P0 first; within a priority the stalest update leads; undated beads sort after dated peers",
+  );
+}

@@ -20,6 +20,14 @@ export type StartVoiceChatResult =
   | { ok: true; sessionId: string }
   | { ok: false; error: string };
 
+/** Translate voice-chat mint error codes into user-facing copy shared by
+ * both composer entry points. */
+export function voiceChatStartErrorMessage(code: string): string {
+  if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
+  if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
+  return `Couldn't start a voice chat (${code}).`;
+}
+
 export async function startVoiceConversation(
   familiarId: string,
   projectRoot: string | null,

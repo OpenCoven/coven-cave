@@ -64,7 +64,7 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
     }).catch(() => {});
   };
 
-  // Save a recommended path to the Board as a card + checklist (design §"Data
+  // Save a recommended path to Tasks as a card + checklist (design §"Data
   // Flow" step 8). The card requires an explicit confirm before calling this.
   const saveCardToBoard = async (card: SalemPathfinderCardData): Promise<boolean> => {
     const notes = [
