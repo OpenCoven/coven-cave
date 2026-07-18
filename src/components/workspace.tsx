@@ -50,6 +50,7 @@ import {
   createDaemonStatusRequestGate,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
+import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
@@ -681,6 +682,10 @@ export function Workspace() {
   }, []);
 
   const startDaemon = useCallback(async () => {
+    // The release-alignment trigger may be replacing the CLI after observing
+    // this same offline state. Starting the old binary during that window can
+    // lock coven.exe on Windows and make the update fail.
+    await waitForDaemonUpdateIdle();
     await runWorkspaceDaemonStart({
       fetchImpl: fetch,
       dismissError: () => dismissBanner("daemon-start-error"),
