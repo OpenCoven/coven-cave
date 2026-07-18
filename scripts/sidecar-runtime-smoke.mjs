@@ -389,13 +389,20 @@ async function main() {
     assert.equal(documentResponse.status, 200, "a normal reload should render from canonical preferences");
     const documentHtml = await documentResponse.text();
     const bootstrapMatch = documentHtml.match(
-      /<script id="cave-preferences-bootstrap" type="application\/json">([\s\S]*?)<\/script>/,
+      /<script id="cave-preferences-bootstrap" type="application\/json"([^>]*)>([\s\S]*?)<\/script>/,
     );
     assert.ok(bootstrapMatch, "the restarted document must contain the pre-paint preference bootstrap");
-    const documentPreferences = JSON.parse(bootstrapMatch[1]);
-    assert.equal(documentPreferences.appearance.theme.id, preferencePatch.appearance.theme.id);
-    assert.deepEqual(documentPreferences.appearance.fonts, preferencePatch.appearance.fonts);
-    assert.equal(documentPreferences.appearance.screenScale, preferencePatch.appearance.screenScale);
+    assert.match(
+      bootstrapMatch[1],
+      /data-authoritative="false"/,
+      "the root document must not claim its paint-only preference snapshot is canonical",
+    );
+    const documentPreferences = JSON.parse(bootstrapMatch[2]);
+    assert.equal(
+      documentPreferences.initialized,
+      false,
+      "the root document must remain independent of reconciled preference storage",
+    );
 
     const localhostUrl = `http://localhost:${secondPort}`;
     const localhostResponse = await fetch(`${localhostUrl}/api/preferences`, {

@@ -10,8 +10,15 @@ on:
   workflow_dispatch:
 
 concurrency:
+  # Key on the full ref so each PR/branch has its own group. Do NOT cancel
+  # in-progress runs: the repo ruleset's code_scanning gate evaluates CodeQL
+  # against the PR merge commit, which regenerates whenever main moves. Cancelling
+  # in-flight PR runs (esp. the ~30min swift build) made the gate unsatisfiable
+  # under merge load — every main move murdered the run before it could report.
+  # Letting runs finish (and queueing the next) preserves full 5-language required
+  # coverage and dissolves that deadlock, at the cost of some extra runner minutes.
   group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: false
 
 permissions:
   actions: read
