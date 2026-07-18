@@ -119,6 +119,21 @@ assert.match(
 );
 assert.match(
   shell,
+  /setEnabled\(j\.enabled === true\)/,
+  "Omnigent group derives the master-switch state from /api/omnigent/status enabled",
+);
+assert.match(
+  shell,
+  /JSON\.stringify\(\{ omnigent: \{ enabled: next \} \}\)/,
+  "the enable toggle PATCHes exactly omnigent.enabled — nothing else",
+);
+assert.match(
+  shell,
+  /\{enabled \? \(/,
+  "connection fields render only after the fleet is explicitly enabled — vault key alone shows just the toggle",
+);
+assert.match(
+  shell,
   /\.catch\(\(\) => \{\s*if \(!ctl\.signal\.aborted\) setServerUrlInVault\(false\);\s*\}\)/,
   "a failed status probe hides the Omnigent group instead of leaving it in limbo",
 );
@@ -134,8 +149,29 @@ assert.match(
 );
 assert.match(
   statusRoute,
+  /const enabled = config\.omnigent\.enabled === true;\s*\n\s*if \(!serverUrlInVault \|\| !enabled\) \{/,
+  "the status probe short-circuits as unconfigured until BOTH the Vault key and the enable toggle hold — no secret resolution, no network",
+);
+assert.match(
+  statusRoute,
   /resolveOmnigentBaseUrl\(config\.omnigent\.baseUrl\)/,
   "the status probe resolves the base URL Vault-first",
 );
+// Every fleet entry point refuses while the master switch is off: the three
+// omnigent proxies, the /api/hosts fleet options, and createOmnigentRun.
+for (const rel of [
+  "../app/api/omnigent/hosts/route.ts",
+  "../app/api/omnigent/sessions/route.ts",
+  "../app/api/omnigent/agents/route.ts",
+  "../app/api/hosts/route.ts",
+  "../lib/omnigent/run.ts",
+]) {
+  const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+  assert.match(
+    src,
+    /if \(!isOmnigentFleetActive\(config\.omnigent\)\)/,
+    `${rel} must gate on isOmnigentFleetActive (vault URL + explicit enable toggle)`,
+  );
+}
 
 console.log("settings-daemon-multihost.test.ts: ok");

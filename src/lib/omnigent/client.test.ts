@@ -8,6 +8,7 @@ import path from "node:path";
 import { pickDefaultAgentId, pickDefaultHostId } from "./client.ts";
 import {
   isOmnigentEnvConfigured,
+  isOmnigentFleetActive,
   isOmnigentServerUrlConfigured,
   normalizeOmnigentBaseUrl,
   resolveOmnigentAuth,
@@ -301,4 +302,36 @@ test("resolveOmnigentBaseUrl falls back to config when vault is empty", async ()
   );
   assert.equal(resolveOmnigentBaseUrl(undefined), "");
   assert.equal(resolveOmnigentBaseUrl(""), "");
+});
+
+test("isOmnigentFleetActive requires BOTH the vault URL and the enable toggle", async () => {
+  delete process.env.OMNIGENT_SERVER_URL;
+  // Toggle on but no vault key → inactive (config fallback can't activate it).
+  assert.equal(isOmnigentFleetActive({ enabled: true }), false);
+
+  process.env.OMNIGENT_SERVER_URL = "https://omni.example.com";
+  try {
+    assert.equal(isOmnigentFleetActive({ enabled: true }), true);
+    // Vault key alone (toggle off / absent) → inactive.
+    assert.equal(isOmnigentFleetActive({ enabled: false }), false);
+    assert.equal(isOmnigentFleetActive({}), false);
+    assert.equal(isOmnigentFleetActive(undefined), false);
+  } finally {
+    delete process.env.OMNIGENT_SERVER_URL;
+  }
+});
+
+test("isOmnigentFleetActive sees a vault-stored server URL", async () => {
+  delete process.env.OMNIGENT_SERVER_URL;
+  const { setLocalEncryptedSecret, deleteLocalEncryptedSecret } = await import(
+    "../local-encrypted-vault.ts"
+  );
+  setLocalEncryptedSecret("OMNIGENT_SERVER_URL", "https://omni.example.com");
+  try {
+    assert.equal(isOmnigentFleetActive({ enabled: true }), true);
+    assert.equal(isOmnigentFleetActive({ enabled: false }), false);
+  } finally {
+    deleteLocalEncryptedSecret("OMNIGENT_SERVER_URL");
+    delete process.env.OMNIGENT_SERVER_URL;
+  }
 });
