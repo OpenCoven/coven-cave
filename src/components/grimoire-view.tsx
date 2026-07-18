@@ -913,13 +913,19 @@ export function GrimoireView({
           ...(opts.patternId ? { patternId: opts.patternId } : {}),
           ...(opts.pinUrl ? { pinUrl: opts.pinUrl } : {}),
         }));
+      } else {
+        // Plain opens keep the nonce (an already-open intake must not remount
+        // and lose pinned sources) but drop any stale prefill so the next
+        // fresh mount starts blank instead of replaying an old capture.
+        setStitchPrefill((prev) => (prev.patternId || prev.pinUrl ? { nonce: prev.nonce } : prev));
       }
       openDoc({ kind: "stitch-new" });
     },
     [openDoc],
   );
 
-  const closeTab = useCallback((key: string) => {    setDirtyTabs((prev) => {
+  const closeTab = useCallback((key: string) => {
+    setDirtyTabs((prev) => {
       if (!(key in prev)) return prev;
       const next = { ...prev };
       delete next[key];
