@@ -419,6 +419,10 @@ export function CommandPalette({
       (Date.parse(a.updated_at || a.created_at) || 0);
     const matchedSessions = sessions.filter((s) => {
       if (!s.familiarId) return false;
+      // Browse mode is the "Recent chats" jump list — archived chats never
+      // resurface there (the chat list's "Show archived" toggle is their
+      // home). A typed query still finds them, like any explicit search.
+      if (!q && s.archived_at) return false;
       if (scoped) {
         if (!scope!.has(s.familiarId)) return false;
         if (!q) return true;
