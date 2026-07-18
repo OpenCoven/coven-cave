@@ -67,7 +67,10 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
 test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
   const src = read("./workspace.tsx");
   assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
+  assert.match(src, /function splitTargetRendersMode\(target: SplitTarget, mode: CanonicalWorkspaceMode\): boolean \{[\s\S]*resolveWorkspaceModeAlias\(target\.mode\) === mode/, "split-target mode guards canonicalize aliases before matching");
+  assert.match(src, /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*addSecondaryWorkspaceTile/, "blocked chat surfaces bounce to Home instead of entering the split");
   assert.match(src, /const openSplitPage = useCallback/);
+  assert.match(src, /if \(!m \|\| m === mode \|\| !isWorkspaceMode\(m\)\) return;[\s\S]*addSplitTarget\(\{ kind: "page", mode: m \}, side\);/, "split drops validate the workspace mode before adding a page tile");
   assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
   assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
   assert.match(src, /const detailContent = renderSurface\(mode\);[\s\S]*\{detailContent\}/, "primary renders the direct detail child from renderSurface");

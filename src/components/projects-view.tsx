@@ -111,6 +111,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   const [rootDraft, setRootDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
   // Bulk delete is deferred + undoable: the rows hide immediately, the actual
@@ -378,29 +379,35 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     const root = rootDraft.trim();
     if (!name || !root) return;
     setCreating(true);
-    const project = await createProject(name, root, { emitMutation: !activeFamiliarId });
-    if (project && activeFamiliarId) {
-      // Register alone leaves the project 403ing in chat for this familiar —
-      // grant it here so "New project" is usable the moment it's created.
-      const granted = await addChatProject({
-        root,
-        familiarId: activeFamiliarId,
-        createProject,
-        existingProjectId: project.id,
-        projectJustCreated: true,
-      });
-      if (!granted.ok) setSessionError(`Project created, but grant failed: ${granted.error}`);
+    setProjectError(null);
+    try {
+      const project = await createProject(name, root, { emitMutation: !activeFamiliarId });
+      if (project && activeFamiliarId) {
+        // Register alone leaves the project 403ing in chat for this familiar —
+        // grant it here so "New project" is usable the moment it's created.
+        const granted = await addChatProject({
+          root,
+          familiarId: activeFamiliarId,
+          createProject,
+          existingProjectId: project.id,
+          projectJustCreated: true,
+        });
+        if (!granted.ok) setProjectError(`Project created, but grant failed: ${granted.error}`);
+      }
+      if (!project) return;
+      setNameDraft("");
+      setRootDraft("");
+      setShowForm(false);
+      setQuery("");
+      // Land on the new project's detail pane — its New chat button is the
+      // follow-up action (replaces the old "Created X" banner).
+      selectProject(project.id);
+      announce(`Created project ${name}.`);
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Could not create that project.");
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
-    if (!project) return;
-    setNameDraft("");
-    setRootDraft("");
-    setShowForm(false);
-    setQuery("");
-    // Land on the new project's detail pane — its New chat button is the
-    // follow-up action (replaces the old "Created X" banner).
-    selectProject(project.id);
-    announce(`Created project ${name}.`);
   };
 
   // A folder was chosen (native dialog or in-app browser) → fill the path, and
@@ -410,6 +417,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     if (!trimmed) return;
     setRootDraft(trimmed);
     setNameDraft((current) => (current.trim() ? current : pathBasename(trimmed)));
+    setProjectError(null);
     rootInputRef.current?.focus();
   };
 
@@ -694,7 +702,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
         }}
       />
 
-      {(error && projects.length > 0) || sessionError ? (
+      {(error && projects.length > 0) || projectError || sessionError ? (
         <div className="shrink-0 space-y-2 px-4 pt-3 sm:px-6">
           {error && projects.length > 0 ? (
             <div
@@ -709,6 +717,22 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
               >
                 Retry
+              </Button>
+            </div>
+          ) : null}
+          {projectError ? (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+            >
+              <span className="min-w-0 truncate">{projectError}</span>
+              <Button
+                variant="danger-ghost"
+                size="xs"
+                onClick={() => setProjectError(null)}
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+              >
+                Dismiss
               </Button>
             </div>
           ) : null}

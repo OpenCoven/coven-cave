@@ -43,8 +43,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.shell-detail:has\(> \.cave-mode-fade > \.chat-surface\)\s*\{[\s\S]*overflow\s*:\s*hidden/,
-  "Mobile chat should prevent the shell detail from becoming a second scroll owner",
+  /@media \(max-width: 767px\) \{[\s\S]*\.shell-detail:has\(> \.cave-mode-fade > \.workspace-detail-content > \.chat-surface\)\s*\{[\s\S]*overflow\s*:\s*hidden/,
+  "Mobile chat should prevent the shell detail from becoming a second scroll owner through the inertable detail wrapper",
 );
 
 // The Inspector/Debug/Changes right sidebar is retired — the code rail is the

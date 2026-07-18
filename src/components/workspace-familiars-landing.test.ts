@@ -187,8 +187,28 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const \{ open: firstProjectGateOpen, familiarId: projectGateFamiliarId \} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
-  "the first-project gate target and visibility are derived together from the loaded non-archived roster through the shared policy helper",
+  /const \{[\s\S]*open: firstProjectGateOpen,[\s\S]*familiarId: projectGateFamiliarId,[\s\S]*blockChatLaunch: chatProjectBlocked,[\s\S]*\} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
+  "the first-project gate target, visibility, and chat-block state are derived together from the loaded non-archived roster through the shared policy helper",
+);
+assert.match(
+  workspace,
+  /const chatProjectBlockedRef = useRef\(chatProjectBlocked\);[\s\S]*chatProjectBlockedRef\.current = chatProjectBlocked;/,
+  "Workspace mirrors the mode-independent chat-blocked condition into a ref for central new-chat guards",
+);
+assert.match(
+  workspace,
+  /if \(chatProjectBlockedRef\.current\) \{[\s\S]*if \(familiarId\) setActiveId\(familiarId\);[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}/,
+  "startFamiliarChat bounces blocked launches to Home so the first-project gate becomes visible without queuing a chat",
+);
+assert.match(
+  workspace,
+  /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
+  "Workspace blocks chat-rendering split targets under the first-project gate and reroutes the primary pane to Home",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!chatProjectBlocked\) return;[\s\S]*setSplitTargets\(\(prev\) => \{[\s\S]*prev\.filter\(\(target\) => !splitTargetRendersMode\(target, "chat"\)\)[\s\S]*return next\.length === prev\.length \? prev : next;[\s\S]*\}\);\s*\}, \[chatProjectBlocked\]\);/,
+  "Workspace drops any already-open chat split tiles once the shared gate condition turns on",
 );
 assert.doesNotMatch(
   workspace,

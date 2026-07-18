@@ -205,8 +205,8 @@ const globals = await readFile(
 );
 assert.match(
   globals,
-  /\.shell-detail-panel:has\(> \.shell-detail > \.cave-mode-fade > \.home-composer-root\)\s*\{\s*overflow:\s*visible\s*!important/,
-  "globals.css opens .shell-detail-panel overflow when it contains the home composer",
+  /\.shell-detail-panel:has\(> \.shell-detail > \.cave-mode-fade > \.workspace-detail-content > \.home-composer-root\)\s*\{\s*overflow:\s*visible\s*!important/,
+  "globals.css opens .shell-detail-panel overflow when it contains the home composer through the inertable detail wrapper",
 );
 
 console.log("home-composer-centering.test.ts: ok");

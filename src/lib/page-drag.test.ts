@@ -8,6 +8,10 @@ test("most pages are splittable", () => {
   }
 });
 
+test("chat aliases stay draggable page ids, so split consumers must canonicalize them", () => {
+  assert.equal(isSplittablePage("groupchat"), true);
+});
+
 test("terminal is excluded from drag-to-split (heavy PTY surface)", () => {
   assert.equal(isSplittablePage("terminal"), false);
 });
