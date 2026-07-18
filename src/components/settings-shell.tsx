@@ -673,10 +673,17 @@ function formatHostWorkspaceText(map: Record<string, string> | undefined): strin
     .join("\n");
 }
 
-/** Omnigent fleet connection — the config surface for the host chip and remote runs. */
+/** Omnigent fleet connection — the config surface for the host chip and remote runs.
+ *  Renders NOTHING unless OMNIGENT_SERVER_URL is set up in the user's Cave
+ *  Vault: without the Vault env the group is absent from the Daemon tab
+ *  entirely (fail closed while the probe is in flight). The Vault URL is also
+ *  the active server URL — it overrides the Cave-config value. */
 function OmnigentSettingsGroup() {
   const { announce } = useAnnouncer();
-  const [baseUrl, setBaseUrl] = useState("");
+  // null = probe in flight → hidden; the group only appears once the status
+  // endpoint proves the Vault env exists.
+  const [serverUrlInVault, setServerUrlInVault] = useState<boolean | null>(null);
+  const [activeBaseUrl, setActiveBaseUrl] = useState("");
   const [workspace, setWorkspace] = useState("");
   const [hostWorkspaceText, setHostWorkspaceText] = useState("");
   const [exposeHosts, setExposeHosts] = useState(true);
@@ -692,7 +699,6 @@ function OmnigentSettingsGroup() {
         ok?: boolean;
         config?: {
           omnigent?: {
-            baseUrl?: string;
             defaultWorkspace?: string;
             hostWorkspaceMap?: Record<string, string>;
             exposeHostsInComposer?: boolean;
@@ -701,7 +707,6 @@ function OmnigentSettingsGroup() {
       }) => {
         if (ctl.signal.aborted || !j.ok) return;
         const o = j.config?.omnigent;
-        setBaseUrl(o?.baseUrl ?? "");
         setWorkspace(o?.defaultWorkspace ?? "");
         setHostWorkspaceText(formatHostWorkspaceText(o?.hostWorkspaceMap));
         setExposeHosts(o?.exposeHostsInComposer !== false);
@@ -714,9 +719,13 @@ function OmnigentSettingsGroup() {
         hasToken?: boolean;
         authMode?: string;
         configured?: boolean;
+        serverUrlInVault?: boolean;
+        baseUrl?: string;
         error?: string;
       }) => {
         if (ctl.signal.aborted) return;
+        setServerUrlInVault(j.serverUrlInVault === true);
+        setActiveBaseUrl(typeof j.baseUrl === "string" ? j.baseUrl : "");
         if (!j.configured) setStatusLine("Not configured");
         else if (j.online) {
           const mode = j.authMode || (j.hasToken ? "jwt" : "none");
@@ -727,7 +736,9 @@ function OmnigentSettingsGroup() {
           );
         } else setStatusLine(j.error ? `Offline · ${j.error}` : "Offline");
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!ctl.signal.aborted) setServerUrlInVault(false);
+      });
     return () => ctl.abort();
   }, []);
 
@@ -739,8 +750,9 @@ function OmnigentSettingsGroup() {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          // baseUrl deliberately omitted: the Vault env supplies the server
+          // URL; the shallow omnigent merge keeps any config fallback as is.
           omnigent: {
-            baseUrl: baseUrl.trim(),
             defaultWorkspace: workspace.trim(),
             hostWorkspaceMap: parseHostWorkspaceText(hostWorkspaceText),
             exposeHostsInComposer: exposeHosts,
@@ -766,20 +778,23 @@ function OmnigentSettingsGroup() {
     }
   };
 
+  // Vault-gated: no OMNIGENT_SERVER_URL in the Cave Vault (or probe still in
+  // flight / failed) → the Daemon tab shows no Omnigent surface whatsoever.
+  if (serverUrlInVault !== true) return null;
+
   return (
     <SettingsGroup label="Omnigent fleet">
       <SettingControlRow
         label="Server URL"
-        hint="HTTPS URL of your Omnigent server (e.g. Tailscale). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
+        hint="Supplied by OMNIGENT_SERVER_URL in your Cave Vault (it overrides Cave config). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
       >
-        <input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          aria-label="Omnigent server URL"
-          placeholder="https://omnigent.example.ts.net"
-          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
-          spellCheck={false}
-        />
+        <span
+          className="w-full min-w-[260px] max-w-md truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)]"
+          aria-label="Omnigent server URL (from Vault)"
+          title={activeBaseUrl || undefined}
+        >
+          {activeBaseUrl || "—"}
+        </span>
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"
