@@ -3,62 +3,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import { createSwrCache } from "./swr-cache.ts";
 import { emitProjectRegistryMutation, subscribeProjectRegistryReload } from "./project-registry-events.ts";
+import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
 
-type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
 type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
   | { ok: false; error: string };
 
-/**
- * Module-level dedupe for GET /api/projects (cave-v8hh). The hook has 8+
- * consumers (sidebar, chat views, board, composer, palette, modals) and no
- * shared store, so a surface mount fired the same request once per consumer —
- * traces showed 6 back-to-back copies. A short hard-TTL microcache collapses
- * a mount burst (plus dev StrictMode's double effects) onto one request per
- * scope. There is no steady poll on this endpoint, so the 2.5s window only
- * ever spans a burst; mutations clear it, and reload() bypasses it.
- */
-const CACHE_TTL_MS = 2500;
-
-// staleServeMs === ttlMs disables the serve-stale window (hard TTL).
-const projectsCache = createSwrCache<ProjectsPayload>({
-  ttlMs: CACHE_TTL_MS,
-  staleServeMs: CACHE_TTL_MS,
-});
-
-async function requestProjects(familiarId: string | null): Promise<ProjectsPayload> {
-  const url = familiarId
-    ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
-    : "/api/projects";
-  const res = await fetch(url);
-  // Thrown (not returned) so HTTP failures are never cached — swr-cache only
-  // stores resolutions — and every coalesced caller sees the same error.
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as ProjectsPayload;
-}
-
 function fetchProjects(
   familiarId: string | null,
   opts?: { force?: boolean },
 ): Promise<ProjectsPayload> {
-  const key = familiarId ?? "";
-  if (opts?.force) projectsCache.invalidate(key);
-  return projectsCache.get(key, () => requestProjects(familiarId));
+  return fetchProjectsFromCache(familiarId, opts);
 }
 
 // A mutation on any project invalidates EVERY scope: creates/renames/deletes
 // change the unscoped list and any familiar-scoped list that includes (or
 // gains) the project, and per-scope bookkeeping isn't worth it at this TTL.
 function invalidateProjectsCache(): void {
-  projectsCache.clear();
+  clearProjectsCache();
 }
 
 /** Test-only: drop the module-level cache between cases. */
 export function resetProjectsCacheForTests(): void {
-  projectsCache.clear();
+  clearProjectsCache();
 }
 
 export type ProjectsState = {

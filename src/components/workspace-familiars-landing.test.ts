@@ -162,8 +162,38 @@ assert.match(
 );
 assert.match(
   workspace,
+  /const requestedActiveId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
+  "Workspace derives the requested single-primary familiar id from the scope set",
+);
+assert.match(
+  workspace,
+  /import \{ resolveLoadedActiveFamiliarId \} from "@\/lib\/active-familiar";[\s\S]*const activeId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);/,
+  "single-familiar surfaces only consume a loaded non-archived familiar id, with a first-visible fallback for stale persisted ids",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!activeFamiliarHydrated \|\| requestedActiveId === null \|\| requestedActiveId === activeId\) return;\s*setScopeIds\(activeId \? new Set\(\[activeId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, requestedActiveId, activeId\]\);/,
+  "Workspace heals a stale persisted single-familiar selection back to the loaded fallback after hydration",
+);
+assert.match(
+  workspace,
+  /const active = visibleFamiliars\.find\(\(f\) => f\.id === activeId\) \?\? null;/,
+  "Workspace detail surfaces read the active familiar from the loaded non-archived roster only",
+);
+assert.match(
+  workspace,
+  /const calendarFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
+  "calendar fallback prefers the first loaded non-archived familiar",
+);
+assert.match(
+  workspace,
+  /const projectGateFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
+  "the first-project gate also falls back from a stale persisted familiar id to the first loaded non-archived familiar",
+);
+assert.doesNotMatch(
+  workspace,
   /const activeId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
-  "activeId is the derived single-primary (lone scoped id, else null)",
+  "Workspace should not use an unchecked persisted familiar id directly once the loaded roster is known",
 );
 assert.doesNotMatch(
   workspace,

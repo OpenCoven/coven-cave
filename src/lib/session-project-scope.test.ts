@@ -64,7 +64,9 @@ test("the sessions/list route scopes by familiar grants", () => {
 
 test("useProjects scopes the project list by familiarId", () => {
   const hook = read("src/lib/use-projects.ts");
-  assert.match(hook, /familiarId\s*\?\s*`\/api\/projects\?familiarId=/, "passes familiarId to the API");
+  const cache = read("src/lib/use-projects-cache.ts");
+  assert.match(hook, /fetchProjectsFromCache\(familiarId, opts\)/, "the hook delegates loads to the shared scoped cache helper");
+  assert.match(cache, /familiarId\s*\?\s*`\/api\/projects\?familiarId=/, "the shared cache helper passes familiarId to the API");
 });
 
 test("chat surface consumers pass the active familiar scope", () => {

@@ -9,6 +9,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject } from "@/lib/chat-add-project";
 import {
+  canPersistPendingFirstProjectAccessSnapshot,
   clearPendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
   writePendingFirstProjectAccessSnapshot,
@@ -34,6 +35,11 @@ type FirstProjectGateProps = {
   createProjectOrThrow: (name: string, root: string) => Promise<CaveProject>;
   reloadProjects: () => void;
 };
+
+const STORAGE_REQUIRED_ERROR =
+  "Session storage is disabled or blocked in this browser. Enable session storage, keep this page open, then retry before creating the project.";
+const STORAGE_RETRY_ERROR =
+  "Project created, but this browser could not save the retry checkpoint needed before access can be granted. Keep this page open, enable session storage, then click Retry access.";
 
 export function FirstProjectGate({
   open,
@@ -95,8 +101,10 @@ export function FirstProjectGate({
         familiarId,
         project: { id: project.id, name: project.name, root: project.root },
       };
-      writePendingFirstProjectAccessSnapshot(snapshot);
       setPendingGrant(snapshot);
+      if (!writePendingFirstProjectAccessSnapshot(snapshot)) {
+        throw new Error(STORAGE_RETRY_ERROR);
+      }
     }
     return project;
   }, [createProjectOrThrow, familiarId]);
@@ -130,6 +138,14 @@ export function FirstProjectGate({
     }
     if (!lockedProject && !isAbsolutePath(submitRoot)) {
       setSubmitError("Project root must be an absolute path.");
+      return;
+    }
+    if (submitFamiliarId && !pendingGrant && !canPersistPendingFirstProjectAccessSnapshot()) {
+      setSubmitError(STORAGE_REQUIRED_ERROR);
+      return;
+    }
+    if (submitFamiliarId && pendingGrant && !writePendingFirstProjectAccessSnapshot(pendingGrant)) {
+      setSubmitError(STORAGE_RETRY_ERROR);
       return;
     }
 

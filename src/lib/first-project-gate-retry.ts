@@ -1,6 +1,7 @@
 import type { CaveProject } from "./cave-projects-types.ts";
 
 export const FIRST_PROJECT_GATE_PENDING_KEY = "cave:first-project-access:pending:v1";
+const FIRST_PROJECT_GATE_STORAGE_PROBE_KEY = "cave:first-project-access:probe:v1";
 
 export type RegisteredProjectSnapshot = Pick<CaveProject, "id" | "name" | "root">;
 
@@ -69,6 +70,18 @@ export function writePendingFirstProjectAccessSnapshot(
   if (!target) return false;
   try {
     target.setItem(FIRST_PROJECT_GATE_PENDING_KEY, JSON.stringify(snapshot));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function canPersistPendingFirstProjectAccessSnapshot(storage?: StorageLike | null): boolean {
+  const target = readSessionStorage(storage);
+  if (!target) return false;
+  try {
+    target.setItem(FIRST_PROJECT_GATE_STORAGE_PROBE_KEY, "1");
+    target.removeItem(FIRST_PROJECT_GATE_STORAGE_PROBE_KEY);
     return true;
   } catch {
     return false;

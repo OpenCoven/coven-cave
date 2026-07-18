@@ -55,6 +55,7 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
   assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
   assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
+  assert.match(src, /import \{ resolveLoadedActiveFamiliarId \} from "@\/lib\/active-familiar";/, "workspace uses the loaded-active familiar helper for stale persisted ids");
   assert.match(
     src,
     /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
@@ -70,8 +71,8 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(
     src,
-    /const projectGateFamiliarId = activeId && !\(activeId in archivedFamiliars\)\s*\?\s*activeId\s*:\s*visibleFamiliars\[0\]\?\.id \?\? null;/,
-    "the gate uses the active familiar only when it is non-archived, otherwise the first non-archived fallback",
+    /const projectGateFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
+    "the gate uses the loaded active familiar, otherwise the first non-archived fallback",
   );
   assert.match(
     src,
@@ -124,7 +125,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /const project = await createProjectOrThrow\(name, root\);/, "wraps the throwing createProjectOrThrow prop in the addChatProject adapter");
   assert.match(
     src,
-    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
     "the gate uses shared helpers for pending-grant persistence",
   );
   assert.match(
@@ -136,11 +137,21 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /const submitFamiliarId = pendingGrant\?\.familiarId \?\? familiarId;/, "retries keep using the stored target familiar");
   assert.match(
     src,
-    /const snapshot: PendingFirstProjectAccessSnapshot = \{\s*familiarId,\s*project: \{ id: project\.id, name: project\.name, root: project\.root \},\s*\};[\s\S]*writePendingFirstProjectAccessSnapshot\(snapshot\);[\s\S]*setPendingGrant\(snapshot\);/,
-    "create success persists the retry snapshot immediately before the grant can fail",
+    /const snapshot: PendingFirstProjectAccessSnapshot = \{\s*familiarId,\s*project: \{ id: project\.id, name: project\.name, root: project\.root \},\s*\};[\s\S]*setPendingGrant\(snapshot\);[\s\S]*if \(!writePendingFirstProjectAccessSnapshot\(snapshot\)\) \{[\s\S]*throw new Error\(STORAGE_RETRY_ERROR\);[\s\S]*\}/,
+    "create success keeps a local sticky snapshot and blocks the grant if persistence unexpectedly fails",
   );
   assert.match(src, /const submitName = lockedProject\?\.name \?\? nameDraft\.trim\(\);/, "retries use the stored project name instead of mutable drafts");
   assert.match(src, /const submitRoot = lockedProject\?\.root \?\? rootDraft\.trim\(\);/, "retries use the stored project root instead of mutable drafts");
+  assert.match(
+    src,
+    /if \(submitFamiliarId && !pendingGrant && !canPersistPendingFirstProjectAccessSnapshot\(\)\) \{[\s\S]*setSubmitError\(STORAGE_REQUIRED_ERROR\);[\s\S]*return;[\s\S]*\}/,
+    "first-time create is blocked before project registration when session storage cannot durably hold the retry snapshot",
+  );
+  assert.match(
+    src,
+    /if \(submitFamiliarId && pendingGrant && !writePendingFirstProjectAccessSnapshot\(pendingGrant\)\) \{[\s\S]*setSubmitError\(STORAGE_RETRY_ERROR\);[\s\S]*return;[\s\S]*\}/,
+    "retry access re-attempts persistence before the grant call and stays blocked when storage is still unavailable",
+  );
   assert.match(src, /existingProjectId: pendingGrant\?\.project\.id/, "retries grant against the already-created project instead of creating a duplicate");
   assert.match(src, /name: submitName/, "passes the stored-or-drafted name through addChatProject");
   assert.match(

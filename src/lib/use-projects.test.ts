@@ -3,11 +3,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
+const cacheSource = readFileSync(new URL("./use-projects-cache.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
   /import \{ emitProjectRegistryMutation, subscribeProjectRegistryReload \} from "\.\/project-registry-events\.ts";/,
   "useProjects imports the shared project-registry notification helpers",
+);
+assert.match(
+  source,
+  /import \{ clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload \} from "\.\/use-projects-cache\.ts";/,
+  "useProjects imports the shared project cache helper",
 );
 
 // When the scope (familiarId) changes or the hook re-enables, the previous
@@ -35,14 +41,19 @@ assert.doesNotMatch(
 // mount. Mutations must drop the cache (every scope) so no consumer can be
 // served a pre-mutation list, and reload() must bypass it.
 assert.match(
-  source,
+  cacheSource,
   /projectsCache\.get\(key, \(\) => requestProjects\(familiarId\)\)/,
   "loads go through the shared projects microcache",
 );
 assert.match(
-  source,
+  cacheSource,
   /if \(opts\?\.force\) projectsCache\.invalidate\(key\);/,
   "force drops the cached scope before refetching",
+);
+assert.match(
+  source,
+  /return fetchProjectsFromCache\(familiarId, opts\);/,
+  "the hook delegates loads to the shared project-cache helper",
 );
 assert.match(
   source,

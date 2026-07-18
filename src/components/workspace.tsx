@@ -137,6 +137,7 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import { resolveLoadedActiveFamiliarId } from "@/lib/active-familiar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -294,7 +295,7 @@ export function Workspace() {
   // selected — so all the existing single-familiar chrome/per-familiar state
   // behaves exactly as before at 0–1 selections; ≥2 is the new filter case.
   const [scopeIds, setScopeIds] = useState<Set<string>>(() => new Set());
-  const activeId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
+  const requestedActiveId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
   const archivedFamiliars = useArchivedFamiliars();
   // Back-compat shim for the call sites that scope to a single familiar (e.g.
   // opening a session) or clear to All: writes the multiselect set accordingly.
@@ -307,6 +308,7 @@ export function Workspace() {
     () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
     [familiars, archivedFamiliars],
   );
+  const activeId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -740,6 +742,11 @@ export function Workspace() {
     if (!activeFamiliarHydrated) return;
     setFamiliarScope([...scopeIds]);
   }, [scopeIds, activeFamiliarHydrated]);
+
+  useEffect(() => {
+    if (!activeFamiliarHydrated || requestedActiveId === null || requestedActiveId === activeId) return;
+    setScopeIds(activeId ? new Set([activeId]) : new Set());
+  }, [activeFamiliarHydrated, requestedActiveId, activeId]);
 
   useEffect(() => {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
@@ -2322,11 +2329,9 @@ export function Workspace() {
     return false;
   };
 
-  const active = familiars.find((f) => f.id === activeId) ?? null;
-  const calendarFamiliarId = activeId ?? familiars[0]?.id ?? null;
-  const projectGateFamiliarId = activeId && !(activeId in archivedFamiliars)
-    ? activeId
-    : visibleFamiliars[0]?.id ?? null;
+  const active = visibleFamiliars.find((f) => f.id === activeId) ?? null;
+  const calendarFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
+  const projectGateFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
   const firstProjectGateOpen = onboardingResolved
     && !onboardingOpen
     && (mode === "home" || mode === "chat")

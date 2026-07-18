@@ -16,8 +16,10 @@
  *  8. keys are independent
  *  9. clear() drops entries
  * 10. invalidate(key) drops that key only — next get recomputes
- * 11. invalidate during an in-flight compute shares that compute (it is as
- *     fresh as a new request) instead of stacking another
+ * 11. invalidate during an in-flight compute starts a new versioned request
+ *     instead of reusing the stale in-flight one
+ * 12. a pre-invalidation request that resolves late must not overwrite the
+ *     newer cache entry
  */
 
 import assert from "node:assert/strict";
@@ -169,22 +171,63 @@ const STALE = 30_000;
   assert.equal(computeB.count(), 1);
 }
 
-// ── 11. invalidate during an in-flight compute shares that compute ───────────
+// ── 11. invalidate during an in-flight compute starts a fresh request ─────────
 {
   const clock = makeClock();
   const cache = createSwrCache({ ttlMs: TTL, staleServeMs: STALE, now: clock.now });
   await cache.get("k", async () => "v1");
   let calls = 0;
-  let release;
-  const gate = new Promise((r) => { release = r; });
-  const compute = async () => { calls += 1; await gate; return "v2"; };
+  let releaseFirst;
+  let releaseSecond;
+  const firstGate = new Promise((r) => { releaseFirst = r; });
+  const secondGate = new Promise((r) => { releaseSecond = r; });
+  const compute = async () => {
+    calls += 1;
+    if (calls === 1) {
+      await firstGate;
+      return "v2";
+    }
+    await secondGate;
+    return "v3";
+  };
   cache.invalidate("k");
-  const first = cache.get("k", compute); // starts the fresh compute
-  cache.invalidate("k"); // a second force while that compute is mid-flight…
+  const first = cache.get("k", compute);
+  cache.invalidate("k");
   const second = cache.get("k", compute);
-  release();
-  assert.deepEqual(await Promise.all([first, second]), ["v2", "v2"]);
-  assert.equal(calls, 1, "a force during an in-flight compute must piggyback, not stack requests");
+  releaseSecond();
+  releaseFirst();
+  assert.deepEqual(await Promise.all([first, second]), ["v2", "v3"]);
+  assert.equal(calls, 2, "a later invalidate must bypass the older in-flight request");
+}
+
+// ── 12. late stale completions cannot repopulate the current cache ────────────
+{
+  const clock = makeClock();
+  const cache = createSwrCache({ ttlMs: TTL, staleServeMs: STALE, now: clock.now });
+  let releaseStale;
+  let releaseFresh;
+  const staleGate = new Promise((r) => { releaseStale = r; });
+  const freshGate = new Promise((r) => { releaseFresh = r; });
+  let calls = 0;
+  const compute = async () => {
+    calls += 1;
+    if (calls === 1) {
+      await staleGate;
+      return "stale";
+    }
+    await freshGate;
+    return "fresh";
+  };
+
+  const stale = cache.get("k", compute);
+  cache.invalidate("k");
+  const fresh = cache.get("k", compute);
+  releaseFresh();
+  assert.equal(await fresh, "fresh");
+  releaseStale();
+  assert.equal(await stale, "stale");
+  assert.equal(await cache.get("k", compute), "fresh");
+  assert.equal(calls, 2, "the stale completion must not overwrite the fresh cache entry");
 }
 
 console.log("swr-cache.test.ts: all assertions passed");

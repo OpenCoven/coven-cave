@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   FIRST_PROJECT_GATE_PENDING_KEY,
+  canPersistPendingFirstProjectAccessSnapshot,
   clearPendingFirstProjectAccessSnapshot,
   parsePendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
@@ -60,6 +61,8 @@ test("pending first-project access snapshots persist, restore, and clear", () =>
     project: { id: "p1", name: "Project One", root: "/repo/one" },
   };
 
+  assert.equal(canPersistPendingFirstProjectAccessSnapshot(storage), true);
+  assert.equal(storage.getItem("cave:first-project-access:probe:v1"), null, "the storage probe removes its test key");
   assert.equal(writePendingFirstProjectAccessSnapshot(snapshot, storage), true);
   assert.deepEqual(readPendingFirstProjectAccessSnapshot(storage), snapshot);
 
@@ -74,6 +77,7 @@ test("pending first-project access snapshots tolerate blocked sessionStorage", (
     project: { id: "p1", name: "Project One", root: "/repo/one" },
   };
 
+  assert.equal(canPersistPendingFirstProjectAccessSnapshot(storage), false);
   assert.equal(writePendingFirstProjectAccessSnapshot(snapshot, storage), false);
   assert.equal(readPendingFirstProjectAccessSnapshot(storage), null);
   assert.doesNotThrow(() => clearPendingFirstProjectAccessSnapshot(storage));
