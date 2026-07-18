@@ -118,6 +118,33 @@ function markShellMinimizeApplied(id: string): void {
   }
 }
 
+// Cross-surface, cross-launch sidebar memory: the nav's open/collapsed state
+// is ONE user preference, persisted globally. The panel library already
+// persists per-GROUP layouts, but the two-pane Home shell and the three-pane
+// Chat shell are separate groups whose layouts never see each other — so a
+// sidebar collapsed on one surface came back open when the next launch (or a
+// surface switch) landed on the other. Boot and group switches re-apply the
+// preference; only user-driven resizes write it (the code-rail auto
+// collapse/restore coupling and programmatic group-swap layout churn don't).
+const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
+function readNavOpenPref(): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(NAV_OPEN_PREF_KEY);
+    return raw === "1" ? true : raw === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+function writeNavOpenPref(open: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
+}
+
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
 const NAV_RAIL_PX = 56;
@@ -461,6 +488,30 @@ function ShellInner({
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
   }, [settled, isMobile, groupId]);
 
+  // Apply the remembered sidebar state on boot and on every panel-group switch
+  // (Home's two-pane shell and Chat's three-pane shell persist their layouts
+  // separately, so without this the OTHER group's stale width wins). Runs after
+  // the minimize-by-default effect above so a saved preference beats the
+  // first-run rail. onResize only writes the preference once this effect has
+  // armed the CURRENT group — the layout churn a group swap fires must never
+  // clobber the user's choice with the incoming group's stale width.
+  const navPrefArmedGroupRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!settled || isMobile) return;
+    const pref = readNavOpenPref();
+    const panel = navRef.current;
+    if (panel && pref !== null && !railAutoCollapsedNavRef.current) {
+      if (pref && panel.isCollapsed()) {
+        panel.expand();
+        setNavOpen(true);
+      } else if (!pref && !panel.isCollapsed()) {
+        panel.collapse();
+        setNavOpen(false);
+      }
+    }
+    navPrefArmedGroupRef.current = groupId;
+  }, [settled, isMobile, groupId]);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
@@ -519,11 +570,13 @@ function ShellInner({
       if (isMobile) return;
       if (open) {
         // Rail became visible: collapse the nav only if it's currently open,
-        // and remember we did it so we can restore later.
+        // and remember we did it so we can restore later. The flag is raised
+        // BEFORE collapse() so the resulting onResize is recognized as
+        // programmatic and doesn't overwrite the persisted nav preference.
         if (navOpen) {
-          navRef.current?.collapse();
           railAutoCollapsedNavRef.current = true;
           userOverrodeNavRef.current = false;
+          navRef.current?.collapse();
         }
         return;
       }
@@ -605,7 +658,19 @@ function ShellInner({
         collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          setNavOpen((size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX);
+          const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
+          setNavOpen(open);
+          // Persist user-driven changes only: the group must be armed (boot /
+          // group-swap layout churn is programmatic) and the code rail must
+          // not be mid-auto-collapse (its restore path clears the flag before
+          // expanding, so the restore correctly re-records "open").
+          if (
+            !isMobile &&
+            navPrefArmedGroupRef.current === groupId &&
+            !railAutoCollapsedNavRef.current
+          ) {
+            writeNavOpenPref(open);
+          }
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
