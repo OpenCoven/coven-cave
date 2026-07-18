@@ -218,6 +218,8 @@ const CORNER_RADII = ["sharp", "default", "round"] as const;
 const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 const CSS_VAR_RE = /^(?:--)?[a-zA-Z0-9_-]{1,80}$/;
 const MAX_THEME_TOKENS = 256;
+const MAX_FAMILIAR_BACKDROPS = 256;
+const MAX_FAMILIAR_BACKDROP_KEY_LENGTH = 128;
 const MAX_CSS_VALUE_LENGTH = 512;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -302,10 +304,13 @@ function normalizeAccentSeed(input: unknown): CaveBackdropAccentSeed | null {
 }
 
 function normalizeFamiliarBackdrops(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!isRecord(value)) return {};
   const out: Record<string, boolean> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (key !== "" && typeof entry === "boolean") out[key] = entry;
+  for (const [key, entry] of Object.entries(value)) {
+    if (key !== "" && key.length <= MAX_FAMILIAR_BACKDROP_KEY_LENGTH && typeof entry === "boolean") {
+      if (Object.keys(out).length >= MAX_FAMILIAR_BACKDROPS) break;
+      out[key] = entry;
+    }
   }
   return out;
 }
@@ -591,9 +596,14 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       if (Object.hasOwn(backdrop, "accentSeed")) backdropPatch.accentSeed = strictAccentSeed(backdrop.accentSeed, "appearance.backdrop.accentSeed");
       if (Object.hasOwn(backdrop, "familiars")) {
         const familiars = strictRecord(backdrop.familiars, "appearance.backdrop.familiars");
+        if (Object.keys(familiars).length > MAX_FAMILIAR_BACKDROPS) {
+          fail("appearance.backdrop.familiars", `must not exceed ${MAX_FAMILIAR_BACKDROPS} entries`);
+        }
         const map: Record<string, boolean> = {};
         for (const [key, entry] of Object.entries(familiars)) {
-          if (key === "") fail("appearance.backdrop.familiars", "keys must be non-empty familiar ids");
+          if (key === "" || key.length > MAX_FAMILIAR_BACKDROP_KEY_LENGTH) {
+            fail("appearance.backdrop.familiars", "keys must be non-empty familiar ids");
+          }
           map[key] = strictBoolean(entry, `appearance.backdrop.familiars.${key}`);
         }
         backdropPatch.familiars = map;
@@ -653,7 +663,12 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 
 function patchHasValues(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  return Object.entries(value).some(([, child]) => isRecord(child) ? patchHasValues(child) : true);
+  // An explicitly-present empty record is a value: replace-whole-map fields
+  // (backdrop.familiars, theme.tokens) clear by sending {}. The semantic
+  // jsonEqual guard in applyPreferencesPatch still prevents no-op revisions.
+  return Object.entries(value).some(([, child]) =>
+    isRecord(child) ? Object.keys(child).length === 0 || patchHasValues(child) : true,
+  );
 }
 
 /** Apply an already-validated patch and stamp canonical metadata. */

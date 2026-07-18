@@ -275,4 +275,41 @@ assert.deepEqual(
   "a patch replaces the whole familiars map (writers always send the full map)",
 );
 
+const familiarsCleared = applyPreferencesPatch(familiarsApplied, {
+  appearance: { backdrop: { familiars: {} } },
+});
+assert.deepEqual(
+  familiarsCleared.appearance.backdrop.familiars,
+  {},
+  "an explicit empty map clears every per-familiar override",
+);
+assert.ok(
+  familiarsCleared.revision > familiarsApplied.revision,
+  "clearing the map is a real write (revision bumps)",
+);
+
+const oversizedFamiliars: Record<string, boolean> = {};
+for (let i = 0; i < 257; i += 1) oversizedFamiliars[`fam-${i}`] = true;
+assert.throws(
+  () => validatePreferencesPatch({ appearance: { backdrop: { familiars: oversizedFamiliars } } }),
+  PreferencesValidationError,
+  "the strict validator bounds the familiars map size",
+);
+assert.throws(
+  () => validatePreferencesPatch({
+    appearance: { backdrop: { familiars: { ["f".repeat(129)]: true } } },
+  }),
+  PreferencesValidationError,
+  "the strict validator bounds familiar id length",
+);
+assert.equal(
+  Object.keys(
+    normalizeCavePreferences({
+      appearance: { backdrop: { familiars: { ...oversizedFamiliars } } },
+    }).appearance.backdrop.familiars,
+  ).length,
+  256,
+  "normalize caps the familiars map instead of growing unbounded",
+);
+
 console.log("preferences-schema.test.ts: ok");
