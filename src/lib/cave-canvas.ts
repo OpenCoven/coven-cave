@@ -121,22 +121,35 @@ export async function mergeCanvasPositions(
 }
 
 /**
- * Insert or replace an artifact by id, returning the updated file. The caller's
- * record is normalized through sanitizeArtifacts so a bad body can't corrupt
- * the store. `updatedAt` is the caller's responsibility (it has the clock).
+ * Insert or replace an artifact, returning the updated file plus the id the
+ * record settled under. Callers replace by id; when the id is new but the
+ * content is byte-identical to an existing sketch (same kind + code), the
+ * existing record is updated in place instead — "Save to Canvas" mints a
+ * fresh id per click, so id-only dedupe let unchanged re-saves pile up as
+ * twin tiles. Keeping the incumbent's id also keeps its createdAt and saved
+ * position. The caller's record is normalized through sanitizeArtifacts so a
+ * bad body can't corrupt the store. `updatedAt` is the caller's
+ * responsibility (it has the clock).
  */
-export async function upsertCanvasArtifact(artifact: CanvasArtifact): Promise<CanvasFile> {
+export async function upsertCanvasArtifact(
+  artifact: CanvasArtifact,
+): Promise<{ file: CanvasFile; savedId: string | null }> {
   const [clean] = sanitizeArtifacts([artifact]);
   if (!clean) {
     // Nothing usable in the payload — return the current file unchanged.
-    return withLock(loadCanvas);
+    return withLock(async () => ({ file: await loadCanvas(), savedId: null }));
   }
   return withLock(async () => {
     const current = await loadCanvas();
     const without = current.artifacts.filter((a) => a.id !== clean.id);
-    const next: CanvasFile = { ...current, artifacts: [...without, clean] };
+    const twin = without.find((a) => a.kind === clean.kind && a.code === clean.code);
+    const settled = twin
+      ? { ...twin, title: clean.title, prompt: clean.prompt, updatedAt: clean.updatedAt }
+      : clean;
+    const rest = twin ? without.filter((a) => a.id !== twin.id) : without;
+    const next: CanvasFile = { ...current, artifacts: [...rest, settled] };
     await saveCanvas(next);
-    return next;
+    return { file: next, savedId: settled.id };
   });
 }
 
