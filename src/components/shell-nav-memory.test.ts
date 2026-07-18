@@ -60,7 +60,7 @@ assert.match(
 );
 
 const visitCollapseEffect =
-  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, navPolicy\]\);/)?.[0] ?? "";
+  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy\]\);/)?.[0] ?? "";
 assert.ok(
   visitCollapseEffect.length > 0,
   "the visit-collapsed layout effect reruns after the real nav panel mounts",
@@ -75,6 +75,10 @@ assert.equal(
         previousNavPolicyRef.current = navPolicy;
         return;
       }
+      if (isMobile) {
+        previousNavPolicyRef.current = navPolicy;
+        return;
+      }
       if (
         previousNavPolicyRef.current !== navPolicy ||
         navPrefArmedGroupRef.current !== groupId
@@ -84,9 +88,9 @@ assert.equal(
         setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
-    }, [mounted, groupId, navPolicy]);
+    }, [mounted, groupId, isMobile, navPolicy]);
   `),
-  "entering visit-collapsed collapses once per visit only after mount, while preserving the armed-group reset",
+  "entering visit-collapsed collapses once per desktop visit only after mount, while mobile skips desktop panel mutation and preserves the armed-group reset",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
