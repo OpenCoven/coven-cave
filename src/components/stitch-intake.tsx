@@ -56,12 +56,22 @@ function defaultRefForKind(kind: PinKind): string {
 
 type SessionOption = { id: string; title: string };
 
-export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) {
+export function StitchIntake({
+  onSewn,
+  initialRef,
+  initialPatternId,
+}: {
+  onSewn: (entryId: string) => void;
+  /** Prefill the pin source field (launcher URL capture). Mount-time only. */
+  initialRef?: string;
+  /** Preselect a stitch pattern (launcher template row). Mount-time only. */
+  initialPatternId?: string | null;
+}) {
   const { announce } = useAnnouncer();
   const [thread, setThread] = useState<StitchThread | null>(null);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<PinKind>("url");
-  const [ref, setRef] = useState("");
+  const [ref, setRef] = useState(initialRef ?? "");
   const [paste, setPaste] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<SessionOption[] | null>(null);
@@ -70,7 +80,7 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
   const [error, setError] = useState<string | null>(null);
   // Shape + destination (cave-kwx4): a pattern aims the sew at a body
   // scaffold; the collection files the entry beside its pack-seeded kin.
-  const [patternId, setPatternId] = useState<string | null>(null);
+  const [patternId, setPatternId] = useState<string | null>(initialPatternId ?? null);
   const [collection, setCollection] = useState("");
   const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
