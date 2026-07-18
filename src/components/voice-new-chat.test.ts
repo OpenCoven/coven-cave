@@ -14,24 +14,42 @@ const chatRouter = read("./chat-router.tsx");
 const chatView = read("./chat-view.tsx");
 
 test("pending-chat-action: open kind carries autoVoice", () => {
-  assert.match(pendingChatAction, /kind: "open";[\s\S]*?autoVoice\?: boolean/);
+  // Bounded so the match can't cross into a later union member if autoVoice
+  // ever moved off the "open" variant — a lazy [\s\S]*? would false-pass.
+  assert.match(pendingChatAction, /kind: "open";(?:(?!kind:)[\s\S])*?autoVoice\?: boolean/);
 });
 
 test("chat-surface: open handler forwards autoVoice to the router", () => {
   assert.match(chatSurface, /openSession\(pendingChatAction\.sessionId, findQuery, autoVoice\)/);
 });
 
-test("chat-router: openSession accepts autoVoice and arms the voice nonce", () => {
+test("chat-router: openSession accepts autoVoice and arms the voice nonce for its session", () => {
   assert.match(chatRouter, /openSession: \(sessionId: string, findQuery\?: string, autoVoice\?: boolean\)/);
-  assert.match(chatRouter, /if \(autoVoice\) setPendingVoice\(\{ nonce: Date\.now\(\) \}\)/);
+  // Unconditional set: a non-voice open must explicitly clear stale intent,
+  // not just skip arming it.
+  assert.match(chatRouter, /setPendingVoice\(autoVoice \? \{ nonce: Date\.now\(\), sessionId \} : null\)/);
   assert.match(chatRouter, /openVoiceNonce=\{pendingVoice\?\.nonce\}/);
 });
 
-test("chat-router: onVoiceSessionCreated promotes the session and arms the nonce", () => {
+test("chat-router: onVoiceSessionCreated promotes the session and arms the nonce for it", () => {
   assert.match(chatRouter, /onVoiceSessionCreated=\{\(sid\) => \{/);
   assert.match(
     chatRouter,
-    /onVoiceSessionCreated=\{\(sid\) => \{[\s\S]*?prev\.sessionId === null[\s\S]*?setPendingVoice\(\{ nonce: Date\.now\(\) \}\)/,
+    /onVoiceSessionCreated=\{\(sid\) => \{[\s\S]*?prev\.sessionId === null[\s\S]*?setPendingVoice\(\{ nonce: Date\.now\(\), sessionId: sid \}\)/,
+  );
+});
+
+test("chat-router: pendingVoice is scoped to its session and clears when the view leaves it", () => {
+  assert.match(
+    chatRouter,
+    /const \[pendingVoice, setPendingVoice\] = useState<\{ nonce: number; sessionId: string \} \| null>\(null\)/,
+  );
+  // The clearing effect: any view whose active session isn't the one the
+  // nonce was armed for drops the intent, so it can't survive navigation to
+  // an unrelated session (list, resume, split-promote, plain re-open, ...).
+  assert.match(
+    chatRouter,
+    /const active = view\.kind === "chat" \? view\.sessionId : null;[\s\S]*?if \(active !== pendingVoice\.sessionId\) setPendingVoice\(null\);/,
   );
 });
 
@@ -42,4 +60,11 @@ test("chat-view: voice nonce effect opens the overlay for the routed session", (
     chatView,
     /openVoiceNonceRef\.current = openVoiceNonce;[\s\S]*?voiceAutoCreatedRef\.current = true;[\s\S]*?setVoiceCallOpen\(true\)/,
   );
+});
+
+test("chat-view: voice nonce effect checks sessionId before consuming the nonce", () => {
+  // Guard order matters: consuming the nonce (marking it fired) before the
+  // sessionId check would permanently lose the request across the one-render
+  // gap while session promotion lands.
+  assert.match(chatView, /if \(!sessionId\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/);
 });

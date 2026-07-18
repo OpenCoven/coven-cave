@@ -173,8 +173,17 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // handed to ChatView (nonce-keyed) so it opens in-thread find on the match.
   const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
   // Voice new-chat: nonce armed when a session should open straight into the
-  // voice call overlay (same fire-once shape as pendingFind above).
-  const [pendingVoice, setPendingVoice] = useState<{ nonce: number } | null>(null);
+  // voice call overlay (same fire-once shape as pendingFind above). Scoped to
+  // the session it was armed for — see the clearing effect below.
+  const [pendingVoice, setPendingVoice] = useState<{ nonce: number; sessionId: string } | null>(null);
+  // Auto-voice intent is scoped to one session; drop it when the active
+  // view moves anywhere else so a stale nonce can never re-open the call
+  // overlay (and its discard path) on an unrelated session.
+  useEffect(() => {
+    if (!pendingVoice) return;
+    const active = view.kind === "chat" ? view.sessionId : null;
+    if (active !== pendingVoice.sessionId) setPendingVoice(null);
+  }, [view, pendingVoice]);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const openProjectsTab = useCallback(() => {
@@ -558,7 +567,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
         const fq = findQuery?.trim();
         if (fq) setPendingFind({ query: fq, nonce: Date.now() });
-        if (autoVoice) setPendingVoice({ nonce: Date.now() });
+        setPendingVoice(autoVoice ? { nonce: Date.now(), sessionId } : null);
       },
       openSessionInSplit: (sessionId: string) => {
         const session = sessions.find((entry) => entry.id === sessionId);
@@ -753,7 +762,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
             : prev,
         );
-        setPendingVoice({ nonce: Date.now() });
+        setPendingVoice({ nonce: Date.now(), sessionId: sid });
       }}
       onSlashCommand={onSlashFromChat}
       onOpenOnboarding={onOpenOnboarding}
