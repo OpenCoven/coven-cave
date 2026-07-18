@@ -7,9 +7,11 @@
 
 import {
   isStale,
+  type DegradedFamiliarView,
   type TensionView,
   type ThreadsEnvelope,
   type ThreadsMeta,
+  type WeaveListView,
   type WeaveDetail,
   type WeaveSummary,
 } from "./threads-read.ts";
@@ -221,6 +223,18 @@ export function traceForWeave(weave: WeaveSummary, meta: ThreadsMeta): StatusTra
   };
 }
 
+export function traceForDegradedFamiliar(degraded: DegradedFamiliarView, meta: ThreadsMeta): StatusTrace {
+  return {
+    evidence: [
+      `familiar: ${degraded.familiarId}`,
+      `reason: ${degraded.reason}`,
+      `error: ${degraded.error}`,
+      "ward config unreadable — fail-closed",
+    ],
+    source: { cursor: meta.sourceCursor, observedAt: meta.observedAt, adapter: meta.adapter },
+  };
+}
+
 export function traceForTension(tension: TensionView, meta: ThreadsMeta): StatusTrace {
   const evidence: string[] = [`tension: ${tension.state}`];
   if (tension.state === "frayed") {
@@ -259,12 +273,19 @@ export function channelLabel(channel: string): string {
 
 export type WeaveRailModel = {
   weaves: WeaveSummary[];
+  degraded: DegradedFamiliarView[];
   familiars: string[];
 };
 
-export function railModel(weaves: WeaveSummary[]): WeaveRailModel {
-  const familiars = [...new Set(weaves.map((w) => w.familiarId).filter((f) => f.length > 0))].sort();
-  return { weaves, familiars };
+export function railModel(data: WeaveListView): WeaveRailModel {
+  const familiars = [
+    ...new Set(
+      [...data.weaves.map((w) => w.familiarId), ...data.degraded.map((d) => d.familiarId)].filter(
+        (f) => f.length > 0,
+      ),
+    ),
+  ].sort();
+  return { weaves: data.weaves, degraded: data.degraded, familiars };
 }
 
 export type ThreadPaneModel = {

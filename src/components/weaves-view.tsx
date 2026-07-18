@@ -10,11 +10,20 @@ import { StrandInspector } from "@/components/strand-inspector";
 import { ThreadPane } from "@/components/thread-pane";
 import { WeaveMapCanvas } from "@/components/weave-map";
 import { WeaveRail } from "@/components/weave-rail";
-import type { AuditEntryView, ProposalView, ThreadView, WeaveDetail, WeaveSummary } from "@/lib/threads-read";
+import type {
+  AuditEntryView,
+  DegradedFamiliarView,
+  ProposalView,
+  ThreadView,
+  WeaveDetail,
+  WeaveSummary,
+  WeaveListView,
+} from "@/lib/threads-read";
 import {
   blockedMessage,
   railModel,
   surfaceStateFromPayload,
+  traceForDegradedFamiliar,
   traceForTension,
   traceForWeave,
   type StatusTrace,
@@ -107,7 +116,7 @@ function TraceDrawer({ trace, onClose }: { trace: StatusTrace; onClose: () => vo
 }
 
 export function WeavesView() {
-  const [railState, setRailState] = useState<SurfaceState<WeaveSummary[]>>({ kind: "loading" });
+  const [railState, setRailState] = useState<SurfaceState<WeaveListView>>({ kind: "loading" });
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
   const [selectedWeaveId, setSelectedWeaveId] = useState<string | null>(null);
   const [paneState, setPaneState] = useState<SurfaceState<WeaveDetail> | null>(null);
@@ -116,7 +125,7 @@ export function WeavesView() {
   const [proposalsState, setProposalsState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
 
   const loadRail = useCallback(async () => {
-    setRailState(await fetchSurface<WeaveSummary[]>("/api/weaves"));
+    setRailState(await fetchSurface<WeaveListView>("/api/weaves"));
   }, []);
 
   useEffect(() => {
@@ -182,6 +191,13 @@ export function WeavesView() {
     [railState],
   );
 
+  const onTraceDegraded = useCallback(
+    (degraded: DegradedFamiliarView) => {
+      if (railState.kind === "ready") setTrace(traceForDegradedFamiliar(degraded, railState.meta));
+    },
+    [railState],
+  );
+
   const onTraceThread = useCallback(
     (thread: ThreadView) => {
       if (paneState?.kind === "ready") setTrace(traceForTension(thread.tension, paneState.meta));
@@ -211,6 +227,7 @@ export function WeavesView() {
               }}
               onFilter={setFamiliarFilter}
               onTrace={onTraceWeave}
+              onTraceDegraded={onTraceDegraded}
             />
           )}
         </div>

@@ -18,9 +18,10 @@ import {
   surfaceStateFromPayload,
   traceForTension,
   traceForWeave,
+  traceForDegradedFamiliar,
 } from "./weave-rail.ts";
 import { makeThreadsMeta, okEnvelope, blockedEnvelope } from "./threads-read.ts";
-import type { TensionView, ThreadsMeta, WeaveDetail, WeaveSummary } from "./threads-read.ts";
+import type { DegradedFamiliarView, TensionView, ThreadsMeta, WeaveDetail, WeaveSummary } from "./threads-read.ts";
 
 const FRESH = new Date("2026-07-15T09:00:00Z");
 
@@ -235,6 +236,21 @@ describe("trace-to-source — pills open predicate evidence, never descriptor co
   it("unknown tension trace says fail-closed explicitly", () => {
     assert.match(traceForTension(UNKNOWN, meta()).evidence.join("\n"), /fail-closed/);
   });
+
+  it("R12 degraded familiar trace carries the sanitized ward parse error", () => {
+    const degraded: DegradedFamiliarView = {
+      kind: "degraded-familiar",
+      familiarId: "charm",
+      reason: "ward-config-unparseable",
+      error: "missing field `principal_key_fingerprint`",
+    };
+    const trace = traceForDegradedFamiliar(degraded, meta());
+    const text = trace.evidence.join("\n");
+    assert.match(text, /familiar: charm/);
+    assert.match(text, /reason: ward-config-unparseable/);
+    assert.match(text, /error: missing field `principal_key_fingerprint`/);
+    assert.match(text, /fail-closed/);
+  });
 });
 
 describe("rail + pane models", () => {
@@ -250,7 +266,24 @@ describe("rail + pane models", () => {
         weaveHash: "",
       }),
     );
-    assert.deepEqual(railModel(summaries).familiars, ["echo", "nova"]);
+    assert.deepEqual(railModel({ weaves: summaries, degraded: [] }).familiars, ["echo", "nova"]);
+  });
+
+  it("R12 railModel includes degraded familiar ids without fabricating weaves", () => {
+    const model = railModel({
+      weaves: [],
+      degraded: [
+        {
+          kind: "degraded-familiar",
+          familiarId: "charm",
+          reason: "ward-config-unparseable",
+          error: "missing field `principal_key_fingerprint`",
+        },
+      ],
+    });
+    assert.deepEqual(model.familiars, ["charm"]);
+    assert.equal(model.degraded[0]?.familiarId, "charm");
+    assert.equal(model.weaves.length, 0);
   });
 
   it("paneModel sorts threads worst-first: snapped > frayed > unknown > holds", () => {

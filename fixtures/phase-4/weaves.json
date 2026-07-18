@@ -155,5 +155,12 @@
       }
     },
     "coherence": { "Shimmering": { "aura": "?" } }
+  },
+  {
+    "degraded": {
+      "familiarId": "charm",
+      "reason": "ward-config-unparseable",
+      "error": "missing field `principal_key_fingerprint`"
+    }
   }
 ]
