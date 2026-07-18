@@ -33,7 +33,7 @@ test("every default widget has a human drag-announcement title", () => {
   for (const id of [...DEFAULT_LAYOUT.main, ...DEFAULT_LAYOUT.rail]) {
     assert.ok(PANEL_TITLES[id], `missing PANEL_TITLES entry for "${id}"`);
   }
-  assert.equal(panelTitle("board"), "Board");
+  assert.equal(panelTitle("board"), "Tasks");
   assert.equal(panelTitle("not-a-widget"), "not-a-widget");
 });
 

@@ -109,7 +109,7 @@ function NextPaths({
           const json = await res.json().catch(() => ({ ok: false }));
           if (!res.ok || !json.ok) throw new Error();
           flashDone(key);
-          onNotice("Added to your task board.", { label: "View tasks", mode: "board" });
+          onNotice("Added to Tasks.", { label: "View tasks", mode: "board" });
         } else {
           // Reminder: default to tomorrow 9:00am local; the user can retime it
           // from Automations. One click should never demand a date picker.

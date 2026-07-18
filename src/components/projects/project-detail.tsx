@@ -400,7 +400,7 @@ export function ProjectDetail({
               leadingIcon="ph:kanban"
               title="Open the Tasks board"
             >
-              Board
+              Tasks
             </Button>
           ) : null}
           <OverflowMenu ariaLabel={`More actions for ${project.name}`} size="sm">

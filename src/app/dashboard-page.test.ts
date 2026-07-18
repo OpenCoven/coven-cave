@@ -176,7 +176,7 @@ assert.match(donut, /role: "img"/, "donut can expose an accessible summary");
 const heatmap = readFileSync(new URL("../components/ui/charts/heatmap.tsx", import.meta.url), "utf8");
 assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
 assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
-assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
+assert.match(cockpit, /ariaLabel=\{`Task status:/, "Tasks donut passes a canonical data summary to AT");
 assert.match(cockpit, /ariaLabel=\{`Thread confidence metrics by familiar:/, "confidence heatmap passes a data summary to AT");
 
 // ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────

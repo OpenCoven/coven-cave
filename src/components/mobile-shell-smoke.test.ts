@@ -32,8 +32,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Rites", ariaLabel: "Rituals", iconName: "ph:calendar-check" }/,
-  "Mobile bottom tabs should keep the Rituals label short while preserving the full accessible name",
+  /{ id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" }/,
+  "Mobile bottom tabs should use the canonical Rituals name for both the visible label and the accessible name",
 );
 
 assert.match(

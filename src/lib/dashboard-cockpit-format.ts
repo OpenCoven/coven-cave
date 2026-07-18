@@ -22,7 +22,7 @@ export const PANEL_TITLES: Record<string, string> = {
   usage: "Activity over time",
   signals: "Signals",
   needs: "Needs you",
-  board: "Board",
+  board: "Tasks",
   today: "Today summary",
   confidence: "Performance matrix",
   agents: "Familiars",
