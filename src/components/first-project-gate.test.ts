@@ -28,14 +28,13 @@ test("the gate copy makes project creation mandatory for chat", () => {
   assert.match(src, /Chat requires a project/, "copy explains that chat cannot proceed without a project");
 });
 
-test("the gate stays prop-driven for task 3 and focuses the name field on first visibility", () => {
+test("the gate stays prop-driven and focuses the name field on first visibility", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
     /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(name: string, root: string\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
-    "the gate stays prop-driven with the required task-3 fields",
+    "the gate stays prop-driven with the required integration fields",
   );
-  assert.doesNotMatch(src, /useProjects\(\)|workspace/i, "Workspace wiring stays outside this task; the gate remains a prop-driven component");
   assert.match(src, /const nameInputRef = useRef<HTMLInputElement \| null>\(null\);/, "keeps a stable ref for the project-name field");
   assert.match(
     src,
@@ -49,6 +48,51 @@ test("the gate stays prop-driven for task 3 and focuses the name field on first 
   );
   assert.match(src, /ref=\{nameInputRef\}/, "the stable focus ref is wired to the project-name input");
   assert.doesNotMatch(src, /autoFocus/, "initial focus no longer depends on DOM-order-sensitive autoFocus");
+});
+
+test("workspace wires the first-project gate after onboarding resolves and the first project load settles", () => {
+  const src = read("./workspace.tsx");
+  assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
+  assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
+  assert.match(
+    src,
+    /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
+    "workspace destructures the unscoped projects hook with collision-safe names",
+  );
+  assert.match(src, /const \[onboardingResolved, setOnboardingResolved\] = useState\(false\);/, "onboarding resolution starts false");
+  assert.match(src, /const \[projectsInitiallyResolved, setProjectsInitiallyResolved\] = useState\(false\);/, "project-load resolution starts false");
+  assert.match(
+    src,
+    /useEffect\(\(\) => \{\s*if \(!projectsLoading\) setProjectsInitiallyResolved\(true\);\s*\}, \[projectsLoading\]\);/,
+    "the first project load flips to resolved once loading settles",
+  );
+  assert.doesNotMatch(src, /setProjectsInitiallyResolved\(false\)/, "project-load resolution stays sticky across later reloads");
+  assert.match(
+    src,
+    /if \(skipped\) \{\s*setOnboardingResolved\(true\);\s*return;\s*\}/,
+    "the localStorage skip path resolves onboarding immediately",
+  );
+  assert.match(
+    src,
+    /finally \{\s*if \(!cancelled\) setOnboardingResolved\(true\);\s*\}/,
+    "the onboarding-status effect resolves in finally even on non-OK or fetch failures",
+  );
+  assert.match(
+    src,
+    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
+    "the gate only opens for home or chat after onboarding and the first project load have resolved with zero projects",
+  );
+  assert.doesNotMatch(src, /const firstProjectGateOpen =[^;]*!projectsLoading/, "later reloads do not hide the gate while Retry is in flight");
+  assert.match(
+    src,
+    /<FirstProjectGate[\s\S]*familiarId=\{activeId \?\? familiars\[0\]\?\.id \?\? null\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
+    "workspace passes the required familiar and project props into the gate",
+  );
+  assert.match(
+    src,
+    /\{\(onboardingOpen \|\| onboardingMounted\) && \([\s\S]*<OnboardingOverlay[\s\S]*\)\}\s*\n\s*<FirstProjectGate/,
+    "workspace renders the gate immediately after the onboarding overlay",
+  );
 });
 
 test("the gate browses with native shell fallback and seeds the drafts from the chosen path", () => {
