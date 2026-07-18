@@ -48,7 +48,7 @@ export function reconcileLayout(stored: Partial<Layout>): Layout {
 // ─── 7-day vitals trends (persisted client-side, keyed by day) ────────────────
 
 export const TREND_DAYS = 7;
-export type TrendKey = "confidence" | "active" | "sessions" | "accept" | "contract" | "needs";
+export type TrendKey = "confidence" | "active" | "sessions" | "accept" | "contract" | "needs" | "streak";
 // Persisted JSON can legitimately miss keys for a day (older snapshots predate
 // newer metrics) — seriesFor already reads missing values as gaps.
 export type DaySnap = Partial<Record<TrendKey, number>>;

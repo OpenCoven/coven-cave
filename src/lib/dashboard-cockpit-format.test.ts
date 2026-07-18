@@ -46,6 +46,15 @@ test("seriesFor yields 7 points oldest→newest with nulls for missing days", ()
   assert.equal(series[0].value, null); // missing day is a gap, not a fake zero
 });
 
+test("streak is a first-class trend key — old snapshots read as gaps", () => {
+  const now = new Date(2026, 6, 14, 12, 0, 0);
+  // Yesterday's snapshot predates the streak metric; today's carries it.
+  const store = { [dayKey(now)]: { streak: 6 }, "2026-07-13": { sessions: 3 } };
+  const series = seriesFor(store, "streak", now);
+  assert.equal(series.at(-1).value, 6);
+  assert.equal(series.at(-2).value, null, "pre-streak snapshot is a gap, never a fake zero");
+});
+
 test("KPI sub-lines teach instead of shrugging", () => {
   assert.equal(retroSub({ retroAccepted: 0, retroReverted: 0 }), "fills in after the first retro run");
   assert.equal(retroSub({ retroAccepted: 3, retroReverted: 1 }), "3/4 accepted");
