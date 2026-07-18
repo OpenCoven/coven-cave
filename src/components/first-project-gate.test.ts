@@ -108,6 +108,13 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
 });
 
+test("the Playwright baseline stays post-onboarding unless a gate spec opts into an empty registry", () => {
+  const config = read("../../playwright.config.ts");
+  assert.match(config, /const E2E_PROJECTS_PATH = join\(tmpdir\(\), `cave-e2e-projects-\$\{E2E_RUN_ID\}\.json`\);/);
+  assert.match(config, /writeFileSync\([\s\S]*id: "e2e-project"[\s\S]*root: process\.cwd\(\)/);
+  assert.match(config, /CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH/);
+});
+
 test("the gate browses with native shell fallback and seeds the drafts from the chosen path", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ DirectoryPickerModal \} from "@\/components\/directory-picker-modal"/, "imports the shared web directory picker");
