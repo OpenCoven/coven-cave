@@ -2597,6 +2597,68 @@
       },
       "trust": "official-local",
       "roleAffinity": []
+    },
+    {
+      "name": "charms-loom",
+      "displayName": "Charm's Loom",
+      "category": "Communication Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/charms-loom"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "git"
+          ],
+          "optional": [
+            "vercel",
+            "memory"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "slidev-deck-pipeline",
+              "sourcePath": "craft-sources/charms-loom/slidev-deck-pipeline/SKILL.md",
+              "upstreamPath": "skills/slidev-deck-pipeline/SKILL.md",
+              "contentHash": "sha256:3b29b2f4cca5b3b478194a2be57b7716fb0041e7eb4d18139f5e560b6eebbf72",
+              "modifications": [
+                "Authored by Charm from the live open-coven-weekly Slidev pipeline.",
+                "Audited for local capability boundaries, deterministic scripts, and reviewable deploy workflow."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Communicator",
+          "Presenter"
+        ],
+        "provenance": {
+          "upstream": "OpenCoven open-coven-weekly Slidev system",
+          "commit": "38b5c200ca6d0c736d2c2efbb888047032f0fc09",
+          "license": "MIT",
+          "modifications": [
+            "Extracted the deterministic deck author/verify/deploy loop into a portable Craft bundle."
+          ],
+          "source": "https://github.com/OpenCoven/open-coven-weekly",
+          "licensePath": "craft-sources/charms-loom/LICENSE"
+        }
+      }
     }
   ]
 }
