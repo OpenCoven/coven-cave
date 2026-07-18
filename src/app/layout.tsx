@@ -22,6 +22,7 @@ import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
 import { PerfOverlay } from "@/components/perf/perf-overlay";
 import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
+import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
 import { createDefaultPreferences } from "@/lib/preferences-schema";
 import { loadPreferences } from "@/lib/server/preferences-store";
 
@@ -80,6 +81,7 @@ export default async function RootLayout({
         <DevCacheResetScript />
         <SidecarAuthBridge />
         <ShellBannersProvider>
+          <DaemonReleaseAlignmentTrigger />
           <LiveRegionProvider>
             <ConfirmProvider>
             <PreferencesBootstrapController />

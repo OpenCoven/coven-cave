@@ -7,10 +7,10 @@ import {
   NativeUpdateCoordinator,
 } from "../lib/native-update-coordinator.ts";
 
-const [src, preparationSrc, shellSrc] = await Promise.all([
+const [src, preparationSrc, layoutSrc] = await Promise.all([
   readFile(new URL("./update-available.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/native-update-preparation.ts", import.meta.url), "utf8"),
-  readFile(new URL("./shell.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
 ]);
 
 // Desktop-only: both surfaces gate on the Tauri desktop hook.
@@ -64,7 +64,11 @@ assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles t
 assert.match(src, /updateDaemonForCaveUpdate\(APP_VERSION/, "startup reconciliation targets the running Cave version");
 assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
 assert.match(src, /\.then\(\(\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "a successful retry clears the failure banner even when the CLI is already current");
-assert.match(shellSrc, /<DaemonReleaseAlignmentTrigger \/>/, "the shell mounts post-update daemon reconciliation");
+assert.match(
+  layoutSrc,
+  /<ShellBannersProvider>[\s\S]{0,100}<DaemonReleaseAlignmentTrigger \/>/,
+  "every app route mounts post-update daemon reconciliation inside the banner provider",
+);
 assert.match(src, /export function UpdateSettingsRow/, "exports the settings row");
 assert.match(src, /async function resolveUpdate/, "resolves native-first, then fallback");
 assert.match(src, /kind:\s*"native-unavailable"/, "preserves native updater check failures as a distinct update state");
