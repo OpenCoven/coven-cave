@@ -81,6 +81,28 @@ test("launcherWeekStats counts trailing-7-day touches and reflections", () => {
   assert.equal(stats.reflections, 1);
 });
 
+test("launcherWeekStats caps the window at end-of-today (no future inflation)", () => {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const futureItem = buildLauncherItems({
+    knowledge: [
+      { id: "skewed", title: "Skewed clock", tags: [], modified: new Date(NOW + 2 * dayMs).toISOString() },
+      { id: "fresh", title: "Fresh", tags: [], modified: new Date(NOW - dayMs).toISOString() },
+    ],
+    memory: [],
+    journal: [],
+  });
+  const stats = launcherWeekStats(
+    futureItem,
+    [
+      { date: "2026-07-18", preview: "", modified: null }, // today, noon anchor — counts even in the morning
+      { date: "2026-07-19", preview: "", modified: null }, // tomorrow — never counts
+    ],
+    Date.parse("2026-07-18T09:00:00"),
+  );
+  assert.equal(stats.filesTouched, 1, "future mtimes (clock skew) are excluded");
+  assert.equal(stats.reflections, 1, "today counts, future-dated entries do not");
+});
+
 test("journalStreakDays counts back from today, tolerating an unwritten today", () => {
   assert.equal(journalStreakDays(["2026-07-18", "2026-07-17", "2026-07-16"], "2026-07-18"), 3);
   // Today not yet written — streak anchors on yesterday.

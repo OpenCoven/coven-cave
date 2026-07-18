@@ -167,6 +167,16 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type LauncherWeekStats = { filesTouched: number; reflections: number };
 
+/** End of the local day containing `ms` — the inclusive upper bound for
+ *  "this week". Today's noon-anchored journal dates count even in the
+ *  morning; genuinely future mtimes (clock skew, future-dated entries)
+ *  don't inflate the tiles. */
+function endOfDayMs(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
 /** Docs touched and reflections written in the trailing 7 days. */
 export function launcherWeekStats(
   items: LauncherItem[],
@@ -174,16 +184,17 @@ export function launcherWeekStats(
   nowMs: number,
 ): LauncherWeekStats {
   const cutoff = nowMs - WEEK_MS;
+  const horizon = endOfDayMs(nowMs);
   let filesTouched = 0;
   for (const item of items) {
-    if (item.modifiedMs !== null && item.modifiedMs >= cutoff && item.modifiedMs <= nowMs + WEEK_MS) {
+    if (item.modifiedMs !== null && item.modifiedMs >= cutoff && item.modifiedMs <= horizon) {
       filesTouched += 1;
     }
   }
   let reflections = 0;
   for (const day of journal) {
     const ms = Date.parse(`${day.date}T12:00:00`);
-    if (Number.isFinite(ms) && ms >= cutoff) reflections += 1;
+    if (Number.isFinite(ms) && ms >= cutoff && ms <= horizon) reflections += 1;
   }
   return { filesTouched, reflections };
 }
