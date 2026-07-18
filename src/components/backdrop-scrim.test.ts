@@ -75,22 +75,22 @@ assert.match(
 
 console.log("backdrop-scrim.test.ts: ok");
 
-// ── Per-familiar backdrop override wiring (cave-j0dz) ────────────────────────
-// The active chat familiar's own backdrop takes over the layer; the app-wide
-// image stays the fallback/default everywhere else.
+// ── Per-familiar backdrop override wiring (cave-j0dz, cave-kf8p) ─────────────
+// The active chat familiar's own backdrop takes over the layer while the
+// familiar is switched on; the app-wide image stays the fallback/default.
 const layer = readFileSync(new URL("./cave-backdrop-layer.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const lookTab = readFileSync(new URL("./familiar-studio-look-tab.tsx", import.meta.url), "utf8");
 
 assert.match(
   layer,
-  /const effectiveUrl = familiarUrl \?\? imageUrl;/,
-  "the familiar override wins while present; the generic image is the fallback",
+  /const effectiveUrl = familiarImageShowing \? familiarUrl : imageUrl;/,
+  "the familiar's own image wins while showing; the generic image is the fallback",
 );
 assert.match(
   layer,
-  /const effectiveEnabled = prefs\.enabled \|\| familiarUrl !== null;/,
-  "a familiar backdrop shows even when the app-wide backdrop is off",
+  /const effectiveEnabled = prefs\.enabled \|\| familiarOn;/,
+  "an enabled familiar shows a backdrop even when the app-wide backdrop is off",
 );
 assert.match(
   layer,

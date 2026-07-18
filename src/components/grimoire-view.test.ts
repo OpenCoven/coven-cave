@@ -15,7 +15,7 @@ assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grim
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\);/, "the journal mode routes into the Grimoire Journal tab");
-assert.match(sidebar, /\| "grimoire"/, "grimoire is a FolderMode");
+assert.match(sidebar, /export type FolderMode = WorkspaceMode/, "the sidebar's FolderMode is the WorkspaceMode union (no drifting copy), so grimoire is a FolderMode");
 assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sidebar row labeled Memories (and ⌘K palette entry via FOLDER_MODES)");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────

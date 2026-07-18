@@ -98,4 +98,104 @@ assert.match(shell, /fetch\("\/api\/daemon\/status", \{ cache: "no-store", signa
 assert.match(shell, /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/, "the multi-host config load carries an abort signal");
 assert.doesNotMatch(shell, /getItem\("coven-custom-theme"\)/, "the custom-theme key goes through COVEN_CUSTOM_THEME_KEY, never a string literal");
 
+// ── Omnigent vault-URL gate ──────────────────────────────────────────────────
+// The whole "Omnigent fleet" group is invisible in the Daemon tab unless
+// OMNIGENT_SERVER_URL is set up in the user's Cave Vault; the Vault value is
+// also the active server URL (it wins over Cave config), so the group never
+// offers an editable URL nor persists one.
+const statusRoute = readFileSync(
+  new URL("../app/api/omnigent/status/route.ts", import.meta.url),
+  "utf8",
+);
+const fleetGateHook = readFileSync(
+  new URL("../lib/omnigent/use-fleet-gate.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  shell,
+  /if \(serverUrlInVault !== true\) return null;/,
+  "Omnigent group renders nothing unless the status probe proves OMNIGENT_SERVER_URL is in the Vault (fail closed while loading)",
+);
+assert.match(
+  shell,
+  /setServerUrlInVault\(j\.serverUrlInVault === true\)/,
+  "Omnigent group derives its visibility from /api/omnigent/status serverUrlInVault",
+);
+assert.match(
+  shell,
+  /setEnabled\(j\.enabled === true\)/,
+  "Omnigent group derives the master-switch state from /api/omnigent/status enabled",
+);
+assert.match(
+  shell,
+  /JSON\.stringify\(\{ omnigent: \{ enabled: next \} \}\)/,
+  "the enable toggle PATCHes exactly omnigent.enabled — nothing else",
+);
+assert.match(
+  shell,
+  /if \(!next\) publishFleetTokenStatus\(null\);/,
+  "disabling immediately hides Fleet controls that are already mounted",
+);
+assert.match(
+  shell,
+  /publishFleetTokenStatus\(st\);/,
+  "a successful enable refresh publishes the new gate to mounted Fleet controls",
+);
+assert.match(
+  shell,
+  /The config PATCH already succeeded[\s\S]*setStatusLine\("Status unavailable · try again later"\);/,
+  "a failed follow-up status refresh does not report the already-persisted toggle as failed",
+);
+assert.match(
+  fleetGateHook,
+  /for \(const listener of listeners\) listener\(enabled\);/,
+  "published gate changes update every mounted Fleet control instead of leaving the page-load cache stale",
+);
+assert.match(
+  shell,
+  /\{enabled \? \(/,
+  "connection fields render only after the fleet is explicitly enabled — vault key alone shows just the toggle",
+);
+assert.match(
+  shell,
+  /\.catch\(\(\) => \{\s*if \(!ctl\.signal\.aborted\) setServerUrlInVault\(false\);\s*\}\)/,
+  "a failed status probe hides the Omnigent group instead of leaving it in limbo",
+);
+assert.doesNotMatch(
+  shell,
+  /omnigent: \{[^}]*baseUrl/,
+  "the Omnigent save payload must not write baseUrl — the Vault env supplies the server URL",
+);
+assert.match(
+  statusRoute,
+  /const serverUrlInVault = isOmnigentServerUrlConfigured\(\);/,
+  "/api/omnigent/status must report whether OMNIGENT_SERVER_URL exists in the Vault",
+);
+assert.match(
+  statusRoute,
+  /const enabled = config\.omnigent\.enabled === true;\s*\n\s*if \(!serverUrlInVault \|\| !enabled\) \{/,
+  "the status probe short-circuits as unconfigured until BOTH the Vault key and the enable toggle hold — no secret resolution, no network",
+);
+assert.match(
+  statusRoute,
+  /resolveOmnigentBaseUrl\(config\.omnigent\.baseUrl\)/,
+  "the status probe resolves the base URL Vault-first",
+);
+// Every fleet entry point refuses while the master switch is off: the three
+// omnigent proxies, the /api/hosts fleet options, and createOmnigentRun.
+for (const rel of [
+  "../app/api/omnigent/hosts/route.ts",
+  "../app/api/omnigent/sessions/route.ts",
+  "../app/api/omnigent/agents/route.ts",
+  "../app/api/hosts/route.ts",
+  "../lib/omnigent/run.ts",
+]) {
+  const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+  assert.match(
+    src,
+    /if \(!isOmnigentFleetActive\(config\.omnigent\)\)/,
+    `${rel} must gate on isOmnigentFleetActive (vault URL + explicit enable toggle)`,
+  );
+}
+
 console.log("settings-daemon-multihost.test.ts: ok");

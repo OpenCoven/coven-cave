@@ -17,7 +17,7 @@ import type {
   ThreadView,
   WeaveDetail,
   WeaveSummary,
-  WeaveListView,
+  WeaveListEntry,
 } from "@/lib/threads-read";
 import {
   blockedMessage,
@@ -116,7 +116,7 @@ function TraceDrawer({ trace, onClose }: { trace: StatusTrace; onClose: () => vo
 }
 
 export function WeavesView() {
-  const [railState, setRailState] = useState<SurfaceState<WeaveListView>>({ kind: "loading" });
+  const [railState, setRailState] = useState<SurfaceState<WeaveListEntry[]>>({ kind: "loading" });
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
   const [selectedWeaveId, setSelectedWeaveId] = useState<string | null>(null);
   const [paneState, setPaneState] = useState<SurfaceState<WeaveDetail> | null>(null);
@@ -125,7 +125,7 @@ export function WeavesView() {
   const [proposalsState, setProposalsState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
 
   const loadRail = useCallback(async () => {
-    setRailState(await fetchSurface<WeaveListView>("/api/weaves"));
+    setRailState(await fetchSurface<WeaveListEntry[]>("/api/weaves"));
   }, []);
 
   useEffect(() => {

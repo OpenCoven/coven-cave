@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
 import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
-import { isOmnigentEnvConfigured } from "@/lib/omnigent/token";
+import {
+  isOmnigentEnvConfigured,
+  isOmnigentServerUrlConfigured,
+  resolveOmnigentBaseUrl,
+} from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -13,21 +17,48 @@ export async function GET(req: Request) {
   if (forbidden) return forbidden;
 
   const config = await loadConfig();
-  const baseUrl = config.omnigent.baseUrl;
   // Per-user fleet opt-in: OMNIGENT_TOKEN set up in the Cave Vault. The
   // client gate (isFleetTokenPresent) hides all Fleet UI without it.
   const envInVault = isOmnigentEnvConfigured();
-  if (!baseUrl) {
+  // Settings-surface gate: the Omnigent group in Settings → Daemon renders
+  // only when OMNIGENT_SERVER_URL is set up in the Cave Vault (metadata-only).
+  const serverUrlInVault = isOmnigentServerUrlConfigured();
+  // Master switch: Vault key + the explicit Settings → Daemon toggle. Until
+  // both hold, report unconfigured WITHOUT resolving the secret or touching
+  // the network — every fleet surface fails closed off configured:false.
+  const enabled = config.omnigent.enabled === true;
+  if (!serverUrlInVault || !enabled) {
     return NextResponse.json({
       ok: true,
       configured: false,
+      enabled,
       baseUrl: "",
       hasToken: false,
       authenticated: false,
       authMode: "none",
       envInVault,
+      serverUrlInVault,
       online: false,
-      error: "Set omnigent.baseUrl in Cave config (Settings → Omnigent fleet).",
+      error: serverUrlInVault
+        ? "Omnigent fleet is disabled — turn it on in Settings → Daemon."
+        : "Add OMNIGENT_SERVER_URL to your Cave Vault (Settings → Vault).",
+    });
+  }
+  // Vault URL wins over Cave config; config stays a fallback.
+  const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
+  if (!baseUrl) {
+    return NextResponse.json({
+      ok: true,
+      configured: false,
+      enabled,
+      baseUrl: "",
+      hasToken: false,
+      authenticated: false,
+      authMode: "none",
+      envInVault,
+      serverUrlInVault,
+      online: false,
+      error: "Add OMNIGENT_SERVER_URL to your Cave Vault (Settings → Vault).",
     });
   }
 
@@ -37,11 +68,13 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       configured: true,
+      enabled,
       baseUrl: client.baseUrl,
       hasToken: client.hasToken,
       authenticated: client.authenticated || client.authMode === "none",
       authMode: client.authMode,
       envInVault,
+      serverUrlInVault,
       online: true,
       health,
       defaults: config.omnigent,
@@ -59,11 +92,13 @@ export async function GET(req: Request) {
       return NextResponse.json({
         ok: true,
         configured: true,
+        enabled,
         baseUrl,
         hasToken: client.hasToken,
         authenticated: client.authenticated,
         authMode: client.authMode,
         envInVault,
+        serverUrlInVault,
         online: false,
         error: message,
         defaults: config.omnigent,
@@ -72,11 +107,13 @@ export async function GET(req: Request) {
       return NextResponse.json({
         ok: true,
         configured: true,
+        enabled,
         baseUrl,
         hasToken: false,
         authenticated: false,
         authMode: "none",
         envInVault,
+        serverUrlInVault,
         online: false,
         error: message,
         defaults: config.omnigent,

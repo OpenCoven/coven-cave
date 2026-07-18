@@ -24,8 +24,11 @@ import {
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
+import { updateDaemonForCaveUpdate } from "@/lib/app-update-daemon";
+import { APP_VERSION } from "@/lib/app-version";
 
 const BANNER_ID = "update-available";
+const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
 const DISMISS_KEY = (version: string) => `cave:update:dismissed:${version}`;
 
@@ -86,11 +89,88 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
 
 /** Install an already downloaded and verified update, then relaunch where supported. */
 async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  await updateDaemonForCaveUpdate(update.version, { confirmInstall: true });
   await update.install();
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
+}
+
+/**
+ * The updater that installs a release belongs to the previous Cave version.
+ * Reconcile once after the new shell starts so the first release containing
+ * this behavior also aligns the separately installed CLI/daemon.
+ */
+export function DaemonReleaseAlignmentTrigger() {
+  const isDesktop = useIsTauriDesktop();
+  const { pushBanner, dismissBanner } = useShellBanners();
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !isDesktop || attempted.current) return;
+    let active = true;
+    let running = false;
+
+    const start = (confirmInstall = false) => {
+      if (!active || running) return;
+      attempted.current = true;
+      running = true;
+      void updateDaemonForCaveUpdate(APP_VERSION, {
+        confirmInstall,
+        onUpdateStart: () => {
+          if (active) {
+            pushBanner({
+              id: DAEMON_ALIGNMENT_BANNER_ID,
+              severity: "info",
+              title: `Updating Coven daemon to match Cave v${APP_VERSION}…`,
+            });
+          }
+        },
+      }).then((result) => {
+        running = false;
+        if (!active) return;
+        if (result === "confirmation-required") {
+          pushBanner({
+            id: DAEMON_ALIGNMENT_BANNER_ID,
+            severity: "info",
+            title: `Coven daemon v${APP_VERSION} is ready to install`,
+            cta: {
+              label: "Update Coven daemon",
+              onClick: () => {
+                attempted.current = false;
+                start(true);
+              },
+            },
+          });
+        } else {
+          dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+        }
+      }).catch((error) => {
+        running = false;
+        if (!active) return;
+        pushBanner({
+          id: DAEMON_ALIGNMENT_BANNER_ID,
+          severity: "warning",
+          title: `Coven daemon update failed (${errorMessage(error, "update failed")})`,
+          cta: {
+            label: "Retry daemon update",
+            onClick: () => {
+              attempted.current = false;
+              start(true);
+            },
+          },
+        });
+      });
+    };
+
+    start();
+    return () => {
+      active = false;
+    };
+  }, [dismissBanner, isDesktop, pushBanner]);
+
+  return null;
 }
 
 /** Lightweight fallback: ask the server route what the latest release is. */
@@ -313,7 +393,7 @@ export function UpdateBannerTrigger() {
                         pushBanner({
                           id: BANNER_ID,
                           severity: "info",
-                          title: `Installing update v${r.version}…`,
+                          title: `Updating Coven daemon and installing Cave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
                           await nativeUpdateCoordinator.finishAction(owner);
@@ -611,7 +691,11 @@ export function UpdateSettingsRow() {
       </>
     );
   } else if (state.phase === "installing") {
-    control = <span className="text-[12px] font-medium text-[var(--text-primary)]">Installing…</span>;
+    control = (
+      <span className="text-[12px] font-medium text-[var(--text-primary)]">
+        Updating daemon &amp; installing…
+      </span>
+    );
   } else if (state.phase === "available") {
     const r = state.r; // narrowed to native | fallback
     control = (

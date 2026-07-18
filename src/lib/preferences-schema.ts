@@ -71,6 +71,8 @@ export type CaveBackdropPreferences = {
   intensity: number;
   matchAccent: boolean;
   accentSeed: CaveBackdropAccentSeed | null;
+  /** Explicit per-familiar enablement (cave-kf8p); absent id = image-presence default. */
+  familiars: Record<string, boolean>;
   image: CaveBackdropImageMetadata;
 };
 
@@ -92,7 +94,10 @@ export type CavePreferences = {
   };
   general: {
     newsHeadlines: boolean;
-    /** Composer phrase that halts a running chat task; "" disables it. */
+    /**
+     * Comma-separated composer phrases, any of which halts a running chat
+     * task; "" disables the feature.
+     */
     stopPhrase: string;
     /**
      * Progression celebrations — milestone toasts and completion flourishes.
@@ -133,10 +138,13 @@ const DEFAULT_THEME: CaveThemePreferences = {
   updatedAt: "",
 };
 
-/** Default composer stop phrase; "" (after trim) turns the feature off. */
-export const DEFAULT_STOP_PHRASE = "stop";
-/** Longest phrase the preference stores; UI and matcher share this bound. */
-export const STOP_PHRASE_MAX_LENGTH = 64;
+/**
+ * Default composer stop phrases (comma-separated options); "" (after trim)
+ * turns the feature off.
+ */
+export const DEFAULT_STOP_PHRASE = "stop, cancel, halt, abort";
+/** Longest phrase list the preference stores; UI and matcher share this bound. */
+export const STOP_PHRASE_MAX_LENGTH = 160;
 
 function normalizeStopPhrase(value: unknown): string {
   if (typeof value !== "string") return DEFAULT_STOP_PHRASE;
@@ -169,6 +177,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         intensity: 50,
         matchAccent: true,
         accentSeed: null,
+        familiars: {},
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
@@ -215,6 +224,8 @@ const CORNER_RADII = ["sharp", "default", "round"] as const;
 const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 const CSS_VAR_RE = /^(?:--)?[a-zA-Z0-9_-]{1,80}$/;
 const MAX_THEME_TOKENS = 256;
+export const MAX_FAMILIAR_BACKDROPS = 256;
+const MAX_FAMILIAR_BACKDROP_KEY_LENGTH = 128;
 const MAX_CSS_VALUE_LENGTH = 512;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -298,6 +309,21 @@ function normalizeAccentSeed(input: unknown): CaveBackdropAccentSeed | null {
   return { L, a, b };
 }
 
+function normalizeFamiliarBackdrops(value: unknown): Record<string, boolean> {
+  if (!isRecord(value)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    // "__proto__" is skipped: assigning it on a plain object would hit the
+    // legacy prototype setter instead of creating an entry, and the slug
+    // alphabet ([a-z0-9-]) can never produce it as a real familiar id.
+    if (key !== "" && key !== "__proto__" && key.length <= MAX_FAMILIAR_BACKDROP_KEY_LENGTH && typeof entry === "boolean") {
+      if (Object.keys(out).length >= MAX_FAMILIAR_BACKDROPS) break;
+      out[key] = entry;
+    }
+  }
+  return out;
+}
+
 export function normalizeCavePreferences(input: unknown): CavePreferences {
   const source = record(input);
   const appearance = record(source.appearance);
@@ -372,6 +398,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
           ? Math.min(100, Math.max(0, backdrop.intensity)) : 50,
         matchAccent: backdrop.matchAccent !== false,
         accentSeed: normalizeAccentSeed(backdrop.accentSeed),
+        familiars: normalizeFamiliarBackdrops(backdrop.familiars),
         image: {
           present: image.present === true,
           mime: imageMime,
@@ -565,7 +592,7 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     if (Object.hasOwn(appearance, "backdrop")) {
       const backdrop = strictRecord(appearance.backdrop, "appearance.backdrop");
-      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "image"], "appearance.backdrop");
+      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "familiars", "image"], "appearance.backdrop");
       const backdropPatch: NonNullable<typeof next.backdrop> = {};
       if (Object.hasOwn(backdrop, "enabled")) backdropPatch.enabled = strictBoolean(backdrop.enabled, "appearance.backdrop.enabled");
       if (Object.hasOwn(backdrop, "intensity")) {
@@ -576,6 +603,22 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       }
       if (Object.hasOwn(backdrop, "matchAccent")) backdropPatch.matchAccent = strictBoolean(backdrop.matchAccent, "appearance.backdrop.matchAccent");
       if (Object.hasOwn(backdrop, "accentSeed")) backdropPatch.accentSeed = strictAccentSeed(backdrop.accentSeed, "appearance.backdrop.accentSeed");
+      if (Object.hasOwn(backdrop, "familiars")) {
+        const familiars = strictRecord(backdrop.familiars, "appearance.backdrop.familiars");
+        if (Object.keys(familiars).length > MAX_FAMILIAR_BACKDROPS) {
+          fail("appearance.backdrop.familiars", `must not exceed ${MAX_FAMILIAR_BACKDROPS} entries`);
+        }
+        const map: Record<string, boolean> = {};
+        for (const [key, entry] of Object.entries(familiars)) {
+          // "__proto__" is rejected: it can't be a slugged familiar id, and
+          // assigning it on a plain object would silently drop the entry.
+          if (key === "" || key === "__proto__" || key.length > MAX_FAMILIAR_BACKDROP_KEY_LENGTH) {
+            fail("appearance.backdrop.familiars", "keys must be valid familiar ids");
+          }
+          map[key] = strictBoolean(entry, `appearance.backdrop.familiars.${key}`);
+        }
+        backdropPatch.familiars = map;
+      }
       if (Object.hasOwn(backdrop, "image")) {
         const image = strictRecord(backdrop.image, "appearance.backdrop.image");
         assertAllowedKeys(image, ["present", "mime", "updatedAt"], "appearance.backdrop.image");
@@ -631,7 +674,12 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 
 function patchHasValues(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  return Object.entries(value).some(([, child]) => isRecord(child) ? patchHasValues(child) : true);
+  // An explicitly-present empty record is a value: replace-whole-map fields
+  // (backdrop.familiars, theme.tokens) clear by sending {}. The semantic
+  // jsonEqual guard in applyPreferencesPatch still prevents no-op revisions.
+  return Object.entries(value).some(([, child]) =>
+    isRecord(child) ? Object.keys(child).length === 0 || patchHasValues(child) : true,
+  );
 }
 
 /** Apply an already-validated patch and stamp canonical metadata. */

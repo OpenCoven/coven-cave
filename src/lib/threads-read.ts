@@ -143,10 +143,7 @@ export type DegradedFamiliarView = {
   error: string;
 };
 
-export type WeaveListView = {
-  weaves: WeaveSummary[];
-  degraded: DegradedFamiliarView[];
-};
+export type WeaveListEntry = WeaveSummary | DegradedFamiliarView;
 
 export type PatternDescriptorView = {
   derived: true;

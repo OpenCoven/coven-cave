@@ -22,6 +22,7 @@ import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
 import { PerfOverlay } from "@/components/perf/perf-overlay";
 import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
+import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
 import { createDefaultPreferences } from "@/lib/preferences-schema";
 
 export const metadata: Metadata = {
@@ -83,6 +84,7 @@ export default function RootLayout({
         <DevCacheResetScript />
         <SidecarAuthBridge />
         <ShellBannersProvider>
+          <DaemonReleaseAlignmentTrigger />
           <LiveRegionProvider>
             <ConfirmProvider>
             <PreferencesBootstrapController />

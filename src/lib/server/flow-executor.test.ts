@@ -42,4 +42,19 @@ assert.match(
   "direct copilot flow spawn must not bypass configured hub authority",
 );
 
+// Flow prompts direct familiars to write memory/self-reports into their own
+// workspace, but the spawn cwd is the project root and a non-interactive run
+// can't prompt for permission — the workspace must ride as a harness-level
+// trust grant or every such write hard-fails.
+assert.match(
+  source,
+  /startCopilotFlowRun\(\{[\s\S]*?addDirs: await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\}\);/,
+  "direct copilot flow spawn must trust the familiar's own workspace via addDirs",
+);
+assert.match(
+  source,
+  /function flowFamiliarAddDirs[\s\S]*?isValidFamiliarId\(familiarId\)[\s\S]*?realpath\(await familiarWorkspace\(familiarId\)\)/,
+  "the workspace grant must be slug-validated and canonicalized before trusting",
+);
+
 console.log("flow-executor.test.ts: ok");

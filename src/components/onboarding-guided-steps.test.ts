@@ -504,6 +504,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const startDaemon = async \(\) => \{[\s\S]*?await waitForDaemonUpdateIdle\(\);[\s\S]*?fetch\("\/api\/daemon\/start"/,
+  "manual and automatic onboarding starts wait for release alignment before launching the CLI",
+);
+assert.match(
+  source,
   /\{startingDaemon \? "Starting…" : "Start local daemon"\}/,
   "the manual button remains — it is the retry affordance when auto-start fails",
 );

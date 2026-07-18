@@ -266,21 +266,18 @@ describe("rail + pane models", () => {
         weaveHash: "",
       }),
     );
-    assert.deepEqual(railModel({ weaves: summaries, degraded: [] }).familiars, ["echo", "nova"]);
+    assert.deepEqual(railModel(summaries).familiars, ["echo", "nova"]);
   });
 
   it("R12 railModel includes degraded familiar ids without fabricating weaves", () => {
-    const model = railModel({
-      weaves: [],
-      degraded: [
-        {
-          kind: "degraded-familiar",
-          familiarId: "charm",
-          reason: "ward-config-unparseable",
-          error: "missing field `principal_key_fingerprint`",
-        },
-      ],
-    });
+    const model = railModel([
+      {
+        kind: "degraded-familiar",
+        familiarId: "charm",
+        reason: "ward-config-unparseable",
+        error: "missing field `principal_key_fingerprint`",
+      },
+    ]);
     assert.deepEqual(model.familiars, ["charm"]);
     assert.equal(model.degraded[0]?.familiarId, "charm");
     assert.equal(model.weaves.length, 0);
