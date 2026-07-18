@@ -1,0 +1,120 @@
+%% CovenCave menus, launchers, contextual navigation, dialogs, and sheets
+%% Sources: workspace.tsx, command-palette.tsx, top-bar.tsx,
+%% sidebar-minimal.tsx, notification-bell.tsx, and surface overflow menus
+%% Regenerated from main@bcf9f8bdbcb1 (2026-07-18) — final IA for issue #3283.
+%%{init: {
+  "theme": "base",
+  "flowchart": { "curve": "basis", "nodeSpacing": 28, "rankSpacing": 62, "padding": 13 },
+  "themeVariables": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#241b31",
+    "primaryTextColor": "#f7f2ff",
+    "primaryBorderColor": "#b995e8",
+    "lineColor": "#927db1",
+    "clusterBkg": "#120f19",
+    "clusterBorder": "#5f4a78",
+    "edgeLabelBackground": "#120f19"
+  }
+}}%%
+flowchart TB
+  UI([Any workspace surface]):::entry
+
+  subgraph GLOBAL["Global launchers and transient layers"]
+    direction LR
+    UI --> SEARCH["Search field · ⌘K"]:::launcher
+    SEARCH --> PALETTE["Command palette"]:::overlay
+    PALETTE --> PRECENT["Recent sessions"]:::group
+    PALETTE --> PSURF["Go to surface"]:::group
+    PALETTE --> PFAM["Switch familiar / New chat"]:::group
+    PALETTE --> PCARD["Tasks · Create task<br/>Kanban / Table / Gantt"]:::group
+    PALETTE --> PPROJECT["Open project"]:::group
+    PALETTE --> PMEM["Memory and file search"]:::group
+    PALETTE --> PSET["Settings search"]:::group
+    PALETTE --> PCMD["Slash commands"]:::group
+    PALETTE --> PSALEM["Ask Salem fallback"]:::group
+
+    UI --> FSWITCH["Familiar switcher"]:::menu
+    FSWITCH --> FALL["All familiars / multi-select scope"]:::group
+    FSWITCH --> FPRESENCE["Presence · sessions · reply badges"]:::group
+    FSWITCH --> FCREATE["Create / manage / reorder familiars"]:::route
+
+    UI --> NOTIFY["Notification bell"]:::menu
+    NOTIFY --> NROWS["Unread / active notification rows"]:::group
+    NOTIFY --> NACT["Mark read · Clear all · Open Rituals"]:::action
+    NOTIFY --> NPREF["Sound<br/>Quiet kinds<br/>Muted familiars"]:::submenu
+
+    UI --> QUICK["Quick chat · ⌘J"]:::overlay
+    UI --> SHORTCUTS["Keyboard shortcuts sheet · ⌘/"]:::overlay
+    UI --> ONBOARD["Onboarding overlay"]:::overlay
+    UI --> REMINDER["New / edit reminder modal"]:::overlay
+    UI --> PHONE["Mobile handoff modal"]:::overlay
+    UI --> GLYPH["Familiar glyph picker"]:::overlay
+    UI --> TOASTS["Inbox / undo / status toasts"]:::overlay
+  end
+
+  subgraph CHATMENUS["Chat navigation and menus"]
+    direction LR
+    UI --> CHATNAV["Chat sidebar"]:::menu
+    CHATNAV --> CORG["Organize sidebar"]:::submenu
+    CORG --> CRECENT["Recent chats"]:::group
+    CORG --> CPROJECT["By project"]:::group
+    CHATNAV --> CQUICK["New chat · Scheduled · Plugins"]:::action
+    CHATNAV --> CROW["Session context menu"]:::submenu
+    CROW --> COPEN["Open · Open in split"]:::action
+    CROW --> CTRANS["Rename · Move to project"]:::action
+    CROW --> CDEBUG["Inspect · Changes / Git"]:::action
+    CROW --> CDELETE["Delete"]:::danger
+    UI --> CODERAIL["Code rail sheet / panel"]:::panel
+    CODERAIL --> CRFULL["Pin · Fullscreen · Collapse"]:::action
+    CODERAIL --> CRTABS["Changes · Files · Terminal"]:::group
+  end
+
+  subgraph SURFACEMENUS["Surface-level progressive disclosure"]
+    direction LR
+    UI --> BOARDMENU["Tasks · More task actions"]:::submenu
+    BOARDMENU --> BMULTI["Select multiple"]:::action
+    BOARDMENU --> BCLEAR["Clear done → inline confirm"]:::danger
+    UI --> PROJECTMENU["Project options"]:::submenu
+    PROJECTMENU --> PEDIT["Rename · Edit folder"]:::action
+    PROJECTMENU --> PICON["Upload / generate / remove image"]:::action
+    PROJECTMENU --> PPATH["Copy path · Reveal folder · Browse files"]:::action
+    PROJECTMENU --> PCOLOR["Color submenu"]:::submenu
+    PROJECTMENU --> PDELETE["Delete project"]:::danger
+    UI --> FAMILIARMENU["Familiar options"]:::submenu
+    FAMILIARMENU --> FEDIT["Edit in Studio"]:::route
+    FAMILIARMENU --> FREMOVE["Remove → Lifecycle tab"]:::danger
+    UI --> GHMENU["GitHub · More options"]:::submenu
+    GHMENU --> GHGRP["No grouping · Group by org · Group by repo"]:::group
+    GHMENU --> GHPAT["Manage GitHub PAT"]:::overlay
+    UI --> CALMENU["Calendar +N more events"]:::submenu
+    CALMENU --> CALDAY["Open event / jump to day"]:::action
+    UI --> HOMECOMP["Composer options"]:::submenu
+    HOMECOMP --> HDEST["Destination · familiar · project"]:::group
+    HOMECOMP --> HSAVE["Save as template"]:::action
+    HOMECOMP --> HSLASH["Inline /command menus<br/>/model · /skill · /prompt"]:::submenu
+  end
+
+  subgraph DETAIL["Drawers, inspectors, and focused dialogs"]
+    direction LR
+    UI --> TASKINSPECT["Task inspector / editor"]:::panel
+    UI --> CRONINSPECT["Cron detail / run history"]:::panel
+    UI --> GHDETAIL["GitHub item detail"]:::panel
+    UI --> MARKETDETAIL["Marketplace plugin detail / configure"]:::panel
+    UI --> CRAFTDRAWER["Craft create / edit drawer"]:::overlay
+    UI --> SKILLDRAWER["Skill detail drawer"]:::overlay
+    UI --> STITCH["Stitch intake"]:::overlay
+    UI --> TRACE["Session trace overlay"]:::overlay
+    UI --> BROWSERSPLIT["Browser / Salem / Memory split companions"]:::panel
+  end
+
+  classDef entry fill:#a46bea,stroke:#e5d0ff,color:#160d22,stroke-width:3px;
+  classDef launcher fill:#3b2e1c,stroke:#e3ba6a,color:#fff6df,stroke-width:2px;
+  classDef menu fill:#382448,stroke:#c6a1ed,color:#fbf7ff,stroke-width:2px;
+  classDef submenu fill:#2f2539,stroke:#b792d9,color:#f7efff;
+  classDef overlay fill:#3c272f,stroke:#e190ad,color:#fff0f5,stroke-dasharray:5 3;
+  classDef panel fill:#202a37,stroke:#7596bd,color:#eff6ff;
+  classDef group fill:#292330,stroke:#786789,color:#f0e9f8;
+  classDef action fill:#19312d,stroke:#66c7aa,color:#effff9;
+  classDef route fill:#30253b,stroke:#db8fff,color:#f9edff,stroke-dasharray:5 4;
+  classDef danger fill:#3c2228,stroke:#e06d88,color:#ffeef2,stroke-width:2px;

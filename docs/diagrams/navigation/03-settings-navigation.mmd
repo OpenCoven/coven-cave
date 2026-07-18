@@ -1,0 +1,94 @@
+%% CovenCave Settings information architecture
+%% Sources: src/components/settings-sections.ts, settings-shell.tsx,
+%% familiar-studio-inline.tsx
+%% Regenerated from main@bcf9f8bdbcb1 (2026-07-18) — final IA for issue #3283.
+%%{init: {
+  "theme": "base",
+  "flowchart": { "curve": "basis", "nodeSpacing": 30, "rankSpacing": 66, "padding": 14 },
+  "themeVariables": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "fontSize": "16px",
+    "primaryColor": "#241b31",
+    "primaryTextColor": "#f7f2ff",
+    "primaryBorderColor": "#b995e8",
+    "lineColor": "#927db1",
+    "clusterBkg": "#120f19",
+    "clusterBorder": "#5f4a78",
+    "edgeLabelBackground": "#120f19"
+  }
+}}%%
+flowchart LR
+  SETTINGS(["Settings · /settings"]):::entry --> SEARCH["Search settings<br/>jumps to section + group or Studio tab"]:::launcher
+  SETTINGS --> NAV{Section navigation}:::decision
+
+  NAV --> PROFILE["Profile"]:::section
+  PROFILE --> PIDENTITY["Identity<br/>display name · pronouns"]:::group
+  PROFILE --> PIMAGE["Image<br/>profile avatar"]:::group
+  PROFILE --> PDETAILS["Details<br/>bio · timezone"]:::group
+  PROFILE --> PLINKS["Links<br/>GitHub · socials · website"]:::group
+
+  NAV --> GENERAL["General"]:::section
+  GENERAL --> GWORK["Workspace<br/>workspace path"]:::group
+  GENERAL --> GHOME["Home<br/>news headlines"]:::group
+  GENERAL --> GCHAT["Chat<br/>stop phrase"]:::group
+  GENERAL --> GBACKUP["Backup<br/>encrypted export · restore"]:::group
+  GENERAL --> GSTART["Startup<br/>launch at login · open to"]:::group
+
+  NAV --> DAEMON["Daemon"]:::section
+  DAEMON --> DSTATUS["Status<br/>health · start / stop / restart"]:::group
+  DAEMON --> DCONN["Connection<br/>local / hub · executors · travel"]:::group
+  DAEMON --> DINFO["Info<br/>version · socket · PID · API"]:::group
+
+  NAV --> FAMILIARS["Familiars"]:::section
+  FAMILIARS --> ROSTER["Familiar roster / selector"]:::panel
+  ROSTER --> STUDIO{Familiar Studio tabs}:::decision
+  STUDIO --> SIDENTITY["Identity<br/>name · role · pronouns · description"]:::tab
+  STUDIO --> SLOOK["Look<br/>avatar · glyph · accent · backdrop"]:::tab
+  STUDIO --> SBRAIN["Brain<br/>runtime · model · voice<br/>prompt · capabilities"]:::tab
+  STUDIO --> SLIFE["Lifecycle<br/>archive · reorder · reset · remove"]:::tab
+  STUDIO --> SMEMORY["Memory<br/>memories · daily notes · recall"]:::tab
+  STUDIO --> SJOURNAL["Journal<br/>daily reflections · generation"]:::tab
+  STUDIO --> SPROJECTS["Projects<br/>access grants · allow / deny<br/>read / write policy"]:::tab
+  STUDIO --> SVAULT["Vault<br/>secrets · environment · credentials"]:::tab
+  FAMILIARS --> ACCESS["Access groups<br/>memberships · shared project grants"]:::group
+  FAMILIARS --> SUMMON["Summoning / enhancement circle"]:::overlay
+
+  NAV --> PHONE["Phone"]:::section
+  PHONE --> PSTEPS["Steps<br/>mobile mode · pair · QR · Tailscale"]:::group
+  PHONE --> PSECURITY["Why there is no password<br/>network trust model"]:::group
+  PHONE --> PAPP["Get the app<br/>native iOS · TestFlight"]:::group
+
+  NAV --> APPEAR["Appearance"]:::section
+  APPEAR --> ATABS{Appearance tabs}:::decision
+  ATABS --> ATHEME["Theme"]:::tab
+  ATHEME --> AMODE["Mode<br/>Dark · Light · System"]:::group
+  ATHEME --> APALETTE["Theme preset / custom theme"]:::group
+  ATHEME --> AIMPORT["Import from tweakcn"]:::group
+  ATHEME --> ABACKDROP["Backdrop"]:::group
+  ATABS --> ACOLORS["Colors"]:::tab
+  ACOLORS --> ATOKENS["Theme tokens<br/>custom picker · recent colors"]:::group
+  ATABS --> ATYPE["Typography"]:::tab
+  ATYPE --> AFONTS["Interface · code · terminal fonts"]:::group
+  ATYPE --> AREADING["Reading text<br/>family · size · leading · weight"]:::group
+  ATABS --> AINTERFACE["Interface"]:::tab
+  AINTERFACE --> ASWITCHER["Familiar switcher style"]:::group
+  AINTERFACE --> ACORNERS["Corner radius"]:::group
+  AINTERFACE --> ADATETIME["Date & time<br/>format · relative timestamps"]:::group
+
+  NAV --> ABOUT["About"]:::section
+  ABOUT --> ACAVE["CovenCave<br/>app version · build"]:::group
+  ABOUT --> ATOOLS["OpenCoven tools<br/>status · updates"]:::group
+  ABOUT --> ALINKS["Project links<br/>GitHub · Docs · X · Discord<br/>Grimoire · Podcast"]:::group
+
+  SETTINGS -. "mobile" .-> PICKER["Full-screen section picker<br/>section → content → Back"]:::conditional
+  SETTINGS -. "desktop" .-> SIDEBYSIDE["200px section rail + content<br/>↑↓ changes section · Esc back"]:::conditional
+
+  classDef entry fill:#a46bea,stroke:#e5d0ff,color:#160d22,stroke-width:3px;
+  classDef launcher fill:#3b2e1c,stroke:#e3ba6a,color:#fff6df,stroke-width:2px;
+  classDef decision fill:#3a2d1b,stroke:#e3ba6a,color:#fff4d6,stroke-width:2px;
+  classDef section fill:#241b31,stroke:#bd96eb,color:#f8f3ff,stroke-width:3px;
+  classDef group fill:#202a37,stroke:#7596bd,color:#eff6ff;
+  classDef tab fill:#17332d,stroke:#69d6a6,color:#effff9,stroke-width:2px;
+  classDef panel fill:#31233c,stroke:#c490ec,color:#f8edff;
+  classDef overlay fill:#3c272f,stroke:#e190ad,color:#fff0f5,stroke-dasharray:5 3;
+  classDef conditional fill:#30253b,stroke:#db8fff,color:#f9edff,stroke-dasharray:5 4;
