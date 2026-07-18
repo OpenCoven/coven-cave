@@ -25,12 +25,10 @@ const FRAYED_STRAND = "bbbbbbb2-0002-4002-8002-000000000001";
 const PROPOSAL_OK = "cccccccc-0001-4001-8001-000000000001";
 
 const tempRoot = path.join(process.cwd(), "artifacts", "test-tmp", `threads-adapters-${process.pid}`);
-const tempDirs: string[] = [];
 let tempCounter = 0;
 function tempDir(prefix: string): string {
   const dir = path.join(tempRoot, `${prefix}${++tempCounter}`);
   mkdirSync(dir, { recursive: true });
-  tempDirs.push(dir);
   return dir;
 }
 after(() => {
