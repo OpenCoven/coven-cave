@@ -11,7 +11,12 @@ import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
-import { isWorkspaceMode, type WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
+import {
+  isWorkspaceMode,
+  resolveWorkspaceModeAlias,
+  type CanonicalWorkspaceMode,
+  type WorkspaceMode as WorkspaceModeFromDaemon,
+} from "@/lib/workspace-mode";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -178,6 +183,10 @@ function splitTargetKey(target: SplitTarget): string {
 
 function splitTargetTitle(target: SplitTarget): string {
   return target.kind === "page" ? WORKSPACE_MODE_TITLES[target.mode] : SPLIT_COMPANION_TITLES[target.kind];
+}
+
+function splitTargetRendersMode(target: SplitTarget, mode: CanonicalWorkspaceMode): boolean {
+  return target.kind === "page" && resolveWorkspaceModeAlias(target.mode) === mode;
 }
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
@@ -505,6 +514,10 @@ export function Workspace() {
   const [splitTargets, setSplitTargets] = useState<SplitTarget[]>([]);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
   const addSplitTarget = useCallback((target: SplitTarget, side: "left" | "right" = "right") => {
+    if (chatProjectBlockedRef.current && splitTargetRendersMode(target, "chat")) {
+      setMode("home");
+      return;
+    }
     setSplitSide(side);
     setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, splitTargetKey));
   }, []);
@@ -2142,8 +2155,8 @@ export function Workspace() {
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
-      if (!m || m === mode) return;
-      addSplitTarget({ kind: "page", mode: m as WorkspaceMode }, side);
+      if (!m || m === mode || !isWorkspaceMode(m)) return;
+      addSplitTarget({ kind: "page", mode: m }, side);
     },
     [addSplitTarget, mode],
   );
@@ -2423,6 +2436,14 @@ export function Workspace() {
   });
   const chatProjectBlockedRef = useRef(chatProjectBlocked);
   chatProjectBlockedRef.current = chatProjectBlocked;
+
+  useEffect(() => {
+    if (!chatProjectBlocked) return;
+    setSplitTargets((prev) => {
+      const next = prev.filter((target) => !splitTargetRendersMode(target, "chat"));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [chatProjectBlocked]);
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
