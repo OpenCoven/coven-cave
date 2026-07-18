@@ -18,13 +18,6 @@ function fetchProjects(
   return fetchProjectsFromCache(familiarId, opts);
 }
 
-// A mutation on any project invalidates EVERY scope: creates/renames/deletes
-// change the unscoped list and any familiar-scoped list that includes (or
-// gains) the project, and per-scope bookkeeping isn't worth it at this TTL.
-function invalidateProjectsCache(): void {
-  clearProjectsCache();
-}
-
 /** Test-only: drop the module-level cache between cases. */
 export function resetProjectsCacheForTests(): void {
   clearProjectsCache();
@@ -109,7 +102,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
 
   useEffect(() => {
     if (!enabled) return;
-    return subscribeProjectRegistryReload(() => load({ force: true }));
+    return subscribeProjectRegistryReload(() => load());
   }, [enabled, load]);
 
   // Post-mutation refresh: bypass the microcache so callers always see the
@@ -119,7 +112,6 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   }, [load]);
 
   const applyCreatedProject = useCallback((project: CaveProject): CaveProject => {
-    invalidateProjectsCache();
     setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
     emitProjectRegistryMutation();
     return project;
@@ -167,7 +159,6 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -185,7 +176,6 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -203,7 +193,6 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -217,7 +206,6 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
-      invalidateProjectsCache();
       setProjects((prev) => prev.filter((project) => project.id !== id));
       emitProjectRegistryMutation();
       return true;

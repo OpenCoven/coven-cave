@@ -137,7 +137,10 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
-import { resolveLoadedActiveFamiliarId } from "@/lib/active-familiar";
+import {
+  resolveLoadedActiveFamiliarId,
+  resolveWorkspaceActiveFamiliarId,
+} from "@/lib/active-familiar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -308,7 +311,12 @@ export function Workspace() {
     () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
     [familiars, archivedFamiliars],
   );
-  const activeId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
+  // false until the first /api/familiars fetch settles (success or error) —
+  // lets the chat boot view hold a quiet frame instead of flashing the
+  // "choose a familiar" empty-state copy while the roster is in flight.
+  const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
+  const loadedActiveId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
+  const activeId = resolveWorkspaceActiveFamiliarId(requestedActiveId, visibleFamiliars, familiarsLoaded);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -318,10 +326,6 @@ export function Workspace() {
     createProjectOrThrow,
   } = useProjects();
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
-  // false until the first /api/familiars fetch settles (success or error) —
-  // lets the chat boot view hold a quiet frame instead of flashing the
-  // "choose a familiar" empty-state copy while the roster is in flight.
-  const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
@@ -744,9 +748,14 @@ export function Workspace() {
   }, [scopeIds, activeFamiliarHydrated]);
 
   useEffect(() => {
-    if (!activeFamiliarHydrated || requestedActiveId === null || requestedActiveId === activeId) return;
-    setScopeIds(activeId ? new Set([activeId]) : new Set());
-  }, [activeFamiliarHydrated, requestedActiveId, activeId]);
+    if (
+      !activeFamiliarHydrated
+      || !familiarsLoaded
+      || requestedActiveId === null
+      || requestedActiveId === loadedActiveId
+    ) return;
+    setScopeIds(loadedActiveId ? new Set([loadedActiveId]) : new Set());
+  }, [activeFamiliarHydrated, familiarsLoaded, requestedActiveId, loadedActiveId]);
 
   useEffect(() => {
     // Salem was re-homed from the (removed) right rail into the drag-to-split

@@ -167,13 +167,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{ resolveLoadedActiveFamiliarId \} from "@\/lib\/active-familiar";[\s\S]*const activeId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);/,
-  "single-familiar surfaces only consume a loaded non-archived familiar id, with a first-visible fallback for stale persisted ids",
+  /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(requestedActiveId, visibleFamiliars, familiarsLoaded\);/,
+  "workspace keeps the requested familiar through roster hydration and only consumes the loaded fallback once familiars have resolved",
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*if \(!activeFamiliarHydrated \|\| requestedActiveId === null \|\| requestedActiveId === activeId\) return;\s*setScopeIds\(activeId \? new Set\(\[activeId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, requestedActiveId, activeId\]\);/,
-  "Workspace heals a stale persisted single-familiar selection back to the loaded fallback after hydration",
+  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, requestedActiveId, loadedActiveId\]\);/,
+  "Workspace only heals and persists a stale single-familiar selection after the async roster has loaded",
 );
 assert.match(
   workspace,

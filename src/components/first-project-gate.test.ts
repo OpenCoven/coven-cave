@@ -55,7 +55,7 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
   assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
   assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
-  assert.match(src, /import \{ resolveLoadedActiveFamiliarId \} from "@\/lib\/active-familiar";/, "workspace uses the loaded-active familiar helper for stale persisted ids");
+  assert.match(src, /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";/, "workspace uses the familiar hydration helpers for stale persisted ids");
   assert.match(
     src,
     /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,

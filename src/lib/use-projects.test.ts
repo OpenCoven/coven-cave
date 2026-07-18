@@ -38,12 +38,28 @@ assert.doesNotMatch(
 
 // cave-v8hh: GET /api/projects is deduped through a module-level microcache —
 // the hook's 8+ consumers used to fire one identical request each on a surface
-// mount. Mutations must drop the cache (every scope) so no consumer can be
-// served a pre-mutation list, and reload() must bypass it.
+// mount. Mutations advance the shared cache generation exactly once so every
+// subscriber re-reads through the same deduped generation, and reload() still
+// bypasses the current generation entry.
 assert.match(
   cacheSource,
   /projectsCache\.get\(key, \(\) => requestProjects\(familiarId\)\)/,
   "loads go through the shared projects microcache",
+);
+assert.match(
+  cacheSource,
+  /let projectsGeneration = 0;/,
+  "the cache tracks a shared generation across scopes",
+);
+assert.match(
+  cacheSource,
+  /function generationKey\(familiarId: string \| null\): string \{\s*return `\$\{projectsGeneration\}:\$\{familiarId \?\? ""\}`;\s*\}/,
+  "cache keys are partitioned by the shared mutation generation and the familiar scope",
+);
+assert.match(
+  cacheSource,
+  /export function advanceProjectsCacheGeneration\(\): number \{\s*projectsGeneration \+= 1;\s*projectsCache\.clear\(\);\s*return projectsGeneration;\s*\}/,
+  "one shared generation advance clears old entries once per emitted mutation",
 );
 assert.match(
   cacheSource,
@@ -61,19 +77,14 @@ assert.match(
   "reload() bypasses the microcache",
 );
 assert.equal(
-  (source.match(/invalidateProjectsCache\(\);/g) ?? []).length,
-  5,
-  "all five mutations (create/rename/updateRoot/updateColor/delete) invalidate the cache",
-);
-assert.equal(
   (source.match(/emitProjectRegistryMutation\(\);/g) ?? []).length,
   5,
   "all five successful mutations notify every mounted projects hook scope",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*if \(!enabled\) return;\s*return subscribeProjectRegistryReload\(\(\) => load\(\{ force: true \}\)\);\s*\}, \[enabled, load\]\);/,
-  "each enabled hook instance subscribes to shared project-registry notifications and force-reloads its own scope",
+  /useEffect\(\(\) => \{\s*if \(!enabled\) return;\s*return subscribeProjectRegistryReload\(\(\) => load\(\)\);\s*\}, \[enabled, load\]\);/,
+  "each enabled hook instance subscribes to shared project-registry notifications and re-reads through the new shared generation",
 );
 
 assert.match(
@@ -84,8 +95,8 @@ assert.match(
 
 assert.match(
   source,
-  /const applyCreatedProject = useCallback\(\(project: CaveProject\): CaveProject => \{[\s\S]*invalidateProjectsCache\(\);[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*return project;/,
-  "successful project creation shares one cache-invalidating local-state update path",
+  /const applyCreatedProject = useCallback\(\(project: CaveProject\): CaveProject => \{[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*emitProjectRegistryMutation\(\);[\s\S]*return project;/,
+  "successful project creation shares one local-state path that fans out through the shared mutation event",
 );
 
 assert.match(

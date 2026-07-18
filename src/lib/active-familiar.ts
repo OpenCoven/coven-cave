@@ -15,3 +15,19 @@ export function resolveLoadedActiveFamiliarId(
     ? activeId
     : familiars[0]?.id ?? null;
 }
+
+/**
+ * Workspace boot restores the persisted familiar scope before the async roster
+ * has loaded. Keep that requested id intact through the initial empty roster so
+ * a valid persisted familiar survives hydration; only once the roster has
+ * loaded may the selection heal to the loaded fallback.
+ */
+export function resolveWorkspaceActiveFamiliarId(
+  activeId: string | null,
+  familiars: readonly Pick<Familiar, "id">[],
+  familiarsLoaded: boolean,
+): string | null {
+  return familiarsLoaded
+    ? resolveLoadedActiveFamiliarId(activeId, familiars)
+    : activeId;
+}

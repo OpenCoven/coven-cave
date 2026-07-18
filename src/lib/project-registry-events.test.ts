@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   emitProjectRegistryMutation,
+  getProjectRegistryMutationGenerationForTests,
   resetProjectRegistryListenersForTests,
   subscribeProjectRegistryMutation,
   subscribeProjectRegistryReload,
@@ -11,6 +12,7 @@ import {
 test("project registry listeners unsubscribe cleanly and fan out over a copied set", () => {
   resetProjectRegistryListenersForTests();
   const calls: string[] = [];
+  const startGeneration = getProjectRegistryMutationGenerationForTests();
 
   let unsubscribeSecond = () => {};
   let addedLate = false;
@@ -33,6 +35,11 @@ test("project registry listeners unsubscribe cleanly and fan out over a copied s
   });
 
   emitProjectRegistryMutation();
+  assert.equal(
+    getProjectRegistryMutationGenerationForTests(),
+    startGeneration + 1,
+    "one emitted mutation advances the shared project generation exactly once",
+  );
   assert.deepEqual(
     calls,
     ["first", "second", "third"],
@@ -42,6 +49,11 @@ test("project registry listeners unsubscribe cleanly and fan out over a copied s
   calls.length = 0;
   unsubscribeThird();
   emitProjectRegistryMutation();
+  assert.equal(
+    getProjectRegistryMutationGenerationForTests(),
+    startGeneration + 2,
+    "later mutations keep advancing the shared project generation one step at a time",
+  );
   assert.deepEqual(calls, ["first", "late"], "later emissions reflect the updated subscriber set");
   resetProjectRegistryListenersForTests();
 });
