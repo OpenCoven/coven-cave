@@ -209,4 +209,70 @@ assert.equal(compatibilityCache["cave:font:sans"], "source-sans-3");
 assert.equal(compatibilityCache["cave:datetime-clock"], "24h");
 assert.equal(Object.keys(compatibilityCache).some((key) => /token|secret|credential/i.test(key)), false);
 
+// ── appearance.backdrop.familiars (cave-kf8p) ────────────────────────────────
+// Per-familiar backdrop enablement: id → explicit boolean. Absent id = default
+// rule (image presence) applied client-side; the schema only stores explicit
+// choices.
+assert.deepEqual(
+  createDefaultPreferences(false).appearance.backdrop.familiars,
+  {},
+  "defaults carry an empty familiars map",
+);
+
+const familiarsNormalized = normalizeCavePreferences({
+  appearance: {
+    backdrop: {
+      familiars: {
+        "fam-a": true,
+        "fam-b": false,
+        "fam-junk": "yes",
+        "": true,
+      },
+    },
+  },
+});
+assert.deepEqual(
+  familiarsNormalized.appearance.backdrop.familiars,
+  { "fam-a": true, "fam-b": false },
+  "normalize keeps boolean entries with non-empty ids and drops junk",
+);
+assert.deepEqual(
+  normalizeCavePreferences({ appearance: { backdrop: { familiars: ["fam-a"] } } })
+    .appearance.backdrop.familiars,
+  {},
+  "a non-record familiars value collapses to the empty map",
+);
+
+const familiarsPatch = validatePreferencesPatch({
+  appearance: { backdrop: { familiars: { "fam-a": true, "fam-b": false } } },
+});
+assert.deepEqual(
+  familiarsPatch.appearance?.backdrop?.familiars,
+  { "fam-a": true, "fam-b": false },
+  "the strict validator accepts an id → boolean map",
+);
+for (const invalidFamiliars of [
+  { appearance: { backdrop: { familiars: { "fam-a": "yes" } } } },
+  { appearance: { backdrop: { familiars: { "": true } } } },
+  { appearance: { backdrop: { familiars: ["fam-a"] } } },
+]) {
+  assert.throws(
+    () => validatePreferencesPatch(invalidFamiliars),
+    PreferencesValidationError,
+    "the strict validator rejects non-boolean entries, empty ids, and non-records",
+  );
+}
+
+const familiarsApplied = applyPreferencesPatch(
+  applyPreferencesPatch(createDefaultPreferences(true), {
+    appearance: { backdrop: { familiars: { "fam-a": true, "fam-b": false } } },
+  }),
+  { appearance: { backdrop: { familiars: { "fam-a": false } } } },
+);
+assert.deepEqual(
+  familiarsApplied.appearance.backdrop.familiars,
+  { "fam-a": false },
+  "a patch replaces the whole familiars map (writers always send the full map)",
+);
+
 console.log("preferences-schema.test.ts: ok");

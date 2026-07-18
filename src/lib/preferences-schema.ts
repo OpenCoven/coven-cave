@@ -71,6 +71,8 @@ export type CaveBackdropPreferences = {
   intensity: number;
   matchAccent: boolean;
   accentSeed: CaveBackdropAccentSeed | null;
+  /** Explicit per-familiar enablement (cave-kf8p); absent id = image-presence default. */
+  familiars: Record<string, boolean>;
   image: CaveBackdropImageMetadata;
 };
 
@@ -169,6 +171,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         intensity: 50,
         matchAccent: true,
         accentSeed: null,
+        familiars: {},
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
@@ -298,6 +301,15 @@ function normalizeAccentSeed(input: unknown): CaveBackdropAccentSeed | null {
   return { L, a, b };
 }
 
+function normalizeFamiliarBackdrops(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== "" && typeof entry === "boolean") out[key] = entry;
+  }
+  return out;
+}
+
 export function normalizeCavePreferences(input: unknown): CavePreferences {
   const source = record(input);
   const appearance = record(source.appearance);
@@ -372,6 +384,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
           ? Math.min(100, Math.max(0, backdrop.intensity)) : 50,
         matchAccent: backdrop.matchAccent !== false,
         accentSeed: normalizeAccentSeed(backdrop.accentSeed),
+        familiars: normalizeFamiliarBackdrops(backdrop.familiars),
         image: {
           present: image.present === true,
           mime: imageMime,
@@ -565,7 +578,7 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     if (Object.hasOwn(appearance, "backdrop")) {
       const backdrop = strictRecord(appearance.backdrop, "appearance.backdrop");
-      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "image"], "appearance.backdrop");
+      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "familiars", "image"], "appearance.backdrop");
       const backdropPatch: NonNullable<typeof next.backdrop> = {};
       if (Object.hasOwn(backdrop, "enabled")) backdropPatch.enabled = strictBoolean(backdrop.enabled, "appearance.backdrop.enabled");
       if (Object.hasOwn(backdrop, "intensity")) {
@@ -576,6 +589,15 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       }
       if (Object.hasOwn(backdrop, "matchAccent")) backdropPatch.matchAccent = strictBoolean(backdrop.matchAccent, "appearance.backdrop.matchAccent");
       if (Object.hasOwn(backdrop, "accentSeed")) backdropPatch.accentSeed = strictAccentSeed(backdrop.accentSeed, "appearance.backdrop.accentSeed");
+      if (Object.hasOwn(backdrop, "familiars")) {
+        const familiars = strictRecord(backdrop.familiars, "appearance.backdrop.familiars");
+        const map: Record<string, boolean> = {};
+        for (const [key, entry] of Object.entries(familiars)) {
+          if (key === "") fail("appearance.backdrop.familiars", "keys must be non-empty familiar ids");
+          map[key] = strictBoolean(entry, `appearance.backdrop.familiars.${key}`);
+        }
+        backdropPatch.familiars = map;
+      }
       if (Object.hasOwn(backdrop, "image")) {
         const image = strictRecord(backdrop.image, "appearance.backdrop.image");
         assertAllowedKeys(image, ["present", "mime", "updatedAt"], "appearance.backdrop.image");
