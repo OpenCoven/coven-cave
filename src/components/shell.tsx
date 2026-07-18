@@ -503,6 +503,7 @@ function ShellInner({
   const navPrefArmedGroupRef = useRef<string | null>(null);
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   useLayoutEffect(() => {
+    if (!mounted) return;
     if (navPolicy !== "visit-collapsed") {
       previousNavPolicyRef.current = navPolicy;
       return;
@@ -516,7 +517,7 @@ function ShellInner({
       setNavOpen(false);
     }
     previousNavPolicyRef.current = navPolicy;
-  }, [groupId, navPolicy]);
+  }, [mounted, groupId, navPolicy]);
   useEffect(() => {
     if (navPolicy !== "remembered") {
       navPrefArmedGroupRef.current = null;

@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
+const compactWhitespace = (input: string) => input.replace(/\s+/g, " ").trim();
 
 assert.match(
   shell,
@@ -58,10 +59,34 @@ assert.match(
   "the effect arms preference writes for the settled group",
 );
 
-assert.match(
-  shell,
-  /const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?useLayoutEffect\(\(\) => \{[\s\S]*?if \(navPolicy !== "visit-collapsed"\) \{[\s\S]*?previousNavPolicyRef\.current = navPolicy;[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(\s*previousNavPolicyRef\.current !== navPolicy\s*\|\|\s*navPrefArmedGroupRef\.current !== groupId\s*\) \{[\s\S]*?navPrefArmedGroupRef\.current = null;[\s\S]*?navRef\.current\?\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?\}[\s\S]*?previousNavPolicyRef\.current = navPolicy;[\s\S]*?\}, \[groupId, navPolicy\]\);/,
-  "entering visit-collapsed collapses once per visit and clears the armed group",
+const visitCollapseEffect =
+  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, navPolicy\]\);/)?.[0] ?? "";
+assert.ok(
+  visitCollapseEffect.length > 0,
+  "the visit-collapsed layout effect reruns after the real nav panel mounts",
+);
+assert.equal(
+  compactWhitespace(visitCollapseEffect),
+  compactWhitespace(`
+    const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+    useLayoutEffect(() => {
+      if (!mounted) return;
+      if (navPolicy !== "visit-collapsed") {
+        previousNavPolicyRef.current = navPolicy;
+        return;
+      }
+      if (
+        previousNavPolicyRef.current !== navPolicy ||
+        navPrefArmedGroupRef.current !== groupId
+      ) {
+        navPrefArmedGroupRef.current = null;
+        navRef.current?.collapse();
+        setNavOpen(false);
+      }
+      previousNavPolicyRef.current = navPolicy;
+    }, [mounted, groupId, navPolicy]);
+  `),
+  "entering visit-collapsed collapses once per visit only after mount, while preserving the armed-group reset",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
