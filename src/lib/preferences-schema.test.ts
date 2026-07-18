@@ -209,4 +209,133 @@ assert.equal(compatibilityCache["cave:font:sans"], "source-sans-3");
 assert.equal(compatibilityCache["cave:datetime-clock"], "24h");
 assert.equal(Object.keys(compatibilityCache).some((key) => /token|secret|credential/i.test(key)), false);
 
+// ── appearance.backdrop.familiars (cave-kf8p) ────────────────────────────────
+// Per-familiar backdrop enablement: id → explicit boolean. Absent id = default
+// rule (image presence) applied client-side; the schema only stores explicit
+// choices.
+assert.deepEqual(
+  createDefaultPreferences(false).appearance.backdrop.familiars,
+  {},
+  "defaults carry an empty familiars map",
+);
+
+const familiarsNormalized = normalizeCavePreferences({
+  appearance: {
+    backdrop: {
+      familiars: {
+        "fam-a": true,
+        "fam-b": false,
+        "fam-junk": "yes",
+        "": true,
+      },
+    },
+  },
+});
+assert.deepEqual(
+  familiarsNormalized.appearance.backdrop.familiars,
+  { "fam-a": true, "fam-b": false },
+  "normalize keeps boolean entries with non-empty ids and drops junk",
+);
+assert.deepEqual(
+  normalizeCavePreferences({ appearance: { backdrop: { familiars: ["fam-a"] } } })
+    .appearance.backdrop.familiars,
+  {},
+  "a non-record familiars value collapses to the empty map",
+);
+
+const familiarsPatch = validatePreferencesPatch({
+  appearance: { backdrop: { familiars: { "fam-a": true, "fam-b": false } } },
+});
+assert.deepEqual(
+  familiarsPatch.appearance?.backdrop?.familiars,
+  { "fam-a": true, "fam-b": false },
+  "the strict validator accepts an id → boolean map",
+);
+for (const invalidFamiliars of [
+  { appearance: { backdrop: { familiars: { "fam-a": "yes" } } } },
+  { appearance: { backdrop: { familiars: { "": true } } } },
+  { appearance: { backdrop: { familiars: ["fam-a"] } } },
+]) {
+  assert.throws(
+    () => validatePreferencesPatch(invalidFamiliars),
+    PreferencesValidationError,
+    "the strict validator rejects non-boolean entries, empty ids, and non-records",
+  );
+}
+
+const familiarsApplied = applyPreferencesPatch(
+  applyPreferencesPatch(createDefaultPreferences(true), {
+    appearance: { backdrop: { familiars: { "fam-a": true, "fam-b": false } } },
+  }),
+  { appearance: { backdrop: { familiars: { "fam-a": false } } } },
+);
+assert.deepEqual(
+  familiarsApplied.appearance.backdrop.familiars,
+  { "fam-a": false },
+  "a patch replaces the whole familiars map (writers always send the full map)",
+);
+
+const familiarsCleared = applyPreferencesPatch(familiarsApplied, {
+  appearance: { backdrop: { familiars: {} } },
+});
+assert.deepEqual(
+  familiarsCleared.appearance.backdrop.familiars,
+  {},
+  "an explicit empty map clears every per-familiar override",
+);
+assert.ok(
+  familiarsCleared.revision > familiarsApplied.revision,
+  "clearing the map is a real write (revision bumps)",
+);
+
+const familiarsClearedAgain = applyPreferencesPatch(familiarsCleared, {
+  appearance: { backdrop: { familiars: {} } },
+});
+assert.equal(
+  familiarsClearedAgain.revision,
+  familiarsCleared.revision,
+  "clearing an already-empty map is a no-op (no revision bump)",
+);
+
+const oversizedFamiliars: Record<string, boolean> = {};
+for (let i = 0; i < 257; i += 1) oversizedFamiliars[`fam-${i}`] = true;
+assert.throws(
+  () => validatePreferencesPatch({ appearance: { backdrop: { familiars: oversizedFamiliars } } }),
+  PreferencesValidationError,
+  "the strict validator bounds the familiars map size",
+);
+assert.throws(
+  () => validatePreferencesPatch({
+    appearance: { backdrop: { familiars: { ["f".repeat(129)]: true } } },
+  }),
+  PreferencesValidationError,
+  "the strict validator bounds familiar id length",
+);
+assert.equal(
+  Object.keys(
+    normalizeCavePreferences({
+      appearance: { backdrop: { familiars: { ...oversizedFamiliars } } },
+    }).appearance.backdrop.familiars,
+  ).length,
+  256,
+  "normalize caps the familiars map instead of growing unbounded",
+);
+
+// "__proto__" can never be a slugged familiar id; JSON.parse creates it as a
+// real own key (an object literal would set the prototype instead).
+const protoKeyed = JSON.parse('{"__proto__": true, "fam-a": true}') as Record<string, boolean>;
+assert.deepEqual(
+  normalizeCavePreferences({ appearance: { backdrop: { familiars: protoKeyed } } })
+    .appearance.backdrop.familiars,
+  { "fam-a": true },
+  "normalize drops __proto__ keys instead of touching the prototype setter",
+);
+assert.throws(
+  () => validatePreferencesPatch({
+    appearance: { backdrop: { familiars: JSON.parse('{"__proto__": true}') } },
+  }),
+  PreferencesValidationError,
+  "the strict validator rejects __proto__ familiar keys",
+);
+
 console.log("preferences-schema.test.ts: ok");
