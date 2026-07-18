@@ -31,11 +31,11 @@ assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired
 // single row (no stacked mini-row), and the header hosts the familiar switcher.
 assert.doesNotMatch(workspaceSidebar, /cnav__mini-row/, "the stacked mini-row is retired — quick actions are one row");
 assert.match(workspaceSidebar, /aria-label=\{scheduledCount \? `Scheduled \(\$\{scheduledCount\}\)` : "Scheduled"\}/, "Scheduled shortcut is an icon chip with an accessible name");
-// The chat page's ONLY familiar control inside the Chats list panel: the global
-// nav stays SidebarMinimal, so this persistent desktop list / mobile drawer
-// hosts the labeled switcher (#2747, restored by cave-l3ay after #2750 briefly
-// removed it as a supposed duplicate). Non-chat pages use the sidenav header
-// switcher.
+// The Chats list header keeps a labeled familiar switcher near thread
+// navigation. The global nav stays SidebarMinimal, so chat intentionally keeps
+// this list-pane control even though the top bar and expanded nav may also show
+// familiar controls (#2747, restored by cave-l3ay after #2750 briefly removed
+// it as a supposed duplicate).
 assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
