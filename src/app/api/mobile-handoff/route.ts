@@ -4,6 +4,14 @@ import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
+  armMobileAccessSecret,
+  provisionMobileAccessSecret,
+  retireMobileAccessSecret,
+} from "@/lib/server/mobile-access-provision";
+import { signMobileAccessToken } from "@/lib/mobile-access-token";
+import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
+import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
+import {
   buildPairingSteps,
   classifyTailscaleSelf,
   createMobileInvite,
@@ -203,28 +211,80 @@ function mobileUnavailableResponse(
 }
 
 function mobileAccessUnavailableResponse() {
-  // Plain `next dev` never sets COVEN_CAVE_ACCESS_TOKEN, so neither signed
-  // invites nor persistent native-app Serve routes are safe to create. Give
-  // devs the exact next step instead of an opaque string; keep the terse
-  // message in packaged builds, where a missing token is a real
-  // misconfiguration rather than the dev default.
+  // With self-provisioning (cave-os73) this is reached only when minting or
+  // persisting the pairing secret failed in dev, or when a packaged build is
+  // missing its Tauri-supplied token — a real misconfiguration, kept terse.
   const error =
     process.env.NODE_ENV !== "production"
-      ? "Mobile handoff isn't available in plain `pnpm dev` — it needs the signed access token that the packaged app and `pnpm mobile:tailscale` set up. Run `pnpm mobile:tailscale` (or open the packaged app), then use Open on phone from that session."
+      ? "Couldn't set up phone pairing automatically (the pairing secret could not be provisioned). Retry, or run `pnpm mobile:tailscale` and pair from that session."
       : "mobile access token unavailable";
   return mobileUnavailableResponse(error, {
     steps: buildPairingSteps({ access: { ok: false, detail: error } }),
   });
 }
 
+/**
+ * Resolve the pairing secret, provisioning one on the fly for a tokenless
+ * dev server (cave-os73). Arms the in-process gate immediately so the
+ * Tailscale Serve route this request is about to publish is token-gated from
+ * the moment it exists. Returns the secret plus whether THIS request
+ * provisioned it — the response then hands the requesting browser a signed
+ * cookie so the freshly armed gate never locks out the session that turned
+ * pairing on.
+ */
+function resolveMobileAccessSecret(): { secret: string; provisioned: boolean } | null {
+  const existing = mobileAccessSecret();
+  if (existing) return { secret: existing, provisioned: false };
+  const provisioned = provisionMobileAccessSecret();
+  if (!provisioned) return null;
+  armMobileAccessSecret(provisioned);
+  return { secret: provisioned, provisioned: true };
+}
+
+/** Install the freshly provisioned session credential on whatever response
+ *  goes out — success or failure — so the dev browser that just armed the
+ *  gate keeps working without a reload or manual token entry. */
+async function withBrowserAccessCookie(
+  res: NextResponse,
+  req: Request,
+  secret: string,
+): Promise<NextResponse> {
+  const expiresAt = Date.now() + appTokenTtlMs();
+  const token = await signMobileAccessToken({ secret, expiresAt });
+  let secure = false;
+  try {
+    secure = new URL(req.url).protocol === "https:";
+  } catch {
+    // Loopback dev is http; default stays false.
+  }
+  res.cookies.set(ACCESS_TOKEN_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: Math.max(1, Math.floor(appTokenTtlMs() / 1000)),
+  });
+  return res;
+}
+
 async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
-  if (!mobileAccessSecret()) {
+  const access = resolveMobileAccessSecret();
+  if (!access) {
     return mobileAccessUnavailableResponse();
   }
 
+  const res = await ensureNativeAppServeReady(req, chatId, access.secret);
+  return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
+}
+
+async function ensureNativeAppServeReady(
+  req: Request,
+  chatId: string | null | undefined,
+  accessSecret: string,
+) {
   const backend = nativeAppBackendUrl(req);
   const backendReady = await verifyNativeAppBackend(req, backend);
   if (!backendReady.ok) {
@@ -338,7 +398,7 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   if (!nativeTokenlessMode()) {
     const invite = await createMobileInvite({
       baseUrl: discovery.serveUrl,
-      accessSecret: mobileAccessSecret(),
+      accessSecret,
       sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
       ttlMs: MOBILE_INVITE_TTL_MS,
     });
@@ -390,11 +450,20 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
-  const accessSecret = mobileAccessSecret();
-  if (!accessSecret) {
+  const access = resolveMobileAccessSecret();
+  if (!access) {
     return mobileAccessUnavailableResponse();
   }
 
+  const res = await mobileHandoffReady(req, access.secret, chatId);
+  return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
+}
+
+async function mobileHandoffReady(
+  req: Request,
+  accessSecret: string,
+  chatId?: string | null,
+) {
   // `--json` doubles as the connectivity check (exit 0 == connected) and the
   // source for the MagicDNS fallback host below.
   const self = await runTailscale(["status", "--self", "--json"]);
@@ -512,6 +581,10 @@ export async function POST(req: Request) {
 
   if (action === "app-stop") {
     const reset = await runTailscale(["serve", "reset"]);
+    // Mobile mode Off retires the self-provisioned pairing secret (cave-os73):
+    // disarm the in-process gate and drop the persisted file so the next dev
+    // boot stays tokenless. No-op in the packaged bundle.
+    retireMobileAccessSecret();
     return NextResponse.json({
       ok: reset.ok,
       error: reset.ok ? undefined : "failed to stop mobile mode",

@@ -2331,10 +2331,10 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
  *  behind a disclosure; the headline tells a person what to actually do. */
 function describeMobileHandoffError(raw: string): { headline: string; hint: string } {
   const text = raw.toLowerCase();
-  if (text.includes("pnpm dev") || text.includes("access token")) {
+  if (text.includes("pnpm dev") || text.includes("access token") || text.includes("pairing secret")) {
     return {
-      headline: "Pairing runs in the packaged Cave app",
-      hint: "This dev server can’t mint pairing codes — open CovenCave from Applications and pair from there.",
+      headline: "Pairing secret unavailable",
+      hint: "Cave provisions the pairing secret automatically — retry below. If this persists, restart Cave (or the dev server) and check the app data folder’s permissions.",
     };
   }
   if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {

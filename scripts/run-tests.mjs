@@ -993,6 +993,7 @@ export const SUITES = {
     "src/lib/server/skill-build.test.ts",
     "src/lib/server/prompt-scan.test.ts",
     "src/lib/server/adapter-conflict-heal.test.ts",
+    "src/lib/server/mobile-access-provision.test.ts",
   ],
   mobile: [
     "src/lib/mobile-access-token.test.ts",
