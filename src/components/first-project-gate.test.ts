@@ -32,7 +32,7 @@ test("the gate stays prop-driven and focuses the name field on first visibility"
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
-    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*pendingGrant: PendingFirstProjectAccessSnapshot \| null;[\s\S]*onPendingGrantChange: \(snapshot: PendingFirstProjectAccessSnapshot \| null\) => void;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(name: string, root: string\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
+    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*pendingGrant: PendingFirstProjectAccessSnapshot \| null;[\s\S]*onPendingGrantChange: \(snapshot: PendingFirstProjectAccessSnapshot \| null\) => void;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(\s*name: string,\s*root: string,\s*options\?: CreateProjectOptions,\s*\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
     "the gate stays prop-driven with the required integration fields",
   );
   assert.match(src, /const nameInputRef = useRef<HTMLInputElement \| null>\(null\);/, "keeps a stable ref for the project-name field");
@@ -137,8 +137,8 @@ test("the gate browses with native shell fallback and seeds the drafts from the 
 
 test("the gate keeps drafts through failures, blocks blank or busy submits, and surfaces retryable alerts", () => {
   const src = read("./first-project-gate.tsx");
-  assert.match(src, /import \{ addChatProject \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
-  assert.match(src, /const project = await createProjectOrThrow\(name, root\);/, "wraps the throwing createProjectOrThrow prop in the addChatProject adapter");
+  assert.match(src, /import \{ addChatProject, type CreateProjectOptions \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
+  assert.match(src, /const project = await createProjectOrThrow\(name, root, options\);/, "forwards createProject options so addChatProject can suppress the creation-time registry emission");
   assert.match(
     src,
     /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
