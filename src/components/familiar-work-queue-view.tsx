@@ -480,7 +480,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           className="fwq-chip fwq-toolbar-sort"
           aria-pressed={sortMode === "recent"}
           onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
-          title="Toggle lane ordering"
+          title={sortMode === "priority" ? "Sort by recently updated" : "Sort by priority and oldest"}
         >
           <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={13} aria-hidden />
           {sortMode === "priority" ? "Priority · oldest" : "Recently updated"}

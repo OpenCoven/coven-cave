@@ -53,6 +53,7 @@ assert.match(view, /useState<"priority" \| "recent">\("priority"\)/, "priority-o
 assert.match(view, /if \(sortMode === "recent"\) items = \[\.\.\.items\]\.sort/, "recent re-sorts a copy — queue identity untouched");
 assert.match(view, /setSortMode\(\(cur\) => \(cur === "priority" \? "recent" : "priority"\)\)/);
 assert.match(view, /aria-pressed=\{sortMode === "recent"\}/, "sort toggle exposes its active state");
+assert.match(view, /title=\{sortMode === "priority" \? "Sort by recently updated" : "Sort by priority and oldest"\}/);
 // The filtered-empty state clears everything at once.
 assert.match(view, /setFamiliarFilter\(null\);\s*setSearch\(""\);\s*setPriorityFilter\("all"\);/);
 
