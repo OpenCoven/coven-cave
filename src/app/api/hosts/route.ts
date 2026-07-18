@@ -6,7 +6,7 @@ import { chatHostOptions, sshHostRegistry, type ChatHostOption } from "@/lib/cha
 import { isSshRuntime, normalizeFamiliarRuntime } from "@/lib/familiar-runtime";
 import { OmnigentClient } from "@/lib/omnigent/client";
 import { omnigentHostOptionId } from "@/lib/omnigent/ids";
-import { isOmnigentEnvConfigured, resolveOmnigentBaseUrl } from "@/lib/omnigent/token";
+import { isOmnigentEnvConfigured, isOmnigentFleetActive, resolveOmnigentBaseUrl } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +38,9 @@ function registryFromConfig(config: Awaited<ReturnType<typeof loadConfig>>) {
 async function omnigentHostOptions(
   config: Awaited<ReturnType<typeof loadConfig>>,
 ): Promise<ChatHostOption[]> {
+  // Master switch: no fleet host options unless OMNIGENT_SERVER_URL is in the
+  // Vault AND the user flipped the Settings → Daemon enable toggle.
+  if (!isOmnigentFleetActive(config.omnigent)) return [];
   const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
   if (!baseUrl || !config.omnigent.exposeHostsInComposer) return [];
   // Fleet gate: omnigent:<host_id> options appear if and ONLY if the user has

@@ -4,7 +4,7 @@
 // post-merge-cleanup derivation. Clock injected for determinism.
 import assert from "node:assert/strict";
 
-const { buildWorkQueue, isActionableLane, laneTitle, hasVerificationEvidence } = await import(
+const { buildWorkQueue, isActionableLane, laneTitle, hasVerificationEvidence, beadRefMatchesPr } = await import(
   "./beads-work-queue.ts"
 );
 
@@ -259,8 +259,6 @@ assert.equal(
   }
 }
 
-console.log("beads-work-queue.test.ts: ok");
-
 // ── no-open-PR triage order: priority asc, then oldest update first (cave-19jy)
 {
   const at = (h) => new Date(NOW - h * HOURS).toISOString();
@@ -279,3 +277,74 @@ console.log("beads-work-queue.test.ts: ok");
     "P0 first; within a priority the stalest update leads; undated beads sort after dated peers",
   );
 }
+
+// ── cave-p63a: ref join — a bead's external_ref or description can claim a
+// PR that mentions no bead id, so File-bead'd PRs link immediately.
+{
+  // external_ref `gh-<n>` links the PR: not unlinked, bead chip + familiar join,
+  // and the bead does NOT double-show in no-open-PR.
+  const refBead = {
+    ...bead("cave-ref", { labels: ["familiar:kitty", "surface:github"] }),
+    external_ref: "gh-77",
+  };
+  const q = buildWorkQueue([refBead], [pr(77, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [], "external_ref gh-<n> links the bead-less PR");
+  assert.deepEqual(q.attention, [], "a ref-linked fresh PR needs no attention");
+  const item = q.lanes.find((l) => l.key === "needs-review").items[0];
+  assert.equal(item.bead.id, "cave-ref", "the ref-matched bead populates the card's bead chip");
+  assert.equal(item.familiar, "kitty", "familiar joins through the ref-matched bead");
+  assert.equal(item.surface, "github");
+  assert.equal(q.lanes.find((l) => l.key === "no-open-PR"), undefined, "ref-linked bead leaves no-open-PR");
+  assert.equal(q.total, 1, "one PR item — the bead is not double-counted");
+}
+
+{
+  // Description fallback: the File-bead flow writes the PR URL into the
+  // description, and ready output carries no external_ref — the URL alone links.
+  const descBead = {
+    ...bead("cave-desc", { labels: ["familiar:nova"] }),
+    description: "Filed from unlinked PR #88 — https://github.com/OpenCoven/coven-cave/pull/88",
+  };
+  const q = buildWorkQueue([descBead], [pr(88, "checks-failing", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [], "description pull/<n> URL links the PR");
+  const item = q.lanes.find((l) => l.key === "checks-failing").items[0];
+  assert.equal(item.bead.id, "cave-desc");
+  assert.equal(item.familiar, "nova");
+  assert.equal(q.lanes.find((l) => l.key === "no-open-PR"), undefined);
+}
+
+{
+  // A non-matching ref does NOT link: the PR stays unlinked and the bead stays
+  // in no-open-PR. Near-miss numbers (gh-99 vs 991, pull/9910) must not match.
+  const otherBead = {
+    ...bead("cave-other"),
+    external_ref: "gh-99",
+    description: "See https://github.com/OpenCoven/coven-cave/pull/9910 and PR #9911",
+  };
+  const q = buildWorkQueue([otherBead], [pr(991, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [991], "a non-matching ref leaves the PR unlinked");
+  assert.equal(q.attention.length, 1);
+  assert.equal(q.attention[0].unlinked, true);
+  assert.equal(q.lanes.find((l) => l.key === "needs-review").items[0].bead, undefined);
+  assert.deepEqual(
+    q.lanes.find((l) => l.key === "no-open-PR").items.map((i) => i.bead.id),
+    ["cave-other"],
+    "the unrelated bead still waits in no-open-PR",
+  );
+}
+
+// ── beadRefMatchesPr: the pure ref shapes ────────────────────────────────────
+assert.equal(beadRefMatchesPr("gh-123", 123), true, "gh-<n>");
+assert.equal(beadRefMatchesPr("#123", 123), true, "#<n>");
+assert.equal(beadRefMatchesPr("gh:OpenCoven/coven-cave#123", 123), true, "gh:owner/repo#<n> suffix");
+assert.equal(beadRefMatchesPr("https://github.com/OpenCoven/coven-cave/pull/123", 123), true, "PR URL");
+assert.equal(beadRefMatchesPr("https://github.com/OpenCoven/coven-cave/pull/123/", 123), true, "trailing slash");
+assert.equal(beadRefMatchesPr(" gh-123 ", 123), true, "whitespace trimmed");
+assert.equal(beadRefMatchesPr("gh-1234", 123), false, "gh near-miss");
+assert.equal(beadRefMatchesPr("#4123", 123), false, "# anchors the whole number");
+assert.equal(beadRefMatchesPr("https://github.com/x/y/pull/1234", 123), false, "URL near-miss");
+assert.equal(beadRefMatchesPr("https://github.com/x/y/issues/123", 123), false, "issue URL is not a PR");
+assert.equal(beadRefMatchesPr(null, 123), false, "null ref");
+assert.equal(beadRefMatchesPr("", 123), false, "empty ref");
+
+console.log("beads-work-queue.test.ts: ok");

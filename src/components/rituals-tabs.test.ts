@@ -27,8 +27,8 @@ assert.match(
 );
 assert.match(
   mobileTabs,
-  /\{ id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" \}/,
-  "Mobile bottom tab uses the canonical Rituals label (one surface, one name — issue #3283)",
+  /const\s+TABS\s*=\s*FOLDER_MODES[\s\S]*?\.filter\([\s\S]*?!fm\.quiet\s*&&\s*!fm\.navHidden[\s\S]*?\.map\([\s\S]*?label\s*:\s*fm\.label[\s\S]*?ariaLabel\s*:\s*fm\.label/,
+  "Mobile bottom tabs derive visible and accessible labels from the canonical FOLDER_MODES rows (one surface, one name — issue #3283)",
 );
 assert.match(
   notificationBell,

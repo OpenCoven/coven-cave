@@ -33,6 +33,7 @@ import {
   openCovenToolsInstallCommand,
   openCovenToolsPrimaryActionLabel,
 } from "@/lib/opencoven-tools-install";
+import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 
 // Guided onboarding: one numbered path from "nothing installed" to "ready to
 // summon". Every step carries its own instructions, a one-click action where
@@ -990,6 +991,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     setStartingDaemon(true);
     setSetupError(null);
     try {
+      // Startup reconciliation may be replacing the CLI after observing the
+      // same offline daemon. Starting the old binary during that window can
+      // lock coven.exe on Windows and make the update fail.
+      await waitForDaemonUpdateIdle();
       const res = await fetch("/api/daemon/start", { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.ok === false) {

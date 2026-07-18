@@ -36,6 +36,7 @@ const DEFAULT_CONFIG: CaveConfig = {
   marketplace: { installed: {} },
   multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
   omnigent: {
+    enabled: false,
     baseUrl: "",
     defaultAgentId: "",
     defaultHostId: "",
@@ -214,6 +215,10 @@ export type CaveMultiHostConfig = {
 /** Omnigent control-plane settings for Cave Fleet. Token is never stored —
  *  server reads `~/.omnigent/auth_tokens.json` (or OMNIGENT_TOKEN). */
 export type CaveOmnigentConfig = {
+  /** Explicit opt-in (Settings → Daemon toggle). The toggle only appears once
+   *  OMNIGENT_SERVER_URL is in the Cave Vault; until BOTH hold, every Omnigent
+   *  surface stays hidden and Cave makes no Omnigent requests. Default off. */
+  enabled: boolean;
   baseUrl: string;
   defaultAgentId: string;
   defaultHostId: string;
@@ -444,6 +449,9 @@ export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | und
     }
   }
   return {
+    // Explicit opt-in: anything but literal true (absent on pre-toggle
+    // configs) normalizes to off.
+    enabled: input?.enabled === true,
     baseUrl,
     defaultAgentId: typeof input?.defaultAgentId === "string" ? input.defaultAgentId.trim() : "",
     defaultHostId: typeof input?.defaultHostId === "string" ? input.defaultHostId.trim() : "",
