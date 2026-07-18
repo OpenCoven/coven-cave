@@ -76,6 +76,15 @@ export function classifyPullRequest(pr: GitHubPullRequestInput): PrLane {
   return "needs-review";
 }
 
+/** Bead ids mentioned in any text (lowercased, deduped, sorted). The ONE
+ *  bead-id pattern — branch parsing (stage-model) and PR parsing share it so
+ *  they cannot drift. */
+export function beadIdsInText(text: string): string[] {
+  const ids = new Set<string>();
+  for (const match of text.matchAll(BEAD_ID_RE)) ids.add(match[0].toLowerCase());
+  return [...ids].sort();
+}
+
 export function extractBeadIds(pr: GitHubPullRequestInput): string[] {
   const chunks = [
     pr.title,
@@ -85,7 +94,7 @@ export function extractBeadIds(pr: GitHubPullRequestInput): string[] {
   ];
   const ids = new Set<string>();
   for (const chunk of chunks) {
-    for (const match of chunk.matchAll(BEAD_ID_RE)) ids.add(match[0].toLowerCase());
+    for (const id of beadIdsInText(chunk)) ids.add(id);
   }
   return [...ids].sort();
 }

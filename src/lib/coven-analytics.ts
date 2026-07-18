@@ -19,9 +19,10 @@ export type ConfidenceTier = "Low" | "Developing" | "Reliable" | "Trusted";
 export type FamiliarHealth = "active" | "steady" | "quiet" | "stalled";
 
 /** One familiar's compact analytics row — the unit the coven aggregators and
- *  the insights table both read. Confidence/contract may be absent when the
- *  familiar's contract wasn't fetched (the fetch is bounded); activity signals
- *  are always present since they derive from sessions alone. */
+ *  the insights table both read. Confidence is thread-confidence (real thread
+ *  self-reports) and reads null until reflections exist; contract may be
+ *  absent when the familiar's contract wasn't fetched (the fetch is bounded);
+ *  activity signals are always present since they derive from sessions alone. */
 export type FamiliarInsightRow = {
   id: string;
   name: string;

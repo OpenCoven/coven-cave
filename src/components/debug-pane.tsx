@@ -1,21 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
-import { formatClock } from "@/lib/datetime-format";
-import {
-  stripPreviewOnlyAttachmentFields,
-  type ChatAttachment,
-} from "@/lib/chat-attachments";
-import { useChatDebugSnapshot, type ChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { formatClock, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
+import { formatRuntime } from "@/lib/chat-response-metadata";
+import { usageBreakdown } from "@/lib/usage-format";
+import { APP_VERSION } from "@/lib/app-version";
+import { type ChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   appendEvents,
   buildDebugBundle,
   debugFileName,
+  exportDebugTurn,
+  filterEvents,
   formatEventPayload,
   nextAfterSeq,
   shouldPollEvents,
+  turnMetaSummary,
   type CovenEvent,
   type DebugTurn,
 } from "@/lib/session-debug";
@@ -40,6 +43,11 @@ function statusColor(status: string | undefined): string {
 
 function CopyButton({ getText, label }: { getText: () => string; label?: string }) {
   const { copied, copy } = useCopy();
+  const { announce } = useAnnouncer();
+  // The check-icon swap is visual-only; mirror it for screen readers.
+  useEffect(() => {
+    if (copied) announce(label ? `${label} — copied to clipboard` : "Copied to clipboard");
+  }, [copied, announce, label]);
   return (
     <button
       type="button"
@@ -114,6 +122,8 @@ function JsonBlock({ text }: { text: string }) {
 function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
   const [open, setOpen] = useState(false);
   const lifecycle = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "pending" : "complete");
+  // Served model + token/cost meta — otherwise only visible in the raw JSON.
+  const meta = turnMetaSummary(turn);
   return (
     <div className="rounded-md border border-[var(--border-hairline)]">
       <button
@@ -131,14 +141,27 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
           {turn.tools?.length ? `${turn.tools.length} tool${turn.tools.length === 1 ? "" : "s"}` : ""}
           {turn.progress?.length ? `${turn.tools?.length ? " · " : ""}${turn.progress.length} progress` : ""}
         </span>
+        {meta ? (
+          <span
+            className="max-w-40 shrink-0 truncate font-mono text-[var(--text-muted)]"
+            title={usageBreakdown(turn.usage, turn.costUsd) ?? undefined}
+          >
+            {meta}
+          </span>
+        ) : null}
         <span className="shrink-0 font-mono text-[var(--text-muted)]">{fmtMs(turn.durationMs)}</span>
       </button>
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
-          <div className="mb-1 flex justify-end">
-            <CopyButton getText={() => JSON.stringify(turn, null, 2)} label="Copy turn" />
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]">
+              {usageBreakdown(turn.usage, turn.costUsd) ?? ""}
+            </span>
+            {/* Preview-stripped: a pasted screenshot's base64 must not land in
+                the clipboard or the JSON block below. */}
+            <CopyButton getText={() => JSON.stringify(exportDebugTurn(turn), null, 2)} label="Copy turn" />
           </div>
-          <JsonBlock text={JSON.stringify(turn, null, 2)} />
+          <JsonBlock text={JSON.stringify(exportDebugTurn(turn), null, 2)} />
         </div>
       ) : null}
     </div>
@@ -163,6 +186,9 @@ function EventRow({ event }: { event: CovenEvent }) {
       </button>
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
+          <div className="mb-1 flex justify-end">
+            <CopyButton getText={() => JSON.stringify(event, null, 2)} label="Copy event" />
+          </div>
           <JsonBlock text={formatEventPayload(event.payload_json)} />
         </div>
       ) : null}
@@ -175,8 +201,13 @@ function EventRow({ event }: { event: CovenEvent }) {
 function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const { sessionId, session, familiar, turns } = snapshot;
   const status = session?.status ?? null;
+  const dtPrefs = useDateTimePrefs();
+  const cwd = formatRuntime(session?.runtime);
   const [events, setEvents] = useState<CovenEvent[]>([]);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventQuery, setEventQuery] = useState("");
+  const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
+  const { announce } = useAnnouncer();
   // Tail-follow only makes sense while events are streaming in; opening a
   // finished session shouldn't jump past the Session section.
   const [follow, setFollow] = useState(status === "running");
@@ -184,6 +215,18 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetchInFlightRef = useRef(false);
+  // True when a drain stopped at the page cap with a full final page — more
+  // events likely remain server-side and the list is silently incomplete.
+  const [tailCapped, setTailCapped] = useState(false);
+
+  // The error banner and tail-cap notice appear silently for sighted users to
+  // scan; mirror them into the live region so SR users hear state changes.
+  useEffect(() => {
+    if (eventsError) announce(`Events failed to load: ${eventsError}`, "assertive");
+  }, [eventsError, announce]);
+  useEffect(() => {
+    if (tailCapped) announce("Long event tail — more events available to load");
+  }, [tailCapped, announce]);
 
   // Pages until the tail is drained (a full page means more may remain), so
   // finished sessions with >200 events aren't silently truncated. Capped as a
@@ -193,6 +236,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
     if (!sessionId || fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
+      let lastPageFull = false;
       for (let page = 0; page < 50; page++) {
         const res = await fetch(
           `/api/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
@@ -203,8 +247,10 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
         const incoming = json.events ?? [];
         setEvents((prev) => appendEvents(prev, incoming));
         cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
-        if (incoming.length < 200) break;
+        lastPageFull = incoming.length >= 200;
+        if (!lastPageFull) break;
       }
+      setTailCapped(lastPageFull);
       setEventsError(null);
     } catch (err) {
       setEventsError(err instanceof Error ? err.message : String(err));
@@ -253,20 +299,25 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
 
   const resumeFollow = useCallback(() => {
     setFollow(true);
+    announce("Following live events");
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, []);
+  }, [announce]);
 
   const bundleJson = useCallback(() => {
-    // Attachment previews carry base64 data-URLs; drop them from exports the
-    // same way sends do, so Copy all / Download stay reasonably sized.
-    const exportTurns = turns.map((turn) => {
-      const attachments = (turn as { attachments?: ChatAttachment[] }).attachments;
-      return attachments?.length
-        ? { ...turn, attachments: stripPreviewOnlyAttachmentFields(attachments) }
-        : turn;
-    });
-    return JSON.stringify(buildDebugBundle({ session, familiar, turns: exportTurns, events }), null, 2);
+    // buildDebugBundle strips attachment previews and stamps the environment
+    // block (which build exported this, when) for bug-report bundles.
+    return JSON.stringify(
+      buildDebugBundle({
+        session,
+        familiar,
+        turns,
+        events,
+        environment: { appVersion: APP_VERSION, exportedAt: new Date().toISOString() },
+      }),
+      null,
+      2,
+    );
   }, [session, familiar, turns, events]);
 
   const downloadBundle = useCallback(() => {
@@ -304,15 +355,29 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
             </span>
           </KVRow>
           <KVRow k="harness">{session?.harness ?? familiar?.harness ?? "—"}</KVRow>
-          <KVRow k="model">{familiar?.model ?? "—"}</KVRow>
+          {/* The session's own model (daemon-recorded) over the familiar's
+              configured default; per-turn served models live on turn rows. */}
+          <KVRow k="model">{session?.model ?? familiar?.model ?? "—"}</KVRow>
           <KVRow k="familiar">{familiar?.display_name ?? "—"}</KVRow>
           <KVRow k="origin">{session?.origin ?? "—"}</KVRow>
           <KVRow k="exit code">{session?.exit_code ?? "—"}</KVRow>
           <KVRow k="project root" title={session?.project_root}>
             {session?.project_root ?? "—"}
           </KVRow>
-          <KVRow k="created">{session?.created_at ?? "—"}</KVRow>
-          <KVRow k="updated">{session?.updated_at ?? "—"}</KVRow>
+          {cwd ? (
+            <KVRow k="cwd" title={cwd.title}>
+              {cwd.label}
+            </KVRow>
+          ) : null}
+          <KVRow k="work branch" title={session?.workBranch ?? undefined}>
+            {session?.workBranch ?? "—"}
+          </KVRow>
+          <KVRow k="created" title={session?.created_at}>
+            {session?.created_at ? formatTimestamp(session.created_at, dtPrefs) || session.created_at : "—"}
+          </KVRow>
+          <KVRow k="updated" title={session?.updated_at}>
+            {session?.updated_at ? formatTimestamp(session.updated_at, dtPrefs) || session.updated_at : "—"}
+          </KVRow>
         </Section>
 
         <Section title="Turns" count={turns.length}>
@@ -342,15 +407,48 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
               </button>
             </div>
           ) : null}
+          {events.length > 0 ? (
+            <div className="mb-1.5 flex items-center gap-2">
+              <input
+                type="search"
+                value={eventQuery}
+                onChange={(e) => setEventQuery(e.target.value)}
+                placeholder="Filter events (kind or payload)"
+                aria-label="Filter events by kind or payload text"
+                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              />
+              {eventQuery.trim() ? (
+                <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                  {visibleEvents.length}/{events.length}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           {events.length === 0 && !eventsError ? (
             <div className="py-2 text-[10px] text-[var(--text-muted)]">No events yet.</div>
+          ) : visibleEvents.length === 0 ? (
+            <div className="py-2 text-[10px] text-[var(--text-muted)]">
+              No events match “{eventQuery.trim()}”.
+            </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {events.map((event) => (
+              {visibleEvents.map((event) => (
                 <EventRow key={event.seq} event={event} />
               ))}
             </div>
           )}
+          {tailCapped ? (
+            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-muted)]">
+              <span>Long event tail — showing the first {events.length} events.</span>
+              <button
+                type="button"
+                className="focus-ring shrink-0 underline"
+                onClick={() => void fetchEvents()}
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
         </Section>
       </div>
 
@@ -379,8 +477,11 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   );
 }
 
-export function DebugPane() {
-  const snapshot = useChatDebugSnapshot();
+/** Session diagnostics for ONE chat instance. Props come from the owning
+ *  ChatView (which also hosts the modal this renders in), not from the global
+ *  chat-debug store — with split panes, several ChatViews publish there and a
+ *  last-writer read would show a different pane's session. */
+export function DebugPane(snapshot: ChatDebugSnapshot) {
   if (!snapshot.sessionId) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-[11px] text-[var(--text-muted)]">

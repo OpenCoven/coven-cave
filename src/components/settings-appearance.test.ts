@@ -18,12 +18,12 @@ const globals = await readFile(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
-const themeColorEditor = await readFile(
-  new URL("./theme-color-editor.tsx", import.meta.url),
-  "utf8",
-);
 const fontSettings = await readFile(
   new URL("./settings-fonts.tsx", import.meta.url),
+  "utf8",
+);
+const appearanceRestore = await readFile(
+  new URL("../lib/appearance-restore.ts", import.meta.url),
   "utf8",
 );
 
@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   layout,
-  /<head>\s*<ThemeScript \/>[\s\S]*<\/head>/,
-  "Root layout should mount ThemeScript in <head> so persisted theme background applies before paint",
+  /<head>\s*<ThemeScript preferences=\{preferences\} authoritative=\{false\} \/>[\s\S]*<\/head>/,
+  "Root layout should pass an explicit paint-only snapshot to ThemeScript before paint",
 );
 
 assert.match(
@@ -177,10 +177,20 @@ assert.match(
   "Global themes must define a filled-accent foreground token",
 );
 
+// The Theme tokens editor is the single color-customization surface: editing
+// the accent must persist a readable foreground for filled accent UI.
 assert.match(
-  themeColorEditor,
-  /"--accent-presence-foreground":\s*readableTextColor\(accent\)/,
-  "Custom color editor must persist a readable foreground for custom accent colors",
+  settings,
+  /"--accent-presence-foreground":\s*readableTextColor\(value\)/,
+  "Token overrides must persist a readable foreground for custom accent colors",
+);
+
+// The old three-color "Customize colors" editor was redundant with the Theme
+// tokens editor and has been removed.
+assert.doesNotMatch(
+  settings,
+  /ThemeColorEditor|theme-color-editor|Customize colors/,
+  "the redundant Customize-colors editor must not come back — the Theme tokens editor owns color customization",
 );
 
 assert.doesNotMatch(
@@ -316,37 +326,13 @@ assert.match(
   "Root layout should mount the global screen magnification controller",
 );
 
-// Familiar switcher style — choose the top-bar control (avatar strip vs dropdown).
-assert.match(
+// Familiar switcher style — RETIRED. Familiar selection is dropdown-only (the
+// chat sidebar header hosts it), so the avatar-strip style/scope/pin-order
+// settings are gone with the strip.
+assert.doesNotMatch(
   settings,
-  /Familiar switcher/,
-  "Appearance settings should expose a Familiar switcher style control",
-);
-assert.match(
-  settings,
-  /setFamiliarSwitcherStyle\(option\)/,
-  "the familiar-switcher control writes the chosen style preference",
-);
-assert.match(
-  settings,
-  /Pin order[\s\S]*<FamiliarPinOrder \/>/,
-  "the avatar style exposes a drag-to-reorder pin-order manager",
-);
-assert.match(
-  settings,
-  /familiarSwitcherStyle === "avatars" \?[\s\S]*<FamiliarPinOrder/,
-  "the pin-order manager only shows for the avatar strip style",
-);
-// "Avatars shown" — restrict the strip to pinned familiars (default) or show all.
-assert.match(
-  settings,
-  /Avatars shown[\s\S]*setFamiliarStripScope\(option\)/,
-  "the avatar style exposes a pinned-only / all scope control",
-);
-assert.match(
-  settings,
-  /familiarSwitcherStyle === "avatars" \?[\s\S]*setFamiliarStripScope/,
-  "the scope control only shows for the avatar strip style",
+  /setFamiliarSwitcherStyle|setFamiliarStripScope|FamiliarPinOrder/,
+  "the avatar-strip style, scope, and pin-order controls are retired (dropdown-only selection)",
 );
 
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
@@ -363,8 +349,8 @@ assert.match(
 );
 assert.match(
   themeBootScript,
-  /localStorage\.getItem\("cave:corner-radius"\)[\s\S]*--radius-control/,
-  "ThemeScript should apply the saved corner radius before paint (no flash)",
+  /appearance\.cornerRadius[\s\S]*--radius-control/,
+  "ThemeScript should apply the canonical corner radius before paint (no flash)",
 );
 
 assert.match(
@@ -379,10 +365,39 @@ assert.match(
   "Global CSS should magnify the app via rem-based root font scaling (not an app-wide zoom, which broke getBoundingClientRect math)",
 );
 
+assert.doesNotMatch(
+  settings,
+  /THEME_OWNED_APPEARANCE_KEYS\s*=/,
+  "Selecting a preset must not carry a destructive list of independent appearance preferences",
+);
+
 assert.match(
   settings,
-  /THEME_OWNED_APPEARANCE_KEYS[\s\S]*localStorage\.removeItem\(key\)/,
-  "Selecting a preset theme should clear stale typography/radius/reading overrides so theme-owned structure applies",
+  /function applyPreset\(theme: PresetTheme\) \{[\s\S]{0,500}clearCustomThemeVariables\(\)[\s\S]{0,500}updateAppPreferences\(\{ appearance: \{ theme: \{ id: theme, custom: null \} \} \}\)[\s\S]{0,500}reapplyIndependentAppearance\(\)/,
+  "Selecting a preset should persist only the theme selection and then re-layer independent choices",
+);
+
+assert.match(
+  appearanceRestore,
+  /for \(const group of \[custom\.cssVars\.theme, custom\.cssVars\.light, custom\.cssVars\.dark\]\)[\s\S]*root\.style\.removeProperty\(name\)/,
+  "theme switching should remove only CSS variables introduced by the previous custom theme",
+);
+
+for (const independentApply of [
+  "applyFontPair", "applyScreenScale", "applyReadingLeading", "applyReadingTracking",
+  "applyReadingAlign", "applyReadingWidth", "applyReadingWeight", "applyReadingHyphens",
+  "applyCornerRadius", "applyBackdropToDocument",
+]) {
+  assert.ok(
+    appearanceRestore.includes(independentApply),
+    `preset/custom switches should reapply ${independentApply}`,
+  );
+}
+
+assert.doesNotMatch(
+  settings,
+  /localStorage\.removeItem\("cave:(?:font|screen-scale|reading|corner-radius|backdrop)/,
+  "theme selection must never delete independent saved appearance settings",
 );
 
 assert.match(
@@ -397,6 +412,16 @@ assert.match(
   /async function persistThemeTokens\(\): Promise<boolean>/,
   "persistThemeTokens returns a result so the Resync button can report success",
 );
+assert.match(
+  settings,
+  /persistThemeTokens\(\)[\s\S]{0,300}await flushAppPreferences\(\)[\s\S]{0,500}tokenOnly: true,[\s\S]{0,200}expectedSelectionRevision: preferences\.appearance\.theme\.selectionRevision/,
+  "token-only publication must wait for canonical selection persistence and carry its revision",
+);
+assert.match(
+  settings,
+  /if \(res\.status === 409\) await refreshAppPreferences\(\)/,
+  "a stale token publisher should refresh the winning canonical selection",
+);
 assert.match(settings, /Resync to phone/, "Appearance exposes a manual Resync to phone button");
 assert.match(
   settings,
@@ -406,11 +431,61 @@ assert.match(
 assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
 assert.match(
   settings,
-  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}type="color"/,
-  "the override panel renders a colour input for each core token",
+  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}<TokenColorRow/,
+  "the override panel renders an editable color row for each core token",
 );
 assert.match(
   settings,
   /function applyTokenOverride\(key: string, hex: string, mode: Mode\)/,
   "editing a token forks the active theme to a custom theme and re-syncs",
+);
+
+// ── Token edits must layer on the SELECTED theme (regression) ────────────────
+// Flipping data-theme to "custom" un-applies the preset's whole CSS block, so
+// the fork must (a) snapshot the full preset look before mutating the DOM and
+// (b) live-apply the whole group — not just the edited key — or editing one
+// token visually resets every other token to the default theme.
+assert.match(
+  settings,
+  /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_SYNC_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
+  "forking a preset must snapshot the hardcoded per-theme tokens AND the legacy-vocab aliases",
+);
+assert.match(
+  settings,
+  /if \(Object\.keys\(group\)\.length === 0\) Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\)/,
+  "an empty mode group is seeded from the current computed look before the DOM mutates",
+);
+assert.match(
+  settings,
+  /for \(const \[name, value\] of Object\.entries\(group\)\) \{\s*\n\s*html\.style\.setProperty\(name, value\);[\s\S]{0,200}html\.setAttribute\("data-theme", "custom"\)/,
+  "the whole group is applied live before the data-theme flip so the selected theme's look survives",
+);
+assert.match(
+  settings,
+  /function deriveTokenCompanions\(/,
+  "core-token edits update their companion tokens (legacy aliases, accent tints)",
+);
+assert.match(
+  settings,
+  /case "--bg-base":[\s\S]{0,400}"--background": value/,
+  "editing the background must mirror the legacy --background alias legacy-vocab surfaces read",
+);
+
+// The picker fires per pointer-move; the token apply must be rAF-coalesced and
+// the daemon sync (onChange → persistThemeTokens PUT) must wait for commit —
+// one network write per finished edit, not one per move.
+assert.match(
+  settings,
+  /frameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]{0,300}applyTokenOverride\(pending\.key, pending\.value/,
+  "live token applies are coalesced to one write per animation frame",
+);
+assert.match(
+  settings,
+  /const handleCommit = [\s\S]{0,300}flushPendingApply\(\);[\s\S]{0,300}onChange\(\);/,
+  "the daemon sync fires on commit (popover close), not per pointer-move",
+);
+assert.doesNotMatch(
+  settings,
+  /const handlePick = [\s\S]{0,600}onChange\(\);\n {2}\};/,
+  "handlePick must not trigger the per-move daemon sync",
 );

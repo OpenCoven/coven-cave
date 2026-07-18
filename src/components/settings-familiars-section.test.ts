@@ -19,13 +19,13 @@ assert.match(
 );
 assert.match(
   section,
-  /familiars\.length === 0[\s\S]{0,1500}Create familiar/,
-  "the genuinely-empty state must offer a Create-familiar action",
+  /familiars\.length === 0[\s\S]{0,1500}Summon familiar/,
+  "the genuinely-empty state must offer a Summon-familiar action",
 );
 assert.match(
   section,
-  /CreateFamiliarDialog/,
-  "Settings should reuse the shared CreateFamiliarDialog",
+  /FamiliarSummoningCircle/,
+  "Settings should reuse the shared FamiliarSummoningCircle",
 );
 assert.match(
   section,

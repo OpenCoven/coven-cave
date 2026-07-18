@@ -13,6 +13,25 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
+import {
+  PALETTE_CATEGORIES,
+  PALETTE_CATEGORY_LABEL,
+  filterPaletteRows,
+  paletteCategoryForKind,
+  paletteResultCounts,
+  paletteResultSummary,
+  type PaletteCategory,
+} from "@/lib/command-palette-search";
+import {
+  clearRecentSearches,
+  readRecentSearches,
+  recordRecentSearch,
+} from "@/lib/recent-searches";
+import {
+  SETTINGS_INDEX,
+  settingsSectionLabel,
+  type SettingsIndexEntry,
+} from "@/components/settings-sections";
 
 function shortProjectRoot(root: string): string {
   const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
@@ -25,7 +44,7 @@ function shortProjectRoot(root: string): string {
 function browseGroup(row: Row): string {
   switch (row.kind) {
     case "session":
-      return "Recent";
+      return "Recent chats";
     case "command":
       if (row.id.startsWith("surface:")) return "Go to";
       if (row.id.startsWith("project:")) return "Projects";
@@ -39,6 +58,8 @@ function browseGroup(row: Row): string {
       return "Memory";
     case "shortcut":
       return "Shortcuts";
+    case "setting":
+      return "Settings";
     default:
       return "";
   }
@@ -48,8 +69,8 @@ function browseGroup(row: Row): string {
 // "Conversations" header in BOTH browse and search mode (they're a distinct
 // content-search cluster); everything else only groups while browsing.
 function paletteGroup(row: Row, browsing: boolean): string {
-  if (row.kind === "conversation-hit") return "Conversations";
-  return browsing ? browseGroup(row) : "";
+  if (browsing) return browseGroup(row);
+  return PALETTE_CATEGORY_LABEL[paletteCategoryForKind(row.kind)];
 }
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
@@ -75,7 +96,13 @@ type PaletteIntent =
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
-  | { kind: "open-memory-file"; path: string };
+  | { kind: "open-memory-file"; path: string }
+  | {
+      kind: "open-setting";
+      section: SettingsIndexEntry["section"];
+      group?: string;
+      familiarTab?: SettingsIndexEntry["familiarTab"];
+    };
 
 type Card = {
   id: string;
@@ -133,6 +160,7 @@ type Row =
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
   | { id: string; kind: "create-task"; title: string }
   | { id: string; kind: "conversation-hit"; hit: ConversationHit }
+  | { id: string; kind: "setting"; entry: SettingsIndexEntry }
   | { id: string; kind: "salem-answer"; query: string };
 
 type SalemSearchContextItem = {
@@ -155,6 +183,7 @@ const RESULT_LIMITS = {
   fsMemory: 8,
   command: 6,
   conversation: 6,
+  setting: 8,
 };
 
 const SALEM_CONTEXT_LIMIT = 8;
@@ -240,8 +269,15 @@ export function CommandPalette({
   onIntent,
 }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const { projects } = useProjects();
+  // "Open project" rows jump into the Projects hub, which is itself scoped to
+  // the active familiar — offer only projects that familiar can actually reach.
+  // The palette is always mounted (it self-returns null when closed), so gate
+  // the fetch on `open`, or it re-requests /api/projects on every active-familiar
+  // change while the user can't even see the palette.
+  const { projects } = useProjects({ familiarId: activeFamiliarId, enabled: open });
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<PaletteCategory>("all");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
@@ -298,6 +334,8 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
+    setRecentSearches(readRecentSearches(window.localStorage));
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
@@ -339,13 +377,14 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
   }, [initialQuery, open]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const rows: Row[] = useMemo(() => {
+  const allRows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
     const q = rest.trim().toLowerCase();
     // Fuzzy match: power users type subsequences ("brd" → Board). `fz` widens the
@@ -380,6 +419,10 @@ export function CommandPalette({
       (Date.parse(a.updated_at || a.created_at) || 0);
     const matchedSessions = sessions.filter((s) => {
       if (!s.familiarId) return false;
+      // Browse mode is the "Recent chats" jump list — archived chats never
+      // resurface there (the chat list's "Show archived" toggle is their
+      // home). A typed query still finds them, like any explicit search.
+      if (!q && s.archived_at) return false;
       if (scoped) {
         if (!scope!.has(s.familiarId)) return false;
         if (!q) return true;
@@ -481,6 +524,29 @@ export function CommandPalette({
               command: c.name,
               ...(slashArgs ? { args: slashArgs } : {}),
             },
+          }));
+
+    // Reuse Settings' canonical index so a control relocated behind progressive
+    // disclosure remains one search away. Settings stay out of empty browse mode
+    // (83 rows would drown the useful recency list) and appear only for a query.
+    const settingRows: Row[] = (scoped || slashToken || !q)
+      ? []
+      : rank(
+          SETTINGS_INDEX.filter((entry) => {
+            const section = settingsSectionLabel(entry.section);
+            return (
+              fz(section) ||
+              fz(entry.group ?? "") ||
+              entry.keywords.toLowerCase().includes(q)
+            );
+          }),
+          (entry) => [settingsSectionLabel(entry.section), entry.group, entry.keywords],
+        )
+          .slice(0, RESULT_LIMITS.setting)
+          .map((entry) => ({
+            id: `setting:${entry.section}:${entry.group ?? "overview"}:${entry.familiarTab ?? "root"}`,
+            kind: "setting" as const,
+            entry,
           }));
 
     const shortcutRows: Row[] = [];
@@ -602,6 +668,7 @@ export function CommandPalette({
           ...cardRows,
           ...covenMemoryRows,
           ...fsMemoryRows,
+          ...settingRows,
           ...cmdRows,
           ...surfaceRows,
           ...boardViewRows,
@@ -615,8 +682,23 @@ export function CommandPalette({
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
       : [];
 
-    return [...salemRows, ...localRows];
+    // Ask-Salem is the FALLBACK row, not the default (cave-42r5): Enter on a
+    // typed query must open the best local match (sessions, familiars, cards,
+    // surfaces), not fire a network AI call. With zero local matches the
+    // Salem row is still rows[0], so unmatched queries keep their one-Enter
+    // AI path.
+    return [...localRows, ...salemRows];
   }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
+
+  const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
+  const rows = useMemo(
+    () => filterPaletteRows(allRows, category) as Row[],
+    [allRows, category],
+  );
+  const resultSummary = useMemo(
+    () => paletteResultSummary(rows, category, parseFamiliarToken(query).rest),
+    [rows, category, query],
+  );
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
@@ -647,16 +729,17 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
-      // Use the local familiar (the one you're scoped to, falling back to Salem)
-      // so the answer is synthesized through it and the AI credits attribute to
-      // its connected model.
+      // Use the local familiar (the one you're scoped to, falling back to the
+      // Salem persona's familiar if one exists, then ANY available familiar)
+      // so the answer is synthesized through it and the AI credits attribute
+      // to its connected model. No invented ids: when the coven is empty the
+      // request goes familiar-less and the route uses its hosted fallback.
       const localFamiliarId =
         activeFamiliarId ??
         familiars.find((f) => f.id === "salem")?.id ??
-        "salem";
+        familiars[0]?.id;
       const localModel =
-        familiars.find((f) => f.id === activeFamiliarId)?.model ??
-        familiars.find((f) => f.id === "salem")?.model ??
+        familiars.find((f) => f.id === localFamiliarId)?.model ??
         undefined;
       const res = await fetch("/api/salem", {
         method: "POST",
@@ -685,6 +768,10 @@ export function CommandPalette({
     if (row.kind === "salem-answer") {
       void askSalem();
       return;
+    }
+    const search = query.trim();
+    if (search.length >= 2 && row.kind !== "create-task") {
+      setRecentSearches(recordRecentSearch(window.localStorage, search));
     }
     if (row.kind === "familiar") {
       onIntent({ kind: "switch-familiar", familiarId: row.familiar.id });
@@ -715,6 +802,13 @@ export function CommandPalette({
         familiarId,
         findQuery: parseFamiliarToken(query).rest.trim(),
       });
+    } else if (row.kind === "setting") {
+      onIntent({
+        kind: "open-setting",
+        section: row.entry.section,
+        ...(row.entry.group ? { group: row.entry.group } : {}),
+        ...(row.entry.familiarTab ? { familiarTab: row.entry.familiarTab } : {}),
+      });
     } else {
       onIntent(row.intent);
     }
@@ -722,6 +816,10 @@ export function CommandPalette({
   };
 
   const onComposerKey = (e: React.KeyboardEvent) => {
+    // The Enter/arrows that drive an IME candidate picker (CJK input) belong
+    // to the IME — confirming a character must not fire the active row or
+    // move the highlight. Mirrors the ChatView / group-chat composer guards.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => Math.min(i + 1, rows.length - 1));
@@ -792,33 +890,83 @@ export function CommandPalette({
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
-        className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
+        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl"
         style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            updateQuery(e.target.value);
-            setActiveIdx(0);
-          }}
-          onKeyDown={onComposerKey}
-          placeholder="Search familiars · chats · cards · memory · commands… (try @familiar to scope)"
-          role="combobox"
-          aria-label="Search and jump to anything"
-          aria-expanded={rows.length > 0}
-          aria-autocomplete="list"
-          aria-controls="command-palette-listbox"
-          aria-activedescendant={
-            rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
-          }
-          className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
+        <div className="flex items-center border-b border-[var(--border-hairline)]">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => {
+              updateQuery(e.target.value);
+              setActiveIdx(0);
+            }}
+            onKeyDown={onComposerKey}
+            placeholder="Search familiars · chats · tasks · memory · settings… (try @familiar)"
+            role="combobox"
+            aria-label="Search and jump to anything"
+            aria-expanded={rows.length > 0}
+            aria-autocomplete="list"
+            aria-controls="command-palette-listbox"
+            aria-activedescendant={
+              rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
+            }
+            className="focus-ring-inset min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="focus-ring mr-3 rounded-full p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              aria-label="Clear search query"
+              onClick={() => {
+                updateQuery("");
+                setCategory("all");
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              <Icon name="ph:x-circle-fill" width="1rem" height="1rem" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {browsing && recentSearches.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 py-2" aria-label="Recent searches">
+            <Icon name="ph:clock-counter-clockwise" width="0.9rem" height="0.9rem" className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            {recentSearches.map((recent) => (
+              <button
+                key={recent}
+                type="button"
+                className="focus-ring shrink-0 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  updateQuery(recent);
+                  setActiveIdx(0);
+                  inputRef.current?.focus();
+                }}
+              >
+                {recent}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Clear recent searches"
+              onClick={() => {
+                clearRecentSearches(window.localStorage);
+                setRecentSearches([]);
+                inputRef.current?.focus();
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
         {salemLoading || salemAnswer || salemError ? (
           <div
             role={salemLoading ? "status" : salemError ? "alert" : "region"}
             aria-label="Salem AI response"
-            className="border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
+            // Long answers scroll inside the palette instead of growing it past
+            // the viewport (issue #2988) — mirrors the listbox's own cap below.
+            className="max-h-[45vh] overflow-y-auto border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
           >
             {salemLoading ? (
               <span>Asking Salem through salem.opencoven.ai...</span>
@@ -863,13 +1011,58 @@ export function CommandPalette({
             </span>
           </div>
         ) : null}
+        <div
+          role="toolbar"
+          aria-label="Filter search results"
+          className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-3 py-2"
+        >
+          {PALETTE_CATEGORIES.filter(
+            // Zero-count scopes are dead tabs — hide them. "All" always shows,
+            // and the active scope stays visible even at 0 so the filter can't
+            // vanish from under the user mid-narrowing (cave-4gg0).
+            (option) => option === "all" || option === category || counts[option] > 0,
+          ).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={category === option}
+              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                category === option
+                  ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,var(--border-strong))] bg-[var(--accent-presence-soft)] text-[var(--text-primary)]"
+                  : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              }`}
+              onClick={() => {
+                setCategory(option);
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              {PALETTE_CATEGORY_LABEL[option]}
+              <span className="ml-1 font-mono opacity-70">{counts[option]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {resultSummary}
+        </div>
         <ul
           id="command-palette-listbox"
           role="listbox"
           className="max-h-[60vh] overflow-y-auto py-1"
         >
           {rows.length === 0 ? (
-            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
+            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
+              <p>{resultSummary}</p>
+              {category !== "all" ? (
+                <button
+                  type="button"
+                  className="focus-ring mt-2 rounded-full border border-[var(--border-hairline)] px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  onClick={() => setCategory("all")}
+                >
+                  Search all categories
+                </button>
+              ) : null}
+            </li>
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
@@ -922,7 +1115,7 @@ export function CommandPalette({
                           {row.familiar.role}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">switch</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">switch</span> : null}
                     </>
                   ) : null}
                   {row.kind === "session" ? (
@@ -959,11 +1152,10 @@ export function CommandPalette({
                           {row.card.labels.length ? ` · ${row.card.labels.join(", ")}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">card</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">card</span> : null}
                     </>
                   ) : null}
-                  {row.kind === "coven-memory" ? (
-                    <>
+                  {row.kind === "coven-memory" ? (                    <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
@@ -971,7 +1163,7 @@ export function CommandPalette({
                           {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">memory</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">memory</span> : null}
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (
@@ -982,20 +1174,35 @@ export function CommandPalette({
                           {row.entry.rootLabel}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">file</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">file</span> : null}
+                    </>
+                  ) : null}
+                  {row.kind === "setting" ? (
+                    <>
+                      <Icon name="ph:gear-six" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" aria-hidden />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">
+                          {settingsSectionLabel(row.entry.section)}
+                          {row.entry.group ? ` › ${row.entry.group}` : ""}
+                        </span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                          {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
+                        </span>
+                      </span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">open</span> : null}
                     </>
                   ) : null}
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
                       <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
-                      <span className="text-[10px] text-[var(--text-muted)]">run</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">run</span> : null}
                     </>
                   ) : null}
                   {row.kind === "shortcut" ? (
                     <>
                       <span className="flex-1 text-[var(--text-primary)]">{row.label}</span>
-                      <span className="font-mono text-[10px] text-[var(--text-muted)]">{platformizeHint(row.shortcut, keys)}</span>
+                      <kbd className="palette-kbd touch-hidden">{platformizeHint(row.shortcut, keys)}</kbd>
                     </>
                   ) : null}
                   {row.kind === "create-task" ? (
@@ -1007,7 +1214,7 @@ export function CommandPalette({
                           New card on the board, scoped to the active familiar
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">create</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">create</span> : null}
                     </>
                   ) : null}
                   {row.kind === "conversation-hit" ? (
@@ -1032,10 +1239,10 @@ export function CommandPalette({
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          Context-aware AI answer via salem.opencoven.ai
+                          Salem is the docs familiar — answers from the OpenCoven docs
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">ask</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">ask</span> : null}
                     </>
                   ) : null}
                 </button>
@@ -1044,9 +1251,21 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
-          <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
-          <span>{keys.mod}K</span>
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+          {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
+              devices where there is no ⌘/esc to press (cave-4gg0). */}
+          <span className="touch-hidden flex items-center gap-1">
+            <kbd className="palette-kbd">{keys.up}{keys.down}</kbd> navigate ·{" "}
+            <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
+            <kbd className="palette-kbd">esc</kbd> close
+          </span>
+          <span className="hidden sm:inline">@familiar scopes results</span>
+          <span className="flex items-center gap-1">
+            {counts[category]} local
+            <span className="touch-hidden flex items-center gap-1">
+              {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
+            </span>
+          </span>
         </div>
       </div>
     </div>

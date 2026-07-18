@@ -16,15 +16,15 @@ export const runtime = "nodejs";
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 
-async function catalogHasPlugin(id: string): Promise<boolean> {
+async function catalogPlugin(id: string): Promise<MarketplaceJsonPlugin | null> {
   try {
     const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
     const plugins = sanitizeMarketplacePlugins(
       raw && Array.isArray(raw.plugins) ? (raw.plugins as MarketplaceJsonPlugin[]) : [],
     );
-    return plugins.some((p: { name?: string }) => p.name === id);
+    return plugins.find((p: { name?: string }) => p.name === id) ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -36,8 +36,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
   const id = typeof body?.id === "string" ? body.id : "";
-  if (!id || !(await catalogHasPlugin(id))) {
+  const plugin = id ? await catalogPlugin(id) : null;
+  if (!plugin) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
+  }
+  if (plugin.kind === "craft") {
+    return NextResponse.json(
+      { ok: false, error: "Crafts require verified Codex removal", code: "craft_transaction_required" },
+      { status: 409 },
+    );
   }
   await uninstallMarketplacePlugin(id);
   return NextResponse.json({ ok: true });

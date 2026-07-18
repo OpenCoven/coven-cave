@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 
 /**
  * Path to the writable `.env.local` that holds user-saved secrets (today, the
@@ -11,15 +11,15 @@ import { covenHome } from "./coven-paths.ts";
  * breaks its signature seal, which makes Gatekeeper reject the app and stops the
  * in-place auto-updater (same class of bug fixed for the Next cache, workflows,
  * and the vault map). So in bundle mode it resolves to a writable per-user file
- * under `<covenHome>/cave/`.
+ * under `caveHome()`.
  *
  * Resolution (first hit wins): `COVEN_CAVE_ENV_FILE` → bundle path → `<cwd>/.env.local`.
  */
 export function envLocalPath(): string {
   const override = process.env.COVEN_CAVE_ENV_FILE?.trim();
   if (override) return override;
-  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(covenHome(), "cave", ".env.local");
-  return path.join(process.cwd(), ".env.local");
+  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(/* turbopackIgnore: true */ caveHome(), ".env.local");
+  return path.join(/* turbopackIgnore: true */ process.cwd(), ".env.local");
 }
 
 /**
@@ -32,7 +32,7 @@ export function envLocalPath(): string {
 export function readEnvLocalAll(): Record<string, string> {
   let raw: string;
   try {
-    raw = readFileSync(envLocalPath(), "utf8");
+    raw = readFileSync(/* turbopackIgnore: true */ envLocalPath(), "utf8");
   } catch {
     return {};
   }
@@ -68,7 +68,7 @@ export function readEnvLocalAll(): Record<string, string> {
 export function readEnvLocalValue(key: string): string | undefined {
   let raw: string;
   try {
-    raw = readFileSync(envLocalPath(), "utf8");
+    raw = readFileSync(/* turbopackIgnore: true */ envLocalPath(), "utf8");
   } catch {
     return undefined;
   }
@@ -97,6 +97,15 @@ export function readEnvLocalValue(key: string): string | undefined {
  * appended, a `null` value deletes its key, and every other line is preserved
  * byte-for-byte.
  */
+function assertEnvAssignmentSafe(key: string, value: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new Error(`invalid env key: ${key}`);
+  }
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`env value for ${key} must not contain newlines`);
+  }
+}
+
 export function upsertEnvContent(existing: string, updates: Record<string, string | null>): string {
   const lines = existing === "" ? [] : existing.split("\n");
   // Drop a single trailing empty line (from a trailing newline) so appended
@@ -122,12 +131,14 @@ export function upsertEnvContent(existing: string, updates: Record<string, strin
     const val = remaining.get(key)!;
     remaining.delete(key);
     if (val === null) continue; // delete: drop this line
+    assertEnvAssignmentSafe(key, val);
     out.push(`${key}=${val}`);
   }
 
   // Append keys that weren't already present (skip deletes for absent keys).
   for (const [key, val] of remaining) {
     if (val === null) continue;
+    assertEnvAssignmentSafe(key, val);
     out.push(`${key}=${val}`);
   }
 

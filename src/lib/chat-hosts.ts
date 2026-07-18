@@ -21,9 +21,9 @@ import {
 export const LOCAL_HOST_ID = "local";
 
 export type ChatHostOption = {
-  /** LOCAL_HOST_ID or the ssh host string. */
+  /** LOCAL_HOST_ID, ssh host string, or omnigent:<host_id>. */
   id: string;
-  kind: "local" | "ssh";
+  kind: "local" | "ssh" | "omnigent";
   label: string;
   cwd?: string;
   /** true/false from a live probe; null = not probed. */
@@ -141,6 +141,15 @@ export function resolveRequestedRuntime(args: {
     // Re-pin the conversation's host, keeping its recorded cwd (the harness
     // session store on the remote is cwd-scoped, same as local resume).
     if (match) return { ok: true, runtime: { ...match, cwd: recorded.cwd || match.cwd } };
+    // The recorded host is GONE from the registry. Falling through to the
+    // familiar's (local) binding silently continued the chat as a FRESH LOCAL
+    // session — remote context lost, execution surprise-relocated (cave-4zdp).
+    // Fail closed like an explicit unregistered pick; the host chip lets the
+    // user deliberately re-pick Local or another host.
+    return {
+      ok: false,
+      error: `this chat ran on host '${recorded.host}', which is no longer registered — pick a host (or Local) from the chat's host chip to continue`,
+    };
   }
   return { ok: true, runtime: null };
 }

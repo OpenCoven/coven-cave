@@ -45,12 +45,12 @@ assert.match(
 
 // ───── Phone composer controls are thumb-sized ─────
 // The composer footer reuses the chat composer's structure (cave-chat.css owns
-// its mobile rules); the home-only controls — destination pills and the agent
-// picker — still get thumb-sized touch targets from the container query.
+// its mobile rules); the home-only destination pills still get thumb-sized
+// touch targets from the container query.
 assert.match(
   css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-home-select-value\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone composer keeps thumb-sized home-only controls (agent picker, destination pills)",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone composer keeps thumb-sized home-only controls (destination pills)",
 );
 
 

@@ -20,8 +20,3 @@ export function broadcastTargetIds(
   }
   return out;
 }
-
-/** Broadcast only does something useful with two or more live panes. */
-export function broadcastIsActionable(enabled: boolean, paneCount: number): boolean {
-  return enabled && paneCount > 1;
-}

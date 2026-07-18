@@ -34,9 +34,10 @@ import {
   assert.deepEqual(parseMdDocument(out), doc, "stable round-trip");
 }
 
-// String tags normalize; malformed YAML degrades to body.
+// String tags normalize + dedupe; malformed YAML degrades to body.
 {
-  assert.deepEqual(parseMdDocument("---\ntags: a, b b\n---\nx").tags, ["a", "b", "b"]);
+  assert.deepEqual(parseMdDocument("---\ntags: a, b b\n---\nx").tags, ["a", "b"], "duplicates collapse");
+  assert.deepEqual(parseMdDocument("---\ntags: [brief, brief, notes]\n---\nx").tags, ["brief", "notes"]);
   const bad = parseMdDocument("---\n: [unclosed\n---\nbody");
   assert.equal(bad.hasFrontmatter, false, "malformed yaml → treated as body");
   assert.match(bad.body, /unclosed/);
@@ -62,5 +63,6 @@ import {
 // normalizeMdTags edge cases.
 assert.deepEqual(normalizeMdTags(undefined), []);
 assert.deepEqual(normalizeMdTags([1, " b ", ""]), ["1", "b"]);
+assert.deepEqual(normalizeMdTags(["a", "a", "b"]), ["a", "b"], "array tags dedupe");
 
 console.log("md-frontmatter.test: ok");

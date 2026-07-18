@@ -6,6 +6,7 @@ import {
   serializeSubset,
   SUBSET_URL,
   GLYPH_URL,
+  FAMILIAR_CORE_URL,
   loadPhosphorCollection,
 } from "../../scripts/generate-icon-subset.mjs";
 
@@ -18,13 +19,26 @@ import {
 //      `node scripts/generate-icon-subset.mjs`.
 // ---------------------------------------------------------------------------
 
-const { subset, missing, names, glyphs } = generate();
+const {
+  subset,
+  missing,
+  names,
+  glyphs,
+  familiarCore,
+  familiarCoreNames,
+  missingFamiliarCore,
+} = generate();
 
 assert.equal(
   missing.length,
   0,
   `Whitelisted icon name(s) not found in Phosphor (would render blank): ${missing.join(", ")}. ` +
     `Fix the name in icon.tsx ICON_NAMES (and any call sites).`,
+);
+assert.equal(
+  missingFamiliarCore.length,
+  0,
+  `Core familiar glyph(s) missing from Phosphor: ${missingFamiliarCore.join(", ")}`,
 );
 
 const committed = readFileSync(SUBSET_URL, "utf8");
@@ -50,6 +64,35 @@ assert.ok(subsetCount === names.length, `every whitelisted name should resolve t
 // not a glyph either) is absent from the chrome subset.
 assert.ok(subset.icons["lightning-bold"], "a used icon (lightning-bold) must be in the chrome subset");
 assert.ok(!subset.icons["airplane"], "an unused icon (airplane) must NOT be in the chrome subset");
+
+const committedFamiliarCore = readFileSync(FAMILIAR_CORE_URL, "utf8");
+assert.equal(
+  committedFamiliarCore,
+  serializeSubset(familiarCore),
+  "ph-familiar-core.json is stale — run `node scripts/generate-icon-subset.mjs` and commit the result.",
+);
+assert.equal(
+  Object.keys(familiarCore.icons).length,
+  familiarCoreNames.length,
+  "every core familiar glyph should resolve to one bundled icon",
+);
+assert.ok(
+  familiarCoreNames.length < 40,
+  `startup familiar collection should stay deliberately small, got ${familiarCoreNames.length}`,
+);
+const summoningSource = readFileSync(
+  new URL("../components/familiar-summoning-circle.tsx", import.meta.url),
+  "utf8",
+);
+const starterBlock = summoningSource.match(/STARTER_GLYPHS\s*=\s*\[([\s\S]*?)\];/);
+assert.ok(starterBlock, "summoning circle should declare its starter glyph list");
+const starterNames = [...starterBlock[1].matchAll(/"(ph:[^"]+)"/g)].map((match) => match[1]);
+for (const starter of starterNames) {
+  assert.ok(
+    familiarCoreNames.includes(starter.replace(/^ph:/, "")),
+    `summoning starter ${starter} must stay in the always-loaded familiar core`,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Glyph-picker catalog subset: the ~1.5k one-variant-per-base glyphs the

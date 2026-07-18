@@ -5,7 +5,25 @@ import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
 import { openInAppBrowserUrl } from "@/lib/open-external";
-import { pickDownloadUrl, type UpdateStatus } from "@/lib/app-update";
+import {
+  classifyFallbackReleaseCheck,
+  pickDownloadUrl,
+  resolveFallbackAfterNative,
+  type FallbackReleaseCheck,
+  type UpdateStatus,
+} from "@/lib/app-update";
+import { relativeTime } from "@/lib/relative-time";
+import {
+  prepareNativeUpdate,
+  releasePreparedUpdate,
+  type CancellationSignal,
+  type NativeUpdateHandle,
+  type PreparationProgress,
+} from "@/lib/native-update-preparation";
+import {
+  adoptNativeUpdateResult,
+  nativeUpdateCoordinator,
+} from "@/lib/native-update-coordinator";
 
 const BANNER_ID = "update-available";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
@@ -29,20 +47,10 @@ function markDismissed(version: string): void {
   }
 }
 
-// Minimal shape of the plugin-updater Update we depend on.
-type TauriUpdate = {
-  version: string;
-  available?: boolean;
-  downloadAndInstall: (onEvent?: (e: DownloadEvent) => void) => Promise<void>;
-};
-type DownloadEvent =
-  | { event: "Started"; data?: { contentLength?: number } }
-  | { event: "Progress"; data?: { chunkLength?: number } }
-  | { event: "Finished" };
-
 type NativeCheckResult =
-  | { kind: "available"; update: TauriUpdate }
+  | { kind: "available"; update: NativeUpdateHandle }
   | { kind: "current" }
+  | { kind: "not-applicable" }
   | { kind: "failed"; message: string };
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -54,49 +62,48 @@ function errorMessage(err: unknown, fallback: string): string {
  * distinguish "native updater unavailable" from the intentional browser
  * installer fallback.
  */
-async function checkNativeUpdate(): Promise<NativeCheckResult> {
-  if (!isTauri()) return { kind: "current" };
+async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
+  if (!isTauri()) return { kind: "not-applicable" };
+  const checkEpoch = nativeUpdateCoordinator.beginCheck();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
-    const update = (await check()) as TauriUpdate | null;
-    if (!update) return { kind: "current" };
+    const update = (await check()) as NativeUpdateHandle | null;
+    if (!update) {
+      await nativeUpdateCoordinator.reportCurrent(checkEpoch);
+      return { kind: "current" };
+    }
     // Older plugin versions expose `.available`; newer return null when none.
-    if (update.available === false) return { kind: "current" };
-    return { kind: "available", update };
+    if (update.available === false) {
+      await releasePreparedUpdate(update);
+      await nativeUpdateCoordinator.reportCurrent(checkEpoch);
+      return { kind: "current" };
+    }
+    return await adoptNativeUpdateResult(nativeUpdateCoordinator, owner, update, checkEpoch);
   } catch (err) {
     return { kind: "failed", message: errorMessage(err, "Native updater check failed") };
   }
 }
 
-/** Download + install a native update, reporting 0–100 progress, then relaunch. */
-async function installNativeUpdate(
-  update: TauriUpdate,
-  onProgress: (pct: number) => void,
-): Promise<void> {
-  let total = 0;
-  let received = 0;
-  await update.downloadAndInstall((e) => {
-    if (e.event === "Started") {
-      total = e.data?.contentLength ?? 0;
-    } else if (e.event === "Progress") {
-      received += e.data?.chunkLength ?? 0;
-      if (total > 0) onProgress(Math.min(99, Math.round((received / total) * 100)));
-    } else if (e.event === "Finished") {
-      onProgress(100);
-    }
-  });
+/** Install an already downloaded and verified update, then relaunch where supported. */
+async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  await update.install();
+  // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
+  // desktop platforms return and need an explicit relaunch.
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
 }
 
 /** Lightweight fallback: ask the server route what the latest release is. */
-async function fetchFallbackStatus(): Promise<UpdateStatus | null> {
+async function fetchFallbackStatus(): Promise<FallbackReleaseCheck> {
   try {
     const res = await fetch("/api/app/latest-release", { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as UpdateStatus;
-  } catch {
-    return null;
+    const body = await res.json().catch(() => null);
+    return classifyFallbackReleaseCheck(res.ok, body, res.status);
+  } catch (err) {
+    return {
+      kind: "unavailable",
+      message: errorMessage(err, "release check could not be reached"),
+    };
   }
 }
 
@@ -126,85 +133,272 @@ function openReleasePageInBrowser(): void {
 }
 
 type Resolved =
-  | { kind: "current" }
-  | { kind: "native"; version: string; update: TauriUpdate }
+  | { kind: "current"; source: "native" | "release"; checkedAt: string }
+  | { kind: "unavailable"; message: string }
+  | { kind: "native"; version: string; update: NativeUpdateHandle }
   | { kind: "native-unavailable"; version: string; url: string; message: string }
   | { kind: "fallback"; version: string; url: string };
 
 /** Native-first, then fallback. Used by both the banner and the settings row. */
-async function resolveUpdate(): Promise<Resolved> {
-  const native = await checkNativeUpdate();
+async function resolveUpdate(owner: symbol): Promise<Resolved> {
+  const native = await checkNativeUpdate(owner);
   if (native.kind === "available") {
     return { kind: "native", version: native.update.version, update: native.update };
   }
-  const fb = await fetchFallbackStatus();
-  if (fb?.available && fb.latest) {
-    const url = await resolveDownloadUrl(fb);
-    if (native.kind === "failed") {
-      return { kind: "native-unavailable", version: fb.latest, url, message: native.message };
-    }
-    return { kind: "fallback", version: fb.latest, url };
+  if (native.kind === "current") {
+    // A successful signed-updater check is authoritative. Do not turn it into
+    // an unknown result merely because the optional GitHub metadata lookup is
+    // unavailable as well.
+    return { kind: "current", source: "native", checkedAt: new Date().toISOString() };
   }
-  return { kind: "current" };
+
+  const combined = resolveFallbackAfterNative(
+    native.kind === "failed" ? native.message : null,
+    await fetchFallbackStatus(),
+  );
+  if (combined.kind === "available") {
+    const url = await resolveDownloadUrl(combined.status);
+    if (combined.nativeUpdaterFailed) {
+      return {
+        kind: "native-unavailable",
+        version: combined.status.latest!,
+        url,
+        message: native.kind === "failed" ? native.message : "Native updater check failed",
+      };
+    }
+    return { kind: "fallback", version: combined.status.latest!, url };
+  }
+  if (combined.kind === "current") {
+    return { kind: "current", source: "release", checkedAt: combined.status.checkedAt };
+  }
+  // A 200 release-route error body is deliberately classified as unavailable
+  // here. No unsuccessful check can fall through to the confirmed-current UI.
+  return combined;
 }
 
+// The cave is a long-running control-room app and releases ship several times
+// a week, so a mount-only check would leave open instances permanently unaware
+// of new versions. Re-check on this cadence (per-version dismissals still hold).
+const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 /**
- * Desktop-only. On mount, checks for an update and (if available and not
- * dismissed for that version) shows a dismissible shell banner. Renders nothing.
+ * Desktop-only. On mount and every RECHECK_INTERVAL_MS thereafter, checks for
+ * an update and (if available and not dismissed for that version) shows a
+ * dismissible shell banner. Renders nothing.
  */
 export function UpdateBannerTrigger() {
   const isDesktop = useIsTauriDesktop();
   const { pushBanner, dismissBanner } = useShellBanners();
+  const owner = useRef(Symbol("update-banner")).current;
 
   useEffect(() => {
     if (!isDesktop) return;
     let cancelled = false;
-    void resolveUpdate().then((r) => {
-      if (cancelled || r.kind === "current") return;
-      if (isDismissed(r.version)) return;
+    let busy = false;
+    let activeCancellation: CancellationSignal | null = null;
+    let preparedUpdate: NativeUpdateHandle | null = null;
+    // Versions for which the user already clicked "Retry native update" in this session. Native
+    // updater check failures are usually transient (e.g. latest.json not yet published mid-release),
+    // so the banner offers a native retry first and only escalates to the browser release page if
+    // the subsequent check is still `native-unavailable`.
+    const nativeRetryFailed = new Set<string>();
 
-      pushBanner({
-        id: BANNER_ID,
-        severity: r.kind === "native-unavailable" ? "warning" : "info",
-        title:
-          r.kind === "native-unavailable"
-            ? `Native updater unavailable — v${r.version}`
-            : `Update available — v${r.version}`,
-        cta: {
-          label: r.kind === "native" ? "Install & restart" : "Open installer in Browser",
-          onClick: () => {
-            if (r.kind === "native") {
-              pushBanner({ id: BANNER_ID, severity: "info", title: `Preparing update v${r.version}…` });
-              void installNativeUpdate(r.update, (pct) => {
+    const runCheck = () => {
+      if (busy) return;
+      void resolveUpdate(owner).then((r) => {
+        // "unavailable" (both checks unreachable) stays quiet here — the periodic
+        // banner must not nag about connectivity; the Settings row reports it
+        // honestly on an explicit check (cave-lsk4).
+        if (cancelled) {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+        if (busy || r.kind === "current" || r.kind === "unavailable") {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+        if (isDismissed(r.version)) {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+
+        if (r.kind !== "native-unavailable") nativeRetryFailed.delete(r.version);
+
+        const recommendNativeRetry =
+          r.kind === "native-unavailable" && !nativeRetryFailed.has(r.version);
+        pushBanner({
+          id: BANNER_ID,
+          severity: r.kind === "native-unavailable" ? "warning" : "info",
+          title:
+            r.kind === "native-unavailable"
+              ? recommendNativeRetry
+                ? `Native updater unavailable — v${r.version}`
+                : `Native updater still unavailable — v${r.version}`
+              : `Update available — v${r.version}`,
+          cta: {
+            label:
+              r.kind === "native"
+                ? "Download update"
+                : r.kind === "native-unavailable"
+                  ? recommendNativeRetry
+                    ? "Retry native update"
+                    : "Open release page in Browser"
+                  : "Open installer in Browser",
+            onClick: () => {
+              if (r.kind === "native") {
+                if (busy) return;
+                if (!nativeUpdateCoordinator.beginAction(owner, r.update)) {
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "info",
+                    title: `Update v${r.version} is already being prepared in Settings`,
+                  });
+                  return;
+                }
+                busy = true;
+                const cancellation: CancellationSignal = { cancelled: false };
+                activeCancellation = cancellation;
+                const requestCancel = () => {
+                  cancellation.cancelled = true;
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "info",
+                    title: `Cancelling update v${r.version} after verification…`,
+                  });
+                };
                 pushBanner({
                   id: BANNER_ID,
                   severity: "info",
-                  title: `Downloading update v${r.version}… ${pct}%`,
+                  title: `Preparing update v${r.version}…`,
+                  cta: { label: "Cancel", onClick: requestCancel },
+                  onDismiss: requestCancel,
                 });
-              }).catch((err) => {
-                const reason = err instanceof Error ? err.message : "";
-                pushBanner({
-                  id: BANNER_ID,
-                  severity: "warning",
-                  title: reason
-                    ? `Update failed (${reason})`
-                    : "Update failed",
-                  cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
-                  onDismiss: () => markDismissed(r.version),
+                void prepareNativeUpdate(
+                  r.update,
+                  ({ phase, pct }) => {
+                    if (cancelled || cancellation.cancelled) return;
+                    pushBanner({
+                      id: BANNER_ID,
+                      severity: "info",
+                      title:
+                        phase === "verifying"
+                          ? `Verifying update v${r.version}…`
+                          : `Downloading update v${r.version}… ${pct}%`,
+                      cta: { label: "Cancel", onClick: requestCancel },
+                      onDismiss: requestCancel,
+                    });
+                  },
+                  cancellation,
+                ).then(async (result) => {
+                  activeCancellation = null;
+                  if (result === "cancelled" || cancelled) {
+                    await nativeUpdateCoordinator.finishAction(owner);
+                    await nativeUpdateCoordinator.invalidate(r.update);
+                    busy = false;
+                    markDismissed(r.version);
+                    if (!cancelled) dismissBanner(BANNER_ID);
+                    return;
+                  }
+
+                  preparedUpdate = r.update;
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "info",
+                    title: `Update v${r.version} is verified and ready`,
+                    cta: {
+                      label: "Restart & install",
+                      onClick: () => {
+                        if (preparedUpdate !== r.update) return;
+                        preparedUpdate = null;
+                        pushBanner({
+                          id: BANNER_ID,
+                          severity: "info",
+                          title: `Installing update v${r.version}…`,
+                        });
+                        void installPreparedUpdate(r.update).catch(async (error) => {
+                          await nativeUpdateCoordinator.finishAction(owner);
+                          await nativeUpdateCoordinator.invalidate(r.update);
+                          busy = false;
+                          preparedUpdate = null;
+                          pushBanner({
+                            id: BANNER_ID,
+                            severity: "warning",
+                            title: `Update failed (${errorMessage(error, "install failed")})`,
+                            cta: {
+                              label: "Open release page in Browser",
+                              onClick: openReleasePageInBrowser,
+                            },
+                            onDismiss: () => markDismissed(r.version),
+                          });
+                        });
+                      },
+                    },
+                    onDismiss: () => {
+                      busy = false;
+                      preparedUpdate = null;
+                      markDismissed(r.version);
+                      void nativeUpdateCoordinator
+                        .finishAction(owner)
+                        .then(() => nativeUpdateCoordinator.invalidate(r.update));
+                    },
+                  });
+                }).catch(async (err) => {
+                  await nativeUpdateCoordinator.finishAction(owner);
+                  await nativeUpdateCoordinator.invalidate(r.update);
+                  activeCancellation = null;
+                  busy = false;
+                  const reason = errorMessage(err, "");
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "warning",
+                    title: reason
+                      ? `Update failed (${reason})`
+                      : "Update failed",
+                    cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
+                    onDismiss: () => markDismissed(r.version),
+                  });
                 });
-              });
-            } else if (r.kind === "native-unavailable") {
-              openReleasePageInBrowser();
-            } else {
-              openInAppBrowserUrl(r.url);
-            }
+              } else if (r.kind === "native-unavailable") {
+                if (recommendNativeRetry) {
+                  nativeRetryFailed.add(r.version);
+                  dismissBanner(BANNER_ID);
+                  runCheck();
+                } else {
+                  openReleasePageInBrowser();
+                }
+              } else {
+                openInAppBrowserUrl(r.url);
+              }
+            },
           },
-        },
-        onDismiss: () => markDismissed(r.version),
+          onDismiss: () => {
+            markDismissed(r.version);
+            if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          },
+        });
       });
+    };
+
+    const unsubscribe = nativeUpdateCoordinator.subscribe(() => {
+      if (cancelled || busy) return;
+      dismissBanner(BANNER_ID);
+      runCheck();
     });
+    runCheck();
+    const interval = window.setInterval(runCheck, RECHECK_INTERVAL_MS);
     return () => {
       cancelled = true;
+      if (activeCancellation) activeCancellation.cancelled = true;
+      if (preparedUpdate) {
+        const update = preparedUpdate;
+        void nativeUpdateCoordinator
+          .finishAction(owner)
+          .then(() => nativeUpdateCoordinator.invalidate(update));
+      } else if (!activeCancellation) {
+        void nativeUpdateCoordinator.release(owner);
+      }
+      window.clearInterval(interval);
+      unsubscribe();
       dismissBanner(BANNER_ID);
     };
   }, [isDesktop, pushBanner, dismissBanner]);
@@ -214,52 +408,129 @@ export function UpdateBannerTrigger() {
 
 type RowState =
   | { phase: "checking" }
-  | { phase: "current" }
+  | { phase: "current"; checkedAt: string; source: "native" | "release" }
+  | { phase: "unavailable"; message: string; stale: LastKnownUpdate | null }
   | { phase: "available"; r: Extract<Resolved, { kind: "native" | "fallback" }> }
   | { phase: "native-unavailable"; r: Extract<Resolved, { kind: "native-unavailable" }> }
-  | { phase: "downloading"; version: string; pct: number }
-  | { phase: "failed"; version: string; message: string }
-  | { phase: "ready"; version: string };
+  | { phase: "preparing"; version: string; stage: PreparationProgress["phase"]; pct: number }
+  | { phase: "cancelling"; version: string }
+  | { phase: "prepared"; version: string; update: NativeUpdateHandle }
+  | { phase: "installing"; version: string }
+  | { phase: "failed"; version: string; message: string };
+
+type LastKnownUpdate =
+  | { kind: "current"; checkedAt: string }
+  | { kind: "available"; version: string; checkedAt: string };
 
 /**
- * Desktop-only row for Settings ▸ About. Native updater when available
- * (Install & restart with progress), else opens the release installer in Cave's
- * Browser surface.
+ * Settings ▸ About row. Desktop uses the signed native updater when available;
+ * the web surface truthfully renders the same release-route fallback state.
  */
 export function UpdateSettingsRow() {
-  const isDesktop = useIsTauriDesktop();
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
+  const activeCancellation = useRef<CancellationSignal | null>(null);
+  const preparedUpdate = useRef<NativeUpdateHandle | null>(null);
+  const owner = useRef(Symbol("update-settings")).current;
+  const lastKnown = useRef<LastKnownUpdate | null>(null);
+  const checkSequence = useRef(0);
 
   const check = useCallback(() => {
+    const sequence = ++checkSequence.current;
     setState({ phase: "checking" });
-    void resolveUpdate().then((r) => {
-      if (!mounted.current) return;
-      if (r.kind === "current") setState({ phase: "current" });
-      else if (r.kind === "native-unavailable") setState({ phase: "native-unavailable", r });
-      else setState({ phase: "available", r });
+    void resolveUpdate(owner).then((r) => {
+      if (sequence !== checkSequence.current) return;
+      if (!mounted.current) {
+        if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+        return;
+      }
+      if (r.kind === "current") {
+        lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
+        setState({ phase: "current", checkedAt: r.checkedAt, source: r.source });
+      } else if (r.kind === "unavailable") {
+        setState({ phase: "unavailable", message: r.message, stale: lastKnown.current });
+      } else if (r.kind === "native-unavailable") {
+        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
+        setState({ phase: "native-unavailable", r });
+      } else {
+        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
+        setState({ phase: "available", r });
+      }
     });
   }, []);
 
   useEffect(() => {
     mounted.current = true;
-    if (isDesktop) check();
+    const unsubscribe = nativeUpdateCoordinator.subscribe((snapshot) => {
+      if (!mounted.current || activeCancellation.current || preparedUpdate.current) return;
+      if (snapshot.update) {
+        lastKnown.current = {
+          kind: "available",
+          version: snapshot.update.version,
+          checkedAt: new Date().toISOString(),
+        };
+        setState({
+          phase: "available",
+          r: { kind: "native", version: snapshot.update.version, update: snapshot.update },
+        });
+      } else {
+        const checkedAt = new Date().toISOString();
+        lastKnown.current = { kind: "current", checkedAt };
+        setState({ phase: "current", checkedAt, source: "native" });
+      }
+    });
+    check();
     return () => {
       mounted.current = false;
+      unsubscribe();
+      if (activeCancellation.current) activeCancellation.current.cancelled = true;
+      if (preparedUpdate.current) {
+        nativeUpdateCoordinator.finishAction(owner);
+        void nativeUpdateCoordinator.invalidate(preparedUpdate.current);
+      } else if (!activeCancellation.current) {
+        void nativeUpdateCoordinator.release(owner);
+      }
     };
-  }, [isDesktop, check]);
+  }, [check]);
 
-  if (!isDesktop) return null;
-
-  const install = (update: TauriUpdate, version: string) => {
-    setState({ phase: "downloading", version, pct: 0 });
-    void installNativeUpdate(update, (pct) => {
-      if (mounted.current) setState({ phase: "downloading", version, pct });
-    })
-      .then(() => {
-        if (mounted.current) setState({ phase: "ready", version });
+  const prepare = (update: NativeUpdateHandle, version: string) => {
+    if (activeCancellation.current || preparedUpdate.current) return;
+    if (!nativeUpdateCoordinator.beginAction(owner, update)) {
+      setState({ phase: "failed", version, message: "Update preparation is active in another surface" });
+      return;
+    }
+    const cancellation: CancellationSignal = { cancelled: false };
+    activeCancellation.current = cancellation;
+    setState({ phase: "preparing", version, stage: "downloading", pct: 0 });
+    void prepareNativeUpdate(
+      update,
+      ({ phase, pct }) => {
+        if (mounted.current && !cancellation.cancelled) {
+          setState({ phase: "preparing", version, stage: phase, pct });
+        }
+      },
+      cancellation,
+    )
+      .then(async (result) => {
+        activeCancellation.current = null;
+        if (!mounted.current) {
+          await nativeUpdateCoordinator.finishAction(owner);
+          await nativeUpdateCoordinator.invalidate(update);
+          return;
+        }
+        if (result === "cancelled") {
+          await nativeUpdateCoordinator.finishAction(owner);
+          await nativeUpdateCoordinator.invalidate(update);
+          check();
+          return;
+        }
+        preparedUpdate.current = update;
+        setState({ phase: "prepared", version, update });
       })
-      .catch((err) => {
+      .catch(async (err) => {
+        await nativeUpdateCoordinator.finishAction(owner);
+        await nativeUpdateCoordinator.invalidate(update);
+        activeCancellation.current = null;
         if (mounted.current)
           setState({
             phase: "failed",
@@ -267,6 +538,29 @@ export function UpdateSettingsRow() {
             message: err instanceof Error ? err.message : "Update failed",
           });
       });
+  };
+
+  const cancelPreparation = (version: string) => {
+    if (!activeCancellation.current) return;
+    activeCancellation.current.cancelled = true;
+    setState({ phase: "cancelling", version });
+  };
+
+  const install = (update: NativeUpdateHandle, version: string) => {
+    if (preparedUpdate.current !== update) return;
+    preparedUpdate.current = null;
+    setState({ phase: "installing", version });
+    void installPreparedUpdate(update).catch(async (err) => {
+      await nativeUpdateCoordinator.finishAction(owner);
+      await nativeUpdateCoordinator.invalidate(update);
+      if (mounted.current) {
+        setState({
+          phase: "failed",
+          version,
+          message: errorMessage(err, "Update failed"),
+        });
+      }
+    });
   };
 
   const accentBtn =
@@ -277,18 +571,55 @@ export function UpdateSettingsRow() {
   let control: ReactNode;
   if (state.phase === "checking") {
     control = <span className="text-[12px] text-[var(--text-muted)]">Checking…</span>;
-  } else if (state.phase === "downloading") {
-    control = <span className="text-[12px] text-[var(--text-muted)]">Downloading… {state.pct}%</span>;
-  } else if (state.phase === "ready") {
-    control = <span className="text-[12px] font-medium text-[var(--text-primary)]">Restarting…</span>;
+  } else if (state.phase === "preparing") {
+    control = (
+      <>
+        <span className="text-[12px] text-[var(--text-muted)]">
+          {state.stage === "verifying" ? "Verifying signature…" : `Downloading… ${state.pct}%`}
+        </span>
+        <Button
+          variant="secondary"
+          size="xs"
+          onClick={() => cancelPreparation(state.version)}
+          className={secondaryBtn}
+        >
+          Cancel
+        </Button>
+      </>
+    );
+  } else if (state.phase === "cancelling") {
+    control = (
+      <span className="text-[12px] text-[var(--text-muted)]">
+        Cancelling after verification…
+      </span>
+    );
+  } else if (state.phase === "prepared") {
+    control = (
+      <>
+        <span className="text-[12px] font-medium text-[var(--text-primary)]">
+          v{state.version} verified
+        </span>
+        <Button
+          variant="primary"
+          size="xs"
+          onClick={() => install(state.update, state.version)}
+          className={accentBtn}
+          leadingIcon="ph:arrow-clockwise-bold"
+        >
+          Restart &amp; install
+        </Button>
+      </>
+    );
+  } else if (state.phase === "installing") {
+    control = <span className="text-[12px] font-medium text-[var(--text-primary)]">Installing…</span>;
   } else if (state.phase === "available") {
     const r = state.r; // narrowed to native | fallback
     control = (
       <>
         <span className="text-[12px] font-medium text-[var(--text-primary)]">v{r.version} available</span>
         {r.kind === "native" ? (
-          <Button variant="primary" size="xs" onClick={() => install(r.update, r.version)} className={accentBtn} leadingIcon="ph:arrow-down-bold">
-            Install &amp; restart
+          <Button variant="primary" size="xs" onClick={() => prepare(r.update, r.version)} className={accentBtn} leadingIcon="ph:arrow-down-bold">
+            Download update
           </Button>
         ) : (
           <Button variant="primary" size="xs" onClick={() => openInAppBrowserUrl(r.url)} className={accentBtn} leadingIcon="ph:arrow-square-out">
@@ -351,10 +682,35 @@ export function UpdateSettingsRow() {
         </Button>
       </>
     );
+  } else if (state.phase === "unavailable") {
+    // Both the native check and the fallback fetch failed — we could not
+    // verify anything, so don't claim currency (cave-lsk4).
+    control = (
+      <>
+        <span className="text-[12px] text-[var(--color-warning)]" title={state.message}>
+          Couldn&apos;t check — you may be offline
+        </span>
+        {state.stale ? (
+          <span className="text-[11px] text-[var(--text-muted)]">
+            Last known {state.stale.kind === "current" ? "current" : `v${state.stale.version} available`} · {relativeTime(state.stale.checkedAt)}
+          </span>
+        ) : null}
+        <Button
+          variant="secondary"
+          size="xs"
+          onClick={check}
+          className={secondaryBtn}
+        >
+          Retry
+        </Button>
+      </>
+    );
   } else {
     control = (
       <>
-        <span className="text-[12px] text-[var(--text-muted)]">Up to date</span>
+        <span className="text-[12px] text-[var(--text-muted)]" title={state.checkedAt}>
+          Up to date · confirmed {relativeTime(state.checkedAt)}
+        </span>
         <Button
           variant="secondary"
           size="xs"

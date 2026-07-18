@@ -91,18 +91,22 @@ const pageDrag = read("../lib/page-drag.ts");
 const slash = read("../lib/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
+// It now opens the Grimoire surface on its Journal tab; per-familiar journals
+// still live in Settings → Familiars → Journal via FamiliarStudioJournalTab.
 assert.match(
   ws,
-  /if \(next === "journal"\) \{[\s\S]{0,400}?openFamiliarStudioSettingsTab\("journal"\)/,
-  "setMode redirects journal to Settings → Familiars → Journal",
+  /if \(next === "journal"\) \{[\s\S]{0,400}?setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\)/,
+  "setMode routes journal into the Grimoire Journal tab",
 );
 assert.doesNotMatch(ws, /import \{ JournalView \}/, "workspace no longer imports JournalView");
 assert.doesNotMatch(ws, /mode === "journal" \?/, "no journal surface branch remains");
 assert.doesNotMatch(ws, /cave:journal-set-tab/, "the journal tab event plumbing is gone");
 assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal routes through the redirect");
 
-// ── Sidebar: the Journal row stays (redirects on click), minus sketches ─────
-assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal row");
+// ── Sidebar: the Journal mode stays reachable (⌘K palette + deep links via
+// navHidden) even though its dedicated row is retired — it's a tab inside
+// Memories now. ─────
+assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal FOLDER_MODES entry for the palette");
 assert.doesNotMatch(sidebar, /generated sketches/, "sidebar description no longer promises the canvas");
 
 // ── A redirect is not a page: journal can't be dragged into a split ─────────
@@ -117,10 +121,18 @@ const artifactViewer = read("./chat-artifact-viewer.tsx");
 // ── No surviving navigation into the retired Canvas page ─────────────────────
 assert.doesNotMatch(artifactViewer, /cave:journal/, "artifact viewer no longer deep-links the Canvas page");
 assert.match(artifactViewer, /Saved to Canvas/, "save-to-canvas confirms inline instead of navigating");
+// A persisted last-surface of "journal" now restores safely: setMode remaps
+// it to Grimoire's Journal tab, so the old skip-branch (which guarded against
+// a hard-navigate to Settings that no longer exists) was removed (cave-nwi8).
 assert.match(
   ws,
-  /last === "journal"/,
-  "a stale persisted last-surface of journal is not restored on familiar select",
+  /"journal" restores fine: setMode remaps it/,
+  "journal restore relies on the setMode remap instead of a stale skip-branch",
+);
+assert.match(
+  ws,
+  /if \(next === "journal"\) \{/,
+  "setMode still owns the journal→grimoire remap the restore path depends on",
 );
 
 const ghReview = read("./gh-review-actions.tsx");

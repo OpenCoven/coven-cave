@@ -47,8 +47,10 @@ assert.match(view, /Replying to \{replyTarget\.author\}/, "the chip names the qu
 assert.match(view, /aria-label="Cancel reply"/, "the chip has a dismiss control");
 
 // ── both TurnRow call sites pass the Reply action ─────────────────────────
+// (via the transcript's latest-ref so the memoized rows never hold a stale
+// replyFor — see chat-view-transcript-memo.test.ts)
 {
-  const wired = view.match(/onReply=\{replyFor\(t\)\}/g) ?? [];
+  const wired = view.match(/onReply=\{handlers\(\)\.replyFor\(t\)\}/g) ?? [];
   assert.equal(wired.length, 2, "onReply is wired at both TurnRow render sites (linear + voice group)");
 }
 

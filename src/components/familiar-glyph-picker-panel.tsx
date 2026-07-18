@@ -2,15 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import {
-  categories,
-  searchGlyphs,
-  type GlyphCatalogEntry,
-} from "@/lib/glyph-catalog";
+import type { GlyphCatalogEntry } from "@/lib/glyph-catalog";
 import {
   clearGlyphOverride,
   setGlyphOverride,
-  useGlyphOverrides,
   useRecentGlyphs,
 } from "@/lib/cave-glyph-overrides";
 import {
@@ -30,19 +25,32 @@ type Props = {
 };
 
 export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
-  const overrides = useGlyphOverrides();
+  const [catalog, setCatalog] = useState<typeof import("@/lib/glyph-catalog") | null>(null);
+  const [catalogFailed, setCatalogFailed] = useState(false);
   const recent = useRecentGlyphs();
   const [query, setQuery] = useState("");
-  const [hovered, setHoveredState] = useState<GlyphCatalogEntry | null>(null);
   const setHovered = useCallback(
     (entry: GlyphCatalogEntry | null) => {
-      setHoveredState(entry);
       onHoverChange?.(entry);
     },
     [onHoverChange],
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void import("@/lib/glyph-catalog")
+      .then((loaded) => {
+        if (active) setCatalog(loaded);
+      })
+      .catch(() => {
+        if (active) setCatalogFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 1D horizontal rove across every rendered glyph button (Recent + Results).
   // Vertical/grid-aware navigation is deferred — the responsive column-count
@@ -79,12 +87,15 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
   const resolved = useResolvedFamiliars([familiar])[0];
   const currentGlyph: FamiliarGlyph = resolved?.glyph ?? { kind: "icon", name: "ph:sparkle-fill" };
 
-  const results = useMemo(() => searchGlyphs({ query }).slice(0, 800), [query]);
+  const results = useMemo(
+    () => catalog?.searchGlyphs({ query }).slice(0, 800) ?? [],
+    [catalog, query],
+  );
 
   const categoryList = useMemo(() => {
-    if (query.trim()) return [];
-    return categories();
-  }, [query]);
+    if (query.trim() || !catalog) return [];
+    return catalog.categories();
+  }, [catalog, query]);
 
   // Recent only includes icon picks since the picker is icon-only now.
   // Older non-icon entries in localStorage are dropped from the recent strip.
@@ -112,8 +123,23 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
     [familiar.id],
   );
 
+  if (catalogFailed) {
+    return (
+      <div
+        className="familiar-glyph-picker-panel grid min-h-[22rem] flex-1 place-items-center px-6 text-center text-sm text-[var(--text-muted)]"
+        role="status"
+      >
+        The glyph catalog could not be loaded. Close and reopen the picker to retry.
+      </div>
+    );
+  }
+
+  if (!catalog) {
+    return <GlyphCatalogLoadingState />;
+  }
+
   return (
-    <div className="familiar-glyph-picker-panel">
+    <div className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col">
       {/* Search */}
       <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
         <div className="relative">
@@ -208,6 +234,32 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
             onHover={setHovered}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function GlyphCatalogLoadingState() {
+  return (
+    <div
+      className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col"
+      aria-busy="true"
+      aria-label="Loading glyph catalog"
+    >
+      <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
+        <div className="h-8 animate-pulse rounded-md bg-[var(--bg-raised)]/70" />
+      </div>
+      <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
+        <div className="h-2.5 w-16 animate-pulse rounded bg-[var(--bg-raised)]" />
+      </div>
+      <div className="grid flex-1 grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] content-start gap-1 px-3 py-3">
+        {Array.from({ length: 48 }, (_, index) => (
+          <span
+            key={index}
+            className="h-8 animate-pulse rounded-md bg-[var(--bg-raised)]/55"
+            aria-hidden
+          />
+        ))}
       </div>
     </div>
   );

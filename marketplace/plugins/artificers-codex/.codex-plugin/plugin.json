@@ -1,0 +1,33 @@
+{
+  "name": "artificers-codex",
+  "version": "0.1.0",
+  "description": "Optional AI and ML engineering specialization from model training to serving.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Artificer's Codex",
+    "shortDescription": "Optional AI and ML engineering specialization from model training to serving.",
+    "longDescription": "Optional AI and ML engineering specialization from model training to serving.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Artificer's Codex to open a bounded research direction."
+    ]
+  }
+}

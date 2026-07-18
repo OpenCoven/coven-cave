@@ -5,8 +5,40 @@ import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
-import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
-import { callDaemon } from "@/lib/coven-daemon";
+import {
+  globalNpmInstallOwner,
+  releaseGlobalNpmInstall,
+  reserveGlobalNpmInstall,
+  type NpmInstallLease,
+} from "@/lib/server/global-npm-install-lane";
+import {
+  covenBin,
+  covenSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenBin,
+  refreshCovenSpawnEnv,
+} from "@/lib/coven-bin";
+import { installHermesShim } from "@/lib/hermes-shim";
+import {
+  npmLaunchCommandForPath,
+  verifyOpenCovenToolInstall,
+  type OpenCovenToolVerification,
+} from "@/lib/opencoven-tools-status";
+import { invalidateOpenCovenToolUpdateCache } from "@/lib/opencoven-tools-update-cache";
+import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
+import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
+import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
+import { startLocalDaemon } from "@/lib/daemon-start";
+import { redactSecretText } from "@/lib/secret-redaction";
+import {
+  markDaemonCliInstalling,
+  daemonUpdateTraceLine,
+  prepareDaemonForCliUpdate,
+  recoverDaemonAfterCliUpdate,
+  type DaemonCommandResult,
+  type DaemonUpdateDependencies,
+  type DaemonUpdateLifecycle,
+} from "@/lib/daemon-update-lifecycle";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,16 +60,9 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TARGETS = {
   "coven-cli": {
     kind: "npm",
-    label: "coven CLI",
+    label: "Coven CLI",
     packageName: "@opencoven/cli@latest",
     binary: "coven",
-    timeoutMs: 240_000,
-  },
-  "coven-code": {
-    kind: "npm",
-    label: "Coven Code",
-    packageName: "coven-code@latest",
-    binary: "coven-code",
     timeoutMs: 240_000,
   },
   codex: {
@@ -52,6 +77,13 @@ const INSTALL_TARGETS = {
     label: "Claude Code",
     packageName: "@anthropic-ai/claude-code",
     binary: "claude",
+    timeoutMs: 240_000,
+  },
+  copilot: {
+    kind: "npm",
+    label: "Copilot",
+    packageName: "@github/copilot@latest",
+    binary: "copilot",
     timeoutMs: 240_000,
   },
   openclaw: {
@@ -77,6 +109,12 @@ const INSTALL_TARGETS = {
 type InstallTarget = keyof typeof INSTALL_TARGETS;
 type CommandPathResult = { path: string | null; error?: string };
 
+function isOpenCovenToolInstallTarget(
+  target: InstallTarget,
+): target is "coven-cli" {
+  return target === "coven-cli";
+}
+
 function nodeInstallHint(): string {
   if (process.platform === "darwin") {
     return "Install Node.js LTS from https://nodejs.org or with `brew install node`, then click Install again.";
@@ -89,7 +127,7 @@ function nodeInstallHint(): string {
 
 async function commandPath(
   binary: string,
-  opts: { refreshOnMiss?: boolean } = {},
+  opts: { refresh?: boolean; refreshOnMiss?: boolean } = {},
 ): Promise<CommandPathResult> {
   const finder = process.platform === "win32" ? "where" : "which";
   const find = async (env: NodeJS.ProcessEnv) => {
@@ -98,7 +136,13 @@ async function commandPath(
         env,
         timeout: 1500,
       });
-      return { path: stdout.trim().split(/\r?\n/)[0] || null };
+      const lines = stdout.split(/\r?\n/);
+      return {
+        path:
+          process.platform === "win32"
+            ? pickWindowsLauncher(lines)
+            : lines.map((l) => l.trim()).find(Boolean) ?? null,
+      };
     } catch (err) {
       const code = (err as { code?: unknown }).code;
       if (code === 1) return { path: null };
@@ -108,7 +152,7 @@ async function commandPath(
       };
     }
   };
-  const found = await find(covenSpawnEnv());
+  const found = await find(opts.refresh ? refreshCovenSpawnEnv() : covenSpawnEnv());
   if (found.path || found.error || !opts.refreshOnMiss) return found;
   return find(refreshCovenSpawnEnv());
 }
@@ -170,6 +214,8 @@ type SpawnPlan = {
   command: string;
   args: string[];
   shell: boolean;
+  /** Sanitized, path-free facts retained independently from npm output. */
+  traceLines: string[];
 };
 
 function sleep(ms: number) {
@@ -209,13 +255,29 @@ async function spawnPlanFor(
       return { sudoRequired: true, packageName: target.packageName };
     }
 
+    const launch = npmLaunchCommandForPath(npm);
+    if (!launch) {
+      return {
+        commandLookupFailed: true,
+        binary: "npm runtime",
+        error: `Could not resolve npm-cli.js from ${npm}`,
+      };
+    }
+
     return {
-      command: npm,
-      args: ["install", "-g", target.packageName],
-      // Windows resolves npm to npm.cmd, which Node refuses to spawn without
-      // a shell. The argv is fully fixed (allowlisted package, no user
-      // input), so shell interpolation has nothing to grab.
-      shell: process.platform === "win32",
+      command: launch.command,
+      args: [...launch.fixedArgs, "install", "-g", target.packageName],
+      // Node 24 concatenates shell:true argv without escaping. A Windows npm
+      // path such as C:\Program Files\nodejs\npm.cmd is consequently truncated
+      // to C:\Program and exits 1. npmLaunchCommandForPath remaps the shim to
+      // `node npm-cli.js`, preserving fixed argv without cmd.exe.
+      shell: false,
+      traceLines: [
+        "npm discovery: runnable launcher found on Cave PATH.",
+        launch.fixedArgs.length > 0
+          ? "Installer launch: npm-cli.js via Node with fixed argv; shell disabled."
+          : "Installer launch: direct npm executable with fixed argv; shell disabled.",
+      ],
     };
   }
   // kind === "script" — run the harness's official installer exactly as its
@@ -226,12 +288,14 @@ async function spawnPlanFor(
       command: "powershell",
       args: ["-NoProfile", "-Command", target.windows],
       shell: false,
+      traceLines: ["Installer launch: pinned PowerShell allowlist script; nested shell disabled."],
     };
   }
   return {
     command: "bash",
     args: ["-lc", target.posix],
     shell: false,
+    traceLines: ["Installer launch: pinned POSIX allowlist script."],
   };
 }
 
@@ -242,16 +306,27 @@ type InstallJob = {
   finishedAt?: number;
   /** Raw interleaved stdout+stderr, capped to OUTPUT_CAP. */
   output: string;
+  /** Sanitized lifecycle facts that must survive a long raw-output tail. */
+  trace: string[];
   ok?: boolean;
   code?: number | null;
   binaryPath?: string | null;
+  verification?: OpenCovenToolVerification;
   error?: string;
+  /** Present only for a Coven CLI update, never for other tool installers. */
+  daemon?: DaemonUpdateLifecycle;
+  /** Cancels preparation or the spawned process; never exposed to clients. */
+  cancel?: () => void;
+  cancelRequested?: boolean;
 };
 
 /** Last ~8 KB of installer output is plenty for a progress tail and keeps
  *  long installs (Hermes bootstraps a Python toolchain) from growing
  *  unbounded in memory. */
 const OUTPUT_CAP = 8_192;
+const CLIENT_TAIL_CAP = 2_000;
+const TRACE_LINE_CAP = 240;
+const TRACE_LINES_CAP = 8;
 
 // Next dev re-evaluates this module on HMR; a plain module-level Map would
 // orphan running jobs. globalThis survives re-evaluation.
@@ -261,17 +336,101 @@ const globalScope = globalThis as unknown as {
 const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
   new Map());
 
-function appendOutput(job: InstallJob, chunk: string) {
-  job.output = (job.output + chunk).slice(-OUTPUT_CAP);
+function redactSensitiveInstallOutput(value: string): string {
+  return redactSecretText(value).replace(
+    /^.*(?:GITHUB_(?:PAT|PERSONAL_ACCESS_TOKEN)|NPM_CONFIG_.*(?:AUTH|TOKEN)|(?:^|[_-])TOKEN)\s*=.*$/gim,
+    "[redacted sensitive installer output]",
+  );
 }
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+type NpmLaneView = {
+  npmBusy: boolean;
+  npmBusyTarget: InstallTarget | null;
+  npmBusyLabel: string | null;
+  npmJob?: ReturnType<typeof jobView>;
+};
+
+/**
+ * The lease intentionally lives outside the jobs map. A request can spend time
+ * on target-specific preparation before it reserves the npm tree, and the
+ * final reservation has to be atomic across every npm target.
+ */
+function activeNpmInstallTarget(): InstallTarget | null {
+  const owner = globalNpmInstallOwner();
+  if (!owner || !isInstallTarget(owner)) return null;
+  const job = jobs.get(owner);
+  if (job?.status === "running" && job.kind === "npm") return owner;
+  // Recovery after HMR/reload: a completed or orphaned job must never leave
+  // the process-wide lease stuck. This only clears the same owner, so it
+  // cannot release a newer reservation.
+  releaseGlobalNpmInstall(owner);
+  return null;
+}
+
+function npmLaneView(): NpmLaneView {
+  const target = activeNpmInstallTarget();
+  if (!target) {
+    return { npmBusy: false, npmBusyTarget: null, npmBusyLabel: null };
   }
+  const job = jobs.get(target);
+  return {
+    npmBusy: true,
+    npmBusyTarget: target,
+    npmBusyLabel: INSTALL_TARGETS[target].label,
+    ...(job ? { npmJob: jobView(job) } : {}),
+  };
+}
+
+function npmBusyResponse(owner: InstallTarget) {
+  return NextResponse.json(
+    {
+      ok: false,
+      retryable: true,
+      code: "npm_install_in_progress",
+      error: `${INSTALL_TARGETS[owner].label} is updating the shared global npm directory. Wait for it to finish, then retry.`,
+      ...npmLaneView(),
+    },
+    { status: 409, headers: { "Retry-After": "2" } },
+  );
+}
+
+function appendOutput(job: InstallJob, chunk: string) {
+  job.output = redactSensitiveInstallOutput(job.output + stripAnsi(chunk)).slice(-OUTPUT_CAP);
+}
+
+function appendTrace(job: InstallJob, line: string) {
+  const safeLine = redactSensitiveInstallOutput(stripAnsi(line))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, TRACE_LINE_CAP);
+  if (!safeLine) return;
+  job.trace = [...job.trace, safeLine].slice(-TRACE_LINES_CAP);
+}
+
+/** Keep lifecycle facts stable while retaining the most useful raw output. */
+function installJobTail(job: InstallJob): string {
+  const trace = job.trace.join("\n").slice(-CLIENT_TAIL_CAP);
+  const separator = trace && job.output ? "\n" : "";
+  const outputBudget = Math.max(0, CLIENT_TAIL_CAP - trace.length - separator.length);
+  return `${trace}${separator}${job.output.slice(-outputBudget)}`;
+}
+
+function releaseNpmLease(job: InstallJob, npmLease?: NpmInstallLease) {
+  if (!npmLease) return;
+  npmLease.release();
+  appendTrace(job, "Global npm lane: released.");
+}
+
+function verificationTraceLine(verification: OpenCovenToolVerification): string {
+  const yesNo = (value: boolean | null) =>
+    value === null ? "unknown" : value ? "yes" : "no";
+  return (
+    "Post-install verification: " +
+    `package=${yesNo(verification.packageVerified)}; ` +
+    `executable=${yesNo(verification.executableVerified)}; ` +
+    `compatible=${yesNo(verification.compatible)}; ` +
+    `latest=${yesNo(verification.latestSatisfied)}.`
+  );
 }
 
 function runCommand(
@@ -288,10 +447,10 @@ function runCommand(
     let output = "";
     const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
     child.stdout.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
     });
     child.stderr.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
     });
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -304,59 +463,88 @@ function runCommand(
   });
 }
 
-async function prepareForInstall(
-  targetName: InstallTarget,
-  target: (typeof INSTALL_TARGETS)[InstallTarget],
-  job: InstallJob,
-) {
-  if (targetName !== "coven-cli") return;
-  appendOutput(job, "Preparing coven CLI update: checking daemon lock state...\n");
-  const health = await callDaemon<{ ok?: boolean; daemon?: { pid?: number } }>({
-    path: "/api/v1/health",
-    timeoutMs: 800,
-  });
-  const pid = health.data?.daemon?.pid;
-  if (!health.ok || typeof pid !== "number" || !Number.isFinite(pid) || pid <= 0) {
-    appendOutput(job, "No reachable Coven daemon reported a live pid; continuing.\n");
-    return;
-  }
+type LocalDaemonHealth = { ok?: boolean; daemon?: { pid?: number } };
 
-  appendOutput(job, `Stopping Coven daemon before updating ${target.label} (pid ${pid})...\n`);
-  const stop = await runCommand(covenBin(), ["daemon", "stop"], {
-    shell: process.platform === "win32",
-    timeoutMs: 8_000,
-  });
-  if (stop.output.trim()) appendOutput(job, `${stop.output.trim()}\n`);
-  appendOutput(
-    job,
-    stop.code === 0
-      ? "Coven daemon stop command completed; verifying process exit...\n"
-      : `Coven daemon stop exited ${stop.code === null ? `signal ${stop.signal ?? "unknown"}` : `code ${stop.code}`}; verifying process exit...\n`,
-  );
-  await sleep(500);
+function commandResultDetail(result: {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  output: string;
+}): string {
+  const exit = result.code === null ? `signal ${result.signal ?? "unknown"}` : `code ${result.code}`;
+  return result.output.trim() ? `${exit}: ${result.output.trim()}` : exit;
+}
 
-  if (!isProcessAlive(pid)) {
-    appendOutput(job, "Coven daemon is stopped; continuing with npm update.\n");
-    return;
-  }
+function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies {
+  // A CLI update only ever touches the laptop-local daemon. The configured
+  // target can be a remote hub, whose health and PID must never influence this
+  // machine's updater lifecycle. Resolve it for every probe: Windows daemon
+  // restarts write a new pipe name to daemon.json, so holding the pre-update
+  // target would make an otherwise healthy recovery look offline.
+  return {
+    checkHealth: async () => {
+      const health = await callDaemonTarget<LocalDaemonHealth>(localDaemonTarget(), {
+        path: "/api/v1/health",
+        timeoutMs: 800,
+      });
+      const reachable = health.ok && health.data?.ok !== false;
+      return {
+        ok: reachable,
+        ...(reachable
+          ? {}
+          : { detail: health.error ?? (health.ok ? "daemon reported unhealthy" : `daemon http ${health.status}`) }),
+      };
+    },
+    stop: async (): Promise<DaemonCommandResult> => {
+      const stop = await runCommand(covenBin(), ["daemon", "stop"], {
+        shell: process.platform === "win32",
+        timeoutMs: 8_000,
+      });
+      return { ok: stop.code === 0, detail: commandResultDetail(stop) };
+    },
+    start: async (): Promise<DaemonCommandResult> => {
+      const started = await startLocalDaemon({ healthTimeoutMs: 800, startTimeoutMs: 8_000 });
+      if (started.ok) {
+        return {
+          ok: true,
+          detail: "alreadyRunning" in started && started.alreadyRunning
+            ? "daemon was already running"
+            : "daemon start completed",
+        };
+      }
+      const details = "error" in started
+        ? started.error
+        : [started.stderr, started.stdout].filter(Boolean).join("\n") || `exit ${started.exitCode ?? "unknown"}`;
+      return { ok: false, detail: details };
+    },
+    refreshExecutable: () => {
+      refreshCovenBin();
+      refreshCovenSpawnEnv();
+    },
+    wait: sleep,
+    onState: (daemon) => {
+      job.daemon = daemon;
+      appendOutput(job, daemonUpdateTraceLine(daemon));
+    },
+  };
+}
 
-  appendOutput(job, `Coven daemon is still running; terminating pid ${pid} to unlock coven.exe...\n`);
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch (err) {
-    appendOutput(
-      job,
-      `Could not terminate daemon pid ${pid}: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return;
+async function prepareForInstall(targetName: InstallTarget, job: InstallJob): Promise<boolean> {
+  if (targetName !== "coven-cli") return true;
+  appendOutput(job, "Preparing Coven CLI update: checking local daemon lifecycle...\n");
+  const dependencies = daemonLifecycleDependencies(job);
+  const prepared = await prepareDaemonForCliUpdate(dependencies);
+  job.daemon = prepared.lifecycle;
+  if (prepared.canInstall && prepared.lifecycle.wasRunning) {
+    job.daemon = markDaemonCliInstalling(prepared.lifecycle, dependencies);
   }
-  await sleep(500);
-  appendOutput(
-    job,
-    isProcessAlive(pid)
-      ? "Warning: daemon process still appears to be running; npm may report a file lock.\n"
-      : "Daemon process terminated; continuing with npm update.\n",
-  );
+  return prepared.canInstall;
+}
+
+async function recoverDaemonAfterCliInstall(targetName: InstallTarget, job: InstallJob): Promise<boolean> {
+  if (targetName !== "coven-cli" || !job.daemon) return true;
+  const recovered = await recoverDaemonAfterCliUpdate(job.daemon, daemonLifecycleDependencies(job));
+  job.daemon = recovered.lifecycle;
+  return recovered.ok;
 }
 
 function installFailureHint(targetName: InstallTarget, output: string): string | null {
@@ -364,7 +552,7 @@ function installFailureHint(targetName: InstallTarget, output: string): string |
     targetName === "coven-cli" &&
     /(EBUSY|resource busy|locked|coven\.exe)/i.test(output)
   ) {
-    return "coven.exe is still locked by a running daemon. Cave tried to stop it first; fully quit Cave, end the coven process in Task Manager if it remains, then retry the update.";
+    return "coven.exe is still locked. Cave only uses graceful local-daemon shutdown and never terminates a process by PID. Quit the process that owns the file (or restart Cave), then retry the update.";
   }
   // Backstop for a non-writable global prefix that slipped past the upfront
   // writability check (race, or a prefix we couldn't resolve): npm reports a
@@ -380,10 +568,15 @@ function installFailureHint(targetName: InstallTarget, output: string): string |
 }
 
 function jobView(job: InstallJob) {
-  const tail = job.output.slice(-2000);
+  const tail = installJobTail(job);
   const elapsedMs = (job.finishedAt ?? Date.now()) - job.startedAt;
   if (job.status === "running") {
-    return { status: "running" as const, elapsedMs, tail };
+    return {
+      status: "running" as const,
+      elapsedMs,
+      tail,
+      ...(job.daemon ? { daemon: job.daemon } : {}),
+    };
   }
   return {
     status: "done" as const,
@@ -392,6 +585,8 @@ function jobView(job: InstallJob) {
     ok: job.ok ?? false,
     code: job.code ?? null,
     binaryPath: job.binaryPath ?? null,
+    ...(job.verification ? { verification: job.verification } : {}),
+    ...(job.daemon ? { daemon: job.daemon } : {}),
     ...(job.error ? { error: job.error } : {}),
   };
 }
@@ -401,17 +596,327 @@ function installStartErrorMessage(err: unknown): string {
   if (/resource temporarily unavailable|EAGAIN|uv_thread_create/i.test(message)) {
     return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
   }
-  return message || "install failed to start";
+  if (!message) return "install failed to start";
+  return "Cave could not start the installer. Retry in a moment; if it continues, copy diagnostics for support.";
 }
 
-function finishInstallJobError(job: InstallJob, err: unknown) {
+function finishInstallJobError(
+  job: InstallJob,
+  err: unknown,
+  npmLease?: NpmInstallLease,
+  safeMessage?: string,
+) {
+  if (job.status !== "running") return;
   job.status = "done";
   job.finishedAt = Date.now();
   job.ok = false;
-  job.error = installStartErrorMessage(err);
+  job.error = safeMessage ?? installStartErrorMessage(err);
+  job.cancel = undefined;
+  releaseNpmLease(job, npmLease);
+}
+
+function installerOutcomeError(
+  targetName: InstallTarget,
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  installed: CommandPathResult,
+  output: string,
+  priorError?: string,
+): string | null {
+  if (priorError) return priorError;
+  if (installed.error) {
+    return `Could not verify ${target.binary} on PATH after install: ${installed.error}`;
+  }
+  if (code === 0 && installed.path) return null;
+  return installFailureHint(targetName, output) ??
+    (code === 0
+      ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+      : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
+}
+
+async function finishInstallJob(
+  targetName: InstallTarget,
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+  job: InstallJob,
+  {
+    code,
+    signal,
+    launchError,
+  }: { code: number | null; signal: NodeJS.Signals | null; launchError?: unknown },
+  npmLease?: NpmInstallLease,
+) {
+  if (job.status !== "running") {
+    releaseNpmLease(job, npmLease);
+    return;
+  }
+  try {
+    if (launchError) {
+      appendOutput(job, `${installStartErrorMessage(launchError)}\n`);
+    }
+
+    const priorError = launchError
+      ? installStartErrorMessage(launchError)
+      : job.error;
+    const shouldVerifyOpenCovenTool =
+      !priorError && code === 0 && isOpenCovenToolInstallTarget(targetName);
+    let verification: OpenCovenToolVerification | undefined;
+    let verificationError: string | null = null;
+    let installed: CommandPathResult;
+
+    if (shouldVerifyOpenCovenTool) {
+      try {
+        verification = await verifyOpenCovenToolInstall(targetName);
+        installed = { path: verification.path };
+        let resolutionHint: string | null = null;
+        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+          // npm succeeded but PATH still resolves something that fails
+          // verification — usually a stale launcher shadowing the fresh
+          // npm-prefix copy. Try the identity-gated cleanup so the Update
+          // button can actually resolve that state instead of reporting it
+          // forever; when cleanup is unsafe, surface its manual hint.
+          const resolution = await resolveStaleOpenCovenLaunchers(
+            targetName,
+            verification.latest,
+          );
+          for (const line of resolution.log) appendOutput(job, `${line}\n`);
+          resolutionHint = resolution.hint;
+          if (resolution.verification) {
+            verification = resolution.verification;
+            installed = { path: verification.path };
+          }
+        }
+        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+          verificationError = [
+            verification.error ?? `Could not verify ${target.binary} after install.`,
+            resolutionHint,
+          ]
+            .filter(Boolean)
+            .join(" ");
+        }
+      } catch {
+        installed = { path: null };
+        verificationError =
+          `Could not complete ${target.binary} post-install verification. Re-check the tool and retry.`;
+      }
+    } else {
+      installed = await commandPath(
+        target.binary,
+        targetName === "coven-cli" ? { refresh: true } : undefined,
+      );
+    }
+
+    const installError = shouldVerifyOpenCovenTool
+      ? verificationError
+      : installerOutcomeError(
+          targetName,
+          target,
+          code,
+          signal,
+          installed,
+          job.output,
+          priorError,
+        );
+    const installOk = verification
+      ? isVerifiedOpenCovenInstallSuccess(code, verification)
+      : !installError && code === 0 && !!installed.path;
+    if (isOpenCovenToolInstallTarget(targetName)) {
+      appendTrace(
+        job,
+        verification
+          ? verificationTraceLine(verification)
+          : "Post-install verification: skipped because the installer did not succeed.",
+      );
+    }
+
+    // Hermes has no positional prompt slot, so the harness's `-- "<prompt>"`
+    // convention needs the hermes-coven shim to remap it onto -q. This remains
+    // best-effort: a shim failure never turns an otherwise successful install
+    // into a failed tool update.
+    if (installOk && targetName === "hermes" && installed.path) {
+      try {
+        const shim = await installHermesShim(installed.path);
+        appendOutput(
+          job,
+          shim.ok
+            ? `Installed hermes-coven shim at ${shim.path}\n`
+            : `Note: could not install hermes-coven shim (${shim.error}); ` +
+                "chat may fail until it is installed manually.\n",
+        );
+      } catch (err) {
+        appendOutput(
+          job,
+          `Note: could not install hermes-coven shim (${err instanceof Error ? err.message : String(err)}); chat may fail until it is installed manually.\n`,
+        );
+      }
+    }
+
+    const recovered = await recoverDaemonAfterCliInstall(targetName, job);
+    const recoveryError = !recovered
+      ? job.daemon?.detail ?? "local daemon recovery failed"
+      : null;
+
+    job.status = "done";
+    job.finishedAt = Date.now();
+    if (installOk && targetName === "coven-cli") invalidateOpenCovenToolUpdateCache();
+    job.ok = installOk && recovered;
+    job.code = code;
+    job.binaryPath = installed.path;
+    if (verification) job.verification = verification;
+    if (!job.ok) {
+      job.error = [installError, recoveryError].filter(Boolean).join(" ");
+    } else {
+      delete job.error;
+    }
+  } catch (err) {
+    job.status = "done";
+    job.finishedAt = Date.now();
+    job.ok = false;
+    job.code = code;
+    job.error = installStartErrorMessage(err);
+    appendOutput(job, `${job.error}\n`);
+  } finally {
+    job.cancel = undefined;
+    releaseNpmLease(job, npmLease);
+  }
+}
+
+/**
+ * Run one already-reserved install job. The lease is released from every
+ * terminal path (spawn error, normal close, cancellation, and the timeout
+ * watchdog), rather than from client polling.
+ */
+async function runInstallJob(
+  targetName: InstallTarget,
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+  plan: SpawnPlan,
+  job: InstallJob,
+  npmLease?: NpmInstallLease,
+) {
+  let child: ReturnType<typeof spawn> | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let killTimer: NodeJS.Timeout | undefined;
+  let forceFinishTimer: NodeJS.Timeout | undefined;
+  let terminationRequested = false;
+  let finalized = false;
+
+  const clearTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (killTimer) clearTimeout(killTimer);
+    if (forceFinishTimer) clearTimeout(forceFinishTimer);
+  };
+  const finish = async (
+    code: number | null,
+    signal: NodeJS.Signals | null,
+    launchError?: unknown,
+  ) => {
+    if (finalized) return;
+    finalized = true;
+    clearTimers();
+    appendTrace(
+      job,
+      launchError
+        ? "Installer process: did not start."
+        : code === null
+          ? `Installer process: ended by signal ${signal ?? "unknown"}.`
+          : `Installer process: exited with code ${code}.`,
+    );
+    await finishInstallJob(
+      targetName,
+      target,
+      job,
+      { code, signal, launchError },
+      npmLease,
+    );
+  };
+  const requestTermination = (reason: string) => {
+    if (!child || terminationRequested) return;
+    terminationRequested = true;
+    if (timer) clearTimeout(timer);
+    appendOutput(job, `${reason}\n`);
+    child.kill("SIGTERM");
+    killTimer = setTimeout(() => child?.kill("SIGKILL"), 10_000);
+    // A misbehaving child must not keep the UI or the npm lane stuck forever.
+    // SIGKILL/TerminateProcess has already been requested at this point; this
+    // watchdog only settles the in-memory job if Node never emits `close`.
+    forceFinishTimer = setTimeout(
+      () => void finish(null, null, new Error(job.error ?? reason)),
+      11_000,
+    );
+  };
+
+  job.cancel = () => {
+    if (job.status !== "running" || job.cancelRequested) return;
+    job.cancelRequested = true;
+    job.error = "install cancelled";
+    if (!child) {
+      appendOutput(job, "Cancellation requested during preparation.\n");
+      return;
+    }
+    requestTermination("Cancellation requested; stopping installer...");
+  };
+
+  try {
+    const readyForInstall = await prepareForInstall(targetName, job);
+
+    if (job.cancelRequested) {
+      await finish(null, null, new Error("install cancelled"));
+      return;
+    }
+
+    if (!readyForInstall) {
+      finalized = true;
+      clearTimers();
+      const safeMessage =
+        "Cave could not safely stop the local daemon before updating the CLI. The update was not started.";
+      appendTrace(job, "Installer process: not started because daemon preparation failed.");
+      appendTrace(job, "Post-install verification: skipped because the installer did not start.");
+      finishInstallJobError(
+        job,
+        new Error(job.daemon?.detail ?? safeMessage),
+        npmLease,
+        safeMessage,
+      );
+      return;
+    }
+
+    child = spawn(plan.command, plan.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: covenSpawnEnv(),
+      shell: plan.shell,
+    });
+    child.stdout?.on("data", (d) => appendOutput(job, d.toString()));
+    child.stderr?.on("data", (d) => appendOutput(job, d.toString()));
+    timer = setTimeout(() => {
+      job.error = `install timed out after ${target.timeoutMs / 1000}s`;
+      requestTermination(`${job.error}; stopping installer...`);
+    }, target.timeoutMs);
+    child.on("error", (err) => void finish(null, null, err));
+    child.on("close", (code, signal) => void finish(code, signal));
+  } catch (err) {
+    await finish(null, null, err);
+  }
 }
 
 export async function GET(req: Request) {
+  const target = new URL(req.url).searchParams.get("target");
+  // Client surfaces poll this lightweight lane view so a job started from a
+  // different surface/window disables its own npm actions immediately.
+  if (target === null) {
+    return NextResponse.json({ status: "idle", ...npmLaneView() });
+  }
+  if (!isInstallTarget(target)) {
+    return NextResponse.json(
+      { ok: false, error: "unknown install target" },
+      { status: 400 },
+    );
+  }
+  const job = jobs.get(target);
+  if (!job) return NextResponse.json({ status: "idle", ...npmLaneView() });
+  return NextResponse.json({ ...jobView(job), ...npmLaneView() });
+}
+
+export async function DELETE(req: Request) {
   const target = new URL(req.url).searchParams.get("target");
   if (!isInstallTarget(target)) {
     return NextResponse.json(
@@ -420,8 +925,19 @@ export async function GET(req: Request) {
     );
   }
   const job = jobs.get(target);
-  if (!job) return NextResponse.json({ status: "idle" });
-  return NextResponse.json(jobView(job));
+  if (!job || job.status !== "running") {
+    return NextResponse.json(
+      { ok: false, error: "no running install for this target", ...npmLaneView() },
+      { status: 409 },
+    );
+  }
+  job.cancel?.();
+  return NextResponse.json({
+    ok: true,
+    cancelling: true,
+    ...jobView(job),
+    ...npmLaneView(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -450,20 +966,12 @@ export async function POST(req: Request) {
     return NextResponse.json(jobView(existing));
   }
 
-  // Concurrent `npm install -g` calls race the global tree; script installers
-  // (Hermes) are independent and may run alongside anything.
+  // This early check keeps the ordinary busy path quick. The authoritative,
+  // atomic reservation comes *after* spawnPlanFor below, because that function
+  // awaits target preparation and two requests can pass this check together.
   if (target.kind === "npm") {
-    for (const [otherName, other] of jobs) {
-      if (other.status === "running" && other.kind === "npm") {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `wait for ${INSTALL_TARGETS[otherName].label} to finish`,
-          },
-          { status: 409 },
-        );
-      }
-    }
+    const activeTarget = activeNpmInstallTarget();
+    if (activeTarget) return npmBusyResponse(activeTarget);
   }
 
   const plan = await spawnPlanFor(target);
@@ -484,7 +992,7 @@ export async function POST(req: Request) {
         ok: false,
         commandLookupFailed: true,
         error: `Cave couldn't check ${plan.binary} on PATH`,
-        hint: `Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again. Details: ${plan.error}`,
+        hint: "Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again.",
       },
       { status: 503 },
     );
@@ -514,73 +1022,35 @@ export async function POST(req: Request) {
     return NextResponse.json(jobView(recheck));
   }
 
+  // This is the atomic boundary. It comes after every asynchronous plan
+  // lookup/preparation step and covers every npm allowlist target, rather than
+  // only the requested target. Script installers intentionally do not reserve
+  // it and may continue under the existing independent-installer policy.
+  const reservation =
+    target.kind === "npm" ? reserveGlobalNpmInstall(targetName) : null;
+  if (reservation && !reservation.ok) {
+    const owner = isInstallTarget(reservation.owner)
+      ? reservation.owner
+      : targetName;
+    return npmBusyResponse(owner);
+  }
+  const npmLease = reservation?.ok ? reservation.lease : undefined;
+
   const job: InstallJob = {
     status: "running",
     kind: target.kind,
     startedAt: Date.now(),
     output: "",
+    trace: [],
   };
+  for (const line of plan.traceLines) appendTrace(job, line);
+  if (npmLease) appendTrace(job, "Global npm lane: reserved for this installer.");
   jobs.set(targetName, job);
 
-  void (async () => {
-    try {
-      try {
-        await prepareForInstall(targetName, target, job);
-      } catch (err) {
-        appendOutput(
-          job,
-          `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
-      }
-
-      const child = spawn(plan.command, plan.args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: covenSpawnEnv(),
-        shell: plan.shell,
-      });
-      child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-      child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-      let killTimer: NodeJS.Timeout | undefined;
-      const timer = setTimeout(() => {
-        // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
-        job.error = `install timed out after ${target.timeoutMs / 1000}s`;
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-      }, target.timeoutMs);
-      child.on("error", (e) => {
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        finishInstallJobError(job, e);
-      });
-      child.on("close", (code, signal) => {
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        void (async () => {
-          const installed = await commandPath(target.binary);
-          const installedPath = installed.path;
-          const ok = code === 0 && !!installedPath && !job.error;
-          job.status = "done";
-          job.finishedAt = Date.now();
-          job.ok = ok;
-          job.code = code;
-          job.binaryPath = installedPath;
-          if (!ok && !job.error) {
-            job.error = installed.error
-              ? `Could not verify ${target.binary} on PATH after install: ${installed.error}`
-              : installFailureHint(targetName, job.output) ??
-                (code === 0
-                  ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                  : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
-          }
-        })();
-      });
-    } catch (err) {
-      finishInstallJobError(job, err);
-    }
-  })();
+  void runInstallJob(targetName, target, plan, job, npmLease);
 
   return NextResponse.json(
-    { started: true, target: targetName },
+    { started: true, target: targetName, ...npmLaneView() },
     { status: 202 },
   );
 }

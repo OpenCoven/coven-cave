@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +20,9 @@ import { join } from "node:path";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const E2E_RUN_ID = randomUUID();
+const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 
 export default defineConfig({
   testDir: "./tests",
@@ -39,19 +43,50 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
+    // Canonical preferences are process-wide rather than browser-origin state.
+    // Run the one mutating persistence case in an explicit chain, restore its
+    // prior value, then release the normal fully-parallel projects. This keeps
+    // the desktop/Chromium-mobile/WebKit coverage without leaking scale=125
+    // into unrelated tests or racing another project's cleanup.
+    {
+      name: "preferences-desktop",
+      testMatch: MOBILE_FOUNDATIONS_SPEC,
+      grep: PERSISTED_SCREEN_SCALE_TEST,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "preferences-pixel-5",
+      dependencies: ["preferences-desktop"],
+      testMatch: MOBILE_FOUNDATIONS_SPEC,
+      grep: PERSISTED_SCREEN_SCALE_TEST,
+      use: { ...devices["Pixel 5"] },
+    },
+    {
+      name: "preferences-iphone-13",
+      dependencies: ["preferences-pixel-5"],
+      testMatch: MOBILE_FOUNDATIONS_SPEC,
+      grep: PERSISTED_SCREEN_SCALE_TEST,
+      use: { ...devices["iPhone 13"] },
+    },
     {
       name: "desktop",
+      dependencies: ["preferences-iphone-13"],
       testMatch: /.*\.spec\.ts/,
+      grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "pixel-5",
+      dependencies: ["preferences-iphone-13"],
       testMatch: /mobile\/.*\.spec\.ts/,
+      grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Pixel 5"] },
     },
     {
       name: "iphone-13",
+      dependencies: ["preferences-iphone-13"],
       testMatch: /mobile\/.*\.spec\.ts/,
+      grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["iPhone 13"] },
     },
   ],
@@ -59,12 +94,18 @@ export default defineConfig({
     command: `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
     url: BASE_URL,
     timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    // Preference tests mutate the canonical app-owned store. Never attach them
+    // to an arbitrary server that may be using the developer's real ~/.coven.
+    reuseExistingServer: false,
     env: {
       COVEN_CAVE_E2E: "1",
-      // Redirect theme writes to a throwaway file so an E2E run never clobbers
-      // a real user's ~/.coven/cave-theme.json (which the iOS app polls).
-      COVEN_THEME_PATH: join(tmpdir(), "cave-e2e-theme.json"),
+      // Keep app-owned preferences and backdrop bytes out of the developer's
+      // real ~/.coven directory. A per-config UUID prevents concurrent runs or
+      // later PID reuse from sharing stale state while remaining stable for
+      // every request in this run.
+      COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
+      COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
+      COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),
     },
   },
 });

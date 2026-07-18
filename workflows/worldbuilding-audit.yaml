@@ -1,0 +1,66 @@
+id: worldbuilding-audit
+version: 0.1.0
+name: Worldbuilding Audit
+summary: Audit the world encyclopedia for dead links, unresolved stubs, missing backlinks, and continuity contradictions before canon drifts.
+familiar: research
+pattern: review-and-apply
+tags:
+  - worldbuilding
+  - writing
+  - continuity
+limits:
+  max_agents: 4
+  timeout_s: 1800
+  cost_ceiling_usd: 4
+permissions:
+  - file.read
+  - file.write
+visibility:
+  public: true
+  coven_cave: true
+steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The worldbuilding vault collection or project world folder to audit.
+  - id: scan-encyclopedia
+    kind: agent
+    name: Scan encyclopedia
+    uses: research
+    summary: Read collection metadata and entries, then find dead links, unresolved wiki-links, stubbed-but-never-filled pages, and missing backlinks.
+    requires:
+      - input
+  - id: classify-severity
+    kind: agent
+    name: Classify severity
+    uses: research
+    summary: Group findings by continuity risk, reader confusion, broken graph navigation, and low-priority cleanup.
+    requires:
+      - scan-encyclopedia
+  - id: produce-report
+    kind: tool
+    name: Produce audit report
+    uses: cave.output
+    summary: Write a prioritized fix report with evidence links and proposed stub/link edits.
+    requires:
+      - classify-severity
+  - id: review-gate
+    kind: human-gate
+    name: Human review
+    uses: valentina
+    summary: Ask which proposed stubs, backlinks, and flags should be applied, because contradictions may be intentional mysteries.
+    requires:
+      - produce-report
+  - id: apply-approved-fixes
+    kind: tool
+    name: Apply approved stubs and links
+    uses: cave.output
+    summary: Apply only approved stub, backlink, and flags-list edits to the encyclopedia.
+    requires:
+      - review-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The final audit report and the list of approved changes applied.
+    requires:
+      - apply-approved-fixes

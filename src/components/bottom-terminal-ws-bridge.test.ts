@@ -11,7 +11,7 @@ assert.match(src, /if \(platform !== "desktop"\) return;/, "Tauri IPC path remai
 assert.match(src, /if \(platform !== "browser" && platform !== "ios" && platform !== "android"\) return;/, "WS bridge path covers browser and Tauri-mobile");
 assert.match(src, /bridge\.connect\(threadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
 assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/, "terminal input flows to WS bridge");
-assert.match(src, /bridge\.resize\(term\.cols,\s*term\.rows\)/, "terminal resize flows to WS bridge");
+assert.match(src, /bridge\.resize\(cols,\s*rows\)/, "terminal resize flows to WS bridge (throttled via makeResizer)");
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
 
 console.log("bottom-terminal-ws-bridge.test.ts OK");
@@ -35,8 +35,25 @@ assert.match(src, /reason === "replaced"/, "a take-over by another window is ann
 assert.doesNotMatch(
   src,
   /invoke\("pty_stop"/,
-  "desktop cleanup must NOT stop the PTY — only closing the tab (ComuxView.removeSession) kills the shell",
+  "desktop cleanup must NOT stop the PTY — the thread-id owner kills the shell (chat-surface stops cave.rail.<id> on session switch, cave-c3yt)",
 );
+// The one deliberate kill site: the chat code rail stops the PREVIOUS
+// session's shell on session switch — native IPC via pty_stop AND the WS
+// transport via an explicit kill frame (otherwise the old shell leaks for
+// the full detach grace, ~5 min) (cave-c3yt).
+{
+  const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+  assert.match(
+    chatSurface,
+    /invoke\("pty_stop", \{ threadId: `cave\.rail\.\$\{prev\}` \}\)/,
+    "session switch stops the previous rail shell over native IPC",
+  );
+  assert.match(
+    chatSurface,
+    /killPtyBridge\(`cave\.rail\.\$\{prev\}`\)/,
+    "session switch also reaps the WS-transport shell immediately",
+  );
+}
 assert.match(
   src,
   /pty_snapshot/,

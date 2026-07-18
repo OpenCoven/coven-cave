@@ -7,13 +7,16 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(resolve(here, p), "utf8");
 
-test("chat-router renders mobile-aware empty-state copy", () => {
+test("chat-router zero-roster empty state leads with the Summoning Circle", () => {
   const src = read("./chat-router.tsx");
-  assert.match(src, /useIsMobile/, "imports useIsMobile");
-  assert.match(src, /Choose a familiar to start chatting/, "mobile heading present");
-  assert.match(src, /Choose a familiar from the sidebar selector/, "desktop heading present");
-  assert.match(src, /Open the menu to pick a familiar/, "mobile subline present");
-  assert.match(src, /Pick who should handle the conversation from the left panel/, "desktop subline present");
+  // With zero familiars there is nothing to "choose" — the state summons
+  // instead of pointing at a selector that lists nothing (cave-3em5).
+  assert.match(src, /Summon your first familiar/, "summon heading present");
+  assert.match(src, /requestSummonFamiliar\(\)/, "primary CTA opens the Summoning Circle");
+  assert.doesNotMatch(src, /from the sidebar selector|from the left panel/, "no pointers at a selector that lists zero familiars");
+  // Roster-load failure must NOT render the first-run copy (cave-atzv).
+  assert.match(src, /Can&apos;t reach your familiars/, "roster-error state present");
+  assert.match(src, /onRetryFamiliars/, "roster-error state offers Retry");
 });
 
 // The right companion rail (which took suppressEmpty={mode === "chat"}) was

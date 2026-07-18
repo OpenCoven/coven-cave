@@ -10,8 +10,8 @@ const source = await readFile(new URL("./chat-surface.tsx", import.meta.url), "u
 
 assert.match(
   source,
-  /import\s+\{\s*WorkspaceRail\s*\}\s+from\s+"@\/components\/workspace-rail"/,
-  "chat-surface imports WorkspaceRail",
+  /import\s+\{[\s\S]*WorkspaceRail[\s\S]*\}\s+from\s+"@\/components\/lazy-surfaces"/,
+  "chat-surface lazy-loads WorkspaceRail",
 );
 
 assert.match(
@@ -64,8 +64,14 @@ assert.match(
 
 assert.match(
   source,
+  /fetchChangesSummary\(root/,
+  "chat-surface loads /api/changes for the active root through the shared changes-summary gate (cave-v8hh)",
+);
+
+assert.doesNotMatch(
+  source,
   /fetch\(`\/api\/changes\?projectRoot=\$\{encodeURIComponent\(/,
-  "chat-surface fetches /api/changes for the active session's project root",
+  "no private /api/changes summary fetch remains — the gate owns the request",
 );
 
 assert.match(
@@ -127,8 +133,16 @@ assert.match(
 
 assert.match(
   source,
-  /<WorkspaceRail[\s\S]*?changeCount=\{changeCount\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{\(\) => \{[\s\S]*?rail\.collapse\(\)/,
-  "WorkspaceRail receives changeCount + rail state/handlers; collapse also ends the browse peek",
+  /<WorkspaceRail[\s\S]*?changeCount=\{changeCount \?\? 0\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{\(\) => \{[\s\S]*?rail\.collapse\(\)/,
+  "WorkspaceRail receives the null-coerced changeCount + rail state/handlers; collapse also ends the browse peek",
+);
+// Closed-by-default rail (cave-xsq.7): the count seeds as null (unknown) per
+// root and failures stay null, so pre-existing dirt arriving with the first
+// load can't fake the 0→N fresh-batch reveal.
+assert.match(
+  source,
+  /useState<number \| null>\(null\)/,
+  "changeCount seeds as null (not yet loaded) so first-load dirt can't fake a fresh batch",
 );
 
 assert.match(
@@ -146,7 +160,7 @@ assert.match(
 // Collapsed state renders a reopen strip.
 assert.match(
   source,
-  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label="Show code rail"[\s\S]*?rail\.reopen/,
+  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label=\{reopenChecksFailing \? "Show code rail — PR checks failing" : "Show code rail"\}[\s\S]*?rail\.reopen/,
   "a 'Show code rail' reopen strip is rendered when the rail is available but collapsed",
 );
 

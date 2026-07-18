@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 // Local feedback store — isolated to a temp COVEN_HOME so it never touches the
-// real ~/.coven/cave-message-feedback.json.
+// real ~/.coven/cave/message-feedback.json.
 const tmpHome = await mkdtemp(path.join(tmpdir(), "msg-fb-"));
 process.env.HOME = tmpHome;
 process.env.COVEN_HOME = path.join(tmpHome, ".coven");
@@ -25,6 +25,8 @@ assert.ok(
     vote: "up",
     cleared: false,
     familiarId: "sage",
+    model: "claude-sonnet-4",
+    runtime: "claude",
     content: "the raw prompt text",
     secretToken: "abc",
   };
@@ -33,6 +35,8 @@ assert.ok(
   assert.equal(clean.vote, "up");
   assert.equal(clean.cleared, false);
   assert.equal(clean.familiarId, "sage");
+  assert.equal(clean.model, "claude-sonnet-4", "model stamp survives (per-model analytics)");
+  assert.equal(clean.runtime, "claude", "runtime stamp survives (per-runtime analytics)");
   assert.equal(clean.at, "2026-07-03T00:00:00Z");
   assert.ok(
     !("content" in clean) && !("secretToken" in clean),
@@ -50,6 +54,8 @@ assert.equal(a.familiarId, "sage");
 const b = await fb.recordMessageFeedback({ messageId: "m2", vote: "up", cleared: true });
 assert.equal(b.cleared, true, "toggle-off is recorded");
 assert.equal(b.familiarId, undefined, "no familiarId unless supplied");
+assert.equal(b.model, undefined, "no model unless supplied");
+assert.equal(b.runtime, undefined, "no runtime unless supplied");
 
 const all = await fb.loadMessageFeedback();
 assert.equal(all.length, 2, "both entries persisted");

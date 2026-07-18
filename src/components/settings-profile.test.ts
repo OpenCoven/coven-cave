@@ -45,6 +45,11 @@ describe("Settings → Profile", () => {
     assert.match(panel, /removeUserProfileAvatar/);
   });
 
+  it("keeps the legacy SVG hint without importing the retired avatar store", () => {
+    assert.match(panel, /hasLegacySvgUserAvatar/);
+    assert.doesNotMatch(panel, /avatar-image|AvatarHydrated|AvatarImageSnapshot/);
+  });
+
   it("timezone options come from Intl with a system default", () => {
     assert.match(panel, /supportedValuesOf\("timeZone"\)/);
     assert.match(panel, /resolvedOptions\(\)\.timeZone/);

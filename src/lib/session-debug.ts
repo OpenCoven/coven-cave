@@ -1,5 +1,7 @@
 import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
+import { usageSummary, type TurnUsage } from "./usage-format.ts";
+import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -41,13 +43,44 @@ export type DebugTurn = {
   lifecycle?: "queued" | "connecting" | "streaming" | "tooling" | "cancelled" | "failed" | "complete";
   durationMs?: number;
   origin?: "chat" | "voice";
+  /** Token usage / cost from the harness result event; absent when the
+   *  harness emitted none. */
+  usage?: TurnUsage;
+  costUsd?: number;
+  /** Structural subset of ChatResponseMetadata — enough to tell the model
+   *  that actually served the turn from the familiar's configured one. */
+  responseMetadata?: { model?: string; confirmedModel?: string };
+  attachments?: ChatAttachment[];
 };
+
+/** The model that actually served a turn, when the harness reported one —
+ *  `confirmedModel` (post-application truth) over the requested `model`.
+ *  Distinct from the familiar's configured model shown in the Session
+ *  section: harness routing and model application can diverge from it. */
+export function turnActualModel(turn: DebugTurn): string | null {
+  const meta = turn.responseMetadata;
+  const model = meta?.confirmedModel || meta?.model;
+  return model?.trim() ? model : null;
+}
+
+/** One-line diagnostic meta for a turn row: "opus-4 · 12.4k tok · $0.08".
+ *  Null when the turn carries neither a served model nor usage/cost. */
+export function turnMetaSummary(turn: DebugTurn): string | null {
+  const parts: string[] = [];
+  const model = turnActualModel(turn);
+  if (model) parts.push(model);
+  const usage = usageSummary(turn.usage, turn.costUsd);
+  if (usage) parts.push(usage);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 export type DebugBundle = {
   session: SessionRow | null;
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  /** Repro context for bug-report bundles: which build exported this, when. */
+  environment: { appVersion: string; exportedAt: string };
 };
 
 /** Append a poll page onto the accumulated tail: dedupe by seq, keep ascending
@@ -68,6 +101,17 @@ export function nextAfterSeq(events: CovenEvent[]): number {
 
 export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
   return args.status === "running" && args.visible;
+}
+
+/** Case-insensitive substring filter over the event tail: matches kind or the
+ *  raw payload JSON (so ids, paths, and error text inside payloads hit without
+ *  a parse). Reference-stable on a blank query so React memos can bail. */
+export function filterEvents(events: CovenEvent[], query: string): CovenEvent[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return events;
+  return events.filter(
+    (e) => e.kind.toLowerCase().includes(q) || e.payload_json.toLowerCase().includes(q),
+  );
 }
 
 export function formatEventPayload(payloadJson: string): string {
@@ -95,23 +139,37 @@ export function formatEventPayload(payloadJson: string): string {
   }
 }
 
+/** Export/display form of a turn: attachment previews carry base64 data-URLs,
+ *  so they're stripped the same way sends do — a pasted screenshot must not
+ *  blow up a clipboard copy or the expanded JSON block. Reference-stable when
+ *  there is nothing to strip. */
+export function exportDebugTurn(turn: DebugTurn): DebugTurn {
+  return turn.attachments?.length
+    ? { ...turn, attachments: stripPreviewOnlyAttachmentFields(turn.attachments) }
+    : turn;
+}
+
 /** Typed constructor for the export bundle. Callers pass a full Familiar;
  *  the explicit field-pick strips everything but {id, harness, model} from
- *  the export. Arrays are passed by reference (snapshot at call time), not
- *  cloned. */
+ *  the export. Turns are preview-stripped via {@link exportDebugTurn}
+ *  (reference-stable when no turn has attachments); events are passed by
+ *  reference (snapshot at call time). */
 export function buildDebugBundle(args: {
   session: SessionRow | null;
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  environment: { appVersion: string; exportedAt: string };
 }): DebugBundle {
+  const anyAttachments = args.turns.some((turn) => turn.attachments?.length);
   return {
     session: args.session,
     familiar: args.familiar
       ? { id: args.familiar.id, harness: args.familiar.harness, model: args.familiar.model }
       : null,
-    turns: args.turns,
+    turns: anyAttachments ? args.turns.map(exportDebugTurn) : args.turns,
     events: args.events,
+    environment: args.environment,
   };
 }
 

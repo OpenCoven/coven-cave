@@ -88,4 +88,56 @@ assert.match(
   "Refresh stays a raw button to keep its inner-glyph spin",
 );
 
+// cave-bvbw: the jump-to-diff focus must apply each nonce exactly once. The
+// effect is (deliberately) keyed on filesSig so a late-appearing file still
+// gets focused — but filesSig churns on every 5s poll while an agent edits,
+// and an unguarded effect re-expanded the stale focus target on every refresh,
+// snapping the panel away from the diff the user had manually selected.
+assert.match(
+  src,
+  /appliedFocusNonceRef\.current === focusNonce\) return;/,
+  "a consumed focus nonce must not re-assert itself on poll refreshes",
+);
+assert.match(
+  src,
+  /if \(!match\) return;\s*\n\s*appliedFocusNonceRef\.current = focusNonce;/,
+  "the nonce is consumed only once a match lands (retry stays alive for late-appearing files)",
+);
+assert.match(
+  src,
+  /long === short \|\| long\.endsWith\(`\/\$\{short\}`\)/,
+  "focus matching aligns on / boundaries — bare string suffixes cross-match sibling files",
+);
+
+// ── Commit review action (cave-nqoy) ─────────────────────────────────────────
+// The toolbar's Review button starts a NEW chat session whose opening prompt
+// reviews the working-tree changes like a commit review, routed through the
+// cave:agents-new-chat bridge (Workspace opens the chat from the Code surface;
+// ChatSurface handles it when the panel lives in chat).
+assert.match(
+  src,
+  /import \{ buildChangesReviewPrompt \} from "@\/lib\/changes-review"/,
+  "the review prompt comes from the pure changes-review helper",
+);
+assert.match(
+  src,
+  /new CustomEvent\("cave:agents-new-chat", \{\s*\n\s*detail: \{\s*\n\s*projectRoot: root,\s*\n\s*initialPrompt: buildChangesReviewPrompt\(\{ repoRoot: root, files \}\),/,
+  "Review dispatches a new-chat event carrying the project root and the review prompt",
+);
+assert.match(
+  src,
+  /const root = repoRoot \?\? projectRoot;/,
+  "the review targets the resolved git root, falling back to the project root",
+);
+assert.match(
+  src,
+  /leadingIcon="ph:git-diff"[\s\S]{0,240}?onClick=\{startReviewSession\}\s*\n\s*disabled=\{!canCommit\}[\s\S]{0,200}?aria-label="Review changes in a new session"/,
+  "the Review button is labeled for AT and disabled when there is nothing to review",
+);
+assert.match(
+  src,
+  /announce\("Review session started on the working-tree changes\."\)/,
+  "starting a review announces the outcome",
+);
+
 console.log("session-changes-panel.test.ts: cave-4op footer + icon-button control primitives ok");

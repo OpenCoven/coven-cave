@@ -19,8 +19,9 @@ import {
 import {
   getVaultStatuses,
   loadVaultMap,
+  refStorage,
   saveVaultMap,
-  validateOpRef,
+  validateRef,
   type VaultEntry,
 } from "@/lib/vault";
 
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
   const baseEntry = {
     description: typeof body.description === "string" ? body.description.trim() : undefined,
     required: body.required ?? false,
+    // Grants are edited elsewhere (per-familiar Vault tab) — re-saving a
+    // mapping here must not silently reset a key back to shared.
+    scope: map[key]?.scope,
   };
 
   let entry: VaultEntry;
@@ -71,7 +75,7 @@ export async function POST(req: NextRequest) {
     setLocalEncryptedSecret(key, value);
     entry = { ...baseEntry, storage: "encrypted" };
   } else {
-    const refError = validateOpRef(ref);
+    const refError = validateRef(ref);
     if (refError) return NextResponse.json({ ok: false, error: refError }, { status: 400 });
     deleteLocalEncryptedSecret(key);
     entry = { ...baseEntry, ref };
@@ -86,7 +90,12 @@ export async function POST(req: NextRequest) {
     delete process.env[key];
   }
 
-  return NextResponse.json({ ok: true, key, ref: entry.ref ?? null, storage: entry.storage ?? "1password" });
+  return NextResponse.json({
+    ok: true,
+    key,
+    ref: entry.ref ?? null,
+    storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : "1password"),
+  });
 }
 
 // ── DELETE — remove a mapping ─────────────────────────────────────────────────

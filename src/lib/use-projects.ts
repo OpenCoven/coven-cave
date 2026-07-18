@@ -3,6 +3,58 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import { createSwrCache } from "./swr-cache.ts";
+
+type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
+
+/**
+ * Module-level dedupe for GET /api/projects (cave-v8hh). The hook has 8+
+ * consumers (sidebar, chat views, board, composer, palette, modals) and no
+ * shared store, so a surface mount fired the same request once per consumer —
+ * traces showed 6 back-to-back copies. A short hard-TTL microcache collapses
+ * a mount burst (plus dev StrictMode's double effects) onto one request per
+ * scope. There is no steady poll on this endpoint, so the 2.5s window only
+ * ever spans a burst; mutations clear it, and reload() bypasses it.
+ */
+const CACHE_TTL_MS = 2500;
+
+// staleServeMs === ttlMs disables the serve-stale window (hard TTL).
+const projectsCache = createSwrCache<ProjectsPayload>({
+  ttlMs: CACHE_TTL_MS,
+  staleServeMs: CACHE_TTL_MS,
+});
+
+async function requestProjects(familiarId: string | null): Promise<ProjectsPayload> {
+  const url = familiarId
+    ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
+    : "/api/projects";
+  const res = await fetch(url);
+  // Thrown (not returned) so HTTP failures are never cached — swr-cache only
+  // stores resolutions — and every coalesced caller sees the same error.
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as ProjectsPayload;
+}
+
+function fetchProjects(
+  familiarId: string | null,
+  opts?: { force?: boolean },
+): Promise<ProjectsPayload> {
+  const key = familiarId ?? "";
+  if (opts?.force) projectsCache.invalidate(key);
+  return projectsCache.get(key, () => requestProjects(familiarId));
+}
+
+// A mutation on any project invalidates EVERY scope: creates/renames/deletes
+// change the unscoped list and any familiar-scoped list that includes (or
+// gains) the project, and per-scope bookkeeping isn't worth it at this TTL.
+function invalidateProjectsCache(): void {
+  projectsCache.clear();
+}
+
+/** Test-only: drop the module-level cache between cases. */
+export function resetProjectsCacheForTests(): void {
+  projectsCache.clear();
+}
 
 export type ProjectsState = {
   projects: CaveProject[];
@@ -31,49 +83,60 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // Generation guard: bumped on every load() call, scope change, and disable,
+  // so a stale response can't write into newer state. (Replaces the previous
+  // per-instance AbortController — the shared, coalesced request can't be
+  // aborted by one of its subscribers, so late results are discarded instead.)
+  const generationRef = useRef(0);
 
-  const load = useCallback(async () => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const load = useCallback(async (opts?: { force?: boolean }) => {
+    generationRef.current += 1;
+    const gen = generationRef.current;
     setLoading(true);
     setError(null);
 
     try {
-      const url = familiarId
-        ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
-        : "/api/projects";
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { ok?: boolean; projects?: CaveProject[]; error?: string };
-      if (!controller.signal.aborted) {
-        if (data.ok === false) {
-          setError(data.error ?? "Failed to load projects");
-        } else {
-          setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
-        }
+      const data = await fetchProjects(familiarId, opts);
+      if (generationRef.current !== gen) return;
+      if (data.ok === false) {
+        setError(data.error ?? "Failed to load projects");
+      } else {
+        setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
       }
     } catch (err) {
-      if (!controller.signal.aborted) {
+      if (generationRef.current === gen) {
         setError(err instanceof Error ? err.message : "Failed to load projects");
       }
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (generationRef.current === gen) setLoading(false);
     }
   }, [familiarId]);
 
   useEffect(() => {
     if (!enabled) {
-      abortRef.current?.abort();
-      abortRef.current = null;
+      generationRef.current += 1;
       setLoading(false);
       return;
     }
 
+    // Drop the previous scope's list before refetching so a familiarId change
+    // (or a re-enable) never leaves another familiar's projects visible — and
+    // pickable — during the in-flight request. `load` is memoized on familiarId,
+    // so this effect only re-runs when the scope or `enabled` actually changes;
+    // a manual reload() after a mutation calls load() directly and is
+    // unaffected, so an in-place refresh never blanks the list.
+    setProjects([]);
     load();
-    return () => abortRef.current?.abort();
+    return () => {
+      generationRef.current += 1;
+    };
   }, [enabled, load]);
+
+  // Post-mutation refresh: bypass the microcache so callers always see the
+  // just-mutated list.
+  const reload = useCallback(() => {
+    void load({ force: true });
+  }, [load]);
 
   const createProject = useCallback(async (name: string, root: string): Promise<CaveProject | null> => {
     const res = await fetch("/api/projects", {
@@ -83,6 +146,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
+      invalidateProjectsCache();
       setProjects((prev) => sortProjectsAlphabetically([...prev, data.project as CaveProject]));
       return data.project as CaveProject;
     }
@@ -97,6 +161,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
+      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -113,6 +178,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
+      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -129,6 +195,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
+      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
@@ -141,6 +208,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
+      invalidateProjectsCache();
       setProjects((prev) => prev.filter((project) => project.id !== id));
       return true;
     }
@@ -151,7 +219,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     projects,
     loading,
     error,
-    reload: load,
+    reload,
     createProject,
     renameProject,
     updateRoot,

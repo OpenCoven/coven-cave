@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome, covenHome } from "./coven-paths.ts";
 import type {
   WorkflowDryRunPlan,
   WorkflowHttpCall,
@@ -28,7 +28,7 @@ type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
  *
  * Manifest directory resolution (first hit wins):
  *   1. `COVEN_WORKFLOWS_DIR` env var (absolute path)
- *   2. bundle mode (`COVEN_CAVE_BUNDLE=1`): `<covenHome>/cave/workflows` (writable)
+ *   2. bundle mode (`COVEN_CAVE_BUNDLE=1`): `<caveHome>/workflows` (writable)
  *   3. `<cwd>/workflows`
  *
  * In packaged desktop builds the process runs with its cwd inside the
@@ -42,15 +42,15 @@ type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
 export function workflowsDir(): string {
   const override = process.env.COVEN_WORKFLOWS_DIR?.trim();
   if (override) return override;
-  if (isBundle()) return path.join(covenHome(), "cave", "workflows");
-  return path.join(process.cwd(), "workflows");
+  if (isBundle()) return path.join(/* turbopackIgnore: true */ caveHome(), "workflows");
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "workflows");
 }
 
 /** Read-only public workflow templates shipped inside the app bundle. In
  *  bundle mode the sidecar's cwd is the bundle's server dir, so its `workflows/`
  *  seeds live alongside. Used only to seed the writable dir on first run. */
 function bundledSeedWorkflowsDir(): string {
-  return path.join(process.cwd(), "workflows");
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "workflows");
 }
 
 function isBundle(): boolean {
@@ -74,7 +74,7 @@ async function seedPublicWorkflowsIfNeeded(): Promise<void> {
 
   const dest = workflowsDir();
   try {
-    await stat(dest);
+    await stat(/* turbopackIgnore: true */ dest);
     return; // already present → seeded (or intentionally emptied) — leave it
   } catch {
     // not present → seed below
@@ -83,17 +83,20 @@ async function seedPublicWorkflowsIfNeeded(): Promise<void> {
   const seedDir = bundledSeedWorkflowsDir();
   let names: string[];
   try {
-    names = await readdir(seedDir);
+    names = await readdir(/* turbopackIgnore: true */ seedDir);
   } catch {
     return; // no bundled seeds (e.g. seedDir === dest) → nothing to copy
   }
-  if (path.resolve(seedDir) === path.resolve(dest)) return;
+  if (path.resolve(/* turbopackIgnore: true */ seedDir) === path.resolve(/* turbopackIgnore: true */ dest)) return;
 
-  await mkdir(dest, { recursive: true });
+  await mkdir(/* turbopackIgnore: true */ dest, { recursive: true });
   for (const name of names) {
     if (!/\.(ya?ml|cave\.json)$/i.test(name)) continue;
     try {
-      await copyFile(path.join(seedDir, name), path.join(dest, name));
+      await copyFile(
+        path.join(/* turbopackIgnore: true */ seedDir, name),
+        path.join(/* turbopackIgnore: true */ dest, name),
+      );
     } catch {
       // Best-effort: a failed copy just means that one template is unavailable.
     }
@@ -103,7 +106,7 @@ async function seedPublicWorkflowsIfNeeded(): Promise<void> {
 export function personalWorkflowsDir(): string {
   const override = process.env.COVEN_PERSONAL_WORKFLOWS_DIR?.trim();
   if (override) return override;
-  return path.join(covenHome(), "workflows", "personal");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "workflows", "personal");
 }
 
 const KNOWN_PATTERNS = new Set([
@@ -421,7 +424,7 @@ export function planDryRun(workflow: WorkflowSummary): WorkflowDryRunPlan {
 async function readManifestFilesInDir(dir: string, storage: WorkflowStorageScope): Promise<ManifestFile[]> {
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(/* turbopackIgnore: true */ dir);
   } catch {
     return [];
   }
@@ -431,9 +434,9 @@ async function readManifestFilesInDir(dir: string, storage: WorkflowStorageScope
 
   const out: ManifestFile[] = [];
   for (const name of files) {
-    const full = path.join(dir, name);
+    const full = path.join(/* turbopackIgnore: true */ dir, name);
     try {
-      const text = await readFile(full, "utf8");
+      const text = await readFile(/* turbopackIgnore: true */ full, "utf8");
       out.push({ source: name.replace(/\.ya?ml$/i, ""), raw: parseYaml(text), storage });
     } catch {
       // Unreadable/malformed file → surface as an invalid stub so it isn't silently dropped.
@@ -571,9 +574,9 @@ function workflowDirForStorage(storage: WorkflowStorageScope): string {
 async function ensureWorkflowDir(storage: WorkflowStorageScope): Promise<string> {
   if (storage === "public") await seedPublicWorkflowsIfNeeded();
   const dir = workflowDirForStorage(storage);
-  await mkdir(dir, { recursive: true, mode: storage === "personal" ? 0o700 : undefined });
+  await mkdir(/* turbopackIgnore: true */ dir, { recursive: true, mode: storage === "personal" ? 0o700 : undefined });
   if (storage === "personal") {
-    await chmod(dir, 0o700);
+    await chmod(/* turbopackIgnore: true */ dir, 0o700);
   }
   return dir;
 }
@@ -582,7 +585,7 @@ async function removeStoredWorkflowFiles(storage: WorkflowStorageScope, source: 
   const dir = workflowDirForStorage(storage);
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(/* turbopackIgnore: true */ dir);
   } catch {
     return;
   }
@@ -592,7 +595,7 @@ async function removeStoredWorkflowFiles(storage: WorkflowStorageScope, source: 
   });
   for (const file of files) {
     try {
-      await unlink(path.join(dir, file));
+      await unlink(path.join(/* turbopackIgnore: true */ dir, file));
     } catch {
       // Best-effort cleanup of the stale copy; the new manifest has already saved.
     }
@@ -633,15 +636,15 @@ export async function saveLocalWorkflow(body: {
   try {
     await withWorkflowWriteLock(async () => {
       const dir = await ensureWorkflowDir(storage);
-      const root = path.resolve(dir);
-      const filePath = path.resolve(root, file);
-      const rel = path.relative(root, filePath);
+      const root = path.resolve(/* turbopackIgnore: true */ dir);
+      const filePath = path.resolve(/* turbopackIgnore: true */ root, file);
+      const rel = path.relative(/* turbopackIgnore: true */ root, filePath);
       if (rel.startsWith("..") || path.isAbsolute(rel)) {
         throw new Error("resolved workflow path escapes workflow storage directory");
       }
-      await writeFile(filePath, text, { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined });
+      await writeFile(/* turbopackIgnore: true */ filePath, text, { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined });
       if (storage === "personal") {
-        await chmod(filePath, 0o600);
+        await chmod(/* turbopackIgnore: true */ filePath, 0o600);
       }
       await removeStoredWorkflowFiles(storage === "public" ? "personal" : "public", summary.id);
     });
@@ -667,14 +670,14 @@ export async function deleteLocalWorkflow(body: {
   try {
     const dir = workflowDirForStorage(found.storage);
     // Resolve the on-disk name from the directory listing (.yaml or .yml).
-    const entries = await readdir(dir);
+    const entries = await readdir(/* turbopackIgnore: true */ dir);
     const file = entries.find(
       (name) => /\.ya?ml$/i.test(name) && name.replace(/\.ya?ml$/i, "") === found.path,
     );
     if (!file) {
       return { ok: false, error: `Manifest file for \`${found.path}\` not found.` };
     }
-    await withWorkflowWriteLock(() => unlink(path.join(dir, file)));
+    await withWorkflowWriteLock(() => unlink(path.join(/* turbopackIgnore: true */ dir, file)));
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "workflow delete failed" };
   }
@@ -700,9 +703,9 @@ async function storageForWorkflowId(id: string): Promise<WorkflowStorageScope> {
 
 /** Absolute path for a layout sidecar, constrained to its workflow storage dir. */
 function resolveLayoutFilePath(rootDir: string, file: string): string | null {
-  const root = path.resolve(rootDir);
-  const target = path.resolve(root, file);
-  const rel = path.relative(root, target);
+  const root = path.resolve(/* turbopackIgnore: true */ rootDir);
+  const target = path.resolve(/* turbopackIgnore: true */ root, file);
+  const rel = path.relative(/* turbopackIgnore: true */ root, target);
   if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   return target;
 }
@@ -718,7 +721,7 @@ export async function loadWorkflowLayout(id: string): Promise<WorkflowLayout | n
   const filePath = await layoutFilePath(id);
   if (!filePath) return null;
   try {
-    const text = await readFile(filePath, "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ filePath, "utf8");
     const parsed = JSON.parse(text) as { positions?: WorkflowLayout };
     if (!parsed.positions || typeof parsed.positions !== "object") return null;
     const positions: WorkflowLayout = {};
@@ -751,12 +754,12 @@ export async function saveWorkflowLayout(
         throw new Error("resolved layout path escapes workflow storage directory");
       }
       await writeFile(
-        filePath,
+        /* turbopackIgnore: true */ filePath,
         JSON.stringify({ version: 1, positions }, null, 2),
         { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined },
       );
       if (storage === "personal") {
-        await chmod(filePath, 0o600);
+        await chmod(/* turbopackIgnore: true */ filePath, 0o600);
       }
     });
   } catch (err) {

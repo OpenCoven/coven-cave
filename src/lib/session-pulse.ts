@@ -5,6 +5,18 @@ export type PulseDay = { key: string; label: string; count: number };
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
+ * UTC day key (YYYY-MM-DD) for an ISO timestamp — the same bucketing
+ * {@link buildSessionPulse} uses, exported so session lists can be filtered
+ * to a clicked pulse day. Null for missing/unparseable timestamps.
+ */
+export function sessionDayKey(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
  * Bucket a familiar's sessions into per-day counts for the trailing `days`
  * window (oldest first, today last). Days are keyed by UTC date so they match
  * the sessions' ISO `updated_at` timestamps.
@@ -18,9 +30,8 @@ export function buildSessionPulse(
   const counts = new Map<string, number>();
   for (const session of sessions) {
     if (session.familiarId !== familiarId) continue;
-    const updated = Date.parse(session.updated_at);
-    if (!Number.isFinite(updated)) continue;
-    const key = new Date(updated).toISOString().slice(0, 10);
+    const key = sessionDayKey(session.updated_at);
+    if (!key) continue;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return Array.from({ length: days }, (_, index) => {

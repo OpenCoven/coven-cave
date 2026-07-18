@@ -59,6 +59,10 @@ assert.match(route, /type SalemSearchContext/, "Salem API should accept structur
 assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context into the hosted prompt");
 assert.match(route, /askChatApiContext\(messageForApi\)/, "Cave Salem should ask the hosted chat-api for retrieved docs context, not hosted synthesis");
 assert.match(route, /askLocalFamiliar\([\s\S]*?familiarId[\s\S]*?model/, "Cave Salem must synthesize through the local familiar so the user's connected model pays for the run");
+assert.match(route, /typeof json\.context === "string"/, "Cave Salem context mode must key off retrieved context, not upstream prompt authority");
+assert.match(route, /LOCAL_SALEM_SYSTEM_PROMPT/, "local Salem synthesis must use a fixed local system prompt");
+assert.match(route, /<retrieved_context>/, "hosted retrieval context must be quoted as untrusted data");
+assert.doesNotMatch(route, /const systemPrompt = typeof context\.systemPrompt/, "hosted systemPrompt must not be trusted as local prompt authority");
 assert.match(route, /modelOverride:\s*args\.model/, "local Salem synthesis must forward the exact selected model as a next-message override");
 assert.match(route, /modelOverrideScope:\s*"next-message"/, "Salem must not persist the one-off model override as a session default");
 assert.match(route, /askChatApiAnswer\(messageForApi\)/, "Salem must keep a hosted-answer fallback when the backend does not serve context mode, so it never regresses to weak local retrieval");
@@ -84,7 +88,7 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
 assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
-assert.match(workspace, /import \{ SalemChatPanel \}/, "workspace should import only the Salem sidepanel surface");
+assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
 assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
 assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");

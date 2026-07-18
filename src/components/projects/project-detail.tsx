@@ -32,6 +32,8 @@ import {
   CHAT_CAP,
   PROJECT_COLOR_SWATCHES,
   chatDotClass,
+  hasDesktopBridge,
+  revealProjectFolder,
   shortRoot,
   type MoveTarget,
 } from "./projects-shared";
@@ -126,7 +128,7 @@ export function ProjectDetail({
   const [nameDraft, setNameDraft] = useState(project.name);
   const [rootDraft, setRootDraft] = useState(project.root);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState<"name" | "root" | "color" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"name" | "root" | "color" | "delete" | "icon" | null>(null);
   const [copiedRoot, setCopiedRoot] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [imageStatus, setImageStatus] = useState<string | null>(null);
@@ -146,6 +148,44 @@ export function ProjectDetail({
   const pickImage = () => {
     setImageStatus(null);
     imageInputRef.current?.click();
+  };
+
+  // AI-generated icon: the server builds a distinct per-project prompt
+  // (deterministic hue/motif from the root, fresh composition per press) and
+  // the result lands in the same image store uploads use — so it renders in
+  // the chat sidebar, project picker, and board immediately.
+  const generateIcon = async () => {
+    setBusy("icon");
+    setImageStatus("Generating icon…");
+    announce(`Generating an icon for ${project.name}.`);
+    try {
+      const res = await fetch("/api/projects/icon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: project.name, root: project.root }),
+      });
+      const payload = (await res.json()) as
+        | { ok: true; dataUrl: string; mime: string }
+        | { ok: false; error?: string; hint?: string; providerMessage?: string };
+      if (!payload.ok) {
+        const reason = payload.hint ?? payload.providerMessage ?? "Couldn't generate an icon.";
+        setImageStatus(reason);
+        announce(reason, "assertive");
+        return;
+      }
+      const saved = await setProjectImage(project.root, {
+        dataUrl: payload.dataUrl,
+        mime: payload.mime,
+      });
+      setImageStatus(saved.ok ? null : saved.reason);
+      if (saved.ok) announce("Project icon generated.");
+      else announce(saved.reason, "assertive");
+    } catch {
+      setImageStatus("Couldn't generate an icon.");
+      announce("Couldn't generate an icon.", "assertive");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const copyRoot = async () => {
@@ -385,6 +425,14 @@ export function ProjectDetail({
             <PopoverItem icon="ph:image-bold" onSelect={pickImage}>
               {hasImage ? "Change image…" : "Set image…"}
             </PopoverItem>
+            <PopoverItem
+              icon="ph:sparkle-bold"
+              disabled={busy === "icon"}
+              onSelect={() => void generateIcon()}
+              title="Generate a distinct AI icon for this project (uses your connected model's image provider — OPENAI_API_KEY or GOOGLE_API_KEY in Vault)"
+            >
+              {busy === "icon" ? "Generating icon…" : hasImage ? "Regenerate AI icon" : "Generate AI icon"}
+            </PopoverItem>
             {hasImage ? (
               <PopoverItem
                 icon="ph:minus-circle"
@@ -399,6 +447,18 @@ export function ProjectDetail({
             <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => void copyRoot()}>
               Copy path
             </PopoverItem>
+            {hasDesktopBridge() ? (
+              <PopoverItem
+                icon="ph:folder-open-bold"
+                onSelect={() => {
+                  void revealProjectFolder(project.root).then((ok) =>
+                    announce(ok ? `Opened ${project.name} in the file manager.` : "Couldn't open the folder.", ok ? "polite" : "assertive"),
+                  );
+                }}
+              >
+                Reveal in Finder
+              </PopoverItem>
+            ) : null}
             <PopoverItem
               icon="ph:file-code"
               onSelect={() => {
@@ -413,6 +473,51 @@ export function ProjectDetail({
             >
               Browse files
             </PopoverItem>
+            <PopoverSeparator />
+            {/* Tile color moved out of the always-visible header (cave-dn9w):
+                a rarely-used preference doesn't earn a whole header line. Same
+                swatches + handlers, now a menu row. */}
+            <div className="px-2 py-1.5">
+      {/* Color: auto (root-hash tint) or a preset swatch. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                Color
+              </span>
+              <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void setColor(null)}
+                  disabled={busy === "color"}
+                  aria-pressed={!project.color}
+                  title="Auto — tinted from the project path"
+                  aria-label="Auto color"
+                  className={`h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] p-0 ${
+                    !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
+                  }`}
+                  style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
+                />
+                {PROJECT_COLOR_SWATCHES.map((swatch) => (
+                  <Button
+                    key={swatch.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => void setColor(swatch.value)}
+                    disabled={busy === "color"}
+                    aria-pressed={project.color === swatch.value}
+                    title={swatch.name}
+                    aria-label={`${swatch.name} color`}
+                    className={`h-4 w-4 shrink-0 rounded-full p-0 ${
+                      project.color === swatch.value
+                        ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
+                        : ""
+                    }`}
+                    style={{ background: swatch.value }}
+                  />
+                ))}
+              </div>
+            </div>
+            </div>
             <PopoverSeparator />
             <PopoverItem icon="ph:trash-bold" danger onSelect={() => setConfirmDelete(true)}>
               Delete project…
@@ -469,7 +574,10 @@ export function ProjectDetail({
 
       {/* Status line: state in words + stats chips + branch + recency. */}
       <div className="projects-detail-head__meta">
-        <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex items-center gap-1.5"
+          title="Project state, derived from its latest sessions"
+        >
           {projectStatus ? (
             <span className={`projects-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
           ) : null}
@@ -478,6 +586,7 @@ export function ProjectDetail({
         <span
           className="projects-session-count"
           aria-label={`${chats.length} ${chats.length === 1 ? "session" : "sessions"}`}
+          title={`${chats.length} ${chats.length === 1 ? "session" : "sessions"} in this project`}
         >
           <Icon name="ph:chats-circle" width={12} aria-hidden />
           {chats.length}
@@ -535,45 +644,6 @@ export function ProjectDetail({
         </div>
       ) : null}
 
-      {/* Color: auto (root-hash tint) or a preset swatch. */}
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-          Color
-        </span>
-        <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => void setColor(null)}
-            disabled={busy === "color"}
-            aria-pressed={!project.color}
-            title="Auto — tinted from the project path"
-            aria-label="Auto color"
-            className={`h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] p-0 ${
-              !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
-            }`}
-            style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
-          />
-          {PROJECT_COLOR_SWATCHES.map((swatch) => (
-            <Button
-              key={swatch.value}
-              variant="ghost"
-              size="xs"
-              onClick={() => void setColor(swatch.value)}
-              disabled={busy === "color"}
-              aria-pressed={project.color === swatch.value}
-              title={swatch.name}
-              aria-label={`${swatch.name} color`}
-              className={`h-4 w-4 shrink-0 rounded-full p-0 ${
-                project.color === swatch.value
-                  ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
-                  : ""
-              }`}
-              style={{ background: swatch.value }}
-            />
-          ))}
-        </div>
-      </div>
 
       {/* ── Sessions ─────────────────────────────────────────────────────────── */}
       <section className="projects-detail-section" aria-label={`Sessions in ${project.name}`}>

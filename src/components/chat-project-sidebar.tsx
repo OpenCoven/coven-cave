@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import "@/styles/chat-list.css";
+
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { sessionRailTitle } from "@/lib/session-rail-title";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import {
   applyManualOrder,
   partitionPinnedFirst,
@@ -23,6 +25,11 @@ import {
 } from "@/lib/chat-session-order";
 import { Icon, type IconName } from "@/lib/icon";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import {
+  CHAT_SESSION_DRAG_MIME,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
+} from "@/lib/chat-split";
 import {
   DndContext,
   PointerSensor,
@@ -62,6 +69,10 @@ type Props = {
   onSelect: (selection: ProjectSelection) => void;
   onToggleExpanded: (key: string) => void;
   onOpenSession: (session: SessionRow) => void;
+  /** ⌥↵ on a row: open the conversation in a split pane beside the current
+   *  chat (keyboard twin of drag-to-split). Absent when splits are off
+   *  (compact rail, mobile) — the row falls back to a plain open. */
+  onOpenSessionInSplit?: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onOpenProjectsTab?: () => void;
 };
@@ -89,6 +100,28 @@ function repoLabel(group: ChatProjectGroup): string {
     group.projectName ??
     (group.projectRoot?.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? "No project")
   );
+}
+
+// Native HTML5 drag props for a thread row: dragging the row *body* carries the
+// conversation to the chat surface's split drop zone (chat-split-host). The
+// dnd-kit reorder handle is exempted — a native dragstart from inside it is
+// cancelled so the pointer-driven reorder keeps sole ownership of that slot.
+function sessionDragProps(sessionId: string, title: string) {
+  return {
+    draggable: true,
+    onDragStart: (e: ReactDragEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("[data-thread-drag-handle]")) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, sessionId);
+      e.dataTransfer.setData("text/plain", title);
+      e.dataTransfer.effectAllowed = "copyMove";
+      emitChatSessionDragStart({ sessionId, title });
+    },
+    onDragEnd: () => emitChatSessionDragEnd(),
+  };
 }
 
 
@@ -128,12 +161,14 @@ function ThreadRow({
   active,
   pinned,
   onOpen,
+  onOpenInSplit,
   onTogglePin,
 }: {
   session: SessionRow;
   active: boolean;
   pinned: boolean;
   onOpen: () => void;
+  onOpenInSplit?: () => void;
   onTogglePin: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -155,9 +190,21 @@ function ThreadRow({
         role="button"
         tabIndex={0}
         onClick={onOpen}
+        onMouseEnter={() => hoverPrefetchConversation(session.id)}
+        onMouseLeave={cancelHoverPrefetch}
+        onFocus={() => hoverPrefetchConversation(session.id)}
+        onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen();
+          if (e.key !== "Enter") return;
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split).
+          if (e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
         }}
+        {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
           "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-1.5 py-2 pl-2 pr-1.5 text-left text-[12px] transition-colors",
@@ -178,6 +225,7 @@ function ThreadRow({
             type="button"
             {...attributes}
             {...listeners}
+            data-thread-drag-handle=""
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder"
             aria-label={`Reorder ${title}`}
@@ -203,7 +251,10 @@ function ThreadRow({
             "shrink-0 rounded p-0.5 transition-all hover:text-[var(--accent-presence)]",
             pinned
               ? "text-[var(--accent-presence)] opacity-100"
-              : "text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
+              : // touch-always-visible: hover-reveal is undiscoverable on touch
+                // (cave-w96h). The drag handles stay hover-only on purpose —
+                // they overlay the status dot, and stay hit-testable regardless.
+                "touch-always-visible text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
           ].join(" ")}
         >
           <Icon
@@ -239,10 +290,12 @@ function FolderChatRow({
   session,
   active,
   onOpen,
+  onOpenInSplit,
 }: {
   session: SessionRow;
   active: boolean;
   onOpen: () => void;
+  onOpenInSplit?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
@@ -255,9 +308,21 @@ function FolderChatRow({
         role="button"
         tabIndex={0}
         onClick={onOpen}
+        onMouseEnter={() => hoverPrefetchConversation(session.id)}
+        onMouseLeave={cancelHoverPrefetch}
+        onFocus={() => hoverPrefetchConversation(session.id)}
+        onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen();
+          if (e.key !== "Enter") return;
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split).
+          if (e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
         }}
+        {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
           "relative flex min-h-[34px] w-full items-center gap-1.5 py-2 pl-2 pr-2 text-left text-[12px] transition-colors",
@@ -278,6 +343,7 @@ function FolderChatRow({
             type="button"
             {...attributes}
             {...listeners}
+            data-thread-drag-handle=""
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder or move to another project"
             aria-label={`Move ${title}`}
@@ -302,24 +368,21 @@ export function ChatProjectSidebar({
   onSelect,
   onToggleExpanded,
   onOpenSession,
+  onOpenSessionInSplit,
   onNewChat,
   onOpenProjectsTab,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  // Pins come from the shared cross-surface store; the manual drag order is
+  // still local (this rail is its only writer).
+  const pinnedIds = usePinnedSessions();
   const [order, setOrder] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
 
-  // UI prefs (pins + manual order) load after mount so SSR markup and the
-  // first client render agree — same idiom as the chat list's persistence.
+  // The manual order loads after mount so SSR markup and the first client
+  // render agree — same idiom as the chat list's persistence.
   useEffect(() => {
-    setPinnedIds(readPinnedSessions());
     setOrder(readSessionOrder());
-    setHydrated(true);
   }, []);
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [hydrated, pinnedIds]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -381,7 +444,7 @@ export function ChatProjectSidebar({
   }
 
   function togglePin(sessionId: string) {
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+    toggleStoredPinnedSession(sessionId);
   }
 
   // Folder-tree DnD: reorder a chat within its project, or drop it onto another
@@ -539,6 +602,9 @@ export function ChatProjectSidebar({
                       active={activeSessionId === session.id}
                       pinned={isSessionPinned(pinnedIds, session.id)}
                       onOpen={() => onOpenSession(session)}
+                      onOpenInSplit={
+                        onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                      }
                       onTogglePin={() => togglePin(session.id)}
                     />
                   ))}
@@ -631,6 +697,9 @@ export function ChatProjectSidebar({
                             session={session}
                             active={activeSessionId === session.id}
                             onOpen={() => onOpenSession(session)}
+                            onOpenInSplit={
+                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                            }
                           />
                         ))}
                       </ul>

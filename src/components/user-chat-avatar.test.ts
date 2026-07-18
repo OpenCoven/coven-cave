@@ -11,7 +11,7 @@ assert.match(component, /userAvatarUrl\(snapshot\)/, "server avatar URL renders 
 assert.match(component, /<img[\s\S]*src=\{src\}/, "server image renders inside the chat avatar");
 assert.doesNotMatch(component, /type="file"|<input|prepareFamiliarImage|setUserAvatarImage/, "avatar no longer owns inline upload UI");
 assert.match(component, /window\.location\.assign\("\/settings#profile"\)/, "click opens Settings at the Profile section via the existing hash deep-link route");
-assert.match(component, /runUserAvatarMigration\(/, "component kicks off the one-time legacy avatar migration");
+assert.doesNotMatch(component, /AvatarMigration|avatar-migrate/, "legacy avatar migration hook is retired");
 assert.match(component, /name\.slice\(0, 1\)\.toUpperCase\(\)/, "named profiles can fall back to an initial when no server avatar exists");
 
 assert.match(chat, /import \{ UserChatAvatar \} from "@\/components\/user-chat-avatar"/, "Chat imports the user avatar component");

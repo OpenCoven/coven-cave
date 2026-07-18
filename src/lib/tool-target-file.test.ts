@@ -40,7 +40,6 @@ const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 
 // ── wiring: chat dispatches, code rail handles, workspace bridges ────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-const comux = await readFile(new URL("../components/comux-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("../components/chat-surface.tsx", import.meta.url), "utf8");
 
@@ -57,17 +56,8 @@ assert.match(
 // Click must not also toggle the <details> open/closed.
 assert.match(chatView, /openTargetFile = \(e: ReactMouseEvent\) => \{[\s\S]*?stopPropagation\(\)/, "open handler stops propagation");
 
-assert.match(
-  comux,
-  /addEventListener\("cave:open-project-file"/,
-  "comux listens for cave:open-project-file",
-);
-assert.match(
-  comux,
-  /if \(!active\) return;[\s\S]*?setRightView\("files"\);[\s\S]*?openFilePreview\(path/,
-  "the active comux opens the file in the Files preview (path resolved from the event detail)",
-);
-
+// (ComuxView's cave:open-project-file listener left with the component,
+// cave-c3yt — the chat code rail below is the live consumer.)
 assert.match(
   workspace,
   /File\/diff links target ChatSurface's code rail[\s\S]*?setPendingCodeRailOpen\([\s\S]*?setMode\("chat"\)/,

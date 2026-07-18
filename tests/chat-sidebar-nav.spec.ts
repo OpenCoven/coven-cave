@@ -43,7 +43,7 @@ async function gotoChat(page: Page) {
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
-  await page.goto("/");
+  await page.goto("/?mode=chat");
   // Switch to the Chat surface (⌘2) — default landing is Home.
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");

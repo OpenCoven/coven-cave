@@ -4,21 +4,30 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 describe("Familiar analytics navigation wiring", () => {
-  it("wires the inspector Analytics tab to FamiliarAnalyticsView", () => {
+  it("keeps analytics out of the retired inspector pane, on its standalone pages", () => {
     const source = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+    const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+    const analyticsPage = readFileSync(
+      new URL("../app/dashboard/familiars/[id]/analytics/page.tsx", import.meta.url),
+      "utf8",
+    );
 
-    assert.match(source, /import \{ FamiliarAnalyticsView \} from "@\/components\/familiar-analytics-view"/);
-    assert.match(source, /type Tab = "memory" \| "familiar" \| "analytics" \| "inbox"/);
-    assert.match(source, /analytics: "Analytics"/);
-    assert.match(source, /tab === "analytics"[\s\S]*<FamiliarAnalyticsView familiarId=\{familiar\.id\} \/>/);
+    // The inspector sidepanel (and its Analytics section) is retired — the
+    // per-familiar analytics pages are the one home for FamiliarAnalyticsView.
+    assert.doesNotMatch(source, /FamiliarAnalyticsView/);
+    assert.doesNotMatch(chatSurface, /"analytics"|Analytics/);
+    assert.match(analyticsPage, /import \{ FamiliarAnalyticsView \} from "@\/components\/familiar-analytics-view"/);
+    assert.match(analyticsPage, /<FamiliarAnalyticsView familiarId=\{id\} \/>/);
   });
 
-  it("links growth roster rows to per-familiar analytics", () => {
+  it("links the selected growth familiar to its analytics page", () => {
     const source = readFileSync(new URL("./familiar-growth-view.tsx", import.meta.url), "utf8");
 
+    // The roster is a dropdown (cave-4d3n); analytics deep-links hang off the
+    // selected familiar's hero action instead of per-row links.
     assert.match(source, /import Link from "next\/link"/);
-    assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/analytics`\}/);
-    assert.match(source, /Analytics →/);
+    assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(selected\.familiar\.id\)\}\/analytics`\}/);
+    assert.match(source, /Analytics/);
   });
 
   it("links familiar landing cards to per-familiar analytics", () => {

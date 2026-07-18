@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import path from "node:path";
+import { pickVersionLine } from "@/lib/harness-version";
 import {
   COMPATIBILITY_ADAPTERS,
   covenHelpSupportsAdapterList,
@@ -73,7 +74,7 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
     }, 2500);
     child.on("close", () => {
       clearTimeout(t);
-      resolve(out.split(/\r?\n/)[0]?.trim() || null);
+      resolve(pickVersionLine(out));
     });
     child.on("error", () => {
       clearTimeout(t);
@@ -161,5 +162,5 @@ export async function GET() {
   );
   const covenReports = (await covenSupportsAdapterList()) ? await loadCovenAdapterSummaries() : [];
   const harnesses: AdapterReport[] = mergeAdapterReports(reports, covenReports);
-  return NextResponse.json({ ok: true, harnesses });
+  return NextResponse.json({ ok: true, runtimeHost: hostname(), harnesses });
 }

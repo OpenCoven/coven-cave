@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Merged into the generated macOS bundle Info.plist by tauri-bundler.
+	Voice calls capture the microphone (WebView getUserMedia for cloud
+	providers; AVAudioEngine in src-tauri/src/speech.rs for the native
+	local engine) and transcribe with SFSpeechRecognizer — macOS kills
+	the process on first use of either without these usage descriptions.
+	-->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CovenCave uses the microphone for voice calls with your familiars.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>CovenCave transcribes your voice on this Mac so local voice calls work without any cloud service.</string>
+</dict>
+</plist>

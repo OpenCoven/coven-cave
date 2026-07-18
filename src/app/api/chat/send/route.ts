@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { stripAnsi } from "@/lib/ansi";
+import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
   enqueueOfflineTravelItem,
@@ -14,6 +14,7 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import {
+  chatSummaryTitle,
   chatTitleFromPrompt,
   defaultChatTitleForSession,
 } from "@/lib/cave-chat-titles";
@@ -33,10 +34,25 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand } from "@/lib/coven-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
+import {
+  detectBuiltinAdapterConflict,
+  healBuiltinShadowedManifest,
+  type BuiltinAdapterConflict,
+} from "@/lib/server/adapter-conflict-heal";
+import {
+  buildCopilotStreamArgs,
+  copilotIdentityPreamble,
+  copilotStreamSpec,
+  CopilotTextAssembler,
+  parseCopilotChatEvent,
+} from "@/lib/copilot-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
+  listCollections,
   readKnowledgeVaultForPrompt,
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
@@ -45,11 +61,12 @@ import {
   unregisterChatRun,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
+import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
-import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv, openClawSupportsUntrustedArgs } from "@/lib/openclaw-bin";
 import {
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
@@ -63,13 +80,17 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, canonicalHarnessId } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, covenRunSupportsAddDirFlag, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
+import {
+  captureWorkBranch,
+  cwdFromConversationRuntime,
+} from "@/lib/server/chat-work-branch";
 import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
@@ -83,6 +104,12 @@ import {
   resolveLocalRuntimeCwd,
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
+import {
+  buildPromptWithBoundaryReminder,
+  createBoundarySentinel,
+  formatBoundaryNotice,
+  recordBoundaryViolations,
+} from "@/lib/chat-boundary-sentinel";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
@@ -379,8 +406,38 @@ async function setDefaultSessionTitleIfMissing(sessionId: string, title: string)
   await setSessionTitle(sessionId, title);
 }
 
-function sse(event: StreamEvent): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+/** Auto-name a thread from its first user/assistant exchange with a short
+ *  summary title. Only fires while the stored title is still one of the
+ *  auto-derived defaults (prompt-derived or "New chat") — a manual rename,
+ *  even one made mid-stream, always wins. Best effort: failures leave the
+ *  default title in place. */
+async function autoNameSessionFromFirstExchange(
+  sessionId: string,
+  promptText: string,
+): Promise<void> {
+  try {
+    const summary = chatTitleFromPrompt(promptText);
+    if (!summary) return;
+    const autoDefaults = new Set(
+      [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
+        (t): t is string => Boolean(t),
+      ),
+    );
+    const state = await loadState();
+    const current = state.sessionTitles[sessionId];
+    if (current && !autoDefaults.has(current)) return;
+    if (current === summary) return;
+    await setSessionTitle(sessionId, summary);
+  } catch {
+    /* best effort */
+  }
+}
+
+function sse(event: StreamEvent, seq?: number): Uint8Array {
+  // `id:` carries the run buffer's seq (cave-h40l): a client that saw it can
+  // resume mid-turn via GET /api/chat/stream?cursor=<last id> after a drop.
+  const id = seq != null ? `id: ${seq}\n` : "";
+  return new TextEncoder().encode(`${id}data: ${JSON.stringify(event)}\n\n`);
 }
 
 // SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
@@ -496,7 +553,7 @@ function covenRunSupportsModel(): Promise<boolean> {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: covenSpawnEnv(),
+          env: harnessSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => (out += d.toString()));
@@ -542,7 +599,7 @@ function covenRunSupportsPermission(): Promise<boolean> {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: covenSpawnEnv(),
+          env: harnessSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => (out += d.toString()));
@@ -569,6 +626,54 @@ function covenRunSupportsPermission(): Promise<boolean> {
     });
   }
   return covenRunPermissionFlagProbe;
+}
+
+// Same gated probe for `coven run --add-dir <DIR>` (repeatable). Granted
+// project roots must be trusted by the spawned harness itself — the
+// runtime-scope preamble only DESCRIBES the grants, and a harness that trusts
+// nothing but its cwd denies every access to them (non-interactive sessions
+// cannot re-request permission mid-turn). Cached; failures resolve false.
+let covenRunAddDirFlagProbe: Promise<boolean> | null = null;
+function covenRunSupportsAddDir(): Promise<boolean> {
+  if (!covenRunAddDirFlagProbe) {
+    covenRunAddDirFlagProbe = new Promise<boolean>((resolve) => {
+      let out = "";
+      let settled = false;
+      const done = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        const { command, fixedArgs } = covenLaunchCommand();
+        const child = spawn(command, [...fixedArgs, "run", "--help"], {
+          env: harnessSpawnEnv(),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (d) => (out += d.toString()));
+        child.stderr.on("data", (d) => (out += d.toString()));
+        const t = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          done(false);
+        }, 2500);
+        child.on("close", () => {
+          clearTimeout(t);
+          done(covenRunSupportsAddDirFlag(out));
+        });
+        child.on("error", () => {
+          clearTimeout(t);
+          done(false);
+        });
+      } catch {
+        done(false);
+      }
+    });
+  }
+  return covenRunAddDirFlagProbe;
 }
 
 function resolveSendModelMetadata(args: {
@@ -669,14 +774,20 @@ function openClawChatResponse(args: {
       // events are dropped instead of throwing ERR_INVALID_STATE on a closed
       // controller (mirrors the native coven-run stream below).
       const push = (event: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(sse(event));
+          controller.enqueue(sse(event, seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
+      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -732,10 +843,48 @@ function openClawChatResponse(args: {
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const spawnArgv = openClawSpawnArgs(argv);
-      const cwd = await resolveLocalRuntimeCwd(
-        args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
-      );
+      const openclawCommand = openClawBin();
+      if (!openClawSupportsUntrustedArgs(openclawCommand)) {
+        pushProgress(
+          "openclaw-start",
+          "OpenClaw bridge cannot start safely",
+          "error",
+          "The resolved OpenClaw Windows .cmd shim requires shell parsing, so Cave cannot pass chat prompts to it safely. Install or configure a native openclaw executable with OPENCLAW_BIN.",
+        );
+        push({
+          kind: "error",
+          code: "openclaw_unsafe_shell",
+          message:
+            "OpenClaw chat is unavailable because the resolved Windows .cmd shim requires unsafe shell parsing. Install or configure a native openclaw executable with OPENCLAW_BIN.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        close();
+        return;
+      }
+      const spawnArgv = openClawSpawnArgs(argv, openclawCommand);
+      let cwd: string;
+      try {
+        cwd = await resolveLocalRuntimeCwd(
+          args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
+        );
+      } catch (error) {
+        if (error instanceof RuntimeScopeError) {
+          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message });
+          push({
+            kind: "done",
+            durationMs: Date.now() - startedAt,
+            isError: true,
+          });
+          close();
+          return;
+        }
+        throw error;
+      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
@@ -753,11 +902,11 @@ function openClawChatResponse(args: {
         sessionKey: openClawSessionKey(conversationId),
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn(openClawBin(), spawnArgv, {
+      const child = spawn(openclawCommand, spawnArgv, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: openClawSpawnEnv(),
-        shell: openClawNeedsShell(),
+        shell: openClawNeedsShell(openclawCommand),
       });
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
@@ -777,10 +926,25 @@ function openClawChatResponse(args: {
       // by the detach cap in case nothing ever comes back for it.
       const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
-      const onAbort = () => {
+      const armDetachKill = () => {
         if (runHandle.stopRequested || detachKillTimer != null) return;
         detachKillTimer = setTimeout(killChild, CHAT_DETACH_MAX_MS);
       };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([args.body.runId, conversationId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (args.req.signal.aborted) armDetachKill();
+        },
+      });
+      const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
 
       child.stdout.on("data", (data: Buffer) => {
@@ -805,6 +969,7 @@ function openClawChatResponse(args: {
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
+        runBuffer?.finish();
         close();
       });
       child.on("close", async (code) => {
@@ -906,6 +1071,11 @@ function openClawChatResponse(args: {
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
           persistSendModelIntent(conv, args.body, args.modelState);
+          // Work-branch snapshot from the chat's own cwd — per-session PR
+          // attribution (badges + merged-PR auto-archive). Best-effort; a
+          // failed capture keeps the previous snapshot.
+          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+          if (workBranch) conv.branch = workBranch;
           conv.turns.push(
             {
               id: userTurnId,
@@ -929,6 +1099,9 @@ function openClawChatResponse(args: {
           );
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          if (!existing && !isError) {
+            await autoNameSessionFromFirstExchange(sessionId, args.promptText);
+          }
           pushProgress("save-transcript", "Transcript saved", "done");
         }
 
@@ -939,6 +1112,7 @@ function openClawChatResponse(args: {
           sessionId: sessionId ?? undefined,
           responseMetadata,
         });
+        runBuffer?.finish();
         await sleep(20);
         close();
       });
@@ -1031,6 +1205,11 @@ export async function POST(req: Request) {
   // its own default sandbox instead of being widened to danger-full-access.
   const permissionForwardingEnabled =
     binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+  // Same gating for directory grants (`--add-dir`). Without forwarding, the
+  // granted roots listed in the runtime-scope preamble are prompt-text-only
+  // and the harness denies every access to them.
+  const addDirForwardingEnabled =
+    binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1084,9 +1263,15 @@ export async function POST(req: Request) {
     !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
       ? existingConversation.runtime.slice("local:".length).trim() || undefined
       : undefined;
+  const projects = sshRuntime ? [] : await loadProjects();
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd ?? resolvedFamiliarWorkspace);
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -1096,10 +1281,6 @@ export async function POST(req: Request) {
     }
     throw error;
   }
-  const projects = sshRuntime ? [] : await loadProjects();
-  const resolvedFamiliarWorkspace = !sshRuntime
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
   const chatProjectId = sshRuntime
     ? null
     : chatProjectAccessId({
@@ -1139,6 +1320,20 @@ export async function POST(req: Request) {
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
     : { kind: "local", root: familiarCwd ?? cwd, allowedProjectRoots: grantedProjectRoots };
+  // Boundary sentinel: watches the harness's streamed tool calls for paths
+  // outside the granted roots. Never blocks the stream — violations surface
+  // as a progress notice at turn end and steer the NEXT turn via a prompt
+  // reminder (see chat-boundary-sentinel.ts). SSH runtimes stream remote
+  // paths that can't be classified against local roots, so they skip it.
+  const boundarySentinel = sshRuntime
+    ? null
+    : createBoundarySentinel({
+        allowedRoots: [
+          familiarCwd ?? cwd,
+          ...grantedProjectRoots,
+          ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+        ],
+      });
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
@@ -1189,9 +1384,10 @@ export async function POST(req: Request) {
   // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
   // consumes `harnessPrompt` below receives the same authoritative context.
   const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
+  const knowledgeVaultCollections = await listCollections();
 
   const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithRuntimeScope(
+  const scopedPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
       buildTaskAwarePrompt(
         buildPromptWithKnowledgeVault(
@@ -1209,6 +1405,7 @@ export async function POST(req: Request) {
             [operatorProfileContext, dailyMemoryContext],
           ),
           knowledgeVaultEntries,
+          knowledgeVaultCollections,
         ),
         taskContext,
       ),
@@ -1216,6 +1413,10 @@ export async function POST(req: Request) {
     ),
     runtimeScope,
   );
+  // The boundary reminder rides OUTSIDE the runtime-scope wrapper: it refers
+  // back to the boundary block ("listed above") and only exists when the
+  // conversation's previous turn strayed out of the granted roots.
+  const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
@@ -1240,6 +1441,38 @@ export async function POST(req: Request) {
     modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
+  // Directory grants: forward every granted project root — plus the familiar's
+  // own workspace when it isn't the spawn cwd — so the harness actually trusts
+  // the roots the runtime-scope preamble grants. The spawn cwd is already
+  // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
+  // local runtimes only (SSH runtimes own their remote filesystem).
+  const spawnRoot = familiarCwd ?? cwd;
+  const grantDirs = !sshRuntime
+    ? Array.from(
+        new Set(
+          [
+            ...grantedProjectRoots,
+            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ]
+            .map((root) => root.trim())
+            .filter((root) => root && root !== spawnRoot),
+        ),
+      )
+    : [];
+  const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
+  // Copilot tool visibility (cave-yesg): `coven run copilot --stream-json`
+  // launches the CLI one-shot (`-s -p`) and pipes raw prose, so tool calls
+  // never surface as structured events. When the registry manifest declares
+  // copilot's JSONL stream mode, spawn the CLI directly with those args and
+  // parse its event stream instead. Local runtimes only — SSH runtimes go
+  // through `coven run` on the remote host. Null keeps the passthrough
+  // fallback (and every other adapter keeps it unconditionally).
+  const copilotStream =
+    !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+  // The copilot session id Cave chose for the CURRENT attempt: the resume
+  // target, or a pre-assigned fresh id (copilot events don't echo the id
+  // until the final result frame, so the stream handler announces this one).
+  let copilotSessionHint: string | null = null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1258,6 +1491,31 @@ export async function POST(req: Request) {
         model: forwardModel,
       });
     }
+    if (copilotStream) {
+      copilotSessionHint = resumeSessionId ?? crypto.randomUUID();
+      // The direct spawn bypasses `coven run --familiar`, so mirror coven's
+      // identity preamble here — without it the familiar answers as the
+      // generic Copilot CLI.
+      const identity = copilotIdentityPreamble(
+        body.familiarId,
+        binding.display_name,
+        binding.role,
+      );
+      return buildCopilotStreamArgs({
+        spec: copilotStream,
+        prompt: identity ? `${identity}\n\n${prompt}` : prompt,
+        resumeSessionId,
+        newSessionId: resumeSessionId ? null : copilotSessionHint,
+        model: cleanModelId(desiredModel),
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
+        // Ungated grant list (cave-n1yc): the direct spawn never goes through
+        // `coven run`, so the coven CLI's --add-dir probe must not mask it.
+        // Copilot's native repeatable --add-dir ships in every CLI version
+        // this stream path supports, same trust basis as the manifest's
+        // session/sandbox flags above.
+        addDirs: grantDirs,
+      });
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
@@ -1265,6 +1523,8 @@ export async function POST(req: Request) {
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
     if (forwardPermission) a.push("--permission", forwardPermission);
+    // Trust each granted root at the harness level; repeatable flag.
+    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
@@ -1289,23 +1549,32 @@ export async function POST(req: Request) {
   // "No conversation found with session ID: <uuid>" when the requested
   // conversation vanished from Claude's local store. Coven itself emits
   // "session <uuid> not found in local store" when the requested --continue
-  // id exists only in Cave's local transcript store. In these cases we retry
+  // id exists only in Cave's local transcript store. Copilot emits "No
+  // session, task, or name matched '<id>'" on `--resume` misses — including
+  // every conversation recorded before the direct-stream path existed, whose
+  // harnessSessionId lives only in coven's store. In these cases we retry
   // once without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
       const push = (e: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(sse(e));
+          controller.enqueue(sse(e, seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
+      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -1336,7 +1605,15 @@ export async function POST(req: Request) {
       push({ kind: "user", text: promptText });
 
       let sessionId: string | null = body.sessionId ?? null;
-      let assistantFilter = new AssistantFilter();
+      // The AssistantFilter's suppressions all key on codex/claude output
+      // shapes (marker lines, startup banners, exec echoes). External manifest
+      // adapters (copilot, opencode, hermes, …) pipe the CLI's raw stdout with
+      // none of those shapes — the phase gate ate whole replies ("completed
+      // but produced no output") and the banner heuristic ate bare-number
+      // answers — so their text passes through verbatim.
+      const rawStdoutHarness =
+        binding.harness !== "codex" && binding.harness !== "claude";
+      let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
       let result: {
@@ -1361,10 +1638,24 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE =
         /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
+      const recordStdoutErrorTail = (text: string) => {
+        for (const part of text.split(/\r?\n/)) {
+          const trimmed = part.trim();
+          if (!trimmed || !ERR_LINE_RE.test(trimmed)) continue;
+          stdoutErrTail.push(trimmed);
+          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        }
+      };
 
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
       let resumeFailed = false;
+
+      // Fatal registry conflict from a stale scaffolded manifest whose id a
+      // CLI upgrade promoted to built-in (copilot, coven-code). Kills every
+      // `coven run` at startup, so the turn ends with no assistant text.
+      // Detected from stderr; healed (manifest quarantined) and retried below.
+      let adapterConflict: BuiltinAdapterConflict | null = null;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1372,10 +1663,127 @@ export async function POST(req: Request) {
       // model field arrives (older CLIs omit it → honest `pending`).
       let confirmedModel: string | null = null;
 
-      const handleLine = (line: string) => {
+      // Dedups copilot's streamed text deltas against the full-content
+      // assistant.message frame that follows them.
+      const copilotText = new CopilotTextAssembler();
+
+      const announceSession = (id: string) => {
+        sessionId = id;
+        // The client tracks the STABLE conversation id — on resumed
+        // turns the harness mints a fresh internal id, which must not
+        // leak out as a "new session" (it fragmented every continued
+        // chat into one sidebar entry per turn).
+        const announcedId = body.sessionId ?? id;
+        push({ kind: "session", sessionId: announcedId });
+        // Title the session from the user's prompt as soon as the id
+        // exists. The daemon's own title derives from the harness
+        // prompt — i.e. the identity-canon preamble — and is what the
+        // UI would otherwise show until the transcript save runs.
+        void setDefaultSessionTitleIfMissing(
+          announcedId,
+          chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+        ).catch(() => undefined);
+      };
+
+      // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
+      // claude stream-json. Text arrives as message deltas + a full-content
+      // message frame (deduped by CopilotTextAssembler); tool calls arrive as
+      // toolRequests / execution_start / execution_complete keyed on a native
+      // toolCallId, which maps onto the tracker's envelope lifecycle so live
+      // chips, textOffset interleaving, and persistedTools all work exactly
+      // as they do for claude. Non-JSON stdout is never assistant text on
+      // this protocol — it only feeds the empty-response diagnostic tail.
+      const handleCopilotLine = (line: string, isJson: boolean) => {
+        if (isJson) {
+          try {
+            const ev = parseCopilotChatEvent(JSON.parse(line));
+            if (!ev) return;
+            if (!confirmedModel && ev.kind !== "result") {
+              const echoed = cleanModelId(ev.model);
+              if (echoed) confirmedModel = echoed;
+            }
+            // Copilot only echoes the session id on the final result frame;
+            // announce the id Cave launched with as soon as the stream is
+            // live so the client can adopt the conversation immediately.
+            if (!sessionId && copilotSessionHint) announceSession(copilotSessionHint);
+            switch (ev.kind) {
+              case "text_delta": {
+                const text = copilotText.delta(ev.messageId, ev.text);
+                if (text) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                break;
+              }
+              case "message": {
+                const text = copilotText.message(ev.messageId, ev.content);
+                if (text) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                // Tool requests announce calls before execution starts; the
+                // tracker links the later execution_start onto the same id.
+                for (const req of ev.toolRequests) {
+                  boundarySentinel?.observe(req.name, req.input);
+                  const toolEv = toolTracker.envelopeToolUse(
+                    req.toolCallId,
+                    req.name,
+                    formatToolInputValue(req.input),
+                    assistantText.length,
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
+                }
+                break;
+              }
+              case "tool_start": {
+                boundarySentinel?.observe(ev.toolName, ev.input);
+                const toolEv = toolTracker.envelopeToolUse(
+                  ev.toolCallId,
+                  ev.toolName,
+                  formatToolInputValue(ev.input),
+                  assistantText.length,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                break;
+              }
+              case "tool_end": {
+                const toolEv = toolTracker.envelopeToolResult(
+                  ev.toolCallId,
+                  ev.output,
+                  ev.isError,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                break;
+              }
+              case "result": {
+                if (!sessionId && ev.sessionId) announceSession(ev.sessionId);
+                result = {
+                  duration_ms: ev.durationMs,
+                  is_error: ev.isError,
+                };
+                break;
+              }
+            }
+            return;
+          } catch {
+            /* not valid JSON after all — fall through to the error tail */
+          }
+        }
+        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+      };
+
+      const handleLine = (rawLine: string) => {
+        // stdout is split on bare \n; external adapters (copilot) emit CRLF,
+        // and a trailing \r would both fail the endsWith("}") JSON sniff and
+        // leak into bubble text.
+        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = line.startsWith("{") && line.endsWith("}");
+        if (copilotStream) {
+          handleCopilotLine(line, isJson);
+          return;
+        }
         if (isJson) {
           try {
             const ev = JSON.parse(line) as {
@@ -1387,6 +1795,7 @@ export async function POST(req: Request) {
               is_error?: boolean;
               total_cost_usd?: number;
               usage?: unknown;
+              text?: string;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -1435,6 +1844,19 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
+            } else if (ev.type === "output" && typeof ev.text === "string") {
+              // Coven's Windows captured-piped Codex path wraps transcript
+              // bytes as stream-json `output` events so stdout remains a
+              // valid JSONL protocol. Preserve the original chunk boundaries:
+              // AssistantFilter buffers partial lines and exposes only the
+              // assistant phase after stripping Codex's startup transcript.
+              const cleaned = resolveBackspaces(stripAnsi(ev.text));
+              recordStdoutErrorTail(cleaned);
+              const filtered = assistantFilter.push(cleaned);
+              if (filtered) {
+                assistantText += filtered;
+                push({ kind: "assistant_chunk", text: filtered });
+              }
             } else if (
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
@@ -1450,6 +1872,7 @@ export async function POST(req: Request) {
                   assistantText += block.text;
                   push({ kind: "assistant_chunk", text: block.text });
                 } else if (block.type === "tool_use" && block.id && block.name) {
+                  boundarySentinel?.observe(block.name, block.input);
                   const toolEv = toolTracker.envelopeToolUse(
                     block.id,
                     block.name,
@@ -1479,13 +1902,10 @@ export async function POST(req: Request) {
             /* fall through to filter */
           }
         }
-        const cleaned = stripAnsi(line);
-        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
-        if (trimmed && ERR_LINE_RE.test(trimmed)) {
-          stdoutErrTail.push(trimmed);
-          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
-        }
+        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
@@ -1494,6 +1914,7 @@ export async function POST(req: Request) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
+          if (!isPost) boundarySentinel?.observe(name, rest);
           const toolEv = isPost
             ? toolTracker.hookEnd(
                 name,
@@ -1527,6 +1948,24 @@ export async function POST(req: Request) {
         killCurrentChild,
       );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const armDetachKill = () => {
+        if (runHandle.stopRequested || detachKillTimer != null) return;
+        detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
+      };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([body.runId, body.sessionId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (req.signal.aborted) armDetachKill();
+        },
+      });
 
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
@@ -1544,11 +1983,16 @@ export async function POST(req: Request) {
                 const sshArgs = spawnArgs;
                 return spawn("ssh", sshArgs, {
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: covenSpawnEnv(),
+                  env: harnessSpawnEnv(body.familiarId),
                 });
               })()
             : (() => {
-                const { command, fixedArgs } = covenLaunchCommand();
+                // Copilot stream turns spawn the adapter binary directly with
+                // its manifest-declared JSONL args; everything else goes
+                // through `coven run`.
+                const { command, fixedArgs } = copilotStream
+                  ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  : covenLaunchCommand();
                 return spawn(command, [...fixedArgs, ...spawnArgs], {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -1557,7 +2001,10 @@ export async function POST(req: Request) {
                   // honor that instead.
                   cwd: familiarCwd ?? cwd,
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: covenSpawnEnv(),
+                  // Scoped vault keys the familiar is not granted are
+                  // subtracted here — the harness only sees shared secrets
+                  // plus its own grants (cave-4nu6).
+                  env: harnessSpawnEnv(body.familiarId),
                 });
               })();
 
@@ -1565,8 +2012,7 @@ export async function POST(req: Request) {
           const onAbort = () => {
             // Transport drop, not Stop — arm the detach cap and let the turn
             // finish. Deliberate stops kill through the registry instead.
-            if (runHandle.stopRequested || detachKillTimer != null) return;
-            detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
+            armDetachKill();
           };
           req.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -1583,6 +2029,9 @@ export async function POST(req: Request) {
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
+            if (!adapterConflict) {
+              adapterConflict = detectBuiltinAdapterConflict(text);
+            }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
               if (!trimmed) continue;
@@ -1606,7 +2055,9 @@ export async function POST(req: Request) {
                 message:
                   sshRuntime
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                    : "coven CLI not found on PATH. Open Setup to install it, then try again.",
+                    : copilotStream
+                      ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });
@@ -1636,7 +2087,43 @@ export async function POST(req: Request) {
         });
 
       // First attempt — uses --continue if body.sessionId was set.
+      const turnSpawnStartMs = Date.now();
       await runAttempt(args);
+
+      // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
+      // installed CLI now ships as a built-in harness makes the registry load
+      // fatal, killing the run before any assistant output. Quarantine the
+      // manifest the CLI named (rename off the scanned `.json` extension) and
+      // retry the same turn. Bounded: several stale manifests can conflict,
+      // but each pass must have healed a new one to continue. Local runs
+      // only — an SSH runtime's error names a remote path.
+      for (
+        let heals = 0;
+        heals < 3 && adapterConflict && !sshRuntime && !runHandle.stopRequested;
+        heals++
+      ) {
+        const conflict: BuiltinAdapterConflict = adapterConflict;
+        const healed = await healBuiltinShadowedManifest(conflict);
+        if (!healed) break;
+        pushProgress(
+          "adapter-heal",
+          `Quarantined stale ${conflict.id} adapter manifest; retrying`,
+          "running",
+          conflict.manifestPath,
+        );
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
+        assistantText = "";
+        jsonBuf = "";
+        result = {};
+        toolTracker = new ToolCallTracker();
+        copilotText.reset();
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
+        resumeFailed = false;
+        adapterConflict = null;
+        await runAttempt(args);
+        pushProgress("adapter-heal", "Retry after manifest quarantine finished", "done");
+      }
 
       // Transparent retry: if codex reported its rollout-resume failed and
       // we had been resuming, start a fresh thread (no --continue) so the
@@ -1654,11 +2141,12 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
-        assistantFilter = new AssistantFilter();
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
@@ -1699,6 +2187,49 @@ export async function POST(req: Request) {
         assistantText = diagnostic;
         result.is_error = true;
         push({ kind: "assistant_chunk", text: diagnostic });
+      }
+
+      // Created-row leak sweep (bd cave-p08l): `coven run` registers the
+      // daemon session row before launching the harness, and the row's id
+      // only reaches this route via the stream handshake. A spawn that dies
+      // pre-handshake (fork exhaustion, missing adapter) strands the row in
+      // "created" forever — the daemon has no reaper. When a NEW chat's turn
+      // ends without ever learning a session id, reap the rows this turn
+      // provably registered: same spawn cwd, created inside the turn window,
+      // title == this turn's prompt head. Best-effort; never fails the turn.
+      if (!cancelledByUser && !body.sessionId && !sessionId && !sshRuntime) {
+        const swept = await sweepStuckCreatedSessions({
+          cwd: familiarCwd ?? cwd,
+          prompt: harnessPrompt,
+          sinceMs: turnSpawnStartMs - 5000,
+        });
+        if (swept.length > 0) {
+          pushProgress(
+            "created-sweep",
+            `Cleaned up ${swept.length} orphaned session ${swept.length === 1 ? "row" : "rows"}`,
+            "done",
+            swept.join(", "),
+          );
+        }
+      }
+
+      // Boundary sentinel readout: one non-blocking notice per turn listing
+      // the out-of-boundary paths the harness touched, plus a recorded
+      // reminder that steers the conversation's next turn. Nothing here
+      // interrupts or fails the turn — enforcement is observe → surface →
+      // steer, not kill.
+      const boundaryViolations = boundarySentinel?.violations() ?? [];
+      if (boundaryViolations.length > 0) {
+        const boundarySessionId = body.sessionId ?? sessionId;
+        if (boundarySessionId) {
+          recordBoundaryViolations(boundarySessionId, boundaryViolations);
+        }
+        pushProgress(
+          "boundary-sentinel",
+          `Touched ${boundaryViolations.length === 1 ? "a path" : `${boundaryViolations.length} paths`} outside the granted roots`,
+          "error",
+          formatBoundaryNotice(boundaryViolations),
+        );
       }
 
       // Agent-produced inline attachments: pull `coven:attachment` marker
@@ -1794,10 +2325,18 @@ export async function POST(req: Request) {
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
         persistSendModelIntent(conv, body, modelState);
+        // Work-branch snapshot from the chat's own cwd — per-session PR
+        // attribution (badges + merged-PR auto-archive). Best-effort; a
+        // failed capture keeps the previous snapshot.
+        const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+        if (workBranch) conv.branch = workBranch;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
+        if (!existing && !result.is_error && !cancelledByUser) {
+          await autoNameSessionFromFirstExchange(finalSessionId, promptText);
+        }
         pushProgress("save-transcript", "Transcript saved", "done");
       }
 
@@ -1816,6 +2355,7 @@ export async function POST(req: Request) {
       cleanupImageTempFiles(imageFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
+      runBuffer?.finish();
       await sleep(20);
       close();
     },

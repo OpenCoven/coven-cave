@@ -12,7 +12,8 @@ import {
 } from "@/lib/cave-board-types";
 import { normalizeTaskGitHubLinks } from "@/lib/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand } from "@/lib/coven-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { spawn } from "node:child_process";
@@ -213,11 +214,12 @@ async function resolveFamiliarWorkspace(
   }
 }
 
-// Run coven CLI and collect full stdout output as a string.
+// Run Coven CLI and collect full stdout output as a string.
 function runCoven(
   args: string[],
   signal: AbortSignal,
   familiarWorkspacePath?: string,
+  familiarId?: string,
 ): Promise<string> {
   return new Promise((resolve) => {
     try {
@@ -227,7 +229,7 @@ function runCoven(
       const child = spawn(command, [...fixedArgs, ...args], {
         cwd: familiarWorkspacePath ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: covenSpawnEnv(),
+        env: harnessSpawnEnv(familiarId),
       });
 
       const finish = () => {
@@ -581,7 +583,7 @@ export async function POST(req: Request) {
         args.push("--", enrichPrompt(cardForPrompt));
 
         const workspace = await resolveFamiliarWorkspace(familiarId);
-        const raw = await runCoven(args, req.signal, workspace);
+        const raw = await runCoven(args, req.signal, workspace, familiarId);
         if (req.signal.aborted) break;
         const enrichment = parseTaskEnrichment(raw);
         const now = new Date().toISOString();

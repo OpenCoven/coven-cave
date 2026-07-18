@@ -30,6 +30,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -43,6 +44,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import type { GitHubItemTarget } from "@/lib/github-item-url";
 import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -55,13 +57,18 @@ import {
   type PopoverMode,
 } from "@/components/github-action-popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ActivityResult = {
   ok: true;
   authed: boolean;
+  /** GitHub rejected the stored PAT (revoked/expired) — surface it, don't
+   *  render an authed-looking empty state over a dead token (cave-cjgg). */
+  patInvalid?: boolean;
   login: string | null;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
@@ -87,27 +94,37 @@ function orgOf(repo: string): string {
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
+  /** Refresh the shell's cached GitHub assignment/session enrichment. */
+  onTasksRefresh?: () => void;
+  /** Deep-link target from a GitHub-event inbox notification — opens that
+   *  PR/issue's detail natively, even when it isn't in the activity list. */
+  initialTarget?: GitHubItemTarget | null;
 };
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
-function useFamiliars(): Familiar[] {
+function useFamiliars(): { familiars: Familiar[]; familiarsFailed: boolean } {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const [familiarsFailed, setFamiliarsFailed] = useState(false);
   useEffect(() => {
     fetch("/api/familiars")
       .then((r) => r.json())
       .then((data) => {
         if (data?.ok && Array.isArray(data.familiars)) {
           setFamiliars(data.familiars as Familiar[]);
+          setFamiliarsFailed(false);
+        } else {
+          setFamiliarsFailed(true);
         }
       })
-      .catch(() => {});
+      .catch(() => setFamiliarsFailed(true)); // failed ≠ empty (cave-59cv)
   }, []);
-  return familiars;
+  return { familiars, familiarsFailed };
 }
 
-function useCards(): { cards: Card[]; reload: () => void } {
+function useCards(): { cards: Card[]; cardsFailed: boolean; reload: () => void } {
   const [cards, setCards] = useState<Card[]>([]);
+  const [cardsFailed, setCardsFailed] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
@@ -117,12 +134,20 @@ function useCards(): { cards: Card[]; reload: () => void } {
         if (cancelled) return;
         if (data?.ok && Array.isArray(data.cards)) {
           setCards(data.cards as Card[]);
+          setCardsFailed(false);
+        } else {
+          setCardsFailed(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // A failed board load is NOT "no cards" — the link picker rendered a
+        // convincing empty over it with no cue (cave-59cv).
+        if (!cancelled) setCardsFailed(true);
+      });
     return () => { cancelled = true; };
   }, [tick]);
-  return { cards, reload: () => setTick((t) => t + 1) };
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return { cards, cardsFailed, reload };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -189,22 +214,36 @@ function PatSetupModal({
   onSaved,
   onClose,
   username,
+  hasPat = false,
 }: {
   onSaved: (login: string, hasPat: boolean) => void;
   onClose: () => void;
   username: string | null;
+  /** A PAT is currently stored — offers the remove path (the DELETE route
+   *  had no caller anywhere; cave-cjgg). */
+  hasPat?: boolean;
 }) {
   const [pat, setPat] = useState("");
   const [usernameInput, setUsernameInput] = useState(username ?? "");
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const removeConfirm = useArmedConfirm();
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  // While a save is in flight, dismissal is deferred: closing mid-save would
+  // unmount under the pending setStates and leave the user unsure whether the
+  // PAT persisted (cave-b8ba).
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+  const closeUnlessSaving = () => {
+    if (!savingRef.current) onClose();
+  };
   // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
   // so the username input's focus effect above keeps the initial focus.
-  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+  useFocusTrap(true, dialogRef, { onEscape: closeUnlessSaving, focusFirst: false });
 
   async function save() {
     const trimmedPat = pat.trim();
@@ -244,7 +283,7 @@ function PatSetupModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
       role="presentation"
-      onClick={onClose}
+      onClick={closeUnlessSaving}
     >
       <div
         ref={dialogRef}
@@ -338,6 +377,44 @@ function PatSetupModal({
             </Button>
           </div>
         </form>
+
+        {hasPat && (
+          <div className="mt-3 border-t border-[var(--border-hairline)] pt-3">
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={removing || saving}
+              onClick={() => {
+                if (removing) return;
+                // Two-step, matching the app's armed-confirm standard (cave-w96h).
+                removeConfirm.trigger(() => {
+                  setRemoving(true);
+                  setError(null);
+                  void (async () => {
+                    try {
+                      const res = await fetch("/api/github/pat", { method: "DELETE" });
+                      const data = await res.json().catch(() => null);
+                      if (!res.ok || data?.ok === false) {
+                        setError(data?.error ?? "Couldn't remove the token.");
+                        return;
+                      }
+                      onSaved(usernameInput.trim() || username || "", false);
+                    } catch {
+                      setError("Network error — please try again.");
+                    } finally {
+                      setRemoving(false);
+                    }
+                  })();
+                });
+              }}
+            >
+              {removing ? "Removing…" : removeConfirm.armed ? "Really remove?" : "Remove stored token"}
+            </Button>
+            <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+              Drops back to public data for @{usernameInput.trim() || username || "…"}.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -384,6 +461,8 @@ function OpenChatAction({
   linkedCards,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onJumpToSession,
   onAfterLink,
 }: {
@@ -391,6 +470,8 @@ function OpenChatAction({
   linkedCards: Card[];
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onAfterLink: () => void;
 }) {
@@ -524,7 +605,9 @@ function OpenChatAction({
             mode="chat"
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={() => setPopoverOpen(false)}
           />
         </div>
@@ -558,6 +641,7 @@ function SafeMergeAction({
     e.stopPropagation();
     setBusy(true);
     setError(null);
+    let safeMergeRoot: string | null = linkedCard?.cwd ?? null;
     let worktreeLine =
       "Worktree: no linked local project root was available; resolve the repo root before editing.";
 
@@ -583,11 +667,12 @@ function SafeMergeAction({
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error ?? `worktree HTTP ${res.status}`);
         }
+        safeMergeRoot = typeof json.worktree === "string" && json.worktree ? json.worktree : linkedCard.cwd;
         worktreeLine = `Worktree: ${json.worktree} (${json.created ? "created" : "reused"}). Branch: ${json.branch}.`;
         announce(`Worktree ${json.created ? "created" : "reused"} for the safe merge.`);
       }
 
-      const context = [
+      const initialPrompt = [
         `**Safely merge this PR: ${item.title}**`,
         `Repo: \`${item.repo}\`${item.number != null ? ` #${item.number}` : ""}`,
         `URL: ${item.url}`,
@@ -600,7 +685,7 @@ function SafeMergeAction({
 
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
-          detail: { familiarId, context },
+          detail: { familiarId, projectRoot: safeMergeRoot ?? undefined, initialPrompt },
         }),
       );
     } catch (err) {
@@ -633,11 +718,15 @@ function AddToBoardAction({
   item,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onAfterLink,
 }: {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onAfterLink: () => void;
 }) {
   const [mode, setMode] = useState<PopoverMode | null>(null);
@@ -648,7 +737,6 @@ function AddToBoardAction({
   }
   function close() {
     setMode(null);
-    onAfterLink();
   }
 
   return (
@@ -668,8 +756,11 @@ function AddToBoardAction({
             mode={mode}
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={close}
+            onComplete={onAfterLink}
           />
         </div>
       )}
@@ -721,19 +812,22 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    // AbortController (not a cancelled flag): arrowing through the list must
+    // actually cancel the left-behind request, not just ignore its response —
+    // uncancelled fetches burn the 60/hr unauthenticated rate limit (cave-b8ba).
+    const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) setState({ status: "ready", detail: data as ItemDetail });
         else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => { cancelled = true; };
+    return () => ctl.abort();
   }, [repo, number]);
 
   return state;
@@ -825,20 +919,20 @@ function UserProfileCard({
       setState({ status: "ready", profile: cached });
       return;
     }
-    let cancelled = false;
+    const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/user?login=${encodeURIComponent(login)}`)
+    fetch(`/api/github/user?login=${encodeURIComponent(login)}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) {
           const profile = data as UserProfile;
           profileCache.set(login, profile);
           setState({ status: "ready", profile });
         } else setState({ status: "error" });
       })
-      .catch(() => { if (!cancelled) setState({ status: "error" }); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!ctl.signal.aborted) setState({ status: "error" }); });
+    return () => ctl.abort();
   }, [login]);
 
   // Outside-click dismissal (deferred one tick so the opening click doesn't
@@ -879,13 +973,14 @@ function UserProfileCard({
       ) : state.status === "error" || !p ? (
         <div className="gh-profile-error">
           <p>Couldn’t load @{login}’s profile.</p>
-          <button
-            type="button"
-            className="gh-profile-open"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:arrow-square-out"
             onClick={() => openExternalUrl(`https://github.com/${login}`)}
           >
-            <Icon name="ph:arrow-square-out" width={12} /> Open on GitHub
-          </button>
+            Open on GitHub
+          </Button>
         </div>
       ) : (
         <>
@@ -945,13 +1040,14 @@ function UserProfileCard({
             )}
           </div>
 
-          <button
-            type="button"
-            className="gh-profile-open"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:github-logo"
             onClick={() => openExternalUrl(p.htmlUrl ?? `https://github.com/${p.login}`)}
           >
-            <Icon name="ph:github-logo" width={13} /> View full profile
-          </button>
+            View full profile
+          </Button>
         </>
       )}
     </div>
@@ -1224,6 +1320,10 @@ function GitHubComments({
   const [postError, setPostError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Optimistic thread-resolve flips awaiting API confirmation — applied over
+  // fetched data so a post-comment refetch during GitHub's read-after-write
+  // lag can't overwrite them (cave-b8ba). Confirmed entries drop out.
+  const pendingResolveRef = useRef(new Map<string, boolean>());
 
   const repo = item.repo;
   const number = item.number ?? null;
@@ -1240,24 +1340,42 @@ function GitHubComments({
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    const ctl = new AbortController();
     setState({ status: "loading" });
     fetch(
       `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}${isPull ? "&isPull=1" : ""}`,
+      { signal: ctl.signal },
     )
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
-        if (data?.ok) setState({ status: "ready", data: data as CommentsResult });
-        else setState({ status: "error" });
+        if (ctl.signal.aborted) return;
+        if (data?.ok) {
+          const result = data as CommentsResult;
+          const pending = pendingResolveRef.current;
+          if (pending.size > 0) {
+            result.reviewThreads = result.reviewThreads.map((t) => {
+              const want = pending.get(t.id);
+              if (want === undefined) return t;
+              if (t.isResolved === want) {
+                pending.delete(t.id); // API caught up — stop overriding
+                return t;
+              }
+              return { ...t, isResolved: want };
+            });
+          }
+          setState({ status: "ready", data: result });
+        } else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
   }, [repo, number, isPull, tick]);
+
+  // A different PR's threads can't inherit stale overrides.
+  useEffect(() => {
+    pendingResolveRef.current.clear();
+  }, [repo, number]);
 
   const data = state.status === "ready" ? state.data : null;
   const canResolve = data?.canResolve ?? false;
@@ -1285,6 +1403,11 @@ function GitHubComments({
     if (!canResolve || state.status !== "ready") return;
     const next = !thread.isResolved;
     announce(next ? "Thread resolved." : "Thread unresolved.");
+    // Record the optimistic value: a post-comment refetch during GitHub's
+    // read-after-write lag would otherwise overwrite the flip with stale
+    // isResolved (cave-b8ba). The fetch handler applies pending overrides
+    // until the API confirms them.
+    pendingResolveRef.current.set(thread.id, next);
     // Optimistic flip — revert on failure.
     setState({
       status: "ready",
@@ -1304,7 +1427,8 @@ function GitHubComments({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "failed");
     } catch {
-      // Revert by refetching the authoritative state.
+      // Revert by refetching the authoritative state (and stop overriding).
+      pendingResolveRef.current.delete(thread.id);
       setTick((n) => n + 1);
     }
   }
@@ -1568,32 +1692,26 @@ function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState
     const key = `${repo}#${number}`;
     const silent = keyRef.current === key;
     keyRef.current = key;
-    let cancelled = false;
+    const ctl = new AbortController();
     if (!silent) setState({ status: "loading" });
-    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) setState({ status: "ready", data: data as ChecksResult });
         else if (!silent) setState({ status: "error" }); // a failed refresh keeps the last good list
       })
-      .catch(() => { if (!cancelled && !silent) setState({ status: "error" }); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!ctl.signal.aborted && !silent) setState({ status: "error" }); });
+    return () => ctl.abort();
   }, [enabled, repo, number, tick]);
 
   // Live-refresh while CI is still running: poll every 30s until the rollup
-  // leaves "pending". Fetches are skipped while the tab is hidden (the interval
-  // itself is a no-op then) so a backgrounded tab doesn't spend rate limit —
-  // mirroring the surface's own activity-poll discipline.
+  // leaves "pending". usePausablePoll (cave-e794) keeps the hidden-tab skip
+  // (a backgrounded tab doesn't spend rate limit) and adds an immediate
+  // refresh on return, so CI status is current the moment the tab comes back
+  // instead of up to 30s later.
   const rollup = state.status === "ready" ? state.data.rollup : null;
-  useEffect(() => {
-    if (rollup !== "pending") return;
-    const id = window.setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      setTick((t) => t + 1);
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, [rollup]);
+  usePausablePoll(() => setTick((t) => t + 1), 30_000, { enabled: rollup === "pending" });
 
   return state;
 }
@@ -1959,12 +2077,103 @@ function GhWorkspace({ detail, children }: { detail: ReactNode; children: ReactN
 
 // ── Selected item detail ─────────────────────────────────────────────────────
 
+/**
+ * Watch/unwatch the selected item's repo right from the detail panel — the
+ * subscribe path for "the repo you're viewing" (cave-hlxn). Backed by
+ * /api/github/subscriptions; the first watch also flips the watcher's master
+ * switch on (watching a repo means you want its notifications). Hidden until
+ * the current watch state is known so it never lies.
+ */
+function WatchRepoChip({ repo }: { repo: string }) {
+  const { announce } = useAnnouncer();
+  const [watched, setWatched] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWatched(null);
+    (async () => {
+      try {
+        const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.ok) {
+          setWatched(Array.isArray(data.prefs?.repos) && data.prefs.repos.includes(repo));
+        }
+      } catch {
+        /* leave null — the chip stays hidden rather than guessing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  const toggle = async () => {
+    if (watched === null || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        // Refresh failed — deriving repos from a failed read could PATCH the
+        // user's whole watch list away (empty repos). Keep state, tell them.
+        announce(`Could not update the watch list for ${repo} — try again.`);
+        return;
+      }
+      const repos: string[] = Array.isArray(data?.prefs?.repos) ? data.prefs.repos : [];
+      const next = watched ? repos.filter((r) => r !== repo) : [...new Set([...repos, repo])];
+      const body = watched ? { repos: next } : { repos: next, enabled: true };
+      const patch = await fetch("/api/github/subscriptions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const patched = await patch.json().catch(() => null);
+      if (patch.ok && patched?.ok) {
+        setWatched(!watched);
+        announce(
+          watched
+            ? `Unwatched ${repo}.`
+            : `Watching ${repo} — new PRs and CI results land in your Inbox.`,
+        );
+      } else {
+        announce(`Could not update the watch list for ${repo} — try again.`);
+      }
+    } catch {
+      announce(`Could not update the watch list for ${repo} — try again.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (watched === null) return null;
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      leadingIcon={watched ? "ph:bell-ringing" : "ph:bell"}
+      aria-pressed={watched}
+      disabled={busy}
+      onClick={() => void toggle()}
+      title={
+        watched
+          ? `Stop watching ${repo}`
+          : `Watch ${repo} — new PRs and CI results land in your Inbox`
+      }
+    >
+      {watched ? "Watching" : "Watch repo"}
+    </Button>
+  );
+}
+
 function GitHubItemGlassPanel({
   item,
   linkedCards,
   familiars,
   resolvedById,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   counts,
   onJumpToSession,
   onFocusCard,
@@ -1975,6 +2184,8 @@ function GitHubItemGlassPanel({
   familiars: Familiar[];
   resolvedById: Map<string, ResolvedFamiliar>;
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   counts: Record<Filter, number>;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
@@ -2054,6 +2265,9 @@ function GitHubItemGlassPanel({
               {" · "}
               <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <WatchRepoChip repo={item.repo} />
           </div>
           {(item.kind === "pr" || item.kind === "review_request") && (
             <GhReviewActions
@@ -2142,6 +2356,8 @@ function GitHubItemGlassPanel({
             linkedCards={linkedCards}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onJumpToSession={onJumpToSession}
             onAfterLink={onAfterLink}
           />
@@ -2149,6 +2365,8 @@ function GitHubItemGlassPanel({
             item={item}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onAfterLink={onAfterLink}
           />
           <SafeMergeAction
@@ -2189,7 +2407,7 @@ const COLS: ColDef[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
+export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initialTarget }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
@@ -2201,9 +2419,20 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [showPatModal, setShowPatModal] = useState(false);
+  const [showSubsModal, setShowSubsModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
+  // user picks a row themselves — from then on selection owns the detail.
+  const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
+  useEffect(() => {
+    setDeepLink(initialTarget ?? null);
+  }, [initialTarget]);
+  const selectRow = useCallback((id: string) => {
+    setDeepLink(null);
+    setSelectedItemId(id);
+  }, []);
   const timerRef = useRef<number | null>(null);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
@@ -2212,8 +2441,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const familiars = useFamiliars();
-  const { cards, reload: reloadCards } = useCards();
+  const { familiars, familiarsFailed } = useFamiliars();
+  const { cards, cardsFailed, reload: reloadCards } = useCards();
+  const refreshLinkedWork = useCallback(() => {
+    reloadCards();
+    onTasksRefresh?.();
+  }, [reloadCards, onTasksRefresh]);
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const resolvedById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -2261,7 +2494,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
 
       const nextActivity = data as ActivityResult;
       setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && arrayContentEqual(prev.items, nextActivity.items)
+        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
           : nextActivity);
       setError(null);
@@ -2314,11 +2547,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
       refreshActivity();
-      reloadCards(); // keep the linked-task chips fresh too (parity with the toolbar refresh)
+      refreshLinkedWork(); // keep linked cards and shell task context fresh too
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [refreshLinkedWork]);
 
   const items = activity?.items ?? [];
   const filtered = useMemo(
@@ -2438,9 +2671,28 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     }
   }, [sorted, selectedItemId]);
 
+  // The deep-linked item may not be in the activity list (old PR, other repo):
+  // prefer the live row when present (real title/state, row highlight), else
+  // synthesize the minimal shape the detail pane needs to fetch
+  // /api/github/item?repo&number.
+  const deepLinkItem = useMemo<GitHubItem | null>(() => {
+    if (!deepLink) return null;
+    const listed = sorted.find((it) => it.repo === deepLink.repo && it.number === deepLink.number);
+    if (listed) return listed;
+    return {
+      kind: deepLink.kind,
+      id: `deeplink:${deepLink.repo}#${deepLink.number}`,
+      title: `${deepLink.repo} #${deepLink.number}`,
+      repo: deepLink.repo,
+      number: deepLink.number,
+      url: deepLink.url,
+      updatedAt: new Date().toISOString(),
+    };
+  }, [deepLink, sorted]);
+
   const selectedItem = useMemo(
-    () => sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
-    [sorted, selectedItemId],
+    () => deepLinkItem ?? sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, selectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
@@ -2465,7 +2717,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       const list = rows();
       if (list.length === 0) return;
       const row = list[Math.max(0, Math.min(list.length - 1, i))];
-      if (row.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+      if (row.dataset.itemId) selectRow(row.dataset.itemId);
       row.focus();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -2486,7 +2738,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     };
     const onFocusIn = (e: FocusEvent) => {
       const row = rowOf(e.target);
-      if (row?.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+      if (row?.dataset.itemId) selectRow(row.dataset.itemId);
     };
     tbody.addEventListener("keydown", onKey);
     tbody.addEventListener("focusin", onFocusIn);
@@ -2503,12 +2755,24 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       {showPatModal && (
         <PatSetupModal
           username={patStatus?.login ?? null}
+          hasPat={patStatus?.hasPat ?? false}
           onSaved={(login, hasPat) => {
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
             refreshActivity();
           }}
           onClose={() => setShowPatModal(false)}
+        />
+      )}
+
+      {showSubsModal && (
+        <GithubSubscriptionsModal
+          hasPat={patStatus?.hasPat ?? false}
+          onConnectPat={() => {
+            setShowSubsModal(false);
+            setShowPatModal(true);
+          }}
+          onClose={() => setShowSubsModal(false)}
         />
       )}
 
@@ -2519,7 +2783,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             <span className="gh-compact-login">@{activity.login}</span>
           )}
 
-          {activity?.authed === false && (
+          {activity?.patInvalid && (
+            <button
+              type="button"
+              onClick={() => setShowPatModal(true)}
+              className="gh-compact-auth gh-compact-auth--invalid focus-ring"
+              title="GitHub rejected the stored token (revoked or expired) — update your PAT"
+            >
+              token rejected — update PAT
+            </button>
+          )}
+          {!activity?.patInvalid && activity?.authed === false && (
             <span
               className="gh-compact-auth gh-compact-auth--public"
               title="Public API — add a PAT for private repos + review requests"
@@ -2537,7 +2811,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           )}
 
           {activity?.rateLimit && (
-            <span className="gh-compact-rate">
+            <span
+              className="gh-compact-rate"
+              title="GitHub API requests left this hour — public gets 60/h, a PAT gets 5,000/h"
+            >
               {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
             </span>
           )}
@@ -2631,10 +2908,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             size="sm"
             onClick={() => {
               refreshActivity();
-              reloadCards();
+              refreshLinkedWork();
             }}
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
+          />
+          <IconButton
+            icon="ph:bell-ringing"
+            size="sm"
+            onClick={() => setShowSubsModal(true)}
+            title="Event subscriptions — opened PRs, CI completions"
+            aria-label="Event subscriptions"
           />
           <OverflowMenu ariaLabel="More GitHub options">
             <PopoverLabel>Group rows</PopoverLabel>
@@ -2671,7 +2955,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             <EmptyState
               icon="ph:github-logo"
               headline="Connect your GitHub account"
-              subtitle="Cave uses the public GitHub API (no auth needed) or your own PAT for private repos and reviews."
+              subtitle="Start with just a GitHub username to browse public repos — add a personal access token (PAT) later for private repos and reviews. Both stay on this machine."
               actions={
                 <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => setShowPatModal(true)}>
                   Set up GitHub
@@ -2694,13 +2978,26 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             />
           </div>
 
-        ) : sorted.length === 0 ? (
+        ) : sorted.length === 0 && !deepLinkItem ? (
           <div className="flex h-full items-center justify-center px-8">
             {query.trim() ? (
               <EmptyState
                 icon="ph:magnifying-glass"
                 headline={`No items match “${query.trim()}”`}
                 subtitle="Try a shorter query, or clear the search to see everything."
+              />
+            ) : activity?.patInvalid ? (
+              // A dead PAT means this emptiness is unverifiable — an all-clear
+              // check mark here would be a lie (cave-cjgg).
+              <EmptyState
+                icon="ph:key"
+                headline="GitHub token rejected"
+                subtitle="The stored token was revoked or expired, so private repos and reviews can't be read. Update the PAT to restore the full view."
+                actions={
+                  <Button variant="primary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
+                    Update PAT
+                  </Button>
+                }
               />
             ) : (
               <EmptyState
@@ -2720,10 +3017,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 familiars={familiars}
                 resolvedById={resolvedById}
                 cards={cards}
+                familiarsFailed={familiarsFailed}
+                cardsFailed={cardsFailed}
                 counts={counts}
                 onJumpToSession={onJumpToSession}
                 onFocusCard={onFocusCard}
-                onAfterLink={reloadCards}
+                onAfterLink={refreshLinkedWork}
               />
             }
           >
@@ -2798,7 +3097,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       data-url={item.url}
                       tabIndex={selectedItem?.id === item.id ? 0 : -1}
                       className={`gh-row reveal-scope${selectedItem?.id === item.id ? " is-selected" : ""}`}
-                      onClick={() => setSelectedItemId(item.id)}
+                      onClick={() => selectRow(item.id)}
                       aria-selected={selectedItem?.id === item.id}
                     >
                       <td>
@@ -2922,14 +3221,18 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             linkedCards={linked}
                             familiars={familiars}
                             cards={cards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
                             onJumpToSession={onJumpToSession}
-                            onAfterLink={reloadCards}
+                            onAfterLink={refreshLinkedWork}
                           />
                           <AddToBoardAction
                             item={item}
                             familiars={familiars}
                             cards={cards}
-                            onAfterLink={reloadCards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
+                            onAfterLink={refreshLinkedWork}
                           />
                           <SafeMergeAction
                             item={item}

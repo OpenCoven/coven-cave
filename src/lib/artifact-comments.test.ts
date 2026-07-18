@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildCommentsPrompt, normalizeExcerpt, commentsStorageKey } from "./artifact-comments.ts";
+import { buildCommentsPrompt, clampFabX, normalizeExcerpt, commentsStorageKey } from "./artifact-comments.ts";
 
 // ── normalizeExcerpt collapses whitespace and clamps long selections ─────────
 assert.equal(normalizeExcerpt("  hello   world\n\nfoo "), "hello world foo");
@@ -37,5 +37,15 @@ assert.match(labeled, /on the spec\./, "honours a custom document label");
 
 // ── storage key is namespaced per turn ───────────────────────────────────────
 assert.equal(commentsStorageKey("t_123"), "cave:artifact-comments:v1:t_123");
+
+// ── clampFabX keeps the fab pill fully inside the viewport ───────────────────
+assert.equal(clampFabX(500, 1000), 500, "mid-viewport positions pass through");
+assert.equal(clampFabX(990, 1000), 940, "right-edge positions are pulled in (margin + half-width)");
+assert.equal(clampFabX(1500, 1000), 940, "positions past the edge are clamped, not lost");
+assert.equal(clampFabX(10, 1000), 60, "left-edge positions are pulled in symmetrically");
+assert.equal(clampFabX(-50, 1000), 60, "negative positions are clamped");
+assert.equal(clampFabX(50, 100), 50, "degenerate narrow viewports fall back to center");
+assert.equal(clampFabX(300, 1000, 20, 10), 300, "honours custom half-width/margin");
+assert.equal(clampFabX(995, 1000, 20, 10), 970, "custom bounds clamp accordingly");
 
 console.log("artifact-comments.test.ts: ok");

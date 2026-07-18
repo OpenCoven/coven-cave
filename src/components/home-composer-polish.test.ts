@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
-const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
@@ -53,27 +52,46 @@ assert.match(
 );
 
 // ───────── Command-bar hierarchy ─────────
-// Chat-composer footer: utility cluster (attach · voice · Options) plus the
-// home-only destination pills and agent picker left; enhance · send right.
+// Reference layout: the + attach trigger and Chat/Task pills sit bottom-left
+// INSIDE the card; voice, enhance, and send hug the right; the darker footer
+// band beneath carries project + runtime/model chip (left) and the Options
+// menu (right). The familiar is chosen in the side panel, not here.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="hc-dest-pills"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
-  "home composer utility cluster has attach + voice + Options + Chat/Task destination + warning-circle access chip",
+  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?ph:plus[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
+  "the utility row leads with + attach, then the Chat/Task pill toggle",
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
-  "home composer submit cluster has enhance and send",
+  /cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"/,
+  "the submit cluster runs enhance · send (voice is hidden until it works)",
+);
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice input"/,
+  "no permanently disabled voice button in the submit cluster",
+);
+assert.match(
+  source,
+  /className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
+  "the footer band hosts the project picker + runtime/model chip left and the Options menu right",
+);
+assert.doesNotMatch(
+  source,
+  /HomeSelect|Choose chat agent/,
+  "the home familiar selector is removed (selection lives in the side panel)",
+);
+assert.match(
+  source,
+  /className=\{`home-composer-card cave-composer-panel[\s\S]*?className="hc-footer-band"/,
+  "the footer band renders inside the card so the panel chrome clips its corners",
 );
 assert.doesNotMatch(
   source,
   /className="hc-run-rail"/,
   "the secondary run-settings rail is removed from the home composer",
 );
-assert.match(homeSelect, /import \{ StandardSelect/, "home select should delegate to StandardSelect");
-assert.match(homeSelect, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home select should use the shared select popover");
 assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
-assert.doesNotMatch(homeSelect, /PopoverBody|PopoverItem|PopoverLabel/, "home select should not maintain a local dropdown implementation");
 assert.match(
   source,
   /className=\{`home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}/,
@@ -85,41 +103,38 @@ assert.match(
   "home composer card keeps only layout rules — visual chrome comes from cave-composer-panel",
 );
 assert.doesNotMatch(css, /\.hc-action-bar\b/, "the bespoke action-bar CSS is gone (chat composer footer styles apply)");
+assert.doesNotMatch(
+  css,
+  /\.hc-familiar-selector|\.hc-home-select/,
+  "the familiar-selector / home-select CSS is removed with the selector",
+);
 assert.match(
   css,
-  /\.hc-home-select-trigger\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?text-align:\s*left;/,
-  "custom selector triggers keep button styling while reading as compact selects",
+  /\.cave-project-picker__trigger\.hc-project-selector\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\)/,
+  "the footer project picker keeps the shared control radius token",
 );
-for (const selector of [
-  ".hc-familiar-selector",
-  ".hc-home-select-trigger",
-]) {
-  assert.match(
-    css,
-    new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{[\\s\\S]*?border-radius:\\s*var\\(--radius-control\\)`),
-    `${selector} should use the shared control radius token`,
-  );
-}
 assert.match(
   css,
   /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*inherit/,
   "drop overlay inherits the panel radius",
 );
-// Enhance is a chat-parity icon button (shared .focus-ring focus treatment).
+// Enhance is the shared control + strip (cave-b6c2) — the icon-button/focus
+// treatment and the role="status" revert strip are pinned once in
+// composer-enhance.test.ts; here we hold that home mounts both.
 assert.match(
   source,
-  /className="cave-composer-icon-button focus-ring[\s\S]{0,300}?aria-label="Enhance prompt"/,
-  "enhance is a chat-style icon button with the shared focus ring",
+  /<EnhanceControl[\s\S]{0,200}?state=\{promptEnhance\.state\}/,
+  "enhance is the shared sparkle control (chat parity by construction)",
 );
 assert.match(
   source,
-  /role="status"[\s\S]*?Prompt improved[\s\S]*?aria-label="Revert prompt enhancement"/,
-  "a post-enhance status strip offers a one-tap revert (chat parity)",
+  /<EnhanceStrip[\s\S]{0,200}?state=\{promptEnhance\.state\}/,
+  "the shared status strip offers apply/revert (chat parity by construction)",
 );
 assert.match(
   css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone composer keeps thumb-sized home-only controls (agent picker, destination pills)",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone composer keeps thumb-sized home-only controls (destination pills)",
 );
 
 // ── "Jump back in" recent-chats strip REMOVED ──
@@ -130,8 +145,8 @@ assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo 
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Resume still reaches the Continue column.
-assert.match(source, /<HomeContinueColumn/, "HomeComposer renders the Continue column");
-assert.match(source, /onOpenSession=\{onOpenSession\}/, "the Continue column receives the resume handler");
+// Resume still reaches the recent-chats track of the digest carousel.
+assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the digest carousel");
+assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
 
 console.log("home-composer-polish.test.ts: ok");

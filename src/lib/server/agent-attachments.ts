@@ -85,10 +85,12 @@ function parseMarker(body: string): AttachmentMarker | null {
 }
 
 function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string[] = []): string | null {
-  const resolvedMarkerPath = path.resolve(markerPath);
+  // Marker paths and granted roots exist only at chat runtime and are bounded
+  // by the allowlist below; they are never server bundle inputs.
+  const resolvedMarkerPath = path.resolve(/* turbopackIgnore: true */ markerPath);
   for (const root of allowedRoots) {
-    const resolvedRoot = path.resolve(root);
-    const relative = path.relative(resolvedRoot, resolvedMarkerPath);
+    const resolvedRoot = path.resolve(/* turbopackIgnore: true */ root);
+    const relative = path.relative(/* turbopackIgnore: true */ resolvedRoot, resolvedMarkerPath);
     if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
       return resolvedMarkerPath;
     }
@@ -103,7 +105,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(resolved);
+    stat = fs.statSync(/* turbopackIgnore: true */ resolved);
   } catch {
     return null;
   }
@@ -116,7 +118,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
   const imageMime = IMAGE_EXT_MIME[ext];
   if (imageMime) {
     try {
-      const dataUrl = `data:${imageMime};base64,${fs.readFileSync(resolved).toString("base64")}`;
+      const dataUrl = `data:${imageMime};base64,${fs.readFileSync(/* turbopackIgnore: true */ resolved).toString("base64")}`;
       const image = cleanImageDataUrl(dataUrl);
       if (image) {
         return { name, size, type: imageMime, mimeType: image.mimeType, dataUrl: image.dataUrl };
@@ -129,7 +131,7 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
 
   if (TEXT_EXTS.has(ext)) {
     try {
-      const raw = fs.readFileSync(resolved, "utf8").replace(/\r\n/g, "\n");
+      const raw = fs.readFileSync(/* turbopackIgnore: true */ resolved, "utf8").replace(/\r\n/g, "\n");
       const text = raw.slice(0, MAX_ATTACHMENT_TEXT_CHARS);
       return {
         name,

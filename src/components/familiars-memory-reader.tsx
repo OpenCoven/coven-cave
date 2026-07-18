@@ -5,6 +5,7 @@ import { copyText } from "@/lib/clipboard";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import type { MemoryRow } from "@/lib/memory-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -192,6 +193,17 @@ export function MemoryReaderPane({
             <Icon name="ph:file-text" width={11} aria-hidden />
             Open file
           </button>
+          {row.contentPath ? (
+            <button
+              type="button"
+              onClick={() => openGrimoireDoc("memory", row.contentPath!)}
+              title="Open in the Memories editor"
+              className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:book-open" width={11} aria-hidden />
+              Memories
+            </button>
+          ) : null}
         </div>
       </div>
       {editing && row.contentPath ? (

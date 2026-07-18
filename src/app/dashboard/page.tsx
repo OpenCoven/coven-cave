@@ -11,7 +11,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="dr-page">
-      <div className="dr-topbar">
+      <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/">
             <Icon name="ph:arrow-left" aria-hidden />

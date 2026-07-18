@@ -7,7 +7,9 @@ import { readFileSync } from "node:fs";
 // collapse into a single icon-only Options menu, so the density problem — and
 // its container query — are gone. When a control has many options, the panel's
 // choices wrap INSIDE the popover instead of the composer footer.
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.doesNotMatch(

@@ -6,6 +6,7 @@
 
 import type { Card } from "./cave-board-types.ts";
 import type { SessionRow } from "./types.ts";
+import { buildHomeSuggestions, type SuggestionCard } from "./home-suggestions.ts";
 
 export type StarterSuggestion = {
   id: string;
@@ -32,12 +33,23 @@ export function deriveStarterSuggestions(opts: {
   cards: Card[];
   /** Familiar-scoped sessions (already visibility-filtered). */
   sessions: SessionRow[];
+  /** Resumable board cards (unassigned + this familiar's, project-scoped) —
+   *  rendered as "Continue the task: X" pills ahead of the starters, via the
+   *  same heuristic the home composer uses (buildHomeSuggestions). */
+  taskCards?: SuggestionCard[];
   projectName?: string | null;
   nowMs: number;
   cap?: number;
 }): StarterSuggestion[] {
   const cap = opts.cap ?? 4;
   const out: StarterSuggestion[] = [];
+
+  // Task-resume pills lead — resuming named work beats a generic starter.
+  // buildHomeSuggestions owns the heuristic (inbox/backlog only, newest
+  // first, max 2); filtering to task: ids drops its starter padding.
+  for (const s of buildHomeSuggestions({ cards: opts.taskCards ?? [], max: cap })) {
+    if (s.id.startsWith("task:")) out.push({ id: s.id, label: s.prompt, text: s.prompt });
+  }
 
   const reviewCount = opts.cards.filter((card) => card.status === "review").length;
   if (reviewCount > 0) {

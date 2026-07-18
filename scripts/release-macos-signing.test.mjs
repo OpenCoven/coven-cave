@@ -35,13 +35,55 @@ test("sidecar bundle restores executable mode for node-pty spawn-helper", () => 
   assert.match(sidecarScript, /fix_node_pty_spawn_helpers "\$DEST\/node_modules"/);
 });
 
+test("Apple ID notarization avoids putting the app password in process arguments", () => {
+  assert.match(releaseScript, /setup_notary_keychain_profile\(\)/);
+  assert.match(releaseScript, /printf '%s\\n' "\$NOTARY_APPLE_PASSWORD" \| xcrun notarytool store-credentials/);
+  assert.match(releaseScript, /retry 3 10 store_notary_credentials/);
+  assert.match(releaseScript, /NOTARY_KEYCHAIN_DIR="\$\(mktemp -d -t covencave-notary-keychain\)"/);
+  assert.match(releaseScript, /--keychain-profile "\$NOTARY_KEYCHAIN_PROFILE"/);
+  assert.match(releaseScript, /security delete-keychain "\$NOTARY_KEYCHAIN_PATH"/);
+  assert.match(releaseScript, /rm -rf "\$NOTARY_KEYCHAIN_DIR"/);
+
+  const cleanupFunction = releaseScript.slice(
+    releaseScript.indexOf("cleanup_release_artifacts()"),
+    releaseScript.indexOf("trap cleanup_release_artifacts EXIT"),
+  );
+  const setupFunctions = releaseScript.slice(
+    releaseScript.indexOf("store_notary_credentials()"),
+    releaseScript.indexOf("print_notary_log()"),
+  );
+  const logFunction = releaseScript.slice(
+    releaseScript.indexOf("print_notary_log()"),
+    releaseScript.indexOf("run_notary_submit()"),
+  );
+  const submitFunction = releaseScript.slice(
+    releaseScript.indexOf("run_notary_submit()"),
+    releaseScript.indexOf("cleanup_dmg_artifacts()"),
+  );
+
+  assert.match(cleanupFunction, /local exit_status=\$\?/);
+  assert.match(cleanupFunction, /rm -rf "\$NOTARY_KEYCHAIN_DIR" \|\| true/);
+  assert.match(cleanupFunction, /rm -rf "\$DMG_STAGE" \|\| true/);
+  assert.match(cleanupFunction, /return "\$exit_status"/);
+  assert(
+    cleanupFunction.indexOf('security delete-keychain "$NOTARY_KEYCHAIN_PATH"') <
+      cleanupFunction.indexOf('rm -rf "$DMG_STAGE"'),
+    "credential cleanup must run before best-effort DMG cleanup",
+  );
+  assert.doesNotMatch(setupFunctions, /--password/);
+  assert.doesNotMatch(logFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
+  assert.doesNotMatch(submitFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
+});
+
 test("notary rejection stops before stapling and prints the Apple log", () => {
   assert.match(releaseScript, /print_notary_log\(\)/);
   assert.match(releaseScript, /Submission in terminal status: Invalid/);
   assert.match(releaseScript, /Notary submission did not report Accepted/);
-  assert.match(releaseScript, /run_notary_submit\n\n/);
+  // (cave-1hha) the call site is the retry wrapper now — transient submit
+  // failures retry, an Invalid verdict still stops before stapling.
+  assert.match(releaseScript, /notarize_with_retries\n\n/);
   assert(
-    releaseScript.indexOf("run_notary_submit") <
+    releaseScript.indexOf("notarize_with_retries") <
       releaseScript.indexOf('echo "==> Stapling notarization ticket"'),
   );
 });
@@ -93,15 +135,21 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
-test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () => {
-  assert.match(releaseWorkflow, /name: Strip bundled GLib from AppImage/);
+test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
+  assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
+  assert.match(releaseWorkflow, /APPIMAGETOOL_SHA256: \$\{\{ vars\.APPIMAGETOOL_SHA256 \}\}/);
+  assert.match(releaseWorkflow, /sha256sum --check --status/);
+  assert.match(releaseWorkflow, /libmount\.so\.1\*/);
+  assert.match(releaseWorkflow, /libblkid\.so\.1\*/);
+  assert.match(releaseWorkflow, /libuuid\.so\.1\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
+  assert.match(releaseWorkflow, /name: Upload and re-sign stripped AppImage/);
   assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
-      releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage"),
+      releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage"),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
   );
   assert(
@@ -109,17 +157,23 @@ test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () =>
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
+  const stripStepStart = releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage");
+  const stripStepEnd = releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage");
+  assert.ok(stripStepStart !== -1, "strip step must exist under its exact name");
+  assert.ok(stripStepEnd > stripStepStart, "upload/re-sign step must follow the strip step");
+  const stripStep = releaseWorkflow.slice(stripStepStart, stripStepEnd);
+  assert.ok(stripStep.length > 0, "strip-step slice must be non-empty for the secret-isolation guard to mean anything");
+  assert.doesNotMatch(stripStep, /GH_TOKEN/);
+  assert.doesNotMatch(stripStep, /TAURI_SIGNING_PRIVATE_KEY/);
 });
 
-test("manual release retries can build from a source ref while attaching to the tag", () => {
-  assert.match(releaseWorkflow, /source_ref:/);
+test("manual release retries build from the release tag before publishing", () => {
+  assert.doesNotMatch(releaseWorkflow, /source_ref:/);
+  assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /description: "Git ref to build from for manual release-infra retries\. Defaults to tag\."/,
-  );
-  assert.match(
-    releaseWorkflow,
-    /ref: \$\{\{ github\.event\.inputs\.source_ref \|\| github\.event\.inputs\.tag \|\| github\.ref \}\}/,
+    /ref: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref \}\}/,
+    "release checkouts must use the same tag/ref whose release receives assets",
   );
   assert.match(
     releaseWorkflow,
@@ -147,4 +201,17 @@ test("sidecar bundle prunes foreign native packages before release bundling", ()
       sidecarScript.indexOf('fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"'),
     "native package pruning should run before node-pty permission repair",
   );
+});
+
+// ── Transient-failure retries (cave-1hha) ────────────────────────────────────
+// The Intel leg failed 3 of 4 cuts on network-dependent steps: the Next
+// build's Google Fonts fetch, Apple's timestamp service during codesign, and
+// a notary submit. Each retries; an Apple REJECTION (Invalid) never retries.
+test("release.sh retries its network-dependent steps", () => {
+  assert.match(releaseScript, /^retry\(\) \{/m, "a retry helper exists");
+  assert.match(releaseScript, /retry 2 30 env \\/, "the tauri build (font fetch inside) gets one retry");
+  assert.match(releaseScript, /retry 3 15 codesign --force --options runtime --timestamp/, "the envelope seal retries the timestamp service");
+  assert.match(releaseScript, /retry 3 10 codesign --force --options runtime --timestamp/, "inner-binary signs retry the timestamp service");
+  assert.match(releaseScript, /notarize_with_retries/, "notary submission goes through the retry loop");
+  assert.match(releaseScript, /2\) echo "Apple rejected the submission \(Invalid\) — not retrying\." >&2; exit 1 ;;/, "a real Invalid verdict never retries");
 });

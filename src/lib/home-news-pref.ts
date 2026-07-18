@@ -13,6 +13,11 @@
  */
 
 import { useSyncExternalStore } from "react";
+import {
+  readAppPreferences,
+  subscribeAppPreferences,
+  updateAppPreferences,
+} from "./app-preferences.ts";
 
 const HOME_NEWS_KEY = "cave:home-news-enabled";
 
@@ -22,12 +27,7 @@ const listeners = new Set<() => void>();
 function notify() { for (const fn of listeners) fn(); }
 
 function readFromStorage(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    return window.localStorage.getItem(HOME_NEWS_KEY) !== "false";
-  } catch {
-    return true;
-  }
+  return readAppPreferences().general.newsHeadlines;
 }
 
 export function readHomeNewsEnabled(): boolean {
@@ -37,6 +37,7 @@ export function readHomeNewsEnabled(): boolean {
 
 export function writeHomeNewsEnabled(enabled: boolean) {
   cached = enabled;
+  updateAppPreferences({ general: { newsHeadlines: enabled } });
   try {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(HOME_NEWS_KEY, enabled ? "true" : "false");
@@ -46,6 +47,11 @@ export function writeHomeNewsEnabled(enabled: boolean) {
   }
   notify();
 }
+
+subscribeAppPreferences(() => {
+  cached = null;
+  notify();
+});
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);

@@ -16,11 +16,11 @@ import {
  */
 export function ReadingTrackingController() {
   useEffect(() => {
-    applyReadingTracking(readReadingTracking());
+    applyReadingTracking(readReadingTracking(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_TRACKING_KEY) return;
-      applyReadingTracking(readReadingTracking());
+      applyReadingTracking(readReadingTracking(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

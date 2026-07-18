@@ -1,0 +1,130 @@
+{
+  "name": "seekers-lens",
+  "version": "0.1.0",
+  "description": "Discovery and ideation for bounded research work, from broad exploration through a reviewable pilot direction.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "ideation",
+    "discovery",
+    "brainstorming",
+    "craft"
+  ],
+  "capabilities": [
+    "research",
+    "ideation",
+    "workflows"
+  ],
+  "marketplaceId": "opencoven/seekers-lens",
+  "x-coven": {
+    "displayName": "Seeker's Lens",
+    "category": "Research Crafts",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc/21-research-ideation"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "kind": "craft",
+  "craft": {
+    "schemaVersion": "opencoven.craft.v1",
+    "components": {
+      "required": [
+        "fetch",
+        "filesystem",
+        "memory",
+        "sequential-thinking"
+      ],
+      "optional": [
+        "exa",
+        "tavily",
+        "firecrawl",
+        "searxng",
+        "research-ingestion"
+      ]
+    },
+    "bundled": {
+      "skills": [
+        {
+          "id": "brainstorming-research-ideas",
+          "sourcePath": "craft-sources/seekers-lens/brainstorming-research-ideas/SKILL.md",
+          "upstreamPath": "21-research-ideation/brainstorming-research-ideas/SKILL.md",
+          "contentHash": "sha256:8422a1a6dc0a88d05f02b9fbe0f8c2ae06a77024856d18125efa13d19d855d46",
+          "modifications": [
+            "Normalized frontmatter to Codex-supported name, description, and license fields while retaining the instructional body.",
+            "Replaced the unavailable scientific-skills literature-review reference with a capability-neutral handoff.",
+            "Added a Coven boundary that keeps ideation advisory until execution is separately authorized."
+          ]
+        },
+        {
+          "id": "creative-thinking-for-research",
+          "sourcePath": "craft-sources/seekers-lens/creative-thinking-for-research/SKILL.md",
+          "upstreamPath": "21-research-ideation/creative-thinking-for-research/SKILL.md",
+          "contentHash": "sha256:ec111f9236d7f9d72c895cebbf0f534ac93f4249172607559ad4bf92aefc5310",
+          "modifications": [
+            "Normalized frontmatter to Codex-supported name, description, and license fields while retaining the instructional body.",
+            "Replaced the unavailable scientific-skills literature-review reference with a capability-neutral handoff.",
+            "Added a Coven boundary that labels speculation and requires separate authorization before execution."
+          ]
+        }
+      ],
+      "prompts": [
+        {
+          "id": "open-a-research-space",
+          "name": "Open a research space",
+          "description": "Generate, challenge, and rank bounded research directions.",
+          "body": "Open the research space around {{topic}}. Use both Seeker's Lens ideation skills to generate distinct directions, label assumptions and unknowns, then rank the strongest three by novelty, impact, evidence gap, and feasibility. Stop with a proposed checkpoint; do not begin experiments."
+        },
+        {
+          "id": "stress-test-a-research-idea",
+          "name": "Stress-test a research idea",
+          "description": "Probe a candidate direction before committing resources.",
+          "body": "Stress-test {{research idea}}. Reformulate it at three abstraction levels, identify the strongest contradiction or boundary case, compare a simpler baseline, and state the evidence that would change the recommendation. End with a bounded pilot and a human go/no-go checkpoint."
+        }
+      ],
+      "workflows": [
+        {
+          "id": "diverge-converge-refine",
+          "name": "Diverge, converge, refine",
+          "description": "Move from a broad topic to a reviewable pilot without starting execution.",
+          "steps": [
+            "Define the research space, stakeholders, constraints, and explicit resource bounds.",
+            "Generate diverse candidate directions with multiple ideation lenses.",
+            "Challenge candidates with contradiction, boundary, simplicity, and feasibility checks.",
+            "Rank the strongest directions and expose assumptions, evidence gaps, and likely objections.",
+            "Draft one bounded pilot and stop at a human go/no-go checkpoint."
+          ]
+        }
+      ]
+    },
+    "requiredCapabilities": [
+      "filesystem.read",
+      "network.http",
+      "memory.local",
+      "reasoning.sequential"
+    ],
+    "recommendedRoles": [
+      "researcher",
+      "strategist",
+      "analyst"
+    ],
+    "provenance": {
+      "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+      "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+      "license": "MIT",
+      "licensePath": "craft-sources/orchestra-research/LICENSE"
+    }
+  }
+}

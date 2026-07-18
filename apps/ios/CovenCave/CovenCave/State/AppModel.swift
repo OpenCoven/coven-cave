@@ -5,7 +5,7 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, calendar, dev, settings }
+enum AppTab: String { case chats, tasks, calendar, dev, settings, search }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -31,7 +31,17 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
-    var connectionState: ConnectionState = .unconfigured
+    /// Stamped the moment the state LEAVES `.connected` — the last instant the
+    /// desktop was known reachable — so the reconnect pill can say
+    /// "last seen 2 min ago" honestly during a drop.
+    private(set) var lastConnectedAt: Date?
+    var connectionState: ConnectionState = .unconfigured {
+        didSet {
+            if oldValue == .connected, connectionState != .connected {
+                lastConnectedAt = Date()
+            }
+        }
+    }
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
@@ -52,6 +62,10 @@ final class AppModel {
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
+
+    /// A familiar selected from global Search. `ChatsHomeView` consumes this
+    /// one-shot intent and opens the existing thread-list destination.
+    var familiarToOpen: Familiar?
 
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
@@ -84,6 +98,11 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestOpenFamiliar(_ familiar: Familiar) {
+        selectedTab = .chats
+        familiarToOpen = familiar
     }
 
     /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
@@ -492,7 +511,7 @@ final class AppModel {
     /// Surface a widget tap targets. The widget body deep-links to `.reminders`
     /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
     /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar }
+    enum DeepLink: String { case tasks, reminders, calendar, search }
 
     var deepLink: DeepLink?
 
@@ -510,6 +529,7 @@ final class AppModel {
         switch target {
         case .tasks, .reminders: selectedTab = .tasks
         case .calendar: selectedTab = .calendar
+        case .search: selectedTab = .search
         }
         deepLink = target
     }
@@ -618,7 +638,7 @@ final class AppModel {
             CaveConnection.saveAccessToken(token)
         } else if !isSameEndpoint {
             // Tokens are stored globally, so never carry an old desktop's
-            // credential to a newly configured host from a tokenless invite.
+            // credential to a newly configured host from an uncredentialed input.
             CaveConnection.saveAccessToken(nil)
         }
         if !isSameEndpoint {
@@ -671,14 +691,22 @@ final class AppModel {
         connectionMonitor.start(queue: connectionMonitorQueue)
     }
 
+    /// Quiet: the state only changes on an outcome, so a healthy path change
+    /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
+    /// flash the reconnect pill over perfectly good tabs.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
-        await refreshConnection(reloadLoadedSurfaces: true)
+        await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    private var shouldReloadLoadedSurfaces: Bool {
+    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// through a connection drop (RootView shows the reconnect pill over it
+    /// instead of tearing down to the Connect screen).
+    var hasLoadedSurfaces: Bool {
         !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
     }
+
+    private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
 
     private func pairingMessage() -> String {
         CaveConnection.accessToken == nil
@@ -869,17 +897,23 @@ final class AppModel {
         case none
     }
 
-    /// Probe every candidate base URL concurrently, then adjudicate strictly
-    /// in candidate order so the semantics match a sequential walk: the first
-    /// `.ok` in order wins, and a 401/403 earlier in the order is TERMINAL —
-    /// it's a live Cave token gate talking, and the fix is pairing. Adopting
-    /// a later candidate past it could silently connect to a different
-    /// instance on a sibling port (e.g. a dev server on :3000) — the user
-    /// thinks they're talking to the desktop they paired with, but they
-    /// aren't. Concurrency only changes the wall clock: one probe's timeout
-    /// (~6s) instead of the sum across candidates (30s+ on a cold launch).
+    /// Probe candidate base URLs and adjudicate strictly in candidate order: the
+    /// first `.ok` in order wins, and a 401/403 earlier in the order is
+    /// TERMINAL — it's a live Cave token gate talking, and the fix is pairing.
+    /// Adopting a later candidate past it could silently connect to a different
+    /// instance on a sibling port (e.g. a dev server on :3000) — the user thinks
+    /// they're talking to the desktop they paired with, but they aren't.
+    ///
+    /// When a paired credential exists, probe sequentially so we never spray a
+    /// Bearer token at speculative sibling ports after an earlier candidate has
+    /// already succeeded or rejected it. Unpaired probes carry no secret, so they
+    /// may still run concurrently for the cold-launch wall-clock win.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
         guard !candidates.isEmpty else { return .none }
+        if CaveConnection.accessToken != nil {
+            return await discoverBaseURLSequentially(candidates)
+        }
+
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
             for (index, base) in candidates.enumerated() {
                 group.addTask { (index, await Self.probe(base)) }
@@ -888,6 +922,21 @@ final class AppModel {
             for await (index, result) in group { collected[index] = result }
             return collected
         }
+        return adjudicateDiscoveryResults(results, candidates: candidates)
+    }
+
+    private static func discoverBaseURLSequentially(_ candidates: [URL]) async -> DiscoveryOutcome {
+        for base in candidates {
+            switch await Self.probe(base) {
+            case .ok: return .found(base)
+            case .unauthorized: return .unauthorized
+            case .failed: continue
+            }
+        }
+        return .none
+    }
+
+    private static func adjudicateDiscoveryResults(_ results: [ProbeResult?], candidates: [URL]) -> DiscoveryOutcome {
         for (index, result) in results.enumerated() {
             switch result {
             case .ok: return .found(candidates[index])
@@ -1051,7 +1100,9 @@ final class AppModel {
     func serverOnlySessions(for familiarId: String) -> [SessionRow] {
         let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
         return serverSessions
-            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            // Generated runs (journal narratives, canvas, crons) are not
+            // conversations — parity with the web chat lists (cave-48aa).
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) && !$0.isGeneratedRun }
             .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
     }
 

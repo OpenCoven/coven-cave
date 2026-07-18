@@ -12,18 +12,36 @@ import {
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { Button } from "@/components/ui/button";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { openExternalUrl } from "@/lib/open-external";
-import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
+import {
+  hasVerifiedLatestVersion,
+  latestCheckText,
+  toolStatusText,
+  type LatestCheckDisplay,
+} from "@/lib/opencoven-tools-status-display";
+import { requestSummonFamiliar } from "@/lib/summon-events";
+import {
+  classifySetupFailure,
+  setupRetryLabel,
+  type SetupFailure,
+} from "@/lib/onboarding-setup-failure";
+import {
+  openCovenToolActionTargets,
+  openCovenToolsInstallCommand,
+  openCovenToolsPrimaryActionLabel,
+} from "@/lib/opencoven-tools-install";
 
-// Guided onboarding: one numbered path from "nothing installed" to "chatting
-// with a familiar". Every step carries its own instructions, a one-click
-// action where Cave can do the work itself, the exact manual command for
-// users who prefer a terminal, and a troubleshooting block — so nobody is
-// ever stuck staring at a red card with no next move.
+// Guided onboarding: one numbered path from "nothing installed" to "ready to
+// summon". Every step carries its own instructions, a one-click action where
+// Cave can do the work itself, the exact manual command for users who prefer
+// a terminal, and a troubleshooting block — so nobody is ever stuck staring
+// at a red card with no next move. Familiar creation itself lives INSIDE the
+// app (the Familiar Summoning Circle on the Familiars surface): the wizard
+// stops at infrastructure — tools, home, runtime, daemon — and the workspace
+// walks a familiar-less user into the circle after dismissal.
 
 type PruneState =
   | { idle: true }
@@ -50,7 +68,7 @@ type OnboardingStatus = {
 };
 
 type OpenCovenToolStatus = {
-  id: "coven-cli" | "coven-code";
+  id: "coven-cli";
   label: string;
   packageName: string;
   binary: string;
@@ -58,8 +76,21 @@ type OpenCovenToolStatus = {
   path: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: LatestCheckDisplay | null;
   outdated: boolean;
-  checkedAt?: string;
+  compatible: boolean;
+  minimumVersion: string;
+  checkedAt?: string | null;
+};
+
+type OnboardingUpdatePayload = {
+  ok: boolean;
+  tools: OpenCovenToolStatus[];
+  checkedAt: string | null;
+  freshness: "fresh" | "stale" | "unavailable";
+  stale: boolean;
+  refreshing: boolean;
+  error: string | null;
 };
 
 type HarnessReport = {
@@ -75,30 +106,24 @@ type HarnessReport = {
   manifestPath: string | null;
 };
 
-type OpenClawAgent = {
-  id: string;
-  displayName: string;
-  role: string;
-  workspacePath: string | null;
-};
-
-type CaveFamiliar = {
-  id: string;
-  display_name?: string;
-  role?: string;
-};
-
 type InstallTarget =
   | "coven-cli"
-  | "coven-code"
   | "codex"
   | "claude"
+  | "copilot"
   | "openclaw"
   | "hermes";
 
 type InstallResult = {
   ok: boolean;
   detail: string;
+  /** Server-capped and secret-redacted terminal output retained on failure. */
+  tail?: string;
+};
+
+type NpmLaneState = {
+  target: InstallTarget;
+  label: string;
 };
 
 /** Result of the codex OAuth port preflight (POST /api/onboarding/codex-port-preflight).
@@ -128,9 +153,9 @@ type InstallJobView = {
  *  one client-side busy lock. */
 const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
   "coven-cli": "npm",
-  "coven-code": "npm",
   codex: "npm",
   claude: "npm",
+  copilot: "npm",
   openclaw: "npm",
   hermes: "script",
 };
@@ -139,21 +164,15 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
   (target) => INSTALL_TARGET_KIND[target] === "npm",
 );
 
-// The "skip Coven Code" choice persists under COVEN_CODE_SKIP_KEY (shared
-// with the workspace auto-open gate via @/lib/onboarding-gate — cave-219) so
-// a failing install can't permanently strand onboarding.
+function isInstallTargetValue(value: string): value is InstallTarget {
+  return ALL_INSTALL_TARGETS.includes(value as InstallTarget);
+}
+
 // ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
 // enough that a genuinely broken /api/harnesses surfaces as a retryable
 // error instead of an empty runtime grid polling silently forever.
 const HARNESS_RETRY_BUDGET = 15;
 
-type SshCheckState =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "ok"; detail: string }
-  | { state: "fail"; detail: string };
-
-const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
 const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
 const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
 
@@ -181,11 +200,17 @@ const HARNESS_ONE_CLICK: Partial<
     command: "npm install -g @anthropic-ai/claude-code",
     afterInstall: "then run `claude doctor` in a terminal to finish setup",
   },
+  copilot: {
+    target: "copilot",
+    command: "npm install -g @github/copilot",
+    afterInstall:
+      "then run `copilot` in a terminal and sign in with `/login` (or set GH_TOKEN)",
+  },
   openclaw: {
     target: "openclaw",
     command: "npm i -g openclaw@latest",
     afterInstall:
-      `then connect an agent from ${OPENCLAW_AGENT_ROOT} in the familiar step`,
+      `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
   },
   hermes: {
     target: "hermes",
@@ -201,19 +226,21 @@ const PLATFORM_COPY: Record<
   PlatformId,
   {
     label: string;
-    installCommand: string;
     nodeSetup: string[];
     caveInstall: string[];
     cliInstall: string[];
-    sshSetup: string[];
     warning?: string;
+    warningLink?: { label: string; href: string };
   }
 > = {
   windows: {
     label: "Windows",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     warning:
-      "For now, turn off Smart App Control before downloading or opening the Windows build.",
+      "The Windows build isn't code-signed yet, so Smart App Control blocks it when enabled. Check Windows Security > App & browser control: if Smart App Control is On, turn it off before downloading. On most PCs it's already Off and nothing is needed.",
+    warningLink: {
+      label: "What is Smart App Control?",
+      href: "https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003",
+    },
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org, or run winget install OpenJS.NodeJS.LTS.",
       "Restart Cave afterwards so the new PATH applies.",
@@ -221,23 +248,18 @@ const PLATFORM_COPY: Record<
     ],
     caveInstall: [
       "Download the MSI from the official GitHub Release.",
-      "Before downloading/opening, go to Settings > Privacy & security > Windows Security > App & browser control > Smart App Control, then turn Smart App Control off for now.",
+      "Only if Smart App Control is On (see the notice above): Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings > Off.",
+      "If SmartScreen shows \"Windows protected your PC\" when you open the MSI, click More info > Run anyway.",
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven.exe is on PATH after the global npm install.",
       "Click Re-check after Windows can run coven from a new terminal.",
-    ],
-    sshSetup: [
-      "Enable the OpenSSH client: Settings > Apps > Optional features > OpenSSH Client.",
-      'Create a key with ssh-keygen, then copy it to the remote with: type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh <host> "cat >> ~/.ssh/authorized_keys".',
-      "Run ssh <host> once in a terminal to accept the host key before testing here.",
     ],
   },
   linux: {
     label: "Linux",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org or your package manager (e.g. sudo apt install nodejs npm).",
       "Open a new terminal so PATH updates apply.",
@@ -249,19 +271,13 @@ const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH after the global npm install.",
-      "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
-    ],
-    sshSetup: [
-      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
-      "Copy it to the remote with ssh-copy-id <host>.",
-      "Run ssh <host> once to accept the host key before testing here.",
+      "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
   },
   mac: {
     label: "macOS",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org, or run brew install node.",
       "Open a new terminal so PATH updates apply.",
@@ -273,19 +289,13 @@ const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
-    ],
-    sshSetup: [
-      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
-      "Copy it to the remote with ssh-copy-id <host>.",
-      "Run ssh <host> once to accept the host key before testing here.",
     ],
   },
   unknown: {
     label: "Your platform",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org.",
       "Open a new terminal so PATH updates apply.",
@@ -297,13 +307,9 @@ const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH.",
       "Click Re-check here after install.",
-    ],
-    sshSetup: [
-      "Create an SSH key and copy it to the remote host (ssh-copy-id <host>).",
-      "Run ssh <host> once to accept the host key before testing here.",
     ],
   },
 };
@@ -350,27 +356,22 @@ function parseOnboardingExecutorUrls(text: string): string[] {
 
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [updateTools, setUpdateTools] = useState<OpenCovenToolStatus[]>([]);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateStale, setUpdateStale] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateCheckedAt, setUpdateCheckedAt] = useState<string | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
-  const [setupError, setSetupError] = useState<string | null>(null);
-  const [familiarName, setFamiliarName] = useState("");
-  const [familiarRole, setFamiliarRole] = useState("Familiar");
-  const [familiarDescription, setFamiliarDescription] = useState("");
-  const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
-  const [openclawAgents, setOpenclawAgents] = useState<OpenClawAgent[]>([]);
+  // Structured failure for the scaffold / daemon-start / connection actions:
+  // verbatim message + derived hint + the action to retry (never a bare
+  // string, so the banner can always offer the matching retry affordance).
+  const [setupError, setSetupError] = useState<SetupFailure | null>(null);
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
   // Consecutive /api/harnesses failures — the empty-list retry loop gives up
   // once this hits HARNESS_RETRY_BUDGET and StepRuntimes offers a Retry.
   const [harnessFailures, setHarnessFailures] = useState(0);
-  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
-    null,
-  );
-  const [confirmCreateNewFamiliar, setConfirmCreateNewFamiliar] =
-    useState(false);
-  const [agentsLoading, setAgentsLoading] = useState(false);
-  const [agentsError, setAgentsError] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const [statusFailures, setStatusFailures] = useState(0);
   // Guided-step navigation: which step the user manually expanded. `null`
@@ -383,6 +384,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  const [npmLane, setNpmLane] = useState<NpmLaneState | null>(null);
   // Codex's `codex login` opens an OAuth callback server on port 1455 that
   // sometimes leaks as a stale process when the auth flow is killed mid-way.
   // The preflight POST identifies and clears the orphan; we display the
@@ -395,27 +397,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // concurrent one), so a user who clicks "install both" otherwise gets a
   // failure on the second. Queue npm targets here and drain them one at a time.
   const [installQueue, setInstallQueue] = useState<InstallTarget[]>([]);
-  // "Required + skippable": Coven Code is required to finish setup, but a
-  // user can skip it so a failing install never permanently strands onboarding.
-  const [covenCodeSkipped, setCovenCodeSkipped] = useState(false);
   const [nodeHint, setNodeHint] = useState<string | null>(null);
-  // Remote (SSH) runtime for the new familiar (/api/onboarding/ssh-check)
-  const [sshEnabled, setSshEnabled] = useState(false);
-  const [sshHost, setSshHost] = useState("");
-  const [sshCwd, setSshCwd] = useState("");
-  const [sshCommand, setSshCommand] = useState("");
-  const [sshCheck, setSshCheck] = useState<SshCheckState>({ state: "idle" });
   const [onboardingMultiHostMode, setOnboardingMultiHostMode] =
     useState<MultiHostMode>("local");
   const [onboardingHubUrl, setOnboardingHubUrl] = useState("");
   const [onboardingExecutorText, setOnboardingExecutorText] = useState("");
   const [savingOnboardingConnection, setSavingOnboardingConnection] =
     useState(false);
-  // Created familiars (final step lists them with Edit affordances)
-  const [familiarsList, setFamiliarsList] = useState<CaveFamiliar[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const { openFamiliarStudio } = useFamiliarStudio();
 
   useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
@@ -426,12 +416,24 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // completed setup once should get the lightweight daemon banner after
   // that, not the first-run flow. (Escape stays session-only on purpose: an
   // accidental Esc mid-setup shouldn't permanently hide the guide.)
+  //
+  // When the daemon is up and the roster is empty, the CTA's promise
+  // ("summon your familiar") is kept literally: requestSummonFamiliar()
+  // walks to the Familiars surface AND opens the Summoning Circle. This
+  // decision uses the wizard's own 2s-fresh status instead of the
+  // workspace's 5s daemonRunning poll, which can lag a just-auto-started
+  // daemon and silently drop the walk (closeOnboarding keeps its gate as a
+  // harmless second net). Skip/Escape stay non-pushy: no circle for them.
+  const statusRef = useRef<OnboardingStatus | null>(null);
+  statusRef.current = status;
   const finishOnboarding = useCallback(() => {
     try {
       localStorage.setItem("cave:onboarding:dismissed", "1");
     } catch {
       /* private mode */
     }
+    const s = statusRef.current?.steps;
+    if (s?.daemon.ok && !s.familiars.ok) requestSummonFamiliar();
     onDismiss();
   }, [onDismiss]);
 
@@ -452,6 +454,54 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
+  const loadUpdates = useCallback(async (force = false) => {
+    setUpdateChecking(true);
+    if (force) setUpdateError(null);
+    try {
+      const res = await fetch("/api/onboarding/update", {
+        method: force ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const json = (await res.json()) as OnboardingUpdatePayload;
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "update check failed");
+      setUpdateTools(json.tools ?? []);
+      setUpdateStale(json.stale);
+      setUpdateError(json.error);
+      setUpdateCheckedAt(json.checkedAt);
+      return json.tools ?? [];
+    } catch (err) {
+      setUpdateStale(true);
+      setUpdateError(err instanceof Error ? err.message : "update check failed");
+      return null;
+    } finally {
+      setUpdateChecking(false);
+    }
+  }, []);
+
+  const refreshNpmLane = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/install", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
+        npmJob?: InstallJobView;
+      };
+      const target = json.npmBusyTarget;
+      if (!json.npmBusy || !target || !isInstallTargetValue(target)) {
+        setNpmLane(null);
+        return;
+      }
+      setNpmLane({ target, label: json.npmBusyLabel ?? target });
+      if (json.npmJob?.status === "running") {
+        setInstallJobs((prev) => ({ ...prev, [target]: json.npmJob! }));
+      }
+    } catch {
+      /* Retain the last observed lane state until the next successful poll. */
+    }
+  }, []);
+
   useEffect(() => setPlatform(detectPlatform()), []);
 
   useEffect(() => {
@@ -468,34 +518,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       .catch(() => {});
   }, [open]);
 
-  const loadOpenClawAgents = useCallback(async () => {
-    setAgentsLoading(true);
-    setAgentsError(null);
-    try {
-      const res = await fetch("/api/openclaw-agents", { cache: "no-store" });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        agents?: OpenClawAgent[];
-        error?: string;
-      };
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "failed to load OpenClaw agents");
-      const agents = json.agents ?? [];
-      setOpenclawAgents(agents);
-      setSelectedAgentId((current) =>
-        current && agents.some((agent) => agent.id === current)
-          ? current
-          : null,
-      );
-    } catch (err) {
-      setAgentsError(
-        err instanceof Error ? err.message : "failed to load OpenClaw agents",
-      );
-    } finally {
-      setAgentsLoading(false);
-    }
-  }, []);
-
   const loadHarnesses = useCallback(async () => {
     try {
       const res = await fetch("/api/harnesses", { cache: "no-store" });
@@ -507,20 +529,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         setHarnessFailures((n) => n + 1);
         return;
       }
-      const next = json.harnesses ?? [];
-      setHarnesses(next);
+      setHarnesses(json.harnesses ?? []);
       setHarnessFailures(0);
-      setSelectedHarnessId((current) => {
-        if (
-          current &&
-          next.some(
-            (adapter) =>
-              adapter.id === current && adapter.installed && adapter.chatSupported,
-          )
-        )
-          return current;
-        return null;
-      });
     } catch {
       // Advisory, but count the failure — the empty-list retry loop below
       // gives up on a persistent error instead of spinning silently forever.
@@ -528,32 +538,21 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
-  const loadFamiliars = useCallback(async () => {
-    try {
-      const res = await fetch("/api/familiars", { cache: "no-store" });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        familiars?: CaveFamiliar[];
-      };
-      if (!res.ok || json.ok === false) return;
-      setFamiliarsList(json.familiars ?? []);
-    } catch {
-      /* advisory — the daemon step covers reachability */
-    }
-  }, []);
-
   useEffect(() => {
     if (!open) return;
     void refresh();
+    void loadUpdates();
     void loadHarnesses();
-    void loadOpenClawAgents();
-    void loadFamiliars();
-    pollRef.current = setInterval(refresh, 2000);
+    void refreshNpmLane();
+    pollRef.current = setInterval(() => {
+      void refresh();
+      void refreshNpmLane();
+    }, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadHarnesses, loadOpenClawAgents, loadFamiliars]);
+  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -571,17 +570,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     return () => clearInterval(retry);
   }, [open, harnesses.length, harnessFailures, loadHarnesses]);
 
-  // Refresh the familiar list when the familiars step flips healthy so the
-  // final step can list them for editing.
-  const familiarsOk = !!status?.steps.familiars.ok;
-  useEffect(() => {
-    if (familiarsOk) void loadFamiliars();
-  }, [familiarsOk, loadFamiliars]);
-
   const platformCopy = PLATFORM_COPY[platform];
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
-  const selectedHarness =
-    chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
 
   // Header-button feedback: both actions were silent, so clicks felt dead.
   // Re-check spins its icon while the status fetch is in flight (held for a
@@ -598,6 +588,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     try {
       await Promise.all([
         refresh(),
+        loadUpdates(true),
         new Promise((resolve) => setTimeout(resolve, 600)),
       ]);
     } finally {
@@ -619,10 +610,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // user hitting an unmet step).
           statusFailures,
           setupError,
-          agentsError,
+          installJobs,
           installResults,
+          update: {
+            checkedAt: updateCheckedAt,
+            stale: updateStale,
+            checking: updateChecking,
+            error: updateError,
+          },
           nodeHint,
-          sshCheck,
           harnesses: harnesses.map((adapter) => ({
             id: adapter.id,
             label: adapter.label,
@@ -633,11 +629,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             installHint: adapter.installHint,
             source: adapter.source,
             manifestPath: adapter.manifestPath,
-          })),
-          openclawAgents: openclawAgents.map((agent) => ({
-            id: agent.id,
-            displayName: agent.displayName,
-            workspacePath: agent.workspacePath,
           })),
         },
         null,
@@ -688,7 +679,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         npmMissing?: boolean;
         hint?: string;
         error?: string;
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
       };
+      if (
+        json.npmBusy &&
+        json.npmBusyTarget &&
+        isInstallTargetValue(json.npmBusyTarget)
+      ) {
+        setNpmLane({
+          target: json.npmBusyTarget,
+          label: json.npmBusyLabel ?? json.npmBusyTarget,
+        });
+      }
       if (json.npmMissing) {
         setNodeHint(
           json.hint ??
@@ -756,7 +760,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (
       shouldQueueInstall({
         kind: INSTALL_TARGET_KIND[target],
-        npmBusy: anyNpmInstallRunning(installJobs),
+        npmBusy: npmLane !== null || anyNpmInstallRunning(installJobs),
         inFlight: installInFlightRef.current,
         queuedCount: installQueue.length,
       })
@@ -814,13 +818,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // Drain the npm queue one at a time as the lane frees up.
   useEffect(() => {
     const next = nextDrainTarget(installQueue, {
-      npmBusy: anyNpmInstallRunning(installJobs),
+      npmBusy: npmLane !== null || anyNpmInstallRunning(installJobs),
       inFlight: installInFlightRef.current,
     });
     if (next == null) return;
     setInstallQueue((q) => q.slice(1));
     void postInstall(next);
-  }, [installQueue, installJobs, postInstall]);
+  }, [installQueue, installJobs, npmLane, postInstall]);
 
   // Poll cadence is keyed on WHICH targets are running, not on the job map
   // itself — every poll stores a fresh view object, and keying on the map
@@ -898,8 +902,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       ? `installed at ${json.binaryPath}`
                       : "installed",
                   }
-                : { ok: false, detail: json.error ?? "install failed" },
+                : {
+                    ok: false,
+                    detail: json.error ?? "install failed",
+                    tail: json.tail,
+                  },
             }));
+            if (target === "coven-cli" && json.ok) {
+              await loadUpdates(true);
+            }
             await refresh();
             await loadHarnesses();
           }
@@ -959,49 +970,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     };
   }, [open]);
 
-  const testSsh = async () => {
-    const host = sshHost.trim();
-    if (!host) {
-      setSshCheck({ state: "fail", detail: "Enter a host first." });
-      return;
-    }
-    setSshCheck({ state: "checking" });
-    try {
-      const res = await fetch("/api/onboarding/ssh-check", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ host }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        reachable?: boolean;
-        covenPath?: string | null;
-        hint?: string;
-        error?: string;
-      };
-      if (json.ok && json.reachable) {
-        setSshCheck({
-          state: "ok",
-          detail: json.covenPath
-            ? `Connected — coven found at ${json.covenPath}.`
-            : `Connected. ${json.hint ?? ""}`.trim(),
-        });
-      } else {
-        setSshCheck({
-          state: "fail",
-          detail:
-            [json.error, json.hint].filter(Boolean).join(" — ") ||
-            "SSH check failed.",
-        });
-      }
-    } catch (err) {
-      setSshCheck({
-        state: "fail",
-        detail: err instanceof Error ? err.message : "SSH check failed.",
-      });
-    }
-  };
-
   const scaffoldOnly = async () => {
     setPicking("scaffold");
     setSetupError(null);
@@ -1012,120 +980,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         throw new Error(json.error ?? "setup failed");
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
-    } finally {
-      setPicking(null);
-    }
-  };
-
-  const createFamiliar = async () => {
-    if (!status?.steps.daemon.ok) {
-      setSetupError("Start the daemon before creating or connecting a familiar.");
-      return;
-    }
-    const selectedAgent =
-      openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
-    if (!selectedAgent) {
-      setSetupError(
-        "Pick an existing OpenClaw agent first, or create a new familiar from an installed runtime instead.",
-      );
-      return;
-    }
-    setPicking("familiar");
-    setSetupError(null);
-    try {
-      const res = await fetch("/api/onboarding/setup", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          familiar: {
-            id: selectedAgent.id,
-            displayName: familiarName,
-            role: familiarRole,
-            description: familiarDescription,
-            glyph: familiarGlyph,
-            openclawAgentId: selectedAgent.id,
-          },
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "setup failed");
-      await refresh();
-      await loadFamiliars();
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
-    } finally {
-      setPicking(null);
-    }
-  };
-
-  const createLocalFamiliar = async () => {
-    if (!status?.steps.daemon.ok) {
-      setSetupError("Start the daemon before creating or connecting a familiar.");
-      return;
-    }
-    const selectedHarness =
-      chatHarnesses.find(
-        (adapter) => adapter.id === selectedHarnessId && adapter.installed,
-      ) ?? null;
-    if (!selectedHarness) {
-      setSetupError(
-        "Pick an installed runtime first, or choose an existing OpenClaw agent.",
-      );
-      return;
-    }
-    if (!confirmCreateNewFamiliar) {
-      setSetupError(
-        "Confirm that you want to create a new Coven familiar before continuing.",
-      );
-      return;
-    }
-    if (sshEnabled && (!sshHost.trim() || !sshCwd.trim())) {
-      setSetupError(
-        "Remote runtime needs a host and a remote working directory — or untick \"Runs on a remote machine\".",
-      );
-      return;
-    }
-    setPicking("local");
-    setSetupError(null);
-    try {
-      const res = await fetch("/api/onboarding/setup", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          familiar: {
-            id: `${selectedHarness.id}-local`,
-            displayName: familiarName.trim() || selectedHarness.label,
-            role: familiarRole.trim() || "Code Familiar",
-            description:
-              familiarDescription.trim() ||
-              (sshEnabled
-                ? `Remote ${selectedHarness.label} adapter over SSH (${sshHost.trim()}).`
-                : `Local ${selectedHarness.label} adapter on this machine.`),
-            glyph: familiarGlyph,
-            harness: selectedHarness.id,
-            model: defaultModelForRuntime(selectedHarness.id),
-            ...(sshEnabled
-              ? {
-                  runtime: {
-                    kind: "ssh",
-                    host: sshHost.trim(),
-                    cwd: sshCwd.trim(),
-                    command: sshCommand.trim(),
-                  },
-                }
-              : {}),
-          },
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "setup failed");
-      await refresh();
-      await loadFamiliars();
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
+      setSetupError(classifySetupFailure("scaffold", err));
     } finally {
       setPicking(null);
     }
@@ -1157,11 +1012,35 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       }
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "daemon start failed");
+      setSetupError(classifySetupFailure("daemon-start", err));
     } finally {
       setStartingDaemon(false);
     }
   };
+
+  // cave-fy1q phase 1: the daemon is the one infra step that can simply
+  // happen. When the OPEN wizard reaches it (CLI, home, and runtime healthy;
+  // daemon not up), attempt ONE auto-start — the primary button stays as the
+  // retry affordance and the failure path is unchanged. Gated on `open`
+  // because hooks run even while the overlay renders null — a veteran
+  // machine with a stopped daemon must never get a surprise background
+  // start on boot. The ref (not state) survives re-renders, and it latches
+  // when the daemon is already up so a later crash mid-wizard never
+  // auto-restarts either.
+  const daemonAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (!open || daemonAutoStartRef.current) return;
+    const s = status?.steps;
+    if (!s) return;
+    if (s.daemon.ok) {
+      daemonAutoStartRef.current = true;
+      return;
+    }
+    if (!s.covenCli.ok || !s.covenHome.ok || !s.adapters.ok) return;
+    daemonAutoStartRef.current = true;
+    void startDaemon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, status]);
 
   const saveOnboardingConnection = async () => {
     setSavingOnboardingConnection(true);
@@ -1176,62 +1055,41 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok || json.ok === false) throw new Error(json.error ?? "connection setup failed");
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "connection setup failed");
+      setSetupError(classifySetupFailure("connection-save", err));
     } finally {
       setSavingOnboardingConnection(false);
     }
   };
 
-  const editFamiliar = (id: string) => {
-    // The studio renders under this overlay, so close the overlay first.
-    onDismiss();
-    openFamiliarStudio(id);
+  // The banner's retry re-runs exactly the action that failed. Busy-state
+  // mirrors each action's own in-flight flag so a double-click can't stack
+  // requests, and every action clears setupError on entry — a successful
+  // retry removes the banner by construction.
+  const setupRetryBusy =
+    picking !== null || startingDaemon || savingOnboardingConnection;
+  const retrySetupAction = () => {
+    if (!setupError || setupRetryBusy) return;
+    if (setupError.action === "scaffold") void scaffoldOnly();
+    else if (setupError.action === "daemon-start") void startDaemon();
+    else void saveOnboardingConnection();
   };
 
 
-  // Restore a prior "skip Coven Code" choice so a failing install can't trap
-  // the user on this step across reloads.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1") setCovenCodeSkipped(true);
-    } catch {
-      /* private mode */
-    }
-  }, []);
-
-  const skipCovenCode = () => {
-    setCovenCodeSkipped(true);
-    try {
-      localStorage.setItem(COVEN_CODE_SKIP_KEY, "1");
-    } catch {
-      /* private mode */
-    }
-  };
-
-  // Coven Code is a required OpenCoven tool, but skippable so a failed install
-  // can never permanently strand onboarding (see covenCodeSkipped).
-  const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
-  const covenCodeInstalled = !!covenCodeTool?.installed;
-  const covenCodeReady = !!covenCodeTool?.installed && !covenCodeTool.outdated;
-  const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
-  // Server `complete` already requires every other step; AND-in the Coven Code
-  // requirement so the finish CTA only appears once both tools are handled.
-  const effectiveComplete = (status?.complete ?? false) && covenCodeSatisfied;
+  // Server `complete` is the single source of truth for setup — the Coven CLI
+  // is the only required OpenCoven tool. Coven Code is an ordinary optional
+  // runtime adapter offered in the runtime step (cave-219 history: it used to
+  // be "required + skippable" via a client-side AND that could diverge from
+  // the workspace auto-open gate).
+  const setupComplete = status?.complete ?? false;
 
   const steps = useMemo<GuidedStep[]>(() => {
     const s = status?.steps;
     return [
       {
         key: "covenCli",
-        title: "Install the OpenCoven tools",
-        // Require both coven CLI (server step) and Coven Code (required, but
-        // skippable) before this step counts as done.
-        ok: !!s?.covenCli.ok && covenCodeSatisfied,
-        detail: !s?.covenCli.ok
-          ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…")
-          : covenCodeSatisfied
-            ? (s?.covenCli.detail ?? "Installed")
-            : "coven CLI ready — Coven Code still needs installing.",
+        title: "Install the Coven CLI",
+        ok: !!s?.covenCli.ok,
+        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…",
         icon: "ph:gear-six",
       },
       {
@@ -1256,20 +1114,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:plug",
       },
       {
-        key: "binding",
-        title: "Create your familiar",
-        ok: !!s?.binding.ok,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking…",
-        icon: "ph:sparkle",
-      },
-      {
-        key: "familiars",
-        title: "Meet your familiars",
-        ok: !!s?.familiars.ok,
-        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking…",
-        icon: "ph:user",
-      },
-      {
         key: "git",
         title: "Find Git (recommended)",
         optional: true,
@@ -1282,7 +1126,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:git-branch-bold",
       },
     ];
-  }, [status, covenCodeSatisfied]);
+  }, [status]);
 
   // The step the guide spotlights: the first required step that isn't done.
   const activeStepKey = useMemo(() => {
@@ -1330,13 +1174,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     familiarCount: status?.steps.familiars.ok ? 1 : 0,
   }), [platform, status]);
 
-  const openStepKey = expandedStep ?? activeStepKey ?? "familiars";
+  // With every required step done, rest on the daemon step (the last one) —
+  // familiar creation itself lives in the app's summoning circle now.
+  const openStepKey = expandedStep ?? activeStepKey ?? "daemon";
 
   if (!open) return null;
 
   const requiredSteps = steps.filter((s) => !s.optional);
   const ready = requiredSteps.filter((s) => s.ok).length;
   const total = requiredSteps.length;
+  // The wizard stops at infrastructure; the roster may already be populated
+  // when a veteran re-opens it. Gates the finish CTA's "summon" promise and
+  // the journey strip's second beat.
+  const hasFamiliars = status?.steps.familiars.ok === true;
 
   return (
     <div
@@ -1405,6 +1255,70 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </div>
         </header>
 
+        {/* Journey strip: the wizard is beat one of a three-beat first run.
+            Without it the page reads as a dead-ended infra checklist — users
+            can't see that a 30-second summoning and a first chat follow. */}
+        <JourneyStrip
+          setupDone={setupComplete}
+          familiarDone={hasFamiliars}
+        />
+
+        <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-4">
+          <div className="flex items-start gap-3">
+            <Icon name="ph:archive" width={18} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">Restoring a previous Cave?</div>
+              <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                Use a .ccbackup file and its passphrase to restore chats, projects, memory, and vault-backed tokens before continuing setup.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.href = "/settings?group=Backup#general"; }}
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" />
+            Restore from backup
+          </button>
+        </section>
+
+        {setupComplete ? (
+          // The finish CTA lives in the footer of a long scrolling page; when
+          // the last step ticks, the counter reads 4/4 but the next action is
+          // below the fold. Surface it above the fold the moment setup
+          // completes so "now what?" never happens.
+          <section
+            role="status"
+            className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] p-4"
+          >
+            <div className="flex items-start gap-3">
+              <Icon
+                name="ph:check-circle-fill"
+                width={18}
+                className="mt-0.5 shrink-0 text-[var(--color-success)]"
+              />
+              <div>
+                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Setup complete — Cave is ready.
+                </div>
+                <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  {hasFamiliars
+                    ? "Your familiars are waiting on the roster."
+                    : "One step left: summon your first familiar, then start chatting."}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={finishOnboarding}
+              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
+            >
+              <Icon name="ph:rocket-launch-bold" />
+              {hasFamiliars ? "Open Cave" : "Summon your familiar"}
+            </button>
+          </section>
+        ) : null}
+
         {platformCopy.warning ? (
           <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] p-4 text-[13px] text-[var(--color-warning)]">
             <div className="flex items-start gap-3">
@@ -1415,7 +1329,24 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               />
               <div>
                 <div className="font-semibold">Windows download notice</div>
-                <p className="mt-1 leading-6">{platformCopy.warning}</p>
+                <p className="mt-1 leading-6">
+                  {platformCopy.warning}
+                  {platformCopy.warningLink ? (
+                    <>
+                      {" "}
+                      <a
+                        href={platformCopy.warningLink.href}
+                        className="underline"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          openExternalUrl(event.currentTarget.href);
+                        }}
+                      >
+                        {platformCopy.warningLink.label}
+                      </a>
+                    </>
+                  ) : null}
+                </p>
               </div>
             </div>
           </section>
@@ -1429,7 +1360,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div>
               <div className="font-semibold">Setup status is unreachable.</div>
               <p className="mt-1 leading-6 text-[var(--text-secondary)]">
-                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
+                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The Coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
               </p>
             </div>
             <button
@@ -1446,20 +1377,41 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // Every setup action (scaffold, daemon start, familiar create,
           // connection save) reports through this banner — it must be a live
           // alert or screen-reader users never hear why their click did
-          // nothing, and it must be dismissible so a stale error doesn't
-          // outlive the retry.
+          // nothing. It carries the verbatim failure, one derived hint, and
+          // the matching retry affordance (classifySetupFailure), and stays
+          // dismissible so a stale error doesn't outlive the retry.
           <section
             role="alert"
-            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
+            className="mt-5 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
           >
-            <div>{setupError}</div>
-            <button
-              type="button"
-              onClick={() => setSetupError(null)}
-              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
-            >
-              Dismiss
-            </button>
+            <div className="min-w-0 flex-1">
+              <div className="whitespace-pre-wrap break-words font-medium">
+                {setupError.message}
+              </div>
+              {setupError.hint ? (
+                <p className="mt-1 leading-5 text-[var(--text-secondary)]">
+                  {setupError.hint}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={retrySetupAction}
+                disabled={setupRetryBusy}
+                aria-busy={setupRetryBusy}
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] disabled:opacity-50"
+              >
+                {setupRetryLabel(setupError.action)}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSetupError(null)}
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
+              >
+                Dismiss
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -1545,12 +1497,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             platformCopy={platformCopy}
                             installJobs={installJobs}
                             installResults={installResults}
-                            tools={status?.tools ?? []}
+                            tools={(status?.tools ?? [])
+                              .filter((tool) => tool.id === "coven-cli")
+                              .map((tool) => onboardingToolWithUpdate(tool, updateTools))}
+                            updateChecking={updateChecking}
+                            updateStale={updateStale}
+                            updateError={updateError}
+                            updateCheckedAt={updateCheckedAt}
                             nodeHint={nodeHint}
-                            covenCodeInstalled={covenCodeInstalled}
-                            covenCodeSkipped={covenCodeSkipped}
-                            onSkipCovenCode={skipCovenCode}
+                            npmBusy={
+                              npmLane !== null || anyNpmInstallRunning(installJobs)
+                            }
+                            npmBusyLabel={npmLane?.label ?? "another npm update"}
                             onInstall={(target) => void runInstall(target)}
+                            onCheckUpdates={() => void loadUpdates(true)}
                             onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
@@ -1562,16 +1522,17 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               One click creates the folders; nothing outside
                               them is touched.
                             </p>
-                            <button
+                            <Button
+                              variant="primary"
+                              leadingIcon="ph:folder-open-bold"
                               onClick={scaffoldOnly}
                               disabled={picking !== null}
-                              className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                              className="w-fit"
                             >
-                              <Icon name="ph:folder-open-bold" />
                               {picking === "scaffold"
                                 ? "Creating…"
                                 : "Create Coven home"}
-                            </button>
+                            </Button>
                           </div>
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
@@ -1580,6 +1541,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
+                            npmBusy={
+                              npmLane !== null || anyNpmInstallRunning(installJobs)
+                            }
+                            npmBusyLabel={npmLane?.label ?? "another npm update"}
                             harnessesStuck={
                               harnesses.length === 0 &&
                               harnessFailures >= HARNESS_RETRY_BUDGET
@@ -1597,70 +1562,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             onCodexPortPreflight={() =>
                               void runCodexPortPreflight()
                             }
-                          />
-                        ) : step.key === "binding" ? (
-                          <StepFamiliar
-                            chatHarnesses={chatHarnesses}
-                            daemonReady={!!status?.steps.daemon.ok}
-                            selectedHarnessId={selectedHarnessId}
-                            selectedHarness={selectedHarness}
-                            openclawAgents={openclawAgents}
-                            selectedAgentId={selectedAgentId}
-                            agentsLoading={agentsLoading}
-                            agentsError={agentsError}
-                            familiarName={familiarName}
-                            familiarRole={familiarRole}
-                            familiarGlyph={familiarGlyph}
-                            familiarDescription={familiarDescription}
-                            confirmCreateNewFamiliar={confirmCreateNewFamiliar}
-                            picking={picking}
-                            sshEnabled={sshEnabled}
-                            sshHost={sshHost}
-                            sshCwd={sshCwd}
-                            sshCommand={sshCommand}
-                            sshCheck={sshCheck}
-                            sshSetup={platformCopy.sshSetup}
-                            setFamiliarName={setFamiliarName}
-                            setFamiliarRole={setFamiliarRole}
-                            setFamiliarGlyph={setFamiliarGlyph}
-                            setFamiliarDescription={setFamiliarDescription}
-                            setConfirmCreateNewFamiliar={
-                              setConfirmCreateNewFamiliar
-                            }
-                            setSshEnabled={setSshEnabled}
-                            setSshHost={(v) => {
-                              setSshHost(v);
-                              setSshCheck({ state: "idle" });
-                            }}
-                            setSshCwd={setSshCwd}
-                            setSshCommand={setSshCommand}
-                            onTestSsh={() => void testSsh()}
-                            onSelectHarness={(adapter) => {
-                              if (!adapter.installed) return;
-                              setSelectedHarnessId(adapter.id);
-                              setSelectedAgentId(null);
-                              setConfirmCreateNewFamiliar(false);
-                              setFamiliarName(adapter.label);
-                              setFamiliarRole("Code Familiar");
-                              setFamiliarDescription(
-                                sshEnabled && sshHost.trim()
-                                  ? `Remote ${adapter.label} adapter over SSH (${sshHost.trim()}).`
-                                  : `Local ${adapter.label} adapter on this machine.`,
-                              );
-                            }}
-                            onSelectAgent={(agent) => {
-                              setSelectedAgentId(agent.id);
-                              setSelectedHarnessId(null);
-                              setConfirmCreateNewFamiliar(false);
-                              setFamiliarName(agent.displayName);
-                              setFamiliarRole(agent.role);
-                              setFamiliarDescription(
-                                `Connected to OpenClaw agent "${agent.id}".`,
-                              );
-                            }}
-                            onRefreshAgents={() => void loadOpenClawAgents()}
-                            onCreateLocal={() => void createLocalFamiliar()}
-                            onConnectAgent={() => void createFamiliar()}
                           />
                         ) : step.key === "daemon" ? (
                           <div className="flex flex-col gap-3">
@@ -1729,37 +1630,29 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               </code>
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
-                              <button
+                              <Button
+                                variant="primary"
+                                leadingIcon="ph:rocket-launch-bold"
                                 onClick={startDaemon}
                                 disabled={
                                   startingDaemon || !status?.steps.covenCli.ok
                                 }
-                                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                                 title={
                                   !status?.steps.covenCli.ok
-                                    ? "Install coven CLI first (step 1)"
+                                    ? "Install Coven CLI first (step 1)"
                                     : "Start local daemon (coven daemon start)"
                                 }
                               >
-                                <Icon name="ph:rocket-launch-bold" />
                                 {startingDaemon ? "Starting…" : "Start local daemon"}
-                              </button>
+                              </Button>
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
                                   Needs step 1 first — the daemon ships with the
-                                  coven CLI.
+                                  Coven CLI.
                                 </span>
                               ) : null}
                             </div>
                           </div>
-                        ) : step.key === "familiars" ? (
-                          <StepMeetFamiliars
-                            familiars={familiarsList}
-                            statusOk={step.ok}
-                            complete={effectiveComplete}
-                            onEdit={editFamiliar}
-                            onOpenCave={finishOnboarding}
-                          />
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1807,13 +1700,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           >
             Skip for now
           </button>
-          {effectiveComplete ? (
+          {setupComplete ? (
             <button
               onClick={finishOnboarding}
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
             >
               <Icon name="ph:rocket-launch-bold" />
-              Open Cave
+              {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
             </button>
           ) : (
             <span className="text-[11px] text-[var(--text-muted)]">
@@ -1827,6 +1720,64 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 }
 
 // ── Step bodies ───────────────────────────────────────────────────────────────
+
+/** The three-beat first-run journey: infrastructure (this wizard) → summon a
+ *  familiar (the in-app circle) → first chat. Orientation only — beats light
+ *  up as phases complete but are not interactive. The chat beat has no "done"
+ *  signal here by design: the wizard closes before it can happen. */
+function JourneyStrip({
+  setupDone,
+  familiarDone,
+}: {
+  setupDone: boolean;
+  familiarDone: boolean;
+}) {
+  const beats: { label: string; icon: IconName; done: boolean }[] = [
+    { label: "Set up Cave", icon: "ph:gear-six", done: setupDone },
+    { label: "Summon a familiar", icon: "ph:sparkle-bold", done: familiarDone },
+    { label: "First chat", icon: "ph:chat-circle-dots", done: false },
+  ];
+  const activeIndex = beats.findIndex((beat) => !beat.done);
+  return (
+    <ol
+      aria-label="First-run journey"
+      className="mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-2"
+    >
+      {beats.map((beat, index) => {
+        const isActive = index === activeIndex;
+        return (
+          <li key={beat.label} className="flex items-center gap-1.5">
+            {index > 0 ? (
+              <Icon
+                name="ph:caret-right"
+                width={11}
+                className="text-[var(--text-muted)]"
+                aria-hidden
+              />
+            ) : null}
+            <span
+              aria-current={isActive ? "step" : undefined}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                beat.done
+                  ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
+                  : isActive
+                    ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] font-medium text-[var(--text-primary)]"
+                    : "border-[var(--border-hairline)] text-[var(--text-muted)]"
+              }`}
+            >
+              {beat.done ? (
+                <Icon name="ph:check-bold" width={11} />
+              ) : (
+                <Icon name={beat.icon} width={11} />
+              )}
+              {beat.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
@@ -1945,13 +1896,16 @@ function NodeSetupNotice({
 function InstallResultNote({ result }: { result?: InstallResult }) {
   if (!result) return null;
   return (
-    <p
-      className={`text-[11px] leading-4 ${
-        result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
-      }`}
-    >
-      {result.detail}
-    </p>
+    <div className="flex flex-col gap-2">
+      <p
+        className={`text-[11px] leading-4 ${
+          result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+        }`}
+      >
+        {result.detail}
+      </p>
+      {!result.ok && result.tail ? <InstallLiveTail tail={result.tail} /> : null}
+    </div>
   );
 }
 
@@ -1961,11 +1915,26 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
   return tool.outdated && tool.latest ? `${tool.current} -> ${tool.latest}` : tool.current;
 }
 
-function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
-  if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
-  if (tool.outdated) return "Update available";
-  return "Up to date";
+/** Readiness remains authoritative for local install/current facts. Cached
+ * update discovery contributes only registry-owned fields, so a stale update
+ * snapshot cannot make a missing local CLI appear installed. */
+function onboardingToolWithUpdate(
+  readiness: OpenCovenToolStatus,
+  updates: OpenCovenToolStatus[],
+): OpenCovenToolStatus {
+  const update = updates.find((tool) => tool.id === readiness.id);
+  if (!update) return readiness;
+  return {
+    ...readiness,
+    latest: update.latest,
+    latestCheck: update.latestCheck,
+    outdated: update.outdated,
+    checkedAt: update.checkedAt,
+  };
+}
+
+function openCovenToolStatusText(tool: OpenCovenToolStatus, stale = false): string {
+  return toolStatusText(tool, stale);
 }
 
 function StepCovenCli({
@@ -1973,76 +1942,105 @@ function StepCovenCli({
   installJobs,
   installResults,
   tools,
+  updateChecking,
+  updateStale,
+  updateError,
+  updateCheckedAt,
   nodeHint,
-  covenCodeInstalled,
-  covenCodeSkipped,
-  onSkipCovenCode,
+  npmBusy,
+  npmBusyLabel,
   onInstall,
+  onCheckUpdates,
   onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   tools: OpenCovenToolStatus[];
+  updateChecking: boolean;
+  updateStale: boolean;
+  updateError: string | null;
+  updateCheckedAt: string | null;
   nodeHint: string | null;
-  covenCodeInstalled: boolean;
-  covenCodeSkipped: boolean;
-  onSkipCovenCode: () => void;
-  onInstall: (target: "coven-cli" | "coven-code") => void;
+  npmBusy: boolean;
+  npmBusyLabel: string;
+  onInstall: (target: "coven-cli") => void;
+  onCheckUpdates: () => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];
   const busy = job?.status === "running";
-  // Per-target busy — track coven-code's running state separately so the
-  // "Install both" button reflects either job. npm installs are queued
-  // client-side now, so per-target busy is enough to coordinate them.
-  const covenCodeJob = installJobs["coven-code"];
-  const covenCodeJobRunning = covenCodeJob?.status === "running";
+  const actionTargets = openCovenToolActionTargets(tools);
+  const manualInstallCommand = openCovenToolsInstallCommand(tools);
+  const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
+  const ownInstallBusy = busy;
+  const installBusy = ownInstallBusy || npmBusy;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        Cave needs two OpenCoven tools — the <strong>coven CLI</strong> (powers
-        everything) and <strong>Coven Code</strong> (required). Install both with
-        one click — Cave runs them one after another so they never collide — or
-        copy the command to run it yourself.
+        Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
+        Use the main action to install or update it — Cave runs npm installs
+        one after another so they never collide — or copy the matching command
+        to run it yourself.
       </p>
+      {npmBusy && !ownInstallBusy ? (
+        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+          {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
+          variant="primary"
+          loading={installBusy}
+          leadingIcon="ph:arrow-down-bold"
           onClick={() => {
-            onInstall("coven-cli");
-            onInstall("coven-code");
+            for (const target of actionTargets) onInstall(target);
           }}
-          disabled={busy || covenCodeJobRunning}
-          aria-busy={busy || covenCodeJobRunning}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+          disabled={installBusy || actionTargets.length === 0}
         >
-          {busy || covenCodeJobRunning ? (
-            <Icon name="ph:circle-notch-bold" className="animate-spin" />
-          ) : (
-            <Icon name="ph:arrow-down-bold" />
-          )}
-          {busy || covenCodeJobRunning ? "Installing…" : "Install both tools"}
-        </button>
-        <span className="text-[11px] text-[var(--text-muted)]">
-          or run it yourself:
-        </span>
+          {ownInstallBusy
+            ? "Installing…"
+            : npmBusy
+              ? `Waiting for ${npmBusyLabel}`
+              : primaryActionLabel}
+        </Button>
+        <Button
+          variant="secondary"
+          loading={updateChecking}
+          onClick={onCheckUpdates}
+          disabled={updateChecking}
+        >
+          {updateChecking ? "Checking…" : "Check for updates"}
+        </Button>
+        {actionTargets.length > 0 ? (
+          <span className="text-[11px] text-[var(--text-muted)]">
+            or run it yourself:
+          </span>
+        ) : null}
       </div>
-      <CommandRow command={platformCopy.installCommand} onCopy={onCopy} />
+      {actionTargets.length > 0 ? (
+        <CommandRow command={manualInstallCommand} onCopy={onCopy} />
+      ) : null}
       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
       <InstallResultNote result={installResults["coven-cli"]} />
       {tools.length > 0 ? (
         <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            OpenCoven tools
+            Coven CLI
           </div>
           <div className="grid gap-2">
             {tools.map((tool) => {
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
-              const needsAction = !tool.installed || tool.outdated;
+              const toolBlockedByNpm = npmBusy && !toolBusy;
+              const needsAction = !tool.installed || tool.outdated || !tool.compatible;
+              const currentVerified =
+                tool.installed &&
+                hasVerifiedLatestVersion(tool) &&
+                !updateStale &&
+                !tool.outdated &&
+                tool.compatible;
               const result = installResults[tool.id];
-              const isCovenCode = tool.id === "coven-code";
-              const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
               return (
                 <div
                   key={tool.id}
@@ -2052,37 +2050,41 @@ function StepCovenCli({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 truncate text-[12px] font-medium text-[var(--text-primary)]">
                         {tool.label}
-                        {isCovenCode ? (
-                          <span className="rounded-full border border-[var(--border-hairline)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
-                            {covenCodeInstalled ? "Required" : covenCodeSkipped ? "Skipped" : "Required"}
-                          </span>
-                        ) : null}
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
                         {openCovenToolVersionText(tool)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                        {tool.latestCheck
+                          ? latestCheckText(tool, updateStale)
+                          : updateChecking
+                            ? "Checking npm for the latest version…"
+                            : updateError
+                              ? `Latest version unavailable: ${updateError}`
+                              : "Latest version has not been checked yet."}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                          tool.installed && !tool.outdated
+                          currentVerified
                             ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                             : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
                         }`}
                       >
-                        {tool.installed && !tool.outdated ? (
+                        {currentVerified ? (
                           <Icon name="ph:check-bold" />
                         ) : (
                           <Icon name="ph:warning-fill" />
                         )}
-                        {openCovenToolStatusText(tool)}
+                        {openCovenToolStatusText(tool, updateStale)}
                       </span>
                       {needsAction ? (
                         <button
                           type="button"
                           onClick={() => onInstall(tool.id)}
-                          disabled={toolBusy}
-                          aria-busy={toolBusy}
+                          disabled={toolBusy || toolBlockedByNpm}
+                          aria-busy={toolBusy || toolBlockedByNpm}
                           className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
                         >
                           {toolBusy ? (
@@ -2092,19 +2094,11 @@ function StepCovenCli({
                           )}
                           {toolBusy && toolJob
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
-                            : tool.outdated
+                            : toolBlockedByNpm
+                              ? `Waiting for ${npmBusyLabel}`
+                            : tool.outdated || !tool.compatible
                               ? "Update"
                               : "Install"}
-                        </button>
-                      ) : null}
-                      {showSkip ? (
-                        <button
-                          type="button"
-                          onClick={onSkipCovenCode}
-                          className="focus-ring rounded-md px-2 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:underline"
-                          title="Continue setup without Coven Code — you can install it later from Settings."
-                        >
-                          Skip for now
                         </button>
                       ) : null}
                     </div>
@@ -2117,6 +2111,15 @@ function StepCovenCli({
           </div>
         </div>
       ) : null}
+      <p role="status" className="text-[10px] text-[var(--text-muted)]">
+        {updateChecking
+          ? "Checking npm now…"
+          : updateError
+            ? `${updateStale ? "Showing stale update data" : "Update check unavailable"}: ${updateError}`
+            : updateCheckedAt
+              ? `${updateStale ? "Stale update data" : "Update data current"} · checked ${new Date(updateCheckedAt).toLocaleString()}`
+              : "Update check pending."}
+      </p>
       {nodeHint ? (
         <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
       ) : null}
@@ -2138,6 +2141,8 @@ function StepRuntimes({
   installJobs,
   installResults,
   nodeHint,
+  npmBusy,
+  npmBusyLabel,
   harnessesStuck,
   onInstall,
   onCopy,
@@ -2151,6 +2156,8 @@ function StepRuntimes({
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
+  npmBusy: boolean;
+  npmBusyLabel: string;
   harnessesStuck: boolean;
   onInstall: (target: InstallTarget) => void;
   onCopy: (text: string) => Promise<boolean>;
@@ -2159,9 +2166,14 @@ function StepRuntimes({
   codexPortPreflightBusy: boolean;
   onCodexPortPreflight: () => void;
 }) {
-  const npmJobRunning = anyNpmInstallRunning(installJobs);
+  const npmJobRunning = npmBusy || anyNpmInstallRunning(installJobs);
   return (
     <div className="flex flex-col gap-3">
+      {npmBusy ? (
+        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+          {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       {harnessesStuck ? (
         <div
           role="alert"
@@ -2287,21 +2299,19 @@ function StepRuntimes({
                 <div className="mt-2 flex flex-col gap-2">
                   {oneClick ? (
                     <>
-                      <button
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={busy}
+                        leadingIcon="ph:arrow-down-bold"
                         onClick={() => onInstall(oneClick.target)}
                         disabled={busy || (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)}
-                        aria-busy={busy}
-                        className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                        className="w-fit"
                       >
-                        {busy ? (
-                          <Icon name="ph:circle-notch-bold" className="animate-spin" />
-                        ) : (
-                          <Icon name="ph:arrow-down-bold" />
-                        )}
                         {busy && job
                           ? `Installing… ${formatElapsed(job.elapsedMs)}`
                           : `Install ${adapter.label}`}
-                      </button>
+                      </Button>
                       <CommandRow
                         command={
                           platform === "windows" && oneClick.windowsCommand
@@ -2387,651 +2397,6 @@ function StepRuntimes({
         <p className="text-[11px] leading-4 text-[var(--color-warning)]">
           npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
         </p>
-      ) : null}
-    </div>
-  );
-}
-
-function StepFamiliar(props: {
-  chatHarnesses: HarnessReport[];
-  daemonReady: boolean;
-  selectedHarnessId: string | null;
-  selectedHarness: HarnessReport | null;
-  openclawAgents: OpenClawAgent[];
-  selectedAgentId: string | null;
-  agentsLoading: boolean;
-  agentsError: string | null;
-  familiarName: string;
-  familiarRole: string;
-  familiarGlyph: string;
-  familiarDescription: string;
-  confirmCreateNewFamiliar: boolean;
-  picking: string | null;
-  sshEnabled: boolean;
-  sshHost: string;
-  sshCwd: string;
-  sshCommand: string;
-  sshCheck: SshCheckState;
-  sshSetup: string[];
-  setFamiliarName: (v: string) => void;
-  setFamiliarRole: (v: string) => void;
-  setFamiliarGlyph: (v: string) => void;
-  setFamiliarDescription: (v: string) => void;
-  setConfirmCreateNewFamiliar: (v: boolean) => void;
-  setSshEnabled: (v: boolean) => void;
-  setSshHost: (v: string) => void;
-  setSshCwd: (v: string) => void;
-  setSshCommand: (v: string) => void;
-  onTestSsh: () => void;
-  onSelectHarness: (adapter: HarnessReport) => void;
-  onSelectAgent: (agent: OpenClawAgent) => void;
-  onRefreshAgents: () => void;
-  onCreateLocal: () => void;
-  onConnectAgent: () => void;
-}) {
-  const {
-    chatHarnesses,
-    daemonReady,
-    selectedHarnessId,
-    selectedHarness,
-    openclawAgents,
-    selectedAgentId,
-    agentsLoading,
-    agentsError,
-    familiarName,
-    familiarRole,
-    familiarGlyph,
-    familiarDescription,
-    confirmCreateNewFamiliar,
-    picking,
-    sshEnabled,
-    sshHost,
-    sshCwd,
-    sshCommand,
-    sshCheck,
-    sshSetup,
-  } = props;
-  const [agentQuery, setAgentQuery] = useState("");
-  const glyphInvalid =
-    familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:");
-  const selectedOpenClawAgent =
-    selectedAgentId != null
-      ? openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null
-      : null;
-  const firstInstalledHarness =
-    chatHarnesses.find((adapter) => adapter.installed) ?? null;
-  const openClawAgentCountLabel = agentsLoading
-    ? "Scanning"
-    : `${openclawAgents.length} ${openclawAgents.length === 1 ? "agent" : "agents"}`;
-  // Exactly one path is ever selected — picking a harness clears the agent and
-  // vice versa upstream. Drives progressive disclosure of the config form below.
-  const optionChosen = selectedHarnessId != null || selectedAgentId != null;
-  // Option B can list many discovered agents; surface a filter once the list is
-  // long enough to be awkward to scan by eye.
-  const showAgentSearch = openclawAgents.length > 6;
-  const trimmedAgentQuery = agentQuery.trim().toLowerCase();
-  const visibleAgents = trimmedAgentQuery
-    ? openclawAgents.filter((agent) =>
-        [
-          agent.displayName,
-          agent.id,
-          agent.role ?? "",
-          agent.workspacePath ?? "",
-        ].some((field) => field.toLowerCase().includes(trimmedAgentQuery)),
-      )
-    : openclawAgents;
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        A familiar is your named agent — pick what powers it, name it, and
-        everything stays editable later in the Familiar Studio (Agents &rarr;
-        pick a familiar &rarr; Edit).
-      </p>
-      {!daemonReady ? (
-        <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
-          Start the daemon first. Familiar creation unlocks once Cave can reach it.
-        </div>
-      ) : null}
-
-      <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-        Choose one setup path
-      </p>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div>
-          <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-            Option A — start fresh from an installed runtime
-          </h3>
-          <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
-            Spin up a brand-new Coven familiar powered by a runtime installed on
-            this machine.
-          </p>
-          <div className="mt-2 grid gap-2">
-            {chatHarnesses.length === 0 ? (
-              <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[11px] leading-5 text-[var(--text-secondary)]">
-                <p className="font-medium text-[var(--text-primary)]">
-                  No runtimes detected on this machine yet.
-                </p>
-                <p className="mt-1">
-                  Install one in{" "}
-                  <span className="font-medium text-[var(--text-primary)]">
-                    step 3
-                  </span>{" "}
-                  (Codex, Claude Code, …) — this list refreshes automatically. If
-                  you just installed a runtime, restart Cave so its PATH applies.
-                </p>
-                <p className="mt-1">
-                  <span className="font-medium text-[var(--text-primary)]">
-                    Option B
-                  </span>{" "}
-                  remains available to connect an existing OpenClaw agent.
-                </p>
-              </div>
-            ) : (
-              chatHarnesses.map((adapter) => {
-                const active = selectedHarnessId === adapter.id;
-                return (
-                  <button
-                    key={adapter.id}
-                    onClick={() => props.onSelectHarness(adapter)}
-                    disabled={!adapter.installed}
-                    className={`focus-ring rounded-lg border p-2.5 text-left ${
-                      active
-                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                        : adapter.installed
-                          ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
-                    }`}
-                    title={
-                      adapter.installed
-                        ? undefined
-                        : `Not installed yet — see step 3. ${adapter.installHint}`
-                    }
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[12px] font-medium">
-                        {adapter.label}
-                      </span>
-                      {active ? (
-                        <Icon
-                          name="ph:check-bold"
-                          className="text-[var(--accent-presence)]"
-                        />
-                      ) : !adapter.installed ? (
-                        <span className="text-[10px]">not installed</span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] p-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-                  Option B — connect an existing OpenClaw agent
-                </h3>
-                <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-presence)]">
-                  <Icon name="ph:git-fork" /> {openClawAgentCountLabel}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
-                Use an existing OpenClaw agent as a Cave familiar. Cave scans{" "}
-                <code className="font-mono text-[var(--text-primary)]">
-                  {OPENCLAW_AGENT_ROOT}
-                </code>
-                {" "}and preserves its workspace under{" "}
-                <code className="font-mono text-[var(--text-primary)]">
-                  {OPENCLAW_WORKSPACE_ROOT}
-                </code>
-                .
-              </p>
-            </div>
-            <button
-              onClick={props.onRefreshAgents}
-              disabled={agentsLoading}
-              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-            >
-              <Icon
-                name="ph:arrows-clockwise-bold"
-                className={agentsLoading ? "animate-spin" : undefined}
-              />
-              {agentsLoading ? "Scanning…" : "Refresh"}
-            </button>
-          </div>
-          {agentsError ? (
-            <div className="mt-2 rounded border border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-3 py-2 text-[12px] text-[var(--color-danger)]">
-              {agentsError}
-            </div>
-          ) : openclawAgents.length === 0 ? (
-            <div className="mt-3 rounded-md border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
-              <div className="flex items-start gap-2">
-                <Icon
-                  name="ph:magnifying-glass"
-                  className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
-                />
-                <div>
-                  <p className="font-medium text-[var(--text-primary)]">
-                    No OpenClaw agents found yet.
-                  </p>
-                  <p className="mt-1">
-                    Create or sync one under{" "}
-                    <code className="font-mono text-[var(--text-primary)]">
-                      {OPENCLAW_AGENT_ROOT}
-                    </code>
-                    , then refresh this list. Option A remains available for a
-                    brand-new Coven familiar.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              {showAgentSearch ? (
-                <div className="relative mt-3">
-                  <Icon
-                    name="ph:magnifying-glass"
-                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                  />
-                  <input
-                    value={agentQuery}
-                    onChange={(e) => setAgentQuery(e.target.value)}
-                    placeholder={`Search ${openclawAgents.length} agents by name, id, or role…`}
-                    aria-label="Search OpenClaw agents"
-                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] py-1.5 pl-8 pr-3 text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                  />
-                </div>
-              ) : null}
-              {visibleAgents.length === 0 ? (
-                <p className="mt-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  No agents match{" "}
-                  <span className="font-medium text-[var(--text-primary)]">
-                    {agentQuery.trim()}
-                  </span>
-                  .
-                </p>
-              ) : (
-                <div className="mt-3 grid max-h-[16rem] gap-2 overflow-y-auto pr-1">
-                  {visibleAgents.map((agent) => {
-                    const active = selectedAgentId === agent.id;
-                    return (
-                      <button
-                        key={agent.id}
-                        onClick={() => props.onSelectAgent(agent)}
-                        className={`focus-ring rounded-lg border p-3 text-left ${
-                          active
-                            ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
-                            : "border-[var(--border-hairline)] bg-[var(--bg-base)]/55 text-[var(--text-secondary)] hover:border-[var(--accent-presence)]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[12px] font-medium">
-                            {agent.displayName}
-                          </span>
-                          {active ? (
-                            <Icon
-                              name="ph:check-bold"
-                              className="text-[var(--accent-presence)]"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="mt-1 grid gap-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                          <div className="truncate">{agent.id}</div>
-                          {agent.workspacePath ? (
-                            <div className="truncate">{agent.workspacePath}</div>
-                          ) : null}
-                        </div>
-                        {agent.role ? (
-                          <div className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">
-                            {agent.role}
-                          </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Config form is revealed only once a path is chosen, and the SSH /
-          confirm blocks below are scoped to Option A — so the user never sees
-          fields that don't apply to their selection. The CTA row still keeps
-          the other path reachable so Option A never disappears after choosing
-          an OpenClaw agent. */}
-      {optionChosen ? (
-        <>
-          <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
-            {selectedHarnessId ? (
-              <>
-                Setting up a new{" "}
-                <span className="font-medium text-[var(--text-primary)]">
-                  {selectedHarness?.label}
-                </span>{" "}
-                familiar. Every field below is optional — sensible defaults fill
-                in.
-              </>
-            ) : (
-              <>
-                Connecting{" "}
-                <span className="font-medium text-[var(--text-primary)]">
-                  {selectedOpenClawAgent?.displayName}
-                </span>
-                . Give it a name; the rest is optional.
-              </>
-            )}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Name{selectedAgentId ? " (required)" : " (optional)"}
-              </span>
-              <input
-                value={familiarName}
-                onChange={(e) => props.setFamiliarName(e.target.value)}
-                placeholder="Example: Riley"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Role (optional)
-              </span>
-              <input
-                value={familiarRole}
-                onChange={(e) => props.setFamiliarRole(e.target.value)}
-                placeholder="Research, Code, Ops…"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Glyph (optional)
-              </span>
-              <input
-                value={familiarGlyph}
-                onChange={(e) => props.setFamiliarGlyph(e.target.value)}
-                placeholder="ph:sparkle-fill"
-                aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
-                className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
-                  glyphInvalid
-                    ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
-                    : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
-                }`}
-              />
-              {glyphInvalid ? (
-                <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
-                  Must start with <code className="font-mono">ph:</code> — see{" "}
-                  <a
-                    href="https://phosphoricons.com"
-                    className="underline"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      openExternalUrl("https://phosphoricons.com");
-                    }}
-                  >
-                    phosphoricons.com
-                  </a>
-                  .
-                </span>
-              ) : null}
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Description (optional)
-              </span>
-              <input
-                value={familiarDescription}
-                onChange={(e) => props.setFamiliarDescription(e.target.value)}
-                placeholder="What should this familiar help with?"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-          </div>
-
-          {selectedHarnessId ? (
-            <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={sshEnabled}
-                  onChange={(e) => props.setSshEnabled(e.currentTarget.checked)}
-                  className="mt-1 h-4 w-4 accent-[var(--accent-presence)]"
-                />
-                <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
-                  <span className="font-medium text-[var(--text-primary)]">
-                    Optional remote runtime (SSH)
-                  </span>{" "}
-                  — Skip this unless you want this familiar to run on another machine
-                  (a build server, a homelab, a VM). When enabled, it runs on a
-                  remote machine over SSH. Cave connects non-interactively with
-                  your SSH keys and never stores passwords or key material.
-                </span>
-              </label>
-              {sshEnabled ? (
-                <div className="mt-3 flex flex-col gap-3">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Host
-                      </span>
-                      <input
-                        value={sshHost}
-                        onChange={(e) => props.setSshHost(e.target.value)}
-                        placeholder="ssh-alias or hostname"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Remote directory
-                      </span>
-                      <input
-                        value={sshCwd}
-                        onChange={(e) => props.setSshCwd(e.target.value)}
-                        placeholder="/home/me/projects"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Remote coven command
-                      </span>
-                      <input
-                        value={sshCommand}
-                        onChange={(e) => props.setSshCommand(e.target.value)}
-                        placeholder="coven (default)"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={props.onTestSsh}
-                      disabled={sshCheck.state === "checking" || !sshHost.trim()}
-                      className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-                    >
-                      <Icon name="ph:plug-bold" />
-                      {sshCheck.state === "checking" ? "Testing…" : "Test connection"}
-                    </button>
-                    {sshCheck.state === "ok" ? (
-                      <span className="text-[11px] text-[var(--color-success)]">
-                        {sshCheck.detail}
-                      </span>
-                    ) : sshCheck.state === "fail" ? (
-                      <span className="text-[11px] text-[var(--color-danger)]">
-                        {sshCheck.detail}
-                      </span>
-                    ) : null}
-                  </div>
-                  <details>
-                    <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
-                      SSH key setup (one-time)
-                    </summary>
-                    <div className="mt-2">
-                      <InstructionList title="" items={sshSetup} />
-                    </div>
-                  </details>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {selectedHarnessId ? (
-            <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-              <input
-                type="checkbox"
-                checked={confirmCreateNewFamiliar}
-                onChange={(e) =>
-                  props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
-                }
-                disabled={!daemonReady || !selectedHarnessId || picking !== null}
-                className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
-              />
-              <span>
-                I understand this creates a new Coven familiar
-                {selectedHarness ? (
-                  <>
-                    {" "}bound to the{" "}
-                    <span className="font-medium text-[var(--text-primary)]">
-                      {selectedHarness.label}
-                    </span>{" "}runtime
-                  </>
-                ) : null}
-                .
-              </span>
-            </label>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            {selectedHarnessId ? (
-              <button
-                onClick={props.onCreateLocal}
-                disabled={
-                  !daemonReady ||
-                  picking !== null ||
-                  !confirmCreateNewFamiliar ||
-                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-                }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-              >
-                <Icon name="ph:terminal-window" />
-                {picking === "local" ? "Creating…" : "Create new Coven familiar"}
-              </button>
-            ) : null}
-            {!selectedHarnessId && selectedAgentId ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (firstInstalledHarness) props.onSelectHarness(firstInstalledHarness);
-                }}
-                disabled={!daemonReady || picking !== null || !firstInstalledHarness}
-                title={
-                  firstInstalledHarness
-                    ? `Use ${firstInstalledHarness.label} for Option A`
-                    : "Install a runtime first to create a new Coven familiar."
-                }
-                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] font-medium text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-              >
-                <Icon name="ph:terminal-window" />
-                Create new Coven familiar
-              </button>
-            ) : null}
-            {selectedAgentId ? (
-              <button
-                onClick={props.onConnectAgent}
-                disabled={
-                  !daemonReady ||
-                  picking !== null ||
-                  familiarName.trim().length === 0 ||
-                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-                }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-              >
-                <Icon name="ph:git-fork" />
-                {picking === "familiar"
-                  ? "Connecting…"
-                  : selectedOpenClawAgent
-                    ? `Connect ${selectedOpenClawAgent.displayName}`
-                    : "Connect OpenClaw agent"}
-              </button>
-            ) : null}
-          </div>
-        </>
-      ) : (
-        <p className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
-          Pick{" "}
-          <span className="font-medium text-[var(--text-primary)]">Option A</span>{" "}
-          or{" "}
-          <span className="font-medium text-[var(--text-primary)]">Option B</span>{" "}
-          above to name and create your familiar.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function StepMeetFamiliars({
-  familiars,
-  statusOk,
-  complete,
-  onEdit,
-  onOpenCave,
-}: {
-  familiars: CaveFamiliar[];
-  statusOk: boolean;
-  complete: boolean;
-  onEdit: (id: string) => void;
-  onOpenCave: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        {statusOk
-          ? "Your familiars are loaded. Everything about them stays editable — name, look, brain, runtime, transport — in the Familiar Studio, any time."
-          : "Once the daemon is running and a familiar exists, they appear here."}
-      </p>
-      {familiars.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {familiars.map((familiar) => (
-            <div
-              key={familiar.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                  {familiar.display_name ?? familiar.id}
-                </div>
-                <div className="truncate text-[11px] text-[var(--text-muted)]">
-                  {familiar.role ?? familiar.id}
-                </div>
-              </div>
-              <button
-                onClick={() => onEdit(familiar.id)}
-                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)]"
-              >
-                <Icon name="ph:pencil-simple" />
-                Edit
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {complete ? (
-        <button
-          onClick={onOpenCave}
-          className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
-        >
-          <Icon name="ph:rocket-launch-bold" />
-          Open Cave
-        </button>
       ) : null}
     </div>
   );

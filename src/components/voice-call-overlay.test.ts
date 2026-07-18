@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const component = readFileSync(new URL("./voice-call-overlay.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
   component,
@@ -55,8 +57,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.voice-call-overlay__dialog\s*\{[\s\S]*?background:\s*var\(--bg-raised\);[\s\S]*?box-shadow:/,
-  "voice overlay dialog has a styled raised surface",
+  /\.voice-call-overlay__dialog\s*\{[\s\S]*?background:\s*var\(--glass-raised\);[\s\S]*?backdrop-filter:\s*blur\(var\(--glass-blur\)\)[\s\S]*?box-shadow:/,
+  "voice overlay dialog is a frosted raised surface",
 );
 
 assert.match(
@@ -96,6 +98,75 @@ assert.doesNotMatch(
   component,
   /<div>\{state\.errorCode\}<\/div>/,
   "the raw error code is no longer rendered as the headline",
+);
+
+// ── True-voice providers own persistence — no transcript double-append ───────
+// The familiar-brain provider's turns run through /api/chat/send, which
+// persists both sides as real conversation history; posting voice transcripts
+// on top would duplicate every exchange.
+assert.match(
+  component,
+  /const persistTranscript = !provider\.persistsTranscripts;/,
+  "the overlay derives transcript posting from the provider's persistence capability",
+);
+assert.match(
+  component,
+  /onUserTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
+  "user transcript finals persist only when the provider does not",
+);
+assert.match(
+  component,
+  /onAssistantTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
+  "assistant transcript finals persist only when the provider does not",
+);
+
+// ── Provider error detail is threaded to the error UI, not swallowed ─────────
+// Was: clientAdapter.connect threw bare `sdp_exchange_failed_<status>` and the
+// PROVIDER_ERROR dispatches dropped everything but the code, so a stale
+// voiceModel surfaced only as "The call ran into a problem." (cave-8c9c)
+assert.match(
+  component,
+  /import\s+\{[^}]*voiceErrorHint[^}]*\}\s+from\s+["']@\/lib\/voice\/types["']/,
+  "overlay imports the shared voiceErrorHint extractor",
+);
+assert.match(
+  component,
+  /onError:\s*\(err\)\s*=>\s*dispatch\(\{\s*type:\s*"PROVIDER_ERROR",\s*errorCode:\s*err\.message,\s*hint:\s*voiceErrorHint\(err\)\s*\}\)/,
+  "live provider errors thread their hint into PROVIDER_ERROR",
+);
+assert.match(
+  component,
+  /type:\s*"PROVIDER_ERROR",[\s\S]{0,120}errorCode:\s*err instanceof Error \? err\.message : "connect_failed",[\s\S]{0,120}hint:\s*voiceErrorHint\(err\)/,
+  "connect failures thread their hint into PROVIDER_ERROR",
+);
+
+// ── The live call says how it hears (cave-vpe1, hybrid on-device policy) ─────
+// The engine label is honesty UI: "on-device" is the no-cloud promise kept;
+// dictation/browser modes tell the user their audio rides a service.
+assert.match(
+  component,
+  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine\s*\}\)/,
+  "CONNECTED carries the LiveSession's ears engine into call state",
+);
+assert.match(
+  component,
+  /state\.state === "live" && state\.earsEngine && \(/,
+  "live calls render the ears-engine badge when a loop provider reports one",
+);
+assert.match(
+  component,
+  /case "native-on-device": return "Hearing on-device";[\s\S]{0,120}case "native-dictation": return "Hearing via Apple dictation";[\s\S]{0,120}case "web-speech": return "Hearing via browser speech";/,
+  "every ears engine mode has an honest human label",
+);
+assert.match(
+  component,
+  /startsWith\("sdp_exchange_failed_"\)/,
+  "SDP-exchange failures get their own human headline",
+);
+assert.match(
+  component,
+  /\{state\.hint && <div className="voice-call-overlay__hint">\{state\.hint\}<\/div>\}/,
+  "the provider hint renders under the headline when present",
 );
 
 console.log("voice-call-overlay.test.ts: ok");
