@@ -105,7 +105,7 @@ type Props = {
 export type ChatRouterHandle = {
   goToList: () => void;
   newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
-  openSession: (sessionId: string, findQuery?: string) => void;
+  openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => void;
   /** Open a conversation in a split pane beside the current chat; falls back
    *  to a plain open when splits are unavailable (mobile, companion rail). */
   openSessionInSplit: (sessionId: string) => void;
@@ -172,6 +172,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // Set when a conversation-search hit asks the opened chat to jump to a query;
   // handed to ChatView (nonce-keyed) so it opens in-thread find on the match.
   const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
+  // Voice new-chat: nonce armed when a session should open straight into the
+  // voice call overlay (same fire-once shape as pendingFind above).
+  const [pendingVoice, setPendingVoice] = useState<{ nonce: number } | null>(null);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const openProjectsTab = useCallback(() => {
@@ -549,12 +552,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           origin,
         });
       },
-      openSession: (sessionId: string, findQuery?: string) => {
+      openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => {
         const session = sessions.find((entry) => entry.id === sessionId);
         const next = selectFamiliarForChat(session?.familiarId ?? null);
         setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
         const fq = findQuery?.trim();
         if (fq) setPendingFind({ query: fq, nonce: Date.now() });
+        if (autoVoice) setPendingVoice({ nonce: Date.now() });
       },
       openSessionInSplit: (sessionId: string) => {
         const session = sessions.find((entry) => entry.id === sessionId);
@@ -722,6 +726,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       origin={view.kind === "chat" ? view.origin : undefined}
       openFindQuery={pendingFind?.query}
       openFindNonce={pendingFind?.nonce}
+      openVoiceNonce={pendingVoice?.nonce}
       daemonRunning={daemonRunning}
       sessions={sessions}
       onSessionsChanged={onSessionsChanged}
@@ -738,6 +743,17 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             : prev,
         );
         onSessionStarted?.();
+      }}
+      onVoiceSessionCreated={(sid) => {
+        // Pre-session voice call: ChatView created the conversation; promote
+        // it into the view (same null-only guard as onSessionStarted) and arm
+        // the auto-open nonce so the overlay opens once the session mounts.
+        setView((prev) =>
+          prev.kind === "chat" && prev.sessionId === null
+            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            : prev,
+        );
+        setPendingVoice({ nonce: Date.now() });
       }}
       onSlashCommand={onSlashFromChat}
       onOpenOnboarding={onOpenOnboarding}

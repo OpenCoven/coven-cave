@@ -444,6 +444,7 @@ export const SUITES = {
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",
     "src/components/voice-call-overlay.test.ts",
+    "src/components/voice-new-chat.test.ts",
     "src/lib/session-debug.test.ts",
     "src/lib/chat-debug-store.test.ts",
     "src/components/bottom-terminal-ws-bridge.test.ts",

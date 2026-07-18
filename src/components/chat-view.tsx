@@ -88,6 +88,7 @@ import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models"
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
+import { discardVoiceSessionIfEmpty } from "@/lib/voice/start-voice-chat";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { readUserProfileSnapshot, useUserProfile, userDisplayName } from "@/lib/user-profile";
@@ -349,11 +350,17 @@ type Props = {
    *  used by the ⌘K Conversations result to jump to the matched message. */
   openFindQuery?: string;
   openFindNonce?: number;
+  /** Voice new-chat: fire-once nonce; opens the voice call overlay for the
+   *  freshly routed session (Home call button / pre-session promotion). */
+  openVoiceNonce?: number;
   daemonRunning?: boolean;
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
   onSessionStarted?: (sessionId: string) => void;
+  /** Pre-session voice call: ChatView created a conversation for the call;
+   *  the router promotes it and re-enters via openVoiceNonce. */
+  onVoiceSessionCreated?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   onBack?: () => void;
@@ -2315,7 +2322,7 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2535,6 +2542,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [projectRootMissing, setProjectRootMissing] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
+  // True when the current overlay session was created FOR the call (voice
+  // new-chat) — close with zero turns then discards the empty conversation.
+  const voiceAutoCreatedRef = useRef(false);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
@@ -3121,6 +3131,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindOpen(true);
     setFindQuery(q);
   }, [openFindNonce, openFindQuery]);
+
+  // Voice new-chat: open the call overlay when routed here with autoVoice.
+  // Nonce-keyed like the find effect above so it fires once per request; the
+  // sessionId guard covers the one-render gap while promotion lands.
+  const openVoiceNonceRef = useRef(0);
+  useEffect(() => {
+    if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
+    if (!sessionId) return;
+    openVoiceNonceRef.current = openVoiceNonce;
+    voiceAutoCreatedRef.current = true;
+    setVoiceCallOpen(true);
+  }, [openVoiceNonce, sessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -6017,7 +6039,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <VoiceCallOverlay
           familiar={familiar}
           sessionId={sessionId}
-          onClose={() => setVoiceCallOpen(false)}
+          onClose={() => {
+            setVoiceCallOpen(false);
+            // Voice new-chat: a call that ended with nothing said leaves an
+            // empty pre-created conversation — discard it so the thread rail
+            // stays clean. Safe: chat/send recreates the file on demand.
+            if (voiceAutoCreatedRef.current) {
+              voiceAutoCreatedRef.current = false;
+              void discardVoiceSessionIfEmpty(sessionId).then((deleted) => {
+                if (deleted) onSessionsChanged?.();
+              });
+            }
+          }}
         />
       )}
       <PromptSnippetsModal
