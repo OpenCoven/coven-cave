@@ -89,7 +89,7 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
 
 /** Install an already downloaded and verified update, then relaunch where supported. */
 async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
-  await updateDaemonForCaveUpdate(update.version);
+  await updateDaemonForCaveUpdate(update.version, { confirmInstall: true });
   await update.install();
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
@@ -112,11 +112,12 @@ export function DaemonReleaseAlignmentTrigger() {
     let active = true;
     let running = false;
 
-    const start = () => {
+    const start = (confirmInstall = false) => {
       if (!active || running) return;
       attempted.current = true;
       running = true;
       void updateDaemonForCaveUpdate(APP_VERSION, {
+        confirmInstall,
         onUpdateStart: () => {
           if (active) {
             pushBanner({
@@ -126,9 +127,25 @@ export function DaemonReleaseAlignmentTrigger() {
             });
           }
         },
-      }).then(() => {
+      }).then((result) => {
         running = false;
-        if (active) dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+        if (!active) return;
+        if (result === "confirmation-required") {
+          pushBanner({
+            id: DAEMON_ALIGNMENT_BANNER_ID,
+            severity: "info",
+            title: `Coven daemon v${APP_VERSION} is ready to install`,
+            cta: {
+              label: "Update Coven daemon",
+              onClick: () => {
+                attempted.current = false;
+                start(true);
+              },
+            },
+          });
+        } else {
+          dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+        }
       }).catch((error) => {
         running = false;
         if (!active) return;
@@ -140,7 +157,7 @@ export function DaemonReleaseAlignmentTrigger() {
             label: "Retry daemon update",
             onClick: () => {
               attempted.current = false;
-              start();
+              start(true);
             },
           },
         });

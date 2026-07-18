@@ -30,7 +30,7 @@ assert.match(preparationSrc, /update\.download\(/, "downloads through the native
 assert.match(src, /update\.install\(\)/, "installs the prepared native update");
 assert.match(
   src,
-  /await updateDaemonForCaveUpdate\(update\.version\);\s*await update\.install\(\)/,
+  /await updateDaemonForCaveUpdate\(update\.version, \{ confirmInstall: true \}\);\s*await update\.install\(\)/,
   "updates and verifies the Coven daemon before replacing the Cave app",
 );
 assert.doesNotMatch(src, /downloadAndInstall/, "does not combine download with immediate process exit");
@@ -63,7 +63,10 @@ assert.match(src, /export function UpdateBannerTrigger/, "exports the banner tri
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
 assert.match(src, /updateDaemonForCaveUpdate\(APP_VERSION/, "startup reconciliation targets the running Cave version");
 assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
-assert.match(src, /\.then\(\(\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "a successful retry clears the failure banner even when the CLI is already current");
+assert.match(src, /const start = \(confirmInstall = false\)/, "startup reconciliation never silently confirms a global install");
+assert.match(src, /result === "confirmation-required"/, "startup reconciliation offers confirmation instead of reporting a failed install");
+assert.match(src, /start\(true\)/, "the daemon update CTA records the user's install confirmation");
+assert.match(src, /\.then\(\(result\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "a successful retry clears the failure banner even when the CLI is already current");
 assert.match(
   layoutSrc,
   /<ShellBannersProvider>[\s\S]{0,100}<DaemonReleaseAlignmentTrigger \/>/,

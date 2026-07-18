@@ -22,6 +22,7 @@ type Dependencies = {
   wait?: (ms: number) => Promise<void>;
   pollIntervalMs?: number;
   maxPollAttempts?: number;
+  confirmInstall?: boolean;
   onUpdateStart?: () => void;
 };
 
@@ -97,7 +98,7 @@ export function compareCaveDaemonVersions(left: string, right: string): number |
 async function runDaemonUpdateForCaveUpdate(
   caveVersion: string,
   dependencies: Dependencies = {},
-): Promise<"current" | "updated"> {
+): Promise<"current" | "updated" | "confirmation-required"> {
   const request = dependencies.fetch ?? fetch;
   const wait = dependencies.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const pollIntervalMs = dependencies.pollIntervalMs ?? 1_000;
@@ -113,6 +114,9 @@ async function runDaemonUpdateForCaveUpdate(
   const checkBody = await responseBody(checkResponse);
   if (!checkResponse.ok || checkBody.ok === false) {
     throw new Error(safeFailure(checkBody, "Cave could not check the Coven daemon version."));
+  }
+  if (checkBody.freshness !== "fresh") {
+    throw new Error("Cave could not verify a fresh Coven CLI version before continuing.");
   }
 
   const tools = Array.isArray(checkBody.tools) ? (checkBody.tools as ToolStatus[]) : [];
@@ -131,11 +135,15 @@ async function runDaemonUpdateForCaveUpdate(
     return "current";
   }
 
+  if (!dependencies.confirmInstall) {
+    return "confirmation-required";
+  }
+
   dependencies.onUpdateStart?.();
   const startResponse = await request(INSTALL_ROUTE, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ target: "coven-cli" }),
+    body: JSON.stringify({ target: "coven-cli", confirmInstall: true }),
     cache: "no-store",
   });
   const startBody = await responseBody(startResponse);
@@ -171,7 +179,7 @@ async function runDaemonUpdateForCaveUpdate(
 export function updateDaemonForCaveUpdate(
   caveVersion: string,
   dependencies: Dependencies = {},
-): Promise<"current" | "updated"> {
+): Promise<"current" | "updated" | "confirmation-required"> {
   const operation = runDaemonUpdateForCaveUpdate(caveVersion, dependencies);
   activeDaemonUpdates.add(operation);
   void operation.finally(() => activeDaemonUpdates.delete(operation)).catch(() => {});
