@@ -169,6 +169,7 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
+      model: binding.model,
       prompt: buildInitialTaskChatPrompt(card),
     },
     timeoutMs: 8000,
