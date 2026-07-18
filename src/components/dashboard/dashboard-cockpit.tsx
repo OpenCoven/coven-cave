@@ -45,7 +45,7 @@ import {
   SpaceUsagePanel, UsagePanel, type ConfidenceRow, type KpiTileProps,
 } from "@/components/dashboard/cockpit-panels";
 import {
-  DEFAULT_LAYOUT, STATUS_ORDER, coverageSub, contractSub, dayKey, longDate, panelTitle,
+  DEFAULT_LAYOUT, STATUS_ORDER, buildTrendSnapshot, coverageSub, contractSub, dayKey, longDate, panelTitle,
   reconcileLayout, retroSub, seriesFor, wowSub,
   type DaySnap, type Layout, type TrendKey, type TrendStore,
 } from "@/lib/dashboard-cockpit-format";
@@ -308,9 +308,10 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     try { const raw = localStorage.getItem(TRENDS_KEY); if (raw) setTrends(JSON.parse(raw) as TrendStore); } catch { /* ignore */ }
   }, []);
   const vitalsReady = ready.has("cards") && ready.has("familiars") && (confidenceRaw !== null || data.familiars.length === 0);
+  const sessionsReady = ready.has("sessions");
   useEffect(() => {
     if (!vitalsReady) return;
-    const snap: DaySnap = {
+    const snap: DaySnap = buildTrendSnapshot({
       confidence: vitals.avgConfidence ?? 0,
       active: vitals.activeFamiliars,
       sessions: vitals.sessions7d,
@@ -318,7 +319,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       contract: contractPct ?? 0,
       needs: model.openCount,
       streak: streakDays,
-    };
+    }, sessionsReady);
     setTrends((prev) => {
       const store: TrendStore = { ...prev, [dayKey(now)]: snap };
       const days = Object.keys(store).sort();
@@ -327,7 +328,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       return store;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount, streakDays]);
+  }, [vitalsReady, sessionsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount, streakDays]);
 
   // ── Draggable secondary layout ──
   const sensors = useSensors(

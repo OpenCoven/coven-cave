@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_LAYOUT,
   PANEL_TITLES,
+  buildTrendSnapshot,
   confidenceColor,
   contractSub,
   coverageSub,
@@ -53,6 +54,18 @@ test("streak is a first-class trend key — old snapshots read as gaps", () => {
   const series = seriesFor(store, "streak", now);
   assert.equal(series.at(-1).value, 6);
   assert.equal(series.at(-2).value, null, "pre-streak snapshot is a gap, never a fake zero");
+});
+
+test("session-backed trends stay gaps until sessions finish loading", () => {
+  const values = {
+    confidence: 0, active: 0, sessions: 0, accept: 0,
+    contract: 0, needs: 0, streak: 0,
+  };
+  assert.deepEqual(buildTrendSnapshot(values, false), {
+    confidence: 0, active: 0, accept: 0, contract: 0, needs: 0,
+  });
+  assert.deepEqual(buildTrendSnapshot(values, true), values,
+    "an empty but loaded session list records honest zeros");
 });
 
 test("KPI sub-lines teach instead of shrugging", () => {
