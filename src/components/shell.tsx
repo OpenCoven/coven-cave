@@ -168,6 +168,8 @@ export type ShellHandle = {
   dismissListMobile: () => void;
 };
 
+export type ShellNavPolicy = "remembered" | "visit-collapsed";
+
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
@@ -189,6 +191,7 @@ function ShellInner({
   onPromoteSplitTile,
   onDropSplitPage,
   onNavOpenChange,
+  navPolicy = "remembered",
   panelShortcutOverrides,
 }: {
   nav: ReactNode;
@@ -208,6 +211,7 @@ function ShellInner({
    *  mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
+  navPolicy?: ShellNavPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
@@ -345,9 +349,10 @@ function ShellInner({
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
+  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
   useEffect(() => {
-    if (navOpen || isMobile) setNavPeeking(false);
-  }, [navOpen, isMobile]);
+    if (navOpen || isMobile || navPolicy !== "remembered") setNavPeeking(false);
+  }, [navOpen, isMobile, navPolicy]);
 
   // Dia-style traffic lights: on the macOS desktop shell the native
   // close/minimize/zoom buttons float over the side panel's top edge. With
@@ -496,7 +501,27 @@ function ShellInner({
   // armed the CURRENT group — the layout churn a group swap fires must never
   // clobber the user's choice with the incoming group's stale width.
   const navPrefArmedGroupRef = useRef<string | null>(null);
+  const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+  useLayoutEffect(() => {
+    if (navPolicy !== "visit-collapsed") {
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    if (
+      previousNavPolicyRef.current !== navPolicy ||
+      navPrefArmedGroupRef.current !== groupId
+    ) {
+      navPrefArmedGroupRef.current = null;
+      navRef.current?.collapse();
+      setNavOpen(false);
+    }
+    previousNavPolicyRef.current = navPolicy;
+  }, [groupId, navPolicy]);
   useEffect(() => {
+    if (navPolicy !== "remembered") {
+      navPrefArmedGroupRef.current = null;
+      return;
+    }
     if (!settled || isMobile) return;
     const pref = readNavOpenPref();
     const panel = navRef.current;
@@ -510,7 +535,7 @@ function ShellInner({
       }
     }
     navPrefArmedGroupRef.current = groupId;
-  }, [settled, isMobile, groupId]);
+  }, [settled, isMobile, groupId, navPolicy]);
 
   useEffect(() => {
     onNavOpenChange?.(navOpen);
@@ -666,6 +691,7 @@ function ShellInner({
           // expanding, so the restore correctly re-records "open").
           if (
             !isMobile &&
+            navPolicy === "remembered" &&
             navPrefArmedGroupRef.current === groupId &&
             !railAutoCollapsedNavRef.current
           ) {
@@ -678,8 +704,8 @@ function ShellInner({
         <aside
           className={`shell-nav${!isMobile && !navOpen ? (navPeeking ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
-          onMouseEnter={!isMobile && !navOpen ? () => setNavPeeking(true) : undefined}
-          onMouseLeave={!isMobile && !navOpen ? () => setNavPeeking(false) : undefined}
+          onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
+          onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
         >
           {nav}
         </aside>
