@@ -217,7 +217,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             disabled={loading || createBusy || !cwd || creatingFolder}
             onClick={beginCreatingFolder}
             className="shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-            leadingIcon="ph:folder-plus"
+            leadingIcon="ph:plus"
           >
             New folder
           </Button>
