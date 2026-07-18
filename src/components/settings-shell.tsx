@@ -467,10 +467,10 @@ function CelebrationsToggle() {
   );
 }
 
-// The stop phrase is a safety valve: while a familiar is mid-task, typing
-// this exact phrase in any chat composer halts the run (the composer's busy
-// bail otherwise swallows plain sends). Commit on blur/Enter; clearing the
-// field disables interception.
+// Stop phrases are a safety valve: while a familiar is mid-task, typing any
+// one of these comma-separated phrases in a chat composer halts the run (the
+// composer's busy bail otherwise swallows plain sends). Commit on blur/Enter;
+// clearing the field disables interception.
 function StopPhraseField() {
   const saved = useStopPhrase();
   const [draft, setDraft] = useState<string | null>(null);
@@ -481,8 +481,8 @@ function StopPhraseField() {
   };
   return (
     <SettingsRow
-      label="Stop phrase"
-      description="Typing this in the composer while a task is running stops it. Leave empty to disable."
+      label="Stop phrases"
+      description="Typing any one of these in the composer while a task is running stops it. Separate options with commas; leave empty to disable."
     >
       <input
         value={value}
@@ -493,7 +493,7 @@ function StopPhraseField() {
         }}
         placeholder={DEFAULT_STOP_PHRASE}
         maxLength={STOP_PHRASE_MAX_LENGTH}
-        aria-label="Stop phrase"
+        aria-label="Stop phrases"
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
       />
     </SettingsRow>
