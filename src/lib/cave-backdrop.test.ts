@@ -8,6 +8,7 @@ import vm from "node:vm";
 import {
   dominantVibrantOklab,
   fitAccentToBackground,
+  isFamiliarBackdropOn,
   readFamiliarBackdropImage,
   writeFamiliarBackdropImage,
 } from "./cave-backdrop.ts";
@@ -36,6 +37,15 @@ import { parseThemeColor, contrastRatio } from "./theme-contrast.ts";
     globalThis.fetch = originalFetch;
   }
 }
+
+// ── isFamiliarBackdropOn: explicit entry wins, else image presence ───────────
+// (cave-kf8p) The default preserves cave-j0dz behavior: an uploaded image means
+// ON when the user has never touched the switch.
+assert.equal(isFamiliarBackdropOn({ familiars: {} }, "fam-a", true), true, "unset + image = on (compat)");
+assert.equal(isFamiliarBackdropOn({ familiars: {} }, "fam-a", false), false, "unset + no image = off");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": true } }, "fam-a", false), true, "explicit on needs no image");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": false } }, "fam-a", true), false, "explicit off keeps the image dormant");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-b": true } }, "fam-a", false), false, "other familiars' entries don't leak");
 
 // ── dominantVibrantOklab: picks the vibrant hue, ignores neutrals ────────────
 function pixels(colors: Array<[number, number, number]>, repeat = 1): Uint8ClampedArray {
@@ -233,6 +243,15 @@ assert.match(lib, /response\.status === 204 \|\| response\.status === 404/, "cle
 assert.match(lib, /FAMILIAR_BACKDROP_MISSING_TTL_MS = 5 \* 60_000/, "known-missing familiar backdrops are bounded-cached across normal navigation");
 assert.match(lib, /familiarBackdropMissingUntil\.delete\(familiarId\)/, "familiar writes immediately invalidate the negative cache");
 assert.doesNotMatch(lib, /\.delete\(IMAGE_KEY\)/, "legacy backdrop bytes are never deleted during migration or clear");
+
+// Per-familiar enablement (cave-kf8p): the setter merges into the full map so
+// sibling familiars' choices survive, and persists via the central prefs pipe.
+assert.match(
+  lib,
+  /\{ \.\.\.readBackdropPrefs\(\)\.familiars, \[familiarId\]: enabled \}/,
+  "setFamiliarBackdropEnabled preserves sibling familiar entries",
+);
+assert.match(lib, /familiars: \{ \.\.\.central\.familiars \}/, "readBackdropPrefs copies the central familiars map");
 
 // The vibe rides exactly one custom property, so clearing restores the theme.
 assert.match(

@@ -49,6 +49,9 @@ export type BackdropPrefs = {
    *  image is effectively monochrome. Lightness is re-fit against the live
    *  background at apply time, so one seed serves dark and light modes. */
   accentSeed: BackdropAccentSeed | null;
+  /** Explicit per-familiar enablement (cave-kf8p). Absent id ⇒ default rule:
+   *  on iff that familiar has an uploaded backdrop image. */
+  familiars: Record<string, boolean>;
 };
 
 const DEFAULT_PREFS: BackdropPrefs = {
@@ -56,6 +59,7 @@ const DEFAULT_PREFS: BackdropPrefs = {
   intensity: 50,
   matchAccent: true,
   accentSeed: null,
+  familiars: {},
 };
 
 // ── prefs store (localStorage + useSyncExternalStore) ───────────────────────
@@ -75,6 +79,7 @@ export function readBackdropPrefs(): BackdropPrefs {
     intensity: clamp(central.intensity, 0, 100),
     matchAccent: central.matchAccent,
     accentSeed: central.accentSeed ? { ...central.accentSeed } : null,
+    familiars: { ...central.familiars },
   };
   return cachedPrefs;
 }
@@ -99,6 +104,23 @@ export function writeBackdropPrefs(patch: Partial<BackdropPrefs>): BackdropPrefs
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/** Effective per-familiar enablement: the explicit switch wins; with no entry,
+ *  an uploaded image means on (cave-j0dz compatibility). */
+export function isFamiliarBackdropOn(
+  prefs: Pick<BackdropPrefs, "familiars">,
+  familiarId: string,
+  hasImage: boolean,
+): boolean {
+  return prefs.familiars[familiarId] ?? hasImage;
+}
+
+/** Record an explicit per-familiar backdrop choice. Always writes the full
+ *  map so `writeBackdropPrefs`'s shallow merge can't drop sibling entries. */
+export function setFamiliarBackdropEnabled(familiarId: string, enabled: boolean): BackdropPrefs {
+  const familiars = { ...readBackdropPrefs().familiars, [familiarId]: enabled };
+  return writeBackdropPrefs({ familiars });
 }
 
 const getServerPrefs = () => DEFAULT_PREFS;
