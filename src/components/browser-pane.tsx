@@ -213,9 +213,7 @@ function defaultPinnedTabs(): BrowserTab[] {
 //      live regions (toasts) are ignored so a corner toast doesn't blank the
 //      page.
 function surfaceIsCovered(surface: HTMLElement, rect: DOMRect): boolean {
-  const overlays = document.querySelectorAll(
-    '[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-native-webview-cover="true"]',
-  );
+  const overlays = document.querySelectorAll(NATIVE_WEBVIEW_COVER_SELECTOR);
   for (const overlay of overlays) {
     if (overlay.getClientRects().length > 0) return true;
   }
@@ -234,6 +232,42 @@ function surfaceIsCovered(surface: HTMLElement, rect: DOMRect): boolean {
     return true;
   }
   return false;
+}
+
+const NATIVE_WEBVIEW_COVER_SELECTOR =
+  '[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-native-webview-cover="true"]';
+const BROWSER_RECONCILE_INTERVAL_MS = 100;
+const BROWSER_MOTION_WINDOW_MS = 400;
+const BROWSER_RECONCILE_METRICS_KEY = "__CAVE_BROWSER_RECONCILE_METRICS__";
+
+type BrowserReconcileMetrics = {
+  count: number;
+  totalDurationMs: number;
+  lastDurationMs: number;
+  startedAt: number;
+};
+
+function recordBrowserReconcile(durationMs: number): void {
+  const metricsWindow = window as typeof window & {
+    [BROWSER_RECONCILE_METRICS_KEY]?: BrowserReconcileMetrics;
+  };
+  const metrics = metricsWindow[BROWSER_RECONCILE_METRICS_KEY] ?? {
+    count: 0,
+    totalDurationMs: 0,
+    lastDurationMs: 0,
+    startedAt: Date.now(),
+  };
+  metrics.count += 1;
+  metrics.totalDurationMs += durationMs;
+  metrics.lastDurationMs = durationMs;
+  metricsWindow[BROWSER_RECONCILE_METRICS_KEY] = metrics;
+}
+
+function nodeContainsNativeWebviewCover(node: Node): boolean {
+  return node instanceof Element && (
+    node.matches(NATIVE_WEBVIEW_COVER_SELECTOR) ||
+    node.querySelector(NATIVE_WEBVIEW_COVER_SELECTOR) !== null
+  );
 }
 
 // Mirrors OFFSCREEN_X/OFFSCREEN_Y in src-tauri/src/browser.rs — the "hidden"
@@ -461,8 +495,10 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // reacts to SIZE changes — a sibling reflow that MOVES the surface
   // without resizing it (e.g. a shell banner appearing/dismissing above
   // the pane, or the cave-mode-fade mount animation) leaves the overlay
-  // stale and overlapping the toolbar. Reconcile against the live rect
-  // every frame instead, issuing IPC only when the rounded bounds change.
+  // stale and overlapping the toolbar. Reconcile from layout/overlay events,
+  // with a short 10 Hz sampling window while CSS motion is actually running.
+  // This avoids a permanent display-rate callback while still following the
+  // 120-150ms shell and rail transitions that can move the surface.
   useEffect(() => {
     if (!active || !bridge || !nativeBrowserAvailable) {
       if (!active) invokeNativeBrowserDeactivateAll(bridge, label);
@@ -473,10 +509,10 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
 
     const tabIds = tabs.map((t) => t.id);
     let raf = 0;
+    let motionTimer = 0;
+    let motionUntil = 0;
     let hidden = false;
     let last = { x: 0, y: 0, w: 0, h: 0 };
-    let lastRun = 0;
-    let forceReconcilePending = false;
 
     const hideAll = () => {
       tabIds.forEach((id) => {
@@ -484,13 +520,9 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       });
     };
 
-    const reconcile = (now: number, force = false) => {
-      // Throttle to ~10 Hz and idle while the tab is hidden. This loop
-      // otherwise runs a getBoundingClientRect + a full-document occlusion
-      // check (querySelectorAll + up to 5 elementFromPoint hit-tests)
-      // 60x/second continuously, even when nothing is moving.
-      if (document.visibilityState !== "visible" || (!force && now - lastRun < 100)) return;
-      lastRun = now;
+    const reconcile = () => {
+      if (document.visibilityState !== "visible") return;
+      const startedAt = performance.now();
       const rect = surface.getBoundingClientRect();
       // Hide every webview when the panel is collapsed, the toolbar is open,
       // OR a DOM overlay (onboarding, a modal, the palette…) renders above
@@ -528,27 +560,53 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
           });
         }
       }
+      recordBrowserReconcile(performance.now() - startedAt);
     };
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick);
-      const force = forceReconcilePending;
-      forceReconcilePending = false;
-      reconcile(now, force);
-    };
-    raf = requestAnimationFrame(tick);
 
     const scheduleImmediateReconcile = () => {
-      forceReconcilePending = true;
+      if (raf || document.visibilityState !== "visible") return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        reconcile();
+      });
+    };
+    const sampleMotion = () => {
+      motionTimer = 0;
+      scheduleImmediateReconcile();
+      const remaining = motionUntil - performance.now();
+      if (remaining > 0) {
+        motionTimer = window.setTimeout(sampleMotion, Math.min(BROWSER_RECONCILE_INTERVAL_MS, remaining));
+      }
+    };
+    const startMotionWindow = () => {
+      motionUntil = Math.max(motionUntil, performance.now() + BROWSER_MOTION_WINDOW_MS);
+      if (!motionTimer) sampleMotion();
     };
     const resizeObserver = new ResizeObserver(scheduleImmediateReconcile);
     resizeObserver.observe(surface);
-    const mutationObserver = new MutationObserver(scheduleImmediateReconcile);
-    mutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["role", "aria-modal", "hidden", "open", "class", "style"],
+    // Portaled dialogs are direct body children. Observe only that boundary,
+    // not the entire React tree: chat streaming and unrelated class/style
+    // updates must not wake BrowserPane reconciliation.
+    const portalObserver = new MutationObserver((records) => {
+      if (records.some((record) =>
+        [...record.addedNodes, ...record.removedNodes].some(nodeContainsNativeWebviewCover)
+      )) scheduleImmediateReconcile();
     });
+    portalObserver.observe(document.body, {
+      childList: true,
+    });
+    const motionAffectsSurface = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return false;
+      const detailRoot = surface.closest("#shell-main-content");
+      return target.contains(surface) || surface.contains(target) || (!!detailRoot && detailRoot.contains(target));
+    };
+    const onMotionStart = (event: Event) => {
+      if (motionAffectsSurface(event)) startMotionWindow();
+    };
+    const onMotionEnd = (event: Event) => {
+      if (motionAffectsSurface(event)) scheduleImmediateReconcile();
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
         hidden = true;
@@ -557,16 +615,43 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         scheduleImmediateReconcile();
       }
     };
+    // Click/key/focus cover inline overlays whose lifecycle is driven by React
+    // state rather than a body portal. The rAF runs after the DOM commit.
+    const onInteraction = () => scheduleImmediateReconcile();
+    const onShellLayout = () => startMotionWindow();
     window.addEventListener("resize", scheduleImmediateReconcile);
     window.addEventListener("scroll", scheduleImmediateReconcile, true);
+    window.addEventListener("cave:native-webview-layout", onShellLayout);
+    window.addEventListener("cave:onboarding-open", onShellLayout);
+    document.addEventListener("animationstart", onMotionStart, true);
+    document.addEventListener("animationend", onMotionEnd, true);
+    document.addEventListener("transitionrun", onMotionStart, true);
+    document.addEventListener("transitionend", onMotionEnd, true);
+    document.addEventListener("click", onInteraction, true);
+    document.addEventListener("keydown", onInteraction, true);
+    document.addEventListener("focusin", onInteraction, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    // The pane's cave-mode-fade animation can begin before this effect's
+    // animationstart listener is attached. Sample the initial mount window
+    // explicitly so the native surface follows that 120ms transform too.
+    startMotionWindow();
 
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(motionTimer);
       resizeObserver.disconnect();
-      mutationObserver.disconnect();
+      portalObserver.disconnect();
       window.removeEventListener("resize", scheduleImmediateReconcile);
       window.removeEventListener("scroll", scheduleImmediateReconcile, true);
+      window.removeEventListener("cave:native-webview-layout", onShellLayout);
+      window.removeEventListener("cave:onboarding-open", onShellLayout);
+      document.removeEventListener("animationstart", onMotionStart, true);
+      document.removeEventListener("animationend", onMotionEnd, true);
+      document.removeEventListener("transitionrun", onMotionStart, true);
+      document.removeEventListener("transitionend", onMotionEnd, true);
+      document.removeEventListener("click", onInteraction, true);
+      document.removeEventListener("keydown", onInteraction, true);
+      document.removeEventListener("focusin", onInteraction, true);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       hideAll();
     };
