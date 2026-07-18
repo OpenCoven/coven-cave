@@ -1,14 +1,26 @@
 import SwiftUI
 
+/// Cached ISO-8601 parsers. `ISO8601DateFormatter` is relatively expensive to
+/// allocate, and `caveParseISO` is called per-item inside sort/filter/map
+/// across the task, calendar, reminder and thread lists — so allocating a pair
+/// on every call showed up as list churn. Reuse two shared instances instead.
+/// `ISO8601DateFormatter` is thread-safe for reads.
+private let caveISOWithFractional: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+private let caveISOPlain: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
 /// Parse an ISO-8601 timestamp (with or without fractional seconds).
 func caveParseISO(_ iso: String?) -> Date? {
     guard let iso, !iso.isEmpty else { return nil }
-    let withFrac = ISO8601DateFormatter()
-    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = withFrac.date(from: iso) { return d }
-    let plain = ISO8601DateFormatter()
-    plain.formatOptions = [.withInternetDateTime]
-    return plain.date(from: iso)
+    if let d = caveISOWithFractional.date(from: iso) { return d }
+    return caveISOPlain.date(from: iso)
 }
 
 struct TasksView: View {
