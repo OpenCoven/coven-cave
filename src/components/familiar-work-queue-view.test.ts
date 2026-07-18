@@ -68,7 +68,6 @@ assert.match(css, /\.fwq-detail-desc \{/, "description block has real styles");
 assert.match(css, /\.fwq-card-name--link \{[\s\S]*?border: 0;/, "inspector links reset native button borders");
 assert.match(css, /\.fwq-lane-toggle \{[\s\S]*?border: 0;/, "lane toggles reset native button borders");
 assert.match(css, /\.fwq-lane-more \{[\s\S]*?border: 0;[\s\S]*?border-top:/, "lane footer keeps only its divider");
-
 // ── cave-p63a: File bead on unlinked attention rows ──────────────────────────
 // The strip's unlinked rows expose a one-click File bead; the parent owns the
 // fetch + announce + reload and threads it down as onFileBead.
