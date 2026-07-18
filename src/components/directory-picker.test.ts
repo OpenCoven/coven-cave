@@ -32,6 +32,7 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   const src = read("./directory-picker-modal.tsx");
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
+  assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
   assert.match(src, /Select this folder/, "can select the current folder");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
@@ -44,6 +45,23 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
     /rounded-md|rounded-lg|rounded(?=\s|")/,
     "modal controls should use radius tokens instead of hard-coded radii",
   );
+});
+
+test("the modal keeps a stable panel and creates folders inline", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(
+    src,
+    /className="flex h-\[560px\] w-\[520px\] max-h-\[calc\(100dvh-2rem\)\] max-w-\[calc\(100vw-2rem\)\] flex-col overflow-hidden/,
+    "the panel keeps a stable 520x560 size with viewport caps",
+  );
+  assert.match(src, /fetch\("\/api\/fs-browse", \{\s*method: "POST"/, "new folders post to the browse route");
+  assert.match(
+    src,
+    /body: JSON\.stringify\(\{ dir: cwd, name: newFolderName \}\)/,
+    "folder creation posts the current directory and draft name",
+  );
+  assert.match(src, /await load\(body\.path\)/, "successful creation enters the returned folder");
+  assert.match(src, /role="alert"/, "inline creation errors announce via role=alert");
 });
 
 // cave-lj6j: the modal mounts inside arbitrary hosts (home composer card,
