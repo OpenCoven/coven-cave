@@ -54,6 +54,26 @@ export type TrendKey = "confidence" | "active" | "sessions" | "accept" | "contra
 export type DaySnap = Partial<Record<TrendKey, number>>;
 export type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
 
+/** Build today's persisted snapshot without fabricating session-backed zeros
+ * while the session list is still loading. */
+export function buildTrendSnapshot(
+  values: Record<TrendKey, number>,
+  sessionsReady: boolean,
+): DaySnap {
+  const snap: DaySnap = {
+    confidence: values.confidence,
+    active: values.active,
+    accept: values.accept,
+    contract: values.contract,
+    needs: values.needs,
+  };
+  if (sessionsReady) {
+    snap.sessions = values.sessions;
+    snap.streak = values.streak;
+  }
+  return snap;
+}
+
 export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
