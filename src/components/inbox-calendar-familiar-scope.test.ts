@@ -76,8 +76,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const calendarFamiliarId = activeId \?\? familiars\[0\]\?\.id \?\? null/,
-  "Workspace calendar mode should default All familiars to one familiar",
+  /const calendarFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null/,
+  "Workspace calendar mode should default All familiars to the first loaded non-archived familiar",
 );
 
 assert.match(

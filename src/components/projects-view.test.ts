@@ -31,7 +31,11 @@ const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), 
 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
-assert.match(projectsView, /createProject\(name, root\)/, "ProjectsView should create projects through the hook");
+assert.match(
+  projectsView,
+  /createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
+  "ProjectsView should defer its registry notification until the scoped familiar grant completes",
+);
 assert.match(
   projectsView,
   /addChatProject\(\{[\s\S]{0,160}?familiarId: activeFamiliarId,[\s\S]{0,160}?existingProjectId: project\.id/,

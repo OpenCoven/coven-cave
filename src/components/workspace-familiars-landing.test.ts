@@ -162,8 +162,38 @@ assert.match(
 );
 assert.match(
   workspace,
+  /const requestedActiveId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
+  "Workspace derives the requested single-primary familiar id from the scope set",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(\s*requestedActiveId,\s*visibleFamiliars,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\);/,
+  "workspace keeps the requested familiar through roster hydration and only consumes the loaded fallback once the roster has successfully loaded",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId\]\);/,
+  "Workspace only heals and persists a stale single-familiar selection after the async roster has loaded successfully",
+);
+assert.match(
+  workspace,
+  /const active = visibleFamiliars\.find\(\(f\) => f\.id === activeId\) \?\? null;/,
+  "Workspace detail surfaces read the active familiar from the loaded non-archived roster only",
+);
+assert.match(
+  workspace,
+  /const calendarFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
+  "calendar fallback prefers the first loaded non-archived familiar",
+);
+assert.match(
+  workspace,
+  /const projectGateFamiliarId = familiarRosterLoadedSuccessfully \? \(activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null\) : null;/,
+  "the first-project gate only targets a familiar after the roster has successfully loaded",
+);
+assert.doesNotMatch(
+  workspace,
   /const activeId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
-  "activeId is the derived single-primary (lone scoped id, else null)",
+  "Workspace should not use an unchecked persisted familiar id directly once the loaded roster is known",
 );
 assert.doesNotMatch(
   workspace,

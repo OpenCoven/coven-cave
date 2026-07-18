@@ -3,57 +3,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import { createSwrCache } from "./swr-cache.ts";
+import type { CreateProjectOptions } from "./chat-add-project.ts";
+import { emitProjectRegistryMutation, subscribeProjectRegistryReload } from "./project-registry-events.ts";
+import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
 
-type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
-
-/**
- * Module-level dedupe for GET /api/projects (cave-v8hh). The hook has 8+
- * consumers (sidebar, chat views, board, composer, palette, modals) and no
- * shared store, so a surface mount fired the same request once per consumer —
- * traces showed 6 back-to-back copies. A short hard-TTL microcache collapses
- * a mount burst (plus dev StrictMode's double effects) onto one request per
- * scope. There is no steady poll on this endpoint, so the 2.5s window only
- * ever spans a burst; mutations clear it, and reload() bypasses it.
- */
-const CACHE_TTL_MS = 2500;
-
-// staleServeMs === ttlMs disables the serve-stale window (hard TTL).
-const projectsCache = createSwrCache<ProjectsPayload>({
-  ttlMs: CACHE_TTL_MS,
-  staleServeMs: CACHE_TTL_MS,
-});
-
-async function requestProjects(familiarId: string | null): Promise<ProjectsPayload> {
-  const url = familiarId
-    ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
-    : "/api/projects";
-  const res = await fetch(url);
-  // Thrown (not returned) so HTTP failures are never cached — swr-cache only
-  // stores resolutions — and every coalesced caller sees the same error.
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as ProjectsPayload;
-}
+type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
+type CreateProjectResult =
+  | { ok: true; project: CaveProject }
+  | { ok: false; error: string };
 
 function fetchProjects(
   familiarId: string | null,
   opts?: { force?: boolean },
 ): Promise<ProjectsPayload> {
-  const key = familiarId ?? "";
-  if (opts?.force) projectsCache.invalidate(key);
-  return projectsCache.get(key, () => requestProjects(familiarId));
-}
-
-// A mutation on any project invalidates EVERY scope: creates/renames/deletes
-// change the unscoped list and any familiar-scoped list that includes (or
-// gains) the project, and per-scope bookkeeping isn't worth it at this TTL.
-function invalidateProjectsCache(): void {
-  projectsCache.clear();
+  return fetchProjectsFromCache(familiarId, opts);
 }
 
 /** Test-only: drop the module-level cache between cases. */
 export function resetProjectsCacheForTests(): void {
-  projectsCache.clear();
+  clearProjectsCache();
 }
 
 export type ProjectsState = {
@@ -61,7 +29,8 @@ export type ProjectsState = {
   loading: boolean;
   error: string | null;
   reload: () => void;
-  createProject: (name: string, root: string) => Promise<CaveProject | null>;
+  createProject: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject | null>;
+  createProjectOrThrow: (name: string, root: string, options?: CreateProjectOptions) => Promise<CaveProject>;
   renameProject: (id: string, name: string) => Promise<boolean>;
   updateRoot: (id: string, root: string) => Promise<boolean>;
   /** Set an explicit tile tint, or pass null to restore the auto root-hash tint. */
@@ -132,26 +101,71 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     };
   }, [enabled, load]);
 
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeProjectRegistryReload(() => load());
+  }, [enabled, load]);
+
   // Post-mutation refresh: bypass the microcache so callers always see the
   // just-mutated list.
   const reload = useCallback(() => {
     void load({ force: true });
   }, [load]);
 
-  const createProject = useCallback(async (name: string, root: string): Promise<CaveProject | null> => {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, root }),
-    });
-    const data = await res.json();
-    if (data.ok && data.project) {
-      invalidateProjectsCache();
-      setProjects((prev) => sortProjectsAlphabetically([...prev, data.project as CaveProject]));
-      return data.project as CaveProject;
-    }
-    return null;
+  const applyCreatedProject = useCallback((project: CaveProject, emitMutation = true): CaveProject => {
+    setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    if (emitMutation) emitProjectRegistryMutation();
+    return project;
   }, []);
+
+  const requestCreateProject = useCallback(async (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ): Promise<CreateProjectResult> => {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, root }),
+      });
+      const data = (await res.json().catch(() => null)) as ProjectMutationPayload | null;
+      if (res.ok && data?.ok && data.project) {
+        return {
+          ok: true,
+          project: applyCreatedProject(data.project as CaveProject, options?.emitMutation !== false),
+        };
+      }
+      return {
+        ok: false,
+        error: typeof data?.error === "string" ? data.error : `Could not create project (HTTP ${res.status})`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not create that project.",
+      };
+    }
+  }, [applyCreatedProject]);
+
+  const createProject = useCallback(async (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ): Promise<CaveProject | null> => {
+    const result = await requestCreateProject(name, root, options);
+    return result.ok ? result.project : null;
+  }, [requestCreateProject]);
+
+  const createProjectOrThrow = useCallback(async (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ): Promise<CaveProject> => {
+    const result = await requestCreateProject(name, root, options);
+    if (result.ok) return result.project;
+    throw new Error(result.error);
+  }, [requestCreateProject]);
 
   const renameProject = useCallback(async (id: string, name: string): Promise<boolean> => {
     const res = await fetch(`/api/projects/${id}`, {
@@ -161,10 +175,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -178,10 +192,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -195,10 +209,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      invalidateProjectsCache();
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -208,8 +222,8 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
-      invalidateProjectsCache();
       setProjects((prev) => prev.filter((project) => project.id !== id));
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -221,6 +235,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     error,
     reload,
     createProject,
+    createProjectOrThrow,
     renameProject,
     updateRoot,
     updateColor,

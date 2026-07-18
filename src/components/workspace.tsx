@@ -117,6 +117,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
+import { FirstProjectGate } from "@/components/first-project-gate";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
@@ -136,6 +137,12 @@ import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
 } from "@/lib/workspace-tiles";
+import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
+import { useProjects } from "@/lib/use-projects";
+import {
+  resolveLoadedActiveFamiliarId,
+  resolveWorkspaceActiveFamiliarId,
+} from "@/lib/active-familiar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -293,7 +300,8 @@ export function Workspace() {
   // selected — so all the existing single-familiar chrome/per-familiar state
   // behaves exactly as before at 0–1 selections; ≥2 is the new filter case.
   const [scopeIds, setScopeIds] = useState<Set<string>>(() => new Set());
-  const activeId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
+  const requestedActiveId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
+  const archivedFamiliars = useArchivedFamiliars();
   // Back-compat shim for the call sites that scope to a single familiar (e.g.
   // opening a session) or clear to All: writes the multiselect set accordingly.
   const setActiveId = useCallback((id: string | null) => {
@@ -301,12 +309,31 @@ export function Workspace() {
   }, []);
   const [activeFamiliarHydrated, setActiveFamiliarHydrated] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const resolvedFamiliars = useResolvedFamiliars(familiars);
-  const [familiarsError, setFamiliarsError] = useState<string | null>(null);
+  const visibleFamiliars = useMemo(
+    () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
+    [familiars, archivedFamiliars],
+  );
   // false until the first /api/familiars fetch settles (success or error) —
   // lets the chat boot view hold a quiet frame instead of flashing the
   // "choose a familiar" empty-state copy while the roster is in flight.
   const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
+  const [familiarRosterLoadedSuccessfully, setFamiliarRosterLoadedSuccessfully] = useState(false);
+  const loadedActiveId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
+  const activeId = resolveWorkspaceActiveFamiliarId(
+    requestedActiveId,
+    visibleFamiliars,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+  );
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const {
+    projects: registeredProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    reload: reloadProjects,
+    createProjectOrThrow,
+  } = useProjects();
+  const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
@@ -477,10 +504,12 @@ export function Workspace() {
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingResolved, setOnboardingResolved] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Its refs and job polling intentionally survive close/reopen cycles so an
   // in-flight install is not forgotten and daemon auto-start stays one-shot.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
+  const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -731,6 +760,17 @@ export function Workspace() {
   }, [scopeIds, activeFamiliarHydrated]);
 
   useEffect(() => {
+    if (
+      !activeFamiliarHydrated
+      || !familiarsLoaded
+      || !familiarRosterLoadedSuccessfully
+      || requestedActiveId === null
+      || requestedActiveId === loadedActiveId
+    ) return;
+    setScopeIds(loadedActiveId ? new Set([loadedActiveId]) : new Set());
+  }, [activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId]);
+
+  useEffect(() => {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
     // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
@@ -898,12 +938,15 @@ export function Workspace() {
         // familiars right now", not "there are none". Clearing here made three
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
+        setFamiliarRosterLoadedSuccessfully(false);
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
+      setFamiliarRosterLoadedSuccessfully(true);
     } catch (err) {
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+      setFamiliarRosterLoadedSuccessfully(false);
     } finally {
       setFamiliarsLoaded(true);
     }
@@ -1348,6 +1391,10 @@ export function Workspace() {
     if (daemonRunning && familiars.length === 0) setMode("agents");
   }, [loadFamiliars, daemonRunning, familiars.length, setMode]);
 
+  useEffect(() => {
+    if (!projectsLoading) setProjectsInitiallyResolved(true);
+  }, [projectsLoading]);
+
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared
   // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
@@ -1358,7 +1405,10 @@ export function Workspace() {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
-    if (skipped) return;
+    if (skipped) {
+      setOnboardingResolved(true);
+      return;
+    }
     void (async () => {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
@@ -1367,6 +1417,8 @@ export function Workspace() {
         if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
+      } finally {
+        if (!cancelled) setOnboardingResolved(true);
       }
     })();
     return () => {
@@ -2321,8 +2373,17 @@ export function Workspace() {
     return false;
   };
 
-  const active = familiars.find((f) => f.id === activeId) ?? null;
-  const calendarFamiliarId = activeId ?? familiars[0]?.id ?? null;
+  const active = visibleFamiliars.find((f) => f.id === activeId) ?? null;
+  const calendarFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
+  const projectGateFamiliarId = familiarRosterLoadedSuccessfully ? (activeId ?? visibleFamiliars[0]?.id ?? null) : null;
+  const firstProjectGateOpen = onboardingResolved
+    && !onboardingOpen
+    && (mode === "home" || mode === "chat")
+    && familiarsLoaded
+    && familiarRosterLoadedSuccessfully
+    && projectGateFamiliarId !== null
+    && projectsInitiallyResolved
+    && registeredProjects.length === 0;
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
@@ -2927,6 +2988,15 @@ export function Workspace() {
           }}
         />
       )}
+
+      <FirstProjectGate
+        open={firstProjectGateOpen}
+        familiarId={projectGateFamiliarId}
+        loadingProjects={projectsLoading}
+        projectsError={projectsError}
+        createProjectOrThrow={createProjectOrThrow}
+        reloadProjects={reloadProjects}
+      />
 
       {reminderModalOpen && (
         <NewReminderModal

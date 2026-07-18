@@ -70,7 +70,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/removed", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/familiars", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/feedback/message", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/fs-browse", methods: ["GET"], kind: "json", pathGuard: true, localOriginGuard: true },
+  { route: "/fs-browse", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true, localOriginGuard: true },
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
   { route: "/github/checks", methods: ["GET"], kind: "json" },
@@ -529,13 +529,13 @@ for (const contract of contracts) {
   );
   assert.match(
     swrCacheSource,
-    /const existing = inFlight\.get\(key\);\s*\n\s*if \(existing\) return existing;/,
-    "swr-cache: concurrent callers should await one in-flight computation",
+    /const existing = inFlight\.get\(key\)\?\.get\(version\);\s*\n\s*if \(existing\) return existing;/,
+    "swr-cache: concurrent callers should dedupe on the current versioned in-flight request",
   );
   assert.match(
     swrCacheSource,
-    /revalidate\(key, compute\)\.catch\(\(\) => undefined\);\s*\n\s*return entry\.value;/,
-    "swr-cache: stale reads serve the cached value and revalidate in the background",
+    /function revalidate\(key: string, compute: \(\) => Promise<T>, version = currentVersion\(key\)\): Promise<T> \{[\s\S]*?if \(versions\.get\(key\) === version\) entries\.set\(key, \{ computedAt: now\(\), value \}\);[\s\S]*?revalidate\(key, compute, version\)\.catch\(\(\) => undefined\);/,
+    "swr-cache: stale reads should revalidate the current version, and older generations must not overwrite newer cache state",
   );
 
   const sessionGitEnrichSource = readFileSync(

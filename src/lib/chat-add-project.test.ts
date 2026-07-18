@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { addChatProject, projectNameForRoot } from "./chat-add-project.ts";
+import {
+  resetProjectRegistryListenersForTests,
+  subscribeProjectRegistryMutation,
+} from "./project-registry-events.ts";
 
 // projectNameForRoot: the leaf folder is the human name.
 assert.equal(projectNameForRoot("/Users/me/code/coven-cave"), "coven-cave");
@@ -11,9 +15,14 @@ assert.equal(projectNameForRoot(""), "");
 // Unregistered root → create the project (auto-named from the leaf) then grant
 // it to the active familiar.
 {
+  resetProjectRegistryListenersForTests();
+  let notifications = 0;
+  const unsubscribe = subscribeProjectRegistryMutation(() => {
+    notifications += 1;
+  });
   const calls = [];
-  const createProject = async (name, root) => {
-    calls.push(["create", name, root]);
+  const createProject = async (name, root, options) => {
+    calls.push(["create", name, root, options]);
     return { id: "p1", name, root };
   };
   const fetchImpl = async (url, init) => {
@@ -22,10 +31,12 @@ assert.equal(projectNameForRoot(""), "");
   };
   const result = await addChatProject({ root: "/code/orphan", familiarId: "sage", createProject, fetchImpl });
   assert.deepEqual(result, { ok: true, projectId: "p1" });
-  assert.deepEqual(calls[0], ["create", "orphan", "/code/orphan"]);
+  assert.deepEqual(calls[0], ["create", "orphan", "/code/orphan", { emitMutation: false }]);
   assert.equal(calls[1][1], "/api/project-grants");
   // The grant route rejects any `familiarId` field — only targetFamiliarId is sent.
   assert.deepEqual(calls[1][2], { targetFamiliarId: "sage", projectId: "p1" });
+  assert.equal(notifications, 1, "successful grant completion emits a post-grant refresh");
+  unsubscribe();
 }
 
 // Already-registered root (only the grant is missing) → skip creation, grant the id.
@@ -54,6 +65,11 @@ assert.equal(projectNameForRoot(""), "");
 
 // No familiar (operator/Supreme view) → register, but issue no grant.
 {
+  resetProjectRegistryListenersForTests();
+  let notifications = 0;
+  const unsubscribe = subscribeProjectRegistryMutation(() => {
+    notifications += 1;
+  });
   let granted = false;
   const createProject = async (name, root) => ({ id: "p2", name, root });
   const fetchImpl = async () => {
@@ -63,6 +79,8 @@ assert.equal(projectNameForRoot(""), "");
   const result = await addChatProject({ root: "/code/solo", familiarId: null, createProject, fetchImpl });
   assert.deepEqual(result, { ok: true, projectId: "p2" });
   assert.equal(granted, false, "no familiar means nothing to grant");
+  assert.equal(notifications, 1, "no-familiar completion still emits a refresh for unscoped hooks");
+  unsubscribe();
 }
 
 // createProject fails → error, and no grant is attempted.
@@ -80,6 +98,11 @@ assert.equal(projectNameForRoot(""), "");
 
 // Grant fails → surface the server error.
 {
+  resetProjectRegistryListenersForTests();
+  let notifications = 0;
+  const unsubscribe = subscribeProjectRegistryMutation(() => {
+    notifications += 1;
+  });
   const createProject = async (name, root) => ({ id: "p3", name, root });
   const fetchImpl = async () => ({
     ok: false,
@@ -89,6 +112,8 @@ assert.equal(projectNameForRoot(""), "");
   const result = await addChatProject({ root: "/y", familiarId: "sage", createProject, fetchImpl });
   assert.equal(result.ok, false);
   assert.match(result.error, /confirmed directly/);
+  assert.equal(notifications, 1, "failed grants still publish the successful partial project creation");
+  unsubscribe();
 }
 
 // Blank root → guarded before any I/O.

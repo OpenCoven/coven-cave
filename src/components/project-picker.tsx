@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectAvatar } from "@/components/project-avatar";
-import { addChatProject } from "@/lib/chat-add-project";
+import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { isTauri } from "@/lib/tauri-platform";
@@ -35,7 +35,11 @@ export type AddProjectFlow = {
  */
 export function useAddProjectFlow(args: {
   familiarId: string | null;
-  createProject: (name: string, root: string) => Promise<CaveProject | null>;
+  createProject: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject | null>;
   projects: CaveProject[];
   onAdded: (projectId: string) => void;
 }): AddProjectFlow {
@@ -260,7 +264,11 @@ export function ProjectPicker({
   allowNoProject?: boolean;
   familiarId?: string | null;
   /** From the caller's useProjects(); presence enables the "Add project…" row. */
-  createProject?: (name: string, root: string) => Promise<CaveProject | null>;
+  createProject?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject | null>;
   disabled?: boolean;
   ariaLabel: string;
   className?: string;

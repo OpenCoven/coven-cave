@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,8 +22,26 @@ import { join } from "node:path";
 const PORT = Number(process.env.PORT ?? 3100);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
+const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
+
+// Most existing specs exercise an already-onboarded workspace. Seed that
+// baseline explicitly now that chat/home correctly block an empty registry;
+// first-project tests can still route /api/projects to an empty response.
+writeFileSync(
+  E2E_PROJECTS_PATH,
+  JSON.stringify({
+    version: 1,
+    projects: [{
+      id: "e2e-project",
+      name: "E2E Project",
+      root: process.cwd(),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }],
+  }),
+);
 
 export default defineConfig({
   testDir: "./tests",
@@ -104,6 +123,7 @@ export default defineConfig({
       // later PID reuse from sharing stale state while remaining stable for
       // every request in this run.
       COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
+      CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
       COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
       COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),
     },

@@ -378,7 +378,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     const root = rootDraft.trim();
     if (!name || !root) return;
     setCreating(true);
-    const project = await createProject(name, root);
+    const project = await createProject(name, root, { emitMutation: !activeFamiliarId });
     if (project && activeFamiliarId) {
       // Register alone leaves the project 403ing in chat for this familiar —
       // grant it here so "New project" is usable the moment it's created.

@@ -77,6 +77,50 @@ export function resolveWithinRoot(
 
 export type DirEntry = { name: string; path: string };
 
+export type CreateSubdirResult =
+  | { ok: true; path: string }
+  | { ok: false; reason: "invalid-parent" | "invalid-name" | "exists" | "create-failed" };
+
+export function createSubdirWithinRoot(
+  root: string,
+  requestedParent: string | null | undefined,
+  requestedName: string,
+): CreateSubdirResult {
+  const parent = resolveWithinRoot(root, requestedParent);
+  if (!parent) return { ok: false, reason: "invalid-parent" };
+
+  const name = requestedName.trim();
+  if (
+    !name ||
+    name === "." ||
+    name === ".." ||
+    path.basename(name) !== name ||
+    name.includes("\\")
+  ) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  // The parent is validated at runtime against real entries beneath $HOME.
+  // Keep Turbopack from interpreting that dynamic path as a project-root glob
+  // and tracing the entire checkout into the standalone sidecar bundle.
+  const target = path.join(/* turbopackIgnore: true */ parent, name);
+  try {
+    fs.mkdirSync(target);
+    return { ok: true, path: target };
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      error.code === "EEXIST"
+    ) {
+      return { ok: false, reason: "exists" };
+    }
+    return { ok: false, reason: "create-failed" };
+  }
+}
+
 /** Immediate visible subdirectories of `dir` (one level), sorted, noise-skipped. */
 export function listSubdirs(dir: string): DirEntry[] {
   let dirents: fs.Dirent[];
