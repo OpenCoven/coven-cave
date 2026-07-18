@@ -58,11 +58,15 @@ export async function createDictationController(
       if (closed || listening) return;
       if (!ears) {
         ears = factory({
-          // Gate on `listening` so a straggler final after stop() can't
-          // append ghost text into the composer.
+          // Partials are ephemeral caption text — only meaningful while
+          // listening. Finals flow until close(): WebSpeech's stop() flushes
+          // the tail utterance asynchronously AFTER hush(), and that text was
+          // all spoken while listening (audio capture cuts at stop), so
+          // dropping it would lose the user's last sentence.
           onPartial: (text) => { if (listening) handlers.onPartial(text); },
-          onFinal: (text) => { if (listening) handlers.onFinal(text); },
+          onFinal: (text) => { if (!closed) handlers.onFinal(text); },
           onError: (code, hint) => {
+            if (closed) return;
             handlers.onError(code, hint);
             controller.stop();
           },

@@ -55,7 +55,7 @@ test("start() listens once and reports listening; repeat start is a no-op", asyn
   assert.equal(controller.isListening(), true);
 });
 
-test("partials and finals forward while listening, not after stop", async () => {
+test("partials gate on listening; a post-stop final still flushes through", async () => {
   const ears = fakeEars();
   const { handlers, events } = recordingHandlers();
   const controller = await createDictationController(handlers, async () => ears.factory);
@@ -64,10 +64,13 @@ test("partials and finals forward while listening, not after stop", async () => 
   ears.fire().onPartial("hel");
   ears.fire().onFinal("hello world");
   controller.stop();
-  ears.fire().onFinal("ghost words after stop");
+  // WebSpeech flushes the tail utterance after hush() — it must not be lost.
+  ears.fire().onFinal("tail utterance");
+  ears.fire().onPartial("ghost partial");
   const kinds = events.map((entry) => entry.kind);
-  assert.deepEqual(kinds, ["listening", "partial", "final", "listening"]);
+  assert.deepEqual(kinds, ["listening", "partial", "final", "listening", "final"]);
   assert.equal(events[2].value, "hello world");
+  assert.equal(events[4].value, "tail utterance");
   assert.equal(controller.isListening(), false);
 });
 
@@ -107,4 +110,36 @@ test("close() tears down; start() after close is a no-op", async () => {
   controller.start();
   assert.deepEqual(ears.calls, ["create", "listen", "close"]);
   assert.equal(controller.isListening(), false);
+});
+
+test("restart cycle reuses the single ears instance and re-opens the gate", async () => {
+  const ears = fakeEars();
+  const { handlers, events } = recordingHandlers();
+  const controller = await createDictationController(handlers, async () => ears.factory);
+  assert.ok(controller);
+  controller.start();
+  controller.stop();
+  controller.start();
+  assert.deepEqual(ears.calls, ["create", "listen", "hush", "listen"]);
+  ears.fire().onPartial("again");
+  assert.deepEqual(events, [
+    { kind: "listening", value: "true" },
+    { kind: "listening", value: "false" },
+    { kind: "listening", value: "true" },
+    { kind: "partial", value: "again" },
+  ]);
+  assert.equal(controller.isListening(), true);
+});
+
+test("finals and errors after close() are dropped", async () => {
+  const ears = fakeEars();
+  const { handlers, events } = recordingHandlers();
+  const controller = await createDictationController(handlers, async () => ears.factory);
+  assert.ok(controller);
+  controller.start();
+  controller.close();
+  ears.fire().onFinal("after close");
+  ears.fire().onError("stt_network");
+  const kinds = events.map((entry) => entry.kind);
+  assert.deepEqual(kinds, ["listening"]); // only the initial listening:true
 });
