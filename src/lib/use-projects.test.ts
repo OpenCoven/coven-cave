@@ -49,4 +49,46 @@ assert.equal(
   "all five mutations (create/rename/updateRoot/updateColor/delete) invalidate the cache",
 );
 
+assert.match(
+  source,
+  /createProjectOrThrow: \(name: string, root: string\) => Promise<CaveProject>;/,
+  "ProjectsState exposes a throwing createProject variant for callers that need actionable API errors",
+);
+
+assert.match(
+  source,
+  /const applyCreatedProject = useCallback\(\(project: CaveProject\): CaveProject => \{[\s\S]*invalidateProjectsCache\(\);[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*return project;/,
+  "successful project creation shares one cache-invalidating local-state update path",
+);
+
+assert.match(
+  source,
+  /const requestCreateProject = useCallback\(async \(name: string, root: string\): Promise<CreateProjectResult> => \{/,
+  "createProject and createProjectOrThrow share one request path",
+);
+
+assert.match(
+  source,
+  /error: typeof data\?\.error === "string" \? data\.error : `Could not create project \(HTTP \$\{res\.status\}\)`/,
+  "the throwing create path preserves the safe API error string or falls back to a clear HTTP message",
+);
+
+assert.match(
+  source,
+  /const createProject = useCallback\(async \(name: string, root: string\): Promise<CaveProject \| null> => \{[\s\S]*const result = await requestCreateProject\(name, root\);[\s\S]*return result\.ok \? result\.project : null;/,
+  "the existing createProject API stays nullable/back-compatible for current callers",
+);
+
+assert.match(
+  source,
+  /const createProjectOrThrow = useCallback\(async \(name: string, root: string\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
+  "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
+);
+
+assert.match(
+  source,
+  /return \{[\s\S]*createProject,[\s\S]*createProjectOrThrow,[\s\S]*renameProject,/,
+  "the hook returns both the nullable and throwing create helpers",
+);
+
 console.log("use-projects.test.ts: ok");

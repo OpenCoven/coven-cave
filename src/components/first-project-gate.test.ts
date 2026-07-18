@@ -7,12 +7,14 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 test("the first-project gate is a sticky portaled modal with no dismiss path", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ createPortal \} from "react-dom"/, "uses a portal");
-  assert.match(src, /const visible = open \|\| Boolean\(registeredProjectId\);/, "stays visible while a registered project still needs a grant retry");
-  assert.match(src, /useFocusTrap\(visible, dialogRef\);/, "traps focus without an Escape dismiss handler");
+  assert.match(src, /const visible = open \|\| Boolean\(registeredProject\);/, "stays visible while a registered project still needs a grant retry");
+  assert.match(src, /useFocusTrap\(visible && !pickerOpen, dialogRef\);/, "suspends the outer trap while the nested directory picker is open");
   assert.doesNotMatch(src, /useFocusTrap\(visible, dialogRef, \{/, "does not wire onEscape for this mandatory gate");
   assert.match(src, /role="dialog"/, "exposes dialog semantics");
   assert.match(src, /aria-modal="true"/, "is a true modal");
   assert.match(src, /tabIndex=\{-1\}/, "dialog container is focusable for the trap fallback");
+  assert.match(src, /aria-hidden=\{pickerOpen \|\| undefined\}/, "hides the underlying gate subtree from assistive tech while the picker is open");
+  assert.match(src, /inert=\{pickerOpen \|\| undefined\}/, "makes the underlying gate subtree inert while the picker is open");
   assert.doesNotMatch(src, />\s*Close\s*</, "does not offer a close button");
   assert.doesNotMatch(src, />\s*Cancel\s*</, "does not offer a cancel button");
   assert.doesNotMatch(src, />\s*Skip\s*</, "does not offer a skip action");
@@ -30,7 +32,7 @@ test("the gate stays prop-driven for task 3 and focuses the name field on first 
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
-    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProject: \(name: string, root: string\) => Promise<CaveProject \| null>;\s*reloadProjects: \(\) => void;/,
+    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(name: string, root: string\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
     "the gate stays prop-driven with the required task-3 fields",
   );
   assert.doesNotMatch(src, /useProjects\(\)|workspace/i, "Workspace wiring stays outside this task; the gate remains a prop-driven component");
@@ -63,23 +65,31 @@ test("the gate browses with native shell fallback and seeds the drafts from the 
 test("the gate keeps drafts through failures, blocks blank or busy submits, and surfaces retryable alerts", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ addChatProject \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
-  assert.match(src, /const \[registeredProjectId, setRegisteredProjectId\] = useState<string \| null>\(null\);/, "tracks the registered project id for partial failures");
-  assert.match(src, /if \(project\) setRegisteredProjectId\(project\.id\);/, "captures the newly registered id before the grant can fail");
-  assert.match(src, /existingProjectId: registeredProjectId/, "retries grant against the already-created project instead of creating a duplicate");
-  assert.match(src, /name: nameDraft/, "passes the drafted name through addChatProject");
-  assert.match(src, /if \(result\.ok\) \{[\s\S]*setRegisteredProjectId\(null\);/, "clears sticky visibility only after a full success");
+  assert.match(src, /const project = await createProjectOrThrow\(name, root\);/, "wraps the throwing createProjectOrThrow prop in the addChatProject adapter");
+  assert.match(src, /type RegisteredProjectSnapshot = Pick<CaveProject, "id" \| "name" \| "root">;/, "stores the created project snapshot, not only the id");
+  assert.match(src, /const \[registeredProject, setRegisteredProject\] = useState<RegisteredProjectSnapshot \| null>\(null\);/, "tracks the registered project snapshot for partial failures");
+  assert.match(src, /setRegisteredProject\(\{ id: project\.id, name: project\.name, root: project\.root \}\);/, "captures the stored id, name, and root before the grant can fail");
+  assert.match(src, /const submitName = lockedProject\?\.name \?\? nameDraft\.trim\(\);/, "retries use the stored project name instead of mutable drafts");
+  assert.match(src, /const submitRoot = lockedProject\?\.root \?\? rootDraft\.trim\(\);/, "retries use the stored project root instead of mutable drafts");
+  assert.match(src, /existingProjectId: registeredProject\?\.id/, "retries grant against the already-created project instead of creating a duplicate");
+  assert.match(src, /name: submitName/, "passes the stored-or-drafted name through addChatProject");
+  assert.match(src, /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*setRegisteredProject\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/, "announces the stored project name on success and clears the snapshot only after the grant succeeds");
   assert.match(src, /if \(submitting \|\| loadingProjects \|\| Boolean\(projectsError\)\) return;/, "the submit handler rejects busy or registry-blocked submits before any mutation");
-  assert.match(src, /if \(!nameDraft\.trim\(\)\) \{[\s\S]*setSubmitError\("Enter a project name\."\);/, "blank project names are blocked in the submit handler");
-  assert.match(src, /if \(!rootDraft\.trim\(\)\) \{[\s\S]*setSubmitError\("Enter an absolute project root\."\);/, "blank project roots are blocked in the submit handler");
+  assert.match(src, /if \(!lockedProject && !submitName\) \{[\s\S]*setSubmitError\("Enter a project name\."\);/, "blank project names are blocked before the first registration");
+  assert.match(src, /if \(!lockedProject && !submitRoot\) \{[\s\S]*setSubmitError\("Enter an absolute project root\."\);/, "blank project roots are blocked before the first registration");
   assert.doesNotMatch(src, /setNameDraft\(""\)|setRootDraft\(""\)/, "failure paths do not clear either draft");
   assert.match(src, /const \{ announce \} = useAnnouncer\(\)/, "announces success through the shared live region");
-  assert.match(src, /announce\(/, "speaks the success message");
+  assert.match(src, /setSubmitError\(error instanceof Error \? error\.message : "Could not create that project\."\);/, "actionable create-project errors are displayed exactly from the thrown message");
   assert.match(src, /role="alert"/, "errors announce via alerts");
   assert.match(src, /onClick=\{reloadProjects\}/, "project-list failures expose a Retry action");
   assert.match(src, /disabled=\{submitting \|\| loadingProjects \|\| Boolean\(projectsError\) \|\| !canSubmit\}/, "creation stays blocked while the registry is still loading or errored");
+  assert.match(src, /disabled=\{Boolean\(registeredProject\) \|\| submitting\}/, "name, root, and Browse controls lock once only the access grant needs retry");
+  assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the submit action relabels to Retry access for partial-grant retries");
+  assert.match(src, /Project <span className="font-medium text-\[var\(--text-primary\)\]">\{registeredProject\.name\}<\/span> was[\s\S]*Retry access so this familiar can use[\s\S]*\{registeredProject\.root\}/, "copy explains that the project was created and only access still needs retry");
+  assert.doesNotMatch(src, /Project created, but chat still needs access:/, "retry context lives in the descriptive copy, not as a prefixed error wrapper");
 });
 
-test("the gate exposes the exact root field plus Browse and Create actions through shared buttons", () => {
+test("the gate exposes the exact root field plus Browse and Create-or-retry actions through shared buttons", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ Button \} from "@\/components\/ui\/button"/, "uses the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "does not hand-roll raw button controls");
@@ -88,7 +98,8 @@ test("the gate exposes the exact root field plus Browse and Create actions throu
   assert.match(src, /id="first-project-gate-root"/, "the exact root input id stays stable");
   assert.match(src, /placeholder="\/absolute\/path\/to\/project"/, "the root field explains the required absolute-path format");
   assert.match(src, />\s*Browse\s*</, "the gate exposes a Browse action next to the root field");
-  assert.match(src, />\s*Create\s*</, "the gate exposes a Create action for the first project");
+  assert.match(src, /"Create"/, "the gate exposes a Create action for the first project");
+  assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the primary action swaps from Create to Retry access after registration succeeds");
 });
 
 console.log("first-project-gate.test.ts OK");

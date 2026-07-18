@@ -25,16 +25,18 @@ type FirstProjectGateProps = {
   familiarId: string | null;
   loadingProjects: boolean;
   projectsError: string | null;
-  createProject: (name: string, root: string) => Promise<CaveProject | null>;
+  createProjectOrThrow: (name: string, root: string) => Promise<CaveProject>;
   reloadProjects: () => void;
 };
+
+type RegisteredProjectSnapshot = Pick<CaveProject, "id" | "name" | "root">;
 
 export function FirstProjectGate({
   open,
   familiarId,
   loadingProjects,
   projectsError,
-  createProject,
+  createProjectOrThrow,
   reloadProjects,
 }: FirstProjectGateProps) {
   const { announce } = useAnnouncer();
@@ -43,17 +45,20 @@ export function FirstProjectGate({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [registeredProjectId, setRegisteredProjectId] = useState<string | null>(null);
+  const [registeredProject, setRegisteredProject] = useState<RegisteredProjectSnapshot | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const wasVisibleRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
   const rootHintId = useId();
-  const visible = open || Boolean(registeredProjectId);
-  const canSubmit = Boolean(nameDraft.trim() && rootDraft.trim() && isAbsolutePath(rootDraft));
+  const visible = open || Boolean(registeredProject);
+  const lockedProject = registeredProject;
+  const submitName = lockedProject?.name ?? nameDraft.trim();
+  const submitRoot = lockedProject?.root ?? rootDraft.trim();
+  const canSubmit = lockedProject ? true : Boolean(nameDraft.trim() && rootDraft.trim() && isAbsolutePath(rootDraft));
 
-  useFocusTrap(visible, dialogRef);
+  useFocusTrap(visible && !pickerOpen, dialogRef);
 
   useEffect(() => {
     if (!visible) {
@@ -78,10 +83,10 @@ export function FirstProjectGate({
   }, []);
 
   const createProjectWithRegistration = useCallback(async (name: string, root: string) => {
-    const project = await createProject(name, root);
-    if (project) setRegisteredProjectId(project.id);
+    const project = await createProjectOrThrow(name, root);
+    setRegisteredProject({ id: project.id, name: project.name, root: project.root });
     return project;
-  }, [createProject]);
+  }, [createProjectOrThrow]);
 
   const handleBrowse = useCallback(() => {
     if (isTauri()) {
@@ -102,15 +107,15 @@ export function FirstProjectGate({
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting || loadingProjects || Boolean(projectsError)) return;
-    if (!nameDraft.trim()) {
+    if (!lockedProject && !submitName) {
       setSubmitError("Enter a project name.");
       return;
     }
-    if (!rootDraft.trim()) {
+    if (!lockedProject && !submitRoot) {
       setSubmitError("Enter an absolute project root.");
       return;
     }
-    if (!isAbsolutePath(rootDraft)) {
+    if (!lockedProject && !isAbsolutePath(submitRoot)) {
       setSubmitError("Project root must be an absolute path.");
       return;
     }
@@ -119,16 +124,17 @@ export function FirstProjectGate({
     setSubmitError(null);
     try {
       const result = await addChatProject({
-        root: rootDraft,
+        root: submitRoot,
         familiarId,
         createProject: createProjectWithRegistration,
-        existingProjectId: registeredProjectId,
-        name: nameDraft,
+        existingProjectId: registeredProject?.id,
+        name: submitName,
       });
       if (result.ok) {
-        setRegisteredProjectId(null);
+        const createdProjectName = registeredProject?.name ?? submitName;
+        setRegisteredProject(null);
         setSubmitError(null);
-        announce(`Created project ${nameDraft.trim()}. Chat is ready.`);
+        announce(`Created project ${createdProjectName}. Chat is ready.`);
       } else {
         setSubmitError(result.error);
       }
@@ -137,13 +143,17 @@ export function FirstProjectGate({
     } finally {
       setSubmitting(false);
     }
-  }, [announce, createProjectWithRegistration, familiarId, loadingProjects, nameDraft, projectsError, registeredProjectId, rootDraft, submitting]);
+  }, [announce, createProjectWithRegistration, familiarId, loadingProjects, projectsError, registeredProject, submitName, submitRoot, submitting, lockedProject]);
 
   if (!visible || typeof document === "undefined") return null;
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
+      <div
+        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
+        aria-hidden={pickerOpen || undefined}
+        inert={pickerOpen || undefined}
+      >
         <div
           ref={dialogRef}
           role="dialog"
@@ -162,7 +172,18 @@ export function FirstProjectGate({
               Create your first project
             </h2>
             <p id={copyId} className="mt-2 max-w-2xl text-[14px] leading-6 text-[var(--text-secondary)]">
-              Chat requires a project. Add the absolute root for the codebase you want this familiar to use before you start chatting.
+              {registeredProject ? (
+                <>
+                  Project <span className="font-medium text-[var(--text-primary)]">{registeredProject.name}</span> was
+                  created. Retry access so this familiar can use
+                  {" "}
+                  <span className="font-mono text-[var(--text-primary)]">{registeredProject.root}</span>
+                  {" "}
+                  in chat.
+                </>
+              ) : (
+                "Chat requires a project. Add the absolute root for the codebase you want this familiar to use before you start chatting."
+              )}
             </p>
           </div>
 
@@ -191,7 +212,7 @@ export function FirstProjectGate({
                 role="alert"
                 className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
               >
-                {registeredProjectId ? `Project created, but chat still needs access: ${submitError}` : submitError}
+                {submitError}
               </div>
             ) : null}
 
@@ -211,12 +232,13 @@ export function FirstProjectGate({
               <input
                 id="first-project-gate-name"
                 ref={nameInputRef}
-                value={nameDraft}
+                value={registeredProject?.name ?? nameDraft}
                 onChange={(event) => {
                   setNameDraft(event.target.value);
                   setSubmitError(null);
                 }}
                 placeholder="Project name"
+                disabled={Boolean(registeredProject) || submitting}
                 className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               />
             </div>
@@ -231,7 +253,7 @@ export function FirstProjectGate({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   id="first-project-gate-root"
-                  value={rootDraft}
+                  value={registeredProject?.root ?? rootDraft}
                   onChange={(event) => {
                     setRootDraft(event.target.value);
                     setSubmitError(null);
@@ -239,12 +261,14 @@ export function FirstProjectGate({
                   placeholder="/absolute/path/to/project"
                   aria-describedby={rootHintId}
                   aria-invalid={rootDraft.trim() ? !isAbsolutePath(rootDraft) : undefined}
+                  disabled={Boolean(registeredProject) || submitting}
                   className="focus-ring h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[13px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
                 />
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => void handleBrowse()}
+                  disabled={Boolean(registeredProject) || submitting}
                   className="h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                   leadingIcon="ph:folder-open"
                 >
@@ -265,7 +289,7 @@ export function FirstProjectGate({
                 disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
                 className="h-10 rounded-[var(--radius-control)] px-4 text-[12px] font-medium disabled:opacity-50"
               >
-                Create
+                {registeredProject ? "Retry access" : "Create"}
               </Button>
             </div>
           </form>

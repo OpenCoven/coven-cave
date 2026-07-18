@@ -6,6 +6,10 @@ import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-project
 import { createSwrCache } from "./swr-cache.ts";
 
 type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
+type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
+type CreateProjectResult =
+  | { ok: true; project: CaveProject }
+  | { ok: false; error: string };
 
 /**
  * Module-level dedupe for GET /api/projects (cave-v8hh). The hook has 8+
@@ -62,6 +66,7 @@ export type ProjectsState = {
   error: string | null;
   reload: () => void;
   createProject: (name: string, root: string) => Promise<CaveProject | null>;
+  createProjectOrThrow: (name: string, root: string) => Promise<CaveProject>;
   renameProject: (id: string, name: string) => Promise<boolean>;
   updateRoot: (id: string, root: string) => Promise<boolean>;
   /** Set an explicit tile tint, or pass null to restore the auto root-hash tint. */
@@ -138,20 +143,45 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     void load({ force: true });
   }, [load]);
 
-  const createProject = useCallback(async (name: string, root: string): Promise<CaveProject | null> => {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, root }),
-    });
-    const data = await res.json();
-    if (data.ok && data.project) {
-      invalidateProjectsCache();
-      setProjects((prev) => sortProjectsAlphabetically([...prev, data.project as CaveProject]));
-      return data.project as CaveProject;
-    }
-    return null;
+  const applyCreatedProject = useCallback((project: CaveProject): CaveProject => {
+    invalidateProjectsCache();
+    setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    return project;
   }, []);
+
+  const requestCreateProject = useCallback(async (name: string, root: string): Promise<CreateProjectResult> => {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, root }),
+      });
+      const data = (await res.json().catch(() => null)) as ProjectMutationPayload | null;
+      if (res.ok && data?.ok && data.project) {
+        return { ok: true, project: applyCreatedProject(data.project as CaveProject) };
+      }
+      return {
+        ok: false,
+        error: typeof data?.error === "string" ? data.error : `Could not create project (HTTP ${res.status})`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not create that project.",
+      };
+    }
+  }, [applyCreatedProject]);
+
+  const createProject = useCallback(async (name: string, root: string): Promise<CaveProject | null> => {
+    const result = await requestCreateProject(name, root);
+    return result.ok ? result.project : null;
+  }, [requestCreateProject]);
+
+  const createProjectOrThrow = useCallback(async (name: string, root: string): Promise<CaveProject> => {
+    const result = await requestCreateProject(name, root);
+    if (result.ok) return result.project;
+    throw new Error(result.error);
+  }, [requestCreateProject]);
 
   const renameProject = useCallback(async (id: string, name: string): Promise<boolean> => {
     const res = await fetch(`/api/projects/${id}`, {
@@ -221,6 +251,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     error,
     reload,
     createProject,
+    createProjectOrThrow,
     renameProject,
     updateRoot,
     updateColor,
