@@ -328,9 +328,9 @@ final class ChatThread: Identifiable, Hashable {
             // @Observable class — invalidating the whole list — so per-token
             // updates caused a render/scroll storm. Coalescing flushes at most
             // ~every 50ms while keeping streaming visibly live.
-            coalescer.append(chunk)
-            if coalescer.shouldFlush() {
-                flush(coalescer, into: messageId, onChange: onChange)
+            coalescer.append(chunk) { [weak self] in
+                guard let self else { return }
+                self.flush(coalescer, into: messageId, onChange: onChange)
             }
         case .done(let isError, let sid):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
@@ -493,27 +493,36 @@ final class ChatThread: Identifiable, Hashable {
 @MainActor
 final class StreamCoalescer {
     private var buffer = ""
-    private var lastFlush = ContinuousClock.now
+    private var flushTask: Task<Void, Never>?
     /// Max time text may sit buffered before the next flush. 50ms keeps the
     /// stream visibly live (~20 updates/sec) while collapsing token bursts.
     private let interval: Duration = .milliseconds(50)
 
-    func append(_ chunk: String) { buffer += chunk }
-
-    /// True when enough time has elapsed since the last flush and text is
-    /// pending. Checked after each appended chunk.
-    func shouldFlush() -> Bool {
-        guard !buffer.isEmpty else { return false }
-        return ContinuousClock.now - lastFlush >= interval
+    /// Start one delayed flush for a burst. Scheduling rather than checking
+    /// elapsed time only when a new chunk arrives also drains the final chunk
+    /// when a stream pauses without immediately ending.
+    func append(_ chunk: String, onFlushDue: @escaping @MainActor () -> Void) {
+        buffer += chunk
+        guard flushTask == nil else { return }
+        flushTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: self.interval)
+            guard !Task.isCancelled else { return }
+            self.flushTask = nil
+            onFlushDue()
+        }
     }
 
     /// Returns and clears the buffered text (nil when empty), and resets the
     /// flush clock.
     func drain() -> String? {
+        flushTask?.cancel()
+        flushTask = nil
         guard !buffer.isEmpty else { return nil }
         let pending = buffer
         buffer = ""
-        lastFlush = ContinuousClock.now
         return pending
     }
+
+    deinit { flushTask?.cancel() }
 }
