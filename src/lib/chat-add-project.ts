@@ -5,6 +5,8 @@ export type AddChatProjectResult =
   | { ok: true; projectId: string }
   | { ok: false; error: string };
 
+export type CreateProjectOptions = { emitMutation?: boolean };
+
 /** Derive a human project name from a working-directory path — its leaf folder.
  *  `/Users/me/code/coven-cave` → `coven-cave`. Falls back to the raw root. */
 export function projectNameForRoot(root: string): string {
@@ -24,14 +26,19 @@ export function projectNameForRoot(root: string): string {
  * route accepts — it only rejects agent-relayed approvals.
  *
  * `createProject` is threaded in from the caller's `useProjects()` hook so the
- * caller's local project list updates in place. When the root is already
- * registered (only the grant is missing) pass `existingProjectId` to skip
- * creation. `fetchImpl` is injectable for tests.
+ * caller's local project list updates in place. Creation suppresses its normal
+ * registry notification here; this helper emits once after the bundled grant
+ * completes. When the root is already registered (only the grant is missing)
+ * pass `existingProjectId` to skip creation. `fetchImpl` is injectable for tests.
  */
 export async function addChatProject(args: {
   root: string;
   familiarId: string | null;
-  createProject: (name: string, root: string) => Promise<CaveProject | null>;
+  createProject: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject | null>;
   existingProjectId?: string | null;
   name?: string;
   fetchImpl?: typeof fetch;
@@ -41,11 +48,13 @@ export async function addChatProject(args: {
   if (!root) return { ok: false, error: "missing project root" };
 
   let projectId = args.existingProjectId ?? null;
+  let createdProject = false;
   if (!projectId) {
     const name = (args.name ?? "").trim() || projectNameForRoot(root);
-    const project = await args.createProject(name, root);
+    const project = await args.createProject(name, root, { emitMutation: false });
     if (!project) return { ok: false, error: "could not register project" };
     projectId = project.id;
+    createdProject = true;
   }
 
   // Grant the active familiar access. A no-familiar context (operator/Supreme
@@ -57,6 +66,9 @@ export async function addChatProject(args: {
       body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
     });
     if (!res.ok) {
+      // Creation still succeeded, so publish that partial registry mutation
+      // even though the bundled grant did not complete.
+      if (createdProject) emitProjectRegistryMutation();
       const data = (await res.json().catch(() => ({}))) as { error?: unknown };
       return {
         ok: false,

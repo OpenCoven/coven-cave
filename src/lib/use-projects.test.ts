@@ -89,19 +89,19 @@ assert.match(
 
 assert.match(
   source,
-  /createProjectOrThrow: \(name: string, root: string\) => Promise<CaveProject>;/,
+  /createProjectOrThrow: \(name: string, root: string, options\?: CreateProjectOptions\) => Promise<CaveProject>;/,
   "ProjectsState exposes a throwing createProject variant for callers that need actionable API errors",
 );
 
 assert.match(
   source,
-  /const applyCreatedProject = useCallback\(\(project: CaveProject\): CaveProject => \{[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*emitProjectRegistryMutation\(\);[\s\S]*return project;/,
-  "successful project creation shares one local-state path that fans out through the shared mutation event",
+  /const applyCreatedProject = useCallback\(\(project: CaveProject, emitMutation = true\): CaveProject => \{[\s\S]*setProjects\(\(prev\) => sortProjectsAlphabetically\(\[\.\.\.prev, project\]\)\);[\s\S]*if \(emitMutation\) emitProjectRegistryMutation\(\);[\s\S]*return project;/,
+  "successful project creation shares one local-state path with optional bundled-mutation notification suppression",
 );
 
 assert.match(
   source,
-  /const requestCreateProject = useCallback\(async \(name: string, root: string\): Promise<CreateProjectResult> => \{/,
+  /const requestCreateProject = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CreateProjectResult> => \{/,
   "createProject and createProjectOrThrow share one request path",
 );
 
@@ -113,13 +113,13 @@ assert.match(
 
 assert.match(
   source,
-  /const createProject = useCallback\(async \(name: string, root: string\): Promise<CaveProject \| null> => \{[\s\S]*const result = await requestCreateProject\(name, root\);[\s\S]*return result\.ok \? result\.project : null;/,
+  /const createProject = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CaveProject \| null> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*return result\.ok \? result\.project : null;/,
   "the existing createProject API stays nullable/back-compatible for current callers",
 );
 
 assert.match(
   source,
-  /const createProjectOrThrow = useCallback\(async \(name: string, root: string\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
+  /const createProjectOrThrow = useCallback\(async \([\s\S]*options\?: CreateProjectOptions,[\s\S]*\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
   "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
 );
 

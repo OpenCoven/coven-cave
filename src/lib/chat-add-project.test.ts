@@ -21,8 +21,8 @@ assert.equal(projectNameForRoot(""), "");
     notifications += 1;
   });
   const calls = [];
-  const createProject = async (name, root) => {
-    calls.push(["create", name, root]);
+  const createProject = async (name, root, options) => {
+    calls.push(["create", name, root, options]);
     return { id: "p1", name, root };
   };
   const fetchImpl = async (url, init) => {
@@ -31,7 +31,7 @@ assert.equal(projectNameForRoot(""), "");
   };
   const result = await addChatProject({ root: "/code/orphan", familiarId: "sage", createProject, fetchImpl });
   assert.deepEqual(result, { ok: true, projectId: "p1" });
-  assert.deepEqual(calls[0], ["create", "orphan", "/code/orphan"]);
+  assert.deepEqual(calls[0], ["create", "orphan", "/code/orphan", { emitMutation: false }]);
   assert.equal(calls[1][1], "/api/project-grants");
   // The grant route rejects any `familiarId` field — only targetFamiliarId is sent.
   assert.deepEqual(calls[1][2], { targetFamiliarId: "sage", projectId: "p1" });
@@ -112,7 +112,7 @@ assert.equal(projectNameForRoot(""), "");
   const result = await addChatProject({ root: "/y", familiarId: "sage", createProject, fetchImpl });
   assert.equal(result.ok, false);
   assert.match(result.error, /confirmed directly/);
-  assert.equal(notifications, 0, "failed grants do not emit a success refresh");
+  assert.equal(notifications, 1, "failed grants still publish the successful partial project creation");
   unsubscribe();
 }
 

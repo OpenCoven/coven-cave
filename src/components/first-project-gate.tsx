@@ -7,7 +7,7 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { CaveProject } from "@/lib/cave-projects-types";
-import { addChatProject } from "@/lib/chat-add-project";
+import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import {
   canPersistPendingFirstProjectAccessSnapshot,
   clearPendingFirstProjectAccessSnapshot,
@@ -32,7 +32,11 @@ type FirstProjectGateProps = {
   familiarId: string | null;
   loadingProjects: boolean;
   projectsError: string | null;
-  createProjectOrThrow: (name: string, root: string) => Promise<CaveProject>;
+  createProjectOrThrow: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   reloadProjects: () => void;
 };
 
@@ -94,8 +98,12 @@ export function FirstProjectGate({
     setSubmitError(null);
   }, []);
 
-  const createProjectWithRegistration = useCallback(async (name: string, root: string) => {
-    const project = await createProjectOrThrow(name, root);
+  const createProjectWithRegistration = useCallback(async (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => {
+    const project = await createProjectOrThrow(name, root, options);
     if (familiarId) {
       const snapshot: PendingFirstProjectAccessSnapshot = {
         familiarId,
