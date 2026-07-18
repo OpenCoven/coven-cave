@@ -930,7 +930,7 @@ tr[role="checkbox"]:focus-visible {
   border-radius: var(--radius-pill);
   border: 1px solid var(--bg-raised);
   background: color-mix(in oklch, var(--foreground) 12%, var(--bg-raised));
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -8970,6 +8970,355 @@ a.mobile-handoff__link:hover {
 .surface-compact-search {
   flex: 0 1 220px;
   min-width: 140px;
+}
+
+/* Rituals overview — option 3a from the minimalist design handoff. The week
+   ribbon stays quiet; the Needs-you queue is the only raised, glowing surface. */
+.rituals-overview {
+  padding: var(--space-3) clamp(var(--space-3), 4vw, var(--space-6)) var(--space-6);
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 76% 8%, color-mix(in oklch, var(--accent-presence) 8%, transparent), transparent 32%),
+    var(--bg-base);
+}
+
+.rituals-overview__header {
+  background: color-mix(in oklch, var(--bg-base) 92%, transparent);
+}
+
+.rituals-overview__moon {
+  color: var(--accent-presence);
+  filter: drop-shadow(0 0 7px color-mix(in oklch, var(--accent-presence) 55%, transparent));
+}
+
+.rituals-overview__events,
+.rituals-overview__lower {
+  width: min(920px, 100%);
+  margin-inline: auto;
+}
+
+.rituals-overview__section-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--accent-presence);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.rituals-overview__fade-rule {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, var(--border-hairline), transparent);
+}
+
+.rituals-overview__week {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: var(--space-1) 0 var(--space-3);
+  scrollbar-width: none;
+}
+
+.rituals-overview__week::-webkit-scrollbar {
+  display: none;
+}
+
+.rituals-overview__day {
+  position: relative;
+  display: grid;
+  flex: 1 0 64px;
+  min-width: 54px;
+  place-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.rituals-overview__day strong {
+  color: inherit;
+  font-size: var(--text-sm);
+  font-weight: 560;
+}
+
+.rituals-overview__day:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.rituals-overview__day--today {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 7%, transparent);
+}
+
+.rituals-overview__day i {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border: 1px solid color-mix(in oklch, var(--text-muted) 75%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+.rituals-overview__needs {
+  position: relative;
+  width: min(920px, 100%);
+  margin: var(--space-3) auto;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 54%, var(--border-hairline));
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(circle at 88% 30%, color-mix(in oklch, var(--accent-presence) 13%, transparent), transparent 38%),
+    color-mix(in oklch, var(--bg-raised) 80%, var(--bg-base));
+  box-shadow: 0 0 30px color-mix(in oklch, var(--accent-presence) 11%, transparent);
+}
+
+.rituals-overview__needs h2 {
+  position: absolute;
+  top: -9px;
+  left: 12px;
+  margin: 0;
+  padding: 0 var(--space-2);
+  background: var(--bg-base);
+  color: var(--accent-presence);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.rituals-overview__needs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rituals-overview__need-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 68%, transparent);
+}
+
+.rituals-overview__need-row:last-child {
+  border-bottom: 0;
+}
+
+.rituals-overview__need-main,
+.rituals-overview__row {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rituals-overview__need-main {
+  padding: var(--space-2) var(--space-1);
+}
+
+.rituals-overview__need-main:hover,
+.rituals-overview__row:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.rituals-overview__live-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence) 80%, transparent);
+}
+
+.rituals-overview__row {
+  padding: var(--space-2) var(--space-1);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 58%, transparent);
+  font-size: var(--text-sm);
+}
+
+.rituals-overview__row--quiet {
+  border-bottom: 0;
+  padding-block: var(--space-1);
+}
+
+.rituals-overview__row-title {
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rituals-overview__kind {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.rituals-overview__meta {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.rituals-overview__spacer {
+  flex: 1;
+}
+
+.rituals-overview__pane-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-1);
+}
+
+.rituals-overview__pane-nav > span {
+  flex: 1;
+}
+
+.rituals-overview__pane-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.rituals-overview__pane-nav button[aria-pressed="true"] {
+  color: var(--accent-presence);
+}
+
+.rituals-overview__pane-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.rituals-overview__pane {
+  min-height: 180px;
+  touch-action: pan-y;
+}
+
+.rituals-overview__log {
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.rituals-overview__thread {
+  display: flex;
+  max-height: min(42vh, 360px);
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+}
+
+.rituals-overview__thread-group,
+.rituals-overview__now {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.rituals-overview__thread-date {
+  padding-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  text-align: right;
+}
+
+.rituals-overview__thread-line {
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 1px solid color-mix(in oklch, var(--border-strong) 72%, transparent);
+}
+
+.rituals-overview__now {
+  align-items: center;
+  color: var(--accent-presence);
+  font-size: var(--text-2xs);
+  text-align: right;
+}
+
+.rituals-overview__now-line {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent-presence), transparent);
+}
+
+.rituals-overview__now-line > span {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 9px color-mix(in oklch, var(--accent-presence) 75%, transparent);
+}
+
+.rituals-overview__empty {
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.rituals-overview__selection {
+  width: min(920px, 100%);
+  margin: var(--space-3) auto 0;
+}
+
+@container (max-width: 620px) {
+  .rituals-overview__need-row {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: var(--space-1);
+  }
+
+  .rituals-overview__need-row > span {
+    align-self: flex-end;
+  }
+
+  .rituals-overview__kind,
+  .rituals-overview__row > .rituals-overview__meta:first-of-type {
+    display: none;
+  }
 }
 
 .workflow-dialog-backdrop {

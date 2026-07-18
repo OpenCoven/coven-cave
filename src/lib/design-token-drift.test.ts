@@ -44,7 +44,7 @@ const BASELINES = {
   offScaleSpacingPx: 1349, // off-4px-grid pad/margin/gap components (2px/6px/10px/…) — +4: the chat composer footer band copies the home hc-footer-band metrics verbatim (6px 10px pad, 6px gap, 11px chip pad) for cross-composer parity
   offScaleRadiusPx: 212, // 4px/6px/10px/14px/… radii between the sanctioned steps
   hexOutsideDefinitions: 155, // hex in render CSS (token definitions excluded)
-  inlineTsxStyles: 501, // style={{…}} in TSX; many are legit dynamic values
+  inlineTsxStyles: 500, // style={{…}} in TSX; many are legit dynamic values
 };
 
 // ── unit sanity for the codemod transform ───────────────────────────────────

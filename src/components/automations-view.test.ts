@@ -148,12 +148,18 @@ assert.doesNotMatch(
   "detail panel actions should use radius tokens instead of hard-coded radii",
 );
 
-// The active Rituals surface is Inbox + Calendar + Crons. Bulk selection now
-// belongs to the INBOX feed (group-by + select-by-group/search, cave-fcy8);
-// the older per-reminder bulk machinery is gone for good.
-assert.match(source, /type AutomationTab = "inbox" \| "calendar" \| "crons"/, "Rituals exposes Inbox, Calendar and Crons tabs");
+// The active Rituals surface defaults to the handoff's unified overview. Full
+// Calendar and Crons remain secondary destinations; bulk selection belongs to
+// the overview's management mode.
+assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/, "Rituals exposes Overview, Calendar and Crons modes");
 assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
-assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "inbox"/, "Inbox is the default landing tab; calendar/crons deep links still win");
+assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "overview"/, "Overview is the default landing mode; calendar/crons deep links still win");
+assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
+assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
+assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
+assert.match(source, /aria-label="Show agenda thread"/, "the overview exposes the agenda thread");
+assert.match(source, /overviewSwipeStartRef/, "Log and Agenda support a manual swipe gesture");
+assert.doesNotMatch(source, /setInterval\([\s\S]{0,100}setOverviewPane/, "the overview never auto-rotates between Log and Agenda");
 
 // ── Inbox grouping + collective actions (cave-fcy8) ─────────────────────────
 // Group-by control re-shapes the feed; selection acts on the visible
@@ -161,9 +167,8 @@ assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : 
 // actions ride ONE POST /api/inbox/bulk; delete keeps the undo window.
 assert.match(source, /buildInboxGroups\(inboxVisible, inboxGroupBy, familiarLabel\)/, "groups derive from the pure lib over the filtered feed");
 assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the lib's dimensions");
-// The group-by is three visible segmented tabs (marketplace kind-filter
-// precedent), never a dropdown — the active dimension reads at a glance.
-assert.match(source, /ariaLabel="Group inbox by"[\s\S]{0,220}INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \(\{ id: option\.value, label: option\.label \}\)\)/, "group-by renders as a named segmented Tabs control");
+// Grouping is deliberately behind the overflow menu in the minimalist shell.
+assert.match(source, /INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \([\s\S]{0,420}Group selection by \{option\.label\.toLowerCase\(\)\}/, "group-by remains reachable from the overview options menu");
 assert.doesNotMatch(source, /<StandardSelect[\s\S]{0,120}label="Group inbox by"/, "the group-by dropdown is gone");
 assert.match(source, /cave:inbox:group-by/, "the group-by choice persists per install");
 assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
@@ -268,8 +273,7 @@ assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-
 assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create announces");
 assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
-assert.match(source, /idPrefix="automations"/, "tabs get ids so the panel can reference them");
-assert.match(source, /role="tabpanel"[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/, "the content region is a labelled tabpanel");
+assert.match(source, /role="region"[\s\S]{0,220}aria-label=\{activeTab === "overview" \? "Rituals overview"/, "the content region names the active Rituals mode without relying on visible tabs");
 assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); setTemplateInitialValues\(undefined\); \}\}/, "the create dialog closes through one reset path");
 assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");
 

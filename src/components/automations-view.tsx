@@ -38,7 +38,7 @@ import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { SearchInput } from "@/components/ui/search-input";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
-import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { CwdPickerField } from "@/components/cwd-picker-field";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
@@ -46,6 +46,7 @@ import { SkillSelect } from "@/components/automation-skill-select";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
+import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
 import { AUTOMATION_TEMPLATES, TEMPLATE_CATEGORIES, type AutomationTemplate } from "@/lib/automation-templates";
 import type { FlowDoc } from "@/lib/flows";
@@ -99,7 +100,7 @@ function linkLabel(link: LinkRef): string {
 // The active Rituals surface: Inbox (the full feed, mostly reminders) plus
 // Calendar and Crons. The broader Automations/Flow experience lives on
 // feature/automations-flow.
-type AutomationTab = "inbox" | "calendar" | "crons";
+type AutomationTab = "overview" | "calendar" | "crons";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -1778,9 +1779,167 @@ function TemplatesPanel({
   );
 }
 
+type RitualOverviewPane = "log" | "agenda";
+
+function ritualItemDate(item: InboxItem): Date | null {
+  const iso = item.fireAt ?? item.firedAt ?? item.updatedAt;
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function ritualWeekLabel(days: RitualDay[]): string {
+  const first = days[0]?.date;
+  const last = days.at(-1)?.date;
+  if (!first || !last) return "";
+  const month = new Intl.DateTimeFormat(undefined, { month: "short" });
+  if (first.getMonth() === last.getMonth()) {
+    return `${month.format(first)} ${first.getDate()}–${last.getDate()}`;
+  }
+  return `${month.format(first)} ${first.getDate()} – ${month.format(last)} ${last.getDate()}`;
+}
+
+function useRitualNow(): Date | null {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    let timer: number | null = null;
+    const scheduleMidnight = () => {
+      const current = new Date();
+      const next = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1);
+      timer = window.setTimeout(() => {
+        setNow(new Date());
+        scheduleMidnight();
+      }, Math.max(1_000, next.getTime() - current.getTime() + 250));
+    };
+    setNow(new Date());
+    scheduleMidnight();
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, []);
+  return now;
+}
+
+function RitualItemRow({
+  item,
+  familiarLabel,
+  onSelect,
+  quiet = false,
+}: {
+  item: InboxItem;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+  quiet?: boolean;
+}) {
+  const familiar = familiarLabel(item.familiarId);
+  const date = ritualItemDate(item);
+  return (
+    <button
+      type="button"
+      className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`}
+      onClick={() => onSelect(item)}
+    >
+      <StatusIcon item={item} />
+      <span className="rituals-overview__row-title">{item.title}</span>
+      <span className="rituals-overview__kind">{inboxKindLabel(item.kind)}</span>
+      {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+      <span className="rituals-overview__spacer" />
+      <span className="rituals-overview__meta">{date ? relTime(date.toISOString()) : relTime(item.updatedAt)}</span>
+    </button>
+  );
+}
+
+function RitualNeedsRow({
+  item,
+  familiarLabel,
+  onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
+  onUnwatch,
+}: {
+  item: InboxItem;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+  onDone: (item: InboxItem) => void;
+  onSnooze: (item: InboxItem) => void;
+  onDismiss: (item: InboxItem) => void;
+  onUnwatch?: (item: InboxItem, repo: string) => void;
+}) {
+  const familiar = familiarLabel(item.familiarId);
+  const watchedRepo = repoFromGithubSubTag(item.auto);
+  return (
+    <li className="rituals-overview__need-row">
+      <button type="button" className="rituals-overview__need-main focus-ring-inset" onClick={() => onSelect(item)}>
+        <span aria-hidden className="rituals-overview__live-dot" />
+        <span className="rituals-overview__row-title">{item.title}</span>
+        {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+        <span className="rituals-overview__meta">{item.firedAt ? relTime(item.firedAt) : relTime(item.updatedAt)}</span>
+      </button>
+      <RowActions>
+        <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
+        {item.status === "fired" ? (
+          <RowActionButton icon="ph:clock-countdown" label={`Snooze ${item.title} for 1 hour`} text="Snooze" onClick={() => onSnooze(item)} />
+        ) : null}
+        {onUnwatch && watchedRepo ? (
+          <RowActionButton
+            icon="ph:bell-slash"
+            label={`Unwatch ${watchedRepo} — stop GitHub notifications from it`}
+            text="Unwatch"
+            onClick={() => onUnwatch(item, watchedRepo)}
+          />
+        ) : null}
+        <RowActionButton icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
+      </RowActions>
+    </li>
+  );
+}
+
+function RitualAgendaThread({
+  items,
+  familiarLabel,
+  onSelect,
+}: {
+  items: InboxItem[];
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  const now = Date.now();
+  const upcoming = items.filter((item) => (ritualItemDate(item)?.getTime() ?? 0) >= now).slice(0, 8).reverse();
+  const past = [...items].reverse().filter((item) => (ritualItemDate(item)?.getTime() ?? 0) < now).slice(0, 8);
+  const renderThreadItem = (item: InboxItem) => {
+    const date = ritualItemDate(item);
+    const label = date
+      ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)
+      : "—";
+    return (
+      <div className="rituals-overview__thread-group" key={item.id}>
+        <span className="rituals-overview__thread-date">{label}</span>
+        <div className="rituals-overview__thread-line">
+          <RitualItemRow item={item} familiarLabel={familiarLabel} onSelect={onSelect} quiet />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rituals-overview__thread">
+      {upcoming.length > 0 ? upcoming.map(renderThreadItem) : (
+        <p className="rituals-overview__empty">Nothing scheduled ahead.</p>
+      )}
+      <div className="rituals-overview__now">
+        <span>now</span>
+        <span className="rituals-overview__now-line"><span /></span>
+      </div>
+      {past.map(renderThreadItem)}
+    </div>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const ritualNow = useRitualNow();
   const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
   // Deferred + undoable deletes (reminders, automations, bulk): rows hide at
   // once, the DELETEs fire only after the undo window, and Undo restores them.
@@ -1798,10 +1957,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Focus lands here after a delete unmounts the detail panel that held it —
   // otherwise it falls to <body> and keyboard users lose their place.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
+  const manageBtnRef = useRef<HTMLButtonElement | null>(null);
+  const overviewSwipeStartRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<AutomationTab>(
-    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : "inbox",
+    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : "overview",
   );
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [manageMenuOpen, setManageMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(true);
+  const [overviewPane, setOverviewPane] = useState<RitualOverviewPane>("log");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
@@ -2293,6 +2458,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     [items, hiddenIds, q],
   );
   const inboxFeed = useMemo(() => groupInboxFeed(inboxVisible), [inboxVisible]);
+  const ritualWeek = useMemo(
+    () => ritualNow ? buildRitualWeek(inboxVisible, ritualNow) : [],
+    [inboxVisible, ritualNow],
+  );
+  const ritualAgenda = useMemo(() => ritualAgendaItems(inboxVisible), [inboxVisible]);
+  const needsYouIds = useMemo(() => new Set(inboxFeed.needsYou.map((item) => item.id)), [inboxFeed.needsYou]);
+  const ritualLog = useMemo(
+    () => ritualLogItems(inboxVisible).filter((item) => !needsYouIds.has(item.id)),
+    [inboxVisible, needsYouIds],
+  );
   const [inboxGroupBy, setInboxGroupBy] = useState<InboxGroupBy>(() => {
     if (typeof window === "undefined") return "attention";
     const raw = window.localStorage.getItem("cave:inbox:group-by");
@@ -2392,10 +2567,25 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
+    setSearchOpen(false);
     inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
     // Clear any open detail on switch — the new tab may not host that type.
     setSelectedItem(null);
     setSelectedCodex(null);
+  };
+
+  const openCalendarDay = (day: RitualDay) => {
+    window.sessionStorage.setItem("cave:calendar:pending-open-date", day.key);
+    selectTab("calendar");
+  };
+
+  const finishOverviewSwipe = (clientX: number) => {
+    const start = overviewSwipeStartRef.current;
+    overviewSwipeStartRef.current = null;
+    if (start === null) return;
+    const distance = clientX - start;
+    if (distance <= -40) setOverviewPane("agenda");
+    if (distance >= 40) setOverviewPane("log");
   };
 
   return (
@@ -2408,26 +2598,19 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
-        {/* Compact header: title, tabs, live summary, filter, and actions in
-            ONE slim topmost band — mirrors the GitHub surface's
-            gh-compact-header so operational surfaces share the same
-            minimalist chrome. */}
-        <div className="surface-compact-header">
+        <div className="surface-compact-header rituals-overview__header">
+          {activeTab !== "overview" ? (
+            <Button size="xs" variant="ghost" leadingIcon="ph:arrow-left" onClick={() => selectTab("overview")}>
+              Overview
+            </Button>
+          ) : (
+            <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
+          )}
           <h1 className="surface-compact-title">Rituals</h1>
-          <Tabs
-            className="surface-compact-tabs"
-            variant="segment"
-            size="sm"
-            ariaLabel="Rituals tabs"
-            idPrefix="automations"
-            value={activeTab}
-            onChange={selectTab}
-            items={[
-              { id: "inbox" as const, label: "Inbox", count: inboxFeed.needsYou.length },
-              ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
-              { id: "crons", label: "Crons", count: codexAutos.length },
-            ] satisfies TabItem<AutomationTab>[]}
-          />
+          {activeTab === "overview" ? (
+            <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
+          ) : null}
+          {activeTab === "calendar" ? <p className="surface-compact-summary">Calendar</p> : null}
           {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
             <p className="surface-compact-summary">
               <span className="inline-flex items-center gap-1.5">
@@ -2440,76 +2623,128 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               )}
             </p>
           )}
-          {activeTab === "inbox" && initialLoadDone && inboxFeed.needsYou.length + inboxFeed.active.length > 0 && (
-            <p className="surface-compact-summary">
-              {inboxFeed.needsYou.length > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-warning)" }} />
-                  {inboxFeed.needsYou.length} need{inboxFeed.needsYou.length === 1 ? "s" : ""} you
-                </span>
-              )}
-              {inboxFeed.active.length > 0 && <span>{inboxFeed.needsYou.length > 0 ? "· " : ""}{inboxFeed.active.length} active</span>}
-            </p>
-          )}
           <div className="surface-compact-actions">
-            {/* Text filter, scoped per tab. Gated on the UNfiltered presence
-                of rows so filtering to zero never hides the box (you can still
-                clear) — and it stays up in inbox select mode, so "search →
-                select all matches → act" is one flow. */}
-            {activeTab !== "calendar" && initialLoadDone &&
-              (activeTab === "inbox" ? items.length > 0 : codexAutos.length > 0) ? (
+            {activeTab === "overview" && searchOpen && initialLoadDone && items.length > 0 ? (
+              <div className="surface-compact-search">
+                <SearchInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onClear={() => { setQuery(""); setSearchOpen(false); }}
+                  placeholder="Filter rituals…"
+                  aria-label="Filter rituals"
+                />
+              </div>
+            ) : null}
+            {activeTab === "overview" && !searchOpen ? (
+              <Button
+                aria-label="Search rituals"
+                size="sm"
+                variant="ghost"
+                leadingIcon="ph:magnifying-glass"
+                onClick={() => setSearchOpen(true)}
+              />
+            ) : null}
+            {activeTab === "crons" && initialLoadDone && codexAutos.length > 0 ? (
               <div className="surface-compact-search">
                 <SearchInput
                   value={query}
                   onValueChange={setQuery}
                   onClear={() => setQuery("")}
-                  placeholder={activeTab === "inbox" ? "Filter inbox…" : "Filter crons…"}
-                  aria-label={activeTab === "inbox" ? "Filter inbox" : "Filter crons"}
+                  placeholder="Filter crons…"
+                  aria-label="Filter crons"
                 />
               </div>
             ) : null}
-            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 ? (
-              // Group-by reads as three visible choices (marketplace kind-filter
-              // precedent), not a dropdown — one glance shows the active dimension.
-              <Tabs
-                variant="segment"
-                size="sm"
-                bordered={false}
-                ariaLabel="Group inbox by"
-                value={inboxGroupBy}
-                onChange={updateInboxGroupBy}
-                items={INBOX_GROUP_BY_OPTIONS.map((option) => ({ id: option.value, label: option.label }))}
-              />
+            {activeTab === "overview" ? (
+              <>
+                <Button
+                  ref={newBtnRef}
+                  size="sm"
+                  className="automation-create-chat-btn"
+                  leadingIcon="ph:plus"
+                  aria-expanded={newMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setNewMenuOpen((open) => !open)}
+                >
+                  New
+                </Button>
+                <Popover
+                  open={newMenuOpen}
+                  onOpenChange={setNewMenuOpen}
+                  anchorRef={newBtnRef}
+                  placement="bottom-end"
+                  minWidth={190}
+                  ariaLabel="Create ritual"
+                >
+                  <PopoverBody role="menu" ariaLabel="Create ritual">
+                    <PopoverItem icon="ph:bell" disabled={!onNewReminder} onSelect={() => { setNewMenuOpen(false); onNewReminder?.(); }}>
+                      New reminder
+                    </PopoverItem>
+                    <PopoverItem icon="ph:clock-countdown" onSelect={() => { setNewMenuOpen(false); setCreateOpen(true); }}>
+                      New cron
+                    </PopoverItem>
+                  </PopoverBody>
+                </Popover>
+                <Button
+                  ref={manageBtnRef}
+                  size="sm"
+                  variant="ghost"
+                  aria-label="More Rituals options"
+                  aria-expanded={manageMenuOpen}
+                  aria-haspopup="menu"
+                  leadingIcon="ph:dots-three"
+                  onClick={() => setManageMenuOpen((open) => !open)}
+                />
+                <Popover
+                  open={manageMenuOpen}
+                  onOpenChange={setManageMenuOpen}
+                  anchorRef={manageBtnRef}
+                  placement="bottom-end"
+                  minWidth={220}
+                  ariaLabel="Rituals options"
+                >
+                  <PopoverBody role="menu" ariaLabel="Rituals options">
+                    {calendarSlot ? (
+                      <PopoverItem icon="ph:calendar-check" onSelect={() => { setManageMenuOpen(false); selectTab("calendar"); }}>
+                        Open full calendar
+                      </PopoverItem>
+                    ) : null}
+                    <PopoverItem icon="ph:clock-countdown" onSelect={() => { setManageMenuOpen(false); selectTab("crons"); }}>
+                      Manage crons
+                    </PopoverItem>
+                    <PopoverItem icon="ph:github-logo" onSelect={() => { setManageMenuOpen(false); void openSubscriptions(); }}>
+                      Subscriptions
+                    </PopoverItem>
+                    {inboxVisible.length > 0 ? (
+                      <PopoverItem icon="ph:check-square" onSelect={() => { setManageMenuOpen(false); inboxSelect.setSelectMode(true); }}>
+                        Select ritual items
+                      </PopoverItem>
+                    ) : null}
+                    {INBOX_GROUP_BY_OPTIONS.map((option) => (
+                      <PopoverItem
+                        key={option.value}
+                        checked={inboxGroupBy === option.value}
+                        onSelect={() => { setManageMenuOpen(false); updateInboxGroupBy(option.value); }}
+                      >
+                        Group selection by {option.label.toLowerCase()}
+                      </PopoverItem>
+                    ))}
+                  </PopoverBody>
+                </Popover>
+              </>
             ) : null}
-            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 && !inboxSelect.selectMode ? (
+            {activeTab === "calendar" && onNewReminder ? (
               <Button
                 size="sm"
-                variant="secondary"
-                leadingIcon="ph:check-square"
-                onClick={() => inboxSelect.setSelectMode(true)}
-                title="Pick inbox items (or whole groups) for a collective action"
+                className="automation-create-chat-btn"
+                leadingIcon="ph:plus"
+                onClick={onNewReminder}
               >
-                Select
-              </Button>
-            ) : null}
-            {activeTab === "inbox" && !inboxSelect.selectMode ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                leadingIcon="ph:github-logo"
-                onClick={() => void openSubscriptions()}
-                title="Choose which GitHub repos and events land in this Inbox"
-              >
-                Subscriptions
-              </Button>
-            ) : null}
-            {activeTab === "inbox" && onNewReminder ? (
-              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={onNewReminder}>
                 New reminder
               </Button>
             ) : null}
             {activeTab === "crons" ? (
-              <Button ref={newBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New cron
               </Button>
             ) : null}
@@ -2535,10 +2770,10 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
         {/* List (or the Calendar surface when that tab is active) */}
         <div
-          role="tabpanel"
+          role="region"
           id={`automations-panel-${activeTab}`}
-          aria-labelledby={`automations-tab-${activeTab}`}
-          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
+          aria-label={activeTab === "overview" ? "Rituals overview" : activeTab === "calendar" ? "Rituals calendar" : "Rituals crons"}
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (
@@ -2551,7 +2786,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 />
               ))}
             </div>
-          ) : activeTab === "inbox" ? (
+          ) : activeTab === "overview" ? (
             inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0 ? (
               q ? (
                 <EmptyState
@@ -2561,13 +2796,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   subtitle="Try a different search term."
                 />
               ) : (
-                <EmptyState
-                  className="mt-12"
-                  icon="ph:tray"
-                  headline="Inbox zero"
-                  subtitle="Reminders and notifications land here as they fire — enjoy the quiet."
-                  actions={onNewReminder ? <Button leadingIcon="ph:plus" onClick={onNewReminder}>New reminder</Button> : undefined}
-                />
+                <EmptyState className="mt-12" icon="ph:moon" headline="All quiet"
+                  subtitle="Reminders, events, and familiar activity will gather here."
+                  actions={onNewReminder ? <Button leadingIcon="ph:plus" onClick={onNewReminder}>New reminder</Button> : undefined} />
               )
             ) : (
               <>
@@ -2601,21 +2832,119 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                     </Button>
                   </SelectionToolbar>
                 ) : null}
-                <InboxFeedList
-                  groups={inboxGroups}
-                  selectedId={selectedItem?.id ?? null}
-                  selectMode={inboxSelect.selectMode}
-                  isSelected={inboxSelect.isSelected}
-                  groupSelected={(group) => inboxSelect.allSelected(group.items)}
-                  onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
-                  onToggle={inboxSelect.toggle}
-                  familiarLabel={familiarLabel}
-                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                  onDone={(item) => void completeInboxItem(item)}
-                  onSnooze={(item) => void snoozeInboxItem(item)}
-                  onDismiss={(item) => void dismissInboxItem(item)}
-                  onUnwatch={(item, repo) => void unwatchRepo(item, repo)}
-                />
+                {inboxSelect.selectMode ? (
+                  <div className="rituals-overview__selection">
+                    <InboxFeedList
+                      groups={inboxGroups}
+                      selectedId={selectedItem?.id ?? null}
+                      selectMode
+                      isSelected={inboxSelect.isSelected}
+                      groupSelected={(group) => inboxSelect.allSelected(group.items)}
+                      onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
+                      onToggle={inboxSelect.toggle}
+                      familiarLabel={familiarLabel}
+                      onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                      onDone={(item) => void completeInboxItem(item)}
+                      onSnooze={(item) => void snoozeInboxItem(item)}
+                      onDismiss={(item) => void dismissInboxItem(item)}
+                      onUnwatch={(item, repo) => void unwatchRepo(item, repo)}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <section className="rituals-overview__events" aria-labelledby="rituals-events-heading">
+                      <button
+                        type="button"
+                        className="rituals-overview__section-toggle focus-ring"
+                        aria-label="Toggle events ribbon"
+                        aria-expanded={eventsOpen}
+                        onClick={() => setEventsOpen((open) => !open)}
+                      >
+                        <span id="rituals-events-heading">Events</span>
+                        <Icon name={eventsOpen ? "ph:caret-down" : "ph:caret-right"} width={11} aria-hidden />
+                        <span aria-hidden className="rituals-overview__fade-rule" />
+                      </button>
+                      {eventsOpen && ritualWeek.length > 0 ? (
+                        <div className="rituals-overview__week" aria-label={ritualWeekLabel(ritualWeek)}>
+                          {ritualWeek.map((day) => (
+                            <button
+                              type="button"
+                              key={day.key}
+                              className={`rituals-overview__day focus-ring${day.isToday ? " rituals-overview__day--today" : ""}`}
+                              aria-label={`Open ${new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(day.date)} in calendar`}
+                              aria-current={day.isToday ? "date" : undefined}
+                              onClick={() => openCalendarDay(day)}
+                            >
+                              <span>{day.weekday}</span>
+                              <strong>{day.day}</strong>
+                              {day.hasItems ? <i aria-hidden /> : null}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+
+                    {inboxFeed.needsYou.length > 0 ? (
+                      <section className="rituals-overview__needs" aria-labelledby="rituals-needs-heading">
+                        <h2 id="rituals-needs-heading">Needs you · {inboxFeed.needsYou.length}</h2>
+                        <ul>
+                          {inboxFeed.needsYou.map((item) => (
+                            <RitualNeedsRow
+                              key={item.id}
+                              item={item}
+                              familiarLabel={familiarLabel}
+                              onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }}
+                              onDone={(next) => void completeInboxItem(next)}
+                              onSnooze={(next) => void snoozeInboxItem(next)}
+                              onDismiss={(next) => void dismissInboxItem(next)}
+                              onUnwatch={(next, repo) => void unwatchRepo(next, repo)}
+                            />
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+
+                    <section className="rituals-overview__lower" aria-label="Ritual activity">
+                      <div className="rituals-overview__pane-nav">
+                        <button type="button" className="focus-ring" aria-label="Show ritual log"
+                          aria-pressed={overviewPane === "log"} onClick={() => setOverviewPane("log")}>
+                          Log · {ritualLog.length}
+                        </button>
+                        <button type="button" className="focus-ring" aria-label="Show agenda thread"
+                          aria-pressed={overviewPane === "agenda"} onClick={() => setOverviewPane("agenda")}>
+                          Agenda thread
+                        </button>
+                        <span />
+                        <button type="button" className="focus-ring" aria-label="Show previous ritual pane"
+                          onClick={() => setOverviewPane("log")} disabled={overviewPane === "log"}>
+                          <Icon name="ph:caret-left" width={13} aria-hidden />
+                        </button>
+                        <button type="button" className="focus-ring" aria-label="Show next ritual pane"
+                          onClick={() => setOverviewPane("agenda")} disabled={overviewPane === "agenda"}>
+                          <Icon name="ph:caret-right" width={13} aria-hidden />
+                        </button>
+                      </div>
+                      <div
+                        className="rituals-overview__pane"
+                        onPointerDown={(event) => { overviewSwipeStartRef.current = event.clientX; }}
+                        onPointerUp={(event) => finishOverviewSwipe(event.clientX)}
+                        onPointerCancel={() => { overviewSwipeStartRef.current = null; }}
+                      >
+                        {overviewPane === "log" ? (
+                          <div className="rituals-overview__log">
+                            {ritualLog.length > 0 ? ritualLog.map((item) => (
+                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel}
+                                onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                            )) : <p className="rituals-overview__empty">No quiet activity yet.</p>}
+                          </div>
+                        ) : (
+                          <RitualAgendaThread items={ritualAgenda} familiarLabel={familiarLabel}
+                            onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                        )}
+                      </div>
+                    </section>
+                  </>
+                )}
               </>
             )
           ) : q && codexActive.length + codexPaused.length === 0 ? (

@@ -1,8 +1,7 @@
 // @ts-nocheck
 // The Rituals surface (nav id `inbox`, formerly "Schedules") is the
-// slimmed-down schedule home: Calendar plus Crons only. Full Automations/Flow
-// work lives on the feature branch and must not be surfaced from the main
-// navigation.
+// unified schedule home: a week ribbon, Needs-you queue, and manual Log/Agenda
+// switch. Full Calendar and Crons remain secondary operational destinations.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -10,6 +9,7 @@ const automations = readFileSync(new URL("./automations-view.tsx", import.meta.u
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
@@ -64,53 +64,47 @@ assert.match(
   "/rituals plus legacy /schedules, /automations and /inbox aliases route to the inbox mode",
 );
 
-// ── Slim typed tab model ────────────────────────────────────────────────────
+// ── Unified overview model ──────────────────────────────────────────────────
 assert.match(
   automations,
-  /type AutomationTab = "inbox" \| "calendar" \| "crons"/,
-  "Surface exposes Inbox, Calendar, and Crons tabs",
+  /type AutomationTab = "overview" \| "calendar" \| "crons"/,
+  "Surface exposes Overview, Calendar, and Crons modes",
 );
 assert.match(
   automations,
-  // Inbox is the default landing tab; explicit deep links (Calendar nav,
-  // legacy crons links) may override on mount.
-  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*initialTab === "crons" \? "crons" : "inbox",?\s*\)/,
-  "Surface defaults to the Inbox tab unless a deep link asks otherwise",
+  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*initialTab === "crons" \? "crons" : "overview",?\s*\)/,
+  "Surface defaults to the unified overview unless a deep link asks otherwise",
 );
 assert.match(automations, /<h1[\s\S]*?>\s*Rituals\s*<\/h1>/, "Surface header reads Rituals");
-assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Tabs use the shared segment Tabs");
-
-// Tabs present, in order: Inbox first (the landing tab), then Calendar, Crons.
-assert.match(automations, /\{ id: "inbox" as const, label: "Inbox", count: inboxFeed\.needsYou\.length \}/, "Inbox tab with the needs-you count");
-assert.match(automations, /\{ id: "calendar" as const, label: "Calendar" \}/, "Calendar tab");
-assert.match(automations, /\{ id: "crons", label: "Crons", count: codexAutos\.length \}/, "Crons tab");
-assert.doesNotMatch(automations, /\{ id: "all", label: "All"/, "All tab moved out with Automations");
-assert.doesNotMatch(automations, /\{ id: "reminders", label: "Reminders"/, "Reminders tab moved out with Automations");
-assert.doesNotMatch(automations, /\{ id: "flows", label: "Flows"/, "Flows tab moved to the feature branch");
-assert.doesNotMatch(automations, /\{ id: "activity", label: "Activity"/, "Activity tab moved out with Automations");
-assert.doesNotMatch(automations, /\{ id: "templates", label: "Templates"/, "Templates tab moved out with Automations");
 assert.match(
   automations,
-  /id: "inbox"[\s\S]*id: "calendar"[\s\S]*id: "crons"/,
-  "tabs ordered Inbox, Calendar, Crons",
-);
-// The Inbox tab renders the full grouped feed and lands there by default from
-// the workspace (Calendar deep links still open Calendar).
-assert.match(
-  automations,
-  /activeTab === "inbox" \?[\s\S]*?<InboxFeedList/,
-  "the Inbox tab renders the grouped inbox feed",
+  /aria-label="Toggle events ribbon"[\s\S]*Needs you · \{inboxFeed\.needsYou\.length\}[\s\S]*aria-label="Show ritual log"[\s\S]*aria-label="Show agenda thread"/,
+  "overview follows the handoff hierarchy: week ribbon, Needs-you queue, then Log/Agenda",
 );
 assert.match(
   automations,
-  /<InboxFeedList[\s\S]*?onDone=\{\(item\) => void completeInboxItem\(item\)\}[\s\S]*?onSnooze=\{\(item\) => void snoozeInboxItem\(item\)\}[\s\S]*?onDismiss=\{\(item\) => void dismissInboxItem\(item\)\}/,
-  "feed rows wire Done / Snooze / Dismiss to the inbox action endpoints",
+  /onPointerDown=\{\(event\) => \{ overviewSwipeStartRef\.current = event\.clientX; \}\}[\s\S]*onPointerUp=\{\(event\) => finishOverviewSwipe\(event\.clientX\)\}/,
+  "Log and Agenda switch only through explicit controls or a manual swipe",
+);
+assert.match(
+  automations,
+  /<RitualNeedsRow[\s\S]*?onDone=\{\(next\) => void completeInboxItem\(next\)\}[\s\S]*?onSnooze=\{\(next\) => void snoozeInboxItem\(next\)\}[\s\S]*?onDismiss=\{\(next\) => void dismissInboxItem\(next\)\}/,
+  "Needs-you rows wire Done / Snooze / Dismiss to the inbox action endpoints",
 );
 assert.match(
   workspace,
-  /initialTab=\{mode === "calendar" \? "calendar" : "inbox"\}/,
-  "Workspace lands the surface on Inbox unless the Calendar deep link asked for Calendar",
+  /initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
+  "Workspace lands on the overview unless the Calendar deep link asked for Calendar",
 );
+assert.match(automations, /setActiveTab\("calendar"\)|selectTab\("calendar"\)/, "the full Calendar remains reachable");
+assert.match(automations, /setActiveTab\("crons"\)|selectTab\("crons"\)/, "Cron management remains reachable");
+assert.match(automations, /sessionStorage\.setItem\("cave:calendar:pending-open-date", day\.key\)[\s\S]{0,100}selectTab\("calendar"\)/, "a ribbon day queues its date before Calendar mounts");
+assert.match(calendar, /sessionStorage\.getItem\("cave:calendar:pending-open-date"\)[\s\S]{0,180}openDateValue\(pendingDate\)/, "Calendar consumes a queued ribbon date on mount");
+assert.match(calendar, /addEventListener\("cave:calendar:open-date", openDate\)/, "Calendar accepts a day selected from the overview ribbon");
+assert.match(calendar, /setAnchor\(next\);[\s\S]{0,140}setViewMode\("day"\)/, "a ribbon day opens the matching single-day calendar");
+assert.match(calendar, /mobileRibbonDayOpen && viewMode === "day"/, "mobile preserves an explicitly selected ribbon day instead of forcing Agenda");
+assert.match(automations, /function useRitualNow\(\): Date \| null[\s\S]{0,560}setNow\(new Date\(\)\);[\s\S]{0,80}scheduleMidnight/, "the hydration-stable week clock starts in the browser and refreshes at local midnight");
+assert.match(automations, /ritualNow \? buildRitualWeek\(inboxVisible, ritualNow\) : \[\]/, "the week ribbon waits for the browser-local date before derivation");
 assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
 
 assert.doesNotMatch(automations, /listFlows\(\)/, "Rituals does not load flow docs");

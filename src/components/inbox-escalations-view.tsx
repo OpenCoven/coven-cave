@@ -18,7 +18,7 @@ type Props = {
   /** Calendar surface rendered as the leading tab (merged schedule page). */
   calendarSlot?: ReactNode;
   /** Tab to open on mount — "calendar" deep-links the Calendar nav button. */
-  initialTab?: "inbox" | "calendar" | "crons";
+  initialTab?: "overview" | "calendar" | "crons";
 };
 
 export function InboxEscalationsView({
