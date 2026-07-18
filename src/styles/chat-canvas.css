@@ -170,6 +170,17 @@
   align-items: center;
   gap: var(--space-2);
 }
+.chat-canvas-add__heading {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.chat-canvas-add__subheading {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
 .chat-canvas-add__modes { display: flex; gap: var(--space-1); flex: 1; }
 .chat-canvas-add__mode {
   font-size: var(--text-xs);
@@ -212,6 +223,7 @@
   padding: var(--space-2) var(--space-3);
 }
 .chat-canvas-add__prompt { min-height: 72px; resize: vertical; }
+.chat-canvas-add__refine-input { min-height: 64px; resize: vertical; }
 .chat-canvas-add__editor {
   min-height: 160px;
   resize: vertical;
@@ -234,6 +246,27 @@
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-2);
   max-width: 180px;
+}
+.chat-canvas-add__start-code,
+.chat-canvas-add__retry-save {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+.chat-canvas-add__start-code:hover,
+.chat-canvas-add__retry-save:hover { color: var(--text-primary); background: var(--bg-raised); }
+.chat-canvas-add__start-code svg { width: 12px; height: 12px; }
+.chat-canvas-add__no-familiar {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-warning, var(--text-muted));
 }
 .chat-canvas-add__kind {
   flex-shrink: 0;
@@ -298,6 +331,53 @@
   border-radius: var(--radius-control);
   padding: var(--space-2) var(--space-3);
 }
+.chat-canvas-add__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.chat-canvas-add__suggestion {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.chat-canvas-add__suggestion:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.chat-canvas-add__result-head,
+.chat-canvas-add__code-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.chat-canvas-add__result-head .chat-canvas-add__save-state { margin-left: auto; }
+.chat-canvas-add__save-state {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.chat-canvas-add__save-state--saved { color: var(--color-success); }
+.chat-canvas-add__save-state--error { color: var(--color-danger); }
+.chat-canvas-add__refine-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.chat-canvas-add__code {
+  min-height: 200px;
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: var(--space-3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  white-space: pre;
+}
 /* Result preview inside the tile — same sandboxed-thumbnail treatment as
    cards (thumb precedent: sketches expect a white page behind them). */
 .chat-canvas-add__preview {
@@ -316,6 +396,16 @@
   transform: scale(0.5);
   transform-origin: top left;
   pointer-events: none;
+}
+.chat-canvas-add__runtime-error {
+  position: absolute;
+  inset: auto var(--space-2) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+  padding: var(--space-2);
 }
 /* A kept sketch settles into the grid with a one-shot highlight. */
 .chat-canvas-card--new {

@@ -223,6 +223,32 @@ export function buildRefinePrompt(
   ].join("\n");
 }
 
+/**
+ * One-shot recovery prompt for a Canvas-origin response that streamed
+ * successfully but could not be rendered. Keeping this separate from the
+ * normal sketch prompt lets callers retry only the format failure, and pass
+ * the first run's session id so the repair remains in the same hidden Canvas
+ * conversation.
+ */
+export function buildArtifactRepairPrompt(
+  originalIntent: string,
+  kind?: ArtifactKind,
+): string {
+  const intent = (originalIntent ?? "").trim() || "the requested UI";
+  const form = kind === "react"
+    ? "one complete `tsx` fenced artifact"
+    : kind === "html"
+      ? "one complete `html` fenced artifact"
+      : "one complete `html` or `tsx` fenced artifact";
+  return [
+    "Repair the previous response so the Canvas can preview it.",
+    `Return only ${form}, with no prose before or after.`,
+    "The artifact must be complete, self-contained, and require no network access.",
+    "Original user intent:",
+    intent,
+  ].join("\n");
+}
+
 /** A minimal starter document for hand-written / pasted artifacts. */
 export const STARTER_ARTIFACT_HTML = [
   "<!doctype html>",
@@ -241,6 +267,24 @@ export const STARTER_ARTIFACT_HTML = [
   '  <div class="card"><h1>Hello, canvas</h1><p>Edit this HTML to sketch a UI.</p></div>',
   "</body>",
   "</html>",
+].join("\n");
+
+/** A minimal interactive starter for the explicit Blank React path. */
+export const STARTER_ARTIFACT_REACT = [
+  "export default function App() {",
+  "  const [count, setCount] = React.useState(0);",
+  "  return (",
+  '    <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-6">',
+  '      <section className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">',
+  '        <h1 className="text-2xl font-semibold">Hello, canvas</h1>',
+  '        <p className="mt-2 text-slate-400">Edit this React component to sketch an interaction.</p>',
+  '        <button className="mt-5 rounded-lg bg-violet-500 px-4 py-2 font-medium hover:bg-violet-400" onClick={() => setCount((value) => value + 1)}>',
+  "          Clicked {count} times",
+  "        </button>",
+  "      </section>",
+  "    </main>",
+  "  );",
+  "}",
 ].join("\n");
 
 /** Validate/normalize a raw artifact record from disk or a request body. */

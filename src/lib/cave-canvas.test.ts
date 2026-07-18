@@ -179,7 +179,7 @@ assert.match(
 const addTileSource = readFileSync(new URL("../components/canvas-add-tile.tsx", import.meta.url), "utf8");
 assert.match(
   addTileSource,
-  /onSaved\(data\.artifacts \?\? \[\], data\.savedId \?\? artifact\.id\)/,
+  /onArtifactsChanged\(data\.artifacts \?\? \[\], savedId\)/,
   "the add tile highlights the settled tile, not the client-minted id a dedupe discarded",
 );
 
