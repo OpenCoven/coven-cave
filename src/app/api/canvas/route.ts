@@ -40,8 +40,8 @@ export async function POST(req: Request) {
   if (!body.artifact || typeof body.artifact !== "object") {
     return NextResponse.json({ ok: false, error: "artifact required" }, { status: 400 });
   }
-  const file = await upsertCanvasArtifact(body.artifact);
-  return NextResponse.json({ ok: true, artifacts: file.artifacts });
+  const { file, savedId } = await upsertCanvasArtifact(body.artifact);
+  return NextResponse.json({ ok: true, artifacts: file.artifacts, savedId });
 }
 
 export async function DELETE(req: Request) {
