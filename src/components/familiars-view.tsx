@@ -29,6 +29,7 @@ import {
   type FamiliarCardStats,
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
+import { deriveRenown } from "@/lib/familiar-renown";
 import { compactCount } from "@/lib/profile-card";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
@@ -459,6 +460,7 @@ function emptyStats(): FamiliarCardStats {
     sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
@@ -513,6 +515,17 @@ function FamiliarRosterCard({
     ? `last session ${age(stats.lastSessionAt)}`
     : "No sessions yet";
   const stripTotal = stats.activity.reduce((sum, n) => sum + n, 0);
+  // Renown — earned standing derived from real work (sessions + curated
+  // memories), never a synthetic counter. Tier reads as quiet metadata in the
+  // microlabel voice; the tooltip carries the score and the next rung.
+  const renown = deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount });
+  const renownTitle = renown.next
+    ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
+    : `${renown.score} renown · top of the ladder`;
+  const streakTitle =
+    stats.streakDays > 0
+      ? `${stats.streakDays} consecutive day${stats.streakDays === 1 ? "" : "s"} with sessions`
+      : "No active streak — a session today starts one";
   return (
     // De-boxed card (cave-g2r6) restyled as a terminal stat tile (cave-uw7c):
     // the wrapper carries the wash + soft hairline so the open button and the
@@ -535,8 +548,12 @@ function FamiliarRosterCard({
             <span className="block truncate font-mono text-[13px] font-semibold tracking-wide text-[var(--text-primary)]">
               {familiar.display_name}
             </span>
-            <span className="familiars-view__microlabel mt-1 block truncate">
-              {familiar.role || familiar.harness || familiar.id}
+            <span className="familiars-view__microlabel mt-1 flex min-w-0 items-center gap-1">
+              <span className="truncate">{familiar.role || familiar.harness || familiar.id}</span>
+              <span aria-hidden="true">·</span>
+              <span className="shrink-0 text-[var(--text-secondary)]" title={renownTitle}>
+                {renown.tier.label}
+              </span>
             </span>
           </span>
           <span className="familiars-view__microlabel inline-flex shrink-0 items-center gap-1.5 self-start">
@@ -575,6 +592,12 @@ function FamiliarRosterCard({
           <span className="familiars-view__stat">
             <span className="familiars-view__stat-label">memories</span>
             <span className="familiars-view__stat-value">{compactCount(stats.memoryCount)}</span>
+          </span>
+          <span className="familiars-view__stat" title={streakTitle}>
+            <span className="familiars-view__stat-label">streak</span>
+            <span className="familiars-view__stat-value">
+              {stats.streakDays > 0 ? `${stats.streakDays}d` : "—"}
+            </span>
           </span>
         </span>
 

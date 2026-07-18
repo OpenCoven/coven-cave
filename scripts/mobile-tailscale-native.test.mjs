@@ -12,10 +12,10 @@ assert.match(infoPlist, /<string>_tailscale\._tcp<\/string>/);
 assert.match(infoPlist, /<string>_tailscale\._udp<\/string>/);
 assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
 assert.match(infoPlist, /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/);
-assert.match(
+assert.doesNotMatch(
   infoPlist,
   /<key>CFBundleURLTypes<\/key>\s*<array>[\s\S]*<key>CFBundleURLSchemes<\/key>\s*<array>[\s\S]*<string>opencoven<\/string>[\s\S]*<\/array>[\s\S]*<\/array>/,
-  "iOS Info.plist should register the opencoven URL scheme",
+  "iOS Info.plist should not register the hijackable opencoven URL scheme",
 );
 
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
@@ -96,15 +96,30 @@ assert.match(
 );
 
 const swiftCaveClient = read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
+// The SSE frame decoding moved into the shared SSELineParser (cave-h40l) so
+// the send stream and the mid-turn resume stream parse identically — the
+// fast-path and boundary behaviors are pinned there (and unit-tested in
+// CovenCaveTests/SSELineParserTests.swift).
+const swiftSseParser = read("apps/ios/CovenCave/CovenCave/Networking/SSELineParser.swift");
 assert.match(
   swiftCaveClient,
-  /if let event = StreamEvent\.decode\(payload\) \{\s*\n\s*continuation\.yield\(event\)\s*\n\s*continue\s*\n\s*\}/,
+  /var parser = SSELineParser\(\)/,
+  "native SwiftUI streams should parse through the shared SSELineParser",
+);
+assert.match(
+  swiftSseParser,
+  /if dataLines\.isEmpty, let event = StreamEvent\.decode\(payload\) \{\s*\n\s*return event\s*\n\s*\}/,
   "native SwiftUI SSE parser should decode single data payloads immediately instead of depending on blank-frame boundaries",
 );
 assert.match(
-  swiftCaveClient,
-  /let trimmedLine = line\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*?if trimmedLine\.isEmpty/,
+  swiftSseParser,
+  /let trimmed = line\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*?if trimmed\.isEmpty/,
   "native SwiftUI SSE parser should treat whitespace-only separator lines as event boundaries",
+);
+assert.match(
+  swiftSseParser,
+  /if trimmed\.hasPrefix\("id:"\)/,
+  "native SwiftUI SSE parser should track id: lines — the mid-turn resume cursor (cave-h40l)",
 );
 
 const swiftCodeEditorView = read("apps/ios/CovenCave/CovenCave/Views/CodeEditorView.swift");

@@ -92,7 +92,7 @@ async function seed(page: Page): Promise<Mutable> {
 test.describe("composer runtime chip", () => {
   test("always visible with the runtime + model, popover carries radio groups", async ({ page }) => {
     await seed(page);
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     const chip = page.getByRole("button", { name: /Runtime: /, exact: false });
     await expect(chip).toBeVisible({ timeout: 45_000 });
     // toHaveAttribute retries — the label settles once model-state hydrates.
@@ -112,7 +112,7 @@ test.describe("composer runtime chip", () => {
 
   test("picking a runtime rebinds via /api/config, flips the chip, and refreshes the roster", async ({ page }) => {
     const state = await seed(page);
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     const chip = page.getByRole("button", { name: /Runtime: /, exact: false });
     await expect(chip).toBeVisible({ timeout: 45_000 });
     await expect(chip).toHaveAttribute("aria-label", /Runtime: Codex/, { timeout: 15_000 });

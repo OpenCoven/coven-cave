@@ -6,7 +6,9 @@ const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8")
 // The empty state (the familiar's starting page) was extracted when it became
 // task-aware; its launch-screen pins now read the dedicated file.
 const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
@@ -299,10 +301,18 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
+// The steady-state hint survives behind the recommended-next-path ghost fill
+// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
+// without one the classic `Message <familiar>…  ↵ to send` remains.
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
   "Composer placeholder should include ↵ to send hint in steady state",
+);
+assert.match(
+  source,
+  /busy\s*\? "Streaming… \(esc to cancel\)"/,
+  "Streaming keeps its own placeholder ahead of the recommendation branch",
 );
 
 assert.match(
@@ -330,8 +340,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerOptionsMenu/,
-  "composer utility row keeps attach + voice, then the collapsed Options menu",
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerOptionsMenu/,
+  "composer utility row keeps attach + voice call, then the collapsed Options menu",
 );
 // Composer core (cave-xsq.4): the dedicated Prompt-snippets button is folded
 // into the Options overflow, so the resting utility row is just attach · voice ·
@@ -410,21 +420,24 @@ assert.match(
 );
 assert.match(
   source,
-  /ph:microphone/,
-  "desktop composer has a mic/voice button",
+  /ph:phone/,
+  "desktop composer has a voice-call button",
 );
-// Voice can only attach to a live session, so pre-session the button is
-// hidden rather than disabled-forever (design language: hide, don't disable —
-// the zero-turn landing must not show a dead affordance).
-assert.match(
+// Voice new-chat (spec: docs/superpowers/specs/2026-07-18-voice-new-chat-design.md):
+// the call button now renders unconditionally, even pre-session — clicking
+// it before a session exists mints the conversation first
+// (startVoiceConversation) instead of the button being hidden until the
+// first send creates one. Full wiring (openVoiceCall, the pre-session mint,
+// the target-session-scoped nonce re-entry) is pinned in voice-new-chat.test.ts.
+assert.doesNotMatch(
   source,
-  /\{sessionId \? \([\s\S]{0,400}aria-label="Voice"/,
-  "the voice button is conditionally rendered on sessionId (hidden pre-session)",
+  /\{sessionId \? \([\s\S]{0,400}aria-label="Voice call"/,
+  "the voice call button is no longer gated behind a sessionId check",
 );
 assert.doesNotMatch(
   source,
-  /aria-label="Voice"[\s\S]{0,200}disabled=\{!sessionId\}/,
-  "the voice button must not be a permanently disabled affordance on the zero-turn landing",
+  /aria-label="Voice call"[\s\S]{0,200}disabled=\{!sessionId\}/,
+  "the voice call button must not be a permanently disabled affordance on the zero-turn landing",
 );
 
 assert.match(
@@ -859,7 +872,9 @@ assert.match(
   /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
   "A visible drop overlay must render while a file drag is over the chat surface",
 );
-const caveChatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   caveChatCss,
   /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,

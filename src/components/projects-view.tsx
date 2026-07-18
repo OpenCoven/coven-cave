@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 // The Projects hub's styling (every `projects-hub`/`projects-list-row`/
@@ -9,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import "@/styles/projects.css";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import { invalidateConversation } from "@/lib/conversation-cache";
+import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { deriveProjectStatus } from "@/lib/project-status";
@@ -57,11 +59,12 @@ type ProjectsViewProps = {
   familiars?: Familiar[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** When set, only projects this familiar has been granted are shown. */
   activeFamiliarId?: string | null;
 };
 
-export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, onSessionsDeleted, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
   // Mutations that only show visually (create, undo) get announced here; move
@@ -425,7 +428,8 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
 
   // Delete one chat, mirroring the Chats list delete (DELETE
-  // /api/chat/conversation/:id). Returns whether it succeeded; callers refetch.
+  // /api/chat/conversation/:id). Returns whether it succeeded; callers report
+  // confirmed ids to the Workspace-owned deletion boundary.
   const deleteOneSession = async (sessionId: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
@@ -434,7 +438,6 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
         setSessionError(json.error ?? "delete failed");
         return false;
       }
-      invalidateConversation(sessionId);
       return true;
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : "delete failed");
@@ -442,15 +445,15 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     }
   };
 
-  // Delete a single chat from the detail pane, then ask the parent to refetch
-  // sessions so the row disappears everywhere.
+  // Delete a single chat from the detail pane, then report it so Workspace
+  // removes the row from every shared-session surface before reloading.
   const handleDeleteSession = async (sessionId: string) => {
     setSessionError(null);
-    if (await deleteOneSession(sessionId)) onSessionsChanged?.();
+    if (await deleteOneSession(sessionId)) onSessionsDeleted([sessionId]);
   };
 
   // Bulk-delete the chats selected in the detail pane — deferred + undoable:
-  // hide them now, fire the DELETEs only after the undo window, refetch once.
+  // hide them now, then report only confirmed ids after the undo window.
   const handleDeleteSessions = async (sessionIds: string[]) => {
     setSessionError(null);
     if (sessionIds.length === 0) return;
@@ -463,7 +466,8 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
       async () => {
         const results = await Promise.all(removed.map((s) => deleteOneSession(s.id)));
-        if (results.some(Boolean)) onSessionsChanged?.();
+        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
+        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
       },
     );
   };

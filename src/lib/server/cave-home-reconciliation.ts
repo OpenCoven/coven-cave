@@ -6,6 +6,7 @@ import {
   link,
   lstat,
   mkdir,
+  open,
   readFile,
   readlink,
   readdir,
@@ -115,12 +116,31 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only unlock rename override. */
   lockReleaseRename?: typeof rename;
+  /** Test-only candidate publication rename override. */
+  lockCandidateRename?: typeof rename;
+  /** Test-only stale-lock fencing rename override. */
+  lockFenceRename?: typeof rename;
+  /** Test-only acquisition deadline override. */
+  lockTimeoutMs?: number;
+  /** Test-only lock diagnostic observer. */
+  lockDiagnostic?: (diagnostic: ReconciliationLockDiagnostic) => void;
+  /** Test-only hook after an exclusive takeover claim is published. */
+  takeoverPublishProbe?: (takeoverToken: string) => void | Promise<void>;
+  /** Test-only hook before a reclaimable takeover claim is advanced. */
+  takeoverRemovalProbe?: (takeover: string, takeoverToken: string | null) => void | Promise<void>;
   /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
   /** Test-only hook after managed-mirror canonical validation. */
   managedMirrorProbe?: (canonicalPath: string) => void | Promise<void>;
   /** Test-only hook before an explicit/automatic canonical replacement. */
   resolutionProbe?: (canonicalPath: string) => void | Promise<void>;
+};
+
+export type ReconciliationLockDiagnostic = {
+  phase: "waiting" | "acquired" | "failed";
+  durationMs: number;
+  result: "pending" | "acquired" | "timeout" | "error";
+  errorCode?: string;
 };
 
 type PathInfo = {
@@ -138,14 +158,24 @@ const JOURNAL_VERSION = 1 as const;
 const MIGRATION_VERSION = 2 as const;
 const BACKUP_RETENTION = 10;
 const LOCK_STALE_MS = 5 * 60_000;
+/** Hard upper bound for publishing or reclaiming the cross-process lock. */
+export const RECONCILIATION_LOCK_TIMEOUT_MS = 15_000;
+const LOCK_SLOW_DIAGNOSTIC_MS = 1_000;
 
 declare global {
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationLockTokens: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationTakeoverTokens: Set<string> | undefined;
 }
 
 function activeLockTokens(): Set<string> {
   return globalThis.__caveHomeReconciliationLockTokens ??=
+    new Set<string>();
+}
+
+function activeTakeoverTokens(): Set<string> {
+  return globalThis.__caveHomeReconciliationTakeoverTokens ??=
     new Set<string>();
 }
 
@@ -276,9 +306,149 @@ async function readLockOwner(lock: string): Promise<LockOwner> {
   };
 }
 
-async function renameLockCandidate(candidate: string, lock: string): Promise<void> {
+type TakeoverClaim = {
+  pid?: unknown;
+  takeoverToken?: unknown;
+  ownerToken?: unknown;
+  startedAt?: unknown;
+  abandonedAt?: unknown;
+};
+
+type TakeoverSnapshot = {
+  claim: TakeoverClaim | null;
+  identity: string;
+  mtimeMs: number;
+};
+
+async function readTakeoverClaim(takeover: string): Promise<TakeoverSnapshot | null> {
+  let handle;
   try {
-    await rename(candidate, lock);
+    handle = await open(takeover, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const [raw, info] = await Promise.all([handle.readFile("utf8"), handle.stat()]);
+    let claim: TakeoverClaim | null = null;
+    try {
+      claim = JSON.parse(raw) as TakeoverClaim;
+    } catch {
+      // Legacy or partially published claims are handled by their age.
+    }
+    const token = typeof claim?.takeoverToken === "string" ? claim.takeoverToken : null;
+    return {
+      claim,
+      identity: token ?? `legacy-${createHash("sha256").update(raw).digest("hex")}`,
+      mtimeMs: info.mtimeMs,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+function takeoverClaimIsReclaimable(snapshot: TakeoverSnapshot): boolean {
+  if (typeof snapshot.claim?.abandonedAt === "string") return true;
+  const pid = typeof snapshot.claim?.pid === "number" && Number.isSafeInteger(snapshot.claim.pid)
+    ? snapshot.claim.pid
+    : null;
+  const takeoverToken = typeof snapshot.claim?.takeoverToken === "string"
+    ? snapshot.claim.takeoverToken
+    : null;
+  const ageMs = Date.now() - snapshot.mtimeMs;
+  const sameProcessOrphan = pid === process.pid &&
+    (!takeoverToken || !activeTakeoverTokens().has(takeoverToken));
+  if (sameProcessOrphan) return true;
+  if (pid) {
+    try {
+      process.kill(pid, 0);
+      return ageMs > LOCK_STALE_MS;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== "EPERM" || ageMs > LOCK_STALE_MS;
+    }
+  }
+  return ageMs > LOCK_STALE_MS;
+}
+
+async function publishTakeoverClaim(
+  lock: string,
+  ownerToken: string | null,
+  takeoverToken: string,
+): Promise<boolean> {
+  const candidate = path.join(lock, `.takeover-candidate-${takeoverToken}`);
+  const claimPath = path.join(lock, ".takeover");
+  await writeFile(candidate, JSON.stringify({
+    pid: process.pid,
+    takeoverToken,
+    ownerToken,
+    startedAt: nowIso(),
+  }), { flag: "wx" });
+  try {
+    const currentOwner = await readLockOwner(lock);
+    if (currentOwner.token !== ownerToken) return false;
+    await link(candidate, claimPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    await rm(candidate, { force: true });
+  }
+}
+
+function takeoverFencePath(
+  lock: string,
+  snapshot: TakeoverSnapshot,
+  owner: LockOwner,
+  lockBirthtimeMs: number,
+): string {
+  const generation = JSON.stringify({
+    claim: snapshot.identity,
+    ownerPid: owner.pid,
+    ownerToken: owner.token,
+    ownerStartedAt: owner.startedAt,
+    lockBirthtimeMs,
+  });
+  const digest = createHash("sha256").update(generation).digest("hex").slice(0, 32);
+  return `${lock}.reclaimed-${digest}`;
+}
+
+async function renameLockToFence(
+  lock: string,
+  fence: string,
+  renameOperation: typeof rename = rename,
+): Promise<boolean> {
+  try {
+    await renameOperation(lock, fence);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (["EEXIST", "ENOTEMPTY", "ENOENT"].includes(code)) return false;
+    if (["EACCES", "EPERM"].includes(code)) {
+      const fenceExists = await stat(fence).then(
+        () => true,
+        (statError) => {
+          if ((statError as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw statError;
+        },
+      );
+      // Whether another contender published the fence or Windows deferred the
+      // directory rename, no unsafe mutation occurred. Retry under the bounded
+      // acquisition deadline instead of either busy-looping or waiting forever.
+      if (fenceExists) return false;
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function renameLockCandidate(
+  candidate: string,
+  lock: string,
+  renameOperation: typeof rename = rename,
+): Promise<void> {
+  try {
+    await renameOperation(candidate, lock);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "";
     // Windows reports EPERM (rather than EEXIST/ENOTEMPTY) when a directory
@@ -305,14 +475,63 @@ async function renameLockCandidate(candidate: string, lock: string): Promise<voi
 
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
+  const startedAt = Date.now();
+  const timeoutMs = Math.max(1, options.lockTimeoutMs ?? RECONCILIATION_LOCK_TIMEOUT_MS);
+  const deadline = startedAt + timeoutMs;
+  let slowDiagnosticEmitted = false;
+  const diagnostic = (
+    phase: ReconciliationLockDiagnostic["phase"],
+    result: ReconciliationLockDiagnostic["result"],
+    error?: unknown,
+    log = false,
+  ) => {
+    const event: ReconciliationLockDiagnostic = {
+      phase,
+      result,
+      durationMs: Date.now() - startedAt,
+      ...(error && typeof error === "object" && "code" in error
+        ? { errorCode: String((error as NodeJS.ErrnoException).code ?? "") }
+        : {}),
+    };
+    try {
+      options.lockDiagnostic?.(event);
+    } catch {
+      // Diagnostics must never change lock ownership or acquisition behavior.
+    }
+    // Successful uncontended store reads are intentionally silent. Only slow
+    // waits and terminal failures reach logs, with no home paths or file data.
+    if (log && phase === "waiting") console.warn("[cave-home-reconciliation] lock", event);
+    else if (log && phase === "failed") console.warn("[cave-home-reconciliation] lock", event);
+    else if (event.durationMs >= LOCK_SLOW_DIAGNOSTIC_MS) console.info("[cave-home-reconciliation] lock", event);
+  };
+  const terminalError = (error: unknown): unknown => {
+    diagnostic(
+      "failed",
+      (error as NodeJS.ErrnoException).code === "ETIMEDOUT" ? "timeout" : "error",
+      error,
+      true,
+    );
+    return error;
+  };
+  diagnostic("waiting", "pending");
+
   for (;;) {
+    if (Date.now() >= deadline) {
+      const timeout = new Error(`timed out acquiring cave home reconciliation lock after ${timeoutMs}ms`) as NodeJS.ErrnoException;
+      timeout.code = "ETIMEDOUT";
+      throw terminalError(timeout);
+    }
+    if (!slowDiagnosticEmitted && Date.now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
+      slowDiagnosticEmitted = true;
+      diagnostic("waiting", "pending", undefined, true);
+    }
     const token = randomBytes(16).toString("hex");
     const candidate = `${lock}.candidate-${token}`;
     try {
       await mkdir(candidate);
       try {
         await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
-        await renameLockCandidate(candidate, lock);
+        await renameLockCandidate(candidate, lock, options.lockCandidateRename);
       } catch (error) {
         await rm(candidate, { recursive: true, force: true });
         throw error;
@@ -368,10 +587,13 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         await release().catch(() => {});
         throw error;
       }
+      diagnostic("acquired", "acquired");
       return release;
     } catch (error) {
       await rm(candidate, { recursive: true, force: true }).catch(() => {});
-      if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      if (!["EEXIST", "ENOTEMPTY", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+        throw terminalError(error);
+      }
       try {
         const info = await stat(lock);
         const owner = await readLockOwner(lock);
@@ -395,24 +617,62 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           await options.lockProbe?.("stale-observed");
           const takeover = path.join(lock, ".takeover");
           const takeoverToken = randomBytes(16).toString("hex");
+          // Register before writeFile can publish the claim. Another
+          // same-process contender must never mistake this token for an
+          // abandoned marker during the await boundary.
+          activeTakeoverTokens().add(takeoverToken);
           try {
-            await writeFile(takeover, JSON.stringify({ takeoverToken, ownerToken: owner.token }), { flag: "wx" });
-            const currentOwner = await readLockOwner(lock);
-            if (currentOwner.token !== owner.token) {
-              await rm(takeover, { force: true });
+            const ownerBeforePublish = await readLockOwner(lock);
+            if (ownerBeforePublish.token !== owner.token) continue;
+            const published = await publishTakeoverClaim(lock, owner.token, takeoverToken);
+            const inspected = await readTakeoverClaim(takeover);
+            if (!inspected) continue;
+            if (published) {
+              await options.takeoverPublishProbe?.(takeoverToken);
             } else {
-              const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
-              await rename(lock, reclaimed);
-              await rm(reclaimed, { recursive: true, force: true });
-              continue;
+              const inspectedToken = typeof inspected.claim?.takeoverToken === "string"
+                ? inspected.claim.takeoverToken
+                : null;
+              if (!takeoverClaimIsReclaimable(inspected)) continue;
+              await options.takeoverRemovalProbe?.(takeover, inspectedToken);
             }
+
+            // Claims are immutable. Re-read both the claim identity and lock
+            // generation immediately before fencing the whole directory.
+            const generationBefore = await stat(lock);
+            const [currentClaim, currentOwner] = await Promise.all([
+              readTakeoverClaim(takeover),
+              readLockOwner(lock),
+            ]);
+            const generationAfter = await stat(lock);
+            if (
+              generationBefore.birthtimeMs !== generationAfter.birthtimeMs ||
+              currentClaim?.identity !== inspected.identity ||
+              currentOwner.token !== owner.token
+            ) continue;
+
+            // Every observer of this claim targets the same retained,
+            // non-empty fence. A delayed contender therefore cannot rename a
+            // newly acquired successor lock after another observer wins.
+            if (
+              await renameLockToFence(
+                lock,
+                takeoverFencePath(lock, inspected, currentOwner, generationAfter.birthtimeMs),
+                options.lockFenceRename,
+              )
+            ) continue;
           } catch (takeoverError) {
-            if (!["EEXIST", "ENOENT"].includes((takeoverError as NodeJS.ErrnoException).code ?? "")) throw takeoverError;
+            if ((takeoverError as NodeJS.ErrnoException).code !== "ENOENT") throw takeoverError;
+          } finally {
+            activeTakeoverTokens().delete(takeoverToken);
           }
         }
       } catch (lockError) {
-        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw lockError;
+        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") {
+          await delay(50);
+          continue;
+        }
+        throw terminalError(lockError);
       }
       await delay(50);
     }

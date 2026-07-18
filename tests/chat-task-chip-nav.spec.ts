@@ -90,7 +90,7 @@ async function setup(page: Page) {
     }
     return route.continue();
   });
-  await page.goto("/");
+  await page.goto("/?mode=chat");
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");
   await page.waitForSelector(".chat-surface", { timeout: 30_000 });

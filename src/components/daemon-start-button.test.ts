@@ -25,8 +25,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const startDaemon = useCallback\([\s\S]*await fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)[\s\S]*await refreshDaemonStatus\(\)/,
-  "Workspace banner start action should refresh daemon status immediately after starting",
+  /const startDaemon = useCallback\([\s\S]*await waitForDaemonUpdateIdle\(\)[\s\S]*runWorkspaceDaemonStart\(\{[\s\S]*fetchImpl: fetch[\s\S]*refreshStatus: refreshDaemonStatus/,
+  "Workspace automatic and manual starts should share the behaviorally tested start flow",
 );
 
 assert.match(

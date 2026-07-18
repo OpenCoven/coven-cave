@@ -8,7 +8,13 @@ import { readFile } from "node:fs/promises";
 // container so the presentation can't silently regress.
 
 const bubble = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
-const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = (
+  await Promise.all(
+    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 // ── renderCodeBlock chrome: collapse chevron + line count in the header ──────
 assert.match(

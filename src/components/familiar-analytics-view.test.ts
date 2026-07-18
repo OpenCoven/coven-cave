@@ -323,6 +323,21 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.confidence.reportCount, 1);
   });
 
+  it("derives progression from familiar stats and omits it for a missing familiar", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.progression?.renown.score, 13, "ten sessions plus one memory earns 13 renown");
+    assert.equal(model.progression?.renown.tier.key, "adept");
+    assert.equal(model.progression?.renown.next?.remaining, 37);
+    assert.equal(model.progression?.renown.progress, 3 / 40);
+    assert.equal(model.progression?.streakDays, 1);
+
+    const missing = buildFamiliarAnalyticsModel({ ...data, familiars: [] });
+    assert.equal(missing.progression, null);
+  });
+
   it("derives signal trends from metric snapshots under a fixed clock", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
@@ -404,6 +419,16 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
   });
 
+  it("renders progression between the insight banner and KPI row with intentional copy", () => {
+    assert.match(
+      source,
+      /<AnalyticsInsightBanner[\s\S]*<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<FamiliarKpis/,
+      "progression is placed between the insight and KPI summary",
+    );
+    assert.match(source, /"Top of the ladder"/, "top-tier accessible copy remains explicit");
+    assert.match(source, /"a session today starts a streak"/, "zero streaks use invitational copy");
+  });
+
   it("derives a 14-day session pulse and renders it in the hero", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
@@ -451,6 +476,21 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(globals, /\.fa-grid\s*\{/, ".fa-grid rule exists");
     assert.match(globals, /container-name: fa/, ".fa-page is a size container");
     assert.match(globals, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
+  });
+
+  it("gives contract compliance both columns after the sessions and self-heal row", () => {
+    assert.match(
+      source,
+      /id="fa-contract"\s+title="Contract compliance"\s+wide/,
+      "contract compliance opts into the full-width section layout",
+    );
+
+    const grid = source.slice(source.indexOf('<div className="fa-grid">'), source.indexOf("{traceTarget ?"));
+    const sessionsIndex = grid.indexOf('id="fa-sessions"');
+    const healIndex = grid.indexOf('id="fa-heal"');
+    const contractIndex = grid.indexOf("<ContractCompliance");
+    assert.ok(sessionsIndex >= 0 && sessionsIndex < healIndex, "recent sessions starts the paired row");
+    assert.ok(healIndex < contractIndex, "self-heal completes the row before the wide contract panel");
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {

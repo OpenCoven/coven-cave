@@ -5,7 +5,9 @@ import { toolArgDetail, toolArgSummary } from "../lib/tool-arg-summary.ts";
 import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 
 // After the streamline refactor the header is MetaLine (title + status meta)
@@ -106,8 +108,8 @@ assert.doesNotMatch(
 
 // In-chat delete lives ONLY in the session overflow (kebab) menu now — the
 // danger "Delete chat…" item swaps the menu body to a confirm view, the
-// explicit Delete commits via deleteChat, and success refreshes the session
-// list and navigates back. No standalone header trash button remains.
+// explicit Delete commits via deleteChat, and success reports the confirmed id
+// to Workspace and navigates back. No standalone header trash button remains.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -115,8 +117,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\);\s*\n\s*onBack\?\.\(\);/,
-  "Successful delete refreshes sessions and navigates back to the list",
+  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onBack\?\.\(\);/,
+  "Successful delete reaches the shared boundary and navigates back to the list",
 );
 
 // The kebab's delete is a two-step guard: the danger item arms a confirm view

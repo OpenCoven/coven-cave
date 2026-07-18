@@ -41,7 +41,7 @@ assert.doesNotMatch(
 
 assert.match(
   workspace,
-  /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
+  /runWorkspaceDaemonStart\(\{[\s\S]*fetchImpl: fetch/,
   "Workspace should make the offline daemon state actionable via the shared banner channel",
 );
 
@@ -224,8 +224,8 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-  "the familiar scope renders the purpose-built familiar view for the active familiar",
+  /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
+  "the familiar scope renders the scope-aware view with the canonical selection callback",
 );
 
 assert.match(
@@ -312,7 +312,7 @@ assert.match(
 // the count resets on a real root change.
 assert.match(
   chatSurface,
-  /let inFlight = false;[\s\S]*?const load = async \(\) => \{\s*\n\s*if \(inFlight\) return;/,
+  /let inFlight = false;[\s\S]*?const load = async \(opts\?: \{ force\?: boolean \}\) => \{\s*\n\s*if \(inFlight\) return;/,
   "change-count fetch dedupe is scoped per effect-run, not a cross-run ref",
 );
 assert.match(

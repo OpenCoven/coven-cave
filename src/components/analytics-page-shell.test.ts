@@ -11,18 +11,23 @@ const dashPage = await source("app/dashboard/familiars/[id]/analytics/page.tsx")
 const shell = await source("components/analytics-page-shell.tsx");
 const css = await source("styles/analytics-page-shell.css");
 
-// ── Both standalone analytics routes wrap the view in the left-sidepanel shell ──
-for (const [name, page] of [
-  ["/familiars/[id]/analytics", routePage],
-  ["/dashboard/familiars/[id]/analytics", dashPage],
-]) {
-  assert.match(page, /import \{ AnalyticsPageShell \} from "@\/components\/analytics-page-shell"/, `${name} imports the shell`);
-  assert.match(
-    page,
-    /<AnalyticsPageShell>[\s\S]*<FamiliarAnalyticsView familiarId=\{id\} \/>[\s\S]*<\/AnalyticsPageShell>/,
-    `${name} renders the analytics view inside AnalyticsPageShell (left sidepanel)`,
-  );
-}
+// ── The canonical analytics route wraps the view in the left-sidepanel shell ──
+assert.match(dashPage, /import \{ AnalyticsPageShell \} from "@\/components\/analytics-page-shell"/, "/dashboard/familiars/[id]/analytics imports the shell");
+assert.match(
+  dashPage,
+  /<AnalyticsPageShell>[\s\S]*<FamiliarAnalyticsView familiarId=\{id\} \/>[\s\S]*<\/AnalyticsPageShell>/,
+  "/dashboard/familiars/[id]/analytics renders the analytics view inside AnalyticsPageShell (left sidepanel)",
+);
+
+// ── The old top-level twin is a redirect stub into the canonical tree
+//    (route consolidation, cave-m4ih.5) — deep links keep working ─────────────
+assert.match(routePage, /import \{ redirect \} from "next\/navigation"/, "/familiars/[id]/analytics is a redirect stub");
+assert.match(
+  routePage,
+  /redirect\(`\/dashboard\/familiars\/\$\{encodeURIComponent\(id\)\}\/analytics\$\{suffix\}`\)/,
+  "/familiars/[id]/analytics forwards into the canonical dashboard route (query preserved)",
+);
+assert.doesNotMatch(routePage, /AnalyticsPageShell/, "the stub renders nothing of its own");
 
 // ── The shell renders a real left nav rail into the app's SPA surfaces ──────────
 assert.match(shell, /<nav className="aps-rail" aria-label="Primary">/, "shell renders a labelled left nav rail");

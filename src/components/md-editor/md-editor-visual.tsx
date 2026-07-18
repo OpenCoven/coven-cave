@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/md-editor.css";
+
 /**
  * MdEditorVisual — the WYSIWYG (VISUAL) mode of the MdEditor, powered by
  * Milkdown Crepe (MIT). Notion-like editing of the markdown *body*; the

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/md-editor.css";
+
 /**
  * MdEditor — the Cave's OpenKnowledge-style markdown editor shell.
  *

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/chat-list.css";
+
 import { Fragment, useMemo, useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
@@ -17,7 +19,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useUndoDelete } from "@/lib/use-undo-delete";
-import { cancelHoverPrefetch, hoverPrefetchConversation, invalidateConversation } from "@/lib/conversation-cache";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
+import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
@@ -78,6 +81,7 @@ type Props = {
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Open a URL in the in-app browser (the PR-status badge's click-through).
    *  Falls back to a new tab when absent. */
   onOpenUrl?: (url: string) => void;
@@ -244,7 +248,7 @@ function ChatListSection({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
@@ -604,8 +608,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       }
       setConfirmDeleteId(null);
       setActiveId((current) => (current === sessionId ? null : current));
-      invalidateConversation(sessionId);
-      onSessionsChanged?.();
+      onSessionsDeleted([sessionId]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -699,7 +702,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
 
   // Deferred + undoable: hide the selected chats now, fire the DELETEs only
-  // after the undo window, refetch once. Undo restores the whole batch.
+  // after the undo window, then report confirmed ids. Undo restores the batch.
   const bulkDelete = () => {
     // Only delete rows that are both selected AND currently visible — a section
     // collapsed after selecting must protect its now-hidden chats from deletion.
@@ -716,15 +719,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         const results = await Promise.all(
           removed.map((s) =>
             fetch(`/api/chat/conversation/${encodeURIComponent(s.id)}`, { method: "DELETE" })
-              .then((r) => r.json().catch(() => ({ ok: false })))
-              .then((j) => {
-                if (j.ok) invalidateConversation(s.id);
-                return !!j.ok;
+              .then(async (response) => {
+                const json = await response.json().catch(() => ({ ok: false }));
+                return response.ok && Boolean(json.ok);
               })
               .catch(() => false),
           ),
         );
-        if (results.some(Boolean)) onSessionsChanged?.();
+        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
+        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
         if (results.some((ok) => !ok)) setError("Some chats couldn't be deleted.");
       },
     );

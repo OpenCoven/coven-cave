@@ -1,4 +1,9 @@
-import { NextResponse } from "next/server";
+// The explicit .js extension (matching src/app/api/voice/**/route.ts) lets
+// route.test.ts import this module directly under plain Node ESM resolution,
+// which — unlike Next's bundler — needs the real subpath: `next` ships no
+// "exports" map, so the extensionless "next/server" specifier 404s outside
+// Next's own resolver.
+import { NextResponse } from "next/server.js";
 import { cleanModelId } from "@/lib/chat-model-state";
 import {
   isSafeConversationSessionId,
@@ -297,11 +302,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return jsonError("nothing to patch", 400);
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+
+  // Voice new-chat discard (?ifEmpty=1): the caller only wants to clean up a
+  // conversation that never got a turn — never sacrifice here. Sacrificing
+  // would permanently hide the session from every list if an in-flight first
+  // exchange (chat/send survives transport aborts) recreates the file right
+  // after this delete lands; skipping it means a recreated file simply
+  // resurfaces in the rail (correct — the data is real), and a truly-empty
+  // delete leaves nothing to hide since local session rows derive from the
+  // conversation files themselves.
+  if (new URL(req.url).searchParams.get("ifEmpty") === "1") {
+    const existing = await loadConversation(id);
+    if (!existing || existing.turns.length > 0) {
+      return NextResponse.json({ ok: true, deleted: false });
+    }
+    const deleted = await deleteConversation(id);
+    return NextResponse.json({ ok: true, deleted });
+  }
+
+  // Default: an explicit user-initiated delete. Sacrifice keeps a
+  // recreated-later file (e.g. a stale client retrying) from resurrecting a
+  // session the user deliberately removed — other callers depend on this.
   const deleted = await deleteConversation(id);
   const sacrificedAt = await sacrificeSessionLocal(id);
   return NextResponse.json({ ok: true, deleted, sacrificedAt });

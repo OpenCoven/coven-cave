@@ -6,11 +6,12 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
-import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
+import { isWorkspaceMode, type WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -40,7 +41,17 @@ import {
   setLastSurface,
 } from "@/lib/familiar-memory";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  createDaemonDesktopAutoStartCoordinator,
+  createDaemonStatusRequestGate,
+  runWorkspaceDaemonStart,
+} from "@/lib/daemon-desktop-auto-start";
+import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
@@ -110,6 +121,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
@@ -156,11 +168,13 @@ function splitTargetTitle(target: SplitTarget): string {
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
 // title, so the detail pane carries a visually-hidden h1 naming the active
-// surface. Labels mirror the sidebar's vocabulary.
+// surface. Labels mirror the sidebar's canonical vocabulary (issue #3283 —
+// one surface, one name): alias modes that render another surface's view
+// (calendar, familiar-work-queue) reuse that surface's name.
 const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   agents: "Familiars",
   home: "Home",
-  chat: "Familiars",
+  chat: "Chat",
   groupchat: "Group Chat",
   board: "Tasks",
   calendar: "Rituals",
@@ -172,7 +186,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
-  "familiar-work-queue": "Queue",
+  "familiar-work-queue": "Tasks",
   journal: "Journal",
   grimoire: "Memories",
 };
@@ -208,15 +222,13 @@ function clearChatHash() {
 // Mode deep links: workspace modes live inside this SPA shell and aren't
 // URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
 // external links land directly on a surface.
-// Only modes the shell can actually render are honoured — validated against
-// WORKSPACE_MODE_TITLES, which is keyed by every WorkspaceMode — so unknown
-// values are ignored silently.
+// Only real modes are honoured — canonical surfaces and the compatibility
+// aliases in MODE_ALIASES (setMode routes those onto their canonical
+// surface/tab) — so unknown values are ignored silently.
 function readModeParam(): WorkspaceMode | null {
   if (typeof window === "undefined") return null;
   const raw = new URLSearchParams(window.location.search).get("mode");
-  if (raw && Object.prototype.hasOwnProperty.call(WORKSPACE_MODE_TITLES, raw)) {
-    return raw as WorkspaceMode;
-  }
+  if (raw && isWorkspaceMode(raw)) return raw;
   return null;
 }
 
@@ -269,6 +281,7 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
 
 export function Workspace() {
   const nextRouter = useRouter();
+  const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
@@ -309,6 +322,7 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<unknown>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
@@ -316,20 +330,26 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Chat-first boot (cave-hsa6): the app opens on the conversation — the chat
-  // surface with the thread sidebar (a fresh session lands on the task-aware
-  // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
-  // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
-  // #chat-…) and cave:navigate-mode override this as before.
-  const [mode, setModeRaw] = useState<CaveMode>("chat");
+  // Home-first boot: every fresh launch (desktop app window or web tab)
+  // opens on the Home surface — the daily overview with the universal
+  // composer — per operator direction (this reverses cave-hsa6's chat-first
+  // boot). Chat stays one step away (⌘2 / nav / the composer submit), and
+  // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
+  // before, so restored sessions and share links still land where they point.
+  const [mode, setModeRaw] = useState<CaveMode>("home");
   // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
   const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
-  // Group Chat retired its standalone page — it's now a tab inside the Chat
-  // surface. Any request for the legacy `groupchat` mode (nav, deep link,
-  // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
-  // tab, so `mode` is never actually "groupchat" and the surface never flashes.
+  // Alias funnel: MODE_ALIASES (src/lib/workspace-mode.ts) is the single
+  // source of truth for where every compatibility mode lands. groupchat /
+  // journal / flow are rewritten HERE so `mode` never holds them (Group Chat
+  // is a tab inside the Chat surface; Journal a tab inside Memories; Flow is
+  // retired). The other aliases (calendar, familiar-work-queue, roles,
+  // capabilities) pass through untouched: the render branches mount their
+  // canonical surface on the matching tab, keyed by the alias so deep links
+  // remount onto it. workspace-alias-modes.test.ts pins these branches to
+  // the table.
   const setMode = useCallback((next: CaveMode) => {
     // Native child WebViews render above React. Deactivate the primary pane
     // before committing a non-Browser surface so there is no paint where the
@@ -375,14 +395,26 @@ export function Workspace() {
   // Sticky offline signal for the banner. A crash-looping / codesigning-zombie
   // daemon flaps: it briefly answers health (running:true) then dies again. The
   // banner keys off this instead of the raw per-poll status so a single transient
-  // "running" doesn't flicker it away — it shows on the first failed poll and
-  // only clears after the daemon is *consistently* healthy (see the streak ref).
+  // "running" doesn't flicker it away — it shows on the first definitive local-
+  // offline poll and only clears after the daemon is *consistently* healthy.
   const [daemonOffline, setDaemonOffline] = useState(false);
   // The access-token gate rejected our credential (401 on the status poll).
   // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
   // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
   const [authExpired, setAuthExpired] = useState(false);
+  const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
+  const daemonStatusRequestGateRef = useRef<ReturnType<typeof createDaemonStatusRequestGate> | null>(null);
+  if (daemonStatusRequestGateRef.current === null) {
+    daemonStatusRequestGateRef.current = createDaemonStatusRequestGate();
+  }
+  const startDaemonRef = useRef<() => Promise<void>>(async () => {});
+  const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
+  if (daemonAutoStartCoordinatorRef.current === null) {
+    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(() => {
+      void startDaemonRef.current();
+    });
+  }
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const browserNavigationIdRef = useRef(Date.now() * 1024);
   const [browserNavigationQueue, setBrowserNavigationQueue] = useState<BrowserNavigationRequest[]>([]);
@@ -582,76 +614,94 @@ export function Workspace() {
     enabled: mobileModeEnabled && !mobileModeAutoRetryBlocked,
   });
 
+  // Milestone crossings → renown ledger → inbox toasts. Self-contained
+  // (fetches its own unscoped roster/session data once per check).
+  useMilestoneWatch();
+
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    let running = false;
-    let authRejected = false;
+    const requestGate = daemonStatusRequestGateRef.current!;
+    const requestId = requestGate.begin();
+    let result: ReturnType<typeof classifyDaemonStatusPoll>;
+    let credentialAccepted = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      if (res.status === 401) {
-        // The access-token gate rejected US — the daemon may be perfectly
-        // healthy; we just can't see it. Attributing this to the daemon put
-        // users in front of a "Daemon offline" banner whose "Start daemon"
-        // CTA also 401s (cave-wkp5). Surface re-auth instead, and leave the
-        // daemon state untouched.
-        authRejected = true;
-      } else {
-        const json = (await res.json()) as { running?: boolean };
-        running = json.running === true;
-        setDaemonRunning(running);
-        // A real (non-401) answer proves the credential is accepted again.
-        setAuthExpired(false);
-      }
+      const payload = await res.json().catch(() => null);
+      result = classifyDaemonStatusPoll({
+        responseStatus: res.status,
+        responseOk: res.ok,
+        payload,
+      });
+      // A real non-401 response proves the Cave credential is accepted again.
+      credentialAccepted = res.status !== 401;
     } catch {
-      if (!authRejected) setDaemonRunning(false);
-    } finally {
-      if (authRejected) {
-        setAuthExpired(true);
-        setDaemonStatusResolved(true);
-      } else {
-        // Drive the sticky offline signal: any failed poll marks the daemon
-        // offline immediately, but a background poll takes two *consecutive*
-        // healthy polls to clear — otherwise a flapping zombie daemon keeps
-        // dismissing the banner.
-        if (running) {
-          daemonHealthyStreakRef.current += 1;
-          // A `trusted` refresh follows an explicit user-initiated start, so a
-          // healthy answer is enough to clear the banner immediately — without it
-          // the "Start daemon" banner lingered for a poll cycle (~5s) after the
-          // daemon was already up.
-          if (opts?.trusted) daemonHealthyStreakRef.current = 2;
-          if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
-        } else {
-          daemonHealthyStreakRef.current = 0;
-          setDaemonOffline(true);
-        }
-        // The first poll has now produced a real answer — only after this may the
-        // offline banner appear, so a fresh load doesn't flash it before we know.
-        setDaemonStatusResolved(true);
-      }
+      result = classifyDaemonStatusPoll({
+        responseStatus: 0,
+        responseOk: false,
+        payload: null,
+        error: "status request failed",
+      });
     }
+
+    // An explicit refresh after Start can overtake an older background poll.
+    // Only the newest request may publish state, or that stale offline result
+    // can put the banner back after the daemon is already healthy.
+    if (!requestGate.isLatest(requestId)) return;
+    // The coordinator pins this first accepted decision. Later polls may update
+    // live UI state, but can never turn into a delayed automatic restart.
+    daemonAutoStartCoordinatorRef.current!.observeStatus(result);
+    if (credentialAccepted) setAuthExpired(false);
+
+    setDaemonStatusResolved(true);
+    if (result.kind === "auth-expired") {
+      setAuthExpired(true);
+      setDaemonStatusUnavailable(null);
+      return;
+    }
+    if (result.kind === "unavailable") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonStatusUnavailable(result.reason);
+      return;
+    }
+
+    setDaemonStatusUnavailable(null);
+    if (result.kind === "offline") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonRunning(false);
+      setDaemonOffline(true);
+      return;
+    }
+
+    setDaemonRunning(true);
+    daemonHealthyStreakRef.current += 1;
+    // A `trusted` refresh follows an explicit user-initiated start, so a
+    // healthy answer is enough to clear the banner immediately — without it
+    // the "Start daemon" banner lingered for a poll cycle (~5s) after the
+    // daemon was already up.
+    if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+    if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
   }, []);
 
   const startDaemon = useCallback(async () => {
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      dismissBanner("daemon-start-error");
-      // Trusted: the user just started it and the API reported success, so a
-      // single healthy status poll is enough to dismiss the offline banner now.
-      await refreshDaemonStatus({ trusted: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "daemon did not start";
-      pushBanner({
+    // The release-alignment trigger may be replacing the CLI after observing
+    // this same offline state. Starting the old binary during that window can
+    // lock coven.exe on Windows and make the update fail.
+    await waitForDaemonUpdateIdle();
+    await runWorkspaceDaemonStart({
+      fetchImpl: fetch,
+      dismissError: () => dismissBanner("daemon-start-error"),
+      reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
         title: `Daemon start failed — ${message}`,
-      });
-      await refreshDaemonStatus();
-    }
+      }),
+      refreshStatus: refreshDaemonStatus,
+    });
   }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  startDaemonRef.current = startDaemon;
+
+  useEffect(() => {
+    daemonAutoStartCoordinatorRef.current!.observePlatform(tauriPlatform);
+  }, [tauriPlatform]);
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -781,8 +831,8 @@ export function Workspace() {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
-      // Only show the offline banner once the status has actually resolved to
-      // "not running" — never during the initial unknown window.
+      // Only show the offline banner once status has resolved to a definitive
+      // local-offline result — never during the initial unknown window.
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
@@ -796,6 +846,27 @@ export function Workspace() {
       });
     }
   }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+
+  // A status-service failure, timeout, malformed response, or non-local target
+  // problem does not prove the local daemon is stopped. Keep that uncertainty
+  // accurate and retryable instead of offering the misleading Start daemon CTA.
+  useEffect(() => {
+    if (!daemonStatusUnavailable || authExpired || daemonOffline) {
+      dismissBanner("daemon-status-unavailable");
+      return;
+    }
+    pushBanner({
+      id: "daemon-status-unavailable",
+      severity: "warning",
+      title: `Daemon status unavailable — ${daemonStatusUnavailable}`,
+      cta: {
+        label: "Retry",
+        onClick: () => {
+          void refreshDaemonStatus();
+        },
+      },
+    });
+  }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
   // Re-auth banner: the access-token gate is rejecting every request, so all
   // surfaces are degrading at once. A reload lands on the gate page, which
@@ -855,23 +926,20 @@ export function Workspace() {
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
-  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
+  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // A multi-toggle shouldn't yank the surface around — only a plain single
     // select restores that familiar's last-viewed surface.
-    if (opts?.multi) return;
+    if (opts?.multi || opts?.preserveSurface) return;
     const last = getLastSurface(id);
-    // Guard against retired/unknown persisted modes (e.g. the removed
-    // "projects" standalone surface). Only restore if the stored string is
-    // still a valid WorkspaceMode; otherwise fall back to the default.
-    const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
-    if (last === "flow") setMode("inbox");
+    // Guard against retired/unknown persisted modes (e.g. removed standalone
+    // surfaces). Any real mode is safe to hand to setMode — its alias funnel
+    // routes compatibility modes (flow, journal, groupchat, …) onto their
+    // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
     // A persisted Role Surface mode restores too — if this familiar no longer
     // holds the role, the visibility effect below falls back generically.
-    // ("journal" restores fine: setMode remaps it to Grimoire's Journal tab —
-    // the old no-op predated that remap; cave-nwi8.)
-    else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
+    if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -904,7 +972,8 @@ export function Workspace() {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
           : currentSessions;
-        const enriched = attachGitHubTaskContext(baseSessions, json);
+        const visibleBaseSessions = filterDeletedSessions(baseSessions, locallyDeletedSessionIdsRef.current);
+        const enriched = attachGitHubTaskContext(visibleBaseSessions, json);
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {
@@ -947,7 +1016,7 @@ export function Workspace() {
         }
 
         setSessionsError(false);
-        const baseSessions = (json.sessions ?? []) as SessionRow[];
+        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
         baseSessionsRef.current = baseSessions;
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
@@ -965,6 +1034,25 @@ export function Workspace() {
       }
     })();
   }, [activeId]);
+
+  const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
+    const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
+    if (confirmedIds.length === 0) return;
+
+    baseSessionsRef.current = filterDeletedSessions(
+      baseSessionsRef.current,
+      locallyDeletedSessionIdsRef.current,
+    );
+    setSessions((currentSessions) => {
+      const nextSessions = filterDeletedSessions(
+        currentSessions,
+        locallyDeletedSessionIdsRef.current,
+      );
+      return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
+    });
+    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    void loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     loadFamiliars();
@@ -1082,7 +1170,10 @@ export function Workspace() {
       }
       if (e.type === "created") {
         setInboxItems((prev) => [...prev, e.item]);
-        if (e.item.status === "fired" && !isMuted(e.item)) {
+        // Celebrations off = clean-tool mode: milestone items still land in
+        // the inbox (and the unread badge) but skip the toast + native ping.
+        const quietedMilestone = e.item.kind === "milestone" && !readCelebrationsEnabled();
+        if (e.item.status === "fired" && !isMuted(e.item) && !quietedMilestone) {
           setToasts((prev) => [...prev, toastFromItem(e.item)]);
           void nativeNotify(e.item.title, e.item.body, sound());
         }
@@ -1628,10 +1719,8 @@ export function Workspace() {
         }
         return;
       }
-      if (targetMode === "flow") {
-        setMode("inbox");
-        return;
-      }
+      // Alias modes (flow, journal, groupchat, …) need no special-casing:
+      // setMode's alias funnel routes them via MODE_ALIASES.
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
@@ -1732,6 +1821,25 @@ export function Workspace() {
     });
     setMode("chat");
   }, []);
+
+  // Voice new-chat: create the empty conversation the call will attach to,
+  // then route to chat with autoVoice so the overlay opens on arrival. On
+  // failure stay on Home — no navigation, no orphan state. The mint is an
+  // awaited round-trip, so re-check modeRef before navigating: if the user
+  // already left Home while it was in flight, don't yank them back into a
+  // chat they didn't ask for.
+  const startVoiceChat = useCallback(async (familiarId: string, projectRoot: string | null) => {
+    const result = await startVoiceConversation(familiarId, projectRoot);
+    if (!result.ok) {
+      pushToast(voiceChatStartErrorMessage(result.error));
+      return;
+    }
+    if (modeRef.current !== "home") return;
+    setActiveId(familiarId);
+    setPendingProjectChatRoot(projectRoot ?? null);
+    setPendingChatAction({ kind: "open", sessionId: result.sessionId, familiarId, autoVoice: true, nonce: Date.now() });
+    setMode("chat");
+  }, [pushToast]);
 
   // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
   // familiar" — startFamiliarChat handles both the off-chat (switch + new
@@ -2437,9 +2545,13 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
       }}
       onDeleteSession={async (session) => {
-        await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-        invalidateConversation(session.id);
-        await loadSessions();
+        const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error ?? "delete failed");
+        }
+
+        handleSessionsDeleted([session.id]);
       }}
       onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
@@ -2494,6 +2606,7 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         activeFamiliarId={activeId}
+        selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
         hideThreadRail
@@ -2506,6 +2619,7 @@ export function Workspace() {
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
         onSetActiveFamiliar={setActiveId}
+        onFamiliarScopeChange={selectFamiliarScope}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
@@ -2513,6 +2627,7 @@ export function Workspace() {
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
       />
@@ -2637,6 +2752,7 @@ export function Workspace() {
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
+        onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}

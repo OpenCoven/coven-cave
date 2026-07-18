@@ -148,7 +148,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_510);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_537);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -317,7 +317,7 @@ async function main() {
           accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
         },
       },
-      general: { newsHeadlines: false, stopPhrase: "halt" },
+      general: { newsHeadlines: false, stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
@@ -389,13 +389,20 @@ async function main() {
     assert.equal(documentResponse.status, 200, "a normal reload should render from canonical preferences");
     const documentHtml = await documentResponse.text();
     const bootstrapMatch = documentHtml.match(
-      /<script id="cave-preferences-bootstrap" type="application\/json">([\s\S]*?)<\/script>/,
+      /<script id="cave-preferences-bootstrap" type="application\/json"([^>]*)>([\s\S]*?)<\/script>/,
     );
     assert.ok(bootstrapMatch, "the restarted document must contain the pre-paint preference bootstrap");
-    const documentPreferences = JSON.parse(bootstrapMatch[1]);
-    assert.equal(documentPreferences.appearance.theme.id, preferencePatch.appearance.theme.id);
-    assert.deepEqual(documentPreferences.appearance.fonts, preferencePatch.appearance.fonts);
-    assert.equal(documentPreferences.appearance.screenScale, preferencePatch.appearance.screenScale);
+    assert.match(
+      bootstrapMatch[1],
+      /data-authoritative="false"/,
+      "the root document must not claim its paint-only preference snapshot is canonical",
+    );
+    const documentPreferences = JSON.parse(bootstrapMatch[2]);
+    assert.equal(
+      documentPreferences.initialized,
+      false,
+      "the root document must remain independent of reconciled preference storage",
+    );
 
     const localhostUrl = `http://localhost:${secondPort}`;
     const localhostResponse = await fetch(`${localhostUrl}/api/preferences`, {

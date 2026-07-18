@@ -50,7 +50,9 @@ const FINISHED_RETENTION_MS = 2 * 60_000;
 const buffers = new Map<string, RunBuffer>();
 
 export type RunBufferHandle = {
-  record: (event: StreamEvent) => void;
+  /** Records the event and returns its seq — the SSE `id:` the original
+   *  stream emits so any client holds a valid resume cursor. */
+  record: (event: StreamEvent) => number;
   finish: () => void;
 };
 
@@ -85,7 +87,7 @@ export function openRunBuffer(
 
   return {
     record: (event: StreamEvent) => {
-      if (buffer.done) return;
+      if (buffer.done) return buffer.nextSeq - 1;
       const entry: BufferedStreamEvent = {
         seq: buffer.nextSeq++,
         json: JSON.stringify(event),
@@ -97,6 +99,7 @@ export function openRunBuffer(
         if (dropped) buffer.bytes -= dropped.json.length;
       }
       for (const listener of buffer.tailListeners) listener(entry);
+      return entry.seq;
     },
     finish: () => {
       if (buffer.done) return;

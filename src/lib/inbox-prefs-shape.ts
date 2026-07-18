@@ -10,7 +10,7 @@ export type SoundMode = "default" | "silent" | "named";
  * response-needed is deliberately not mutable — a familiar waiting on a reply
  * clears by replying, not by silencing it.
  */
-export const MUTABLE_KINDS = ["reminder", "agent", "daily-summary"] as const;
+export const MUTABLE_KINDS = ["reminder", "agent", "daily-summary", "milestone"] as const;
 export type MutableKind = (typeof MUTABLE_KINDS)[number];
 
 export type InboxPrefs = {

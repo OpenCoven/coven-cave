@@ -20,12 +20,14 @@ describe("Familiar analytics navigation wiring", () => {
     assert.match(analyticsPage, /<FamiliarAnalyticsView familiarId=\{id\} \/>/);
   });
 
-  it("links growth roster rows to per-familiar analytics", () => {
+  it("links the selected growth familiar to its analytics page", () => {
     const source = readFileSync(new URL("./familiar-growth-view.tsx", import.meta.url), "utf8");
 
+    // The roster is a dropdown (cave-4d3n); analytics deep-links hang off the
+    // selected familiar's hero action instead of per-row links.
     assert.match(source, /import Link from "next\/link"/);
-    assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/analytics`\}/);
-    assert.match(source, /Analytics →/);
+    assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(selected\.familiar\.id\)\}\/analytics`\}/);
+    assert.match(source, /Analytics/);
   });
 
   it("links familiar landing cards to per-familiar analytics", () => {

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useState } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
@@ -10,6 +12,7 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import type { Familiar } from "@/lib/types";
 import {
   loadFamiliarAnalyticsData,
@@ -378,13 +381,25 @@ export function FamiliarInlineCard({
         ) : (
           <ul className="familiar-inline-card__memory-list">
             {entries.map((m) => (
-              <li key={m.fullPath} className="familiar-inline-card__memory-item">
-                <span className="familiar-inline-card__memory-title">
-                  {m.title}
-                  {m.stale ? <span className="familiar-inline-card__memory-stale">stale</span> : null}
-                </span>
-                {m.excerpt ? <span className="familiar-inline-card__memory-excerpt">{m.excerpt}</span> : null}
-                <span className="familiar-inline-card__memory-time">{formatRelTime(m.modified)}</span>
+              <li key={m.fullPath}>
+                {/* Each peek row is a card that lands on the doc itself in the
+                    Grimoire editor — same deep link the command palette uses. */}
+                <button
+                  type="button"
+                  className="familiar-inline-card__memory-item focus-ring-inset"
+                  title={`Open in Grimoire — ${m.relPath}`}
+                  onClick={() => act(() => openGrimoireDoc("memory", m.fullPath))}
+                >
+                  <span className="familiar-inline-card__memory-title">
+                    {m.title}
+                    {m.stale ? <span className="familiar-inline-card__memory-stale">stale</span> : null}
+                  </span>
+                  {m.excerpt ? <span className="familiar-inline-card__memory-excerpt">{m.excerpt}</span> : null}
+                  <span className="familiar-inline-card__memory-time">
+                    {formatRelTime(m.modified)}
+                    <Icon name="ph:arrow-bend-up-right" width={10} className="familiar-inline-card__memory-open" aria-hidden />
+                  </span>
+                </button>
               </li>
             ))}
           </ul>

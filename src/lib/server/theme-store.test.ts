@@ -6,6 +6,9 @@ import path from "node:path";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "cave-theme-adapter-"));
 const preferencesFile = path.join(root, "cave-preferences.json");
+// Hermetic coven home — keeps reconciliation off the REAL ~/.coven legacy
+// symlinks, whose canonical targets differ from the temp overrides (threads-wro).
+process.env.COVEN_HOME = path.join(root, "coven-home");
 process.env.COVEN_PREFERENCES_PATH = preferencesFile;
 process.env.COVEN_THEME_PATH = path.join(root, "missing-legacy-theme.json");
 
@@ -100,6 +103,7 @@ try {
 
   console.log("theme-store.test.ts: ok");
 } finally {
+  delete process.env.COVEN_HOME;
   delete process.env.COVEN_PREFERENCES_PATH;
   delete process.env.COVEN_THEME_PATH;
   await rm(root, { recursive: true, force: true });

@@ -80,14 +80,14 @@ color.
   `:focus-visible` via the `.focus-ring` / `.focus-ring-inset` utilities.
 
 ### Theming
-`data-theme` (20 palettes: coven, tide, grove, ember, bloom, dusk, mist, hex,
-bane, slate, ghosty, claymorphism, claude, pastel-dreams, meatseeks, trucker,
-snow, contrast, beacon, solstice)
+`data-theme` (21 palettes: coven, tide, grove, ember, bloom, dusk, mist, hex,
+bane, slate, ghosty, claymorphism, claude, openai, pastel-dreams, meatseeks,
+trucker, snow, contrast, beacon, solstice)
 × `data-mode` (dark/light) are orthogonal attributes on `:root`, hydrated by
 `theme-script.tsx`. External shadcn themes import via tweakcn and are enriched
 with the Cave's derived semantic tokens (`settings-shell.tsx` →
 `enrichTweakcnTheme`). **Consequence: never hardcode a color; every surface
-must survive all 40 palette×mode combinations.**
+must survive all 42 palette×mode combinations.**
 
 ## 3. Signature idioms
 

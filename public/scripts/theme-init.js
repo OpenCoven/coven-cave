@@ -6,7 +6,13 @@
   } catch (e) {}
 
   if (!bootstrap || typeof bootstrap !== "object" || bootstrap.version !== 1) bootstrap = null;
-  if (bootstrap) window.__COVEN_CAVE_PREFERENCES__ = bootstrap;
+  var bootstrapAuthoritative = Boolean(
+    bootstrap && (!node || node.getAttribute("data-authoritative") !== "false")
+  );
+  if (bootstrap) {
+    window.__COVEN_CAVE_PREFERENCES__ = bootstrap;
+    window.__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__ = bootstrapAuthoritative;
+  }
 
   var initialized = Boolean(bootstrap && bootstrap.initialized === true);
   var appearance = bootstrap && bootstrap.appearance && typeof bootstrap.appearance === "object"
@@ -194,7 +200,7 @@
 
   try {
     var rename = { "mood-c": "coven", "sky": "tide", "orchid": "dusk", "midnight": "slate" };
-    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","pastel-dreams","meatseeks","trucker","snow","contrast","beacon","solstice","custom"];
+    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","openai","pastel-dreams","meatseeks","trucker","snow","contrast","beacon","solstice","custom"];
     var theme = String(stored("coven-theme", themePrefs.id || "coven"));
     if (rename[theme]) theme = rename[theme];
     if (!isChoice(theme, valid)) theme = "coven";
@@ -208,6 +214,9 @@
     var html = document.documentElement;
     html.setAttribute("data-theme", theme);
     html.setAttribute("data-mode", mode);
+    if (window.performance && typeof window.performance.mark === "function") {
+      window.performance.mark("cave:paint-bootstrap-applied");
+    }
 
     function applyGroup(group) {
       if (!group || typeof group !== "object" || Array.isArray(group)) return;

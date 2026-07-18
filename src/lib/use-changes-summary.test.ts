@@ -14,8 +14,19 @@ assert.match(
 );
 assert.match(src, /document\.visibilityState !== "visible"/, "skips work while the document is hidden");
 assert.match(src, /inFlight\.current/, "single-flight guard prevents overlapping requests");
-assert.match(src, /`\/api\/changes\?projectRoot=\$\{encodeURIComponent\(projectRoot\)\}`/, "hits /api/changes for the root");
-assert.doesNotMatch(src, /&path=/, "summary request omits a file path — it only needs the count");
+// cave-v8hh: the request goes through the shared changes-summary gate so the
+// chip + header + rail badge + panel cost one request per root per 5s window.
+assert.match(
+  src,
+  /fetchChangesSummary\(projectRoot, opts\)/,
+  "fetches through the shared changes-summary gate (no private fetch)",
+);
+assert.doesNotMatch(src, /fetch\(`\/api\/changes/, "no direct /api/changes fetch remains");
+assert.match(
+  src,
+  /void load\(\{ force: true \}\)/,
+  "reload() forces through the gate so a post-mutation refresh never reuses a cached response",
+);
 // cave-e794: the recurring poll + on-return refresh go through the shared
 // usePausablePoll hook instead of a hand-rolled interval + visibility trio.
 assert.match(

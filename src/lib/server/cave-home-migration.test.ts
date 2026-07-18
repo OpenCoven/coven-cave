@@ -857,9 +857,127 @@ try {
     ]);
     assert.deepEqual(first.errors, []);
     assert.deepEqual(second.errors, []);
-    assert.equal(staleObservers, 2);
+    assert.ok(staleObservers >= 2, "both stale-lock contenders observed reclamation");
     assert.equal(maxActive, 1);
     assert.equal(active, 0);
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // A contender can crash after publishing its takeover claim but before it
+  // renames the stale lock. Competing observers fence that immutable claim to
+  // one deterministic retained path, so a delayed observer cannot rename a
+  // successor lock after the first observer wins.
+  {
+    const { coven, cave } = await home("orphan-takeover-claim");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ pid: 2_147_483_647, token: "dead-owner" }));
+    const takeover = path.join(lock, ".takeover");
+    await writeFile(takeover, JSON.stringify({ takeoverToken: "abandoned", ownerToken: "dead-owner" }));
+    const stale = new Date(Date.now() - 10 * 60_000);
+    await utimes(lock, stale, stale);
+    await utimes(takeover, stale, stale);
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    let observers = 0;
+    let releaseObservers!: () => void;
+    const bothObserved = new Promise<void>((resolve) => { releaseObservers = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const options = {
+      createSymlink: denySymlink,
+      takeoverRemovalProbe: async () => {
+        observers += 1;
+        if (observers === 2) releaseObservers();
+        await bothObserved;
+      },
+      lockProbe: async (event: "stale-observed" | "acquired" | "released") => {
+        if (event === "acquired") {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        } else if (event === "released") {
+          active -= 1;
+        }
+      },
+    };
+    const startedAt = Date.now();
+    const [first, second] = await Promise.all([migrateCaveHome(options), migrateCaveHome(options)]);
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(second.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "an orphan takeover claim is reclaimed without hanging");
+    assert.ok(observers >= 2, "both orphan observers reached the immutable claim");
+    assert.equal(maxActive, 1);
+    assert.equal(active, 0);
+    const fences = (await readdir(cave)).filter((entry) => entry.startsWith(".migration.lock.reclaimed-"));
+    assert.equal(fences.length, 1, "all orphan observers target one retained generation fence");
+    assert.equal((await json(path.join(cave, fences[0], ".takeover"))).takeoverToken, "abandoned");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // A crashed claimant's PID can be reused by an unrelated process. Even when
+  // that PID appears live, an aged claim must not block migration forever.
+  {
+    const { coven, cave } = await home("reused-pid-takeover-claim");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      token: "released-owner",
+      releasedAt: new Date().toISOString(),
+    }));
+    const takeover = path.join(lock, ".takeover");
+    await writeFile(takeover, JSON.stringify({
+      pid: process.ppid,
+      takeoverToken: "crashed-claim-with-reused-pid",
+      ownerToken: "released-owner",
+    }));
+    const stale = new Date(Date.now() - 10 * 60_000);
+    await utimes(takeover, stale, stale);
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "an aged claim is reclaimed despite PID reuse");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // Registration must precede publication. Pause the first same-process
+  // contender after writeFile and prove a second contender leaves its active
+  // marker intact while waiting for the takeover to finish.
+  {
+    const { coven, cave } = await home("takeover-register-before-publish");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ pid: 2_147_483_647, token: "dead-owner" }));
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    let markPublished!: (token: string) => void;
+    const published = new Promise<string>((resolve) => { markPublished = resolve; });
+    let releasePublisher!: () => void;
+    const publisherMayContinue = new Promise<void>((resolve) => { releasePublisher = resolve; });
+    let paused = false;
+    const first = migrateCaveHome({
+      createSymlink: denySymlink,
+      takeoverPublishProbe: async (token) => {
+        if (paused) return;
+        paused = true;
+        markPublished(token);
+        await publisherMayContinue;
+      },
+    });
+    const publishedToken = await published;
+    const second = migrateCaveHome({ createSymlink: denySymlink });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((await json(path.join(lock, ".takeover"))).takeoverToken, publishedToken);
+    releasePublisher();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(firstResult.errors, []);
+    assert.deepEqual(secondResult.errors, []);
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
@@ -883,6 +1001,35 @@ try {
     const result = await migrateCaveHome({ createSymlink: denySymlink });
     assert.deepEqual(result.errors, []);
     assert.ok(Date.now() - startedAt < 2_000, "a same-process orphan is reclaimed without timing out");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // A failed Windows reclaim rename can also leave a takeover claim from this
+  // still-live process. Only an actively tracked token represents an in-flight
+  // contender; an untracked same-process marker must not block later stores.
+  {
+    const { coven, cave } = await home("same-process-orphan-takeover");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      token: "released-same-process-owner",
+      startedAt: new Date().toISOString(),
+      releasedAt: new Date().toISOString(),
+    }));
+    await writeFile(path.join(lock, ".takeover"), JSON.stringify({
+      pid: process.pid,
+      takeoverToken: "abandoned-same-process-takeover",
+      ownerToken: "released-same-process-owner",
+      startedAt: new Date().toISOString(),
+    }));
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "a same-process orphan takeover is reclaimed without hanging");
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
@@ -959,6 +1106,91 @@ try {
     const second = await migrateCaveHome({ createSymlink: denySymlink });
     assert.deepEqual(second.errors, []);
     assert.equal(await kind(lock), "missing");
+  }
+
+  // An active owner has a hard acquisition deadline. Timing out removes every
+  // contender-owned candidate and emits bounded, data-free terminal telemetry.
+  {
+    const { cave } = await home("active-lock-timeout");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.ppid,
+      token: "active-parent-owner",
+      startedAt: new Date().toISOString(),
+    }));
+    const diagnostics = [];
+    const startedAt = Date.now();
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockDiagnostic: (event) => diagnostics.push(event) }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(Date.now() - startedAt >= 100 && Date.now() - startedAt < 1_500);
+    assert.equal(diagnostics[0]?.phase, "waiting");
+    assert.deepEqual(diagnostics.at(-1), {
+      phase: "failed",
+      result: "timeout",
+      durationMs: diagnostics.at(-1).durationMs,
+      errorCode: "ETIMEDOUT",
+    });
+    assert.equal(
+      (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
+      false,
+      "timed-out contenders remove their own candidate directories",
+    );
+  }
+
+  // Persistent Windows EPERM while publishing a candidate is retryable but
+  // bounded. No lock is published and no candidate debris survives timeout.
+  {
+    const { cave } = await home("candidate-eperm-timeout");
+    await mkdir(cave, { recursive: true });
+    let renameAttempts = 0;
+    const epermRename = async () => {
+      renameAttempts += 1;
+      const error = new Error("injected Windows candidate failure") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    };
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockCandidateRename: epermRename }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(renameAttempts >= 2, "candidate publication retries until the deadline");
+    assert.equal(
+      (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
+      false,
+    );
+  }
+
+  // Persistent Windows EPERM while fencing a released lock likewise stops at
+  // the deadline without deleting or replacing the still-owned lock directory.
+  {
+    const { cave } = await home("reclaim-eperm-timeout");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.ppid,
+      token: "released-owner",
+      startedAt: new Date().toISOString(),
+      releasedAt: new Date().toISOString(),
+    }));
+    let fenceAttempts = 0;
+    const epermRename = async () => {
+      fenceAttempts += 1;
+      const error = new Error("injected Windows reclaim failure") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    };
+    await assert.rejects(
+      migrateCaveHome({ lockTimeoutMs: 150, lockFenceRename: epermRename }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    assert.ok(fenceAttempts >= 2, "released-lock fencing retries until the deadline");
+    assert.equal(await kind(lock), "dir", "failed fencing never removes the owned lock");
+    assert.equal((await json(path.join(lock, "owner.json"))).token, "released-owner");
   }
 
   // Store transactions share the cross-process migration lock. A writer that

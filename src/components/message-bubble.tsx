@@ -1,5 +1,12 @@
 "use client";
 
+// Only the shared markdown/code sheet: MarkdownBlock/SyntaxBlock render on
+// non-chat surfaces (settings memory tab, journal, github, command palette),
+// which must not pull the whole chat stylesheet (#3264). The bubble/turn
+// chrome (.cave-bubble-*) lives in cave-chat.css, imported by the chat
+// surfaces that render <MessageBubble> itself (chat-view, group-chat-view).
+import "@/styles/cave-md.css";
+
 /**
  * MessageBubble — full Markdown/HTML rendering for Cave chat turns.
  *
@@ -78,7 +85,11 @@ function getHighlighter(): Promise<Highlighter> {
     highlighterPromise = (async () => {
       const { createHighlighter } = await import("shiki");
       return createHighlighter({
-        themes: [moodCTheme as Parameters<typeof createHighlighter>[0]["themes"][number]],
+        // Shiki normalizes themes IN PLACE (e.g. prepends a scope-less global
+        // tokenColors entry). The JSON import is a shared module singleton —
+        // code-editor-theme.ts reads the same object — so hand Shiki a clone,
+        // never the module instance (cave-h1hi).
+        themes: [structuredClone(moodCTheme) as Parameters<typeof createHighlighter>[0]["themes"][number]],
         langs: [...LANGS],
       });
     })();

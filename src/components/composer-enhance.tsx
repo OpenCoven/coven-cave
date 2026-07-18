@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";

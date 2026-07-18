@@ -38,6 +38,11 @@ import { covenLaunchCommand } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
+  detectBuiltinAdapterConflict,
+  healBuiltinShadowedManifest,
+  type BuiltinAdapterConflict,
+} from "@/lib/server/adapter-conflict-heal";
+import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
   copilotStreamSpec,
@@ -428,8 +433,11 @@ async function autoNameSessionFromFirstExchange(
   }
 }
 
-function sse(event: StreamEvent): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+function sse(event: StreamEvent, seq?: number): Uint8Array {
+  // `id:` carries the run buffer's seq (cave-h40l): a client that saw it can
+  // resume mid-turn via GET /api/chat/stream?cursor=<last id> after a drop.
+  const id = seq != null ? `id: ${seq}\n` : "";
+  return new TextEncoder().encode(`${id}data: ${JSON.stringify(event)}\n\n`);
 }
 
 // SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
@@ -768,11 +776,12 @@ function openClawChatResponse(args: {
       const push = (event: StreamEvent) => {
         // Tee EVERY event through the per-run ring first (cave-h40l): the
         // buffer is what makes a dropped client resumable, so it must see
-        // events even after the original transport closed.
-        runBuffer?.record(event);
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(sse(event));
+          controller.enqueue(sse(event, seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -1554,11 +1563,12 @@ export async function POST(req: Request) {
       const push = (e: StreamEvent) => {
         // Tee EVERY event through the per-run ring first (cave-h40l): the
         // buffer is what makes a dropped client resumable, so it must see
-        // events even after the original transport closed.
-        runBuffer?.record(e);
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(sse(e));
+          controller.enqueue(sse(e, seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -1640,6 +1650,12 @@ export async function POST(req: Request) {
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
       let resumeFailed = false;
+
+      // Fatal registry conflict from a stale scaffolded manifest whose id a
+      // CLI upgrade promoted to built-in (copilot, coven-code). Kills every
+      // `coven run` at startup, so the turn ends with no assistant text.
+      // Detected from stderr; healed (manifest quarantined) and retried below.
+      let adapterConflict: BuiltinAdapterConflict | null = null;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -2013,6 +2029,9 @@ export async function POST(req: Request) {
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
+            if (!adapterConflict) {
+              adapterConflict = detectBuiltinAdapterConflict(text);
+            }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
               if (!trimmed) continue;
@@ -2070,6 +2089,41 @@ export async function POST(req: Request) {
       // First attempt — uses --continue if body.sessionId was set.
       const turnSpawnStartMs = Date.now();
       await runAttempt(args);
+
+      // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
+      // installed CLI now ships as a built-in harness makes the registry load
+      // fatal, killing the run before any assistant output. Quarantine the
+      // manifest the CLI named (rename off the scanned `.json` extension) and
+      // retry the same turn. Bounded: several stale manifests can conflict,
+      // but each pass must have healed a new one to continue. Local runs
+      // only — an SSH runtime's error names a remote path.
+      for (
+        let heals = 0;
+        heals < 3 && adapterConflict && !sshRuntime && !runHandle.stopRequested;
+        heals++
+      ) {
+        const conflict: BuiltinAdapterConflict = adapterConflict;
+        const healed = await healBuiltinShadowedManifest(conflict);
+        if (!healed) break;
+        pushProgress(
+          "adapter-heal",
+          `Quarantined stale ${conflict.id} adapter manifest; retrying`,
+          "running",
+          conflict.manifestPath,
+        );
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
+        assistantText = "";
+        jsonBuf = "";
+        result = {};
+        toolTracker = new ToolCallTracker();
+        copilotText.reset();
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
+        resumeFailed = false;
+        adapterConflict = null;
+        await runAttempt(args);
+        pushProgress("adapter-heal", "Retry after manifest quarantine finished", "done");
+      }
 
       // Transparent retry: if codex reported its rollout-resume failed and
       // we had been resuming, start a fresh thread (no --continue) so the

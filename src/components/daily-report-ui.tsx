@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 // Presentational building blocks shared by the standalone `/daily-report/[date]`
 // and `/dashboard` routes. These are server components — they render the
 // client-only <Icon> as a leaf island, which Next.js allows. Keeping them here
@@ -120,6 +121,7 @@ const ROW_ACCENT: Record<InboxItem["kind"], string> = {
   agent: ACCENT_VAR.lavender,
   "response-needed": ACCENT_VAR.rose,
   "daily-summary": ACCENT_VAR.blue,
+  milestone: ACCENT_VAR.green,
 };
 
 /** A single actionable inbox item. Renders as a deep link when it has a target. */

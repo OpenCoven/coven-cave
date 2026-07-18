@@ -6,6 +6,13 @@ improvements.
 
 ## Community Contributors
 
+### Val Alexander ([@BunsDev](https://github.com/BunsDev))
+
+Val contributed the direct copilot flow workspace trust grant, including the
+familiar workspace validation and regression coverage that let non-interactive
+flow runs access their own workspace safely.
+(proposed in [#3411](https://github.com/OpenCoven/coven-cave/pull/3411))
+
 ### Jiachen LIU ([@AmberLJC](https://github.com/AmberLJC))
 
 Jiachen authored the two MIT-licensed research-ideation skills adapted for the

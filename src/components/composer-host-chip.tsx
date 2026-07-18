@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 // Composer Host chip — shared by the chat composer and the home composer.
 // A popover picker over the registered-host registry (/api/hosts) with live
 // status dots per host and a connect-new-host flow. Self-contained: owns the

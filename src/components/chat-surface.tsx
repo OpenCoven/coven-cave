@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
@@ -14,6 +18,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { useCodeRail } from "@/lib/use-code-rail";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -26,6 +31,7 @@ import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { InitialCommandControls } from "@/lib/command-controls";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -68,6 +74,7 @@ type Props = {
   sessions: SessionRow[];
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
+  selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
@@ -81,6 +88,7 @@ type Props = {
   pendingChatAction?: PendingChatAction;
   pendingCodeRailOpen?: PendingCodeRailOpen | null;
   onSetActiveFamiliar: (id: string | null) => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
   onPendingCodeRailOpenHandled: () => void;
@@ -88,6 +96,7 @@ type Props = {
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Forwarded to ChatRouter → ChatView so the Task chip in the chat header
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
@@ -105,6 +114,7 @@ export function ChatSurface({
   sessions,
   activeFamiliar,
   activeFamiliarId,
+  selectedFamiliarIds,
   daemonRunning,
   routerRef,
   sessionsLoaded,
@@ -116,6 +126,7 @@ export function ChatSurface({
   pendingChatAction,
   pendingCodeRailOpen,
   onSetActiveFamiliar,
+  onFamiliarScopeChange,
   onClearPendingProjectRoot,
   onPendingChatActionHandled,
   onPendingCodeRailOpenHandled,
@@ -123,6 +134,7 @@ export function ChatSurface({
   onSlashFromChat,
   onOpenOnboarding,
   onSessionsChanged,
+  onSessionsDeleted,
   onOpenTask,
   onOpenUrl,
   hideThreadRail = false,
@@ -203,17 +215,21 @@ export function ChatSurface({
     // root only. A previous cross-run ref wrongly blocked the new root's first
     // load when the old root's fetch was still in flight, leaving a stale count.
     let inFlight = false;
-    const load = async () => {
+    // The fetch goes through the shared changes-summary gate (cave-v8hh) so
+    // this badge, the composer git chip, the stage header, and the Changes
+    // panel — all polling the same root — cost one request per 5s window, not
+    // four. The refresh signal forces so a just-made edit can't reuse a
+    // pre-mutation response.
+    const load = async (opts?: { force?: boolean }) => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(root)}`, { cache: "no-store" });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; files?: unknown[] };
+        const { httpOk, json } = await fetchChangesSummary(root, opts);
         if (cancelled) return;
         // Failures stay `null` (unknown), never a fake zero — a transient
         // error followed by a successful load must not read as a fresh 0→N
         // edit batch and pop the closed-by-default rail open (cave-xsq.7).
-        setChangeCount(res.ok && json.ok ? (json.files?.length ?? 0) : null);
+        setChangeCount(httpOk && json.ok ? (json.files?.length ?? 0) : null);
       } catch {
         if (!cancelled) setChangeCount(null);
       } finally {
@@ -221,7 +237,7 @@ export function ChatSurface({
       }
     };
     void load();
-    const onRefresh = () => { void load(); };
+    const onRefresh = () => { void load({ force: true }); };
     window.addEventListener("cave:changes-refresh", onRefresh);
     let intervalId: number | undefined;
     if (sessionRunning) {
@@ -459,7 +475,8 @@ export function ChatSurface({
       if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
       setScope("conversation");
       const findQuery = pendingChatAction.findQuery;
-      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery), 0);
+      const autoVoice = pendingChatAction.autoVoice;
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice), 0);
       onPendingChatActionHandled();
       return;
     }
@@ -526,6 +543,8 @@ export function ChatSurface({
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           <Tabs<FamiliarsScope>
             bordered={false}
+            ariaLabel="Chat sections"
+            className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             value={scope}
             onChange={(s) => {
               setScope(s);
@@ -541,7 +560,7 @@ export function ChatSurface({
               { id: "settings", label: "Settings" },
             ]}
           />
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.
@@ -581,7 +600,7 @@ export function ChatSurface({
         </div>
 
         {scope === "projects" ? (
-          <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+          <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} onSessionsDeleted={onSessionsDeleted} activeFamiliarId={activeFamiliarId} />
         ) : scope === "canvas" ? (
           // Saved-sketch gallery: everything "Save to Canvas" persisted from
           // inline chat artifacts, browsable/reopenable/deletable in place.
@@ -594,7 +613,19 @@ export function ChatSurface({
           // describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
             <div className="h-full w-full max-w-7xl">
-              <ChatFamiliarView familiar={activeFamiliar} daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
+              <ChatFamiliarView
+                familiar={activeFamiliar}
+                familiars={familiars}
+                selectedFamiliarIds={selectedFamiliarIds}
+                familiarsLoaded={familiarsLoaded}
+                familiarsError={familiarsError}
+                daemonRunning={daemonRunning}
+                onRetryFamiliars={onRetryFamiliars}
+                onCreateFamiliar={requestSummonFamiliar}
+                onOpenOnboarding={onOpenOnboarding}
+                onFamiliarScopeChange={onFamiliarScopeChange}
+                onStartChat={startFamiliarHeroChat}
+              />
             </div>
           </div>
         ) : scope === "settings" ? (
@@ -639,6 +670,7 @@ export function ChatSurface({
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
+                  onSessionsDeleted={onSessionsDeleted}
                   onSlashFromChat={onSlashFromChat}
                   onOpenOnboarding={onOpenOnboarding}
                   pendingProjectRoot={pendingProjectRoot}

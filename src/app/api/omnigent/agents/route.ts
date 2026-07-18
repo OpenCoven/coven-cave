@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
 import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
+import { isOmnigentFleetActive, resolveOmnigentBaseUrl } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -12,15 +13,24 @@ export async function GET(req: Request) {
   if (forbidden) return forbidden;
 
   const config = await loadConfig();
-  if (!config.omnigent.baseUrl) {
+  // Master switch: Vault OMNIGENT_SERVER_URL + the explicit Settings → Daemon
+  // enable toggle. Refuse before resolving any secret or contacting a server.
+  if (!isOmnigentFleetActive(config.omnigent)) {
     return NextResponse.json(
-      { ok: false, error: "omnigent.baseUrl is not configured" },
+      { ok: false, error: "Omnigent fleet is not enabled (Settings → Daemon)" },
+      { status: 400 },
+    );
+  }
+  const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
+  if (!baseUrl) {
+    return NextResponse.json(
+      { ok: false, error: "Omnigent server URL is not configured (OMNIGENT_SERVER_URL)" },
       { status: 400 },
     );
   }
 
   try {
-    const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
+    const client = await OmnigentClient.fromBaseUrl(baseUrl);
     const agents = await client.listAgents();
     return NextResponse.json({
       ok: true,

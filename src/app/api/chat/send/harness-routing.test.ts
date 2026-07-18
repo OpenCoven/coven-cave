@@ -284,7 +284,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(e\)\);[\s\S]*?catch/,
+  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(e, seq\)\);[\s\S]*?catch/,
   "Native stream pushes should be ignored after close/abort so late child output cannot enqueue into a closed stream",
 );
 assert.match(
@@ -294,7 +294,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(event\)\);[\s\S]*?catch/,
+  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(event, seq\)\);[\s\S]*?catch/,
   "OpenClaw stream pushes should be ignored after close/abort so late child close/error output cannot enqueue into a cancelled stream",
 );
 assert.doesNotMatch(

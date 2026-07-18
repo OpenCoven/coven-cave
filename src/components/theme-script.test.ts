@@ -16,13 +16,13 @@ assert.doesNotMatch(
 );
 assert.match(
   component,
-  /export function ThemeScript\(\{ preferences \}: \{ preferences: CavePreferences \}\)/,
-  "ThemeScript should require the canonical server preference snapshot",
+  /authoritative = true[\s\S]*authoritative\?: boolean/,
+  "ThemeScript should distinguish canonical snapshots from paint-only snapshots",
 );
 assert.match(
   component,
-  /id="cave-preferences-bootstrap"[\s\S]*type="application\/json"[\s\S]*serializePreferencesBootstrap\(preferences\)[\s\S]*id="theme-init"/,
-  "the inert canonical bootstrap must precede the synchronous appearance script",
+  /id="cave-preferences-bootstrap"[\s\S]*type="application\/json"[\s\S]*data-authoritative=[\s\S]*serializePreferencesBootstrap\(preferences\)[\s\S]*id="theme-init"/,
+  "the inert, provenance-marked bootstrap must precede the synchronous appearance script",
 );
 assert.match(
   component,
@@ -37,18 +37,18 @@ assert.match(
 
 assert.match(
   layout,
-  /export default async function RootLayout/,
-  "the root layout should load canonical preferences on the server",
+  /export default function RootLayout/,
+  "the root layout should render synchronously",
+);
+assert.doesNotMatch(
+  layout,
+  /loadPreferences|migrateCaveHomeOnce|await /,
+  "first shell delivery must not enter preferences or reconciliation",
 );
 assert.match(
   layout,
-  /const preferences = await loadPreferences\(\)\.catch\(\(\) => createDefaultPreferences\(false\)\)/,
-  "a store failure should degrade to an uninitialized safe snapshot",
-);
-assert.match(
-  layout,
-  /<head>\s*<ThemeScript preferences=\{preferences\} \/>\s*<\/head>/,
-  "the canonical snapshot should be embedded in <head> before first paint",
+  /<head>\s*<ThemeScript preferences=\{preferences\} authoritative=\{false\} \/>\s*<\/head>/,
+  "the safe snapshot should be explicitly paint-only",
 );
 assert.match(
   layout,
@@ -63,9 +63,10 @@ assert.match(
 );
 assert.match(
   bootScript,
-  /bootstrap\.version !== 1[\s\S]*window\.__COVEN_CAVE_PREFERENCES__ = bootstrap/,
-  "only the supported preference schema should be exposed to the client store",
+  /bootstrap\.version !== 1[\s\S]*data-authoritative[\s\S]*__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__/,
+  "the supported preference schema and its provenance should be exposed to the client store",
 );
+assert.match(bootScript, /cave:paint-bootstrap-applied/, "paint bootstrap timing is observable");
 assert.match(
   bootScript,
   /function stored\(key, fallback\) \{\s*if \(initialized\) return fallback;/,
@@ -94,8 +95,9 @@ for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
 }
 for (const id of [
   "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
-  "bane", "slate", "ghosty", "claymorphism", "claude", "pastel-dreams",
-  "meatseeks", "trucker", "snow", "contrast", "beacon", "solstice", "custom",
+  "bane", "slate", "ghosty", "claymorphism", "claude", "openai",
+  "pastel-dreams", "meatseeks", "trucker", "snow", "contrast", "beacon",
+  "solstice", "custom",
 ]) {
   assert.ok(bootScript.includes(`"${id}"`), `pre-paint theme allowlist contains ${id}`);
 }
@@ -122,7 +124,7 @@ function executeBootstrap(preferences) {
     document: {
       documentElement: html,
       getElementById: (id) => id === "cave-preferences-bootstrap"
-        ? { textContent: JSON.stringify(preferences) }
+        ? { textContent: JSON.stringify(preferences), getAttribute: () => "true" }
         : null,
     },
     localStorage,

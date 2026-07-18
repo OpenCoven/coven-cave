@@ -9,7 +9,9 @@ const header = readFileSync(new URL("./chat-stage-header.tsx", import.meta.url),
 const rail = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const hook = readFileSync(new URL("../lib/use-stage-checks-badge.ts", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const railLogic = readFileSync(new URL("../lib/code-rail.ts", import.meta.url), "utf8");
 
 // Publish side: the header owns the snapshot; publishStageChecks records the

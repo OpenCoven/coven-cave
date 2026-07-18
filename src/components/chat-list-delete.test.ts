@@ -30,8 +30,8 @@ assert.match(
 
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\)/,
-  "ChatList should ask the shell to refresh sessions after deleting a chat",
+  /onSessionsDeleted\(\[sessionId\]\)/,
+  "ChatList should report a confirmed single delete to the Workspace boundary",
 );
 
 assert.match(
@@ -356,6 +356,8 @@ assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} set
 assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
 assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+assert.match(source, /successfulSessionIds\(removed\.map\(\(session\) => session\.id\), results\)/, "bulk delete selects only confirmed ids");
+assert.match(source, /if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/, "bulk delete reports confirmed ids once");
 // Bulk delete is deferred + undoable via the shared undo toast.
 assert.match(source, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
 assert.match(source, /scheduleBulkDelete\(\s*removed,/, "bulk delete schedules the batch through the undo window");

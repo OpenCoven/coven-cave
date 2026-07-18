@@ -7,6 +7,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
+import { isManifestShadowedByBuiltin } from "@/lib/server/adapter-conflict-heal";
 
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "addons",
@@ -65,6 +66,10 @@ async function scaffoldAdapterManifestsFromPatch(body: ConfigPatchBody): Promise
       ensuredAdaptersDir = true;
     }
     const manifestPath = path.join(adaptersDir, scaffold.filename);
+    // A quarantined manifest means the installed CLI ships this id as a
+    // built-in harness and fatally rejects the external copy — never
+    // resurrect it (cave-1c05).
+    if (await isManifestShadowedByBuiltin(manifestPath)) continue;
     if (!(await pathExists(manifestPath))) {
       await writeFile(manifestPath, scaffold.contents, "utf8");
     }

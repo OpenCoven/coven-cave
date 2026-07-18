@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dashboard.css";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/lib/icon";
@@ -28,6 +30,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import {
   DEFAULT_STOP_PHRASE,
@@ -76,6 +79,7 @@ import {
   reapplyIndependentAppearance,
 } from "@/lib/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
+import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -400,6 +404,9 @@ function GeneralSection() {
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
+      <SettingsGroup label="Progression">
+        <CelebrationsToggle />
+      </SettingsGroup>
       <BackupSettingsGroup />
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
@@ -435,10 +442,35 @@ function HomeNewsToggle() {
   );
 }
 
-// The stop phrase is a safety valve: while a familiar is mid-task, typing
-// this exact phrase in any chat composer halts the run (the composer's busy
-// bail otherwise swallows plain sends). Commit on blur/Enter; clearing the
-// field disables interception.
+// The dial-it-down switch for the renown system's louder moments. Off is a
+// clean-tool mode, not a mute-with-loss: milestones still land in the inbox
+// and completions still announce for AT — only the celebratory presentation
+// (toasts, flourishes) stills.
+function CelebrationsToggle() {
+  const celebrationsEnabled = useCelebrationsEnabled();
+  return (
+    <SettingsRow
+      label="Celebrations"
+      description="Milestone toasts and completion flourishes. Off keeps milestones in the inbox only."
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={celebrationsEnabled}
+        aria-label="Celebrations"
+        onClick={() => writeCelebrationsEnabled(!celebrationsEnabled)}
+        className={`settings-switch focus-ring${celebrationsEnabled ? " is-on" : ""}`}
+      >
+        <span className="settings-switch__knob" aria-hidden />
+      </button>
+    </SettingsRow>
+  );
+}
+
+// Stop phrases are a safety valve: while a familiar is mid-task, typing any
+// one of these comma-separated phrases in a chat composer halts the run (the
+// composer's busy bail otherwise swallows plain sends). Commit on blur/Enter;
+// clearing the field disables interception.
 function StopPhraseField() {
   const saved = useStopPhrase();
   const [draft, setDraft] = useState<string | null>(null);
@@ -449,8 +481,8 @@ function StopPhraseField() {
   };
   return (
     <SettingsRow
-      label="Stop phrase"
-      description="Typing this in the composer while a task is running stops it. Leave empty to disable."
+      label="Stop phrases"
+      description="Typing any one of these in the composer while a task is running stops it. Separate options with commas; leave empty to disable."
     >
       <input
         value={value}
@@ -461,7 +493,7 @@ function StopPhraseField() {
         }}
         placeholder={DEFAULT_STOP_PHRASE}
         maxLength={STOP_PHRASE_MAX_LENGTH}
-        aria-label="Stop phrase"
+        aria-label="Stop phrases"
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
       />
     </SettingsRow>
@@ -642,10 +674,23 @@ function formatHostWorkspaceText(map: Record<string, string> | undefined): strin
     .join("\n");
 }
 
-/** Omnigent fleet connection — the config surface for the host chip and remote runs. */
+/** Omnigent fleet connection — the config surface for the host chip and remote runs.
+ *  Renders NOTHING unless OMNIGENT_SERVER_URL is set up in the user's Cave
+ *  Vault: without the Vault env the group is absent from the Daemon tab
+ *  entirely (fail closed while the probe is in flight). With the Vault env
+ *  present the group is just an explicit enable toggle (off by default,
+ *  persisted as omnigent.enabled in Cave config); the connection fields appear
+ *  only after the user turns the fleet on. The Vault URL is also the active
+ *  server URL — it overrides the Cave-config value. */
 function OmnigentSettingsGroup() {
   const { announce } = useAnnouncer();
-  const [baseUrl, setBaseUrl] = useState("");
+  // null = probe in flight → hidden; the group only appears once the status
+  // endpoint proves the Vault env exists.
+  const [serverUrlInVault, setServerUrlInVault] = useState<boolean | null>(null);
+  // The explicit master switch (omnigent.enabled in Cave config).
+  const [enabled, setEnabled] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [activeBaseUrl, setActiveBaseUrl] = useState("");
   const [workspace, setWorkspace] = useState("");
   const [hostWorkspaceText, setHostWorkspaceText] = useState("");
   const [exposeHosts, setExposeHosts] = useState(true);
@@ -661,7 +706,6 @@ function OmnigentSettingsGroup() {
         ok?: boolean;
         config?: {
           omnigent?: {
-            baseUrl?: string;
             defaultWorkspace?: string;
             hostWorkspaceMap?: Record<string, string>;
             exposeHostsInComposer?: boolean;
@@ -670,7 +714,6 @@ function OmnigentSettingsGroup() {
       }) => {
         if (ctl.signal.aborted || !j.ok) return;
         const o = j.config?.omnigent;
-        setBaseUrl(o?.baseUrl ?? "");
         setWorkspace(o?.defaultWorkspace ?? "");
         setHostWorkspaceText(formatHostWorkspaceText(o?.hostWorkspaceMap));
         setExposeHosts(o?.exposeHostsInComposer !== false);
@@ -683,9 +726,15 @@ function OmnigentSettingsGroup() {
         hasToken?: boolean;
         authMode?: string;
         configured?: boolean;
+        enabled?: boolean;
+        serverUrlInVault?: boolean;
+        baseUrl?: string;
         error?: string;
       }) => {
         if (ctl.signal.aborted) return;
+        setServerUrlInVault(j.serverUrlInVault === true);
+        setEnabled(j.enabled === true);
+        setActiveBaseUrl(typeof j.baseUrl === "string" ? j.baseUrl : "");
         if (!j.configured) setStatusLine("Not configured");
         else if (j.online) {
           const mode = j.authMode || (j.hasToken ? "jwt" : "none");
@@ -696,7 +745,9 @@ function OmnigentSettingsGroup() {
           );
         } else setStatusLine(j.error ? `Offline · ${j.error}` : "Offline");
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!ctl.signal.aborted) setServerUrlInVault(false);
+      });
     return () => ctl.abort();
   }, []);
 
@@ -708,8 +759,9 @@ function OmnigentSettingsGroup() {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          // baseUrl deliberately omitted: the Vault env supplies the server
+          // URL; the shallow omnigent merge keeps any config fallback as is.
           omnigent: {
-            baseUrl: baseUrl.trim(),
             defaultWorkspace: workspace.trim(),
             hostWorkspaceMap: parseHostWorkspaceText(hostWorkspaceText),
             exposeHostsInComposer: exposeHosts,
@@ -735,20 +787,95 @@ function OmnigentSettingsGroup() {
     }
   };
 
+  // Flip the master switch (persisted as omnigent.enabled in Cave config).
+  // Turning it on re-probes status so the URL row and status line populate;
+  // turning it off immediately deactivates every fleet surface server-side.
+  const setFleetEnabled = async (next: boolean) => {
+    setToggling(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ omnigent: { enabled: next } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `save failed (${res.status})`);
+      }
+      setEnabled(next);
+      announce(next ? "Omnigent fleet enabled." : "Omnigent fleet disabled.");
+      // Disabling must hide already-mounted Fleet controls immediately. Enabling
+      // publishes the refreshed status below only after the server confirms the
+      // token/auth gate, so dependent surfaces continue to fail closed.
+      if (!next) publishFleetTokenStatus(null);
+      try {
+        const statusRes = await fetch("/api/omnigent/status", { cache: "no-store" });
+        const st = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok || st?.ok === false) {
+          throw new Error(st?.error || `status failed (${statusRes.status})`);
+        }
+        publishFleetTokenStatus(st);
+        setActiveBaseUrl(typeof st?.baseUrl === "string" ? st.baseUrl : "");
+        if (!st?.configured) setStatusLine("Not configured");
+        else if (st?.online) {
+          const mode = st.authMode || (st.hasToken ? "jwt" : "none");
+          setStatusLine(mode === "none" ? "Online · local/unauthenticated" : `Online · auth ${mode}`);
+        } else setStatusLine(st?.error ? `Offline · ${st.error}` : "Offline");
+      } catch {
+        // The config PATCH already succeeded, so do not report the toggle as
+        // failed merely because this optional status refresh was unavailable.
+        publishFleetTokenStatus(null);
+        setActiveBaseUrl("");
+        setStatusLine("Status unavailable · try again later");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "could not save";
+      setError(msg);
+      announce(`Couldn't ${next ? "enable" : "disable"} Omnigent fleet: ${msg}`, "assertive");
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  // Vault-gated: no OMNIGENT_SERVER_URL in the Cave Vault (or probe still in
+  // flight / failed) → the Daemon tab shows no Omnigent surface whatsoever.
+  if (serverUrlInVault !== true) return null;
+
   return (
     <SettingsGroup label="Omnigent fleet">
       <SettingControlRow
-        label="Server URL"
-        hint="HTTPS URL of your Omnigent server (e.g. Tailscale). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
+        label="Enable fleet"
+        hint="Master switch (off by default). Off keeps every Omnigent surface hidden — fleet host options, Fleet buttons, per-familiar fleet defaults — and Cave contacts no Omnigent server. Available because OMNIGENT_SERVER_URL is in your Cave Vault."
       >
-        <input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          aria-label="Omnigent server URL"
-          placeholder="https://omnigent.example.ts.net"
-          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
-          spellCheck={false}
-        />
+        <label className="flex items-center gap-2 text-[12px]">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={toggling}
+            onChange={(e) => void setFleetEnabled(e.target.checked)}
+          />
+          Omnigent fleet {enabled ? "on" : "off"}
+        </label>
+      </SettingControlRow>
+      {!enabled && error && (
+        <div className="px-4 pb-2.5">
+          <span role="alert" className="text-[11px] text-[var(--color-danger)]">{error}</span>
+        </div>
+      )}
+      {enabled ? (
+        <>
+      <SettingControlRow
+        label="Server URL"
+        hint="Supplied by OMNIGENT_SERVER_URL in your Cave Vault (it overrides Cave config). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
+      >
+        <span
+          className="w-full min-w-[260px] max-w-md truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)]"
+          aria-label="Omnigent server URL (from Vault)"
+          title={activeBaseUrl || undefined}
+        >
+          {activeBaseUrl || "—"}
+        </span>
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"
@@ -805,6 +932,8 @@ function OmnigentSettingsGroup() {
           </Button>
         </div>
       </div>
+        </>
+      ) : null}
     </SettingsGroup>
   );
 }
@@ -2300,10 +2429,10 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
  *  behind a disclosure; the headline tells a person what to actually do. */
 function describeMobileHandoffError(raw: string): { headline: string; hint: string } {
   const text = raw.toLowerCase();
-  if (text.includes("pnpm dev") || text.includes("access token")) {
+  if (text.includes("pnpm dev") || text.includes("access token") || text.includes("pairing secret")) {
     return {
-      headline: "Pairing runs in the packaged Cave app",
-      hint: "This dev server can’t mint pairing codes — open CovenCave from Applications and pair from there.",
+      headline: "Pairing secret unavailable",
+      hint: "Cave provisions the pairing secret automatically — retry below. If this persists, restart Cave (or the dev server) and check the app data folder’s permissions.",
     };
   }
   if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {

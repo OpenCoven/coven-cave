@@ -8,6 +8,7 @@ import vm from "node:vm";
 import {
   dominantVibrantOklab,
   fitAccentToBackground,
+  isFamiliarBackdropOn,
   readFamiliarBackdropImage,
   writeFamiliarBackdropImage,
 } from "./cave-backdrop.ts";
@@ -36,6 +37,25 @@ import { parseThemeColor, contrastRatio } from "./theme-contrast.ts";
     globalThis.fetch = originalFetch;
   }
 }
+
+// ── isFamiliarBackdropOn: explicit entry wins, else image presence ───────────
+// (cave-kf8p) The default preserves cave-j0dz behavior: an uploaded image means
+// ON when the user has never touched the switch.
+assert.equal(isFamiliarBackdropOn({ familiars: {} }, "fam-a", true), true, "unset + image = on (compat)");
+assert.equal(isFamiliarBackdropOn({ familiars: {} }, "fam-a", false), false, "unset + no image = off");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": true } }, "fam-a", false), true, "explicit on needs no image");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-a": false } }, "fam-a", true), false, "explicit off keeps the image dormant");
+assert.equal(isFamiliarBackdropOn({ familiars: { "fam-b": true } }, "fam-a", false), false, "other familiars' entries don't leak");
+assert.equal(
+  isFamiliarBackdropOn({ familiars: {} }, "constructor", false),
+  false,
+  "prototype members never count as entries (id 'constructor' is a real slug)",
+);
+assert.equal(
+  isFamiliarBackdropOn({ familiars: { constructor: true } }, "constructor", false),
+  true,
+  "an explicit own entry for a prototype-named id still works",
+);
 
 // ── dominantVibrantOklab: picks the vibrant hue, ignores neutrals ────────────
 function pixels(colors: Array<[number, number, number]>, repeat = 1): Uint8ClampedArray {
@@ -234,6 +254,20 @@ assert.match(lib, /FAMILIAR_BACKDROP_MISSING_TTL_MS = 5 \* 60_000/, "known-missi
 assert.match(lib, /familiarBackdropMissingUntil\.delete\(familiarId\)/, "familiar writes immediately invalidate the negative cache");
 assert.doesNotMatch(lib, /\.delete\(IMAGE_KEY\)/, "legacy backdrop bytes are never deleted during migration or clear");
 
+// Per-familiar enablement (cave-kf8p): the setter merges into the full map so
+// sibling familiars' choices survive, and persists via the central prefs pipe.
+assert.match(
+  lib,
+  /\{ \.\.\.readBackdropPrefs\(\)\.familiars, \[familiarId\]: enabled \}/,
+  "setFamiliarBackdropEnabled preserves sibling familiar entries",
+);
+assert.match(
+  lib,
+  /while \(Object\.keys\(familiars\)\.length > MAX_FAMILIAR_BACKDROPS\)/,
+  "the setter evicts before writing — an over-cap PATCH would terminally halt the prefs pipe",
+);
+assert.match(lib, /familiars: \{ \.\.\.central\.familiars \}/, "readBackdropPrefs copies the central familiars map");
+
 // The vibe rides exactly one custom property, so clearing restores the theme.
 assert.match(
   lib,
@@ -251,8 +285,25 @@ assert.match(layer, /data-on=\{active \? "true" : "false"\}/, "the layer crossfa
 assert.match(layer, /useBackdropImageRevision\(\)/, "the mounted layer subscribes to image replacements");
 assert.match(
   layer,
-  /\[prefs\.enabled, imageRevision\]/,
-  "an enabled backdrop reloads when its durable bytes are replaced",
+  /\[wantsAppImage, imageRevision\]/,
+  "the app image loads when app-enabled OR a familiar explicitly opted in (fallback), and reloads on byte replacement",
+);
+// Per-familiar switch semantics (cave-kf8p): explicit entry wins, image
+// presence is the compat default, and the switch only ADDS enablement.
+assert.match(
+  layer,
+  /familiarOn = familiarId\s*\?\s*isFamiliarBackdropOn\(prefs, familiarId, familiarUrl !== null\)\s*:\s*false/,
+  "the layer derives familiar enablement through the shared default rule",
+);
+assert.match(
+  layer,
+  /effectiveEnabled = prefs\.enabled \|\| familiarOn/,
+  "a familiar can enable the backdrop, never suppress the app-wide one",
+);
+assert.match(
+  layer,
+  /familiarImageShowing \? familiarUrl : imageUrl/,
+  "a dormant familiar image never shows — the app image is the fallback",
 );
 
 {
@@ -280,7 +331,7 @@ assert.match(
     document: {
       documentElement: html,
       getElementById: (id: string) => id === "cave-preferences-bootstrap"
-        ? { textContent: JSON.stringify(preferences) }
+        ? { textContent: JSON.stringify(preferences), getAttribute: () => "true" }
         : null,
     },
     localStorage: {

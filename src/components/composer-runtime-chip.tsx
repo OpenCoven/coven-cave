@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 // ComposerRuntimeChip — the always-visible "what will answer me" chip in the
 // chat composer: the active runtime's logo + the effective model, clickable
 // to switch either. Runtime picks are familiar-level (the same /api/config

@@ -6,7 +6,7 @@
 // buttons are allowed to exist. Fail-closed derivations:
 // - fixtures mode / stale / blocked surface  -> decisions disabled, reason shown
 // - corrupt proposal                          -> both actions disabled (R6)
-// - decision failure                          -> visible refusal, proposal stays pending
+// - decision failure                          -> visible refusal with its queue consequence
 
 import type { ProposalView } from "./threads-read.ts";
 import type { SurfaceState } from "./weave-rail.ts";
@@ -76,8 +76,8 @@ const REFUSAL_MESSAGES: Record<string, string> = {
   "daemon-unreachable": "The daemon did not answer — nothing was applied; the proposal stays pending.",
   "daemon-endpoint-missing": "The daemon does not accept decisions yet — nothing was applied.",
   "daemon-timeout": "The daemon timed out — nothing was applied; the proposal stays pending.",
-  "proposal-corrupt": "The staged file is corrupt — the daemon was never asked.",
-  "proposal-refused": "The daemon re-validated and refused the decision — nothing was applied.",
+  "proposal-corrupt": "The proposal is corrupt — the decision was not applied.",
+  "proposal-refused": "The daemon re-validated and refused the decision — nothing was applied, and the proposal may no longer be pending.",
   "not-found": "No staged proposal by that id — it may already be decided.",
   "invalid-id": "That proposal id is not valid.",
 };

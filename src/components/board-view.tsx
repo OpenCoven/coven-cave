@@ -12,6 +12,7 @@ import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } f
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -144,6 +145,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // aria-silent, and only kanban's drag flow had an announcer before.
   const { announce } = useAnnouncer();
   const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
+  // Card that just moved to Done — drives the kanban's one-shot reward flare,
+  // then clears so a re-render can't replay it.
+  const [rewardCardId, setRewardCardId] = useState<string | null>(null);
+  const rewardClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+  }, []);
 
   // `quiet` is for background polls: a transient poll failure must not blank
   // the board (setCards([])) or flash an error — leave the last-good cards in
@@ -223,7 +231,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
-  // The command palette can switch the board view directly (e.g. "Board: Gantt
+  // The command palette can switch the board view directly (e.g. "Tasks: Gantt
   // timeline"); honor it live when the board is already mounted.
   useEffect(() => {
     const onSetView = (e: Event) => {
@@ -447,6 +455,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (status === "running") (patch as Record<string, unknown>).runningSince = new Date().toISOString();
     const title = cards.find((c) => c.id === id)?.title;
     if (title) announce(`Moved '${title}' to ${status.charAt(0).toUpperCase()}${status.slice(1)}.`);
+    // One-shot completion flare on the card as it lands in Done (the announce
+    // above is the AT channel; this is purely visual). Gated on the
+    // celebrations pref; reduced-motion collapses the animation in CSS.
+    if (status === "done" && readCelebrationsEnabled()) {
+      setRewardCardId(id);
+      if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+      rewardClearRef.current = setTimeout(() => setRewardCardId(null), 900);
+    }
     // Return the patch promise so bulkMove's Promise.all actually waits for
     // the batch — bulkBusy used to clear while the PATCHes were still in
     // flight (cave-381s). Fire-and-forget callers are unaffected.
@@ -1243,6 +1259,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
+            rewardCardId={rewardCardId}
             wipLimits={wipLimits} onSetWipLimit={setWipLimitFor}
             onQuickAdd={quickAdd}
             onJumpToSession={onJumpToSession}

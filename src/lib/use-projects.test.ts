@@ -24,4 +24,29 @@ assert.doesNotMatch(
   "the reset lives in the effect, not in load(), so in-place reload() never blanks the list",
 );
 
+// cave-v8hh: GET /api/projects is deduped through a module-level microcache —
+// the hook's 8+ consumers used to fire one identical request each on a surface
+// mount. Mutations must drop the cache (every scope) so no consumer can be
+// served a pre-mutation list, and reload() must bypass it.
+assert.match(
+  source,
+  /projectsCache\.get\(key, \(\) => requestProjects\(familiarId\)\)/,
+  "loads go through the shared projects microcache",
+);
+assert.match(
+  source,
+  /if \(opts\?\.force\) projectsCache\.invalidate\(key\);/,
+  "force drops the cached scope before refetching",
+);
+assert.match(
+  source,
+  /void load\(\{ force: true \}\);/,
+  "reload() bypasses the microcache",
+);
+assert.equal(
+  (source.match(/invalidateProjectsCache\(\);/g) ?? []).length,
+  5,
+  "all five mutations (create/rename/updateRoot/updateColor/delete) invalidate the cache",
+);
+
 console.log("use-projects.test.ts: ok");

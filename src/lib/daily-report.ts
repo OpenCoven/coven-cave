@@ -105,6 +105,7 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   agent: "Familiar update",
   "response-needed": "Response needed",
   "daily-summary": "Daily report",
+  milestone: "Milestone",
 };
 
 export const KIND_ICON: Record<ItemKind, string> = {
@@ -112,6 +113,7 @@ export const KIND_ICON: Record<ItemKind, string> = {
   agent: "ph:sparkle",
   "response-needed": "ph:chat-circle-dots",
   "daily-summary": "ph:newspaper",
+  milestone: "ph:trophy-fill",
 };
 
 /**

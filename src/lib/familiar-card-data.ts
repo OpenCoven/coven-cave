@@ -21,6 +21,8 @@ export type MemoryPeekEntry = {
   excerpt: string;
   modified: string;
   fullPath: string;
+  /** Source-relative path — tooltip context for the card's open action. */
+  relPath: string;
   /** Older than GROWTH_THRESHOLDS.staleMemoryDays — badge as stale. */
   stale: boolean;
 };
@@ -94,6 +96,7 @@ export function pickFamiliarMemory(
         excerpt,
         modified: e.modified,
         fullPath: e.fullPath,
+        relPath: e.relPath,
         stale: Number.isFinite(modifiedMs) && now - modifiedMs > STALE_MEMORY_MS,
       };
     });

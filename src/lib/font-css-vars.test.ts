@@ -10,6 +10,13 @@ const FILES = [
   "../styles/home-composer.css",
   "../styles/board.css",
   "../styles/cave-chat.css",
+  // #3264 split sheets — keep the font-alias fence covering the moved rules.
+  "../styles/cave-md.css",
+  "../styles/cave-composer.css",
+  "../styles/chat-list.css",
+  "../styles/calendar.css",
+  "../styles/dashboard.css",
+  "../styles/dash-act.css",
   "../styles/sidebar-minimal.css",
 ];
 
@@ -46,7 +53,11 @@ assert.match(
 
 // The reading line-spacing control drives the shared .cave-md prose surface via
 // --cave-reading-leading, with a 1.7 fallback so the default is unchanged.
-const caveChat = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+// (#3264: .cave-md base rules live in cave-md.css; the chat-bubble-scoped
+// prose overrides stay in cave-chat.css — read both.)
+const caveChat = ["cave-md", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   caveChat,
   /\.cave-md\s*\{[\s\S]*?line-height:\s*var\(--cave-reading-leading,\s*1\.7\)/,

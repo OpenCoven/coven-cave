@@ -13,12 +13,19 @@ export function serializePreferencesBootstrap(preferences: CavePreferences): str
  * script. The external script applies appearance before the first paint and
  * exposes the same snapshot to the post-hydration client store.
  */
-export function ThemeScript({ preferences }: { preferences: CavePreferences }) {
+export function ThemeScript({
+  preferences,
+  authoritative = true,
+}: {
+  preferences: CavePreferences;
+  authoritative?: boolean;
+}) {
   return (
     <>
       <script
         id="cave-preferences-bootstrap"
         type="application/json"
+        data-authoritative={authoritative ? "true" : "false"}
         dangerouslySetInnerHTML={{ __html: serializePreferencesBootstrap(preferences) }}
       />
       <script id="theme-init" src="/scripts/theme-init.js" />

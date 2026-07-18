@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/calendar.css";
+
 import { createContext, useCallback, useContext, useId, useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
@@ -660,7 +662,7 @@ function DeadlineStrip({
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
         <span
           className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
-          title="Task due dates from the Board — separate from your scheduled reminders below"
+          title="Task due dates from Tasks — separate from your scheduled reminders below"
         >
           Due
         </span>
@@ -1575,6 +1577,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   agent: "Familiar",
   "response-needed": "Response needed",
   "daily-summary": "Daily summary",
+  milestone: "Milestone",
 };
 
 function ItemDetailPanel({

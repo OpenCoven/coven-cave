@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-md.css";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";

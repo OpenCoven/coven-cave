@@ -208,7 +208,7 @@ export default async function DailyReportPage({ params }: Props) {
                 icon="ph:kanban-bold"
                 value={stats.cardsCompleted}
                 label="Cards completed"
-                caption="Board work finished"
+                caption="Task work finished"
                 accent="amber"
                 trend={trendFor("cardsCompleted")}
               />
@@ -449,7 +449,7 @@ export default async function DailyReportPage({ params }: Props) {
           <div className="dr-quicklinks">
             <QuickLink href="/dashboard" icon="ph:squares-four" label="Dashboard" sub="Overview & reports" />
             <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
-            <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
+            <QuickLink href="/#card-" icon="ph:kanban-bold" label="Tasks" sub="Cards & tasks" />
             <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
           </div>
         </section>

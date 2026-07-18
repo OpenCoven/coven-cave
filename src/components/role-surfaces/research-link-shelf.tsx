@@ -107,39 +107,36 @@ export function ResearchLinkShelf({ onOpenUrl }: Props) {
   const groups = groupSavedLinks(links);
 
   return (
-    <section className="research-links" aria-label="Saved links">
-      <header className="research-links__header">
-        <h3 className="research-links__title">
-          <Icon name="ph:link" width={14} height={14} aria-hidden /> Links
-        </h3>
-        <span className="research-links__hint">
-          Paste one or many — auto-organized. `/save` in chat lands here too.
-        </span>
-      </header>
+    <details className="research-links" aria-label="Saved links">
+      <summary className="research-links__summary focus-ring-inset">
+        <Icon name="ph:link" width={13} height={13} aria-hidden />
+        Links
+        {links.length > 0 ? <span className="research-links__count">{links.length}</span> : null}
+      </summary>
 
       <div className="research-links__composer">
-        <textarea
+        <input
+          type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (e.key === "Enter") {
               e.preventDefault();
               void saveDraft();
             }
           }}
-          rows={2}
-          placeholder="https://… (or paste any text — every link in it is saved)"
+          placeholder="Paste links — `/save` in chat lands here too"
           aria-label="Links to save"
           className="research-links__input focus-ring-inset"
           disabled={busy}
         />
         <Button
           size="xs"
-          variant="primary"
+          variant="ghost"
           onClick={() => void saveDraft()}
           disabled={busy || draftLinkCount === 0}
         >
-          {busy ? "Saving…" : draftLinkCount > 1 ? `Save ${draftLinkCount} links` : "Save"}
+          {busy ? "Saving…" : draftLinkCount > 1 ? `Save ${draftLinkCount}` : "Save"}
         </Button>
       </div>
 
@@ -154,7 +151,6 @@ export function ResearchLinkShelf({ onOpenUrl }: Props) {
           {groups.map((group) => (
             <div key={group.category} className="research-links__group">
               <h4 className="research-links__group-title">
-                <Icon name={group.icon} width={13} height={13} aria-hidden />
                 {group.label}
                 <span className="research-links__count">{group.links.length}</span>
               </h4>
@@ -168,7 +164,6 @@ export function ResearchLinkShelf({ onOpenUrl }: Props) {
                       title={link.url}
                     >
                       <span className="research-links__link-title">{link.title}</span>
-                      <span className="research-links__url">{link.url}</span>
                     </button>
                     <span className="research-links__meta">
                       <RelativeTime iso={link.addedAt} />
@@ -192,6 +187,6 @@ export function ResearchLinkShelf({ onOpenUrl }: Props) {
           Nothing saved yet. Paste links above, or type <code>/save &lt;url&gt;</code> in any chat.
         </p>
       )}
-    </section>
+    </details>
   );
 }

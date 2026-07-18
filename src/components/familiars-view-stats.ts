@@ -1,3 +1,4 @@
+import { ritualStreak } from "@/lib/familiar-renown";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 export type CovenMemoryEntry = {
@@ -20,6 +21,12 @@ export type FamiliarCardStats = {
   sessionsTotal: number;
   sessionsLast7d: number;
   hasActiveSession: boolean;
+  /**
+   * Ritual streak — consecutive UTC days with at least one session, ending
+   * today (one-day grace while today is still young). 0 when broken; the
+   * card renders that as an em dash, never as a reprimand.
+   */
+  streakDays: number;
   /**
    * Sessions per UTC day for the roster card's mini activity strip —
    * ACTIVITY_DAYS entries, oldest first, today last. Same UTC day bucketing
@@ -76,6 +83,7 @@ export function buildFamiliarCardStats(args: {
     let sessionsLast7d = 0;
     let hasActiveSession = false;
     const activity = new Array<number>(ACTIVITY_DAYS).fill(0);
+    const activeDays = new Set<number>();
     for (const session of sessions) {
       const startedAt = sessionStartAt(session);
       if (!startedAt) continue;
@@ -87,7 +95,9 @@ export function buildFamiliarCardStats(args: {
       }
       if (ms > sevenCutoff) sessionsLast7d += 1;
       if (ms > activeCutoff) hasActiveSession = true;
-      const daysAgo = todayIndex - Math.floor(ms / DAY_MS);
+      const dayIndex = Math.floor(ms / DAY_MS);
+      activeDays.add(dayIndex);
+      const daysAgo = todayIndex - dayIndex;
       if (daysAgo >= 0 && daysAgo < ACTIVITY_DAYS) {
         activity[ACTIVITY_DAYS - 1 - daysAgo] += 1;
       }
@@ -111,6 +121,7 @@ export function buildFamiliarCardStats(args: {
       sessionsTotal: sessions.length,
       sessionsLast7d,
       hasActiveSession,
+      streakDays: ritualStreak(activeDays, todayIndex),
       activity,
     });
   }

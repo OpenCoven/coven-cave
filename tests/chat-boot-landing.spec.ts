@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the chat boot landing (cave-qvwu): booting into `/` paints the
+// Verifies the chat surface landing (cave-qvwu): opening chat (home-first
+// boot means via ?mode=chat) paints the
 // zero-turn compose view (ChatEmptyState + composer) without waiting for
 // /api/sessions/list — the fetch that used to gate the boot-compose effect
 // and left users on the ChatList skeleton wall for its full duration. Also
@@ -80,7 +81,7 @@ test.describe("chat boot landing", () => {
       await route.fulfill({ json: { ok: true, sessions: [SESSION_S1] } });
     });
 
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     await expect(page.locator(".cave-chat-empty")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
@@ -111,13 +112,13 @@ test.describe("chat boot landing", () => {
     await expect(takeover).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test("landing offers a task-resume pill, hides Voice pre-session, and hints at / commands", async ({ page }) => {
+  test("landing offers a task-resume pill, voice call from turn zero, and hints at / commands", async ({ page }) => {
     await seed(page);
     await page.route("**/api/sessions/list**", (route) =>
       route.fulfill({ json: { ok: true, sessions: [] } }),
     );
 
-    await page.goto("/");
+    await page.goto("/?mode=chat");
     const empty = page.locator(".cave-chat-empty");
     await expect(empty).toBeVisible({ timeout: 45_000 });
 
@@ -132,8 +133,10 @@ test.describe("chat boot landing", () => {
     await expect(composer).toHaveValue(/Continue the task: Fix login flow/);
     await expect(empty).toBeVisible();
 
-    // Voice needs a session; pre-session it is hidden, not disabled.
-    await expect(page.getByRole("button", { name: "Voice" })).toHaveCount(0);
+    // Voice no longer needs a session: the call button is present from turn
+    // zero (it mints a conversation on demand), alongside the dictation mic
+    // when the browser supports speech recognition.
+    await expect(page.getByRole("button", { name: "Voice call" })).toBeVisible();
 
     // Dosed discoverability: the ready line mentions the slash entry point.
     await expect(empty.getByText("/ for commands", { exact: false })).toBeVisible();

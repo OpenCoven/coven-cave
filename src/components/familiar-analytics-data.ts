@@ -4,6 +4,7 @@ import {
   type CovenMemoryEntry,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
+import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
 import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
 import type { ContractReport } from "@/lib/familiar-contract";
@@ -80,6 +81,12 @@ export type FamiliarAnalyticsModel = {
   threadReports: ThreadSelfReport[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
+  /**
+   * Renown + ritual streak — the progression system's read of this familiar
+   * (same derivation as the roster cards, so the surfaces always agree).
+   * Null when the familiar itself couldn't be resolved.
+   */
+  progression: { renown: FamiliarRenown; streakDays: number } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
   /** This familiar's sessions, newest first, capped for the drill-through list. */
@@ -114,6 +121,7 @@ function emptyStats(): FamiliarCardStats {
     sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
@@ -206,6 +214,7 @@ export function buildFamiliarAnalyticsModel(
         familiars: [familiar],
         sessions: familiarSessions,
         covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+        now,
       }).get(familiar.id) ?? emptyStats()
     : emptyStats();
   const growthReport = familiar
@@ -234,6 +243,12 @@ export function buildFamiliarAnalyticsModel(
     healRequests,
     threadReports: data.threadReports,
     modelFeedback: data.modelFeedback,
+    progression: familiar
+      ? {
+          renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
+          streakDays: stats.streakDays,
+        }
+      : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     recentSessions: [...familiarSessions]
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))

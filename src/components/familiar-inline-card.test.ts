@@ -38,6 +38,22 @@ assert.match(src, /useFamiliarMemory/, "uses memory hook");
 assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"memory"\s*\)/, "View all → memory tab");
 assert.match(src, /__memory-stale/, "stale memory entries carry a badge");
 
+// Memory peek rows are clickable cards (cave-00w0): each row is a button that
+// deep-links to the doc in the Grimoire (same path the command palette takes)
+// and closes the popover via act().
+assert.match(
+  src,
+  /className="familiar-inline-card__memory-item focus-ring-inset"/,
+  "memory rows render as focusable button cards",
+);
+assert.match(
+  src,
+  /onClick=\{\(\) => act\(\(\) => openGrimoireDoc\("memory", m\.fullPath\)\)\}/,
+  "clicking a memory card opens that doc in the Grimoire and closes the card",
+);
+assert.match(src, /title=\{`Open in Grimoire — \$\{m\.relPath\}`\}/, "cards say where they go");
+assert.match(src, /familiar-inline-card__memory-open/, "cards carry an open-affordance arrow");
+
 // ── Insight layer (cave-ck70) ───────────────────────────────────────────────
 // Trust/health one-liner, activity meta, live workload, contextual actions —
 // derived by familiar-card-insights from the shared analytics model.
@@ -71,7 +87,9 @@ assert.match(src, /No memory yet/, "empty memory state");
 // circle — only its close × peeked through. The crop now lives on the inner
 // button, the cell un-clips when it hosts the button, and the card floats as
 // an absolutely positioned popover above the following turns.
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   css,
   /\.cave-linear-turn-avatar:has\(> \.cave-linear-turn-avatar-btn\) \{\s*overflow: visible;/,
@@ -91,6 +109,16 @@ assert.match(
   css,
   /\.cave-linear-turn-avatar\.is-selected \{[^}]*z-index/,
   "open card stacks above the following turns",
+);
+assert.match(
+  css,
+  /\.familiar-inline-card__memory-item \{[^}]*cursor: pointer;/s,
+  "memory cards look pressable",
+);
+assert.match(
+  css,
+  /\.familiar-inline-card__memory-item:hover \.familiar-inline-card__memory-open,\s*\.familiar-inline-card__memory-item:focus-visible \.familiar-inline-card__memory-open \{ opacity: 1; \}/,
+  "the open arrow reveals on hover AND keyboard focus",
 );
 
 console.log("familiar-inline-card.test.ts: ok");

@@ -16,13 +16,12 @@ assert.match(
   "WorkspaceMode union keeps \"agents\" for internal familiar detail flows",
 );
 
-// Chat-first boot (cave-hsa6): the app opens on the conversation. Home remains
-// one step away — the chat Back control's lastNonChatMode still defaults to
-// "home", and ⌘1 / nav / deep links reach it as before.
+// Home-first boot: the app opens on the Home overview; Chat is one step away
+// and the chat Back control still returns to Home by default.
 assert.match(
   workspace,
-  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
-  "Default workspace mode lands on Chat (chat-first boot, cave-hsa6)",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
+  "Default workspace mode lands on Home (home-first boot)",
 );
 assert.match(
   workspace,

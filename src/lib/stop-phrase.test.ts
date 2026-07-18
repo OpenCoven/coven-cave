@@ -5,8 +5,10 @@ import { test } from "node:test";
 
 import {
   DEFAULT_STOP_PHRASE,
+  STOP_PHRASE_MAX_LENGTH,
   matchesStopPhrase,
   normalizeStopUtterance,
+  parseStopPhrases,
 } from "./stop-phrase.ts";
 import {
   applyPreferencesPatch,
@@ -33,16 +35,48 @@ test("matchesStopPhrase: containing the phrase is NOT a match — instructions p
   assert.equal(matchesStopPhrase("don't stop", "stop"), false);
 });
 
+test("matchesStopPhrase: comma-separated preference offers multiple options", () => {
+  const phrases = "stop, cancel , HALT,abort";
+  assert.equal(matchesStopPhrase("stop", phrases), true);
+  assert.equal(matchesStopPhrase("Cancel!", phrases), true);
+  assert.equal(matchesStopPhrase("halt", phrases), true);
+  assert.equal(matchesStopPhrase("  abort.  ", phrases), true);
+  assert.equal(matchesStopPhrase("continue", phrases), false);
+  // Still exact-match only, per option.
+  assert.equal(matchesStopPhrase("cancel the meeting", phrases), false);
+  assert.equal(matchesStopPhrase("stop, cancel", phrases), false);
+});
+
+test("parseStopPhrases: normalizes, dedupes, and drops empty segments", () => {
+  assert.deepEqual(parseStopPhrases("stop, cancel , HALT,abort"), [
+    "stop",
+    "cancel",
+    "halt",
+    "abort",
+  ]);
+  assert.deepEqual(parseStopPhrases("stop,,  ,Stop!,stop"), ["stop"]);
+  assert.deepEqual(parseStopPhrases(","), []);
+  assert.deepEqual(parseStopPhrases(""), []);
+});
+
+test("default stop phrase preference ships multiple comma-separated options", () => {
+  const options = parseStopPhrases(DEFAULT_STOP_PHRASE);
+  assert.ok(options.length > 1, "default offers more than one stop phrase");
+  assert.ok(options.includes("stop"));
+  for (const option of options) assert.equal(matchesStopPhrase(option, DEFAULT_STOP_PHRASE), true);
+});
+
 test("matchesStopPhrase: empty/blank phrase disables matching entirely", () => {
   assert.equal(matchesStopPhrase("stop", ""), false);
   assert.equal(matchesStopPhrase("", ""), false);
   assert.equal(matchesStopPhrase("stop", "   "), false);
+  assert.equal(matchesStopPhrase("stop", " , ,"), false);
   // Punctuation-only phrase normalizes to empty → off.
   assert.equal(matchesStopPhrase("!!!", "!!!"), false);
 });
 
 test("matchesStopPhrase: oversized composer text short-circuits without matching", () => {
-  const huge = `stop ${"x".repeat(500)}`;
+  const huge = `stop ${"x".repeat(STOP_PHRASE_MAX_LENGTH * 4)}`;
   assert.equal(matchesStopPhrase(huge, "stop"), false);
 });
 
@@ -71,9 +105,11 @@ test("preferences default stopPhrase and survive normalize/patch round-trips", (
 });
 
 test("validatePreferencesPatch validates stopPhrase as a trimmed bounded string", () => {
-  const parsed = validatePreferencesPatch({ general: { stopPhrase: `  halt${"x".repeat(200)}` } });
+  const parsed = validatePreferencesPatch({
+    general: { stopPhrase: `  halt${"x".repeat(STOP_PHRASE_MAX_LENGTH * 4)}` },
+  });
   const phrase = parsed.general?.stopPhrase ?? "";
-  assert.equal(phrase.length, 64);
+  assert.equal(phrase.length, STOP_PHRASE_MAX_LENGTH);
   assert.equal(phrase.startsWith("halt"), true);
   assert.throws(() => validatePreferencesPatch({ general: { stopPhrase: 7 } }));
 });
@@ -93,9 +129,9 @@ test("chat composer send() intercepts the stop phrase before the busy bail", () 
   assert.match(between, /cancelSend\(\)/);
 });
 
-test("Settings → General exposes the stop phrase field", () => {
+test("Settings → General exposes the stop phrases field", () => {
   const src = readFileSync(path.join(repoRoot, "src/components/settings-shell.tsx"), "utf8");
   assert.match(src, /<StopPhraseField \/>/);
   assert.match(src, /writeStopPhrase\(draft\)/);
-  assert.match(src, /aria-label="Stop phrase"/);
+  assert.match(src, /aria-label="Stop phrases"/);
 });

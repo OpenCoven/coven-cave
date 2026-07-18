@@ -6,6 +6,9 @@ import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { SearchInput } from "@/components/ui/search-input";
+import { Modal } from "@/components/ui/modal";
+import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -56,6 +59,39 @@ const LANE_TONE: Record<WorkQueueLaneKey, "urgent" | "ready" | "neutral" | "quie
   "no-open-PR": "neutral",
   "post-merge-cleanup": "ready",
 };
+
+/** Long lanes mount this many cards until the operator asks for the rest —
+ *  the triage view stays scannable (and cheap) at N-many beads (cave-19jy). */
+const LANE_VISIBLE_CAP = 8;
+
+const COLLAPSED_LANES_KEY = "cave:fwq:collapsed:v1";
+
+/** Lanes collapsed on first run — `waiting` is explicitly non-actionable. */
+const DEFAULT_COLLAPSED: readonly WorkQueueLaneKey[] = ["waiting"];
+
+function readCollapsedLanes(): Set<WorkQueueLaneKey> {
+  if (typeof window === "undefined") return new Set(DEFAULT_COLLAPSED);
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_LANES_KEY);
+    if (!raw) return new Set(DEFAULT_COLLAPSED);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_COLLAPSED);
+    return new Set(parsed.filter((k): k is WorkQueueLaneKey => typeof k === "string" && k in LANE_TITLES_GUARD));
+  } catch {
+    return new Set(DEFAULT_COLLAPSED);
+  }
+}
+
+function writeCollapsedLanes(keys: Set<WorkQueueLaneKey>): void {
+  try {
+    window.localStorage.setItem(COLLAPSED_LANES_KEY, JSON.stringify([...keys]));
+  } catch {
+    /* storage unavailable — collapse state stays session-local */
+  }
+}
+
+// Key-guard for the storage parse above (LANE_ICON covers every lane key).
+const LANE_TITLES_GUARD = LANE_ICON;
 
 type FetchedQueue = {
   queue: WorkQueue;
@@ -127,6 +163,18 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
+  // Triage tools (cave-u2p1): text search over title/bead-id/PR number, a
+  // priority band filter, and an in-lane sort toggle. All client-side over
+  // the already-fetched queue.
+  const [search, setSearch] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | "p0" | "p1" | "p2plus">("all");
+  const [sortMode, setSortMode] = useState<"priority" | "recent">("priority");
+  // Bead detail drawer — the id being inspected, null = closed.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  // Per-lane disclosure + show-all state. Collapse persists across sessions;
+  // "show all" is per-visit intent and resets on reload (cave-19jy).
+  const [collapsedLanes, setCollapsedLanes] = useState<Set<WorkQueueLaneKey>>(() => new Set(DEFAULT_COLLAPSED));
+  const [expandedLanes, setExpandedLanes] = useState<Set<WorkQueueLaneKey>>(() => new Set());
   // Beads that got a handoff note THIS session — Close unlocks immediately
   // without waiting for the poll to re-read comment_count (cave-hlv.2).
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
@@ -140,6 +188,22 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
   useMinuteTick();
+
+  // Collapse state hydrates after mount so SSR and the first client render
+  // agree (same idiom as the chat sidebar's organize view).
+  useEffect(() => {
+    setCollapsedLanes(readCollapsedLanes());
+  }, []);
+
+  const toggleLane = useCallback((key: WorkQueueLaneKey) => {
+    setCollapsedLanes((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      writeCollapsedLanes(next);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -257,13 +321,107 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     [announce, load],
   );
 
+  // Claim-for-familiar: same claim action, but the bead lands on the picked
+  // familiar (the API turns assignee into --assignee/--status flags) instead
+  // of the connected user (cave-p63a).
+  const runClaimFor = useCallback(
+    async (item: WorkQueueItem, familiar: ResolvedFamiliar) => {
+      const id = item.bead?.id;
+      if (!id) return;
+      setBusyId(item.key);
+      try {
+        const res = await fetch("/api/beads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "claim", id, assignee: familiar.id }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "claim failed");
+        announce(`Claimed ${id} for ${familiar.display_name}.`);
+        await load();
+      } catch (err) {
+        announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [announce, load],
+  );
+
+  // File a bead for an unlinked attention-strip PR: bd create with the PR's
+  // title, a description carrying the PR URL (the queue's ref join reads it —
+  // ready output has no external_ref), and externalRef gh-<n> for the
+  // visibility layer. Returns whether it landed so the strip's per-row button
+  // can drop its busy state truthfully (cave-p63a).
+  const runFileBead = useCallback(
+    async (pr: PullRequestSummary): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/beads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            title: pr.title,
+            description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
+            externalRef: `gh-${pr.number}`,
+            labels: ["from-pr"],
+          }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "create failed");
+        const beadId = (json.data as { id?: string } | null)?.id;
+        announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
+        await load();
+        return true;
+      } catch (err) {
+        announce(
+          err instanceof Error ? err.message : `Could not file a bead for PR #${pr.number}`,
+          "assertive",
+        );
+        return false;
+      }
+    },
+    [announce, load],
+  );
+
+  // Search matches title, bead id, and PR number; priority bands map P2+
+  // together (protocol priorities rarely exceed 2 in practice).
   const visibleLanes = useMemo(() => {
     if (!queue) return [];
-    if (!familiarFilter) return queue.lanes;
+    const q = search.trim().toLowerCase();
+    const matchesSearch = (item: WorkQueueItem): boolean => {
+      if (!q) return true;
+      const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "";
+      const prNumber = item.pr?.number ?? item.merged?.number ?? null;
+      return (
+        title.toLowerCase().includes(q) ||
+        (item.bead?.id.toLowerCase().includes(q) ?? false) ||
+        (prNumber != null && (`#${prNumber}`.includes(q) || String(prNumber).includes(q)))
+      );
+    };
+    const matchesPriority = (item: WorkQueueItem): boolean => {
+      if (priorityFilter === "all") return true;
+      const p = item.bead?.priority;
+      if (p == null) return false;
+      if (priorityFilter === "p0") return p === 0;
+      if (priorityFilter === "p1") return p === 1;
+      return p >= 2;
+    };
+    const recency = (item: WorkQueueItem): number =>
+      Date.parse(item.pr?.updatedAt ?? item.merged?.mergedAt ?? item.bead?.updated_at ?? "") || 0;
     return queue.lanes
-      .map((lane) => ({ ...lane, items: lane.items.filter((i) => i.familiar === familiarFilter) }))
+      .map((lane) => {
+        let items = lane.items.filter(
+          (i) => (!familiarFilter || i.familiar === familiarFilter) && matchesSearch(i) && matchesPriority(i),
+        );
+        // "priority" keeps buildWorkQueue's deterministic triage order;
+        // "recent" re-sorts the filtered copy without touching queue state
+        // (sameQueue identity across polls stays stable).
+        if (sortMode === "recent") items = [...items].sort((a, b) => recency(b) - recency(a));
+        return { ...lane, items };
+      })
       .filter((lane) => lane.items.length > 0);
-  }, [queue, familiarFilter]);
+  }, [queue, familiarFilter, search, priorityFilter, sortMode]);
 
   if (!hasLoaded) {
     return (
@@ -351,6 +509,48 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
       ) : null}
 
+      {/* Triage toolbar (cave-u2p1): search · priority bands · sort. */}
+      <div className="fwq-toolbar" role="group" aria-label="Queue triage tools">
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          onClear={() => setSearch("")}
+          placeholder="Search title, bead id, PR #…"
+          aria-label="Search the queue"
+          containerClassName="fwq-toolbar-search"
+        />
+        <div className="fwq-toolbar-group" role="group" aria-label="Filter by priority">
+          {(
+            [
+              ["all", "All"],
+              ["p0", "P0"],
+              ["p1", "P1"],
+              ["p2plus", "P2+"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`fwq-chip${priorityFilter === value ? " is-active" : ""}`}
+              aria-pressed={priorityFilter === value}
+              onClick={() => setPriorityFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="fwq-chip fwq-toolbar-sort"
+          aria-pressed={sortMode === "recent"}
+          onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
+          title={sortMode === "priority" ? "Sort by recently updated" : "Sort by priority and oldest"}
+        >
+          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={13} aria-hidden />
+          {sortMode === "priority" ? "Priority · oldest" : "Recently updated"}
+        </button>
+      </div>
+
       {/* Truthful-degradation banners. Text is static (only the tooltip carries
           the raw error) so role=alert doesn't re-announce every failing poll. */}
       {error ? (
@@ -379,7 +579,9 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
       ) : null}
 
-      {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
+      {q.attention.length > 0 ? (
+        <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
+      ) : null}
 
       <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} familiarId={activeFamiliarId} />
 
@@ -397,45 +599,233 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         ) : visibleLanes.length === 0 ? (
           <EmptyState
             icon="ph:funnel"
-            headline={`Nothing for ${familiarName(familiarFilter ?? "")}`}
-            subtitle="Clear the filter to see the whole queue."
+            headline="Nothing matches the current filters"
+            subtitle={
+              search.trim()
+                ? `No queue item matches “${search.trim()}”.`
+                : "Clear the filters to see the whole queue."
+            }
             actions={
-              <Button variant="secondary" onClick={() => setFamiliarFilter(null)}>
-                Show all
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFamiliarFilter(null);
+                  setSearch("");
+                  setPriorityFilter("all");
+                }}
+              >
+                Clear filters
               </Button>
             }
           />
         ) : (
-          visibleLanes.map((lane) => (
-            <section key={lane.key} className={`fwq-lane fwq-lane--${LANE_TONE[lane.key]}`} aria-label={lane.title}>
-              <header className="fwq-lane-head">
-                <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
-                <span className="fwq-lane-title">{lane.title}</span>
-                <span className="fwq-lane-count">{lane.items.length}</span>
-              </header>
-              <ul className="fwq-cards">
-                {lane.items.map((item) => (
-                  <WorkQueueCard
-                    key={item.key}
-                    item={item}
-                    familiarLabel={familiarName(item.familiar)}
-                    busy={busyId === item.key}
-                    hasEvidence={
-                      !!item.bead &&
-                      (hasVerificationEvidence(item.bead) || evidenceAdded.has(item.bead.id.toLowerCase()))
-                    }
-                    onOpenUrl={onOpenUrl}
-                    onClaim={() => void runAction(item, "claim")}
-                    onClose={() => void runAction(item, "close")}
-                    onComment={(text) => runComment(item, text)}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))
+          visibleLanes.map((lane) => {
+            const collapsed = collapsedLanes.has(lane.key);
+            const showAll = expandedLanes.has(lane.key);
+            const capped = !showAll && lane.items.length > LANE_VISIBLE_CAP;
+            const visibleItems = capped ? lane.items.slice(0, LANE_VISIBLE_CAP) : lane.items;
+            return (
+              <section key={lane.key} className={`fwq-lane fwq-lane--${LANE_TONE[lane.key]}`} aria-label={lane.title}>
+                <header className="fwq-lane-head">
+                  <button
+                    type="button"
+                    className="fwq-lane-toggle focus-ring-inset"
+                    aria-expanded={!collapsed}
+                    onClick={() => toggleLane(lane.key)}
+                  >
+                    <Icon
+                      name="ph:caret-right-bold"
+                      width={11}
+                      className={`fwq-lane-caret${collapsed ? "" : " is-open"}`}
+                      aria-hidden
+                    />
+                    <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
+                    <span className="fwq-lane-title">{lane.title}</span>
+                    <span className="fwq-lane-count">{lane.items.length}</span>
+                  </button>
+                </header>
+                {collapsed ? null : (
+                  <>
+                    <ul className="fwq-cards">
+                      {visibleItems.map((item) => (
+                        <WorkQueueCard
+                          key={item.key}
+                          item={item}
+                          familiarLabel={familiarName(item.familiar)}
+                          familiars={familiars}
+                          busy={busyId === item.key}
+                          hasEvidence={
+                            !!item.bead &&
+                            (hasVerificationEvidence(item.bead) || evidenceAdded.has(item.bead.id.toLowerCase()))
+                          }
+                          onOpenUrl={onOpenUrl}
+                          onClaim={() => void runAction(item, "claim")}
+                          onClaimFor={(familiar) => void runClaimFor(item, familiar)}
+                          onClose={() => void runAction(item, "close")}
+                          onComment={(text) => runComment(item, text)}
+                          onInspect={item.bead ? () => setDetailId(item.bead!.id) : undefined}
+                        />
+                      ))}
+                    </ul>
+                    {lane.items.length > LANE_VISIBLE_CAP ? (
+                      <button
+                        type="button"
+                        className="fwq-lane-more focus-ring-inset"
+                        aria-expanded={showAll}
+                        onClick={() =>
+                          setExpandedLanes((cur) => {
+                            const next = new Set(cur);
+                            if (next.has(lane.key)) next.delete(lane.key);
+                            else next.add(lane.key);
+                            return next;
+                          })
+                        }
+                      >
+                        {showAll
+                          ? `Show top ${LANE_VISIBLE_CAP}`
+                          : `Show all ${lane.items.length}`}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </section>
+            );
+          })
         )}
       </div>
+
+      {detailId ? (
+        <BeadDetailModal
+          id={detailId}
+          onClose={() => setDetailId(null)}
+          onClaim={() => {
+            const item = q.lanes.flatMap((l) => l.items).find((i) => i.bead?.id === detailId);
+            if (item) void runAction(item, "claim");
+            setDetailId(null);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Bead inspector (cave-u2p1) — the queue row names the work; this shows the
+ * work itself. Reads `bd show --json` through the existing (previously
+ * unused) GET /api/beads?mode=show contract. Read-mostly: Claim + copy-id
+ * ride along; notes stay on the card's composer.
+ */
+function BeadDetailModal({
+  id,
+  onClose,
+  onClaim,
+}: {
+  id: string;
+  onClose: () => void;
+  onClaim: () => void;
+}) {
+  type BeadDetail = {
+    id?: string;
+    title?: string;
+    description?: string | null;
+    status?: string;
+    priority?: number;
+    assignee?: string | null;
+    owner?: string | null;
+    labels?: string[] | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    dependencies?: unknown[] | null;
+    comment_count?: number | null;
+  };
+  const [detail, setDetail] = useState<BeadDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    let alive = true;
+    setDetail(null);
+    setDetailError(null);
+    fetch(`/api/beads?mode=show&id=${encodeURIComponent(id)}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (!alive) return;
+        if (!json.ok) throw new Error(json.error || "bead unavailable");
+        // bd show --json returns the bead object (or a one-element array).
+        const data = Array.isArray(json.data) ? json.data[0] : json.data;
+        setDetail((data ?? {}) as BeadDetail);
+      })
+      .catch((err) => {
+        if (alive) setDetailError(err instanceof Error ? err.message : "bead unavailable");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  return (
+    <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Bead ${id}`}>
+      <div className="fwq-detail">
+        {detailError ? (
+          <p className="fwq-detail-error" role="alert">{detailError}</p>
+        ) : !detail ? (
+          <SkeletonRows count={4} />
+        ) : (
+          <>
+            <h2 className="fwq-detail-title">{detail.title ?? id}</h2>
+            <div className="fwq-card-meta">
+              {detail.status ? <span className="fwq-tag">{detail.status}</span> : null}
+              {detail.priority != null ? (
+                <span className={`fwq-tag fwq-tag--p${Math.min(detail.priority, 3)}`}>P{detail.priority}</span>
+              ) : null}
+              {detail.assignee ? <span className="fwq-tag fwq-tag--familiar">{detail.assignee}</span> : null}
+              {(detail.labels ?? []).map((label) => (
+                <span key={label} className="fwq-tag">{label}</span>
+              ))}
+              {detail.updated_at ? (
+                <span className="fwq-card-time" title={new Date(detail.updated_at).toLocaleString()}>
+                  updated {relativeTime(detail.updated_at)}
+                </span>
+              ) : null}
+            </div>
+            {detail.description ? (
+              <pre className="fwq-detail-desc">{detail.description}</pre>
+            ) : (
+              <p className="fwq-detail-empty">No description on this bead.</p>
+            )}
+            {Array.isArray(detail.dependencies) && detail.dependencies.length > 0 ? (
+              <p className="fwq-detail-deps">
+                {detail.dependencies.length} dependenc{detail.dependencies.length === 1 ? "y" : "ies"}
+                {detail.comment_count ? ` · ${detail.comment_count} comment${detail.comment_count === 1 ? "" : "s"}` : ""}
+              </p>
+            ) : detail.comment_count ? (
+              <p className="fwq-detail-deps">
+                {detail.comment_count} comment{detail.comment_count === 1 ? "" : "s"}
+              </p>
+            ) : null}
+            <div className="fwq-detail-actions">
+              <Button
+                variant="ghost"
+                size="xs"
+                leadingIcon="ph:copy"
+                onClick={() => {
+                  void import("@/lib/clipboard").then(async ({ copyText }) => {
+                    announce((await copyText(id)) ? `Copied ${id}.` : "Copy failed.", "polite");
+                  });
+                }}
+              >
+                Copy id
+              </Button>
+              {detail.status === "open" || detail.status === "ready" ? (
+                <Button variant="secondary" size="xs" leadingIcon="ph:hand" onClick={onClaim}>
+                  Claim
+                </Button>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -448,10 +838,27 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 function AttentionStrip({
   items,
   onOpenUrl,
+  onFileBead,
 }: {
   items: AttentionItem[];
   onOpenUrl?: (url: string) => void;
+  /** Files a bead for an unlinked PR; resolves once the queue reloaded (or the
+   *  attempt failed) so the row's button can drop its busy state. */
+  onFileBead?: (pr: PullRequestSummary) => Promise<boolean>;
 }) {
+  // Per-row busy: only the clicked File-bead button spins while the create +
+  // queue reload are in flight.
+  const [filingPr, setFilingPr] = useState<number | null>(null);
+  const fileBead = async (pr: PullRequestSummary) => {
+    if (!onFileBead || filingPr != null) return;
+    setFilingPr(pr.number);
+    try {
+      await onFileBead(pr);
+    } finally {
+      setFilingPr(null);
+    }
+  };
+
   const unlinkedCount = items.filter((i) => i.unlinked).length;
   const staleCount = items.filter((i) => i.stale).length;
   const summary = [
@@ -483,6 +890,19 @@ function AttentionStrip({
               ) : null}
               {stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
             </div>
+            {unlinked ? (
+              <Button
+                variant="secondary"
+                size="xs"
+                leadingIcon="ph:plus-circle"
+                loading={filingPr === pr.number}
+                onClick={() => void fileBead(pr)}
+                disabled={!onFileBead || filingPr != null}
+                title="File a bead for this PR so it joins the queue"
+              >
+                File bead
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="xs"
@@ -502,21 +922,28 @@ function AttentionStrip({
 function WorkQueueCard({
   item,
   familiarLabel,
+  familiars,
   busy,
   hasEvidence,
   onOpenUrl,
   onClaim,
+  onClaimFor,
   onClose,
   onComment,
+  onInspect,
 }: {
   item: WorkQueueItem;
   familiarLabel: string;
+  familiars: ResolvedFamiliar[];
   busy: boolean;
   hasEvidence: boolean;
   onOpenUrl?: (url: string) => void;
   onClaim: () => void;
+  onClaimFor: (familiar: ResolvedFamiliar) => void;
   onClose: () => void;
   onComment: (text: string) => Promise<boolean>;
+  /** Opens the bead inspector; absent on rows with no bead. */
+  onInspect?: () => void;
 }) {
   const beadId = item.bead?.id ?? null;
   const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
@@ -555,14 +982,25 @@ function WorkQueueCard({
       <div className="fwq-card-main">
         <div className="fwq-card-title">
           {prNumber != null ? <span className="fwq-pr-num">#{prNumber}</span> : null}
-          <span className="fwq-card-name">{title}</span>
+          {onInspect ? (
+            <button
+              type="button"
+              className="fwq-card-name fwq-card-name--link focus-ring-inset"
+              title={`Inspect ${beadId}`}
+              onClick={onInspect}
+            >
+              {title}
+            </button>
+          ) : (
+            <span className="fwq-card-name">{title}</span>
+          )}
         </div>
         <div className="fwq-card-meta">
           <span className="fwq-tag fwq-tag--familiar">{familiarLabel}</span>
           {item.surface ? <span className="fwq-tag">{item.surface}</span> : null}
           {beadId ? <span className="fwq-tag fwq-tag--bead">{beadId}</span> : null}
           {item.bead && !item.pr && !item.merged ? (
-            <span className="fwq-tag">P{item.bead.priority}</span>
+            <span className={`fwq-tag fwq-tag--p${Math.min(item.bead.priority, 3)}`}>P{item.bead.priority}</span>
           ) : null}
           {item.pr ? (
             <>
@@ -584,6 +1022,11 @@ function WorkQueueCard({
           {item.merged?.mergedAt ? (
             <span className="fwq-card-time" title={new Date(item.merged.mergedAt).toLocaleString()}>
               merged {relativeTime(item.merged.mergedAt)}
+            </span>
+          ) : null}
+          {!item.pr && !item.merged && item.bead?.updated_at ? (
+            <span className="fwq-card-time" title={new Date(item.bead.updated_at).toLocaleString()}>
+              updated {relativeTime(item.bead.updated_at)}
             </span>
           ) : null}
         </div>
@@ -614,16 +1057,36 @@ function WorkQueueCard({
           </Button>
         ) : null}
         {item.lane === "no-open-PR" && beadId ? (
-          <Button
-            variant="secondary"
-            size="xs"
-            loading={busy}
-            leadingIcon="ph:hand"
-            onClick={onClaim}
-            title="Take this work item (bead) — marks it in progress under your name"
-          >
-            Claim
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              leadingIcon="ph:hand"
+              onClick={onClaim}
+              title="Take this work item (bead) — marks it in progress under your name"
+            >
+              Claim
+            </Button>
+            {/* Split control: bare Claim assigns the connected user; the picker
+                claims on a familiar's behalf instead (cave-p63a). */}
+            {familiars.length > 0 ? (
+              <StandardSelect
+                label="Claim for familiar…"
+                title="Claim this bead for a familiar instead of yourself"
+                value=""
+                placeholder="For…"
+                showCaret
+                className="fwq-claim-for focus-ring-inset"
+                disabled={busy}
+                options={familiars.map((f) => ({ value: f.id, label: f.display_name }))}
+                onChange={(id) => {
+                  const familiar = familiars.find((f) => f.id === id);
+                  if (familiar) onClaimFor(familiar);
+                }}
+              />
+            ) : null}
+          </>
         ) : null}
         {isCleanup && beadId ? (
           <Button

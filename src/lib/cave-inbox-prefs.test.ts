@@ -49,8 +49,13 @@ assert.match(
 const shapeSrc = readFileSync(new URL("./inbox-prefs-shape.ts", import.meta.url), "utf8");
 assert.match(
   shapeSrc,
-  /MUTABLE_KINDS = \["reminder", "agent", "daily-summary"\] as const/,
-  "response-needed is not a mutable kind",
+  /MUTABLE_KINDS = \["reminder", "agent", "daily-summary", "milestone"\] as const/,
+  "the mutable-kind roster is exactly reminder/agent/daily-summary/milestone",
+);
+assert.doesNotMatch(
+  shapeSrc,
+  /MUTABLE_KINDS = \[[^\]]*"response-needed"/,
+  "response-needed is never mutable — a reply request clears by replying, not by silencing",
 );
 assert.doesNotMatch(
   shapeSrc,

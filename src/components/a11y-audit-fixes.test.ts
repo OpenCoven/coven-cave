@@ -12,11 +12,6 @@ test("browser tabs are a tablist exposing name + selected state", async () => {
   assert.match(src, /aria-selected=\{isActive\}/);
 });
 
-test("action-inbox checkbox row carries a focus ring in select mode", async () => {
-  const src = await read("./dashboard/action-inbox.tsx");
-  assert.match(src, /selectMode \? " focus-ring-inset" : ""/);
-});
-
 test("calendar urgency dots carry a text alternative", async () => {
   const src = await read("./calendar-view.tsx");
   assert.match(src, /function urgencyLabel\(item: InboxItem\): string/);

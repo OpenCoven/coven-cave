@@ -1,12 +1,10 @@
-// Persistence for Triage Canvas node positions.
-//
-// Positions live in their own file (`~/.coven/cave/canvas.json`) keyed by card
-// id, deliberately separate from the board file. The canvas is a *view* of
-// the board's cards — keeping layout out of the Card schema means the board
-// owner (and the many other sessions that mutate it) never has to know the
-// canvas exists, and a canvas write can never clobber card data.
+// Persistence for the Canvas store (`~/.coven/cave/canvas.json`): saved sketch
+// artifacts plus their (legacy standalone-canvas) node positions. Kept separate
+// from the board file so a canvas write can never clobber card data. Artifacts
+// are user content with no undo — the load path must never let a bad read turn
+// into an empty save that destroys them (see loadCanvas).
 
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
@@ -59,15 +57,38 @@ async function ensureDir() {
 }
 
 export async function loadCanvas(): Promise<CanvasFile> {
+  let raw: string;
+  try {
+    raw = await readFile(CANVAS_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      // No store yet — a fresh start, nothing to protect.
+      return { ...EMPTY };
+    }
+    // The file exists but can't be read (permissions, IO). Treating that as
+    // empty would let the next save overwrite sketches we merely failed to
+    // read — surface the error instead; mutations abort, nothing is lost.
+    throw err;
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readFile(CANVAS_PATH, "utf8"));
+    parsed = JSON.parse(raw);
   } catch {
-    // Missing file or torn/invalid JSON — start from an empty layout. Nothing
-    // is lost: positions are cosmetic and rebuild from the cards' statuses.
-    return { ...EMPTY };
+    parsed = null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    // The file holds bytes that aren't a canvas store (torn write, foreign
+    // content). This store now carries user sketches with no undo — reading
+    // it as empty made the NEXT save silently destroy all of them. Move the
+    // bad file aside (bytes preserved for recovery) and start fresh.
+    const aside = `${CANVAS_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    try {
+      await rename(CANVAS_PATH, aside);
+      console.error(`cave-canvas: unreadable store moved aside to ${aside}`);
+    } catch {
+      // Rename raced another writer (who may have just replaced the file
+      // with a good one) or failed outright — leave the path alone either way.
+    }
     return { ...EMPTY };
   }
   const file = parsed as Partial<CanvasFile>;
@@ -121,22 +142,41 @@ export async function mergeCanvasPositions(
 }
 
 /**
- * Insert or replace an artifact by id, returning the updated file. The caller's
- * record is normalized through sanitizeArtifacts so a bad body can't corrupt
- * the store. `updatedAt` is the caller's responsibility (it has the clock).
+ * Insert or replace an artifact, returning the updated file plus the id the
+ * record settled under. Callers replace by id; when the id is new but the
+ * content is byte-identical to an existing sketch (same kind + code), the
+ * existing record is updated in place instead — "Save to Canvas" mints a
+ * fresh id per click, so id-only dedupe let unchanged re-saves pile up as
+ * twin tiles. Keeping the incumbent's id also keeps its createdAt and saved
+ * position. The caller's record is normalized through sanitizeArtifacts so a
+ * bad body can't corrupt the store. `updatedAt` is the caller's
+ * responsibility (it has the clock).
  */
-export async function upsertCanvasArtifact(artifact: CanvasArtifact): Promise<CanvasFile> {
+export async function upsertCanvasArtifact(
+  artifact: CanvasArtifact,
+): Promise<{ file: CanvasFile; savedId: string | null }> {
   const [clean] = sanitizeArtifacts([artifact]);
   if (!clean) {
     // Nothing usable in the payload — return the current file unchanged.
-    return withLock(loadCanvas);
+    return withLock(async () => ({ file: await loadCanvas(), savedId: null }));
   }
   return withLock(async () => {
     const current = await loadCanvas();
+    const incumbent = current.artifacts.find((a) => a.id === clean.id);
     const without = current.artifacts.filter((a) => a.id !== clean.id);
-    const next: CanvasFile = { ...current, artifacts: [...without, clean] };
+    // An explicit update to an existing id is authoritative, even when its new
+    // content happens to match another artifact. Content dedupe is only for
+    // saves that arrive under a newly minted id.
+    const twin = incumbent
+      ? undefined
+      : without.find((a) => a.kind === clean.kind && a.code === clean.code);
+    const settled = twin
+      ? { ...twin, title: clean.title, prompt: clean.prompt, updatedAt: clean.updatedAt }
+      : clean;
+    const rest = twin ? without.filter((a) => a.id !== twin.id) : without;
+    const next: CanvasFile = { ...current, artifacts: [...rest, settled] };
     await saveCanvas(next);
-    return next;
+    return { file: next, savedId: settled.id };
   });
 }
 

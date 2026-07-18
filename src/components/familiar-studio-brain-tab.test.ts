@@ -229,3 +229,72 @@ assert.match(
   /elevenCatalog\.status === "error" && elevenCatalog\.note/,
   "catalog failures surface an actionable hint while the raw-id inputs remain usable",
 );
+
+// ── Voice ids survive to disk (cave-32er) ────────────────────────────────────
+// The config round-trip is covered in cave-config.test.ts; what actually lost
+// a typed voice id was the CLIENT: a monolithic draft-reset effect keyed on
+// every familiar field (so the 4s roster poll landing one field's save wiped
+// another field's in-progress draft), plus blur-only commits that unmount
+// could skip. These pin the repaired shape.
+
+// 1. The full reset is keyed on the familiar id alone — never on field values.
+assert.match(
+  source,
+  /setToast\(null\);[\s\S]{0,1800}?\}, \[familiar\.id\]\)/,
+  "the full draft reset fires only when the familiar itself changes",
+);
+assert.doesNotMatch(
+  source,
+  /\}, \[\s*familiar\.id,\s*familiar\.harnessOverride,[\s\S]{0,300}familiar\.voiceName/,
+  "the all-fields reset dependency list is gone (it clobbered in-progress drafts)",
+);
+
+// 2. Per-field sync: each voice draft follows only its own backing value.
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*\n\s*setDraftVoiceName\(familiar\.voiceName \?\? ""\);\s*\n\s*\}, \[familiar\.voiceName\]\)/,
+  "the voice-id draft syncs on its own backing value only",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*\n\s*setDraftVoiceProvider\(familiar\.voiceProvider \?\? ""\);\s*\n\s*\}, \[familiar\.voiceProvider\]\)/,
+  "the voice-provider draft syncs on its own backing value only",
+);
+
+// 3. Dirty voice text flushes on unmount, so closing the Studio (or leaving
+//    the tab) without a blur still persists the typed id.
+assert.match(
+  source,
+  /const dirtyTextRef = useRef[\s\S]{0,600}?pendingVoiceName !== \(familiar\.voiceName \?\? ""\)/,
+  "unsaved voice text is tracked against the last saved values",
+);
+assert.match(
+  source,
+  /return \(\) => \{[\s\S]{0,700}?if \(pending\.familiarId !== familiar\.id\) return;[\s\S]{0,500}?familiars: \{ \[pending\.familiarId\]: pending\.patch \}/,
+  "the id-reset cleanup flushes dirty voice text for the SAME familiar (unmount), never cross-writing on a switch",
+);
+
+// 4. Enter commits the free-text voice inputs through their blur handlers.
+assert.match(
+  source,
+  /onBlur=\{\(\) => void save\(\{ voiceName: draftVoiceName\.trim\(\) \|\| null \}\)\}\s*\n\s*onKeyDown=\{\(e\) => \{[\s\S]{0,200}?if \(e\.key === "Enter"\) e\.currentTarget\.blur\(\);/,
+  "Enter commits a typed voice id instead of leaving it unsaved",
+);
+const imeSafeVoiceEnterHandlers =
+  source.match(
+    /onKeyDown=\{\(e\) => \{\s*if \(e\.nativeEvent\.isComposing\) return;[\s\S]{0,200}?if \(e\.key === "Enter"\) e\.currentTarget\.blur\(\);/g,
+  ) ?? [];
+assert.equal(
+  imeSafeVoiceEnterHandlers.length,
+  2,
+  "both free-text voice inputs ignore Enter while an IME composition is active",
+);
+
+// 5. Successful saves catch the roster up immediately — every surface gating
+//    on familiar.voiceProvider (the chat kebab's Call item) sees the new
+//    voice without waiting for the next poll.
+assert.match(
+  source,
+  /reportDaemonSyncSuccess\(\);[\s\S]{0,400}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
+  "a successful config save dispatches cave:familiars-refresh (parity with the other /api/config writers)",
+);

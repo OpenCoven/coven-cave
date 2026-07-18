@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
@@ -65,6 +69,7 @@ type Props = {
   onSetActiveFamiliar?: (id: string) => void;
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
   sessionsError?: boolean;
@@ -100,7 +105,7 @@ type Props = {
 export type ChatRouterHandle = {
   goToList: () => void;
   newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
-  openSession: (sessionId: string, findQuery?: string) => void;
+  openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => void;
   /** Open a conversation in a split pane beside the current chat; falls back
    *  to a plain open when splits are unavailable (mobile, companion rail). */
   openSessionInSplit: (sessionId: string) => void;
@@ -131,6 +136,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSetActiveFamiliar,
     onSessionStarted,
     onSessionsChanged,
+    onSessionsDeleted,
     sessionsLoaded,
     sessionsError,
     familiarsLoaded,
@@ -166,6 +172,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // Set when a conversation-search hit asks the opened chat to jump to a query;
   // handed to ChatView (nonce-keyed) so it opens in-thread find on the match.
   const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
+  // Voice new-chat: nonce armed when a session should open straight into the
+  // voice call overlay (same fire-once shape as pendingFind above). Scoped to
+  // the session it was armed for — see the clearing effect below.
+  const [pendingVoice, setPendingVoice] = useState<{ nonce: number; sessionId: string } | null>(null);
+  // Auto-voice intent is scoped to one session; drop it when the active
+  // view moves anywhere else so a stale nonce can never re-open the call
+  // overlay (and its discard path) on an unrelated session.
+  useEffect(() => {
+    if (!pendingVoice) return;
+    const active = view.kind === "chat" ? view.sessionId : null;
+    if (active !== pendingVoice.sessionId) setPendingVoice(null);
+  }, [view, pendingVoice]);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const openProjectsTab = useCallback(() => {
@@ -543,12 +561,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           origin,
         });
       },
-      openSession: (sessionId: string, findQuery?: string) => {
+      openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => {
         const session = sessions.find((entry) => entry.id === sessionId);
         const next = selectFamiliarForChat(session?.familiarId ?? null);
         setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
         const fq = findQuery?.trim();
         if (fq) setPendingFind({ query: fq, nonce: Date.now() });
+        setPendingVoice(autoVoice ? { nonce: Date.now(), sessionId } : null);
       },
       openSessionInSplit: (sessionId: string) => {
         const session = sessions.find((entry) => entry.id === sessionId);
@@ -657,6 +676,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessionsError={sessionsError}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
+        onSessionsDeleted={onSessionsDeleted}
         onOpenUrl={onOpenUrl}
         onOpen={(sessionId, familiarId, findQuery) => {
           const next = selectFamiliarForChat(familiarId);
@@ -715,9 +735,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       origin={view.kind === "chat" ? view.origin : undefined}
       openFindQuery={pendingFind?.query}
       openFindNonce={pendingFind?.nonce}
+      openVoiceNonce={pendingVoice?.nonce}
+      openVoiceSessionId={pendingVoice?.sessionId}
       daemonRunning={daemonRunning}
       sessions={sessions}
       onSessionsChanged={onSessionsChanged}
+      onSessionsDeleted={onSessionsDeleted}
       onBack={() => setView({ kind: "list" })}
       onSessionStarted={(sid) => {
         // Only promote the sessionId in the view state when the current chat
@@ -730,6 +753,29 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             : prev,
         );
         onSessionStarted?.();
+      }}
+      onVoiceSessionCreated={(sid) => {
+        // Pre-session voice call: ChatView created the conversation; promote
+        // it into the view (same null-only guard as onSessionStarted) and arm
+        // the auto-open nonce so the overlay opens once the session mounts.
+        setView((prev) =>
+          prev.kind === "chat" && prev.sessionId === null
+            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            : prev,
+        );
+        setPendingVoice({ nonce: Date.now(), sessionId: sid });
+      }}
+      onVoiceSessionDiscarded={() => {
+        // The auto-created session was empty and got discarded while the
+        // view was still parked on it — return to a fresh compose state for
+        // the same familiar/project (same reset shape as the promotion
+        // above, but back to sessionId: null) instead of leaving the user
+        // typing into a session that no longer exists.
+        setView((prev) =>
+          prev.kind === "chat"
+            ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            : prev,
+        );
       }}
       onSlashCommand={onSlashFromChat}
       onOpenOnboarding={onOpenOnboarding}
@@ -763,6 +809,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               daemonRunning={daemonRunning}
               sessions={sessions}
               onSessionsChanged={onSessionsChanged}
+              onSessionsDeleted={onSessionsDeleted}
               onOpenTask={onOpenTask}
               onOpenUrl={onOpenUrl}
             />

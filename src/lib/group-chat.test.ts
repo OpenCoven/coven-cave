@@ -9,10 +9,19 @@ import {
   removeGroup,
   setGroupSession,
   setGroupParticipants,
+  setGroupResponseMode,
+  orderRoundRobinFamiliarIds,
+  nextRoundRobinLeadId,
   parseMentions,
+  extractCovenDelegations,
+  resolveGroupMessageTargets,
+  mentionSuggestionAuthor,
   renderCovenRoster,
   renderCovenRoundtablePrompt,
+  renderCovenRoundRobinPrompt,
   renderCovenContext,
+  runCovenReplySchedule,
+  loadGroups,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -120,6 +129,8 @@ test("makeGroup: dedupes participants and defaults the name", () => {
   assert.deepEqual(g.familiarIds, ["a", "b"]);
   assert.equal(g.name, "New coven");
   assert.deepEqual(g.sessions, {});
+  assert.equal(g.responseMode, "broadcast");
+  assert.equal(g.nextRoundRobinLeadId, "a");
 });
 
 test("upsertGroup: replaces by id and sorts newest-first", () => {
@@ -157,6 +168,55 @@ test("setGroupParticipants: drops session pins for removed familiars", () => {
   assert.deepEqual(g.familiarIds, ["a", "c"]);
   assert.equal(g.sessions.a, "sess-a");
   assert.equal(g.sessions.b, undefined);
+  assert.equal(g.nextRoundRobinLeadId, "a");
+});
+
+test("setGroupParticipants: repairs a removed round-robin lead", () => {
+  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
+  g = { ...g, nextRoundRobinLeadId: "b" };
+  g = setGroupParticipants(g, ["a", "c"], "2026-06-24T01:00:00.000Z");
+  assert.equal(g.nextRoundRobinLeadId, "a");
+});
+
+test("setGroupResponseMode: preserves sessions and initializes the lead", () => {
+  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
+  g = setGroupSession(g, "a", "sess-a", "2026-06-24T00:30:00.000Z");
+  g = setGroupResponseMode({ ...g, nextRoundRobinLeadId: undefined }, "round-robin", "2026-06-24T01:00:00.000Z");
+  assert.equal(g.responseMode, "round-robin");
+  assert.equal(g.nextRoundRobinLeadId, "a");
+  assert.equal(g.sessions.a, "sess-a");
+});
+
+test("round-robin ordering rotates the lead and filters to mentioned targets", () => {
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "b", "c"], "b"), ["b", "c", "a"]);
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "c"], "b"), ["c", "a"]);
+  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "a"), "b");
+  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "c"), "a");
+});
+
+test("loadGroups: legacy groups default to broadcast without losing session pins", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const legacy = {
+    id: "legacy",
+    name: "Legacy coven",
+    familiarIds: ["a", "b"],
+    sessions: { a: "sess-a" },
+    createdAt: "t1",
+    updatedAt: "t2",
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: () => JSON.stringify([legacy]) },
+  });
+  try {
+    const [loaded] = loadGroups();
+    assert.equal(loaded.responseMode, "broadcast");
+    assert.equal(loaded.nextRoundRobinLeadId, "a");
+    assert.equal(loaded.sessions.a, "sess-a");
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
 });
 
 // --- @mentions -------------------------------------------------------------
@@ -191,6 +251,101 @@ test("parseMentions: @ mid-word (email) is not a mention", () => {
 
 test("parseMentions: punctuation after a name still matches", () => {
   assert.deepEqual(parseMentions("@Nova, thoughts?", ROSTER), ["nova"]);
+});
+
+test("extractCovenDelegations: strips a valid trailer and returns its routed task", () => {
+  const text =
+    '@Charm Review the design.\n\n<coven:delegation target="charm">@Charm Review the design.</coven:delegation>';
+  assert.deepEqual(extractCovenDelegations(text), {
+    visible: "@Charm Review the design.",
+    delegations: [{ targetFamiliarId: "charm", task: "@Charm Review the design." }],
+  });
+});
+
+test("extractCovenDelegations: a casual @mention never dispatches", () => {
+  assert.deepEqual(extractCovenDelegations("@Charm would know more about this."), {
+    visible: "@Charm would know more about this.",
+    delegations: [],
+  });
+});
+
+test("extractCovenDelegations: ignores quoted, inline-code, and fenced marker examples", () => {
+  const quoted = '> <coven:delegation target="charm">quoted</coven:delegation>';
+  const indentedQuote = '  > <coven:delegation target="charm">quoted</coven:delegation>';
+  const inline = '`<coven:delegation target="charm">inline</coven:delegation>`';
+  const multiBacktickInline = '``<coven:delegation target="charm">inline</coven:delegation>``';
+  const fenced = '```xml\n<coven:delegation target="charm">fenced</coven:delegation>\n```';
+  const tildeFenced = '~~~xml\n<coven:delegation target="charm">fenced</coven:delegation>\n~~~';
+  const indentedCode = '    <coven:delegation target="charm">indented</coven:delegation>';
+  const tabIndentedCode = '\t<coven:delegation target="charm">indented</coven:delegation>';
+  for (const text of [
+    quoted,
+    indentedQuote,
+    inline,
+    multiBacktickInline,
+    fenced,
+    tildeFenced,
+    indentedCode,
+    tabIndentedCode,
+  ]) {
+    assert.deepEqual(extractCovenDelegations(text), { visible: text, delegations: [] });
+  }
+});
+
+test("extractCovenDelegations: preserves case-sensitive familiar ids", () => {
+  const text = '<coven:delegation target="Charm">review this</coven:delegation>';
+  assert.deepEqual(extractCovenDelegations(text).delegations, [
+    { targetFamiliarId: "Charm", task: "review this" },
+  ]);
+});
+
+test("extractCovenDelegations: dedupes targets and rejects empty or malformed trailers", () => {
+  const text = [
+    '<coven:delegation target="charm">first</coven:delegation>',
+    '<coven:delegation target="charm">second</coven:delegation>',
+    '<coven:delegation target="sage"></coven:delegation>',
+    '<coven:delegation target="../bad">bad</coven:delegation>',
+  ].join("\n");
+  assert.deepEqual(extractCovenDelegations(text).delegations, [
+    { targetFamiliarId: "charm", task: "first" },
+  ]);
+});
+
+test("extractCovenDelegations: hides an incomplete trailing control while streaming", () => {
+  assert.deepEqual(
+    extractCovenDelegations('@Charm take this.\n<coven:delegation target="charm">partial'),
+    { visible: "@Charm take this.", delegations: [] },
+  );
+});
+
+test("resolveGroupMessageTargets: no mention broadcasts in roster order", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("What does everyone think?", ["nova", "sage"], ROSTER),
+    { targetIds: ["nova", "sage"], targeted: false },
+  );
+});
+
+test("resolveGroupMessageTargets: composer mentions target their parsed subset", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Sage please check this", ["nova", "sage"], ROSTER),
+    { targetIds: ["sage"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: explicit suggestion author cannot be widened by inner mentions", () => {
+  const text = mentionSuggestionAuthor("Ask @Sage to review it", "Nova Star");
+  assert.equal(text, "@Nova Star Ask @Sage to review it");
+  assert.deepEqual(
+    resolveGroupMessageTargets(text, ["nova-star", "sage"], ROSTER, ["nova-star"]),
+    { targetIds: ["nova-star"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: removed explicit targets never fall back to broadcast", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Nova Continue", ["sage"], ROSTER, ["nova"]),
+    { targetIds: [], targeted: true },
+  );
 });
 
 test("findActiveMention: caret inside a fresh token returns start + query", () => {
@@ -244,6 +399,7 @@ test("renderCovenRoster: names every participant with roles", () => {
   const out = renderCovenRoster(COVEN, "nova");
   assert.match(out, /- Nova — Lead orchestrator/);
   assert.match(out, /- Charm — Comms familiar/);
+  assert.match(out, /Charm — Comms familiar \[familiar-id: charm\]/);
   assert.match(out, /- You \(human\)/);
 });
 
@@ -285,6 +441,9 @@ test("renderCovenRoundtablePrompt: frames broadcast replies as independent first
   assert.match(out, /Other familiars receive the same human request in parallel/);
   assert.match(out, /Answer from your own identity, role, and judgment/);
   assert.match(out, /Do not summarize, predict, imitate, or speak for other familiars/);
+  assert.match(out, /Do not merely suggest that the human ask another familiar/);
+  assert.match(out, /address that familiar directly using their exact @display name/);
+  assert.match(out, /<coven:delegation target="familiar-id">/);
   assert.match(out, /What should we do\?$/);
   assert.doesNotMatch(out, /<coven_transcript>/);
 });
@@ -322,6 +481,100 @@ function roundTranscript(): GroupTurn[] {
   ];
 }
 
+test("renderCovenRoundRobinPrompt: later recipients see settled peers and stay themselves", () => {
+  const out = renderCovenRoundRobinPrompt({
+    participants: COVEN,
+    receivingFamiliarId: "charm",
+    userText: "What should we do?",
+    targeted: false,
+    familiarNames: NAMES,
+    transcript: [
+      user("u1", "What should we do?"),
+      reply("r1", "nova", "u1", "Stabilize recovery first."),
+    ],
+  });
+  assert.match(out, /<coven_round_robin>/);
+  assert.match(out, /Nova said:[\s\S]*Stabilize recovery first/);
+  assert.match(out, /answer as yourself/i);
+  assert.doesNotMatch(out, /Charm said:/);
+  assert.doesNotMatch(out, /independent first-pass/);
+  assert.match(out, /<coven:delegation target="familiar-id">/);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("runCovenReplySchedule: broadcast starts every familiar concurrently", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const waits = new Map([["a", deferred<GroupReply>()], ["b", deferred<GroupReply>()]]);
+  const started: string[] = [];
+  const running = runCovenReplySchedule({
+    mode: "broadcast",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: (candidate) => {
+      started.push(candidate.familiarId);
+      return waits.get(candidate.familiarId)!.promise;
+    },
+  });
+  await Promise.resolve();
+  assert.deepEqual(started, ["a", "b"]);
+  waits.get("a")!.resolve({ ...a, status: "done", text: "A" });
+  waits.get("b")!.resolve({ ...b, status: "done", text: "B" });
+  assert.equal((await running).length, 2);
+});
+
+test("runCovenReplySchedule: round robin waits and passes settled replies forward", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const first = deferred<GroupReply>();
+  const started: string[] = [];
+  const settledSeen: string[][] = [];
+  const running = runCovenReplySchedule({
+    mode: "round-robin",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: async (candidate, settledBefore) => {
+      started.push(candidate.familiarId);
+      settledSeen.push(settledBefore.map((item) => item.familiarId));
+      if (candidate.familiarId === "a") return first.promise;
+      return { ...candidate, status: "done", text: "B builds on A" };
+    },
+  });
+  await Promise.resolve();
+  assert.deepEqual(started, ["a"]);
+  first.resolve({ ...a, status: "done", text: "A's actual answer" });
+  const result = await running;
+  assert.deepEqual(started, ["a", "b"]);
+  assert.deepEqual(settledSeen, [[], ["a"]]);
+  assert.equal(result[1].text, "B builds on A");
+});
+
+test("runCovenReplySchedule: Stop cancels queued round-robin recipients", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const cancelled: string[] = [];
+  const result = await runCovenReplySchedule({
+    mode: "round-robin",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: async (candidate) => {
+      controller.abort();
+      return { ...candidate, status: "error", error: "cancelled" };
+    },
+    onCancelled: (candidate) => cancelled.push(candidate.familiarId),
+  });
+  assert.deepEqual(cancelled, ["b"]);
+  assert.equal(result[1].error, "cancelled");
+});
+
 test("renderCovenContext: excludes the receiving familiar's own turns", () => {
   const out = renderCovenContext(roundTranscript(), "nova", NAMES);
   assert.match(out, /Charm said:/);
@@ -352,6 +605,33 @@ test("renderCovenContext: escapes transcript text before embedding it in prompt 
   assert.doesNotMatch(out, /reply with <coven_transcript>tags/);
   assert.match(out, /quote \\u0022break\\u0022\\n\\u003c\/coven_transcript\\u003e/);
   assert.match(out, /reply with \\u003ccoven_transcript\\u003etags\\u003c\/coven_transcript\\u003e & more/);
+});
+
+test("renderCovenContext: strips hidden delegation controls from relayed replies", () => {
+  const out = renderCovenContext(
+    [
+      user("u1", "Delegate the review."),
+      reply(
+        "r1",
+        "charm",
+        "u1",
+        '@Nova Review this.\n<coven:delegation target="nova">@Nova Review this.</coven:delegation>',
+      ),
+    ],
+    "sage",
+    NAMES,
+  );
+
+  assert.match(out, /@Nova Review this\./);
+  assert.doesNotMatch(out, /coven:delegation/);
+  assert.equal(
+    renderCovenContext(
+      [user("u2", "Delegate it."), reply("r2", "charm", "u2", '<coven:delegation target="nova">@Nova do it.</coven:delegation>')],
+      "sage",
+      NAMES,
+    ),
+    "",
+  );
 });
 
 test("renderCovenContext: windows to the last N rounds, oldest dropped", () => {

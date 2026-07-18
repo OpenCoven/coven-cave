@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { THEME_IDS, THEME_META, getSwatches } from "./theme-palettes.ts";
 import { LEGACY_THEME_RENAME, COVEN_THEME_KEY, COVEN_MODE_KEY } from "./theme-storage.ts";
 
-// 20 themes, coven is the default (first).
-assert.equal(THEME_IDS.length, 20);
+// 21 themes, coven is the default (first).
+assert.equal(THEME_IDS.length, 21);
 assert.equal(THEME_IDS[0], "coven");
 assert.deepEqual(
   [...THEME_IDS].sort(),
@@ -23,6 +23,7 @@ assert.deepEqual(
     "hex",
     "meatseeks",
     "mist",
+    "openai",
     "pastel-dreams",
     "slate",
     "snow",
@@ -71,6 +72,9 @@ assert.equal(THEME_META.ghosty.accentDark, "#a6a6a6");
 assert.equal(THEME_META.ghosty.accentLight, "#808080");
 assert.equal(THEME_META.claymorphism.name, "Claymorphism");
 assert.equal(THEME_META.claude.name, "Claude");
+assert.equal(THEME_META.openai.name, "OpenAI");
+assert.equal(THEME_META.openai.accentDark, "#ececec");
+assert.equal(THEME_META.openai.accentLight, "#0d0d0d");
 assert.equal(THEME_META["pastel-dreams"].name, "Pastel Dreams");
 assert.equal(THEME_META["pastel-dreams"].accentDark, "#c0aafd");
 assert.equal(THEME_META["pastel-dreams"].accentLight, "#9377e6");
