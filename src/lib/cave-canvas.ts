@@ -141,8 +141,14 @@ export async function upsertCanvasArtifact(
   }
   return withLock(async () => {
     const current = await loadCanvas();
+    const incumbent = current.artifacts.find((a) => a.id === clean.id);
     const without = current.artifacts.filter((a) => a.id !== clean.id);
-    const twin = without.find((a) => a.kind === clean.kind && a.code === clean.code);
+    // An explicit update to an existing id is authoritative, even when its new
+    // content happens to match another artifact. Content dedupe is only for
+    // saves that arrive under a newly minted id.
+    const twin = incumbent
+      ? undefined
+      : without.find((a) => a.kind === clean.kind && a.code === clean.code);
     const settled = twin
       ? { ...twin, title: clean.title, prompt: clean.prompt, updatedAt: clean.updatedAt }
       : clean;

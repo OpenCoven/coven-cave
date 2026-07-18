@@ -189,7 +189,7 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
         body: JSON.stringify({ artifact }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as { artifacts?: CanvasArtifact[]; savedId?: string };
+      const data = (await res.json()) as { artifacts?: CanvasArtifact[]; savedId?: string | null };
       announce(`Saved '${artifact.title}' to Canvas.`);
       dispatch({ type: "saved" });
       setRefineText("");
