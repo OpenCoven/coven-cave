@@ -79,6 +79,7 @@ import {
   reapplyIndependentAppearance,
 } from "@/lib/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
+import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -676,13 +677,19 @@ function formatHostWorkspaceText(map: Record<string, string> | undefined): strin
 /** Omnigent fleet connection — the config surface for the host chip and remote runs.
  *  Renders NOTHING unless OMNIGENT_SERVER_URL is set up in the user's Cave
  *  Vault: without the Vault env the group is absent from the Daemon tab
- *  entirely (fail closed while the probe is in flight). The Vault URL is also
- *  the active server URL — it overrides the Cave-config value. */
+ *  entirely (fail closed while the probe is in flight). With the Vault env
+ *  present the group is just an explicit enable toggle (off by default,
+ *  persisted as omnigent.enabled in Cave config); the connection fields appear
+ *  only after the user turns the fleet on. The Vault URL is also the active
+ *  server URL — it overrides the Cave-config value. */
 function OmnigentSettingsGroup() {
   const { announce } = useAnnouncer();
   // null = probe in flight → hidden; the group only appears once the status
   // endpoint proves the Vault env exists.
   const [serverUrlInVault, setServerUrlInVault] = useState<boolean | null>(null);
+  // The explicit master switch (omnigent.enabled in Cave config).
+  const [enabled, setEnabled] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [activeBaseUrl, setActiveBaseUrl] = useState("");
   const [workspace, setWorkspace] = useState("");
   const [hostWorkspaceText, setHostWorkspaceText] = useState("");
@@ -719,12 +726,14 @@ function OmnigentSettingsGroup() {
         hasToken?: boolean;
         authMode?: string;
         configured?: boolean;
+        enabled?: boolean;
         serverUrlInVault?: boolean;
         baseUrl?: string;
         error?: string;
       }) => {
         if (ctl.signal.aborted) return;
         setServerUrlInVault(j.serverUrlInVault === true);
+        setEnabled(j.enabled === true);
         setActiveBaseUrl(typeof j.baseUrl === "string" ? j.baseUrl : "");
         if (!j.configured) setStatusLine("Not configured");
         else if (j.online) {
@@ -778,12 +787,84 @@ function OmnigentSettingsGroup() {
     }
   };
 
+  // Flip the master switch (persisted as omnigent.enabled in Cave config).
+  // Turning it on re-probes status so the URL row and status line populate;
+  // turning it off immediately deactivates every fleet surface server-side.
+  const setFleetEnabled = async (next: boolean) => {
+    setToggling(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ omnigent: { enabled: next } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `save failed (${res.status})`);
+      }
+      setEnabled(next);
+      announce(next ? "Omnigent fleet enabled." : "Omnigent fleet disabled.");
+      // Disabling must hide already-mounted Fleet controls immediately. Enabling
+      // publishes the refreshed status below only after the server confirms the
+      // token/auth gate, so dependent surfaces continue to fail closed.
+      if (!next) publishFleetTokenStatus(null);
+      try {
+        const statusRes = await fetch("/api/omnigent/status", { cache: "no-store" });
+        const st = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok || st?.ok === false) {
+          throw new Error(st?.error || `status failed (${statusRes.status})`);
+        }
+        publishFleetTokenStatus(st);
+        setActiveBaseUrl(typeof st?.baseUrl === "string" ? st.baseUrl : "");
+        if (!st?.configured) setStatusLine("Not configured");
+        else if (st?.online) {
+          const mode = st.authMode || (st.hasToken ? "jwt" : "none");
+          setStatusLine(mode === "none" ? "Online · local/unauthenticated" : `Online · auth ${mode}`);
+        } else setStatusLine(st?.error ? `Offline · ${st.error}` : "Offline");
+      } catch {
+        // The config PATCH already succeeded, so do not report the toggle as
+        // failed merely because this optional status refresh was unavailable.
+        publishFleetTokenStatus(null);
+        setActiveBaseUrl("");
+        setStatusLine("Status unavailable · try again later");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "could not save";
+      setError(msg);
+      announce(`Couldn't ${next ? "enable" : "disable"} Omnigent fleet: ${msg}`, "assertive");
+    } finally {
+      setToggling(false);
+    }
+  };
+
   // Vault-gated: no OMNIGENT_SERVER_URL in the Cave Vault (or probe still in
   // flight / failed) → the Daemon tab shows no Omnigent surface whatsoever.
   if (serverUrlInVault !== true) return null;
 
   return (
     <SettingsGroup label="Omnigent fleet">
+      <SettingControlRow
+        label="Enable fleet"
+        hint="Master switch (off by default). Off keeps every Omnigent surface hidden — fleet host options, Fleet buttons, per-familiar fleet defaults — and Cave contacts no Omnigent server. Available because OMNIGENT_SERVER_URL is in your Cave Vault."
+      >
+        <label className="flex items-center gap-2 text-[12px]">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={toggling}
+            onChange={(e) => void setFleetEnabled(e.target.checked)}
+          />
+          Omnigent fleet {enabled ? "on" : "off"}
+        </label>
+      </SettingControlRow>
+      {!enabled && error && (
+        <div className="px-4 pb-2.5">
+          <span role="alert" className="text-[11px] text-[var(--color-danger)]">{error}</span>
+        </div>
+      )}
+      {enabled ? (
+        <>
       <SettingControlRow
         label="Server URL"
         hint="Supplied by OMNIGENT_SERVER_URL in your Cave Vault (it overrides Cave config). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
@@ -851,6 +932,8 @@ function OmnigentSettingsGroup() {
           </Button>
         </div>
       </div>
+        </>
+      ) : null}
     </SettingsGroup>
   );
 }

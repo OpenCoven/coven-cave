@@ -23,12 +23,34 @@ export async function GET(req: Request) {
   // Settings-surface gate: the Omnigent group in Settings → Daemon renders
   // only when OMNIGENT_SERVER_URL is set up in the Cave Vault (metadata-only).
   const serverUrlInVault = isOmnigentServerUrlConfigured();
+  // Master switch: Vault key + the explicit Settings → Daemon toggle. Until
+  // both hold, report unconfigured WITHOUT resolving the secret or touching
+  // the network — every fleet surface fails closed off configured:false.
+  const enabled = config.omnigent.enabled === true;
+  if (!serverUrlInVault || !enabled) {
+    return NextResponse.json({
+      ok: true,
+      configured: false,
+      enabled,
+      baseUrl: "",
+      hasToken: false,
+      authenticated: false,
+      authMode: "none",
+      envInVault,
+      serverUrlInVault,
+      online: false,
+      error: serverUrlInVault
+        ? "Omnigent fleet is disabled — turn it on in Settings → Daemon."
+        : "Add OMNIGENT_SERVER_URL to your Cave Vault (Settings → Vault).",
+    });
+  }
   // Vault URL wins over Cave config; config stays a fallback.
   const baseUrl = resolveOmnigentBaseUrl(config.omnigent.baseUrl);
   if (!baseUrl) {
     return NextResponse.json({
       ok: true,
       configured: false,
+      enabled,
       baseUrl: "",
       hasToken: false,
       authenticated: false,
@@ -46,6 +68,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       configured: true,
+      enabled,
       baseUrl: client.baseUrl,
       hasToken: client.hasToken,
       authenticated: client.authenticated || client.authMode === "none",
@@ -69,6 +92,7 @@ export async function GET(req: Request) {
       return NextResponse.json({
         ok: true,
         configured: true,
+        enabled,
         baseUrl,
         hasToken: client.hasToken,
         authenticated: client.authenticated,
@@ -83,6 +107,7 @@ export async function GET(req: Request) {
       return NextResponse.json({
         ok: true,
         configured: true,
+        enabled,
         baseUrl,
         hasToken: false,
         authenticated: false,
