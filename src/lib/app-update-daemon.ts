@@ -27,6 +27,14 @@ type Dependencies = {
 
 const UPDATE_ROUTE = "/api/onboarding/update";
 const INSTALL_ROUTE = "/api/onboarding/install";
+const activeDaemonUpdates = new Set<Promise<unknown>>();
+
+/** Keep desktop auto-start from racing an in-flight CLI replacement. */
+export async function waitForDaemonUpdateIdle(): Promise<void> {
+  while (activeDaemonUpdates.size > 0) {
+    await Promise.allSettled([...activeDaemonUpdates]);
+  }
+}
 
 async function responseBody(response: Response): Promise<Record<string, unknown>> {
   return (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -86,7 +94,7 @@ export function compareCaveDaemonVersions(left: string, right: string): number |
  * daemon lifecycle: graceful stop, npm update, executable verification, and
  * restart only when the daemon was running before the update.
  */
-export async function updateDaemonForCaveUpdate(
+async function runDaemonUpdateForCaveUpdate(
   caveVersion: string,
   dependencies: Dependencies = {},
 ): Promise<"current" | "updated"> {
@@ -158,4 +166,14 @@ export async function updateDaemonForCaveUpdate(
   }
 
   throw new Error("The Coven daemon update did not finish before the Cave update timed out.");
+}
+
+export function updateDaemonForCaveUpdate(
+  caveVersion: string,
+  dependencies: Dependencies = {},
+): Promise<"current" | "updated"> {
+  const operation = runDaemonUpdateForCaveUpdate(caveVersion, dependencies);
+  activeDaemonUpdates.add(operation);
+  void operation.finally(() => activeDaemonUpdates.delete(operation)).catch(() => {});
+  return operation;
 }

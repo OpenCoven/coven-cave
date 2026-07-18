@@ -126,9 +126,9 @@ export function DaemonReleaseAlignmentTrigger() {
             });
           }
         },
-      }).then((result) => {
+      }).then(() => {
         running = false;
-        if (active && result === "updated") dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+        if (active) dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
       }).catch((error) => {
         running = false;
         if (!active) return;

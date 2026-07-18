@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   compareCaveDaemonVersions,
   updateDaemonForCaveUpdate,
+  waitForDaemonUpdateIdle,
 } from "./app-update-daemon.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -14,6 +15,24 @@ function json(body: unknown, status = 200): Response {
 assert.equal(compareCaveDaemonVersions("0.1.4-beta.2", "0.1.4-beta.1"), 1);
 assert.equal(compareCaveDaemonVersions("0.1.4", "0.1.4-rc.1"), 1);
 assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
+
+{
+  let releaseCheck: ((response: Response) => void) | undefined;
+  const operation = updateDaemonForCaveUpdate("0.1.3", {
+    fetch: () => new Promise<Response>((resolve) => { releaseCheck = resolve; }),
+  });
+  let idle = false;
+  const waiting = waitForDaemonUpdateIdle().then(() => { idle = true; });
+  await Promise.resolve();
+  assert.equal(idle, false, "daemon start waits while release alignment is checking or replacing the CLI");
+  releaseCheck!(json({
+    ok: true,
+    tools: [{ id: "coven-cli", installed: true, current: "0.1.3", compatible: true }],
+  }));
+  await operation;
+  await waiting;
+  assert.equal(idle, true, "daemon start is released after alignment settles");
+}
 
 {
   const calls: string[] = [];
