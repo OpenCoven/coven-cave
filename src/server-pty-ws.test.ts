@@ -12,11 +12,22 @@ assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
 assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails closed when no access token is configured");
-// The 401 only applies when a token is actually configured (remote/mobile). With
-// no token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
-// connections working. #714 dropped this guard and 401'd every local terminal.
-assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+// The 401 applies when a token is configured (remote/mobile) OR when tokenless
+// native-app mode relaxes the Host gate for Tailscale Serve. With no token and
+// no tailnet trust (the local desktop app / dev server), the loopback
+// host+origin gate remains the protection so credential-less local terminals
+// keep working.
+assert.match(src, /function requiresPtyAccessToken\(\): boolean/, "server centralizes when PTY upgrades need credentials");
+assert.match(
+  src,
+  /ACCESS_TOKEN !== "" \|\| process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/,
+  "PTY upgrades require credentials whenever tokenless tailnet trust relaxes the host gate",
+);
+assert.match(
+  src,
+  /if \(requiresPtyAccessToken\(\) && !isAuthorized\(req, query\)\)/,
+  "PTY upgrade fails closed for tokenless tailnet mode while preserving credential-less local loopback",
+);
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
@@ -86,10 +97,10 @@ assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSoc
 // tailscale serve forwards from 127.0.0.1, so a non-loopback peer is a direct
 // LAN/WAN connection that must never be trusted.
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
-// Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1) relaxes ONLY the
-// loopback *host* gate, so the iOS terminal reaches /api/pty-ws over the tailnet
-// (tailscale serve forwards the <host>.ts.net Host). Mirrors the REST gate in
-// proxy.ts; the sameOrigin gate still blocks cross-site browser upgrades.
+// Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1) relaxes the loopback
+// *host* gate for REST/WebSocket routing (tailscale serve forwards the
+// <host>.ts.net Host), but PTY still fails closed without a token so tailnet
+// clients cannot spawn a shell.
 assert.match(src, /process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless tailnet app mode relaxes the WebSocket host gate for tailnet-forwarded upgrades");
 assert.match(packageJson.scripts.postinstall ?? "", /fix-node-pty-spawn-helper\.mjs/, "postinstall repairs node-pty spawn-helper mode");
 assert.equal(

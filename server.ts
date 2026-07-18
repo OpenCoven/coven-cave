@@ -179,6 +179,10 @@ function isAllowedUpgradeSource(req: IncomingMessage): boolean {
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 
+function requiresPtyAccessToken(): boolean {
+  return ACCESS_TOKEN !== "" || process.env.COVEN_CAVE_TAILNET_TRUST === "1";
+}
+
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
   if (!ACCESS_TOKEN) return false;
 
@@ -457,13 +461,12 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Only enforce token auth when a token is actually configured (remote/mobile
-  // access mode). With no token set — the local desktop app and dev server —
+  // Enforce token auth when a token is configured (remote/mobile access mode)
+  // or when tokenless native-app mode relaxes the Host gate for Tailscale Serve.
+  // With no token and no tailnet trust — the local desktop app and dev server —
   // the loopback host+origin gate above is the protection, and credential-less
-  // connections are the local app itself. #714 dropped this and 401'd every
-  // local terminal (reintroducing the v0.0.72 "Terminal connection failed"
-  // regression that server-pty-ws.test.ts warns about).
-  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
+  // connections are the local app itself.
+  if (requiresPtyAccessToken() && !isAuthorized(req, query)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
