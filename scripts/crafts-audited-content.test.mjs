@@ -11,12 +11,19 @@ const expected = new Map([
   ["scribes-quill", 4],
   ["grand-research-ritual", 1],
   ["artificers-codex", 7],
+  ["charms-loom", 1],
+]);
+const provenanceCommits = new Map([
+  ["charms-loom", "38b5c200ca6d0c736d2c2efbb888047032f0fc09"],
 ]);
 
 assert.deepEqual(new Set(crafts.map((craft) => craft.name)), new Set(expected.keys()));
 for (const craft of crafts) {
   assert.equal(craft.craft.bundled.skills.length, expected.get(craft.name));
-  assert.equal(craft.craft.provenance.commit, "773a52944ba4747a18bd4ae9ade53fff041adcbc");
+  assert.equal(
+    craft.craft.provenance.commit,
+    provenanceCommits.get(craft.name) ?? "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+  );
   assert.equal(craft.craft.provenance.license, "MIT");
   for (const skill of craft.craft.bundled.skills) {
     assert.match(skill.contentHash, /^sha256:[a-f0-9]{64}$/);
@@ -27,6 +34,13 @@ for (const craft of crafts) {
 assert.ok(fs.existsSync("marketplace/plugins/grand-research-ritual/skills/0-autoresearch-skill/references/agent-continuity.md"));
 assert.ok(fs.existsSync("marketplace/plugins/scribes-quill/skills/ml-paper-writing/templates/README.md"));
 assert.ok(fs.existsSync("marketplace/plugins/oracles-measure/skills/lm-evaluation-harness/references/custom-tasks.md"));
+
+const loomManifest = JSON.parse(
+  fs.readFileSync("marketplace/plugins/charms-loom/.codex-plugin/plugin.json", "utf8"),
+);
+assert.deepEqual(loomManifest.interface.defaultPrompt, [
+  "Use Charm's Loom to author, verify, export, or deploy an OpenCoven Slidev deck.",
+]);
 
 const ritual = fs.readFileSync(
   "marketplace/craft-sources/grand-research-ritual/0-autoresearch-skill/SKILL.md",
