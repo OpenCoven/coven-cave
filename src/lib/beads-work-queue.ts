@@ -47,21 +47,28 @@ export function beadRefMatchesPr(ref: string | null | undefined, prNumber: numbe
   return new RegExp(`/pull/${n}/?$`).test(trimmed);
 }
 
-// Description fallback for the ref join: the exact `pull/<n>` URL segment or a
-// `PR #<n>` token — both written by the queue's File-bead flow. Boundary-guarded
-// so PR 123 never matches `/pull/1234` or `PR #1234`.
-function beadDescriptionMatchesPr(description: string | null | undefined, prNumber: number): boolean {
+// Description fallback for the ref join, anchored to what the queue's
+// File-bead flow actually writes: the PR's own URL (repo-qualified), or the
+// `Filed from unlinked PR #<n>` signature. A casual mention — "Follow-up to
+// PR #88", a foreign repo's /pull/88 URL — must NOT consume the bead as PR
+// 88's link (cave-opld; review of #3426). Digit-boundary-guarded so PR 123
+// never matches PR 1234's URL or token.
+function beadDescriptionMatchesPr(
+  description: string | null | undefined,
+  pr: Pick<PullRequestSummary, "number" | "url">,
+): boolean {
   if (!description) return false;
-  const n = String(prNumber);
+  const url = pr.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return (
-    new RegExp(`/pull/${n}(?!\\d)`).test(description) || new RegExp(`\\bPR #${n}(?!\\d)`).test(description)
+    new RegExp(`${url}(?!\\d)`).test(description) ||
+    new RegExp(`\\bFiled from unlinked PR #${pr.number}(?!\\d)`).test(description)
   );
 }
 
 // Prefer the explicit external_ref when it names the PR; otherwise fall back
-// to the description URL/token (ready output carries no external_ref).
-function beadMatchesPr(bead: ReadyBead, prNumber: number): boolean {
-  return beadRefMatchesPr(bead.external_ref, prNumber) || beadDescriptionMatchesPr(bead.description, prNumber);
+// to the File-bead description signature (ready output carries no external_ref).
+function beadMatchesPr(bead: ReadyBead, pr: Pick<PullRequestSummary, "number" | "url">): boolean {
+  return beadRefMatchesPr(bead.external_ref, pr.number) || beadDescriptionMatchesPr(bead.description, pr);
 }
 
 /**
@@ -223,7 +230,7 @@ export function buildWorkQueue(
     // (cave-p63a). That ref-join links the PR — familiar/surface/bead chip and
     // all — instead of leaving it flagged unlinked.
     if (pr.beadIds.length === 0 && !bead) {
-      bead = readyBeads.find((b) => beadMatchesPr(b, pr.number));
+      bead = readyBeads.find((b) => beadMatchesPr(b, pr));
     }
     const isUnlinked = pr.beadIds.length === 0 && !bead;
     if (isUnlinked) unlinked.push(pr.number);
