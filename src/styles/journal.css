@@ -6,33 +6,33 @@
   width: 320px;
   flex: 0 0 320px;
   border-right: 1px solid var(--border-hairline);
-  padding: 12px;
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   overflow-y: auto;
 }
 .journal-list__error {
-  padding: 8px 11px;
-  border-radius: 8px;
+  padding: var(--space-2) 11px;
+  border-radius: var(--radius-control);
   font-size: 11.5px;
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
 .journal-list__cap {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 4px 2px 2px;
+  margin: var(--space-1) 2px 2px;
 }
 .journal-list__filter {
   width: 100%;
-  margin: 2px 0 8px;
+  margin: 2px 0 var(--space-2);
   padding: 6px 10px;
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
   font-size: 12.5px;
   color: var(--text-primary);
@@ -51,7 +51,7 @@
   gap: 6px;
   font-size: 12.5px;
   color: var(--text-muted);
-  padding: 16px 4px;
+  padding: var(--space-4) var(--space-1);
 }
 .journal-empty svg { flex: none; color: var(--accent-presence); opacity: 0.8; }
 
@@ -76,7 +76,7 @@
   gap: 6px;
   width: 100%;
   padding: 9px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   border-radius: 9px;
   border: 1px solid var(--accent-presence);
@@ -134,6 +134,12 @@
     transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .journal-day:hover { border-color: var(--border-strong); transform: translateX(2px); }
+/* Keyboard parity (cave-t1ou): the rail rows and entry actions had no visible
+   focus state — hover styling alone is invisible to keyboard users. */
+.journal-day:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+}
 .journal-day:active { transform: translateX(2px) scale(0.99); }
 .journal-day.is-selected {
   border-color: var(--accent-presence);
@@ -150,18 +156,18 @@
 }
 .journal-day__prev { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .journal-entry__sec {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 /* Heading row with chronological prev/next entry controls on the right. */
 .journal-entry__sec--nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .journal-entry__daynav { display: inline-flex; gap: 4px; }
 .journal-entry__stats { display: flex; gap: 8px; margin-bottom: 18px; }
@@ -170,7 +176,7 @@
   background: var(--bg-panel, var(--bg-base));
   border: 1px solid var(--border-hairline);
   border-radius: 9px;
-  padding: 8px 10px;
+  padding: var(--space-2) 10px;
 }
 .journal-entry__stat b { font-size: 18px; display: block; line-height: 1; }
 .journal-entry__stat span { font-size: 10px; color: var(--text-muted); }
@@ -199,6 +205,10 @@
   transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease,
     transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+.journal-entry__action:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 1px;
+}
 .journal-entry__action:hover:not(:disabled),
 .journal-entry__action:focus-visible {
   border-color: var(--border-strong);
@@ -224,9 +234,9 @@
   border-radius: 10px;
   background: var(--bg-panel, var(--bg-base));
   color: var(--text-primary);
-  padding: 12px;
+  padding: var(--space-3);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 /* Edit mode hosts the shared MdEditor (WYSIWYG/markdown) in place of the old
@@ -251,8 +261,8 @@
 .journal-entry__reflection { line-height: 1.6; color: var(--text-secondary); font-size: 13px; }
 /* Reflective "next-paths" prompts lifted out of the reflection markdown. */
 .journal-entry__next {
-  margin-top: 16px;
-  padding: 12px 14px;
+  margin-top: var(--space-4);
+  padding: var(--space-3) 14px;
   border: 1px solid var(--border-hairline);
   border-radius: 10px;
   background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
@@ -262,7 +272,7 @@
   align-items: center;
   gap: 5px;
   margin-bottom: 9px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -292,7 +302,7 @@
 .journal-next__chip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   padding: 9px 11px;
@@ -366,7 +376,7 @@
   color: var(--text-secondary);
   background: var(--bg-raised);
   border: 1px solid var(--border-hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease,
     transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -409,14 +419,32 @@
   align-items: center;
   gap: 9px;
   max-width: min(92vw, 460px);
-  padding: 10px 12px 10px 13px;
+  padding: 10px var(--space-3) 10px 13px;
   font-size: 12.5px;
   color: var(--text-primary);
-  background: var(--bg-elevated, var(--bg-raised));
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-strong));
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.6);
   animation: journal-notice-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 @keyframes journal-notice-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
@@ -432,7 +460,7 @@
   color: var(--accent-presence);
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: background 0.12s ease, transform 0.1s ease;
 }
@@ -455,8 +483,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 16px;
-  font-size: 11px;
+  margin-top: var(--space-4);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .journal-entry__by b { color: var(--accent-presence); }
@@ -467,3 +495,13 @@
    detail pane scroll internally instead of growing the settings page. */
 .familiar-studio-journal { display: flex; min-width: 0; }
 .familiar-studio-journal .journal-list { height: min(65vh, 720px); }
+
+/* The section labels are real headings now (cave-t1ou) — inherit the label
+   styling instead of UA heading defaults. */
+.journal-entry__sec-heading {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { openCovenToolStatuses } from "@/lib/opencoven-tools-status";
+import { getOpenCovenToolUpdates } from "@/lib/opencoven-tools-update-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const tools = await openCovenToolStatuses();
-  return NextResponse.json({ ok: true, tools });
+  const update = await getOpenCovenToolUpdates();
+  return NextResponse.json({ ok: true, ...update });
 }

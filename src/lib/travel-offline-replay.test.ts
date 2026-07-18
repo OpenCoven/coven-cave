@@ -86,13 +86,13 @@ assert.match(
 
 assert.match(
   replay,
-  /const projectRoot = stringValue\(payload\.projectRoot\) \?\? runtimeCwd \?\? process\.cwd\(\)/,
+  /const payloadProjectRoot = stringValue\(payload\.projectRoot\)[\s\S]*const projectRoot = payloadProjectRoot \?\? runtimeCwd \?\? process\.cwd\(\)/,
   "chat replay should derive projectRoot from queued local runtime when payload omits it",
 );
 
 assert.match(
   replay,
-  /await assertProjectRootAccess\(\{ familiarId \}, projectRoot, "chat"\)/,
+  /const allowLocalRuntimeCwd = normalizeProjectRoot\(projectRoot\) === normalizeProjectRoot\(process\.cwd\(\)\)[\s\S]*await assertProjectRootAccess\(\{ familiarId \}, projectRoot, "chat", \{[\s\S]*allowUnregisteredRoot: allowLocalRuntimeCwd/,
   "chat replay should revalidate the current familiar project grant before spawning a hub session",
 );
 

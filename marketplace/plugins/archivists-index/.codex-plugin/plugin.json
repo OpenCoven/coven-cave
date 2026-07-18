@@ -1,0 +1,33 @@
+{
+  "name": "archivists-index",
+  "version": "0.1.0",
+  "description": "Ingestion, retrieval, provenance, and durable research memory.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Archivist's Index",
+    "shortDescription": "Ingestion, retrieval, provenance, and durable research memory.",
+    "longDescription": "Ingestion, retrieval, provenance, and durable research memory.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Archivist's Index to open a bounded research direction."
+    ]
+  }
+}

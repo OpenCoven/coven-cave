@@ -44,13 +44,29 @@ function portFromHost(host: string | null) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
-function isTailscaleServeHost(host: string | null) {
-  const hostname = hostnameFromHost(host);
-  return Boolean(hostname?.endsWith(".ts.net"));
+function isTailscaleIpHost(hostname: string) {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    const parts = hostname.split(".").map((part) => Number(part));
+    return parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+      parts[0] === 100 &&
+      parts[1] >= 64 &&
+      parts[1] <= 127;
+  }
+  return hostname.toLowerCase().startsWith("fd7a:115c:a1e0:");
 }
 
-export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated = false) {
-  return mobileAccessAuthenticated || isLoopbackHost(host);
+export function isTailscaleServeHost(host: string | null) {
+  const hostname = hostnameFromHost(host)?.toLowerCase();
+  return Boolean(hostname && (hostname.endsWith(".ts.net") || isTailscaleIpHost(hostname)));
+}
+
+export function isAllowedApiHost(
+  host: string | null,
+  mobileAccessAuthenticated = false,
+  tailnetTrusted = false,
+) {
+  if (mobileAccessAuthenticated) return true;
+  return isLoopbackHost(host) || (tailnetTrusted && isTailscaleServeHost(host));
 }
 
 export function sameOrigin(value: string | null, expectedOrigin: string) {
@@ -89,14 +105,13 @@ export function isAllowedRequestSource(value: string | null, expectedOrigin: str
  * (the port it actually connected to, carried by the Host header) never equals
  * `nextUrl.origin` and every /api request 403s "forbidden origin" (cave-5sg).
  *
- * The request's own Host header carries the real authority. The host gate in
- * proxy() has already constrained it to loopback (or an authenticated /
- * tailnet-trusted remote), so a Host-derived origin is a safe second accepted
- * value: a cross-site browser attacker's Origin still won't match the Host
- * (the browser sets both and cannot forge either), and DNS-rebinding is caught
- * by the loopback host gate. `nextUrl.origin` is kept first so the
- * Tailscale-Serve / forwarded-host path (where Next trusts x-forwarded-host)
- * is entirely unchanged.
+ * The request's own Host header carries the real authority for local fallback,
+ * but only loopback Hosts may extend the accepted-origin set. Tokenless
+ * tailnet-trust mode deliberately relaxes the Host gate for Tailscale Serve
+ * forwarding, so adding arbitrary non-loopback Hosts here would let a
+ * browser-supplied Origin that matches that Host satisfy the CSRF check.
+ * `nextUrl.origin` is kept first so the Tailscale-Serve / forwarded-host path
+ * (where Next trusts x-forwarded-host) is entirely unchanged.
  */
 export function expectedRequestOrigins(
   nextUrlOrigin: string,
@@ -104,7 +119,7 @@ export function expectedRequestOrigins(
   host: string | null,
 ): string[] {
   const origins = [nextUrlOrigin];
-  if (host) {
+  if (isLoopbackHost(host)) {
     const scheme = protocol && protocol.length > 0 ? protocol : "http:";
     const derived = `${scheme}//${host}`;
     if (derived !== nextUrlOrigin) origins.push(derived);
@@ -268,4 +283,11 @@ export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",
   "multipart/form-data",
+  // The local-only backdrop endpoint accepts raw, size-bounded raster bytes so
+  // it can reject an oversized upload while streaming instead of materialising
+  // multipart/base64 overhead. The route still verifies MIME + magic bytes;
+  // SVG remains deliberately unsupported.
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ];

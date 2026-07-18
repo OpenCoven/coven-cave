@@ -27,6 +27,12 @@ export type CanvasArtifact = {
 // can't bloat the canvas store. Generous enough for a real standalone page.
 export const MAX_ARTIFACT_CODE_CHARS = 200_000;
 const MAX_TITLE_CHARS = 60;
+// Prompts are short descriptions (the composer's ask or a refine request);
+// clamping keeps a runaway/buggy caller from bloating every store read.
+export const MAX_ARTIFACT_PROMPT_CHARS = 4_000;
+// Ids are client-minted (`art-<uuid>`, ghreview slugs); anything this long is
+// garbage and would pollute the positions map keyed by it.
+const MAX_ARTIFACT_ID_CHARS = 200;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -54,8 +60,9 @@ export function extractHtmlArtifact(text: string): string | null {
   return null;
 }
 
-/** Heuristic: does this fenced code look like a React component vs HTML? */
-function looksLikeReact(code: string): boolean {
+/** Heuristic: does this fenced code look like a React component vs HTML?
+ *  Exported for the Canvas add tile's pasted-code kind detection. */
+export function looksLikeReact(code: string): boolean {
   if (/<!doctype html/i.test(code) || /<html[\s>]/i.test(code)) return false;
   return /\bexport\s+default\b/.test(code) || /\bfunction\s+App\b/.test(code) || /\buse(State|Effect|Ref|Memo|Callback)\b/.test(code);
 }
@@ -216,6 +223,32 @@ export function buildRefinePrompt(
   ].join("\n");
 }
 
+/**
+ * One-shot recovery prompt for a Canvas-origin response that streamed
+ * successfully but could not be rendered. Keeping this separate from the
+ * normal sketch prompt lets callers retry only the format failure, and pass
+ * the first run's session id so the repair remains in the same hidden Canvas
+ * conversation.
+ */
+export function buildArtifactRepairPrompt(
+  originalIntent: string,
+  kind?: ArtifactKind,
+): string {
+  const intent = (originalIntent ?? "").trim() || "the requested UI";
+  const form = kind === "react"
+    ? "one complete `tsx` fenced artifact"
+    : kind === "html"
+      ? "one complete `html` fenced artifact"
+      : "one complete `html` or `tsx` fenced artifact";
+  return [
+    "Repair the previous response so the Canvas can preview it.",
+    `Return only ${form}, with no prose before or after.`,
+    "The artifact must be complete, self-contained, and require no network access.",
+    "Original user intent:",
+    intent,
+  ].join("\n");
+}
+
 /** A minimal starter document for hand-written / pasted artifacts. */
 export const STARTER_ARTIFACT_HTML = [
   "<!doctype html>",
@@ -236,18 +269,39 @@ export const STARTER_ARTIFACT_HTML = [
   "</html>",
 ].join("\n");
 
+/** A minimal interactive starter for the explicit Blank React path. */
+export const STARTER_ARTIFACT_REACT = [
+  "export default function App() {",
+  "  const [count, setCount] = React.useState(0);",
+  "  return (",
+  '    <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-6">',
+  '      <section className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">',
+  '        <h1 className="text-2xl font-semibold">Hello, canvas</h1>',
+  '        <p className="mt-2 text-slate-400">Edit this React component to sketch an interaction.</p>',
+  '        <button className="mt-5 rounded-lg bg-violet-500 px-4 py-2 font-medium hover:bg-violet-400" onClick={() => setCount((value) => value + 1)}>',
+  "          Clicked {count} times",
+  "        </button>",
+  "      </section>",
+  "    </main>",
+  "  );",
+  "}",
+].join("\n");
+
 /** Validate/normalize a raw artifact record from disk or a request body. */
 export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   const id = typeof v.id === "string" ? v.id.trim() : "";
-  if (!id) return null;
-  const prompt = typeof v.prompt === "string" ? v.prompt : "";
+  if (!id || id.length > MAX_ARTIFACT_ID_CHARS) return null;
+  const prompt = (typeof v.prompt === "string" ? v.prompt : "").slice(0, MAX_ARTIFACT_PROMPT_CHARS);
   const code = clampArtifactCode(typeof v.code === "string" ? v.code : "");
   const title = typeof v.title === "string" && v.title.trim() ? v.title.trim().slice(0, MAX_TITLE_CHARS) : titleFromPrompt(prompt);
   const kind: ArtifactKind = v.kind === "react" ? "react" : "html";
-  const createdAt = typeof v.createdAt === "string" ? v.createdAt : "";
-  const updatedAt = typeof v.updatedAt === "string" ? v.updatedAt : createdAt;
+  // Timestamps feed the gallery's lexicographic recency sort and the card's
+  // date label — garbage strings sort a sketch as if newest forever. Coerce
+  // unparseable values to "" (renders dateless, sorts last).
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
   return { id, title, prompt, code, kind, createdAt, updatedAt };
 }
 

@@ -27,6 +27,20 @@ export type OpenTaskRail = {
   moreCount: number;
 };
 
+/** Whether a card belongs to the selected project scope. No project selected
+ *  matches everything; card.cwd is the fallback match for legacy cards that
+ *  predate projectId; an unscoped card (no project association) always
+ *  matches — it's still the familiar's work. */
+export function cardMatchesProject(
+  card: Card,
+  opts: { projectId?: string | null; projectRoot?: string | null },
+): boolean {
+  if (!opts.projectId) return true;
+  if (card.projectId) return card.projectId === opts.projectId;
+  if (card.cwd && opts.projectRoot) return card.cwd === opts.projectRoot;
+  return !card.cwd;
+}
+
 /** All of a familiar's open cards for the current project scope, active-first.
  *  Uncapped — feeds both the rail (capped below) and the starter suggestions
  *  (which need e.g. the full review count). */
@@ -43,13 +57,7 @@ export function deriveOpenTaskCards(
   return cards
     .filter((card) => card.familiarId === opts.familiarId)
     .filter((card) => STATUS_RANK.has(card.status))
-    .filter((card) => {
-      if (!opts.projectId) return true;
-      if (card.projectId) return card.projectId === opts.projectId;
-      if (card.cwd && opts.projectRoot) return card.cwd === opts.projectRoot;
-      // Unscoped card (no project association): still this familiar's work.
-      return !card.cwd;
-    })
+    .filter((card) => cardMatchesProject(card, opts))
     .sort((a, b) => {
       const status = (STATUS_RANK.get(a.status) ?? 9) - (STATUS_RANK.get(b.status) ?? 9);
       if (status !== 0) return status;

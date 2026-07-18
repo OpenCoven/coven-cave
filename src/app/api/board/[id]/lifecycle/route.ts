@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { transitionCard, type CardLifecycle, LIFECYCLES } from "@/lib/cave-board";
-import { emitArchiveNudge } from "@/lib/task-archive-nudge-emit";
+import { handleTaskCompletion } from "@/lib/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +30,11 @@ export async function POST(
     if (!card) {
       return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     }
-    // End-of-lifecycle: nudge the user to archive the task's chat. Best-effort —
-    // never let a nudge failure mask a successful transition.
+    // End-of-lifecycle: auto-archive the task's chat when the policy opts in,
+    // otherwise nudge the user to archive it. Best-effort — never let this
+    // mask a successful transition.
     if (card.lifecycle === "completed") {
-      await emitArchiveNudge(card);
+      await handleTaskCompletion(card);
     }
     return NextResponse.json({ ok: true, card });
   } catch (err) {

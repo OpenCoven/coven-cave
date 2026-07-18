@@ -6,6 +6,19 @@ export function covenHome(): string {
   return process.env.COVEN_HOME || path.join(homedir(), ".coven");
 }
 
+/**
+ * Dedicated home for Coven Cave's own state: `<covenHome>/cave/`.
+ *
+ * All cave-owned files live here with standardized names (config.json,
+ * state.json, board.json, conversations/, …) instead of the legacy scattered
+ * `~/.coven/cave-*.json` top-level files. Legacy files are moved in at startup
+ * by `migrateCaveHome()` (src/lib/server/cave-home-migration.ts). Bundle-mode
+ * writables (.env.local, vault.yaml, workflows/) already lived here.
+ */
+export function caveHome(): string {
+  return process.env.COVEN_CAVE_HOME || path.join(covenHome(), "cave");
+}
+
 export function covenWorkspacesRoot(): string {
   return process.env.COVEN_WORKSPACES_ROOT || path.join(covenHome(), "workspaces");
 }
@@ -50,7 +63,7 @@ export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
 
 export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
   try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
     return parseFamiliarWorkspaces(raw);
   } catch {
     return new Map();
@@ -59,7 +72,7 @@ export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
 
 export async function familiarWorkspace(familiarId: string): Promise<string> {
   const declared = await readFamiliarWorkspaces();
-  return declared.get(familiarId) ?? path.join(familiarWorkspacesRoot(), familiarId);
+  return declared.get(familiarId) ?? path.join(/* turbopackIgnore: true */ familiarWorkspacesRoot(), familiarId);
 }
 
 export async function familiarIds(): Promise<string[]> {

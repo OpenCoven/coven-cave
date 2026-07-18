@@ -65,14 +65,21 @@ export function greeting(date: Date): string {
   return "Good night";
 }
 
+// Intl.DateTimeFormat construction is the expensive part of these labels
+// (fresh locale-data resolution per call), and day rails call them per row
+// per render — share one instance per shape instead.
+const longDateFormat = new Intl.DateTimeFormat([], {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+});
+const weekdayFormat = new Intl.DateTimeFormat([], { weekday: "long" });
+const monthDayFormat = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
+
 /** Long human label, e.g. "Thursday, June 18, 2026". */
 export function longDateLabel(date: Date): string {
-  return new Intl.DateTimeFormat([], {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return longDateFormat.format(date);
 }
 
 /** "Today" / "Yesterday" / weekday for dates inside the last week, else short date. */
@@ -83,9 +90,9 @@ export function relativeDayLabel(date: Date, now = new Date()): string {
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
   if (days > 1 && days < 7) {
-    return new Intl.DateTimeFormat([], { weekday: "long" }).format(date);
+    return weekdayFormat.format(date);
   }
-  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(date);
+  return monthDayFormat.format(date);
 }
 
 // The compact "3h ago" / "2d ago" / short-date phrase now lives in the shared
@@ -98,6 +105,7 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   agent: "Familiar update",
   "response-needed": "Response needed",
   "daily-summary": "Daily report",
+  milestone: "Milestone",
 };
 
 export const KIND_ICON: Record<ItemKind, string> = {
@@ -105,13 +113,16 @@ export const KIND_ICON: Record<ItemKind, string> = {
   agent: "ph:sparkle",
   "response-needed": "ph:chat-circle-dots",
   "daily-summary": "ph:newspaper",
+  milestone: "ph:trophy-fill",
 };
 
 /**
  * Turn an inbox item into an href the standalone routes can use. In-app
- * targets resolve to `/#<hash>` so the workspace deep-link listeners
- * (`#card-`, `#chat-`, `#memory:`) re-enter the right surface; bare urls pass
- * through. Items with no actionable target return `/` (the home shell).
+ * targets resolve to `/#<hash>` so the workspace boot deep-link handlers
+ * (`#card-`, `#chat-`, `#grimoire:`) re-enter the right surface; bare urls
+ * pass through. Items with no actionable target return `/` (the home shell).
+ * (`#memory:` never had a consumer — memory links ride the Grimoire hash,
+ * whose reader is the app's memory viewer; cave-aka2.)
  */
 export function itemHref(item: InboxItem): string {
   const link: LinkRef | null | undefined = item.link;
@@ -122,7 +133,7 @@ export function itemHref(item: InboxItem): string {
       case "session":
         return `/#chat-${link.ref}`;
       case "memory":
-        return `/#memory:${encodeURIComponent(link.ref)}`;
+        return `/#grimoire:memory:${encodeURIComponent(link.ref)}`;
       case "url":
         return link.ref || "/";
     }

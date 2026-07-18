@@ -24,9 +24,6 @@ export type MemoryRow = {
   stale: boolean;
   protection: ProtectionTier;
   excerpt?: string;         // agent rows only
-  /** Whether this row belongs to the selected familiar ("owned") or is a
-   *  shared/global pool with no familiar owner ("shared"). */
-  ownership: "owned" | "shared";
 };
 
 type BuildArgs = {
@@ -70,15 +67,14 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         stale: detectStale(managed).stale,
         protection: classifyProtection(e.path),
         excerpt: e.excerpt,
-        ownership: "owned" as const,
       };
     });
 
   const fileRows: MemoryRow[] = args.files
     .filter((e) => args.sourceFilter === "all" || e.sourceKind === args.sourceFilter)
-    // Drop files owned by a *different* familiar; keep this familiar's files
-    // and ownerless (global/shared) files.
-    .filter((e) => e.familiarId == null || e.familiarId === args.familiarFilter)
+    // Only the selected familiar's own files: drop other familiars' files AND
+    // ownerless shared/global pools — this view shows one familiar's memory.
+    .filter((e) => e.familiarId === args.familiarFilter)
     .map((e) => {
       const managed = normalizeFileEntry(e);
       return {
@@ -92,7 +88,6 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         sourceLabel: e.sourceKindLabel,
         stale: detectStale(managed).stale,
         protection: classifyProtection(e.fullPath),
-        ownership: e.familiarId === args.familiarFilter ? ("owned" as const) : ("shared" as const),
       };
     });
 
@@ -107,12 +102,7 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
     size: (a, b) => (b.size ?? 0) - (a.size ?? 0),
     staleFirst: (a, b) => Number(b.stale) - Number(a.stale),
   };
-  const sorted = rows.sort(cmp[args.sortMode]);
-  // Owned (this familiar's) rows first, shared (global) rows after.
-  return [
-    ...sorted.filter((r) => r.ownership === "owned"),
-    ...sorted.filter((r) => r.ownership === "shared"),
-  ];
+  return rows.sort(cmp[args.sortMode]);
 }
 
 export type MemoryRowGroup = { key: string; label: string; rows: MemoryRow[] };

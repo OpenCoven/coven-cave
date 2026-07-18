@@ -20,20 +20,110 @@ assert.doesNotMatch(
   "Debug payload blocks should not force unreadable break-all wrapping",
 );
 
-// ── Changes tab (CHAT-D8-01): working-tree review panel in the right panel ────
-
-const surface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+// ── Diagnostic depth (chat-session-debugging S2) ─────────────────────────────
 
 assert.match(
-  surface,
-  /right-panel-changes-header[\s\S]*?Changes/,
-  "Chat right panel should expose a persistent Changes half beneath Inspector/Debug",
+  source,
+  /turnMetaSummary\(turn\)/,
+  "Turn rows should surface the served model + usage/cost meta, not bury it in raw JSON",
 );
 assert.match(
-  surface,
-  /<Panel[\s\S]*id="right-panel-changes"[\s\S]*<SessionChangesPanel \/>/,
-  "Changes half should render SessionChangesPanel persistently",
+  source,
+  /title=\{usageBreakdown\(turn\.usage, turn\.costUsd\) \?\? undefined\}/,
+  "The compact turn meta should carry the full usage breakdown as its tooltip",
 );
+assert.match(
+  source,
+  /formatTimestamp\(session\.created_at, dtPrefs\)/,
+  "Session created/updated must honor the user's datetime prefs (raw ISO stays on the title attr)",
+);
+assert.match(
+  source,
+  /<KVRow k="work branch"/,
+  "Session section should expose the per-session work branch attribution row",
+);
+assert.match(
+  source,
+  /session\?\.model \?\? familiar\?\.model/,
+  "Session model row prefers the daemon-recorded session model over the familiar's configured default",
+);
+
+// ── Export hygiene (chat-session-debugging S3) ───────────────────────────────
+
+assert.match(
+  source,
+  /environment: \{ appVersion: APP_VERSION, exportedAt: new Date\(\)\.toISOString\(\) \}/,
+  "Debug bundles must stamp the exporting build + timestamp for bug reports",
+);
+assert.match(
+  source,
+  /JSON\.stringify\(exportDebugTurn\(turn\), null, 2\)/,
+  "Copy turn and the expanded JSON must strip base64 attachment previews (multi-MB clipboard writes)",
+);
+assert.doesNotMatch(
+  source,
+  /getText=\{\(\) => JSON\.stringify\(turn, null, 2\)\}/,
+  "no raw-turn copy path may remain — every turn export goes through exportDebugTurn",
+);
+assert.match(
+  source,
+  /label="Copy event"/,
+  "Event rows should offer a copy affordance like turn rows do",
+);
+assert.match(
+  source,
+  /tailCapped[\s\S]*?Long event tail[\s\S]*?Load more/,
+  "Hitting the page-cap must surface a truncation notice with a Load more continuation, not truncate silently",
+);
+
+// ── Events filter (chat-session-debugging S4) ────────────────────────────────
+
+assert.match(
+  source,
+  /filterEvents\(events, eventQuery\)/,
+  "The events list renders through the pure filter so behavior stays unit-tested",
+);
+assert.match(
+  source,
+  /aria-label="Filter events by kind or payload text"/,
+  "The filter input must be labelled for screen readers",
+);
+assert.match(
+  source,
+  /\{visibleEvents\.length\}\/\{events\.length\}/,
+  "An active filter shows an honest filtered/total count",
+);
+assert.match(
+  source,
+  /No events match/,
+  "A filter with zero hits says so instead of rendering an empty void",
+);
+
+// ── Live-region announcements (chat-session-debugging S5) ────────────────────
+
+assert.match(
+  source,
+  /if \(copied\) announce\(/,
+  "Copy success must be announced — the check-icon swap is visual-only",
+);
+assert.match(
+  source,
+  /announce\(`Events failed to load: \$\{eventsError\}`, "assertive"\)/,
+  "Events load failures must reach screen readers assertively, not appear as a silent banner",
+);
+assert.match(
+  source,
+  /if \(tailCapped\) announce\(/,
+  "The tail-cap notice must be announced when it appears",
+);
+assert.match(
+  source,
+  /announce\("Following live events"\)/,
+  "Resuming follow announces; scroll-driven pauses stay silent by design (announcement spam)",
+);
+
+// ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
+// rail (the inspector right panel that first carried it is retired) ──────────
 
 const changesPanel = await readFile(
   new URL("./session-changes-panel.tsx", import.meta.url),

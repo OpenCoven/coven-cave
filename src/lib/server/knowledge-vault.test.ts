@@ -51,6 +51,19 @@ assert.deepEqual(normalizeScope(["sage", "echo"]), ["sage", "echo"]);
   assert.deepEqual(parsed, entry, "serialize → parse is lossless");
 }
 
+// unknown frontmatter keys are preserved exactly through parse → serialize → parse
+{
+  const raw = "---\ntitle: Character\ntags: [npc]\ntype: character\nstatus: draft\nflags:\n  - haunted\n  - royal\n---\nBody\n";
+  const parsed = parseKnowledgeFile("character", raw);
+  assert.deepEqual(parsed.extra, {
+    type: "character",
+    status: "draft",
+    flags: ["haunted", "royal"],
+  });
+  const roundTripped = parseKnowledgeFile("character", serializeKnowledgeEntry(parsed));
+  assert.deepEqual(roundTripped.extra, parsed.extra, "extra frontmatter survives serialize round-trip");
+}
+
 // frontmatter-less file → whole thing is body, title falls back to id
 {
   const parsed = parseKnowledgeFile("notes", "just some text\n");

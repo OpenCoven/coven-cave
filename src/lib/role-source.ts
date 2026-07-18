@@ -22,7 +22,7 @@ export function parseRoleFrontmatter(text: string): Record<string, string> {
 
 async function roleDirs(root: string): Promise<string[]> {
   try {
-    const entries = await readdir(root, { withFileTypes: true });
+    const entries = await readdir(/* turbopackIgnore: true */ root, { withFileTypes: true });
     return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch {
     return [];
@@ -37,19 +37,19 @@ async function addRoleFile(
   fallback: { id: string; familiar: string },
 ) {
   try {
-    await stat(rolePath);
+    await stat(/* turbopackIgnore: true */ rolePath);
   } catch {
     return;
   }
 
-  const resolved = path.resolve(rolePath);
+  const resolved = path.resolve(/* turbopackIgnore: true */ rolePath);
   if (seen.has(resolved)) return;
   seen.add(resolved);
 
   let id = fallback.id;
   let familiar = fallback.familiar;
   try {
-    const text = await readFile(resolved, "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ resolved, "utf8");
     const fm = parseRoleFrontmatter(text);
     id = fm.id ?? id;
     familiar = fm.familiar ?? familiar;
@@ -69,9 +69,9 @@ export async function discoverRoleFiles(): Promise<RoleFile[]> {
   const seenKeys = new Set<string>();
 
   for (const familiar of await familiarIds()) {
-    const rolesDir = path.join(await familiarWorkspace(familiar), "roles");
+    const rolesDir = path.join(/* turbopackIgnore: true */ await familiarWorkspace(familiar), "roles");
     for (const roleName of await roleDirs(rolesDir)) {
-      await addRoleFile(files, seen, seenKeys, path.join(rolesDir, roleName, "ROLE.md"), {
+      await addRoleFile(files, seen, seenKeys, path.join(/* turbopackIgnore: true */ rolesDir, roleName, "ROLE.md"), {
         id: roleName,
         familiar,
       });
@@ -80,7 +80,7 @@ export async function discoverRoleFiles(): Promise<RoleFile[]> {
 
   const globalRolesDir = path.join(covenHome(), "roles");
   for (const roleName of await roleDirs(globalRolesDir)) {
-    await addRoleFile(files, seen, seenKeys, path.join(globalRolesDir, roleName, "ROLE.md"), {
+    await addRoleFile(files, seen, seenKeys, path.join(/* turbopackIgnore: true */ globalRolesDir, roleName, "ROLE.md"), {
       id: roleName,
       familiar: "global",
     });
@@ -88,9 +88,9 @@ export async function discoverRoleFiles(): Promise<RoleFile[]> {
 
   const exportedFamiliarsDir = path.join(globalRolesDir, "familiars");
   for (const familiar of await roleDirs(exportedFamiliarsDir)) {
-    const rolesDir = path.join(exportedFamiliarsDir, familiar);
+    const rolesDir = path.join(/* turbopackIgnore: true */ exportedFamiliarsDir, familiar);
     for (const roleName of await roleDirs(rolesDir)) {
-      await addRoleFile(files, seen, seenKeys, path.join(rolesDir, roleName, "ROLE.md"), {
+      await addRoleFile(files, seen, seenKeys, path.join(/* turbopackIgnore: true */ rolesDir, roleName, "ROLE.md"), {
         id: roleName,
         familiar,
       });
@@ -104,7 +104,7 @@ export async function listRoleWorkflowIds(): Promise<string[]> {
   const ids = new Set<string>();
   for (const role of await discoverRoleFiles()) {
     try {
-      const text = await readFile(role.path, "utf8");
+      const text = await readFile(/* turbopackIgnore: true */ role.path, "utf8");
       for (const id of parseRoleListField(text, "workflows")) {
         ids.add(id);
       }

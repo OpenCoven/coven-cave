@@ -14,7 +14,7 @@ export type MdDocument = {
   hasFrontmatter: boolean;
   /** `title:` frontmatter value, when present and a non-empty string. */
   title: string | null;
-  /** Normalized `tags:` list (array or comma/space separated string). */
+  /** Normalized, deduped `tags:` list (array or comma/space separated string). */
   tags: string[];
   /** Every other frontmatter key, preserved for round-tripping. */
   rest: Record<string, unknown>;
@@ -25,14 +25,16 @@ export type MdDocument = {
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 export function normalizeMdTags(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
-  if (typeof value === "string") {
-    return value
+  let tags: string[] = [];
+  if (Array.isArray(value)) tags = value.map((t) => String(t).trim()).filter(Boolean);
+  else if (typeof value === "string") {
+    tags = value
       .split(/[,\s]+/)
       .map((t) => t.trim())
       .filter(Boolean);
   }
-  return [];
+  // Dedupe (first occurrence wins): duplicate tags break React keys downstream.
+  return [...new Set(tags)];
 }
 
 /** Parse raw markdown (with optional YAML frontmatter) into an MdDocument.

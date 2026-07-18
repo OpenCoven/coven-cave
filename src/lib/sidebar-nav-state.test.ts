@@ -35,3 +35,25 @@ test("no split modes provided behaves like an empty list", () => {
   assert.equal(sidebarRowState("board", "home"), "idle");
   assert.equal(sidebarRowState("board", "home", []), "idle");
 });
+
+test("deep-linkable modes hosted by another surface light the host row (cave-s9p6)", () => {
+  assert.equal(sidebarRowState("inbox", "calendar"), "active", "calendar renders on Schedules");
+  assert.equal(sidebarRowState("board", "familiar-work-queue"), "active", "the Queue is a Tasks-hub tab");
+  assert.equal(sidebarRowState("inbox", "flow"), "active", "retired flow remaps to Schedules");
+});
+
+test("Journal is a Memories tab — the Memories (grimoire) row hosts it", () => {
+  // The Journal sidebar row is retired (navHidden): the surface lives as a
+  // tab inside Memories, so the Memories row stays lit on either tab, and a
+  // "journal" deep-link mode lights the Memories row too.
+  assert.equal(
+    sidebarRowState("grimoire", "grimoire"),
+    "active",
+    "Memories row lights for the grimoire mode regardless of tab",
+  );
+  assert.equal(
+    sidebarRowState("grimoire", "journal"),
+    "active",
+    "a journal deep-link mode lights the Memories row",
+  );
+});

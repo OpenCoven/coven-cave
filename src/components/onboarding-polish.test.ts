@@ -49,28 +49,12 @@ assert.doesNotMatch(
   "Onboarding should not auto-close after setup becomes complete; adding a familiar must leave setup open",
 );
 
-// Glyph input validation
-assert.match(
+// Familiar creation (and its glyph validation) moved to the in-app summoning
+// circle — the wizard carries no familiar form fields at all.
+assert.doesNotMatch(
   source,
-  /aria-invalid=\{familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)\}/,
-  "Glyph input should mark itself invalid when a non-ph: value is typed",
-);
-assert.match(
-  source,
-  /Must start with <code className="font-mono">ph:<\/code>/,
-  "Glyph input should explain the validation requirement inline",
-);
-
-// Both create buttons should refuse invalid glyphs
-const createBlocks = source.match(/disabled=\{[\s\S]*?\}/g) ?? [];
-const glyphGated = createBlocks.filter((block) =>
-  /familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)/.test(
-    block,
-  ),
-);
-assert.ok(
-  glyphGated.length >= 2,
-  `Both create buttons should refuse invalid glyphs; found ${glyphGated.length} guarded block(s)`,
+  /familiarGlyph/,
+  "the wizard has no familiar glyph field — the summoning circle owns creation",
 );
 
 // Install polling gives up after a failure budget so a network drop mid-install
@@ -102,13 +86,13 @@ assert.match(
 assert.equal(
   source.match(/(?:onClick=\{finishOnboarding\}|onOpenCave=\{finishOnboarding\})/g)?.length,
   2,
-  "both Open Cave CTAs (footer + meet-familiars step) finish via finishOnboarding",
+  "exactly two finish CTAs — the above-the-fold completion banner and the footer — both via finishOnboarding (the meet-familiars step stays retired)",
 );
 
 // The shared setup-action error banner must be a live alert with a dismiss —
-// every setup action (scaffold, daemon start, familiar create, connection
-// save) reports through it, and a silent <div> means SR users never hear
-// why their click did nothing.
+// every setup action (scaffold, daemon start, connection save) reports
+// through it, and a silent <div> means SR users never hear why their click
+// did nothing.
 assert.match(
   source,
   /\{setupError \? \([\s\S]{0,700}?role="alert"/,
@@ -159,12 +143,12 @@ assert.match(
 );
 
 // ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
-// The six accent-background call-to-action buttons (Create Coven home, Start
-// local daemon, Install both tools, Install <adapter>, Create new Coven
-// familiar, Connect agent) render through <Button variant="primary">, so their
-// radius / height / focus ring / disabled + busy treatment come from one place.
-// The two install CTAs use the primitive's `loading` prop for their spinner.
-// Bordered secondary actions, option cards, and skip links stay bespoke here.
+// The four accent-background call-to-action buttons (Create Coven home, Start
+// local daemon, Install the Coven CLI, Install <adapter>) render through
+// <Button variant="primary">, so their radius / height / focus ring /
+// disabled + busy treatment come from one place. The two install CTAs use the
+// primitive's `loading` prop for their spinner. Bordered secondary actions,
+// option cards, and skip links stay bespoke here.
 assert.match(
   source,
   /import \{ Button \} from "@\/components\/ui\/button"/,
@@ -172,8 +156,8 @@ assert.match(
 );
 assert.equal(
   (source.match(/<Button\s+variant="primary"/g) ?? []).length,
-  6,
-  'all six primary CTAs render through <Button variant="primary">',
+  4,
+  'all four primary CTAs render through <Button variant="primary">',
 );
 assert.match(
   source,
@@ -182,13 +166,108 @@ assert.match(
 );
 assert.match(
   source,
-  /<Button[\s\S]{0,140}loading=\{busy \|\| covenCodeJobRunning\}/,
-  "the Install-both CTA uses the primitive's loading state for its spinner",
+  /<Button[\s\S]{0,140}loading=\{installBusy\}/,
+  "the OpenCoven tools CTA uses the primitive's loading state for its spinner",
 );
 assert.doesNotMatch(
   source,
   /className="focus-ring inline-flex[^"]*bg-\[var\(--accent-presence\)\][^"]*text-\[var\(--accent-presence-foreground\)\]/,
   "the hand-rolled accent-bg CTA recipe is gone (now Button variant=primary)",
+);
+
+// ── cave-uvv7: the finish CTA keeps its promise ──────────────────────────────
+// "Open Cave — summon your familiar" must actually open the Summoning Circle
+// (requestSummonFamiliar walks to Familiars AND latches the circle open) when
+// the wizard's own fresh status shows a live daemon and an empty roster. The
+// decision must NOT ride the workspace's daemonRunning poll, which can lag a
+// just-auto-started daemon. Skip/Escape stay non-pushy: only finishOnboarding
+// summons.
+assert.match(
+  source,
+  /import \{ requestSummonFamiliar \} from "@\/lib\/summon-events"/,
+  "the finish path routes through the shared summon-events wiring",
+);
+assert.match(
+  source,
+  /const finishOnboarding = useCallback\(\(\) => \{[\s\S]*?if \(s\?\.daemon\.ok && !s\.familiars\.ok\) requestSummonFamiliar\(\);[\s\S]*?onDismiss\(\);/,
+  "finishOnboarding opens the Summoning Circle for a familiar-less machine with a live daemon",
+);
+assert.equal(
+  (source.match(/requestSummonFamiliar\(\);/g) ?? []).length,
+  1,
+  "only the finish CTA summons the circle — Skip for now and Escape never do",
+);
+
+// ── cave-uvv7: three-beat journey strip ──────────────────────────────────────
+// The wizard is beat one of Set up → Summon → First chat; the strip keeps the
+// page from reading as a dead-ended infra checklist.
+assert.match(
+  source,
+  /function JourneyStrip\(/,
+  "the journey strip component exists",
+);
+assert.match(
+  source,
+  /aria-label="First-run journey"/,
+  "the journey strip is labelled for assistive tech",
+);
+for (const beat of ["Set up Cave", "Summon a familiar", "First chat"]) {
+  assert.match(
+    source,
+    new RegExp(`label: "${beat}"`),
+    `journey strip carries the "${beat}" beat`,
+  );
+}
+assert.match(
+  source,
+  /<JourneyStrip\s+setupDone=\{setupComplete\}\s+familiarDone=\{hasFamiliars\}/,
+  "the strip's beats derive from live status (server complete / familiars step)",
+);
+
+// ── cave-uvv7: completion surfaces above the fold ────────────────────────────
+// The footer CTA sits below the fold of a long page; when the last step ticks
+// the user must see the next action without scrolling.
+assert.match(
+  source,
+  /\{setupComplete \? \([\s\S]{0,1200}?Setup complete — Cave is ready\./,
+  "a completion banner renders at the top of the wizard once setup is done",
+);
+assert.match(
+  source,
+  /\{hasFamiliars \? "Open Cave" : "Open Cave — summon your familiar"\}/,
+  "the footer CTA only promises a summoning when the roster is actually empty",
+);
+
+// ── cave-r6ro: setup failures carry a hint and a retry, never a dead end ─────
+// scaffold / daemon-start / connection-save previously dumped a raw message
+// into the banner with only a Dismiss — no next step, no way to try again
+// without hunting for the original button.
+for (const action of ["scaffold", "daemon-start", "connection-save"]) {
+  assert.match(
+    source,
+    new RegExp(`classifySetupFailure\\("${action}", err\\)`),
+    `${action} failures are classified into message + derived hint`,
+  );
+}
+assert.match(
+  source,
+  /\{setupError\.hint \? \(/,
+  "the banner renders the derived hint when the failure class is known",
+);
+assert.match(
+  source,
+  /onClick=\{retrySetupAction\}/,
+  "the banner offers a retry that re-runs exactly the failed action",
+);
+assert.match(
+  source,
+  /\{setupRetryLabel\(setupError\.action\)\}/,
+  "the retry affordance names the action it will re-run",
+);
+assert.match(
+  source,
+  /if \(!setupError \|\| setupRetryBusy\) return;/,
+  "retry is a no-op while the action is already in flight (no stacked requests)",
 );
 
 console.log("onboarding-polish.test.ts: ok");

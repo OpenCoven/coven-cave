@@ -11,6 +11,7 @@ const TRUST_LABEL: Record<string, string> = {
   "reference-local": "Reference",
   "preview-local": "Preview",
   "local-tool": "Local tool",
+  "local-draft": "Draft",
 };
 
 type Props = {
@@ -26,6 +27,8 @@ type Props = {
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "ph:books";
+  if (kind === "craft") return "ph:package-bold";
   if (kind === "mcp") return "ph:plug-bold";
   if (kind === "api") return "ph:cloud-bold";
   if (kind === "prompt") return "ph:chat-centered-text";
@@ -33,13 +36,27 @@ function kindIcon(kind: MarketplacePlugin["kind"]) {
 }
 
 function kindLabel(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "Knowledge pack";
+  if (kind === "craft") return "Craft";
   if (kind === "mcp") return "MCP";
   if (kind === "api") return "API";
   if (kind === "prompt") return "Prompts";
   return "Skill";
 }
 
+// What "Add" actually does differs by kind — the button says so on hover
+// instead of leaving the verb ambiguous.
+function addHelp(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "Preview the pack manifest, choose a seed target, and install bundled skills";
+  if (kind === "craft") return "Preview the exact Codex install and Role capability plan";
+  if (kind === "mcp") return "Add this MCP server to your Cave — familiars can call its tools";
+  if (kind === "api") return "Connect this API so your familiars can use it";
+  if (kind === "prompt") return "Add this prompt pack — its templates join the / menu";
+  return "Install this skill — familiars load it while they work";
+}
+
 function setupEffortLabel(plugin: MarketplacePlugin) {
+  if (plugin.draft) return { icon: "ph:pencil-simple" as const, label: "Draft" };
   if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
   if (plugin.requiresSetup && !plugin.configured) {
     const fields = plugin.requiredConfig.length;
@@ -105,12 +122,51 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             </span>
           </span>
         </button>
-        {state === "needs-setup" ? (
+        {plugin.kind === "craft" && plugin.draft ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:pencil-simple"
+            onClick={() => onOpen(plugin.id)}
+            title="Review this local Craft draft"
+          >
+            Draft
+          </Button>
+        ) : plugin.kind === "knowledge-pack" && state !== "unavailable" ? (
+          <Button
+            variant={state === "added" ? "secondary" : "primary"}
+            size="sm"
+            leadingIcon={state === "added" ? "ph:check" : "ph:books"}
+            loading={busy}
+            onClick={() => onOpen(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            {state === "added" ? "Seed" : "Preview"}
+          </Button>
+        ) : plugin.kind === "craft" && state !== "unavailable" ? (
+          <Button
+            variant={state === "added" ? "secondary" : "primary"}
+            size="sm"
+            leadingIcon={state === "added" ? "ph:check" : "ph:package-bold"}
+            loading={busy}
+            onClick={() => onOpen(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            {state === "added" ? "Manage" : "Preview"}
+          </Button>
+        ) : state === "needs-setup" ? (
           <Button variant="primary" size="sm" leadingIcon="ph:warning" onClick={() => onConfigure(plugin.id)}>
             Set up
           </Button>
         ) : state === "added" ? (
-          <Button variant="secondary" size="sm" leadingIcon="ph:check" loading={busy} onClick={() => onRemove(plugin.id)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:check"
+            loading={busy}
+            onClick={() => onRemove(plugin.id)}
+            title="In your Cave — click to remove it"
+          >
             Added
           </Button>
         ) : state === "unavailable" ? (
@@ -118,7 +174,14 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             Unavailable
           </Button>
         ) : (
-          <Button variant="primary" size="sm" leadingIcon="ph:plus" loading={busy} onClick={() => onAdd(plugin.id)}>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:plus"
+            loading={busy}
+            onClick={() => onAdd(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
             Add
           </Button>
         )}

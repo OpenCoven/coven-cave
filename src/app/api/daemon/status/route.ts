@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig, loadState, recordLocalSubdaemonWakeRequest, recordTravelHubReachability } from "@/lib/cave-config";
 import {
-  callDaemon,
+  callDaemonTarget,
   daemonTargetForConfig,
   extractDaemonError,
   type DaemonResponse,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
+import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
 import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -46,6 +47,14 @@ function failureReason(target: DaemonTarget, res: DaemonResponse<unknown>) {
   return `hub unreachable: ${detail}`;
 }
 
+function failureAvailability(target: DaemonTarget, res: DaemonResponse<unknown>) {
+  return classifyDaemonFailureAvailability({
+    targetMode: target.mode,
+    responseStatus: res.status,
+    reason: extractDaemonError(res),
+  });
+}
+
 export async function GET() {
   const config = await loadConfig();
   const target = daemonTargetForConfig(config);
@@ -61,6 +70,7 @@ export async function GET() {
     });
     return NextResponse.json({
       running: false,
+      availability: "misconfigured",
       reason: target.error,
       target: targetSummary(target),
       executors: executorStatuses,
@@ -70,7 +80,11 @@ export async function GET() {
     });
   }
 
-  const res = await callDaemon<Health>({ path: "/api/v1/health", timeoutMs: 1500 });
+  // Use the same resolved target for the health request, response metadata,
+  // and failure classification. Reloading config inside callDaemon() created
+  // a race where a connection-mode change could query one target while the
+  // response claimed (and classified) another.
+  const res = await callDaemonTarget<Health>(target, { path: "/api/v1/health", timeoutMs: 1500 });
   let travelReplay: TravelOfflineReplayResult | null = null;
   if (target.mode === "hub") {
     hubReachable = hubAnswered(res);
@@ -100,6 +114,7 @@ export async function GET() {
   if (!res.ok || !res.data) {
     return NextResponse.json({
       running: false,
+      availability: failureAvailability(target, res),
       reason: failureReason(target, res),
       target: targetSummary(target),
       executors: executorStatuses,
@@ -115,6 +130,7 @@ export async function GET() {
       : null;
   return NextResponse.json({
     running: true,
+    availability: "online",
     apiVersion: res.data.apiVersion,
     covenVersion: displayCovenVersion({
       daemonVersion: res.data.covenVersion,

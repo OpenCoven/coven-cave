@@ -4,6 +4,7 @@ import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { CaveConfig } from "./cave-config.ts";
+import { storedHubAccessToken } from "./hub-access-token.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -97,7 +98,11 @@ function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }
   const normalized = normalizeHubUrl(rawUrl);
   if (!normalized) return null;
   const url = new URL(normalized);
-  const accessToken = url.searchParams.get("coven_access_token")?.trim() || undefined;
+  // An embedded token (a freshly pasted invite URL, or an env-provided URL)
+  // wins; otherwise fall back to the out-of-config custody the config
+  // sanitizer maintains (cave-1v95): env override, then the encrypted vault.
+  const embedded = url.searchParams.get("coven_access_token")?.trim();
+  const accessToken = embedded || storedHubAccessToken() || undefined;
   url.search = "";
   url.hash = "";
   return {

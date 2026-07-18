@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { deriveAnalyticsInsight } from "./familiar-analytics-insight.ts";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data.ts";
+import type { ThreadConfidence } from "./thread-confidence.ts";
+
+/** Thread-derived confidence with only the fields the insight reads. */
+function confidence(score: number, label: ThreadConfidence["label"], hasData = true): ThreadConfidence {
+  return {
+    score,
+    label,
+    hasData,
+    reportCount: hasData ? 1 : 0,
+    metrics: [],
+    contextCounts: { adequate: 0, tight: 0, excess: 0, critical: 0 },
+  };
+}
 
 // Build a model with only the fields the insight reads; cast the rest.
 function model(over: Partial<FamiliarAnalyticsModel> = {}): FamiliarAnalyticsModel {
@@ -9,11 +22,9 @@ function model(over: Partial<FamiliarAnalyticsModel> = {}): FamiliarAnalyticsMod
     familiar: null,
     contractReport: null,
     growthReport: null,
-    confidence: { score: 50, label: "Developing", factors: [] },
+    confidence: confidence(50, "Developing"),
     healRequests: [],
     threadReports: [],
-    responseConfidenceEvents: [],
-    responseConfidenceRollup: {} as FamiliarAnalyticsModel["responseConfidenceRollup"],
     errors: [],
     ...over,
   } as FamiliarAnalyticsModel;
@@ -31,8 +42,22 @@ function growth(healthLabel: string, retroAcceptRate: number | null = null) {
 
 // ---- leads with confidence + activity ----
 {
-  const i = deriveAnalyticsInsight(model({ confidence: { score: 80, label: "Trusted", factors: [] }, growthReport: growth("active") }), 0);
+  const i = deriveAnalyticsInsight(model({ confidence: confidence(80, "Trusted"), growthReport: growth("active") }), 0);
   assert.match(i.text, /^Trusted, actively used/, "leads with label + activity phrase");
+}
+
+// ---- unmeasured confidence (no thread reports) leads honestly ----
+{
+  const i = deriveAnalyticsInsight(model({ confidence: confidence(0, "Low", false), growthReport: growth("active") }), 0);
+  assert.match(i.text, /^Unmeasured, actively used/, "no reports → 'Unmeasured', never a fake Low");
+  assert.equal(i.tone, "good", "unmeasured alone is not a warning");
+}
+
+// ---- low thread confidence is a named concern with warn tone ----
+{
+  const i = deriveAnalyticsInsight(model({ confidence: confidence(32, "Low"), growthReport: growth("active") }), 0);
+  assert.equal(i.tone, "warn", "measured-low confidence → warn");
+  assert.match(i.text, /thread confidence low \(32\/100\)/, "names the low score");
 }
 
 // ---- concerns: contract failing dominates tone ----
@@ -59,7 +84,7 @@ function growth(healthLabel: string, retroAcceptRate: number | null = null) {
 // ---- all clear → good, lists positives ----
 {
   const i = deriveAnalyticsInsight(model({
-    confidence: { score: 90, label: "Trusted", factors: [] },
+    confidence: confidence(90, "Trusted"),
     contractReport: contract(true, 5, 5),
     growthReport: growth("active", 0.8),
     threadReports: [{}] as FamiliarAnalyticsModel["threadReports"],

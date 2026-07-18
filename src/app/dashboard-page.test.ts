@@ -13,7 +13,16 @@ assert.match(page, /dr-page/, "dashboard should use the shared surface styling")
 
 const cockpitUrl = new URL("../components/dashboard/dashboard-cockpit.tsx", import.meta.url);
 assert.equal(existsSync(cockpitUrl), true, "DashboardCockpit component should exist");
-const cockpit = readFileSync(cockpitUrl, "utf8");
+// The cockpit is split across the data/layout root, the presentational panel
+// layer, the pure label helpers (cave-tsoz), and the contract-fetch hook
+// (cave-hwux) — this contract covers the whole surface, so read the split as
+// one source.
+const cockpit = [
+  readFileSync(cockpitUrl, "utf8"),
+  readFileSync(new URL("../components/dashboard/cockpit-panels.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/dashboard-cockpit-format.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/use-familiar-contracts.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // The cockpit folds the original triage/summary zones in…
 assert.match(cockpit, /ActionInbox/, "cockpit keeps the action inbox (triage) panel");
@@ -40,10 +49,21 @@ assert.match(cockpit, /dashboardSignals/, "cockpit derives predictive signals");
 assert.match(cockpit, /case "signals"/, "a Signals panel is wired into the layout switch");
 assert.match(cockpit, /case "confidence"/, "a Confidence/performance panel is wired into the layout switch");
 assert.match(cockpit, /Heatmap/, "confidence renders the visx heatmap primitive");
-assert.match(cockpit, /deriveConfidenceScore/, "confidence reuses the shared scoring helper");
-assert.match(cockpit, /deriveGrowthReport/, "confidence composes the growth report for scoring");
-assert.match(cockpit, /\/api\/retro-runs/, "confidence pulls the shared retro-runs snapshot");
-assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "confidence pulls each familiar's contract");
+// Confidence is the thread metric — real self-reports scored by the same
+// helper the familiar analytics page reads — not the retired synthetic
+// weighted-factor score (familiar-confidence.ts).
+assert.match(cockpit, /deriveThreadConfidence/, "confidence derives from real thread self-reports");
+assert.doesNotMatch(cockpit, /familiar-confidence/, "the synthetic weighted-factor lib is gone from the cockpit");
+assert.doesNotMatch(cockpit, /deriveConfidenceScore/, "no synthetic confidence scoring remains");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/self-reports\?limit=/, "confidence pulls each familiar's thread self-reports");
+assert.match(cockpit, /deriveGrowthReport/, "growth report still derives the health badge");
+assert.match(cockpit, /\/api\/retro-runs/, "vitals pull the shared retro-runs snapshot");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "the contract column pulls each familiar's contract");
+assert.match(
+  readFileSync(cockpitUrl, "utf8"),
+  /useFamiliarContracts\(data\.familiars\)/,
+  "the root sources contracts/retro through the extracted hook (cave-hwux), not an inline effect",
+);
 
 // ── Insights reframe: the dashboard leads with coven-wide analytics ──
 
@@ -157,6 +177,105 @@ const heatmap = readFileSync(new URL("../components/ui/charts/heatmap.tsx", impo
 assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
 assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
 assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
-assert.match(cockpit, /ariaLabel=\{`Confidence factors by familiar:/, "confidence heatmap passes a data summary to AT");
+assert.match(cockpit, /ariaLabel=\{`Thread confidence metrics by familiar:/, "confidence heatmap passes a data summary to AT");
+
+// ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────
+// dnd-kit's default announcements read the raw widget ids; the cockpit supplies
+// its own with human panel titles + 1-based positions, and each grip names its
+// panel instead of a generic "Drag to rearrange".
+assert.match(cockpit, /const dragAnnouncements: Announcements = \{/, "cockpit defines custom drag announcements");
+assert.match(cockpit, /accessibility=\{\{ announcements: dragAnnouncements \}\}/, "DndContext receives the custom announcements");
+assert.match(cockpit, /moved to position \$\{pos\.index\} of \$\{pos\.count\}/, "drops announce the panel's new position");
+assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each grip names its panel");
+// The titles map must cover every layout id, or announcements degrade to ids.
+{
+  const layoutIds = cockpit.match(/DEFAULT_LAYOUT: Layout = \{\s*main: \[([^\]]*)\],\s*rail: \[([^\]]*)\]/s);
+  const ids = `${layoutIds[1]},${layoutIds[2]}`.match(/"([^"]+)"/g).map((q) => q.slice(1, -1));
+  for (const id of ids) {
+    assert.match(cockpit, new RegExp(`^  ${id}: "`, "m"), `PANEL_TITLES covers "${id}"`);
+  }
+}
+
+// ── ActionInbox follows the cockpit's 30s repoll (cave-bzch) ─────────────────
+// The widget froze on its mount-time copy; it now adopts each fresh
+// needsAttention list, with locally-acted ids filtered until the incoming
+// list confirms removal (a racing poll can't resurrect a cleared row).
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  assert.match(inbox, /setItems\(initialItems\.filter\(\(it\) => !actedIdsRef\.current\.has\(it\.id\)\)\)/, "prop updates sync into the widget minus acted ids");
+  assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
+  assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
+}
+// ── The model is live, not a first-paint fossil (cave-456r) ──────────────────
+// cave-bzch's adoption only matters if fresh props ever arrive: the server
+// model is just the seed — each poll pulls the full inbox and rebuilds the
+// model client-side, so cleared items leave, newly fired ones appear, and
+// caught-up flips truthfully.
+assert.match(cockpit, /getJson<\{ items: InboxItem\[\] \}>\("\/api\/inbox"\)/, "cockpit polls the full inbox (fired items included), not just status=pending");
+assert.match(cockpit, /if \(r\?\.items\) \{\s*\n\s*put\("inbox", r\.items\);/, "a failed inbox poll keeps the last known good list instead of flashing 'all clear'");
+assert.match(cockpit, /buildDashboardModel\(data\.inbox, new Date\(\)\)/, "each poll rebuilds the dashboard model from the live inbox");
+assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pending filter the old query param provided");
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  // Caught up is a designed state: the section stays (stable grid slot, calm
+  // all-clear read) instead of vanishing — and the bare-widget mount means no
+  // outer Panel is left husking a stale count over an empty body.
+  assert.match(cockpit, /case "needs": return <ActionInbox initialItems=\{model\.needsAttention\} openCount=\{model\.openCount\} onOpenCount=\{setLiveOpen\} \/>;/, "needs widget mounts ActionInbox bare — no double chrome, no husk Panel");
+  assert.doesNotMatch(inbox, /if \(items\.length === 0\) return null/, "an empty list no longer unmounts the section");
+  assert.match(inbox, /All clear — nothing needs you right now\./, "caught-up renders an honest all-clear state");
+  assert.match(inbox, /caughtUp \? "ph:check-circle-bold" : "ph:warning-circle"/, "the section icon relaxes when caught up");
+  assert.match(inbox, /\{caughtUp \? null : <span className="dr-count">\{liveTotal\}<\/span>\}/, "the live count hides at zero instead of reading 0");
+}
+// ── Counts are truthful past the display cap (cave-ckxk) ─────────────────────
+// needsAttention is capped at 8 for display; the true open total is
+// DashboardModel.openCount. The widget badge, its caught-up read, and the
+// Needs-you vital all use the uncapped total — an emptied visible page with
+// more items behind it is NOT "all clear" — and overflow drills into the
+// owning Rituals surface instead of silently truncating.
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  const model = readFileSync(new URL("../lib/dashboard-model.ts", import.meta.url), "utf8");
+  assert.match(model, /openCount: breakdown\.openItems\.length/, "the model carries the uncapped open total");
+  assert.match(inbox, /const optimisticRemovals = Math\.max\(0, initialItems\.length - items\.length\)/, "the removal delta clamps at 0 so a failed-action revert can't overshoot");
+  assert.match(inbox, /const liveTotal = Math\.max\(0, openCount - optimisticRemovals\)/, "the widget derives a live total that tracks optimistic removals");
+  assert.match(inbox, /const caughtUp = liveTotal === 0/, "all-clear reads the uncapped total, not the visible page");
+  assert.match(inbox, /const hidden = Math\.max\(0, liveTotal - items\.length\)/, "overflow counts the items beyond the visible cap");
+  assert.match(inbox, /\+\{hidden\} more — open Rituals/, "overflow drills through instead of silently truncating");
+  assert.match(inbox, /className="dash-inbox__more focus-ring" href="\/\?mode=inbox"/, "the drill-through targets the Rituals surface");
+  assert.match(inbox, /onOpenCountRef\.current\?\.\(liveTotal\)/, "the widget reports its live total up");
+  assert.match(cockpit, /value: liveOpen \?\? model\.openCount, label: "Needs you"/, "the Needs-you vital reads the uncapped live total");
+  assert.match(cockpit, /metric: "needs", good: "down", href: "\/\?mode=inbox"/, "the Needs-you vital drills into Rituals like every other tile");
+  assert.match(cockpit, /needs: model\.openCount/, "trend snapshots record the uncapped total");
+  assert.doesNotMatch(cockpit, /model\.needsAttention\.length/, "nothing reads the capped list length as if it were the open total");
+}
+// The workspace SSE 'updated' branch bails on content-equal echoes, so an
+// optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
+// of every inboxItemsWithEphemeral consumer.
+{
+  const ws = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+  assert.match(ws, /if \(JSON\.stringify\(prev\[idx\]\) === JSON\.stringify\(e\.item\)\) return prev;/, "SSE update echoes keep the array identity");
+  // Same guard for the reconnect path: a snapshot that matches current state
+  // must not re-render every inboxItemsWithEphemeral consumer.
+  assert.match(
+    ws,
+    /setInboxItems\(\(prev\) => \(arrayContentEqual\(prev, e\.items\) \? prev : e\.items\)\);/,
+    "SSE reconnect snapshots keep the array identity when content-identical",
+  );
+}
+
+// The dashboard's inline today-summary renders the stored narrative; legacy
+// narratives may still carry the piggybacked <coven:next-paths> block, so the
+// render must exclude it.
+{
+  const todaySummary = readFileSync(
+    new URL("../components/dashboard/today-summary.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    todaySummary,
+    /extractNextPaths\(summary\.narrative\.text\)\.visible/,
+    "today-summary should exclude the next-paths suggestions block from the narrative",
+  );
+}
 
 console.log("dashboard-page.test.ts: ok");

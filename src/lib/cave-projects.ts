@@ -10,6 +10,8 @@ export {
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
+import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
+import { caveHome } from "./coven-paths.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -19,12 +21,20 @@ type ProjectsFile = {
 function projectsFilePath(): string {
   return (
     process.env.CAVE_PROJECTS_PATH_OVERRIDE ??
-    path.join(homedir(), ".coven", "cave-projects.json")
+    path.join(caveHome(), "projects.json")
   );
 }
 
 function normalizeRoot(root: string): string {
-  const normalized = root.trim().replace(/\\/g, "/");
+  let trimmed = root.trim();
+  // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
+  // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
+  // stayed empty and the project looked dead (cave-psp8).
+  if (trimmed === "~") trimmed = homedir();
+  else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    trimmed = path.join(homedir(), trimmed.slice(2));
+  }
+  const normalized = trimmed.replace(/\\/g, "/");
   let endIndex = normalized.length;
   while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
   return normalized.slice(0, endIndex) || "/";
@@ -65,7 +75,15 @@ export async function loadProjects(): Promise<CaveProject[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as Partial<ProjectsFile>;
-    return Array.isArray(parsed.projects) ? parsed.projects : [];
+    if (!Array.isArray(parsed.projects)) return [];
+    // Dedupe at the source of truth: the normalized path IS the project
+    // identity. createProject/patchProject keep new writes one-per-root, but
+    // duplicates persisted before that guard (or written by hand) would
+    // otherwise leak into every server consumer (projectById,
+    // trustedProjectCwd, permission filtering) while the UI hid them via
+    // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
+    // the next mutation persists the deduped list, self-healing the file.
+    return dedupeByRoot(parsed.projects, normalizeRoot);
   } catch {
     return [];
   }
@@ -83,11 +101,19 @@ export function createProject(input: {
 }): Promise<CaveProject> {
   return withWriteMutex(async () => {
     const projects = await loadProjects();
+    const root = normalizeRoot(input.root);
+    // One project per root. Creating at an already-registered root would persist
+    // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
+    // server (projectById / trustedProjectCwd) can still resolve to — a
+    // client/server divergence. Return the existing project idempotently instead
+    // ("this folder is already a project → here it is").
+    const existing = projects.find((entry) => normalizeRoot(entry.root) === root);
+    if (existing) return existing;
     const now = new Date().toISOString();
     const project: CaveProject = {
       id: nanoid(),
       name: input.name.trim(),
-      root: normalizeRoot(input.root),
+      root,
       color: input.color,
       createdAt: now,
       updatedAt: now,
@@ -108,10 +134,22 @@ export function patchProject(
     const idx = projects.findIndex((project) => project.id === id);
     if (idx < 0) return null;
     const current = projects[idx];
+    // A root change that would collide with a *different* project is dropped —
+    // it keeps the one-project-per-root invariant that createProject enforces, so
+    // a rename-onto-another-root can't fork the on-disk store into two entries
+    // for one path. Name/color still apply.
+    let nextRoot = current.root;
+    if (patch.root !== undefined) {
+      const candidate = normalizeRoot(patch.root);
+      const collides = projects.some(
+        (entry) => entry.id !== id && normalizeRoot(entry.root) === candidate,
+      );
+      if (!collides) nextRoot = candidate;
+    }
     const updated: CaveProject = {
       ...current,
       name: patch.name !== undefined ? patch.name.trim() : current.name,
-      root: patch.root !== undefined ? normalizeRoot(patch.root) : current.root,
+      root: nextRoot,
       updatedAt: new Date().toISOString(),
     };
     if (patch.color !== undefined) {
@@ -155,4 +193,19 @@ export function projectById(
 ): CaveProject | null {
   if (!id) return null;
   return projects.find((project) => project.id === id) ?? null;
+}
+
+/**
+ * The server-trusted working directory for a card assigned to `projectId`: the
+ * project's own root, loaded server-side. A card's `cwd` must never be taken
+ * from a client body alongside a `projectId` — the two could contradict, and a
+ * mismatched cwd then feeds board search (`cwd:` token), display, and the
+ * no-project chat fallback (cave-pw83). Returns `{ ok: false }` when the id
+ * doesn't resolve so the caller can reject with a 409.
+ */
+export async function trustedProjectCwd(
+  projectId: string,
+): Promise<{ ok: true; root: string } | { ok: false }> {
+  const project = projectById(projectId, await loadProjects());
+  return project ? { ok: true, root: project.root } : { ok: false };
 }

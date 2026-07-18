@@ -18,6 +18,12 @@ assert.match(
 
 assert.match(
   source,
+  /callDaemonTarget<Health>\(target,/,
+  "the health request and status metadata should use the same resolved daemon target",
+);
+
+assert.match(
+  source,
   /target: targetSummary\(target\)/,
   "daemon status response should include the current target summary",
 );
@@ -92,6 +98,18 @@ assert.match(
   source,
   /res\.status === 401 \|\| res\.status === 403[\s\S]*hub unauthorized/,
   "hub auth failures should be labelled separately instead of treated as offline",
+);
+
+assert.match(
+  source,
+  /availability: failureAvailability\(target, res\)/,
+  "daemon failures should expose a machine-readable availability classification",
+);
+
+assert.match(
+  source,
+  /running: true,[\s\S]{0,80}availability: "online"/,
+  "a healthy daemon should expose online availability",
 );
 
 console.log("daemon status route.test.ts: ok");

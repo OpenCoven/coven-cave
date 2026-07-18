@@ -13,7 +13,7 @@ Coven familiar's run history, so a familiar's work can be evaluated in HFR.
 
 ## Why the conversation file is the source
 
-A Coven Cave conversation file (`$COVEN_HOME/cave-conversations/<sessionId>.json`)
+A Coven Cave conversation file (`$COVEN_HOME/cave/conversations/<sessionId>.json`)
 is the richest self-contained record of what a familiar actually did: every tool
 call with `input`/`output`/`status`/`durationMs`, per-turn token `usage` and
 `costUsd`, and the assistant's answers. That maps cleanly onto HFR's observer-hook
@@ -30,7 +30,7 @@ pnpm hfr:export --subagents links.json   # splice in delegation edges
 
 | Flag | Meaning |
 |------|---------|
-| `--dir <path>` | conversations dir (default `$COVEN_HOME/cave-conversations`) |
+| `--dir <path>` | conversations dir (default `$COVEN_HOME/cave/conversations`) |
 | `--session <id>` | export a single conversation |
 | `--familiar <id>` | filter to one familiar (the eval scope) |
 | `--subagents <path>` | JSON array of `{parentSessionId, childSessionId, familiarId?, status?, startedAt?, endedAt?}` |

@@ -21,8 +21,7 @@ describe("Familiar growth view", () => {
     assert.match(globals, /\.growth-triage__chip--active/);
   });
 
-  it("renders a 14-day pulse per roster row and in the report", () => {
-    assert.match(view, /<PulseBars pulse=\{pulse\} size="sm"/);
+  it("renders the 14-day session pulse in the report", () => {
     assert.match(report, /<PulseBars/);
     assert.match(report, /buildSessionPulse/);
   });
@@ -33,9 +32,25 @@ describe("Familiar growth view", () => {
     assert.match(report, /vs prior 7d/);
   });
 
-  it("keeps the roster analytics link on a proper class (no ad-hoc utility strings)", () => {
-    assert.match(view, /growth-familiar__analytics/);
-    assert.doesNotMatch(view, /ml-\[54px\]/);
+  it("selects familiars via a dropdown so the roster scales to any count (cave-4d3n)", () => {
+    assert.match(view, /import \{ StandardSelect, type StandardSelectGroup \} from "@\/components\/ui\/select"/);
+    assert.match(view, /label="Select familiar"/, "the dropdown carries an accessible label");
+    assert.match(view, /className="growth-picker__select focus-ring"/);
+    assert.doesNotMatch(view, /growth-sidebar/, "the fixed sidebar roster list is gone");
+    assert.match(globals, /\.growth-picker\s*\{/, "the picker bar has its own styles");
+  });
+
+  it("groups dropdown options by health, attention-first, and hides empty groups", () => {
+    assert.match(view, /HEALTH_KEYS\.map\(\(key\) => \(\{/, "groups follow the stalled → active order");
+    assert.match(view, /HEALTH_GROUP_LABELS\[key\]/);
+    assert.match(view, /\$\{triage\[key\]\}/, "each group heading carries its familiar count");
+    assert.match(view, /filter\(\(group\) => group\.options\.length > 0\)/);
+    assert.match(view, /reportSummary\(familiarStats, retro\)/, "options keep the per-familiar summary as detail text");
+  });
+
+  it("shows the selected familiar's health dot in the dropdown trigger", () => {
+    assert.match(view, /growth-picker__value/);
+    assert.match(view, /growth-dot growth-dot--\$\{selected\.report\.healthLabel\}/);
   });
 
   it("announces quiet refreshes to assistive tech", () => {
@@ -43,8 +58,19 @@ describe("Familiar growth view", () => {
     assert.match(view, /announce\("Growth data refreshed\."\)/);
   });
 
-  it("marks the selected roster row for assistive tech", () => {
-    assert.match(view, /aria-pressed=\{selectedItem\}/);
+  it("drops stale load settles — only the latest issued load writes state (cave-5p5m)", () => {
+    // Mount, manual refresh, 60s poll, and on-focus refresh interleave; an
+    // older slower response must not overwrite fresher data or raise a stale
+    // error over it.
+    assert.match(view, /const gen = \+\+generation\.current/);
+    assert.match(view, /if \(generation\.current !== gen\) return;/);
+    assert.match(view, /if \(generation\.current === gen\) \{\s*setLoading\(false\);/);
+  });
+
+  it("carries a truthful freshness stamp, set when data lands (cave-5p5m)", () => {
+    assert.match(view, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "stamped on load settle, not render");
+    assert.match(view, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "renders as a semantic relative time");
+    assert.match(globals, /\.growth-hero__updated/, "the stamp has its own class");
   });
 
   it("responds to pane width via container queries", () => {
@@ -54,5 +80,26 @@ describe("Familiar growth view", () => {
 
   it("tints signal cards by severity with a left border (not color alone)", () => {
     assert.match(globals, /\.growth-signal--crit \{ border-left-color: var\(--color-danger\); \}/);
+  });
+
+  it("keeps the triage surface live with a silent pausable poll", () => {
+    assert.match(view, /usePausablePoll\(\(\) => void load\(\{ quiet: true, silent: true \}\), 60_000\)/);
+    assert.match(view, /if \(quiet && !silent\) announce\("Growth data refreshed\."\)/, "polls refresh without announcing; manual refresh still announces");
+  });
+
+  it("gives every non-healthy growth signal a next-step action link", () => {
+    assert.match(report, /function signalAction/, "signal kinds map to the surface where the fix happens");
+    assert.match(report, /case "session-gap":/);
+    assert.match(report, /Resume latest session/, "activity gaps resume the newest thread when one exists");
+    assert.match(report, /case "no-memory":/);
+    assert.match(report, /case "low-accept-rate":/);
+    assert.match(report, /analytics#fa-confidence/, "retro signals drill into the confidence impact");
+    assert.match(report, /className="growth-signal__action focus-ring"/, "actions render as styled links");
+    assert.match(globals, /\.growth-signal__action\s*\{/);
+  });
+
+  it("turns the 14d session count into a drill-through to the analytics sessions list", () => {
+    assert.match(report, /analytics#fa-sessions/, "activity head links to the recent-sessions section");
+    assert.match(report, /className="growth-section__link focus-ring"/);
   });
 });

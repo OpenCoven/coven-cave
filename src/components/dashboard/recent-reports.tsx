@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 import { Icon } from "@/lib/icon";
 import { EmptyState, SectionHead } from "@/components/daily-report-ui";
 import { relativeDayLabel, type RecentReport } from "@/lib/daily-report";
@@ -11,14 +12,12 @@ export function RecentReports({
   now: Date;
   hasFeatured: boolean;
 }) {
-  const VISIBLE = 7;
-  const hiddenCount = Math.max(0, reports.length - VISIBLE);
   return (
     <section className="dr-section" id="recent-reports" aria-label="Recent daily reports">
       <SectionHead icon="ph:newspaper" title="Recent daily reports" count={reports.length} />
       {reports.length > 0 ? (
-        <div className="dr-list">
-          {reports.slice(0, VISIBLE).map((report) => {
+        <div className="dr-list dr-list--scroll">
+          {reports.map((report) => {
             const reportDate = new Date(`${report.slug}T00:00:00`);
             return (
               <a key={report.slug} className="dr-row" href={report.href}>
@@ -45,11 +44,6 @@ export function RecentReports({
               </a>
             );
           })}
-          {hiddenCount > 0 ? (
-            <p className="dr-row__sub" style={{ padding: "8px 4px 0", textAlign: "center" }}>
-              +{hiddenCount} older {hiddenCount === 1 ? "report" : "reports"} not shown
-            </p>
-          ) : null}
         </div>
       ) : (
         <EmptyState icon="ph:newspaper">

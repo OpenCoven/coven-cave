@@ -1,5 +1,12 @@
 "use client";
 
+// Only the shared markdown/code sheet: MarkdownBlock/SyntaxBlock render on
+// non-chat surfaces (settings memory tab, journal, github, command palette),
+// which must not pull the whole chat stylesheet (#3264). The bubble/turn
+// chrome (.cave-bubble-*) lives in cave-chat.css, imported by the chat
+// surfaces that render <MessageBubble> itself (chat-view, group-chat-view).
+import "@/styles/cave-md.css";
+
 /**
  * MessageBubble — full Markdown/HTML rendering for Cave chat turns.
  *
@@ -17,7 +24,9 @@
  */
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -33,10 +42,11 @@ import { Icon } from "@/lib/icon";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap, FOCUSABLE } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
-import { parseFileRef } from "@/lib/file-ref";
+import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
+import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -75,7 +85,11 @@ function getHighlighter(): Promise<Highlighter> {
     highlighterPromise = (async () => {
       const { createHighlighter } = await import("shiki");
       return createHighlighter({
-        themes: [moodCTheme as Parameters<typeof createHighlighter>[0]["themes"][number]],
+        // Shiki normalizes themes IN PLACE (e.g. prepends a scope-less global
+        // tokenColors entry). The JSON import is a shared module singleton —
+        // code-editor-theme.ts reads the same object — so hand Shiki a clone,
+        // never the module instance (cave-h1hi).
+        themes: [structuredClone(moodCTheme) as Parameters<typeof createHighlighter>[0]["themes"][number]],
         langs: [...LANGS],
       });
     })();
@@ -542,16 +556,93 @@ async function renderTableBlock(block: TableBlock, renderAsync: RenderAsyncFn): 
 // imported lazily and only when a message actually contains a mermaid fence. The
 // instance is a module singleton so init() (which loads mermaid) runs once.
 let mermaidPluginPromise: Promise<PreviewPlugin | null> | null = null;
+
+/** Resolve a CSS custom property to a HEX color for mermaid's theme
+ *  variables. Mermaid bakes colors into SVG attributes and derives shades via
+ *  khroma, which cannot parse the app's oklch()/color-mix() token values —
+ *  fed those raw it produces broken near-white fills. Painting the token onto
+ *  a 1×1 canvas lets the browser resolve ANY CSS color, then we read back
+ *  plain rgb and emit hex. Falls back when the token is missing/unpaintable. */
+function themeToken(name: string, fallback: string): string {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!value) return fallback;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fallback;
+    // Composite over black first so semi-transparent tokens (the border
+    // scale is color-mix ...% transparent) resolve to their on-dark look
+    // instead of reading back a premultiplied near-white.
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = value; // unparseable values leave the previous fillStyle
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  } catch {
+    return fallback;
+  }
+}
+
 async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
   if (!mermaidPluginPromise) {
     mermaidPluginPromise = import("@create-markdown/preview-mermaid")
       .then(async ({ mermaidPlugin }) => {
-        // theme "dark" matches the Cave UI; securityLevel "strict" overrides the
-        // plugin's default "loose" so diagrams from untrusted chat content can't
-        // smuggle scripts/click handlers (postProcess output bypasses our sanitizer).
+        // Base "dark" + the app's live theme tokens, so diagrams stop shipping
+        // stock mermaid purple and read as part of the surface: node fills sit
+        // on the raised layer, strokes on the hairline scale, and the accent
+        // appears only where mermaid marks emphasis. securityLevel "strict"
+        // overrides the plugin's default "loose" so diagrams from untrusted
+        // chat content can't smuggle scripts/click handlers (postProcess
+        // output bypasses our sanitizer).
+        const accent = themeToken("--accent-presence", "#9a8ecd");
+        const raised = themeToken("--bg-raised", "#1c1a24");
+        const panel = themeToken("--bg-panel", "#14121b");
+        const textPrimary = themeToken("--text-primary", "#e6e6f0");
+        const textSecondary = themeToken("--text-secondary", "#a5a1b6");
+        const hairline = themeToken("--border-strong", "#3a3648");
         const plugin = mermaidPlugin({
-          theme: "dark",
-          config: { securityLevel: "strict", suppressErrorRendering: true },
+          // "base" is the only mermaid theme that honors themeVariables;
+          // darkMode below keeps its derived shades on the dark ramp.
+          theme: "base",
+          config: {
+            securityLevel: "strict", suppressErrorRendering: true,
+            fontFamily:
+              'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+            themeVariables: {
+              darkMode: true,
+              background: panel,
+              primaryColor: raised,
+              primaryTextColor: textPrimary,
+              primaryBorderColor: hairline,
+              secondaryColor: panel,
+              secondaryTextColor: textSecondary,
+              secondaryBorderColor: hairline,
+              tertiaryColor: panel,
+              tertiaryTextColor: textSecondary,
+              tertiaryBorderColor: hairline,
+              lineColor: textSecondary,
+              textColor: textPrimary,
+              mainBkg: raised,
+              nodeBorder: hairline,
+              clusterBkg: panel,
+              clusterBorder: hairline,
+              titleColor: textPrimary,
+              edgeLabelBackground: panel,
+              actorBkg: raised,
+              actorBorder: hairline,
+              actorTextColor: textPrimary,
+              activationBkgColor: raised,
+              labelBoxBkgColor: raised,
+              labelBoxBorderColor: hairline,
+              noteBkgColor: panel,
+              noteBorderColor: hairline,
+              noteTextColor: textSecondary,
+              pie1: accent,
+              cScale0: accent,
+            },
+          },
         });
         await plugin.init?.();
         return plugin;
@@ -647,6 +738,11 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   if (mermaidPlugin?.postProcess) {
     sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
   }
+  // Strip the renderer's cm-preview shell so blocks land as DIRECT children
+  // of .cave-md — its `> * + *` owl selector is the only block-rhythm rule,
+  // and with the shell in place a list rendered flush against the paragraph
+  // introducing it (no line break before bullets).
+  sanitizedHtml = unwrapPreviewShell(sanitizedHtml);
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
@@ -758,29 +854,54 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
 // Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
 // clickable, opening the file in the Code workspace. Match logic lives in
 // @/lib/file-ref (pure + unit-tested); only inline code is considered.
-function wireFilePathLinks(container: HTMLElement) {
+//
+// A ref is only linkified when the surface's resolver confirms the click can
+// actually open it (project root known + file present in its index) — a dead
+// affordance is worse than plain text. Reconciles rather than wires-once:
+// when the resolver changes (project switch, index load), refs gain or lose
+// the affordance in place, so a stale link never lingers.
+export type FileLinkResolver = (ref: FileRef) => boolean;
+
+/** Chat provides a resolver over its transcript; everywhere else (group chat,
+ *  quick chat, previews) the default null keeps prose refs as plain text. */
+export const FileLinkResolverContext = createContext<FileLinkResolver | null>(null);
+
+function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | null) {
   for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
     // Inline code only — never the highlighted lines inside a fenced block.
     if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
-    const flagged = code as HTMLElement & { _caveFileLink?: boolean };
-    if (flagged._caveFileLink) continue;
+    const flagged = code as HTMLElement & { _caveFileLinkCleanup?: () => void };
     const ref = parseFileRef(code.textContent ?? "");
-    if (!ref) continue;
-    flagged._caveFileLink = true;
-    const { path, line } = ref;
+    const want = Boolean(ref && resolve?.(ref));
+    if (want === Boolean(flagged._caveFileLinkCleanup)) continue;
+    if (!want) {
+      flagged._caveFileLinkCleanup?.();
+      delete flagged._caveFileLinkCleanup;
+      continue;
+    }
+    const { path, line } = ref!;
     code.classList.add("cave-file-link");
     code.setAttribute("role", "button");
     code.setAttribute("tabindex", "0");
     code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
     const open = () =>
       window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
-    code.addEventListener("click", open);
-    code.addEventListener("keydown", (e) => {
+    const onKeydown = (e: KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         open();
       }
-    });
+    };
+    code.addEventListener("click", open);
+    code.addEventListener("keydown", onKeydown);
+    flagged._caveFileLinkCleanup = () => {
+      code.removeEventListener("click", open);
+      code.removeEventListener("keydown", onKeydown);
+      code.classList.remove("cave-file-link");
+      code.removeAttribute("role");
+      code.removeAttribute("tabindex");
+      code.removeAttribute("title");
+    };
   }
 }
 
@@ -851,15 +972,49 @@ function openTableLightbox(scroll: HTMLElement) {
 
   const prevOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
+  // CHAT-D11-02: this dialog is imperative DOM (no React mount), so it can't
+  // use useFocusTrap — mirror its contract by hand: remember the trigger,
+  // trap Tab inside the overlay, and restore focus on dismiss. `.focus()` on
+  // a since-removed trigger is a harmless no-op.
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dismiss = () => {
     document.body.style.overflow = prevOverflow;
     document.removeEventListener("keydown", onKey);
     overlay.remove();
+    returnFocus?.focus();
   };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       dismiss();
+      return;
+    }
+    if (event.key === "Tab") {
+      // The cloned table can carry focusable links, so cycle everything in
+      // the overlay, not just the Close button. Same recapture rule as
+      // useFocusTrap: focus that escaped the dialog gets pulled back in.
+      const focusables = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => !el.hasAttribute("disabled"),
+      );
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (!activeEl || !overlay.contains(activeEl)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && activeEl === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeEl === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   };
   overlay.addEventListener("click", (event) => {
@@ -877,10 +1032,11 @@ function openTableLightbox(scroll: HTMLElement) {
  * returned ref, otherwise its Copy buttons render but silently do nothing
  * (wireCopyButtons is idempotent per button via the `_wired` flag).
  *
- * `linkifyPaths` opts inline file references in prose into clickable
- * Code-workspace links; only the chat prose path enables it.
+ * `fileLinkResolver` opts inline file references in prose into clickable
+ * Code-workspace links; only chat prose (via FileLinkResolverContext) supplies
+ * one, and only refs the resolver confirms openable get the affordance.
  */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
+function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, fileLinkResolver: FileLinkResolver | null = null) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = containerRef.current;
@@ -890,7 +1046,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
       wireMarkdownLinks(el, onOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
-      if (linkifyPaths) wireFilePathLinks(el);
+      wireFilePathLinks(el, fileLinkResolver);
     };
     wireAll();
     // Re-wire when nodes are added after the first pass. Components that render
@@ -904,7 +1060,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, linkifyPaths]);
+  }, [html, onOpenUrl, fileLinkResolver]);
   return containerRef;
 }
 
@@ -915,8 +1071,11 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  // linkifyPaths=true: chat prose file references (`src/foo.ts:42`) open in Code.
-  const containerRef = useWireCopyButtons(html, onOpenUrl, true);
+  // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
+  // the surface's resolver (FileLinkResolverContext) confirms the file exists
+  // under the session's project root. No resolver ⇒ refs stay plain text.
+  const fileLinkResolver = useContext(FileLinkResolverContext);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the
@@ -1371,36 +1530,39 @@ function MarkdownExpandModal({
     >
       <div
         ref={dialogRef}
-        className="relative flex h-[90vh] w-[92vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Expanded ${label}`}
         tabIndex={-1}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <Icon name="ph:arrows-out-simple" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{label}</span>
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
+          <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <span className="flex-1 truncate text-[13px] font-medium text-[var(--text-secondary)]">{label}</span>
           <button
             type="button"
             onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
-            <Icon name="ph:copy" width={11} aria-hidden />
+            <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
             {copied ? "Copied" : "Copy"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             aria-label="Close expanded view"
           >
             <Icon name="ph:x-bold" width={11} aria-hidden />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
-          <div className="mx-auto w-full max-w-[820px]">
-            <MarkdownBlock text={text} className="cave-md--expanded" />
+        {/* Reader body: a centered book measure with its own reading scale
+            (.cave-md--reader in cave-chat.css) — the transcript's dense 14px
+            is right in the stream, wrong for a full-screen reading surface. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
+          <div className="mx-auto w-full max-w-[72ch]">
+            <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
           </div>
         </div>
       </div>

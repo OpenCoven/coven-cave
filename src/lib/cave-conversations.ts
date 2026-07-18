@@ -1,12 +1,14 @@
-import { mkdir, readFile, writeFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { performance } from "node:perf_hooks";
+import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
-const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
+const CONV_DIR = path.join(caveHome(), "conversations");
 
 export type ChatTurn = {
   id: string;
@@ -74,6 +76,13 @@ export type ConversationFile = {
   title?: string;
   /** Provenance — defaults to "chat". */
   origin?: SessionOrigin;
+  /**
+   * Git branch of the conversation's cwd, snapshotted when a turn is saved
+   * (last successful capture wins). This is the only per-session branch
+   * signal, so PR attribution (badges + the merged-PR auto-archive sweep)
+   * must use it — never the project root's branch at poll time.
+   */
+  branch?: string;
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
@@ -92,6 +101,65 @@ function conversationTerminalStatus(conv: ConversationFile): { status: string; e
   const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
   if (latestAssistant?.isError) return { status: "failed", exitCode: 1 };
   return { status: "completed", exitCode: 0 };
+}
+
+export type ConversationSummary = {
+  sessionId: string;
+  familiarId: string;
+  harness?: string;
+  model?: string;
+  runtime?: string;
+  title?: string;
+  origin?: SessionOrigin;
+  branch?: string;
+  status?: string;
+  exitCode?: number | null;
+  createdAt?: string;
+  updatedAt: string;
+};
+
+export type ConversationListMetrics = {
+  scanCount: number;
+  filesSeen: number;
+  cacheHits: number;
+  cacheMisses: number;
+  cacheHitRate: number;
+  bytesRead: number;
+  durationMs: number;
+  peakReadConcurrency: number;
+  cacheEntries: number;
+};
+
+const CONVERSATION_LIST_READ_CONCURRENCY = 8;
+// The list route only needs this compact projection. Stat keys detect both
+// ordinary edits (mtime/size) and atomic replacements (ctime), while keeping
+// unchanged transcript bodies out of the four-second polling path.
+type ConversationSummaryCacheEntry = {
+  mtimeMs: number;
+  ctimeMs: number;
+  size: number;
+  summary: ConversationSummary | null;
+};
+const conversationSummaryCache = new Map<string, ConversationSummaryCacheEntry>();
+let conversationListScanCount = 0;
+let conversationListMetrics: ConversationListMetrics = {
+  scanCount: 0,
+  filesSeen: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  cacheHitRate: 0,
+  bytesRead: 0,
+  durationMs: 0,
+  peakReadConcurrency: 0,
+  cacheEntries: 0,
+};
+
+export function getConversationListMetrics(): ConversationListMetrics {
+  return { ...conversationListMetrics };
+}
+
+export function clearConversationListMetadataCache(): void {
+  conversationSummaryCache.clear();
 }
 
 async function ensureDir() {
@@ -140,7 +208,11 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
   conv.updatedAt = new Date().toISOString();
-  await writeFile(pathFor(conv.sessionId), JSON.stringify(conv, null, 2), "utf8");
+  // Atomic replace (cave-1v95): conversations are the highest-churn store —
+  // a crash mid-write must leave the previous transcript intact, never a
+  // torn half-JSON that loadConversation silently drops.
+  await writeJsonAtomic(pathFor(conv.sessionId), conv);
+  conversationSummaryCache.delete(pathFor(conv.sessionId));
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
@@ -152,82 +224,202 @@ export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<voi
 
 export async function deleteConversation(sessionId: string): Promise<boolean> {
   try {
-    await unlink(pathFor(sessionId));
+    const file = pathFor(sessionId);
+    await unlink(file);
+    conversationSummaryCache.delete(file);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function listConversations(): Promise<
-  Array<{
-    sessionId: string;
-    familiarId: string;
-    harness?: string;
-    model?: string;
-    runtime?: string;
-    title?: string;
-    origin?: SessionOrigin;
-    status?: string;
-    exitCode?: number | null;
-    createdAt?: string;
-    updatedAt: string;
-  }>
-> {
+function fallbackConversationSummary(sessionId: string, mtimeMs: number): ConversationSummary {
+  return { sessionId, familiarId: "", updatedAt: new Date(mtimeMs).toISOString() };
+}
+
+async function readConversationSummary(
+  file: string,
+  fallbackSessionId: string,
+  mtimeMs: number,
+  fileSize: number,
+): Promise<{ summary: ConversationSummary | null; bytesRead: number; cacheable: boolean }> {
+  let raw: string;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch {
+    // A sharing violation or other transient read failure must be retried on
+    // the next scan even when the file's stat key did not change.
+    return {
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      bytesRead: 0,
+      cacheable: false,
+    };
+  }
+
+  let conv: ConversationFile;
+  try {
+    conv = JSON.parse(raw) as ConversationFile;
+  } catch {
+    return {
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      bytesRead: fileSize,
+      cacheable: true,
+    };
+  }
+
+  try {
+    // Match loadConversation's lazy legacy normalization before deriving the
+    // active-path terminal status, without writing the migrated body here.
+    if (!conv.activeLeafId && conv.turns.length > 0) {
+      const linearized = linearizeLegacy(conv.turns);
+      conv.turns = linearized.turns;
+      conv.activeLeafId = linearized.activeLeafId;
+    }
+    const terminal = conversationTerminalStatus(conv);
+    return {
+      summary: {
+        sessionId: conv.sessionId,
+        familiarId: conv.familiarId,
+        harness: conv.harness,
+        model: conv.model,
+        runtime: conv.runtime,
+        title: conv.title,
+        origin: conv.origin,
+        ...(conv.branch ? { branch: conv.branch } : {}),
+        status: terminal.status,
+        exitCode: terminal.exitCode,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+      },
+      bytesRead: fileSize,
+      cacheable: true,
+    };
+  } catch {
+    // loadConversation() treats any invalid conversation shape like a parse
+    // failure, so preserve listConversations()'s filename/mtime fallback row.
+    return {
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      bytesRead: fileSize,
+      cacheable: true,
+    };
+  }
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const startedAt = performance.now();
+  const scanCount = ++conversationListScanCount;
   await ensureDir();
-  let entries;
+  let entries: string[];
   try {
     entries = await readdir(CONV_DIR);
   } catch {
+    if (scanCount >= conversationListMetrics.scanCount) {
+      conversationListMetrics = {
+        scanCount,
+        filesSeen: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        cacheHitRate: 0,
+        bytesRead: 0,
+        durationMs: performance.now() - startedAt,
+        peakReadConcurrency: 0,
+        cacheEntries: conversationSummaryCache.size,
+      };
+    }
     return [];
   }
-  const results: Array<{
-    sessionId: string;
-    familiarId: string;
-    harness?: string;
-    model?: string;
-    runtime?: string;
-    title?: string;
-    origin?: SessionOrigin;
-    status?: string;
-    exitCode?: number | null;
-    createdAt?: string;
-    updatedAt: string;
-  }> = [];
-  for (const name of entries) {
-    if (!name.endsWith(".json")) continue;
-    try {
-      const sessionId = name.replace(/\.json$/, "");
-      const conv = await loadConversation(sessionId);
-      if (conv) {
-        const terminal = conversationTerminalStatus(conv);
-        results.push({
-          sessionId: conv.sessionId,
-          familiarId: conv.familiarId,
-          harness: conv.harness,
-          model: conv.model,
-          runtime: conv.runtime,
-          title: conv.title,
-          origin: conv.origin,
-          status: terminal.status,
-          exitCode: terminal.exitCode,
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
-        });
-      } else {
-        const s = await stat(path.join(CONV_DIR, name));
-        results.push({
-          sessionId,
-          familiarId: "",
-          updatedAt: s.mtime.toISOString(),
-        });
-      }
-    } catch {
-      /* skip */
-    }
+
+  const names = entries.filter((name) => name.endsWith(".json"));
+  const files = names.map((name) => path.join(CONV_DIR, name));
+  const liveFiles = new Set(files);
+  for (const file of conversationSummaryCache.keys()) {
+    if (!liveFiles.has(file)) conversationSummaryCache.delete(file);
   }
-  results.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  return results;
+
+  const results: Array<ConversationSummary | null | undefined> = new Array(names.length);
+  let nextIndex = 0;
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  let bytesRead = 0;
+  let activeReads = 0;
+  let peakReadConcurrency = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= names.length) return;
+      const name = names[index];
+      const file = files[index];
+      try {
+        const info = await stat(file);
+        const cached = conversationSummaryCache.get(file);
+        if (
+          cached &&
+          cached.mtimeMs === info.mtimeMs &&
+          cached.ctimeMs === info.ctimeMs &&
+          cached.size === info.size
+        ) {
+          cacheHits += 1;
+          results[index] = cached.summary;
+          continue;
+        }
+
+        cacheMisses += 1;
+        activeReads += 1;
+        peakReadConcurrency = Math.max(peakReadConcurrency, activeReads);
+        let loaded: Awaited<ReturnType<typeof readConversationSummary>>;
+        try {
+          loaded = await readConversationSummary(
+            file,
+            name.replace(/\.json$/, ""),
+            info.mtimeMs,
+            info.size,
+          );
+        } finally {
+          activeReads -= 1;
+        }
+        bytesRead += loaded.bytesRead;
+        if (loaded.cacheable) {
+          conversationSummaryCache.set(file, {
+            mtimeMs: info.mtimeMs,
+            ctimeMs: info.ctimeMs,
+            size: info.size,
+            summary: loaded.summary,
+          });
+        } else {
+          conversationSummaryCache.delete(file);
+        }
+        results[index] = loaded.summary;
+      } catch {
+        conversationSummaryCache.delete(file);
+        results[index] = null;
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(CONVERSATION_LIST_READ_CONCURRENCY, names.length) },
+      worker,
+    ),
+  );
+
+  const summaries = results.filter((summary): summary is ConversationSummary => Boolean(summary));
+  summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  if (scanCount >= conversationListMetrics.scanCount) {
+    conversationListMetrics = {
+      scanCount,
+      filesSeen: names.length,
+      cacheHits,
+      cacheMisses,
+      cacheHitRate: names.length === 0 ? 0 : cacheHits / names.length,
+      bytesRead,
+      durationMs: performance.now() - startedAt,
+      peakReadConcurrency,
+      cacheEntries: conversationSummaryCache.size,
+    };
+  }
+  return summaries;
 }
 
 // ── Content search (CHAT-D9-02) ──────────────────────────────────────────────

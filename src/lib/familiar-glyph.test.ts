@@ -6,7 +6,7 @@ import {
   DEFAULT_FAMILIAR_GLYPH,
   ROLE_GLYPH_MAP,
 } from "./familiar-glyph.ts";
-import phGlyphs from "./ph-glyph-catalog.json" with { type: "json" };
+import phGlyphs from "./ph-familiar-core.json" with { type: "json" };
 
 // Regression guard: every built-in glyph name (role-map + default) MUST exist
 // in the bundled catalog, or it renders an empty glyph. This is exactly how
@@ -15,7 +15,7 @@ import phGlyphs from "./ph-glyph-catalog.json" with { type: "json" };
   const bundled = new Set(Object.keys(phGlyphs.icons ?? {}).map((n) => `ph:${n}`));
   const builtIns = [...ROLE_GLYPH_MAP.map(([, name]) => name), DEFAULT_FAMILIAR_GLYPH.name];
   for (const name of builtIns) {
-    assert.ok(bundled.has(name), `built-in glyph "${name}" missing from ph-glyph-catalog.json (would render blank)`);
+    assert.ok(bundled.has(name), `built-in glyph "${name}" missing from ph-familiar-core.json (would render blank)`);
   }
 }
 

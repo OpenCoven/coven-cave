@@ -21,10 +21,13 @@ await mkdir(outside, { recursive: true });
 const filePath = path.join(home, "not-a-dir.txt");
 await writeFile(filePath, "not a directory");
 
-assert.equal(
-  await resolveLocalRuntimeCwd(undefined, { homeDir: home }),
-  realpathSync(home),
-  "missing project root should default to the real home directory",
+await assert.rejects(
+  () => resolveLocalRuntimeCwd(undefined, { homeDir: home }),
+  (error) =>
+    error instanceof RuntimeScopeError &&
+    error.code === "project_root_required" &&
+    /refusing to start a homedir-scoped fallback session/.test(error.message),
+  "missing project roots should be refused instead of downgraded to home",
 );
 
 assert.equal(

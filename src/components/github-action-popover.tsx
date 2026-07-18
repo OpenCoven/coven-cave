@@ -23,7 +23,12 @@ type Props = {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  /** The corresponding load FAILED — an empty list then means "couldn't
+   *  load", not "none exist" (cave-59cv). */
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onClose: () => void;
+  onComplete?: () => void;
 };
 
 // ── Feedback banner ────────────────────────────────────────────────────────────
@@ -57,11 +62,15 @@ function FeedbackBanner({
 function BoardMode({
   item,
   cards,
+  cardsFailed = false,
   onClose,
+  onComplete,
 }: {
   item: GitHubItem;
   cards: Card[];
+  cardsFailed?: boolean;
   onClose: () => void;
+  onComplete?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -91,6 +100,7 @@ function BoardMode({
     setBusy(false);
     if (result.ok) {
       setFeedback({ status: "success", message: "Link added to card." });
+      onComplete?.();
       setTimeout(onClose, 1200);
     } else {
       setFeedback({ status: "error", message: result.error ?? "Failed." });
@@ -104,6 +114,7 @@ function BoardMode({
     setBusy(false);
     if (result.ok) {
       setFeedback({ status: "success", message: "Card created." });
+      onComplete?.();
       setTimeout(onClose, 1200);
     } else {
       setFeedback({ status: "error", message: result.error ?? "Failed." });
@@ -158,7 +169,9 @@ function BoardMode({
             ))}
             {filtered.length === 0 && (
               <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
-                No cards match.
+                {cardsFailed && cards.length === 0
+                  ? "Couldn't load your tasks — close and reopen to retry."
+                  : "No cards match."}
               </li>
             )}
           </ul>
@@ -172,11 +185,13 @@ function BoardMode({
 
 function FamiliarPicker({
   familiars,
+  familiarsFailed = false,
   item,
   mode,
   onClose,
 }: {
   familiars: Familiar[];
+  familiarsFailed?: boolean;
   item: GitHubItem;
   mode: "chat" | "assign";
   onClose: () => void;
@@ -204,7 +219,7 @@ function FamiliarPicker({
             : ctx.kind === "notification"
               ? "Notification"
               : "Issue";
-      const contextText = [
+      const initialPrompt = [
         `**${kindLabel}: ${ctx.title}**`,
         `Repo: \`${ctx.repo}\`${ctx.number != null ? ` #${ctx.number}` : ""}`,
         `URL: ${ctx.url}`,
@@ -212,7 +227,7 @@ function FamiliarPicker({
 
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
-          detail: { familiarId: selected, context: contextText },
+          detail: { familiarId: selected, initialPrompt },
         }),
       );
       setBusy(false);
@@ -277,7 +292,9 @@ function FamiliarPicker({
         })}
         {resolved.length === 0 && (
           <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
-            No familiars available.
+            {familiarsFailed
+              ? "Couldn't load familiars — close and reopen to retry."
+              : "No familiars available."}
           </li>
         )}
       </ul>
@@ -305,7 +322,10 @@ export function GitHubActionPopover({
   item,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onClose,
+  onComplete,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -389,11 +409,18 @@ export function GitHubActionPopover({
 
       {/* Mode content */}
       {mode === "board" && (
-        <BoardMode item={item} cards={cards} onClose={onClose} />
+        <BoardMode
+          item={item}
+          cards={cards}
+          cardsFailed={cardsFailed}
+          onClose={onClose}
+          onComplete={onComplete}
+        />
       )}
       {(mode === "chat" || mode === "assign") && (
         <FamiliarPicker
           familiars={familiars}
+          familiarsFailed={familiarsFailed}
           item={item}
           mode={mode}
           onClose={onClose}

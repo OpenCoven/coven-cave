@@ -1,6 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { packEventColumns, DEFAULT_EVENT_MIN } from "./calendar-layout.ts";
+import {
+  packEventColumns,
+  packEventColumnsWithOverflow,
+  DEFAULT_EVENT_MIN,
+  WEEK_MAX_LANES,
+  DAY_MAX_LANES,
+} from "./calendar-layout.ts";
 
 // Build an InboxItem-ish object at HH:MM on a fixed date.
 function at(id: string, h: number, m = 0) {
@@ -52,6 +58,61 @@ function at(id: string, h: number, m = 0) {
 {
   const noDate = { id: "x", kind: "reminder", title: "x", status: "pending", createdAt: "", updatedAt: "", fireAt: null, firedAt: null, recurrence: { type: "none" }, source: "user" };
   assert.equal(packEventColumns([noDate]).length, 0);
+}
+
+// ── Capped packing (week/day lane budgets) ───────────────────────────────────
+
+// Under the cap, capped packing matches uncapped exactly (no reserved lane).
+{
+  const items = [at("a", 9, 0), at("b", 9, 5), at("c", 9, 10)];
+  const { events, overflows } = packEventColumnsWithOverflow(items, WEEK_MAX_LANES);
+  assert.equal(overflows.length, 0, "3 concurrent events fit 3 lanes — no pill");
+  assert.deepEqual(
+    events.map((e) => [e.item.id, e.lane, e.lanes]).sort(),
+    packEventColumns(items).map((e) => [e.item.id, e.lane, e.lanes]).sort(),
+  );
+}
+
+// Over the cap: visible events re-pack into maxLanes-1 lanes, the rest roll
+// into one overflow pill in the reserved last lane.
+{
+  const items = [at("a", 9, 0), at("b", 9, 2), at("c", 9, 4), at("d", 9, 6), at("e", 9, 8)];
+  const { events, overflows } = packEventColumnsWithOverflow(items, WEEK_MAX_LANES);
+  assert.equal(events.length, 2, "two visible chips in lanes 0..1");
+  assert.ok(events.every((e) => e.lanes === WEEK_MAX_LANES));
+  assert.ok(events.every((e) => e.lane < WEEK_MAX_LANES - 1), "visible events never sit in the pill lane");
+  assert.equal(overflows.length, 1);
+  const [ov] = overflows;
+  assert.equal(ov.items.length, 3, "the three that no longer fit roll up");
+  assert.equal(ov.lane, WEEK_MAX_LANES - 1, "pill occupies the reserved last lane");
+  assert.equal(ov.lanes, WEEK_MAX_LANES);
+  assert.equal(ov.start, 9 * 60 + 4, "pill spans from the first rolled-up start");
+  assert.equal(ov.end, 9 * 60 + 8 + DEFAULT_EVENT_MIN, "…to the last rolled-up end");
+}
+
+// Sequential events never overflow regardless of cap (lanes are reused).
+{
+  const { events, overflows } = packEventColumnsWithOverflow(
+    [at("a", 9, 0), at("b", 9, 30), at("c", 10, 0), at("d", 10, 30), at("e", 11, 0)],
+    WEEK_MAX_LANES,
+  );
+  assert.equal(overflows.length, 0);
+  assert.ok(events.every((e) => e.lane === 0 && e.lanes === 1));
+}
+
+// The wider day column affords more lanes before rolling up.
+{
+  const five = [at("a", 9, 0), at("b", 9, 2), at("c", 9, 4), at("d", 9, 6), at("e", 9, 8)];
+  const { events, overflows } = packEventColumnsWithOverflow(five, DAY_MAX_LANES);
+  assert.equal(overflows.length, 0, "5 concurrent events fit the day cap");
+  assert.equal(events.length, 5);
+}
+
+// Distinct overlapping clusters each get their own pill.
+{
+  const burst = (h) => [at(`${h}-a`, h, 0), at(`${h}-b`, h, 2), at(`${h}-c`, h, 4), at(`${h}-d`, h, 6)];
+  const { overflows } = packEventColumnsWithOverflow([...burst(9), ...burst(14)], WEEK_MAX_LANES);
+  assert.equal(overflows.length, 2, "one pill per overflowing cluster");
 }
 
 console.log("calendar-layout.test.ts: all assertions passed");

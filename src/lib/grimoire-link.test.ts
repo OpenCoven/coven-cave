@@ -7,6 +7,7 @@ import { grimoireHash, GRIMOIRE_HASH_PREFIX } from "./grimoire-link.ts";
 
 assert.equal(GRIMOIRE_HASH_PREFIX, "#grimoire:", "prefix matches the grimoire-view deep-link format");
 assert.equal(grimoireHash("knowledge", "my-entry"), "#grimoire:knowledge:my-entry");
+assert.equal(grimoireHash("knowledge", "characters/my-entry"), "#grimoire:knowledge:characters%2Fmy-entry");
 assert.equal(grimoireHash("journal", "2026-07-07"), "#grimoire:journal:2026-07-07");
 assert.equal(
   grimoireHash("memory", "/Users/x/.coven/memory/notes.md"),
@@ -30,6 +31,6 @@ assert.match(lib, /window\.history\.replaceState/, "the hash is written before t
 assert.match(reader, /openGrimoireDoc\("memory", row\.contentPath/, "memory reader links its file to the Grimoire");
 assert.match(reader, /row\.contentPath \?/, "reader only offers the link when the file path resolved");
 assert.match(inspector, /openGrimoireDoc\("memory", path\)/, "chat inspector's memory file view links to the Grimoire");
-assert.match(inspector, /aria-label="Open in Grimoire"/, "inspector link is labelled");
+assert.match(inspector, /aria-label="Open in Memories"/, "inspector link is labelled");
 
 console.log("grimoire-link.test: ok");

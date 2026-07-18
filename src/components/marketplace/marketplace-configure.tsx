@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -34,17 +34,37 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const [fields, setFields] = useState<FieldStatus[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  // A Set (not a scalar) of the fields currently saving — concurrent saves of
+  // two fields must each keep their own spinner rather than one clearing the
+  // other (mirrors the parent's busyIds).
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
+  const setKeyBusy = useCallback((key: string, busy: boolean) => {
+    setBusyKeys((prev) => {
+      const next = new Set(prev);
+      if (busy) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
   type ValidationResult = { state: "idle" | "testing" | "valid" | "invalid"; message?: string };
   const [results, setResults] = useState<Record<string, ValidationResult>>({});
   const [error, setError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
+  // Abort a prior in-flight config load before a new one (or on unmount). The
+  // dialog stays mounted between opens, so without this a slow load resolving
+  // after a close/reopen — or after a Save-triggered reload — clobbers the
+  // freshly-seeded fields with the previous plugin's data.
+  const loadCtlRef = useRef<AbortController | null>(null);
   const load = useCallback(async (seedDefaults = false) => {
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     setLoaded(false);
     try {
-      const res = await fetch(`/api/marketplace/config?id=${encodeURIComponent(pluginId)}`, { cache: "no-store" });
+      const res = await fetch(`/api/marketplace/config?id=${encodeURIComponent(pluginId)}`, { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as { ok?: boolean; fields?: FieldStatus[]; error?: string };
+      if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `config http ${res.status}`);
       const nextFields = json.fields ?? [];
       setFields(nextFields);
@@ -58,12 +78,14 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       }
       setError(null);
     } catch (err) {
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       setFields([]);
       setError(err instanceof Error ? err.message : "config unavailable");
     } finally {
-      setLoaded(true);
+      if (!ctl.signal.aborted) setLoaded(true);
     }
   }, [pluginId]);
+  useEffect(() => () => loadCtlRef.current?.abort(), []);
 
   useEffect(() => {
     if (open) {
@@ -104,7 +126,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const save = useCallback(async (field: FieldStatus) => {
     const draft = (drafts[field.key] ?? "").trim();
     if (!draft) return;
-    setBusyKey(field.key);
+    setKeyBusy(field.key, true);
     setError(null);
     try {
       const sensitiveBody = draft.startsWith("op://")
@@ -133,9 +155,9 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       setError(msg);
       announce(msg, "assertive");
     } finally {
-      setBusyKey(null);
+      setKeyBusy(field.key, false);
     }
-  }, [drafts, pluginId, load, onChanged, validate, announce]);
+  }, [drafts, pluginId, load, onChanged, validate, announce, setKeyBusy]);
 
   return (
     <Modal
@@ -187,7 +209,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 <Button
                   variant="primary"
                   size="sm"
-                  loading={busyKey === f.key}
+                  loading={busyKeys.has(f.key)}
                   onClick={() => void save(f)}
                 >
                   Save

@@ -1,8 +1,10 @@
 import { createHmac } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
-import { parse } from "node:url";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -28,10 +30,51 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   }
 }
 
-const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+// Boot re-arm (cave-os73): a tokenless dev boot outside the packaged bundle
+// re-arms COVEN_CAVE_ACCESS_TOKEN from the pairing secret that Settings ·
+// Phone (or scripts/mobile-tailscale.sh — same state file) provisioned, so
+// paired phones survive dev-server restarts and a still-configured Tailscale
+// Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
+// provision.ts, inlined because the standalone server.mjs cannot import from
+// src/.
+function persistedMobileAccessSecretFile(): string {
+  const port = (process.env.PORT || "3000").trim() || "3000";
+  const stateRoot =
+    process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
+    join(
+      process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+      "coven-cave",
+    );
+  const stateDir =
+    process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() ||
+    join(stateRoot, `mobile-tailscale-${port}`);
+  return join(stateDir, "access-token");
+}
+
+if (
+  process.env.COVEN_CAVE_BUNDLE !== "1" &&
+  process.env.COVEN_CAVE_E2E !== "1" &&
+  !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()
+) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+    // No provisioned secret — stay tokenless, exactly as before.
+  }
+}
+
+// Read lazily, not snapshotted: Settings · Phone can provision and arm the
+// pairing secret mid-session (cave-os73), and the PTY upgrade gate must honor
+// tokens signed with it without a server restart.
+function accessToken(): string {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
+const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
+const SIDECAR_QUERY_PARAM = "covenCaveToken";
 
 type PtySession = {
   pty: import("node-pty").IPty;
@@ -101,10 +144,19 @@ function timingSafeEqualString(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function isExpectedToken(value: string | undefined | null): boolean {
-  if (!ACCESS_TOKEN || !value) return false;
-  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
-  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+function isExpectedAccessToken(value: string | undefined | null): boolean {
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
+}
+
+function isExpectedSidecarToken(value: string | undefined | null): boolean {
+  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+
+function isExpectedPtyToken(value: string | undefined | null): boolean {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
 }
 
 // Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
@@ -149,6 +201,13 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
     if (url.origin === expectedOrigin) return true;
 
     const expected = new URL(expectedOrigin);
+    // Scheme-agnostic host match: `tailscale serve` terminates TLS upstream,
+    // so a browser page served over https://<host>.ts.net opens its terminal
+    // socket with Origin https://… while the expectation string here is built
+    // as http://<Host>. The host (incl. port) equality is the actual
+    // cross-site defence — a hostile page cannot declare this host as its
+    // Origin — so the scheme difference must not 403 the upgrade.
+    if (url.host === expected.host) return true;
     return (
       url.protocol === expected.protocol &&
       url.port === expected.port &&
@@ -160,37 +219,110 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
   }
 }
 
-function isAllowedUpgradeSource(req: IncomingMessage): boolean {
+function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false): boolean {
   const host = req.headers.host;
   // The peer must always be loopback: `tailscale serve` terminates TLS and
   // forwards to 127.0.0.1, so a legitimate tailnet client still arrives over
   // loopback. A non-loopback peer is a direct LAN/WAN connection — never trust.
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-  // `pnpm mobile:tailscale:app`): `tailscale serve` forwards the request's
-  // `<host>.ts.net` Host — NOT 127.0.0.1 — so the loopback host gate would
-  // otherwise 403 the iOS terminal over the tailnet. Trusting the host here is
-  // safe because tailnet membership is the ingress boundary in this mode, and
-  // the sameOrigin gate below still blocks cross-site browser upgrades (a native
-  // WebSocket sends no Origin). This mirrors the REST trust gate in proxy.ts.
-  // By default (no flag) WebSocket upgrades remain loopback-host only.
-  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
+  if (!isLoopbackHost(host)) {
+    // A meaningful same-origin/host gate needs a Host header; fail closed on
+    // malformed upgrade requests instead of letting them ride a relaxation.
+    if (!host) return false;
+    // The only way a non-loopback Host is legitimate is a token-authenticated
+    // upgrade (paired iOS app / handoff browser holding a signed access token)
+    // arriving via `tailscale serve`, which forwards the request's
+    // `<host>.ts.net` Host, NOT 127.0.0.1: the credential proves the caller,
+    // exactly like proxy.ts's isAllowedApiHost(mobileAccessAuthenticated)
+    // relaxation on REST. Without this, a paired phone's terminal 403s at the
+    // host gate while every REST call works (the "terminal tab never
+    // connects" bug). The sameOrigin gate below still blocks cross-site
+    // browser upgrades. Tailnet membership alone is NOT authorization:
+    // credential-less upgrades remain loopback-host only.
+    if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
+    return false;
+  }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 
-function requiresPtyAccessToken(): boolean {
-  return ACCESS_TOKEN !== "" || process.env.COVEN_CAVE_TAILNET_TRUST === "1";
+function firstQueryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+type UpgradeQuery = Record<string, string | string[] | undefined>;
+
+const UPGRADE_URL_BASE = "http://localhost";
+const MAX_UPGRADE_QUERY_SEGMENTS = 1_000;
+const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+
+function boundedUpgradeQuery(suffix: string): string {
+  if (!suffix.startsWith("?")) return "";
+
+  const fragmentStart = suffix.indexOf("#", 1);
+  const rawQuery = suffix.slice(1, fragmentStart === -1 ? undefined : fragmentStart);
+  let segmentCount = 1;
+  for (let index = 0; index < rawQuery.length; index += 1) {
+    if (rawQuery[index] !== "&") continue;
+    if (segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS) return rawQuery.slice(0, index);
+    segmentCount += 1;
+  }
+  return rawQuery;
+}
+
+function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQuery } {
+  const pathEnd = rawUrl.search(/[?#]/);
+  const rawPath = pathEnd === -1 ? rawUrl : rawUrl.slice(0, pathEnd);
+  const suffix = pathEnd === -1 ? "" : rawUrl.slice(pathEnd);
+  const normalizedPath = rawPath.replaceAll("\\", "/");
+  const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
+
+  // Prefix relative and origin-form targets with `/.` so WHATWG parsing cannot
+  // reinterpret a leading `//` as an authority. The raw request remains
+  // untouched when a valid non-PTY upgrade is forwarded to Next.
+  const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  const parsedUrl = absoluteForm
+    ? new URL(normalizedPath)
+    : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
+
+  // Bound the raw `&`-separated segments before URLSearchParams sees them.
+  // querystring.parse() counts empty segments toward maxKeys, while iterating
+  // URLSearchParams alone would skip them and parse the entire query first.
+  parsedUrl.search = `?${boundedUpgradeQuery(suffix)}`;
+
+  // WHATWG URL canonicalizes dot segments. Route against the pre-canonical
+  // path so unusual request targets cannot broaden into /api/pty-ws. For a
+  // standard absolute-form target, strip only its scheme and authority.
+  let pathname = normalizedPath;
+  if (absoluteForm) {
+    const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);
+    pathname = pathStart === -1 ? "/" : normalizedPath.slice(pathStart);
+  }
+
+  // node:querystring, used by url.parse(..., true), returns a null-prototype
+  // object and processes at most 1,000 segments by default. Preserve both
+  // details while retaining first-value and duplicate ordering semantics.
+  const query: UpgradeQuery = Object.create(null);
+  for (const [key, value] of parsedUrl.searchParams) {
+    const current = query[key];
+    if (current === undefined) query[key] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else query[key] = [current, value];
+  }
+
+  return { pathname, query };
+}
+
+function isPtyAuthRequired(): boolean {
+  return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
-  if (!ACCESS_TOKEN) return false;
+  if (!isPtyAuthRequired()) return false;
 
-  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM])
-    ? query[ACCESS_QUERY_PARAM][0]
-    : query[ACCESS_QUERY_PARAM];
-  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
-  return candidates.some(isExpectedToken);
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
+  const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedPtyToken);
 }
 
 function defaultShell(): string {
@@ -254,6 +386,12 @@ function validateCwd(raw: string | undefined): string | undefined {
 // the user had set them. Strip the package-manager lifecycle namespace —
 // and the server's own NODE_ENV — before handing the env to a user shell.
 const PTY_ENV_DROPPED = new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+// Sidecar-internal namespaces (cave-o01k): the packaged app's serialized Next
+// config breaks builds run from the terminal, and the sidecar auth tokens are
+// secrets that would 401-gate a dev server inheriting them. Mirrors
+// scrubSidecarInternalEnv in src/lib/coven-bin.ts (this file stays
+// import-free of src/ so the packaged sidecar can run it standalone).
+const PTY_ENV_DROPPED_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"];
 
 function sanitizedEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -261,6 +399,7 @@ function sanitizedEnv(): Record<string, string> {
     if (value === undefined) continue;
     if (/^npm_/i.test(key)) continue;
     if (PTY_ENV_DROPPED.has(key)) continue;
+    if (PTY_ENV_DROPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
     env[key] = value;
   }
   return env;
@@ -349,6 +488,18 @@ function onWsMessage(threadId: string, data: RawData): void {
     const rows = frame.readUInt16LE(3);
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
+    }
+  } else if (tag === 0x05) {
+    // Explicit tab-close (client sent a kill frame): reap the shell NOW rather
+    // than detaching with a grace window. Without this, a WS-transport tab close
+    // just drops the socket, which the close handler treats as a transient
+    // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
     }
   }
 }
@@ -441,12 +592,20 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
-  const parsedUrl = parse(req.url ?? "/", true);
-  void handle(req, res, parsedUrl);
+  void handle(req, res);
 });
 
 server.on("upgrade", (req, socket, head) => {
-  const { pathname, query } = parse(req.url ?? "/", true);
+  let pathname: string;
+  let query: UpgradeQuery;
+  try {
+    ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
+  } catch {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
   if (pathname !== "/api/pty-ws") {
     void nextUpgradeHandler(req, socket, head).catch((err) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
@@ -455,18 +614,28 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (!isAllowedUpgradeSource(req)) {
+  // Verify credentials before the host gate: a valid signed access token
+  // (paired iOS terminal / handoff browser over `tailscale serve`, which
+  // forwards the `<host>.ts.net` Host) legitimately arrives with a
+  // non-loopback Host and must pass the source gate on the strength of its
+  // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  // Enforce token auth when a token is configured (remote/mobile access mode)
-  // or when tokenless native-app mode relaxes the Host gate for Tailscale Serve.
-  // With no token and no tailnet trust — the local desktop app and dev server —
-  // the loopback host+origin gate above is the protection, and credential-less
-  // connections are the local app itself.
-  if (requiresPtyAccessToken() && !isAuthorized(req, query)) {
+  // Enforce token auth whenever the server has a remote/mobile credential.
+  // With no token set — the local desktop app and dev server — the loopback
+  // host+origin gate above is the protection, and credential-less connections
+  // are the local app itself. #714 dropped this and 401'd every local terminal
+  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
+  // server-pty-ws.test.ts warns about). Native mobile mode configures only
+  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
+  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -505,31 +674,107 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
-function startListening(attempt: number = 0): void {
-  const currentPort = port + attempt;
-  const maxAttempts = 10;
+server.listen(port, hostname, () => {
+  console.log(`> Ready on http://${hostname}:${port}`);
+});
 
-  server.listen(currentPort, hostname, () => {
-    console.log(`> Ready on http://${hostname}:${currentPort}`);
-    // Export the final port so wrapper scripts (dev-app.sh, etc.) can discover it.
-    if (process.env.PORT !== String(currentPort)) {
-      process.env.PORT = String(currentPort);
-    }
-  });
+server.once("error", (err: NodeJS.ErrnoException) => {
+  console.error(err);
+  process.exit(1);
+});
 
-  server.once("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
-      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
-      server.removeAllListeners("error");
-      // listen() attached its callback via once('listening') before the failed
-      // bind — clear it too, or every stale callback fires on the winning port.
-      server.removeAllListeners("listening");
-      startListening(attempt + 1);
-    } else {
-      console.error(err);
-      process.exit(1);
-    }
-  });
+// ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────
+// Long-lived servers (the packaged sidecar and dev runs alike) have died with
+// "Ineffective mark-compacts near heap limit" after hours of uptime, leaving
+// no evidence of WHAT filled the heap. This monitor makes the next episode
+// diagnosable: it logs a structured warning once heap usage crosses a high
+// watermark, and writes ONE heap snapshot per episode as the process
+// approaches the limit — before the OOM kill destroys the evidence.
+//
+// Mirrors src/lib/coven-paths.ts covenHome()/caveHome() for the snapshot
+// destination (server.ts is transpiled standalone and cannot import src/).
+
+const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";
+const HEAP_MONITOR_INTERVAL_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_HEAP_MONITOR_INTERVAL_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 300_000; // 5 minutes
+})();
+/** Log a structured warning at ≥85% of the V8 heap limit. */
+const HEAP_WARN_RATIO = 0.85;
+/** Write the per-episode heap snapshot at ≥95% — about to OOM, capture now. */
+const HEAP_SNAPSHOT_RATIO = 0.95;
+/** Snapshots kept in the diagnostics dir (oldest pruned first). */
+const HEAP_SNAPSHOT_KEEP = 2;
+/** Disambiguates snapshots written within the same millisecond. */
+let heapSnapshotSeq = 0;
+
+function heapDiagnosticsDir(): string {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHome = process.env.COVEN_CAVE_HOME || join(covenHome, "cave");
+  return join(caveHome, "diagnostics");
 }
 
-startListening();
+const mb = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))}MB`;
+
+/** Prune oldest heap snapshots so the diagnostics dir never grows unbounded. */
+function pruneHeapSnapshots(dir: string): void {
+  const snapshots = readdirSync(dir)
+    .filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot"))
+    .sort(); // names embed an ISO-like timestamp, so lexical order = age order
+  while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
+    const oldest = snapshots.shift()!;
+    try {
+      unlinkSync(join(dir, oldest));
+    } catch {
+      // Already gone — fine.
+    }
+  }
+}
+
+function startHeapMonitor(): void {
+  if (!HEAP_MONITOR_ENABLED) return;
+  // Latches once per high-heap episode; re-arms after usage recovers below
+  // the warn watermark so a later, separate episode captures its own snapshot.
+  let snapshotWritten = false;
+
+  const tick = (): void => {
+    const heap = getHeapStatistics();
+    const ratio = heap.used_heap_size / heap.heap_size_limit;
+    if (ratio < HEAP_WARN_RATIO) {
+      snapshotWritten = false;
+      return;
+    }
+
+    const usage = process.memoryUsage();
+    console.warn(
+      `[heap-monitor] heapUsed=${mb(heap.used_heap_size)} heapLimit=${mb(heap.heap_size_limit)} ` +
+        `(${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ` +
+        `ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`,
+    );
+
+    if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
+    // writeHeapSnapshot is synchronous and stop-the-world (seconds at GB
+    // scale) — acceptable exactly once, when the alternative is dying with
+    // no evidence minutes later.
+    try {
+      const dir = heapDiagnosticsDir();
+      mkdirSync(dir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const seq = String((heapSnapshotSeq += 1)).padStart(3, "0");
+      const file = join(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
+      writeHeapSnapshot(file);
+      snapshotWritten = true;
+      pruneHeapSnapshots(dir);
+      console.warn(`[heap-monitor] wrote heap snapshot ${file}`);
+    } catch (err) {
+      // Diagnostics must never take the server down with it.
+      snapshotWritten = true; // don't retry a failing write every tick
+      console.warn(`[heap-monitor] failed to write heap snapshot`, err);
+    }
+  };
+
+  // unref: telemetry must never keep the process alive on shutdown.
+  setInterval(tick, HEAP_MONITOR_INTERVAL_MS).unref();
+}
+
+startHeapMonitor();

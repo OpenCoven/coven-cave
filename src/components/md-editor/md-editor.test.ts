@@ -27,6 +27,9 @@ assert.match(shell, /e\.key\.toLowerCase\(\) === "s"/, "Cmd/Ctrl+S saves from th
 assert.match(shell, /const dirty = raw !== baseline/, "dirty tracks the saved baseline");
 assert.match(shell, /disabled=\{!dirty \|\| saving\}/, "save button disabled when clean/saving");
 assert.match(shell, /role="alert"/, "save errors are announced");
+// (cave-mglw) the "Saved" flash is the only save confirmation — it must be a
+// polite status so screen readers hear saves (incl. debounced autosaves) too.
+assert.match(shell, /savedFlash \? \(\s*\n[\s\S]{0,220}?<span role="status"/, "the Saved flash is a polite live region");
 
 // Untouched docs must round-trip byte-identical: raw is canonical state.
 assert.match(shell, /const \[raw, setRaw\] = useState\(value\)/, "raw document string is the canonical state");
@@ -129,7 +132,11 @@ assert.match(css, /--crepe-color-inline-code: color-mix\(in oklch, var\(--accent
 assert.match(css, /--crepe-color-inline-area: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\)/, "inline code pill bg is theme-aware");
 assert.doesNotMatch(css, /--crepe-color-inline-area: var\(--code-surface\)/, "inline code must NOT ride the fixed-dark code surface");
 assert.match(css, /\.milkdown-code-block \{[\s\S]*?background: var\(--code-surface\)/, "code blocks stay on the always-dark code surface");
-assert.match(globals, /@import "\.\.\/styles\/md-editor\.css"/, "md-editor.css imported in globals");
+// #3264: the sheet moved out of globals.css to the editor components so
+// non-editor routes stop paying for it — the components import it directly.
+const visualSource = await readFile(new URL("./md-editor-visual.tsx", import.meta.url), "utf8");
+assert.match(visualSource, /import "@\/styles\/md-editor\.css"/, "md-editor.css imported by the visual editor component");
+assert.doesNotMatch(globals, /@import "\.\.\/styles\/md-editor\.css"/, "md-editor.css stays out of the root stylesheet (#3264)");
 
 // The shared CodeMirror theme is one module for all three editor surfaces.
 const sharedTheme = await readFile(new URL("../code-editor-theme.ts", import.meta.url), "utf8");
@@ -137,4 +144,20 @@ assert.match(sharedTheme, /export const caveCodeMirrorTheme/, "shared theme expo
 const codeEditor = await readFile(new URL("../code-editor.tsx", import.meta.url), "utf8");
 assert.match(codeEditor, /from "@\/components\/code-editor-theme"/, "code-editor consumes the shared theme");
 
+// ── onDirtyChange: hosts can observe unsaved-edits transitions (cave-vv2h) ───
+// The shell reports dirty flips through a ref so an unstable callback identity
+// never re-fires the effect; MemoryMdEditor forwards it to the inner editor.
+assert.match(shell, /onDirtyChange\?: \(dirty: boolean\) => void/, "MdEditor exposes an onDirtyChange prop");
+assert.match(shell, /const onDirtyChangeRef = useRef\(onDirtyChange\)/, "dirty reporting rides a ref, not the callback identity");
+assert.match(shell, /useEffect\(\(\) => \{\s*\n\s*onDirtyChangeRef\.current\?\.\(dirty\);\s*\n\s*\}, \[dirty\]\)/, "dirty transitions fire only when dirty actually flips");
+assert.match(memory, /onDirtyChange=\{onDirtyChange\}/, "MemoryMdEditor forwards onDirtyChange to the shell");
+
 console.log("md-editor.test: ok");
+
+// ── (grimoire-audit cave-say6) editor lazy-load skeleton ─────────────────────
+// The visual editor chunk used to flash a bare "Loading editor…" line while
+// Milkdown loaded — it now renders skeleton text lines like the other panes.
+assert.match(shell, /loading: \(\) => \(\s*\n\s*\/\/ Skeleton lines/, "the dynamic import has a skeleton fallback");
+assert.match(shell, /<Skeleton key=\{i\} variant="text" width=\{w\} \/>/, "the fallback uses the shared Skeleton primitive");
+assert.match(shell, /aria-label="Loading editor" aria-busy="true"/, "the fallback is announced as busy");
+assert.ok(!shell.includes("Loading editor…"), "the bare text flash is gone");

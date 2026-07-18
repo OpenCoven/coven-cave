@@ -52,6 +52,14 @@ for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects
 // Picking a familiars entry activates the studio tab below the provider
 // instead of scrolling to a SettingsGroup (the panel has none).
 assert.match(shell, /if \(entry\.familiarTab\) \{[\s\S]*?setFamiliarsTabTarget\(entry\.familiarTab\)/, "goToSetting branches familiars entries to the tab target");
+
+assert.match(
+  shell,
+  /new URLSearchParams\(window\.location\.search\)/,
+  "Settings reads exact group/tab targets passed by the global palette",
+);
+assert.match(shell, /params\.get\("group"\)/, "Settings accepts a group deep-link target");
+assert.match(shell, /params\.get\("familiarTab"\)/, "Settings accepts a familiar studio-tab deep-link target");
 assert.match(shell, /setActiveTab\(tabTarget\)/, "FamiliarsSection activates the targeted studio tab");
 assert.match(shell, /familiar-studio-inline-tab-\$\{tabTarget\}/, "the targeted tab button receives focus");
 assert.match(shell, /onTabTargetConsumed\?\.\(\)/, "the one-shot tab target is handed back to the shell");

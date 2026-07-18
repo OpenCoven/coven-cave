@@ -19,6 +19,11 @@
  */
 
 import { useSyncExternalStore } from "react";
+import {
+  readAppPreferences,
+  subscribeAppPreferences,
+  updateAppPreferences,
+} from "./app-preferences.ts";
 
 export const DATETIME_CLOCK_KEY = "cave:datetime-clock";
 export const DATETIME_DATE_KEY = "cave:datetime-date";
@@ -77,16 +82,12 @@ function notify() {
 }
 
 function readFromStorage(): DateTimePrefs {
-  if (typeof window === "undefined") return DEFAULT_PREFS;
-  try {
-    return {
-      clock: normalizeClock(window.localStorage.getItem(DATETIME_CLOCK_KEY)),
-      date: normalizeDate(window.localStorage.getItem(DATETIME_DATE_KEY)),
-      density: normalizeDensity(window.localStorage.getItem(DATETIME_DENSITY_KEY)),
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
+  const datetime = readAppPreferences().appearance.datetime;
+  return {
+    clock: normalizeClock(datetime.clock),
+    date: normalizeDate(datetime.date),
+    density: normalizeDensity(datetime.density),
+  };
 }
 
 function getSnapshot(): DateTimePrefs {
@@ -107,6 +108,7 @@ export function readDateTimePrefs(): DateTimePrefs {
 
 export function setClockFormat(value: ClockFormat): void {
   const clock = normalizeClock(value);
+  updateAppPreferences({ appearance: { datetime: { clock } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_CLOCK_KEY, clock);
@@ -120,6 +122,7 @@ export function setClockFormat(value: ClockFormat): void {
 
 export function setDateFormat(value: DateFormat): void {
   const date = normalizeDate(value);
+  updateAppPreferences({ appearance: { datetime: { date } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_DATE_KEY, date);
@@ -133,6 +136,7 @@ export function setDateFormat(value: DateFormat): void {
 
 export function setDensityFormat(value: DensityFormat): void {
   const density = normalizeDensity(value);
+  updateAppPreferences({ appearance: { datetime: { density } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_DENSITY_KEY, density);
@@ -154,6 +158,11 @@ if (typeof window !== "undefined") {
     }
   });
 }
+
+subscribeAppPreferences(() => {
+  snapshot = null;
+  notify();
+});
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);

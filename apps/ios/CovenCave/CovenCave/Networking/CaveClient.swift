@@ -2,9 +2,8 @@ import Foundation
 
 /// REST + streaming client for the Coven Cave desktop API.
 /// When the desktop is token-gated (COVEN_CAVE_ACCESS_TOKEN), every request —
-/// REST and SSE alike — carries the paired credential as a Bearer header; in
-/// tokenless tailnet-trust mode no header is sent and the tailnet boundary is
-/// the trust anchor, as before.
+/// REST and SSE alike — carries the paired credential as a Bearer header. This
+/// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
 
@@ -111,8 +110,8 @@ struct CaveClient {
     }
 
     /// Rolling renewal: exchange the current credential for a fresh 30-day
-    /// token. Returns the new token, or nil when the desktop runs tokenless
-    /// (503) or the credential can't refresh — callers treat nil as "keep
+    /// token. Returns the new token, or nil when the desktop has no refresh
+    /// endpoint (503) or the credential can't refresh — callers treat nil as "keep
     /// using what we have".
     func refreshAccessToken() async -> String? {
         guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
@@ -370,10 +369,24 @@ struct CaveClient {
         var prompt: String
         var sessionId: String?
         var attachments: [ChatAttachment]?
+        /// Per-send client token (cave-h40l): the server keys its resumable
+        /// run buffer under this, so a NEW chat (no sessionId yet) is still
+        /// re-attachable after a transport drop.
+        var runId: String? = nil
     }
 
-    /// Open the SSE stream for a chat send. Yields decoded `StreamEvent`s.
-    func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamEvent, Error> {
+    /// One decoded SSE frame: the event plus the server's `id:` (the run
+    /// buffer seq). Consumers update their resume cursor AFTER applying the
+    /// event, so a drop can never skip or double a frame on resume.
+    struct StreamFrame {
+        let event: StreamEvent
+        /// Resume cursor as of this frame — nil until the server sends ids.
+        let id: Int?
+    }
+
+    /// Open the SSE stream for a chat send. Yields decoded frames — keep the
+    /// last applied frame's `id` to resume mid-turn via `resumeStream`.
+    func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -385,33 +398,56 @@ struct CaveClient {
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     try Self.check(resp)
 
-                    var dataLines: [String] = []
+                    var parser = SSELineParser()
                     for try await line in bytes.lines {
-                        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if trimmedLine.isEmpty {
-                            // Blank line = event boundary. Flush accumulated data.
-                            if !dataLines.isEmpty {
-                                let joined = dataLines.joined(separator: "\n")
-                                if let event = StreamEvent.decode(joined) {
-                                    continuation.yield(event)
-                                }
-                                dataLines.removeAll()
-                            }
-                            continue
+                        if let event = parser.consume(line) {
+                            continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
                         }
-                        if trimmedLine.hasPrefix("data:") {
-                            let payload = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                            if let event = StreamEvent.decode(payload) {
-                                continuation.yield(event)
-                                continue
-                            }
-                            dataLines.append(payload)
-                        }
-                        // ignore other SSE fields (event:, id:, :comment)
                     }
                     // Flush any trailing event with no terminating blank line.
-                    if !dataLines.isEmpty, let event = StreamEvent.decode(dataLines.joined(separator: "\n")) {
-                        continuation.yield(event)
+                    if let event = parser.flush() {
+                        continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Signals `GET /api/chat/stream` had no buffered run for the key — the
+    /// turn finished long ago or the server restarted. Callers fall back to
+    /// the post-hoc transcript resync.
+    struct NoResumableRun: Error {}
+
+    /// Re-attach to a LIVE chat run after a transport drop (cave-h40l).
+    /// Replays buffered events past `cursor` (the last applied frame id),
+    /// then tails the run live; the server disarms its detach-cap kill while
+    /// a tail is attached. Throws `NoResumableRun` on 404.
+    func resumeStream(runId: String, cursor: Int) -> AsyncThrowingStream<StreamFrame, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = try request("api/chat/stream?runId=\(urlQuery(runId))&cursor=\(cursor)")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    req.timeoutInterval = 600
+
+                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    if (resp as? HTTPURLResponse)?.statusCode == 404 {
+                        throw NoResumableRun()
+                    }
+                    try Self.check(resp)
+
+                    var parser = SSELineParser()
+                    for try await line in bytes.lines {
+                        if let event = parser.consume(line) {
+                            continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
+                        }
+                    }
+                    if let event = parser.flush() {
+                        continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
                     }
                     continuation.finish()
                 } catch {

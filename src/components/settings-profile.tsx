@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { SettingsOverview } from "@/components/settings-overview";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
 import { Icon } from "@/lib/icon";
 import {
@@ -79,6 +82,14 @@ export function ProfileSection() {
   const [linkHint, setLinkHint] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  // One-click removals with no undo → two-step (cave-5lsj). Links arm per-row.
+  const avatarRemoveConfirm = useArmedConfirm();
+  const [armedLinkIndex, setArmedLinkIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (armedLinkIndex === null) return;
+    const t = window.setTimeout(() => setArmedLinkIndex(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [armedLinkIndex]);
   const [legacySvgAvatar, setLegacySvgAvatar] = useState(false);
   useEffect(() => {
     if (snapshot?.avatar.present) {
@@ -211,6 +222,14 @@ export function ProfileSection() {
       <h2 id={`${baseId}-title`} className="sr-only">Profile</h2>
       <SettingsOverview section="profile" />
 
+      <Link
+        href="/profile"
+        className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        aria-label="Open your profile card"
+      >
+        View profile card →
+      </Link>
+
       {disabled ? (
         <p className="rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-muted)]">
           Daemon offline — profile unavailable.
@@ -218,7 +237,7 @@ export function ProfileSection() {
       ) : null}
 
       {error ? (
-        <p className="rounded-xl border border-[var(--danger)] bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] px-4 py-3 text-[12px] text-[var(--danger)]">
+        <p className="rounded-xl border border-[var(--color-danger)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-4 py-3 text-[12px] text-[var(--color-danger)]">
           {error}
         </p>
       ) : null}
@@ -274,23 +293,23 @@ export function ProfileSection() {
                 onChange={onAvatarFile}
                 className="sr-only"
               />
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 disabled={disabled || avatarBusy}
                 onClick={() => fileInputRef.current?.click()}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {avatarBusy ? "Updating…" : "Upload image"}
-              </button>
+              </Button>
               {snapshot?.avatar.present ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={avatarBusy}
-                  onClick={() => void removeAvatar()}
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => avatarRemoveConfirm.trigger(() => void removeAvatar())}
                 >
-                  Remove
-                </button>
+                  {avatarRemoveConfirm.armed ? "Really remove?" : "Remove"}
+                </Button>
               ) : null}
             </div>
             <p className="text-[11px] text-[var(--text-muted)]">PNG, JPEG, or WebP. Large files are downsized before upload.</p>
@@ -378,31 +397,38 @@ export function ProfileSection() {
                   />
                 </ProfileField>
                 <div className="flex items-end">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     disabled={disabled}
-                    onClick={() => void removeLink(index)}
-                    className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-2 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => {
+                      if (armedLinkIndex === index) {
+                        setArmedLinkIndex(null);
+                        void removeLink(index);
+                      } else {
+                        setArmedLinkIndex(index);
+                      }
+                    }}
                   >
-                    Remove
-                  </button>
+                    {armedLinkIndex === index ? "Really remove?" : "Remove"}
+                  </Button>
                 </div>
                 {rowIncomplete ? (
-                  <p className="text-[11px] text-[var(--danger)] md:col-span-3">Add both fields to save this link.</p>
+                  <p className="text-[11px] text-[var(--color-danger)] md:col-span-3">Add both fields to save this link.</p>
                 ) : null}
               </div>
             );
           })}
-          {linkHint ? <p className="text-[11px] text-[var(--danger)]">{linkHint}</p> : null}
+          {linkHint ? <p className="text-[11px] text-[var(--color-danger)]">{linkHint}</p> : null}
           <div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               disabled={disabled || links.length >= PROFILE_LIMITS.links}
               onClick={() => setLinks((current) => [...current, { label: "", url: "" }])}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Add link
-            </button>
+            </Button>
             {saving === "links" ? <span className="ml-3 text-[11px] text-[var(--text-muted)]">Saving…</span> : null}
           </div>
         </div>

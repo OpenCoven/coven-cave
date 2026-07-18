@@ -1,23 +1,9 @@
 // Home feed — shared client-safe types + helpers for the home surface's
-// content feed (Videos · Tweets · Repos), which replaces the old RSS widget.
+// content feed (Tweets · Repos), which replaces the old RSS widget.
 // Pure / framework-free (no node imports) so the browser components and the
 // server routes can share it.
 
 export type FeedTab = "tweets" | "repos";
-
-/** A YouTube video, sourced from a channel's Atom feed via /api/youtube. */
-export type VideoItem = {
-  /** Stable key (the video id, or the link when the id can't be parsed). */
-  id: string;
-  title: string;
-  /** Channel display name. */
-  channel: string;
-  /** 11-char YouTube video id, when parseable from the link. */
-  videoId: string | null;
-  /** Canonical watch URL. */
-  url: string;
-  isoDate: string | null;
-};
 
 /** A GitHub repository, from /api/github/repos. */
 export type RepoItem = {
@@ -47,37 +33,6 @@ export type TweetItem = {
   /** ISO publish timestamp, when present. */
   isoDate: string | null;
 };
-
-const YT_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"]);
-
-/** Extract the 11-char YouTube video id from any common URL form. */
-export function parseYoutubeVideoId(raw: string): string | null {
-  if (!raw) return null;
-  // Bare id.
-  if (/^[A-Za-z0-9_-]{11}$/.test(raw.trim())) return raw.trim();
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    return null;
-  }
-  const host = url.hostname.toLowerCase();
-  if (!YT_HOSTS.has(host)) return null;
-  if (host.endsWith("youtu.be")) {
-    const id = url.pathname.replace(/^\//, "").split("/")[0] ?? "";
-    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-  }
-  const v = url.searchParams.get("v");
-  if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
-  // /embed/<id>, /shorts/<id>, /v/<id>
-  const m = url.pathname.match(/\/(?:embed|shorts|v)\/([A-Za-z0-9_-]{11})/);
-  return m ? m[1] : null;
-}
-
-/** A YouTube thumbnail URL for a video id (mqdefault is reliably present). */
-export function youtubeThumbnail(videoId: string): string {
-  return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
-}
 
 /** Parse @handle + status id from a tweet/X URL. Normalizes host to x.com. */
 export function parseTweetRef(raw: string): { url: string; handle: string | null; statusId: string | null } | null {

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/calendar.css";
+
 import { createContext, useCallback, useContext, useId, useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
@@ -14,7 +16,8 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SnoozeMenu } from "@/components/snooze-menu";
-import { itemDate, packEventColumns } from "@/lib/calendar-layout";
+import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
 
@@ -24,6 +27,14 @@ import { useIsMobile } from "@/lib/use-viewport";
 const FamiliarColorContext = createContext<(familiarId: string | null | undefined) => string | null>(() => null);
 function useFamiliarAccent(familiarId: string | null | undefined): string | null {
   return useContext(FamiliarColorContext)(familiarId);
+}
+
+// Per-familiar display name, same shape as the colour context. The accent
+// colour alone is a colour-only encoding (WCAG 1.4.1) — every chip also names
+// its owning familiar in the accessible name / tooltip.
+const FamiliarNameContext = createContext<(familiarId: string | null | undefined) => string | null>(() => null);
+function useFamiliarName(familiarId: string | null | undefined): string | null {
+  return useContext(FamiliarNameContext)(familiarId);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -130,6 +141,22 @@ function agendaDayLabel(date: Date, now: Date = new Date()): string {
   return relDayWord(date, now) ?? fmtDateHeading(date);
 }
 
+// Compact "time until / since" for agenda rows — the affordance that answers
+// "what's next" at a glance ("now", "in 25m", "in 3h", "40m ago"). Only
+// meaningful inside a ~12h window; beyond that the day header already carries
+// the date, so we return null and the row shows just its clock time.
+function relTimeShort(target: Date, now: Date): string | null {
+  const mins = Math.round((target.getTime() - now.getTime()) / 60_000);
+  const abs = Math.abs(mins);
+  if (abs < 1) return "now";
+  if (abs < 60) return mins > 0 ? `in ${abs}m` : `${abs}m ago`;
+  if (abs < 60 * 12) {
+    const hrs = Math.round(abs / 60);
+    return mins > 0 ? `in ${hrs}h` : `${hrs}h ago`;
+  }
+  return null;
+}
+
 // A hydration-safe, live-ticking "now". Null on the server / first client
 // render (so today-highlights and the now-line aren't painted into SSR markup,
 // which would mismatch the client clock), then resolves on mount and re-ticks
@@ -138,8 +165,17 @@ function useNow(): Date | null {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
+    // Anchor ticks to the wall-clock minute (a mount-anchored interval left
+    // the now-line and Today highlight up to ~60s behind at each rollover).
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const align = setTimeout(() => {
+      setNow(new Date());
+      interval = setInterval(() => setNow(new Date()), 60_000);
+    }, 60_000 - (Date.now() % 60_000));
+    return () => {
+      clearTimeout(align);
+      if (interval) clearInterval(interval);
+    };
   }, []);
   return now;
 }
@@ -168,6 +204,8 @@ function defaultEntryFireAt(day: Date): string {
   // opens on the day the user actually clicked.
   if (isSameDay(day, now)) {
     const slot = new Date(now);
+    // The +5 is a buffer: a slot boundary under 5 minutes away is skipped for
+    // the one after it (:56-59 → :15 past). setMinutes(75) carries the hour.
     slot.setMinutes(Math.ceil((slot.getMinutes() + 5) / 15) * 15, 0, 0);
     return slot.toISOString();
   }
@@ -221,35 +259,96 @@ function platformIcon(item: InboxItem): IconName {
 
 // ─── Item chip (shared across views) ──────────────────────────────────────────
 
+// A single agenda row, laid out as a timeline entry: a fixed left clock column,
+// a spine dot threaded by the day's vertical rail, the title, and a right-hand
+// "in 2h" relative cue. `isNext` marks the soonest upcoming item so the agenda
+// answers "what's next" without the user hunting for it.
 function ItemChip({
   item,
   onClick,
+  isNext = false,
+  now = null,
 }: {
   item: InboxItem;
   onClick?: () => void;
+  isNext?: boolean;
+  now?: Date | null;
 }) {
   const done = item.status === "done";
+  const overdue = isOverdueReminder(item);
   const accent = useFamiliarAccent(item.familiarId);
+  const familiarName = useFamiliarName(item.familiarId);
+  const iso = item.fireAt ?? item.firedAt ?? null;
+  const rel = iso && now && !done ? relTimeShort(new Date(iso), now) : null;
   return (
     <button
       onClick={onClick}
-      title={item.title}
-      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
-      className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
+      title={familiarName ? `${item.title} — ${familiarName}` : item.title}
+      className={`cal-agenda-row focus-ring group${done ? " is-done" : ""}${isNext ? " is-next" : ""}${overdue ? " is-overdue" : ""}`}
     >
-      {done
-        ? <Icon name="ph:check-circle" className="shrink-0 text-[var(--text-muted)] text-[12px]" />
-        : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
-      <Icon
-        name={platformIcon(item)}
-        className="shrink-0 text-[var(--text-muted)] text-[12px]"
-      />
-      <span className={`flex-1 truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
-      {(item.fireAt ?? item.firedAt) && (
-        <span className="shrink-0 text-[var(--text-muted)]">
-          {fmtTime((item.fireAt ?? item.firedAt)!)}
+      <span className={`cal-agenda-time${overdue ? " is-overdue" : ""}${isNext ? " is-next" : ""}`}>
+        {iso ? fmtTime(iso) : "—"}
+      </span>
+      <span className="cal-agenda-spine" aria-hidden>
+        {done ? (
+          <Icon name="ph:check-circle" className="cal-agenda-dot-check" />
+        ) : (
+          <span
+            role="img"
+            aria-label={urgencyLabel(item)}
+            title={urgencyLabel(item)}
+            className={`cal-agenda-dot ${urgencyColor(item)}`}
+            style={accent ? { boxShadow: `0 0 0 2.5px color-mix(in oklch, ${accent} 60%, transparent)` } : undefined}
+          />
+        )}
+      </span>
+      <span className="cal-agenda-body">
+        <Icon name={platformIcon(item)} className="cal-agenda-platform" aria-hidden />
+        <span className={`cal-agenda-title${done ? " line-through" : ""}`}>{item.title}</span>
+        {familiarName && <span className="sr-only">, {familiarName}</span>}
+      </span>
+      {isNext ? <span className="cal-agenda-next">Next</span> : null}
+      {rel ? <span className={`cal-agenda-rel${overdue ? " is-overdue" : ""}${isNext ? " is-next" : ""}`}>{rel}</span> : null}
+    </button>
+  );
+}
+
+// A board task's due date, rendered in the same timeline grid as reminders so
+// the agenda reads as one thread — but tinted "task" (warning) and tagged, so a
+// deadline is never mistaken for a scheduled reminder.
+function AgendaDeadlineRow({
+  deadline,
+  onOpen,
+}: {
+  deadline: CalendarDeadline;
+  onOpen?: (id: string) => void;
+}) {
+  const done = deadline.status === "done";
+  const accent = useFamiliarAccent(deadline.familiarId);
+  const familiarName = useFamiliarName(deadline.familiarId);
+  return (
+    <button
+      type="button"
+      data-calendar-deadline="true"
+      onClick={(e) => { e.stopPropagation(); onOpen?.(deadline.id); }}
+      title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+      className={`cal-agenda-row cal-agenda-row--task focus-ring group${done ? " is-done" : ""}`}
+    >
+      <span className="cal-agenda-time is-due">Due</span>
+      <span className="cal-agenda-spine" aria-hidden>
+        <span
+          className="cal-agenda-dot cal-agenda-dot--task"
+          style={accent ? { boxShadow: `0 0 0 2.5px color-mix(in oklch, ${accent} 60%, transparent)` } : undefined}
+        >
+          <Icon name="ph:clock-countdown" width={9} aria-hidden />
         </span>
-      )}
+      </span>
+      <span className="cal-agenda-body">
+        <span className={`cal-agenda-title${done ? " line-through opacity-70" : ""}`}>{deadline.title}</span>
+        {familiarName && <span className="sr-only">, {familiarName}</span>}
+      </span>
+      <span className="cal-agenda-tag">Task</span>
     </button>
   );
 }
@@ -273,8 +372,9 @@ function EmptyScheduleState({
           leadingIcon="ph:plus"
           onClick={onAddEntry}
           className="calendar-empty-action"
+          title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
         >
-          Add task or event
+          Add reminder
         </Button>
       ) : null}
     </div>
@@ -334,6 +434,21 @@ function AgendaView({
         : a.date.getTime() - b.date.getTime());
   }, [items, deadlines, anchor, showPast]);
 
+  // The single soonest still-pending item — highlighted as "Next" so the agenda
+  // answers "what's up next" without the user scanning for it.
+  const nextId = useMemo(() => {
+    if (!now) return null;
+    const t = now.getTime();
+    let best: { id: string; ms: number } | null = null;
+    for (const it of items) {
+      if (it.status === "done" || it.status === "dismissed") continue;
+      const d = itemDate(it);
+      if (!d || d.getTime() < t) continue;
+      if (!best || d.getTime() < best.ms) best = { id: it.id, ms: d.getTime() };
+    }
+    return best?.id ?? null;
+  }, [items, now]);
+
   if (groups.length === 0) {
     return (
       <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
@@ -354,8 +469,9 @@ function AgendaView({
             leadingIcon="ph:plus"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
             className="calendar-empty-action"
+            title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
           >
-            Add task or event
+            Add reminder
           </Button>
         ) : null}
       </div>
@@ -363,9 +479,9 @@ function AgendaView({
   }
 
   return (
-    <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
+    <div className="cal-agenda-scroll flex flex-col overflow-y-auto px-3 py-3 sm:px-5">
       {showPast ? (
-        <div className="-mb-2 flex justify-end">
+        <div className="mb-1 flex justify-end">
           <Button
             variant="ghost"
             size="xs"
@@ -378,25 +494,28 @@ function AgendaView({
       ) : null}
       {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
         const total = groupItems.length + groupDeadlines.length;
+        const isToday = !!now && isSameDay(date, now);
+        const relWord = now ? relDayWord(date, now) : null;
         return (
-        <div key={date.toISOString()}>
-          <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
-            <span
-              className={`text-[12px] font-bold uppercase tracking-wider ${
-                now && isSameDay(date, now)
-                  ? "text-[var(--accent-presence)]"
-                  : "text-[var(--text-primary)]"
-              }`}
-            >
-              {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
+        <div key={date.toISOString()} className={`cal-agenda-group${isToday ? " is-today" : ""}`}>
+          <div className="cal-agenda-dayhead">
+            <span className="cal-agenda-datebadge" aria-hidden>
+              <span className="cal-agenda-dow">{WEEKDAYS[date.getDay()]}</span>
+              <span className="cal-agenda-dnum">{date.getDate()}</span>
             </span>
-            <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
-              {total} item{total !== 1 ? "s" : ""}
+            <span className="cal-agenda-daylabel">
+              <span className="cal-agenda-daylabel-main">
+                {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
+              </span>
+              {relWord ? (
+                <span className="cal-agenda-daylabel-sub">{MONTHS[date.getMonth()]} {date.getDate()}, {date.getFullYear()}</span>
+              ) : null}
             </span>
+            <span className="cal-agenda-count" title={`${total} item${total !== 1 ? "s" : ""}`}>{total}</span>
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="cal-agenda-list">
             {groupDeadlines.map((d) => (
-              <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} />
+              <AgendaDeadlineRow key={d.id} deadline={d} onOpen={onOpenDeadline} />
             ))}
             {[...groupItems]
               // Order by the same key the day bucket uses (itemDate: fireAt ??
@@ -407,6 +526,8 @@ function AgendaView({
                 <ItemChip
                   key={item.id}
                   item={item}
+                  isNext={item.id === nextId}
+                  now={now}
                   onClick={() => onOpenItem?.(item)}
                 />
               ))}
@@ -503,6 +624,7 @@ function DeadlineChip({
 }) {
   const done = deadline.status === "done";
   const accent = useFamiliarAccent(deadline.familiarId);
+  const familiarName = useFamiliarName(deadline.familiarId);
   return (
     <button
       type="button"
@@ -511,8 +633,8 @@ function DeadlineChip({
         e.stopPropagation();
         onOpen?.(deadline.id);
       }}
-      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}`}
-      title={`${deadline.title} — task deadline`}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+      title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
     >
@@ -538,7 +660,10 @@ function DeadlineStrip({
   return (
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+        <span
+          className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
+          title="Task due dates from the Board — separate from your scheduled reminders below"
+        >
           Due
         </span>
       </div>
@@ -597,15 +722,22 @@ function TimeGrid({
   onOpenItem,
   onAddEntry,
   onReschedule,
+  maxLanes = WEEK_MAX_LANES,
 }: {
   columns: { label: string; date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  /** Lane cap before concurrent events roll up into a "+N" pill. */
+  maxLanes?: number;
 }) {
   // Read the per-familiar accent fn once (events render in a loop, so we can't
   // call the hook per item).
   const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
+  // Reschedules (drag drop + Alt+↑/↓) move the event silently for AT users
+  // otherwise — confirm the new time through the shared live region.
+  const { announce } = useAnnouncer();
   // Tracks the in-flight drag: the item id + where in the block it was grabbed,
   // so the drop snaps the block's start (not the cursor) to the new time.
   const dragRef = useRef<{ id: string; grabY: number } | null>(null);
@@ -632,7 +764,15 @@ function TimeGrid({
 
   // Lane-pack each column once per columns change rather than on every render
   // (a drag re-renders the grid continuously).
-  const packedColumns = useMemo(() => columns.map((c) => packEventColumns(c.items)), [columns]);
+  const packedColumns = useMemo(
+    () => columns.map((c) => packEventColumnsWithOverflow(c.items, maxLanes)),
+    [columns, maxLanes],
+  );
+
+  // One popover serves every "+N" pill: clicking a pill anchors the popover to
+  // that pill and lists its rolled-up events.
+  const [overflowOpen, setOverflowOpen] = useState<{ colIdx: number; overflow: PlacedOverflow } | null>(null);
+  const overflowAnchorRef = useRef<HTMLElement | null>(null);
 
   const totalHeight = 24 * HOUR_HEIGHT;
   const nowTop = now ? ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT : 0;
@@ -704,6 +844,10 @@ function TimeGrid({
                     const slot = new Date(col.date);
                     slot.setHours(0, minutes, 0, 0);
                     onReschedule(drag.id, slot.toISOString());
+                    // Cross-day drags land in a different column than the one
+                    // that owns the item — search every column for the title.
+                    const dragged = columns.flatMap((c) => c.items).find((it) => it.id === drag.id);
+                    announce(`Rescheduled "${dragged?.title ?? "event"}" to ${col.label}, ${fmtTime(slot.toISOString())}`);
                   }
                 : undefined
             }
@@ -731,11 +875,12 @@ function TimeGrid({
             )}
 
             {/* Items — lane-packed so overlaps sit side by side */}
-            {packedColumns[ci].map((ev) => {
+            {packedColumns[ci].events.map((ev) => {
               const widthPct = 100 / ev.lanes;
               const leftPct = ev.lane * widthPct;
               const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
               const done = ev.item.status === "done";
+              const familiarName = nameFor(ev.item.familiarId);
               return (
                 <button
                   key={ev.item.id}
@@ -768,11 +913,12 @@ function TimeGrid({
                           const slot = new Date(col.date);
                           slot.setHours(0, minutes, 0, 0);
                           onReschedule(ev.item.id, slot.toISOString());
+                          announce(`Rescheduled "${ev.item.title}" to ${fmtTime(slot.toISOString())}`);
                         }
                       : undefined
                   }
-                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}`}
-                  title={onReschedule ? `${ev.item.title} — drag, or Alt+↑/↓, to reschedule` : ev.item.title}
+                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+                  title={`${familiarName ? `${ev.item.title} — ${familiarName}` : ev.item.title}${onReschedule ? " — drag, or Alt+↑/↓, to reschedule" : ""}`}
                   className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
@@ -795,11 +941,81 @@ function TimeGrid({
                 </button>
               );
             })}
+
+            {/* "+N" rollup pills — concurrent events beyond the lane cap */}
+            {packedColumns[ci].overflows.map((ov, oi) => {
+              const widthPct = 100 / ov.lanes;
+              const leftPct = ov.lane * widthPct;
+              const height = Math.max(18, ((ov.end - ov.start) / 60) * HOUR_HEIGHT - 2);
+              const open = overflowOpen?.colIdx === ci && overflowOpen.overflow === ov;
+              return (
+                <button
+                  key={`ov-${oi}`}
+                  type="button"
+                  data-calendar-event="true"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  aria-label={`${ov.items.length} more events from ${fmtTime(minutesToIso(col.date, ov.start))}`}
+                  title={`${ov.items.length} more events — click to list`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    overflowAnchorRef.current = e.currentTarget;
+                    setOverflowOpen(open ? null : { colIdx: ci, overflow: ov });
+                  }}
+                  className="focus-ring-inset absolute flex items-center justify-center rounded border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  style={{
+                    top: (ov.start / 60) * HOUR_HEIGHT + 1,
+                    height,
+                    left: `calc(${leftPct}% + 1px)`,
+                    width: `calc(${widthPct}% - 2px)`,
+                  }}
+                >
+                  +{ov.items.length}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
+
+      {/* One shared popover lists whichever "+N" pill is open */}
+      <Popover
+        open={overflowOpen !== null}
+        onOpenChange={(next) => { if (!next) setOverflowOpen(null); }}
+        anchorRef={overflowAnchorRef}
+        placement="bottom-start"
+        minWidth={220}
+        ariaLabel="More events"
+      >
+        <PopoverBody role="menu" ariaLabel="More events">
+          {(overflowOpen?.overflow.items ?? []).map((item) => {
+            const iso = item.fireAt ?? item.firedAt;
+            return (
+              <PopoverItem
+                key={item.id}
+                onSelect={() => {
+                  setOverflowOpen(null);
+                  onOpenItem?.(item);
+                }}
+                title={item.title}
+              >
+                <span className="tabular-nums text-[var(--text-muted)]">{iso ? fmtTime(iso) : ""}</span>
+                {" "}
+                {item.title}
+              </PopoverItem>
+            );
+          })}
+        </PopoverBody>
+      </Popover>
     </div>
   );
+}
+
+/** ISO timestamp for a minutes-from-midnight offset on a given day. */
+function minutesToIso(day: Date, minutes: number): string {
+  const d = new Date(day);
+  d.setHours(0, minutes, 0, 0);
+  return d.toISOString();
 }
 
 // ─── Day view ─────────────────────────────────────────────────────────────────
@@ -886,7 +1102,7 @@ function DayView({
       )}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} maxLanes={DAY_MAX_LANES} />
       </div>
     </div>
   );
@@ -970,6 +1186,7 @@ function WeekView({
           {columns.map((col, i) => (
             <div
               key={i}
+              aria-current={now && isSameDay(col.date, now) ? "date" : undefined}
               className={`group relative flex-1 min-w-[80px] px-2 py-2 text-center ${
                 now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
@@ -994,6 +1211,7 @@ function WeekView({
                 }`}
               >
                 {col.date.getDate()}
+                {now && isSameDay(col.date, now) && <span className="sr-only">, today</span>}
               </div>
             </div>
           ))}
@@ -1034,12 +1252,28 @@ function MonthView({
   onOpenDeadline?: (id: string) => void;
 }) {
   const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
   const now = useNow();
   const monthStart = startOfMonth(anchor);
   const gridStart = startOfWeek(monthStart);
 
   // 6 weeks × 7 days grid
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  const weeks = Array.from({ length: 6 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+
+  // 2-D roving focus over the day cells (←/→ = day, ↑/↓ = week), per the
+  // WAI-ARIA grid pattern. The tab stop follows the anchor day — the roving
+  // default of "first cell" would land on the previous month's tail.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const { setActiveIndex } = useRovingTabIndex({
+    containerRef: gridRef,
+    itemSelector: '[data-month-cell="true"]',
+    columns: 7,
+  });
+  const anchorIndex = cells.findIndex((d) => isSameDay(d, anchor));
+  useEffect(() => {
+    if (anchorIndex >= 0) setActiveIndex(anchorIndex);
+  }, [anchorIndex, setActiveIndex]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, InboxItem[]>();
@@ -1074,25 +1308,35 @@ function MonthView({
     <div className="flex flex-1 flex-col overflow-hidden px-2 pb-3 sm:px-4 sm:pb-4">
       {/* Weekday headers */}
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[560px] flex-col">
-          <div className="mb-1 grid grid-cols-7">
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-label={`${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
+          className="flex h-full min-w-[560px] flex-col"
+        >
+          <div role="row" className="mb-1 grid grid-cols-7">
             {WEEKDAYS.map((wd) => (
               <div
                 key={wd}
+                role="columnheader"
                 className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 {wd}
               </div>
             ))}
           </div>
-          {/* Day cells */}
-          <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
-            {cells.map((day, i) => {
+          {/* Day cells — one row per week (flex-col + gap-px reproduces the
+              old grid-rows-6 hairline lattice while giving SRs real rows). */}
+          <div role="rowgroup" className="flex flex-1 flex-col gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
+            {weeks.map((week, wi) => (
+            <div key={wi} role="row" className="grid flex-1 grid-cols-7 gap-px">
+            {week.map((day) => {
               const key = startOfDay(day).toISOString();
               const dayItems = byDay.get(key) ?? [];
               const dayDeadlines = deadlinesByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
               const isToday = now ? isSameDay(day, now) : false;
+              const isAnchor = isSameDay(day, anchor);
 
               // Clicking an empty part of a current-month day pre-fills the add
               // form for that day; the date number still navigates into the day.
@@ -1104,27 +1348,40 @@ function MonthView({
               };
               return (
                 <div
-                  key={i}
-                  role="button"
-                  tabIndex={0}
+                  key={key}
+                  role="gridcell"
+                  data-month-cell="true"
+                  tabIndex={-1}
+                  aria-selected={isAnchor || undefined}
                   aria-current={isToday ? "date" : undefined}
-                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}`}
+                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}${isAnchor ? ", selected" : ""}`}
                   onClick={onCell}
                   onKeyDown={(e) => {
+                    // Shift+Enter opens the day — the keyboard path for what
+                    // the (tab-skipped) date-number button does on click.
+                    if (e.key === "Enter" && e.shiftKey) {
+                      e.preventDefault();
+                      onDayClick?.(day);
+                      return;
+                    }
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       onCell();
                     }
                   }}
-                  title={canAdd ? "Click to add a reminder — click the date to open the day" : undefined}
+                  title={canAdd ? "Click to add a reminder — click the date (or Shift+Enter) to open the day" : undefined}
                   className={`group relative focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
                   } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
+                  {/* Out of the tab order (cave-sth7): 42 of these defeated
+                      the grid's single roving tab stop. Mouse click still
+                      works; keyboard uses Shift+Enter on the cell. */}
                   <button
                     type="button"
+                    tabIndex={-1}
                     onClick={(e) => { e.stopPropagation(); onDayClick?.(day); }}
                     aria-label={`Open ${fmtDateHeading(day)}`}
                     className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
@@ -1143,6 +1400,7 @@ function MonthView({
                     ))}
                     {dayDeadlines.length > 2 && (
                       <button
+                        tabIndex={-1}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDayClick?.(day);
@@ -1156,6 +1414,7 @@ function MonthView({
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
                       const accent = accentFor(item.familiarId);
+                      const familiarName = nameFor(item.familiarId);
                       return (
                       <button
                         key={item.id}
@@ -1163,7 +1422,7 @@ function MonthView({
                           e.stopPropagation();
                           onOpenItem?.(item);
                         }}
-                        title={item.title}
+                        title={familiarName ? `${item.title} — ${familiarName}` : item.title}
                         style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
                         className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
@@ -1171,11 +1430,13 @@ function MonthView({
                           ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
                           : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
                         <span className={`truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
+                        {familiarName && <span className="sr-only">, {familiarName}</span>}
                       </button>
                       );
                     })}
                     {dayItems.length > 3 && (
                       <button
+                        tabIndex={-1}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDayClick?.(day);
@@ -1190,6 +1451,8 @@ function MonthView({
                 </div>
               );
             })}
+            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1314,6 +1577,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   agent: "Familiar",
   "response-needed": "Response needed",
   "daily-summary": "Daily summary",
+  milestone: "Milestone",
 };
 
 function ItemDetailPanel({
@@ -1459,6 +1723,38 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Week view needs ~7 usable columns; inside a narrow split tile (~360px)
+  // they floor at ~40px each. Below 560px of CONTAINER width, week renders
+  // with the day presentation instead — the user's stored week choice is
+  // untouched and returns the moment the pane widens (cave-87zv).
+  const [narrowPane, setNarrowPane] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.clientWidth;
+      setNarrowPane(w > 0 && w < 560);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const effectiveView: ViewMode = viewMode === "week" && narrowPane ? "day" : viewMode;
+
+  // Keep the open event detail panel in sync with live updates. `selectedItem`
+  // is a snapshot captured at click; without this, an SSE update/delete (or a
+  // mutation from elsewhere) leaves the panel showing stale status/fireAt/body,
+  // and a deleted item's panel lingers over a dead id — acting on it (Done /
+  // Snooze / Dismiss) fires a mutation against nothing. Mirrors the reconciler
+  // in automations-view.tsx: adopt the fresh item when it differs, else close.
+  useEffect(() => {
+    if (!selectedItem) return;
+    const fresh = items.find((it) => it.id === selectedItem.id);
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedItem)) setSelectedItem(fresh);
+    } else {
+      setSelectedItem(null);
+    }
+  }, [items, selectedItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Force agenda on phone-class viewports: the day/week/month grids all
   // have a `min-w-[560px]` floor, which would overflow a 360px screen.
@@ -1524,6 +1820,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     (familiarId: string | null | undefined) => (familiarId ? familiarColorById.get(familiarId) ?? null : null),
     [familiarColorById],
   );
+  const nameFor = useCallback(
+    (familiarId: string | null | undefined) => (familiarId ? familiarNameById.get(familiarId) ?? null : null),
+    [familiarNameById],
+  );
 
   // Legend: the distinct familiars that own something currently in view. Only
   // worth showing when ≥2 — with one (or none) there's nothing to disambiguate.
@@ -1551,10 +1851,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       const tag = target.tagName.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
-        // A focused grid event owns its own Arrow handling (roving nav +
-        // Alt+↑/↓ reschedule); don't also page the whole period out from under it.
-        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(-1); break;
-        case "ArrowRight": if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(1);  break;
+        // A focused grid event or month day-cell owns its own Arrow handling
+        // (roving nav + Alt+↑/↓ reschedule); don't also page the whole period
+        // out from under it.
+        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(1);  break;
         case "t": case "T": setAnchor(new Date()); break;
         case "d": case "D": setViewMode("day");    break;
         case "w": case "W": setViewMode("week");   break;
@@ -1569,13 +1870,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     return () => window.removeEventListener("keydown", handler);
     // re-bind when viewMode/anchor changes so navigate() and the new-entry
     // shortcut close over the current values.
-  }, [viewMode, anchor, onAddEntry]);
+    // effectiveView folds in narrowPane, so the handlers re-bind when the
+    // week→day fallback engages and navigate() steps by the visible unit.
+  }, [effectiveView, anchor, onAddEntry]);
 
   function navigate(dir: -1 | 1) {
     setAnchor((prev) => {
-      if (viewMode === "day") return addDays(prev, dir);
-      if (viewMode === "week") return addDays(prev, dir * 7);
-      if (viewMode === "month") {
+      if (effectiveView === "day") return addDays(prev, dir);
+      if (effectiveView === "week") return addDays(prev, dir * 7);
+      if (effectiveView === "month") {
         const d = new Date(prev);
         d.setMonth(d.getMonth() + dir);
         return d;
@@ -1586,8 +1889,8 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   }
 
   function headingLabel(): string {
-    if (viewMode === "day") return fmtDateHeading(anchor);
-    if (viewMode === "week") {
+    if (effectiveView === "day") return fmtDateHeading(anchor);
+    if (effectiveView === "week") {
       const ws = startOfWeek(anchor);
       const we = addDays(ws, 6);
       if (ws.getMonth() === we.getMonth()) {
@@ -1595,7 +1898,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       }
       return `${MONTHS[ws.getMonth()]} ${ws.getDate()} – ${MONTHS[we.getMonth()]} ${we.getDate()}, ${ws.getFullYear()}`;
     }
-    if (viewMode === "month") {
+    if (effectiveView === "month") {
       return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
     }
     return "Upcoming";
@@ -1614,14 +1917,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const announcedRef = useRef(false);
   useEffect(() => {
     if (!announcedRef.current) { announcedRef.current = true; return; }
-    const label = VIEW_MODES.find((v) => v.id === viewMode)?.label ?? "";
+    const label = VIEW_MODES.find((v) => v.id === effectiveView)?.label ?? "";
     announce(`${label} view, ${headingLabel()}`);
     // headingLabel() reads viewMode + anchor; re-announce whenever either moves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, anchor, announce]);
+  }, [effectiveView, anchor, announce]);
 
   return (
     <FamiliarColorContext.Provider value={accentFor}>
+    <FamiliarNameContext.Provider value={nameFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
       <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
@@ -1724,7 +2028,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {viewMode === "agenda" && (
+        {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1734,7 +2038,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "day" && (
+        {effectiveView === "day" && (
           <DayView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1745,7 +2049,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "week" && (
+        {effectiveView === "week" && (
           <WeekView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1757,7 +2061,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDay={goToDay}
           />
         )}
-        {viewMode === "month" && (
+        {effectiveView === "month" && (
           <MonthView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1783,6 +2087,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         />
       )}
     </div>
+    </FamiliarNameContext.Provider>
     </FamiliarColorContext.Provider>
   );
 }

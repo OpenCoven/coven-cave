@@ -3,63 +3,82 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
-import { groupInboxFeed } from "@/lib/inbox-feed";
+import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
+import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
+import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
+import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
-import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
+import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
-import { GrimoireView } from "@/components/grimoire-view";
+import type { GrimoireViewKind } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
-import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
+import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  COVEN_CODE_SKIP_KEY,
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
-import { InboxEscalationsView } from "@/components/inbox-escalations-view";
-import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
+import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
-import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
-import { RailInspector } from "@/components/inspector-pane";
-import { SalemChatPanel } from "@/components/salem/salem-widget";
-import { FamiliarsView } from "@/components/familiars-view";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   getFamiliarScope,
   setFamiliarScope,
   getLastSurface,
   setLastSurface,
 } from "@/lib/familiar-memory";
-import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
-import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
+import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  createDaemonDesktopAutoStartCoordinator,
+  createDaemonStatusRequestGate,
+  runWorkspaceDaemonStart,
+} from "@/lib/daemon-desktop-auto-start";
+import { useTauriPlatform } from "@/lib/tauri-platform";
+import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
 import {
   BoardView,
+  BrowserPane,
   CalendarView,
+  CommandPalette,
+  FamiliarsView,
   FamiliarWorkQueueView,
+  FamiliarGlyphPicker,
   GitHubView,
+  GrimoireView,
+  InboxEscalationsView,
   MarketplaceView,
+  MobileHandoffModal,
+  NewReminderModal,
+  OnboardingOverlay,
+  OpenCovenSubmissionPage,
+  RailInspector,
+  SalemChatPanel,
+  ShortcutsSheet,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
-import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
-import { ShortcutsSheet } from "@/components/shortcuts-sheet";
+import { ChatSurface } from "@/components/chat-surface";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -79,26 +98,48 @@ import {
   shouldRegenerateNarrative,
 } from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
+import {
+  getRoleSurface,
+  isRoleSurfaceMode,
+  parseRoleSurfaceMode,
+  roleSurfaceMode,
+  type RoleSurfaceMode,
+} from "@/lib/role-surfaces";
+import { useRoleSurfaceSession } from "@/lib/use-role-surfaces";
+import { RoleSurfaceHost } from "@/components/role-surface-host";
+// Role Surfaces self-register via this manifest — the shell only ever handles
+// the generic `surface:<id>` mode and never names a role.
+import "@/components/role-surfaces/register";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
-import { QuickChatOverlay } from "@/components/quick-chat-overlay";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
 } from "@/lib/open-external";
+import { deactivateAllNativeBrowserWebviews } from "@/lib/native-browser-lifecycle";
+import {
+  consumeBrowserNavigation,
+  enqueueBrowserNavigation,
+  type BrowserNavigationRequest,
+} from "@/lib/browser-navigation-queue";
 import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
 } from "@/lib/workspace-tiles";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
+
+// Everything the primary detail pane can show: the built-in workspace modes
+// plus registered Role Surfaces via the generic `surface:<id>` mode.
+type CaveMode = WorkspaceMode | RoleSurfaceMode;
 
 // What the drag-to-split secondary pane is showing: either a draggable page
 // (a workspace mode) or one of the companion surfaces (Salem / Memory /
@@ -132,8 +173,8 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   groupchat: "Group Chat",
   board: "Tasks",
-  calendar: "Schedules",
-  inbox: "Schedules",
+  calendar: "Rituals",
+  inbox: "Rituals",
   browser: "Browser",
   github: "GitHub",
   roles: "Roles",
@@ -141,16 +182,21 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
-  "familiar-work-queue": "Work Queue",
+  "familiar-work-queue": "Queue",
   journal: "Journal",
-  grimoire: "Grimoire",
+  grimoire: "Memories",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
 const CHAT_HASH_PREFIX = "#chat-";
-const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
+
+// GitHub task context is low-churn. At five minutes, uninterrupted idle
+// foreground use makes at most 12 Cave requests/hour instead of piggybacking on
+// the four-second session poll (~900/hour). usePausablePoll also pauses this in
+// hidden windows and while the user is composing input.
+const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 function readChatHash(): string | null {
   if (typeof window === "undefined") return null;
@@ -197,16 +243,6 @@ function clearModeParam() {
   );
 }
 
-function readMobileModeEnabled() {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
-}
-
-function writeMobileModeEnabled(enabled: boolean) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
-}
-
 function taskCanAnnotateSession(task: GitHubTask): boolean {
   return Boolean(task.sessionId && (task.prNumber != null || task.prUrl));
 }
@@ -227,7 +263,10 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
       git: task.branch
         ? { ...(session.git ?? {}), branch: task.branch }
         : session.git,
-      pullRequest: {
+      // The sessions list's server-side enrichment (gh pr view) carries the
+      // real PR state (open/merged/closed/draft) — never clobber it with the
+      // GitHub task's lifecycle word.
+      pullRequest: session.pullRequest ?? {
         repo: task.repo,
         number: task.prNumber,
         url: task.prUrl,
@@ -240,8 +279,13 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
 
 export function Workspace() {
   const nextRouter = useRouter();
+  const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
+  // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
+  // (declared above startFamiliarChat) can call it without a TDZ, and without
+  // workspace self-dispatching a chat-nav event. Assigned in an effect below.
+  const quickChatLaunchRef = useRef<() => void>(() => {});
   // Multiselect familiar scope. Empty set = "All familiars". `activeId` is the
   // derived single "primary" — the lone scoped id, or null when 0 or ≥2 are
   // selected — so all the existing single-familiar chrome/per-familiar state
@@ -257,23 +301,55 @@ export function Workspace() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
+  // false until the first /api/familiars fetch settles (success or error) —
+  // lets the chat boot view hold a quiet frame instead of flashing the
+  // "choose a familiar" empty-state copy while the roster is in flight.
+  const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const loadSessionsInFlightRef = useRef<Promise<void> | null>(null);
+  // The last session-list load failed (cave-x6k5) — see loadSessions.
+  const [sessionsError, setSessionsError] = useState(false);
+  // Monotonic sequence guard for loadSessions (see its definition): the list is
+  // scoped to the active familiar, and loadSessions re-fires on every scope
+  // change, so a stale in-flight load must not paint the previous familiar's
+  // sessions.
+  const loadSessionsReqRef = useRef(0);
+  const loadGitHubTasksReqRef = useRef(0);
+  const loadGitHubTasksForceEpochRef = useRef(0);
+  const loadGitHubTasksForceInFlightRef = useRef(0);
+  const baseSessionsRef = useRef<SessionRow[]>([]);
+  const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
+  const githubTasksRef = useRef<unknown>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [mode, setModeRaw] = useState<WorkspaceMode>("home");
+  // Home-first boot: every fresh launch (desktop app window or web tab)
+  // opens on the Home surface — the daily overview with the universal
+  // composer — per operator direction (this reverses cave-hsa6's chat-first
+  // boot). Chat stays one step away (⌘2 / nav / the composer submit), and
+  // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
+  // before, so restored sessions and share links still land where they point.
+  const [mode, setModeRaw] = useState<CaveMode>("home");
+  // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
+  // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
+  // and so the choice persists across Grimoire remounts within a session.
+  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
   // Group Chat retired its standalone page — it's now a tab inside the Chat
   // surface. Any request for the legacy `groupchat` mode (nav, deep link,
   // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
   // tab, so `mode` is never actually "groupchat" and the surface never flashes.
-  const setMode = useCallback((next: WorkspaceMode) => {
+  const setMode = useCallback((next: CaveMode) => {
+    // Native child WebViews render above React. Deactivate the primary pane
+    // before committing a non-Browser surface so there is no paint where the
+    // old WebView can intercept the new surface's first clicks.
+    if (modeRef.current === "browser" && next !== "browser") {
+      deactivateAllNativeBrowserWebviews("main");
+    }
     if (next === "groupchat") {
       // Set the latch synchronously so a freshly-mounting ChatSurface opens the
       // Group tab on mount; the event covers an already-mounted ChatSurface.
@@ -283,31 +359,103 @@ export function Workspace() {
       return;
     }
     if (next === "journal") {
-      // The Journal page retired — it lives in Settings → Familiars → Journal.
-      // Every entry point (sidebar row, ⌘K palette, ?mode= deep link,
-      // cave:navigate-mode, dashboard links) funnels through setMode, so this
-      // one redirect covers them all.
-      openFamiliarStudioSettingsTab("journal");
+      // Journal is now a tab inside the Grimoire surface. Every entry point
+      // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
+      // dashboard links) funnels through setMode, so opening Grimoire on its
+      // Journal tab here covers them all. (Per-familiar journals still live in
+      // Settings → Familiars → Journal.)
+      setGrimoireView("journal");
+      setModeRaw("grimoire");
+      return;
+    }
+    if (next === "flow") {
+      // FlowView is retired (lives on feature/automations-flow); "flow" has no
+      // render branch, so an unremapped request fell through to Home with the
+      // wrong sr-title and no nav highlight (cave-hyor). The remap lives HERE —
+      // the single choke point — so ?mode=flow deep links, cave:navigate-mode,
+      // and last-mode restore all land on Schedules.
+      setModeRaw("inbox");
       return;
     }
     setModeRaw(next);
   }, []);
   // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
   // Its back control returns to the surface the user came from.
-  const [lastNonChatMode, setLastNonChatMode] = useState<WorkspaceMode>("home");
+  const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
   // Sticky offline signal for the banner. A crash-looping / codesigning-zombie
   // daemon flaps: it briefly answers health (running:true) then dies again. The
   // banner keys off this instead of the raw per-poll status so a single transient
-  // "running" doesn't flicker it away — it shows on the first failed poll and
-  // only clears after the daemon is *consistently* healthy (see the streak ref).
+  // "running" doesn't flicker it away — it shows on the first definitive local-
+  // offline poll and only clears after the daemon is *consistently* healthy.
   const [daemonOffline, setDaemonOffline] = useState(false);
+  // The access-token gate rejected our credential (401 on the status poll).
+  // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
+  // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
+  const [authExpired, setAuthExpired] = useState(false);
+  const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
+  const daemonStatusRequestGateRef = useRef<ReturnType<typeof createDaemonStatusRequestGate> | null>(null);
+  if (daemonStatusRequestGateRef.current === null) {
+    daemonStatusRequestGateRef.current = createDaemonStatusRequestGate();
+  }
+  const startDaemonRef = useRef<() => Promise<void>>(async () => {});
+  const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
+  if (daemonAutoStartCoordinatorRef.current === null) {
+    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(() => {
+      void startDaemonRef.current();
+    });
+  }
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
+  const browserNavigationIdRef = useRef(Date.now() * 1024);
+  const [browserNavigationQueue, setBrowserNavigationQueue] = useState<BrowserNavigationRequest[]>([]);
+
+  const openUrlInAppBrowser = useCallback((url: string) => {
+    if (!url) return;
+    browserNavigationIdRef.current += 1;
+    const request = { id: browserNavigationIdRef.current, url };
+    setBrowserNavigationQueue((queue) => enqueueBrowserNavigation(queue, request));
+    setMode("browser");
+    shellRef.current?.dismissNavMobile();
+  }, [setMode]);
+
+  const acknowledgeBrowserNavigation = useCallback((request: BrowserNavigationRequest) => {
+    setBrowserNavigationQueue((queue) => consumeBrowserNavigation(queue, request.id));
+    if (window.sessionStorage.getItem(PENDING_IN_APP_BROWSER_URL_KEY) === request.url) {
+      window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
+    }
+  }, []);
+
+  // ── Mode-transition crossfade ──────────────────────────────────────────
+  // The `.cave-mode-fade` CSS animation only plays on the wrapper's *initial*
+  // mount. Re-firing it on a mode switch would need `key={mode}` on the
+  // wrapper, which is deliberately forbidden — the key remounts keepalive
+  // surfaces (it once killed the terminal's PTYs on every switch; pinned in
+  // comux-view-terminal.test.ts). Instead, replay a short opacity fade on the
+  // (persistent) wrapper via WAAPI whenever `mode` changes. Opacity-only, so it
+  // never applies a transform and therefore never becomes the containing block
+  // for position:fixed descendants (the cave-cco trap that forced 4 portal
+  // workarounds). Skips the first run (initial entrance is the CSS animation)
+  // and honors prefers-reduced-motion.
+  const detailFadeRef = useRef<HTMLDivElement>(null);
+  const modeFadeAnimRef = useRef<Animation | null>(null);
+  const modeFadeReadyRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!modeFadeReadyRef.current) {
+      modeFadeReadyRef.current = true;
+      return;
+    }
+    const el = detailFadeRef.current;
+    if (!el || typeof el.animate !== "function") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    modeFadeAnimRef.current?.cancel();
+    modeFadeAnimRef.current = el.animate(
+      [{ opacity: 0 }, { opacity: 1 }],
+      { duration: 120, easing: "ease-out" },
+    );
+  }, [mode]);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -322,6 +470,10 @@ export function Workspace() {
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // Lazy-load onboarding on first use, then keep its host mounted while closed.
+  // Its refs and job polling intentionally survive close/reopen cycles so an
+  // in-flight install is not forgotten and daemon auto-start stays one-shot.
+  const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -336,6 +488,7 @@ export function Workspace() {
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
     version: 1,
     mutedFamiliars: [],
+    mutedKinds: [],
     sound: { mode: "default" },
   });
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
@@ -345,14 +498,22 @@ export function Workspace() {
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
+  // Deep-link target for the native GitHub surface (a GitHub-event inbox
+  // notification's PR/issue). Cleared on leaving the surface so a later manual
+  // visit doesn't re-open a stale item.
+  const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
+  useEffect(() => {
+    if (mode !== "github" && githubTarget) setGithubTarget(null);
+  }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
-  const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
-  const [quickChatOpen, setQuickChatOpen] = useState(false);
+  // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
+  const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
+  const [mobileModeAutoRetryBlocked, setMobileModeAutoRetryBlocked] = useState(false);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch
@@ -401,109 +562,135 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
+    setMobileModeAutoRetryBlocked(false);
     setMobileModeEnabledState(enabled);
   }, []);
 
-  const reconcileMobileMode = useCallback(async (enabled: boolean) => {
-    try {
-      const body = enabled
-        ? { action: "app-start" }
-        : { action: "app-stop" };
-      const res = await fetch("/api/mobile-handoff", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        nativeHost?: string | null;
-        error?: string;
-        stderr?: string;
-      };
-      if (!json.ok) {
-        setMobileModeError(json.stderr || json.error || "Mobile mode unavailable.");
-        if (!enabled) setMobileModeHost(null);
-        return;
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {
+    const result = await reconcileMobileModeRequest(enabled, options);
+    setMobileModeAutoRetryBlocked(result.retryBlocked);
+    if (!result.ok) {
+      // suppressError covers the one-time boot reconcile with the pref off:
+      // the shared reconciler reports transport failures as !ok too, so both
+      // the expected plain-web 503 and a fetch error stay silent there.
+      if (!options?.suppressError) {
+        setMobileModeError(result.stderr || result.error || "Mobile mode unavailable.");
       }
-      setMobileModeError(null);
-      setMobileModeHost(enabled ? json.nativeHost ?? null : null);
-    } catch (err) {
-      setMobileModeError(err instanceof Error ? err.message : "Mobile mode unavailable.");
+      if (!enabled) setMobileModeHost(null);
+      return;
     }
+    setMobileModeError(null);
+    setMobileModeHost(enabled ? result.nativeHost ?? null : null);
   }, []);
 
-  // Reconcile only when mobile mode is (or just was) enabled. With the pref
-  // off there is nothing to stop — an unconditional boot-time POST meant
-  // every plain-web session hit /api/mobile-handoff, got the expected 503
-  // (the route needs the packaged app's signed token), and logged a console
-  // error + a misleading "Mobile mode unavailable" state for a feature the
-  // user never touched. Turning the toggle OFF still posts app-stop because
-  // the state change re-runs this effect while wasEnabledRef is set.
+  // Always reconcile once on boot, even when the persisted pref is off: Tailscale
+  // Serve routes outlive the web UI process, so a stale route from a crash or
+  // failed prior stop must be reset. Suppress only the boot-time disabled error
+  // so plain-web sessions do not show a misleading mobile-mode failure. After
+  // boot, disabled->disabled renders can skip, while enabled->disabled still
+  // posts app-stop.
   const mobileModeWasEnabledRef = useRef(false);
+  const didInitialMobileModeReconcileRef = useRef(false);
   useEffect(() => {
-    if (!mobileModeEnabled && !mobileModeWasEnabledRef.current) return;
+    const wasEnabled = mobileModeWasEnabledRef.current;
+    const isInitialReconcile = !didInitialMobileModeReconcileRef.current;
+    didInitialMobileModeReconcileRef.current = true;
     mobileModeWasEnabledRef.current = mobileModeEnabled;
-    void reconcileMobileMode(mobileModeEnabled);
+    if (!mobileModeEnabled && !wasEnabled && !isInitialReconcile) return;
+    void reconcileMobileMode(mobileModeEnabled, {
+      suppressError: isInitialReconcile && !mobileModeEnabled,
+    });
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
   // in a hidden tab and refreshes on return.
   usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
-    enabled: mobileModeEnabled,
+    enabled: mobileModeEnabled && !mobileModeAutoRetryBlocked,
   });
 
+  // Milestone crossings → renown ledger → inbox toasts. Self-contained
+  // (fetches its own unscoped roster/session data once per check).
+  useMilestoneWatch();
+
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    let running = false;
+    const requestGate = daemonStatusRequestGateRef.current!;
+    const requestId = requestGate.begin();
+    let result: ReturnType<typeof classifyDaemonStatusPoll>;
+    let credentialAccepted = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      const json = (await res.json()) as { running?: boolean };
-      running = json.running === true;
-      setDaemonRunning(running);
+      const payload = await res.json().catch(() => null);
+      result = classifyDaemonStatusPoll({
+        responseStatus: res.status,
+        responseOk: res.ok,
+        payload,
+      });
+      // A real non-401 response proves the Cave credential is accepted again.
+      credentialAccepted = res.status !== 401;
     } catch {
-      setDaemonRunning(false);
-    } finally {
-      // Drive the sticky offline signal: any failed poll marks the daemon
-      // offline immediately, but a background poll takes two *consecutive*
-      // healthy polls to clear — otherwise a flapping zombie daemon keeps
-      // dismissing the banner.
-      if (running) {
-        daemonHealthyStreakRef.current += 1;
-        // A `trusted` refresh follows an explicit user-initiated start, so a
-        // healthy answer is enough to clear the banner immediately — without it
-        // the "Start daemon" banner lingered for a poll cycle (~5s) after the
-        // daemon was already up.
-        if (opts?.trusted) daemonHealthyStreakRef.current = 2;
-        if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
-      } else {
-        daemonHealthyStreakRef.current = 0;
-        setDaemonOffline(true);
-      }
-      // The first poll has now produced a real answer — only after this may the
-      // offline banner appear, so a fresh load doesn't flash it before we know.
-      setDaemonStatusResolved(true);
+      result = classifyDaemonStatusPoll({
+        responseStatus: 0,
+        responseOk: false,
+        payload: null,
+        error: "status request failed",
+      });
     }
+
+    // An explicit refresh after Start can overtake an older background poll.
+    // Only the newest request may publish state, or that stale offline result
+    // can put the banner back after the daemon is already healthy.
+    if (!requestGate.isLatest(requestId)) return;
+    // The coordinator pins this first accepted decision. Later polls may update
+    // live UI state, but can never turn into a delayed automatic restart.
+    daemonAutoStartCoordinatorRef.current!.observeStatus(result);
+    if (credentialAccepted) setAuthExpired(false);
+
+    setDaemonStatusResolved(true);
+    if (result.kind === "auth-expired") {
+      setAuthExpired(true);
+      setDaemonStatusUnavailable(null);
+      return;
+    }
+    if (result.kind === "unavailable") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonStatusUnavailable(result.reason);
+      return;
+    }
+
+    setDaemonStatusUnavailable(null);
+    if (result.kind === "offline") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonRunning(false);
+      setDaemonOffline(true);
+      return;
+    }
+
+    setDaemonRunning(true);
+    daemonHealthyStreakRef.current += 1;
+    // A `trusted` refresh follows an explicit user-initiated start, so a
+    // healthy answer is enough to clear the banner immediately — without it
+    // the "Start daemon" banner lingered for a poll cycle (~5s) after the
+    // daemon was already up.
+    if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+    if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
   }, []);
 
   const startDaemon = useCallback(async () => {
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      dismissBanner("daemon-start-error");
-      // Trusted: the user just started it and the API reported success, so a
-      // single healthy status poll is enough to dismiss the offline banner now.
-      await refreshDaemonStatus({ trusted: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "daemon did not start";
-      pushBanner({
+    await runWorkspaceDaemonStart({
+      fetchImpl: fetch,
+      dismissError: () => dismissBanner("daemon-start-error"),
+      reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
         title: `Daemon start failed — ${message}`,
-      });
-      await refreshDaemonStatus();
-    }
+      }),
+      refreshStatus: refreshDaemonStatus,
+    });
   }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  startDaemonRef.current = startDaemon;
+
+  useEffect(() => {
+    daemonAutoStartCoordinatorRef.current!.observePlatform(tauriPlatform);
+  }, [tauriPlatform]);
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -565,6 +752,21 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // `/#card-<id>` deep link (daily-report pages, dashboard action inbox):
+  // BoardView is the only consumer of the card hash and it never mounts on
+  // the boot-default Chat surface, so external card links opened the app and
+  // silently dropped the card (cave-qnh2). Switch to the board; BoardView's
+  // hash effect re-applies once cards load. Same treatment for `/#grimoire:`
+  // (memory/knowledge/journal doc links from daily-report pages and shared
+  // URLs): GrimoireView reads its hash on mount, so it only needs the mode
+  // switch here (cave-aka2).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (/^#card-/.test(window.location.hash)) setMode("board");
+    else if (window.location.hash.startsWith("#grimoire:")) setMode("grimoire");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // File/diff links target ChatSurface's code rail. ChatSurface only mounts in
   // chat mode, so preserve event detail from non-chat surfaces until it mounts.
   useEffect(() => {
@@ -610,14 +812,16 @@ export function Workspace() {
   });
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
-  // it appears at the top of every surface, not just Chat.
+  // it appears at the top of every surface, not just Chat. While the access
+  // token is rejected the daemon state is unknowable — suppress this banner
+  // in favour of the re-auth one (cave-wkp5).
   useEffect(() => {
-    if (!daemonOffline) {
+    if (!daemonOffline || authExpired) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
-      // Only show the offline banner once the status has actually resolved to
-      // "not running" — never during the initial unknown window.
+      // Only show the offline banner once status has resolved to a definitive
+      // local-offline result — never during the initial unknown window.
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
@@ -630,60 +834,163 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+
+  // A status-service failure, timeout, malformed response, or non-local target
+  // problem does not prove the local daemon is stopped. Keep that uncertainty
+  // accurate and retryable instead of offering the misleading Start daemon CTA.
+  useEffect(() => {
+    if (!daemonStatusUnavailable || authExpired || daemonOffline) {
+      dismissBanner("daemon-status-unavailable");
+      return;
+    }
+    pushBanner({
+      id: "daemon-status-unavailable",
+      severity: "warning",
+      title: `Daemon status unavailable — ${daemonStatusUnavailable}`,
+      cta: {
+        label: "Retry",
+        onClick: () => {
+          void refreshDaemonStatus();
+        },
+      },
+    });
+  }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
+
+  // Re-auth banner: the access-token gate is rejecting every request, so all
+  // surfaces are degrading at once. A reload lands on the gate page, which
+  // explains how to sign back in (paste a token / open the pairing link).
+  useEffect(() => {
+    if (!authExpired) {
+      dismissBanner("auth-expired");
+      return;
+    }
+    pushBanner({
+      id: "auth-expired",
+      severity: "error",
+      title: "Access expired — this session's token is no longer valid. Reload to sign in again.",
+      cta: {
+        label: "Reload",
+        onClick: () => {
+          window.location.reload();
+        },
+      },
+    });
+  }, [authExpired, pushBanner, dismissBanner]);
 
   const loadFamiliars = useCallback(async () => {
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) {
-        setFamiliars([]);
+        // Keep the last-known-good roster: a failed load means "can't see the
+        // familiars right now", not "there are none". Clearing here made three
+        // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
     } catch (err) {
-      setFamiliars([]);
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+    } finally {
+      setFamiliarsLoaded(true);
     }
   }, []);
+
+  // A roster load that failed (or raced the daemon's boot) self-heals once the
+  // daemon is reachable again — without this, one transient failure left the
+  // empty state up until an unrelated refresh event (cave-atzv).
+  useEffect(() => {
+    if (daemonRunning) void loadFamiliars();
+  }, [daemonRunning, loadFamiliars]);
+  // …and while an error IS showing, keep retrying quietly. The effect above
+  // only fires on daemonRunning TRANSITIONS, so a one-off fetch flake with the
+  // daemon already "running" (e.g. it restarts right after the first familiar
+  // is summoned) stranded the error screen until a manual Retry (issue #2990).
+  usePausablePoll(() => void loadFamiliars(), 4_000, {
+    enabled: familiarsError !== null,
+  });
 
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
-  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
+  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
-    // Stamp recency so the top-bar quick-switch strip reflects real usage.
-    recordFamiliarUsed(id);
     // A multi-toggle shouldn't yank the surface around — only a plain single
     // select restores that familiar's last-viewed surface.
-    if (opts?.multi) return;
+    if (opts?.multi || opts?.preserveSurface) return;
     const last = getLastSurface(id);
     // Guard against retired/unknown persisted modes (e.g. the removed
     // "projects" standalone surface). Only restore if the stored string is
     // still a valid WorkspaceMode; otherwise fall back to the default.
     const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
     if (last === "flow") setMode("inbox");
-    // "journal" persists from before the page retired; restoring it would
-    // hard-navigate to Settings on a mere familiar select. Stay put instead.
-    else if (last === "journal") { /* no-op */ }
-    else if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
+    // A persisted Role Surface mode restores too — if this familiar no longer
+    // holds the role, the visibility effect below falls back generically.
+    // ("journal" restores fine: setMode remaps it to Grimoire's Journal tab —
+    // the old no-op predated that remap; cave-nwi8.)
+    else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
     selectFamiliarScope(id);
   }, [selectFamiliarScope]);
 
-  const loadSessions = useCallback(() => {
-    if (loadSessionsInFlightRef.current) return loadSessionsInFlightRef.current;
+  const loadGitHubTasks = useCallback(async (force = false) => {
+    const reqId = ++loadGitHubTasksReqRef.current;
+    const forceEpoch = force
+      ? ++loadGitHubTasksForceEpochRef.current
+      : loadGitHubTasksForceEpochRef.current;
+    const startedDuringForcedRefresh = !force && loadGitHubTasksForceInFlightRef.current > 0;
+    if (force) loadGitHubTasksForceInFlightRef.current += 1;
+    try {
+      const res = await fetch("/api/github/tasks", {
+        method: force ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => null);
+      const superseded = force
+        ? forceEpoch !== loadGitHubTasksForceEpochRef.current
+        : startedDuringForcedRefresh ||
+          forceEpoch !== loadGitHubTasksForceEpochRef.current ||
+          reqId !== loadGitHubTasksReqRef.current;
+      if (!res.ok || !json || json.ok === false || superseded) return;
 
-    const request = (async () => {
+      githubTasksRef.current = json;
+      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
+      setSessions((currentSessions) => {
+        const baseSessions = baseSessionsRef.current.length > 0
+          ? baseSessionsRef.current
+          : currentSessions;
+        const visibleBaseSessions = filterDeletedSessions(baseSessions, locallyDeletedSessionIdsRef.current);
+        const enriched = attachGitHubTaskContext(visibleBaseSessions, json);
+        return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
+      });
+    } catch {
+      // Keep the last-known-good count and session context. The next scheduled
+      // or explicit refresh will retry without blanking GitHub metadata.
+    } finally {
+      if (force) loadGitHubTasksForceInFlightRef.current -= 1;
+    }
+  }, []);
+
+  const loadSessions = useCallback(() => {
+    // Sequence guard. loadSessions runs from mount, the 4s poll, the
+    // familiars-refresh event, and — because `activeId` is a dep — re-fires
+    // whenever the active-familiar SCOPE changes. It scopes the fetch to that
+    // familiar's granted projects, so a load started under scope A that resolves
+    // *after* the user switches to scope B would paint A's sessions under B
+    // until the next poll healed it. A monotonic reqId (replacing the old
+    // in-flight-promise dedup, which additionally *skipped* the new-scope load
+    // while A was still in flight) drops every superseded load's writes, so only
+    // the newest scope ever reaches state.
+    const reqId = ++loadSessionsReqRef.current;
+    const isCurrent = () => reqId === loadSessionsReqRef.current;
+
+    return (async () => {
       let baseSessionsApplied = false;
-      const githubTasksPromise = fetch("/api/github/tasks", { cache: "no-store" })
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null);
       try {
         // Scope the session list to the active familiar's granted projects so
         // every surface fed by `sessions` enforces the familiar→projects map.
@@ -691,44 +998,72 @@ export function Workspace() {
         const scope = activeId ? `?familiarId=${encodeURIComponent(activeId)}` : "";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
-        if (!json.ok) return;
+        if (!isCurrent()) return; // superseded by a newer load / scope change
+        if (!json.ok) {
+          // A failed list is NOT "no chats" — flag it so the chat list can
+          // render a truthful can't-load state instead of the first-run
+          // empty state (cave-x6k5). The 4s poll retries.
+          setSessionsError(true);
+          return;
+        }
 
-        const baseSessions = (json.sessions ?? []) as SessionRow[];
+        setSessionsError(false);
+        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
+        baseSessionsRef.current = baseSessions;
+        const visibleSessions = githubTasksRef.current
+          ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
+          : baseSessions;
         // The 4s poll rebuilds a fresh array each tick; keep the previous
         // reference when nothing changed so an unchanged list doesn't re-render
         // every sessions consumer (chat list, rails, badges) for nothing.
-        setSessions((prev) => (sameSessionList(prev, baseSessions) ? prev : baseSessions));
+        setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
         setSessionsLoaded(true);
         baseSessionsApplied = true;
-
-        const githubTasksJson = await githubTasksPromise;
-        if (githubTasksJson) {
-          setGithubAssignedCount(Array.isArray(githubTasksJson.tasks) ? githubTasksJson.tasks.length : 0);
-          setSessions((currentSessions) => {
-            const enriched = attachGitHubTaskContext(
-              currentSessions.length > 0 ? currentSessions : baseSessions,
-              githubTasksJson,
-            );
-            return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
-          });
-        }
       } catch {
-        /* transient */
+        if (isCurrent()) setSessionsError(true); // transient — poll retries
       } finally {
-        if (!baseSessionsApplied) setSessionsLoaded(true);
-        loadSessionsInFlightRef.current = null;
+        if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-
-    loadSessionsInFlightRef.current = request;
-    return request;
   }, [activeId]);
+
+  const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
+    const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
+    if (confirmedIds.length === 0) return;
+
+    baseSessionsRef.current = filterDeletedSessions(
+      baseSessionsRef.current,
+      locallyDeletedSessionIdsRef.current,
+    );
+    setSessions((currentSessions) => {
+      const nextSessions = filterDeletedSessions(
+        currentSessions,
+        locallyDeletedSessionIdsRef.current,
+      );
+      return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
+    });
+    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    void loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     loadFamiliars();
     loadSessions();
-  }, [loadFamiliars, loadSessions]);
+    void loadGitHubTasks();
+  }, [loadFamiliars, loadSessions, loadGitHubTasks]);
+  // Composers rebind a familiar's runtime through /api/config (the runtime
+  // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
+  // empty-state identity line) shouldn't wait for the next natural reload —
+  // the switch paths fire this event so the roster catches up immediately.
+  useEffect(() => {
+    const onFamiliarsRefresh = () => void loadFamiliars();
+    window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
+    return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
+  }, [loadFamiliars]);
   usePausablePoll(() => void loadSessions(), 4000, {
+    pauseWhileInputActive: true,
+  });
+  usePausablePoll(() => void loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     pauseWhileInputActive: true,
   });
 
@@ -781,13 +1116,23 @@ export function Workspace() {
   const inboxPrefsRef = useRef(inboxPrefs);
   inboxPrefsRef.current = inboxPrefs;
 
+  // cave-fy1q phase 3: first-run funnel anchor — written once ever, and only
+  // while onboarding is still undismissed (the lib guards both), so
+  // time-to-first-reply measures fresh installs and never re-anchors old ones.
+  useEffect(() => {
+    stampFirstOpenOnce();
+  }, []);
+
   // Subscribe to the inbox SSE stream: drives the inbox list, toasts, and
   // macOS system notifications. EventSource auto-reconnects on its own.
   useEffect(() => {
     const es = new EventSource("/api/inbox/stream");
+    // Quiet delivery, not suppression: muted items still land in the inbox and
+    // bell — they just skip the toast/native-notification/sound moment.
     const isMuted = (item: InboxItem) =>
-      !!item.familiarId &&
-      inboxPrefsRef.current.mutedFamiliars.includes(item.familiarId);
+      (!!item.familiarId &&
+        inboxPrefsRef.current.mutedFamiliars.includes(item.familiarId)) ||
+      (inboxPrefsRef.current.mutedKinds as readonly string[]).includes(item.kind);
     const sound = () => {
       const s = inboxPrefsRef.current.sound;
       if (s.mode === "silent") return null;
@@ -809,21 +1154,36 @@ export function Workspace() {
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
       if (e.type === "snapshot") {
-        setInboxItems(e.items);
+        // Reconnect snapshots usually carry what we already have — keep the
+        // reference so inboxItemsWithEphemeral consumers don't re-render
+        // (companion to #2762's content-equal guard on `updated` echoes).
+        setInboxItems((prev) => (arrayContentEqual(prev, e.items) ? prev : e.items));
         return;
       }
       if (e.type === "created") {
         setInboxItems((prev) => [...prev, e.item]);
-        if (e.item.status === "fired" && !isMuted(e.item)) {
+        // Celebrations off = clean-tool mode: milestone items still land in
+        // the inbox (and the unread badge) but skip the toast + native ping.
+        const quietedMilestone = e.item.kind === "milestone" && !readCelebrationsEnabled();
+        if (e.item.status === "fired" && !isMuted(e.item) && !quietedMilestone) {
           setToasts((prev) => [...prev, toastFromItem(e.item)]);
           void nativeNotify(e.item.title, e.item.body, sound());
         }
         return;
       }
       if (e.type === "updated") {
-        setInboxItems((prev) =>
-          prev.map((it) => (it.id === e.item.id ? e.item : it)),
-        );
+        setInboxItems((prev) => {
+          // The SSE broadcast that follows an optimistic complete/dismiss/
+          // snooze delivers the same content back — bail on identity so every
+          // consumer of inboxItemsWithEphemeral skips one redundant re-render
+          // (cave-bzch).
+          const idx = prev.findIndex((it) => it.id === e.item.id);
+          if (idx === -1) return prev;
+          if (JSON.stringify(prev[idx]) === JSON.stringify(e.item)) return prev;
+          const next = prev.slice();
+          next[idx] = e.item;
+          return next;
+        });
         return;
       }
       if (e.type === "deleted") {
@@ -973,15 +1333,19 @@ export function Workspace() {
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
     void loadFamiliars();
-  }, [loadFamiliars]);
+    // Familiar creation lives in the app now (the Summoning Circle on the
+    // Familiars surface), not in the wizard. A user who leaves setup with a
+    // live daemon and an empty roster can't chat yet — walk them to the
+    // circle's invitation instead of dropping them on a familiar-less Home.
+    if (daemonRunning && familiars.length === 0) setMode("agents");
+  }, [loadFamiliars, daemonRunning, familiars.length, setMode]);
 
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared
   // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state again (cave-219): server `complete` ignores Coven Code
-  // (client-side tools[] check + skip choice), so bare `complete` must not
-  // short-circuit the gate. See onboarding-gate.ts for the structural-steps
-  // vs daemon-down rationale.
+  // finish-state (cave-219): both read bare server `complete` now that Coven
+  // Code is an optional runtime rather than a requirement. See
+  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -992,8 +1356,7 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        const covenCodeSkipped = window.localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1";
-        if (shouldAutoOpenOnboarding(json, covenCodeSkipped)) setOnboardingOpen(true);
+        if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       }
@@ -1019,10 +1382,14 @@ export function Workspace() {
           setPaletteOpen(true);
           return;
         }
-        // ⌘J (Ctrl+J off-Mac) → toggle the quick-chat dropdown, from anywhere.
+        // ⌘J (Ctrl+J off-Mac) → jump straight into a fresh chat with the active
+        // familiar, from anywhere. cave-xsq.6 retired the parallel quick-chat
+        // overlay in favor of the real (now ChatGPT-clean) chat surface; this
+        // reuses the tested new-chat plumbing (workspace handles it off-chat,
+        // ChatSurface handles it in-chat — see the cave:agents-new-chat wiring).
         if (k === "j") {
           e.preventDefault();
-          setQuickChatOpen((open) => !open);
+          quickChatLaunchRef.current();
           return;
         }
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
@@ -1060,37 +1427,61 @@ export function Workspace() {
     }
   }, []);
 
-  // Calendar item actions — optimistic local update + fire-and-forget POST;
-  // the /api/inbox/stream SSE reconciles authoritative state (same pattern as
-  // dismissToast/snoozeToast).
+  // Calendar item actions — optimistic local update + verified POST; the
+  // /api/inbox/stream SSE reconciles authoritative state on SUCCESS, but a
+  // FAILED write emits no SSE event, so each action now re-syncs from the
+  // server and corrects the announcement when its request fails — the old
+  // fire-and-forget left items visually done and told AT "Marked done."
+  // regardless (cave-x6k5). Announcements stay generic on purpose: the
+  // callbacks are [] -deps'd and only carry the id.
+  const { announce } = useAnnouncer();
+  const verifyInboxWrite = useCallback((req: Promise<Response>, failureNote: string) => {
+    void req
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      })
+      .catch(() => {
+        announce(failureNote, "assertive");
+        void refreshInbox();
+      });
+  }, [announce, refreshInbox]);
   const completeInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "done" } : it)));
-    void fetch(`/api/inbox/${id}/done`, { method: "POST" });
-  }, []);
+    verifyInboxWrite(fetch(`/api/inbox/${id}/done`, { method: "POST" }), "Couldn't mark done — restored.");
+    announce("Marked done.");
+  }, [announce, verifyInboxWrite]);
   const dismissInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "dismissed" } : it)));
-    void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
-  }, []);
+    verifyInboxWrite(fetch(`/api/inbox/${id}/dismiss`, { method: "POST" }), "Couldn't dismiss — restored.");
+    announce("Dismissed.");
+  }, [announce, verifyInboxWrite]);
   const snoozeInboxItem = useCallback((id: string, untilIso: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "snoozed", snoozeUntil: untilIso } : it)));
-    void fetch(`/api/inbox/${id}/snooze`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ untilIso }),
-    });
-  }, []);
+    verifyInboxWrite(
+      fetch(`/api/inbox/${id}/snooze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ untilIso }),
+      }),
+      "Couldn't snooze — restored.",
+    );
+    announce("Snoozed.");
+  }, [announce, verifyInboxWrite]);
   // Drag-to-reschedule from the calendar: move the item to a new fireAt and make
-  // it pending there (clearing any snooze). Optimistic; the SSE stream reconciles.
+  // it pending there (clearing any snooze). Optimistic; verified like the rest.
   const rescheduleInboxItem = useCallback((id: string, fireAtIso: string) => {
     setInboxItems((prev) =>
       prev.map((it) => (it.id === id ? { ...it, fireAt: fireAtIso, status: "pending", snoozeUntil: null } : it)),
     );
-    void fetch(`/api/inbox/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fireAt: fireAtIso, status: "pending", snoozeUntil: null }),
-    });
-  }, []);
+    verifyInboxWrite(
+      fetch(`/api/inbox/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fireAt: fireAtIso, status: "pending", snoozeUntil: null }),
+      }),
+      "Couldn't reschedule — restored.",
+    );
+  }, [verifyInboxWrite]);
 
   // Poll Inbox for unresolved-escalations count — drives the
   // sidebar/daemon-bar Inbox badge. Cheap GET every 30s; the route
@@ -1171,10 +1562,22 @@ export function Workspace() {
     pauseWhileInputActive: true,
   });
 
+  // Declared above handleEnrichTasks, which closes over it.
+  const pushToast = useCallback((title: string) => {
+    const id = `eph:adhoc-${Date.now()}`;
+    setToasts((prev) => [...prev, { id, title }]);
+  }, []);
+
   const handleEnrichTasks = useCallback(async () => {
     if (!activeId || enrichingTasks) return;
     setEnrichingTasks(true);
     setEnrichProgress(null);
+    // The trigger is a small top-bar button with no surface of its own — count
+    // the outcome so it can say what happened when the run ends (issue #2991:
+    // "clicking it results in loading and then returns to the start, no
+    // feedback").
+    let total = 0;
+    let enhanced = 0;
     try {
       const res = await fetch("/api/board/enrich-steps", {
         method: "POST",
@@ -1201,8 +1604,10 @@ export function Workspace() {
           try {
             const msg = JSON.parse(trimmed) as Record<string, unknown>;
             if (msg.kind === "start") {
-              setEnrichProgress({ done: 0, total: (msg.total as number) ?? 0 });
+              total = (msg.total as number) ?? 0;
+              setEnrichProgress({ done: 0, total });
             } else if (msg.kind === "done" || msg.kind === "skip") {
+              if (msg.kind === "done") enhanced += 1;
               setEnrichProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
             } else if (msg.kind === "complete") {
               window.dispatchEvent(new CustomEvent("cave:board:reload"));
@@ -1213,35 +1618,55 @@ export function Workspace() {
           }
         }
       }
+      // Close the loop: the live label disappears when the run ends, so state
+      // the outcome — especially the two "nothing happened" shapes that read
+      // as a silent failure.
+      pushToast(
+        total === 0
+          ? "No open tasks to enhance right now."
+          : enhanced === 0
+            ? "Open tasks already have steps — nothing to enhance."
+            : `Enhanced ${enhanced} task${enhanced === 1 ? "" : "s"} — open Tasks to review.`,
+      );
     } catch {
-      /* keep the top-bar action quiet; progress resets below */
+      pushToast("Enhance tasks failed — check the daemon banner and try again.");
     } finally {
       setEnrichingTasks(false);
     }
-  }, [activeId, enrichingTasks, refreshOpenTaskCards]);
+  }, [activeId, enrichingTasks, pushToast, refreshOpenTaskCards]);
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
     setReminderModalOpen(true);
   }, []);
 
-  const openReminderForFamiliar = useCallback((familiarId: string) => {
-    setActiveId(familiarId);
-    openReminderModal();
-  }, [openReminderModal]);
-
-  const pushToast = useCallback((title: string) => {
-    const id = `eph:adhoc-${Date.now()}`;
-    setToasts((prev) => [...prev, { id, title }]);
+  // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
+  // the notification stays listed until dismissed/done. No-ops server-side on
+  // already-read items, so callers don't need to check. Skips synthetic ids
+  // (missed-batches, ephemeral response-needed rows, ad-hoc toasts).
+  const markInboxItemRead = useCallback((id: string | null | undefined) => {
+    if (!id || id.startsWith("missed-") || id.startsWith("eph:")) return;
+    // Best-effort: a dead daemon must not turn a toast timer into a crash.
+    void fetch("/api/inbox/bulk", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "read", ids: [id] }),
+    }).catch(() => undefined);
   }, []);
 
+  // Explicit ✕ on a toast = "seen it" — mark read, keep it in the bell. The
+  // old handler POSTed /dismiss, which RESOLVED the item; combined with the
+  // auto-hide timer routing through the same handler, every notification that
+  // fired while you were present silently destroyed itself after 8 seconds.
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-    // Persist dismissal for real items. Skip synthetic ids (missed-batches,
-    // ephemeral response-needed rows).
-    if (!id.startsWith("missed-") && !id.startsWith("eph:")) {
-      void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
-    }
+    markInboxItemRead(id);
+  }, [markInboxItemRead]);
+
+  // Auto-hide expiry: the user may never have seen the toast — remove the
+  // visual only, leave the item unread so the bell still carries it.
+  const expireToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const snoozeToast = useCallback((toast: Toast, untilIso: string) => {
@@ -1250,7 +1675,7 @@ export function Workspace() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ untilIso }),
-      });
+      }).catch(() => undefined);
     }
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
   }, []);
@@ -1315,6 +1740,26 @@ export function Workspace() {
     return () => unlisten?.();
   }, [openFamiliarSession]);
 
+  // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
+  // the NATIVE GitHub surface with the item's detail — never a browser tab.
+  // Returns false for anything that isn't a github.com item URL so callers
+  // fall back to their existing behavior (cave-qcsv).
+  const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
+    const target = parseGitHubItemUrl(url);
+    if (!target) return false;
+    setGithubTarget(target);
+    setMode("github");
+    return true;
+  }, []);
+
+  const openUrlInApp = useCallback((url: string) => {
+    if (openGitHubTarget(url)) {
+      shellRef.current?.dismissNavMobile();
+      return;
+    }
+    openUrlInAppBrowser(url);
+  }, [openGitHubTarget, openUrlInAppBrowser]);
+
   const openReminderLink = useCallback((link: LinkRef) => {
     if (link.kind === "url") {
       if (!link.ref) return;
@@ -1322,26 +1767,33 @@ export function Workspace() {
         nextRouter.push(link.ref);
         return;
       }
-      setMode("browser");
-      requestAnimationFrame(() => browserPaneRef.current?.navigateTo(link.ref));
+      if (openGitHubTarget(link.ref)) return;
+      openUrlInAppBrowser(link.ref);
     } else if (link.kind === "card") {
       setMode("board");
       window.location.hash = `card-${link.ref}`;
     } else if (link.kind === "session") {
       openFamiliarSession(link.ref);
+    } else if (link.kind === "memory") {
+      // LinkRef supported "memory" but this fell through silently — a visible
+      // Link button that did nothing (cave-gg5d). Grimoire is the memory reader.
+      openGrimoireDoc("memory", link.ref);
     }
-  }, [nextRouter, openFamiliarSession]);
+  }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
+    markInboxItemRead(item.id);
     const sessionId =
       item.sessionId ?? (item.link?.kind === "session" ? item.link.ref : null);
     if (sessionId) {
       openFamiliarSession(sessionId, item.familiarId);
       return;
     }
+    // A GitHub-event notification's target is its PR/issue — open it natively.
+    if (item.link?.kind === "url" && openGitHubTarget(item.link.ref)) return;
     if (item.familiarId) setActiveId(item.familiarId);
     setMode("inbox");
-  }, [openFamiliarSession]);
+  }, [openFamiliarSession, markInboxItemRead, openGitHubTarget]);
 
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
@@ -1364,6 +1816,13 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
+  // familiar" — startFamiliarChat handles both the off-chat (switch + new
+  // thread) and in-chat (new thread) cases (cave-xsq.6).
+  useEffect(() => {
+    quickChatLaunchRef.current = () => startFamiliarChat(activeId);
+  }, [startFamiliarChat, activeId]);
+
   // Bridge `cave:agents-new-chat` from surfaces that aren't the chat view.
   // ChatSurface owns this event, but it only mounts when mode === "chat", so a
   // dispatch from the Familiar Studio drawer (e.g. the Contract tab's
@@ -1377,7 +1836,32 @@ export function Workspace() {
       startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null, d?.initialControls ?? null);
     };
     window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
-    return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+    // Chat overflow → "Continue on phone": open the pairing modal with the
+    // active conversation's deep link on the QR.
+    const onContinueOnPhone = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string }>).detail;
+      setMobileHandoffChatId(detail?.chatId ?? null);
+      setMobileHandoffOpen(true);
+    };
+    window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
+    return () => {
+      window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+      window.removeEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
+    };
+  }, [startFamiliarChat]);
+
+  // Consume a cross-page "new chat" handoff (cave-hbpb): standalone routes like
+  // the familiar analytics pages have no workspace listeners, so their Resolve
+  // actions persist the request to sessionStorage and navigate here.
+  useEffect(() => {
+    const pending = consumePendingAgentsNewChat();
+    if (!pending) return;
+    startFamiliarChat(
+      pending.familiarId ?? null,
+      pending.projectRoot ?? null,
+      pending.initialPrompt ?? null,
+      pending.initialControls ?? null,
+    );
   }, [startFamiliarChat]);
 
   useEffect(() => {
@@ -1397,6 +1881,7 @@ export function Workspace() {
         // ⌘9 -> Projects tab inside chat surface (no SURFACE_ORDER lookup needed)
         if (e.key === "9") {
           e.preventDefault();
+          markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
           setMode("chat");
           window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
           return;
@@ -1411,7 +1896,7 @@ export function Workspace() {
       }
 
       // ⌘[ / ⌘] -> previous / next surface, cycling through SURFACE_ORDER in the
-      // same top-to-bottom order as ⌘1..⌘8 (wraps at the ends). From an off-list
+      // same top-to-bottom order as ⌘1..⌘5 (wraps at the ends). From an off-list
       // surface (Journal/Roles/Workflows), ⌘] lands on the first surface and ⌘[
       // on the last.
       if (meta && !alt && (e.key === "[" || e.key === "]")) {
@@ -1502,6 +1987,9 @@ export function Workspace() {
         }
         if (!sessionsLoadedRef.current) {
           pendingChatDeepLinkRef.current = sid;
+          // Show the "Opening chat…" takeover while sessions settle, matching the
+          // mount-restore path; the deep-link resolver clears it on found/stale.
+          setChatDeepLinkPending(true);
           return;
         }
         clearChatHash();
@@ -1534,6 +2022,7 @@ export function Workspace() {
 
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+    markInboxItemRead(toast.itemId);
     if (toast.link) {
       openReminderLink(toast.link);
     } else if (toast.sessionId) {
@@ -1541,7 +2030,7 @@ export function Workspace() {
     } else {
       setMode("inbox");
     }
-  }, [openFamiliarSession, openReminderLink]);
+  }, [openFamiliarSession, openReminderLink, markInboxItemRead]);
 
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
@@ -1552,20 +2041,14 @@ export function Workspace() {
     [addSplitTarget, mode],
   );
 
+  // (cave-gg5d) The old "cave:salem-undock" dispatches here had NO listener
+  // anywhere — SalemChatPanel's unmount does the real teardown.
   const closeSplit = useCallback(() => {
-    // Tell Salem it's undocking so it can pause, mirroring the old rail teardown.
-    setSplitTargets((prev) => {
-      if (prev.some((target) => target.kind === "salem")) window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return [];
-    });
+    setSplitTargets([]);
   }, []);
 
   const closeSplitTile = useCallback((id: string) => {
-    setSplitTargets((prev) => {
-      const closing = prev.find((target) => splitTargetKey(target) === id);
-      if (closing?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return removeSecondaryWorkspaceTile(prev, id, splitTargetKey);
-    });
+    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, splitTargetKey));
   }, []);
 
   // Promote a split tile to the sole surface (its divider was dragged past the
@@ -1610,7 +2093,7 @@ export function Workspace() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "attach", sessionId: intent.sessionId }),
-      });
+      }).catch(() => undefined);
       return;
     }
     if (intent.kind === "open-board") {
@@ -1636,6 +2119,7 @@ export function Workspace() {
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
+      markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
       setMode("chat");
       shellRef.current?.dismissNavMobile();
       const root = intent.root;
@@ -1684,8 +2168,18 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "open-memory-file") {
-      setMode("agents");
-      window.location.hash = `memory:${encodeURIComponent(intent.path)}`;
+      // Land on the Grimoire editor with the file selected. (The old
+      // `#memory:` hash had no consumer anywhere — picking a memory result
+      // jumped to Familiars with nothing opened; cave-ce7y.)
+      openGrimoireDoc("memory", intent.path);
+      return;
+    }
+    if (intent.kind === "open-setting") {
+      const params = new URLSearchParams();
+      if (intent.group) params.set("group", intent.group);
+      if (intent.familiarTab) params.set("familiarTab", intent.familiarTab);
+      const search = params.size > 0 ? `?${params.toString()}` : "";
+      nextRouter.push(`/settings${search}#${intent.section}`);
       return;
     }
     if (intent.kind === "slash") {
@@ -1706,7 +2200,7 @@ export function Workspace() {
         setMode("board");
         return true;
       case "/journal":
-        setMode("journal"); // redirects to Settings → Familiars → Journal
+        setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
         // The Canvas page moved to feature/journal-canvas-surface. /canvas is
@@ -1719,6 +2213,7 @@ export function Workspace() {
       case "/chat":
         showFamiliarChatList();
         return true;
+      case "/rituals":
       case "/schedules":
       case "/automations":
       case "/inbox":
@@ -1739,6 +2234,7 @@ export function Workspace() {
         setShortcutsOpen(true);
         return true;
       case "/projects":
+        markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
         setMode("chat");
         window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
         return true;
@@ -1782,7 +2278,7 @@ export function Workspace() {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ mode: "attach", sessionId: sid }),
-          });
+          }).catch(() => undefined);
         }
         return true;
       }
@@ -1848,12 +2344,14 @@ export function Workspace() {
     return [...inboxItems, ...ephemeral];
   }, [inboxItems, responseNeeded, familiars, sessions]);
 
-  // Schedules nav badge: how many inbox items currently need you (fired or
-  // response-needed) - mirrors the Schedules > Inbox tab "needs you" group.
-  const scheduleNeedsCount = useMemo(
-    () => groupInboxFeed(inboxItemsWithEphemeral).needsYou.length,
+  // The "needs you" attention tier (fired or response-needed). ONE memo feeds
+  // both the Schedules nav badge and Home's "Needs you" strip so the two can
+  // never disagree (cave-925w).
+  const inboxNeedsYou = useMemo(
+    () => groupInboxFeed(inboxItemsWithEphemeral).needsYou,
     [inboxItemsWithEphemeral],
   );
+  const scheduleNeedsCount = inboxNeedsYou.length;
 
   // Mood C three-pane Shell:
   //   nav   = always present (mode switcher + command launchers)
@@ -1868,18 +2366,40 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
-  const openUrlInAppBrowser = useCallback((url: string) => {
-    if (!url) return;
-    setMode("browser");
-    shellRef.current?.dismissNavMobile();
-    window.setTimeout(() => browserPaneRef.current?.navigateTo(url), 0);
-  }, []);
+  // The notification bell counts UNREAD notifications from the same items it
+  // lists (one definition, unreadInboxCount) — it used to show the polled
+  // escalations count above a list of inbox items, so badge and list routinely
+  // disagreed. Live via SSE, quieted by Mark read / opening items.
+  const notificationUnreadCount = useMemo(
+    () => unreadInboxCount(inboxItemsWithEphemeral),
+    [inboxItemsWithEphemeral],
+  );
+
+  // Role Surfaces: build the shared context from the live session and resolve
+  // which registered surfaces the active familiar should see. Entirely
+  // registry-driven — the shell never branches on a specific role.
+  const roleSurfaceSession = useRoleSurfaceSession({
+    familiar: active,
+    sessions,
+    activeSessionId: routerRef.current?.currentSessionId() ?? null,
+    daemonRunning,
+    openUrl: openUrlInAppBrowser,
+    openSession: openFamiliarSession,
+  });
+
+  // If the current mode is a Role Surface this familiar can't see (role
+  // unassigned, surface unregistered, familiar switched away), fall back home.
+  useEffect(() => {
+    if (!isRoleSurfaceMode(mode)) return;
+    if (!roleSurfaceSession.rolesLoaded) return;
+    const surfaceId = parseRoleSurfaceMode(mode);
+    if (!roleSurfaceSession.visibleSurfaces.some((s) => s.id === surfaceId)) setMode("home");
+  }, [mode, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces, setMode]);
 
   useEffect(() => {
     const openPendingBrowserUrl = () => {
       const pending = window.sessionStorage.getItem(PENDING_IN_APP_BROWSER_URL_KEY);
       if (pending) {
-        window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
         openUrlInAppBrowser(pending);
         return;
       }
@@ -1888,7 +2408,6 @@ export function Workspace() {
     const onOpenBrowserUrl = (event: Event) => {
       const detail = (event as CustomEvent<{ url?: string }>).detail;
       if (detail?.url) {
-        window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
         openUrlInAppBrowser(detail.url);
       }
     };
@@ -1912,11 +2431,30 @@ export function Workspace() {
     () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
     [splitTargets],
   );
+  const browserVisible = useMemo(
+    () =>
+      mode === "browser" ||
+      splitTargets.some((target) => target.kind === "browser" || (target.kind === "page" && target.mode === "browser")),
+    [mode, splitTargets],
+  );
+
+  useEffect(() => {
+    if (browserVisible) return;
+    deactivateAllNativeBrowserWebviews();
+  }, [browserVisible]);
 
   const sidebar = (
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
+      // Registered Role Surfaces visible for the active familiar — rendered by
+      // the sidebar as generic rows (rooms), never named in shell code.
+      roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
+        mode: roleSurfaceMode(surface.id),
+        label: surface.title,
+        iconName: surface.iconName,
+        description: surface.description,
+      }))}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onNewChat={() => {
@@ -1933,7 +2471,7 @@ export function Workspace() {
           shellRef.current?.dismissNavMobile();
           return;
         }
-        setMode(m as WorkspaceMode);
+        setMode(m as CaveMode);
         shellRef.current?.dismissNavMobile();
       }}
       onOpenSession={(id) => {
@@ -1944,17 +2482,11 @@ export function Workspace() {
       inboxPrefs={inboxPrefs}
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
+      selectedFamiliarIds={scopeIds}
       onFamiliarScopeChange={selectFamiliarScope}
       responseNeeded={responseNeeded}
-      notificationBadgeCount={inboxBadgeCount}
+      notificationBadgeCount={notificationUnreadCount}
       onOpenInbox={() => setMode("inbox")}
-      onOpenInboxItem={(item) => {
-        if (item.sessionId) {
-          openFamiliarSession(item.sessionId, item.familiarId);
-        } else {
-          setMode("inbox");
-        }
-      }}
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
@@ -1965,11 +2497,22 @@ export function Workspace() {
   const chatSidebar = (
     <WorkspaceSidebar
       sessions={sessions}
+      familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
-      onBack={exitChatMode}
+      responseNeeded={responseNeeded}
+      onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
+        shellRef.current?.dismissNavMobile();
+      }}
+      onOpenSessionInSplit={(session) => {
+        // Open beside the current chat: same pending-action pipeline as a
+        // plain open, but the chat surface routes it into a split pane
+        // (falling back to a normal open when splits are unavailable). The
+        // active familiar is left alone — the pane carries its own.
+        setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
+        setMode("chat");
         shellRef.current?.dismissNavMobile();
       }}
       onNewChat={(projectRoot) => {
@@ -1977,10 +2520,20 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
       }}
       onDeleteSession={async (session) => {
-        await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-        await loadSessions();
+        const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error ?? "delete failed");
+        }
+
+        handleSessionsDeleted([session.id]);
       }}
+      onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
+      onOpenSettings={() => {
+        shellRef.current?.dismissNavMobile();
+        nextRouter.push("/settings");
+      }}
     />
   );
 
@@ -1989,8 +2542,17 @@ export function Workspace() {
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
   // secondary.
-  const renderSurface = (mode: WorkspaceMode): ReactNode =>
-    mode === "agents" ? (
+  const renderSurface = (mode: CaveMode): ReactNode =>
+    isRoleSurfaceMode(mode) ? (
+      // Generic Role Surface host — the registry decides what renders here.
+      <RoleSurfaceHost
+        surfaceId={parseRoleSurfaceMode(mode) ?? ""}
+        context={roleSurfaceSession.context}
+        visibleSurfaces={roleSurfaceSession.visibleSurfaces}
+        rolesLoaded={roleSurfaceSession.rolesLoaded}
+        onLeave={() => setMode("home")}
+      />
+    ) : mode === "agents" ? (
       <FamiliarsView
         familiars={familiars}
         sessions={sessions}
@@ -2000,7 +2562,9 @@ export function Workspace() {
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
         onOpenMemoryFile={(path) => {
-          window.location.hash = `memory:${encodeURIComponent(path)}`;
+          // Grimoire editor is the memory-file reader — the old `#memory:`
+          // hash had no consumer (cave-ce7y).
+          openGrimoireDoc("memory", path);
         }}
         onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlInAppBrowser}
@@ -2008,6 +2572,8 @@ export function Workspace() {
           void loadFamiliars();
           selectFamiliar(id);
         }}
+        familiarsError={familiarsError}
+        onRetryFamiliars={() => void loadFamiliars()}
       />
     ) : mode === "chat" ? (
       <ChatSurface
@@ -2015,35 +2581,39 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         activeFamiliarId={activeId}
+        selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
-        inboxItems={inboxItemsWithEphemeral}
-        inspectorOpen={inspectorOpen}
-        rightPanel={rightPanel}
+        sessionsError={sessionsError}
+        familiarsLoaded={familiarsLoaded}
+        familiarsError={familiarsError}
+        onRetryFamiliars={() => void loadFamiliars()}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
-        onSetInspectorOpen={setInspectorOpen}
-        onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
+        onFamiliarScopeChange={selectFamiliarScope}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("inbox")}
-        onCreateReminder={openReminderForFamiliar}
-        onOpenInboxItem={openInspectorInboxItem}
-        onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        onOpenUrl={openUrlInAppBrowser}
+        onOpenUrl={openUrlInApp}
       />
-    ) : mode === "board" ? (
+    ) : mode === "board" || mode === "familiar-work-queue" ? (
+      // Tasks and the Work Queue are one surface (cave-oa1z, the Schedules
+      // pattern): the legacy familiar-work-queue mode still resolves here but
+      // opens that tab; keying on the mode remounts so deep links land on it.
       <BoardView
+        key={mode}
+        initialTab={mode === "familiar-work-queue" ? "queue" : "tasks"}
+        queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded activeFamiliarId={activeId} />}
         familiars={familiars}
         sessions={sessions}
         activeFamiliarId={activeId}
@@ -2054,14 +2624,19 @@ export function Workspace() {
         }}
       />
     ) : mode === "grimoire" ? (
-      <GrimoireView />
+      <GrimoireView
+        view={grimoireView}
+        onViewChange={setGrimoireView}
+        familiars={familiars}
+        activeFamiliarId={activeId}
+      />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
       // remounts so the deep link lands on it.
       <InboxEscalationsView
         key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "crons"}
+        initialTab={mode === "calendar" ? "calendar" : "inbox"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);
@@ -2102,6 +2677,10 @@ export function Workspace() {
             onOpenItem={(item) => {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
+              } else if (item.link) {
+                // GitHub-event notifications open the native GitHub surface;
+                // other links use their normal open paths.
+                openReminderLink(item.link);
               }
             }}
             onComplete={completeInboxItem}
@@ -2112,25 +2691,32 @@ export function Workspace() {
         }
       />
     ) : mode === "browser" ? (
-      <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
+      <BrowserPane
+        handleRef={browserPaneRef}
+        label="main"
+        activeFamiliarId={active?.id ?? null}
+        active={browserVisible}
+        navigationRequest={browserNavigationQueue[0] ?? null}
+        onNavigationConsumed={acknowledgeBrowserNavigation}
+      />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        initialTarget={githubTarget}
+        onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
-      // modes still resolve here (deep links / navigate-mode) but open the
-      // matching section; keying on the mode remounts so deep links land.
+      // modes still resolve here (deep links / navigate-mode) but land on
+      // Browse while those sections are hidden; keying on the mode remounts
+      // so deep links land.
       <MarketplaceView
         key={mode}
         initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
-        activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
-    ) : mode === "familiar-work-queue" ? (
-      <FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : (
@@ -2138,7 +2724,6 @@ export function Workspace() {
         familiars={familiars}
         activeFamiliarId={activeId}
         sessions={sessions}
-        onSetActiveFamiliar={setActiveId}
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
@@ -2146,12 +2731,22 @@ export function Workspace() {
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
+        needsYou={inboxNeedsYou}
+        onOpenInboxItem={openInspectorInboxItem}
+        onOpenSchedules={() => setMode("inbox")}
       />
     );
 
   const detail = (
-    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-      <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
+    <div
+      ref={detailFadeRef}
+      className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden"
+    >
+      <h1 className="sr-only">
+        {(isRoleSurfaceMode(mode)
+          ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
+          : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
+      </h1>
       {renderSurface(mode)}
     </div>
   );
@@ -2173,7 +2768,7 @@ export function Workspace() {
     ) : target.kind === "memory" ? (
       <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
     ) : (
-      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />
+      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} active={browserVisible} />
     );
 
   const splitTiles: DetailSplitTile[] = splitTargets
@@ -2196,6 +2791,14 @@ export function Workspace() {
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
     <FamiliarStudioProvider redirectToSettings>
+      {/* Backdrop vibe: the user's image behind Home + Chat, painted under
+          the shell; the derived accent applies document-wide from the same
+          store (cave-backdrop.ts). In chat, a single-familiar scope with its
+          own backdrop overrides the app-wide image (generic = fallback). */}
+      <CaveBackdropLayer
+        active={mode === "home" || mode === "chat"}
+        familiarId={mode === "chat" ? activeId : null}
+      />
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}
@@ -2210,11 +2813,7 @@ export function Workspace() {
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
-              familiars={resolvedFamiliars}
               activeFamiliarId={activeId}
-              selectedFamiliarIds={scopeIds}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
@@ -2223,13 +2822,12 @@ export function Workspace() {
                 setTopSearchQuery(query);
                 setPaletteOpen(true);
               }}
-              onSelectFamiliar={selectFamiliarScope}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
               onViewSchedules={() => setMode("inbox")}
-              onOpenQuickChat={() => setQuickChatOpen(true)}
+              onOpenQuickChat={() => startFamiliarChat(activeId)}
             />
             <TopBar
               onOpenPalette={() => setPaletteOpen(true)}
@@ -2241,7 +2839,7 @@ export function Workspace() {
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
               onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
-              onOpenQuickChat={() => setQuickChatOpen(true)}
+              onOpenQuickChat={() => startFamiliarChat(activeId)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
               activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
@@ -2256,10 +2854,15 @@ export function Workspace() {
               responseNeeded={responseNeeded}
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
-              inboxBadgeCount={inboxBadgeCount}
+              inboxBadgeCount={notificationUnreadCount}
+              // Bell rows open in the Inbox (Schedules) surface — the popover
+              // is a triage list, not a chat launcher. Session jumps stay on
+              // the chat surface and Home needs-you paths
+              // (openInspectorInboxItem).
               onOpenInboxItem={(item) => {
-                if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                else setMode("inbox");
+                markInboxItemRead(item.id);
+                if (item.familiarId) setActiveId(item.familiarId);
+                setMode("inbox");
               }}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
@@ -2274,141 +2877,122 @@ export function Workspace() {
         detail={detail}
       />
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        familiars={familiars}
-        sessions={sessions}
-        activeFamiliarId={activeId}
-        initialQuery={topSearchQuery}
-        onQueryChange={setTopSearchQuery}
-        onIntent={onPaletteIntent}
-      />
+      {paletteOpen && (
+        <CommandPalette
+          open
+          onClose={() => setPaletteOpen(false)}
+          familiars={familiars}
+          sessions={sessions}
+          activeFamiliarId={activeId}
+          initialQuery={topSearchQuery}
+          onQueryChange={setTopSearchQuery}
+          onIntent={onPaletteIntent}
+        />
+      )}
 
-      <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
 
-      <OnboardingOverlay open={onboardingOpen} onDismiss={closeOnboarding} />
+      {(onboardingOpen || onboardingMounted) && (
+        <OnboardingOverlay
+          open={onboardingOpen}
+          onDismiss={() => {
+            setOnboardingMounted(true);
+            closeOnboarding();
+          }}
+        />
+      )}
 
-      <NewReminderModal
-        open={reminderModalOpen}
-        onClose={() => {
-          setReminderModalOpen(false);
-          setEditingReminder(null);
-        }}
-        familiars={familiars}
-        defaultFamiliarId={activeId}
-        defaultFireAt={reminderModalDefaults.fireAt}
-        defaultWhenText={reminderModalDefaults.whenText}
-        defaultTitle={reminderModalDefaults.title}
-        editing={
-          editingReminder
-            ? {
-                id: editingReminder.id,
-                title: editingReminder.title,
-                fireAt: editingReminder.fireAt ?? new Date().toISOString(),
-                recurrence: editingReminder.recurrence,
-                link: editingReminder.link ?? null,
-              }
-            : undefined
-        }
-        onUpdate={async (id, draft) => {
-          await fetch(`/api/inbox/${id}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: draft.title,
-              fireAt: draft.fireAt,
-              recurrence: draft.recurrence ?? { type: "none" },
-              link: draft.link ?? null,
-            }),
-          });
-          // SSE `updated` event refreshes the row; mirror the create path.
-        }}
-        onCreate={async (draft) => {
-          await fetch("/api/inbox", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              kind: "reminder",
-              title: draft.title,
-              body: draft.body,
-              fireAt: draft.fireAt,
-              familiarId: draft.familiarId,
-              recurrence: draft.recurrence ?? { type: "none" },
-              link: draft.link ?? null,
-              source: "user",
-            }),
-          });
-          // SSE `created` event will append the row; no manual refresh needed.
-        }}
-      />
+      {reminderModalOpen && (
+        <NewReminderModal
+          open
+          onClose={() => {
+            setReminderModalOpen(false);
+            setEditingReminder(null);
+          }}
+          familiars={familiars}
+          defaultFamiliarId={activeId}
+          defaultFireAt={reminderModalDefaults.fireAt}
+          defaultWhenText={reminderModalDefaults.whenText}
+          defaultTitle={reminderModalDefaults.title}
+          editing={
+            editingReminder
+              ? {
+                  id: editingReminder.id,
+                  title: editingReminder.title,
+                  whenText: editingReminder.whenText ?? undefined,
+                  fireAt: editingReminder.fireAt ?? new Date().toISOString(),
+                  recurrence: editingReminder.recurrence,
+                  link: editingReminder.link ?? null,
+                }
+              : undefined
+          }
+          onUpdate={async (id, draft) => {
+            await fetch(`/api/inbox/${id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                title: draft.title,
+                fireAt: draft.fireAt,
+                recurrence: draft.recurrence ?? { type: "none" },
+                whenText: draft.whenText ?? null,
+                link: draft.link ?? null,
+              }),
+            });
+            // SSE `updated` event refreshes the row; mirror the create path.
+          }}
+          onCreate={async (draft) => {
+            await fetch("/api/inbox", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                kind: "reminder",
+                title: draft.title,
+                body: draft.body,
+                fireAt: draft.fireAt,
+                familiarId: draft.familiarId,
+                recurrence: draft.recurrence ?? { type: "none" },
+                whenText: draft.whenText ?? null,
+                link: draft.link ?? null,
+                source: "user",
+              }),
+            });
+            // SSE `created` event will append the row; no manual refresh needed.
+          }}
+        />
+      )}
 
       <InboxToastStack
         toasts={toasts}
         onDismiss={dismissToast}
+        onExpire={expireToast}
         onSnooze={snoozeToast}
         onOpen={openToastTarget}
       />
 
       <MagicTriggers />
 
-      <FamiliarGlyphPicker
-        open={glyphPickerFor !== null}
-        familiar={glyphPickerFor}
-        onClose={() => setGlyphPickerFor(null)}
-      />
+      {glyphPickerFor ? (
+        <FamiliarGlyphPicker
+          open
+          familiar={glyphPickerFor}
+          onClose={() => setGlyphPickerFor(null)}
+        />
+      ) : null}
 
-      <ChooserModal
-        open={addChooserOpen}
-        onClose={() => setAddChooserOpen(false)}
-        breadcrumb={["CovenCave", "Add"]}
-        options={
-          [
-            {
-              id: "reminder",
-              icon: "ph:alarm-bold",
-              title: "Reminder",
-              description: "Schedule a reminder to fire at a specific time.",
-            },
-            {
-              id: "board-card",
-              icon: "ph:kanban",
-              title: "Board card",
-              description: "Queue work for a familiar on the board.",
-            },
-            {
-              id: "familiar",
-              icon: "ph:sparkle",
-              title: "Familiar",
-              description: "Run setup to scaffold a new familiar.",
-            },
-          ] as ChooserOption[]
-        }
-        onPick={(id) => {
-          if (id === "reminder") openReminderModal();
-          else if (id === "board-card") setMode("board");
-          else if (id === "familiar") openOnboarding();
-        }}
-      />
-
-      <MobileHandoffModal
-        open={mobileHandoffOpen}
-        onClose={() => setMobileHandoffOpen(false)}
-        mobileModeEnabled={mobileModeEnabled}
-        nativeHost={mobileModeHost}
-        mobileModeError={mobileModeError}
-        onMobileModeChange={setMobileModeEnabled}
-      />
-
-      <QuickChatOverlay
-        open={quickChatOpen}
-        onClose={() => setQuickChatOpen(false)}
-        activeFamiliarId={activeId}
-        onOpenFullSession={(sid, fid) => {
-          setQuickChatOpen(false);
-          openFamiliarSession(sid, fid);
-        }}
-      />
+      {mobileHandoffOpen && (
+        <MobileHandoffModal
+          open
+          chatId={mobileHandoffChatId}
+          onClose={() => {
+            setMobileHandoffOpen(false);
+            setMobileHandoffChatId(null);
+          }}
+          mobileModeEnabled={mobileModeEnabled}
+          nativeHost={mobileModeHost}
+          mobileModeError={mobileModeError}
+          onMobileModeChange={setMobileModeEnabled}
+        />
+      )}
 
       {chatDeepLinkPending && (
         <div className="workspace-deeplink-pending" role="status">

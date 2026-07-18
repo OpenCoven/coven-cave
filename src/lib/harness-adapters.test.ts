@@ -2,16 +2,20 @@
 import assert from "node:assert/strict";
 import {
   COMPATIBILITY_ADAPTERS,
+  SUMMONABLE_LOCAL_HARNESS_IDS,
   mergeAdapterReports,
   adapterSetupState,
   runtimeSourceSetupState,
   adapterManifestScaffoldForHarness,
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
+  covenRunSupportsAddDirFlag,
+  isSummonableLocalHarness,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
   canonicalHarnessId,
+  runtimeDisplayLabel,
 } from "./harness-adapters.ts";
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
@@ -47,10 +51,67 @@ assert.equal(
   "A substring like --model-context-protocol must not be mistaken for --model",
 );
 
-assert.deepEqual(
-  COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
-  ["codex", "claude", "hermes", "openclaw"],
+// Directory-grant gating probe: forwarding `--add-dir` must stay off until the
+// installed `coven run` advertises the flag.
+assert.equal(
+  covenRunSupportsAddDirFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+      --add-dir <DIR>  Additional directory the harness may access (repeatable)
+`),
+  true,
+  "Help text advertising --add-dir should enable forwarding",
 );
+assert.equal(
+  covenRunSupportsAddDirFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+`),
+  false,
+  "Help text without --add-dir should keep forwarding off",
+);
+assert.equal(covenRunSupportsAddDirFlag(""), false, "Empty help text never enables --add-dir forwarding");
+assert.equal(covenRunSupportsAddDirFlag(undefined), false, "Non-string help text never enables --add-dir forwarding");
+assert.equal(
+  covenRunSupportsAddDirFlag("see also --add-dir-recursive for nested grants"),
+  false,
+  "A longer flag like --add-dir-recursive must not be mistaken for --add-dir",
+);
+
+const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
+{
+  const ids = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id);
+  assert.deepEqual(ids.slice(0, curatedIds.length), curatedIds, "curated adapters keep their seed order first");
+  const registryIds = ids.slice(curatedIds.length);
+  assert.ok(registryIds.length > 0, "registry-synced runtimes extend the curated seed");
+  assert.deepEqual(registryIds, [...registryIds].sort(), "registry additions are alphabetical");
+  assert.ok(!registryIds.some((id) => curatedIds.includes(id)), "curated ids never duplicate");
+  assert.ok(
+    !ids.includes("coven-code"),
+    "coven-code is policy-excluded from runtime surfaces (app/tool install, not a harness)",
+  );
+  for (const adapter of COMPATIBILITY_ADAPTERS.slice(curatedIds.length)) {
+    assert.equal(adapter.source, "registry", `${adapter.id} carries the registry source tag`);
+    assert.equal(adapter.chatSupported, true, `registry-accepted ${adapter.id} is chat-trusted`);
+    assert.ok(isTrustedChatHarness(adapter.id), `${adapter.id} passes the chat trust gate`);
+    assert.ok(isTrustedOnboardingHarness(adapter.id), `${adapter.id} passes the onboarding trust gate`);
+  }
+}
+
+assert.deepEqual(
+  SUMMONABLE_LOCAL_HARNESS_IDS,
+  ["codex", "claude", "copilot", "hermes"],
+  "the summoning circle's local/SSH runtime choices must only include creation-ready local runtimes",
+);
+assert.equal(isSummonableLocalHarness("codex"), true);
+assert.equal(isSummonableLocalHarness("claude"), true);
+assert.equal(isSummonableLocalHarness("copilot"), true);
+assert.equal(isSummonableLocalHarness("hermes"), true);
+assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
+assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
+assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
 
 assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
@@ -122,6 +183,27 @@ assert.equal(
   merged.find((adapter) => adapter.id === "hermes")?.source,
   "manifest",
 );
+// A daemon manifest label ("Hermes Agent") only applies when Cave has no
+// local report for that id; a local (curated) label always wins so a
+// registry-scaffolded manifest can't flip the adapters list copy.
+assert.equal(merged.find((adapter) => adapter.id === "hermes")?.label, "Hermes Agent", "daemon label used when no local report exists");
+assert.equal(merged.find((adapter) => adapter.id === "codex")?.label, "Codex");
+{
+  const labelMerge = mergeAdapterReports(
+    [{ id: "copilot", label: "Copilot", binary: "copilot", installed: true, path: null, version: null }],
+    [{ id: "copilot", label: "GitHub Copilot CLI", executable: "copilot", available: true, install_hint: "", source: "manifest" }],
+  );
+  assert.equal(labelMerge[0].label, "Copilot", "curated label survives a registry-manifest daemon report");
+}
+
+// Single label authority: curated copy → registry label → raw id; aliases
+// canonicalize first.
+assert.equal(runtimeDisplayLabel("copilot"), "Copilot");
+assert.equal(runtimeDisplayLabel("opencode"), "OpenCode", "registry runtimes use their accepted label");
+assert.equal(runtimeDisplayLabel("opencode-ai"), "OpenCode", "npm package alias canonicalizes (chat trust gate parity)");
+assert.equal(runtimeDisplayLabel("openclaw"), "OpenClaw");
+assert.equal(runtimeDisplayLabel("mystery"), "mystery", "unknown ids label as themselves");
+assert.ok(isTrustedChatHarness("opencode-ai"), "package alias passes the chat trust gate");
 assert.equal(
   merged.find((adapter) => adapter.id === "hermes")?.manifestPath,
   "/tmp/adapters.json",
@@ -148,6 +230,7 @@ const mergedExternal = mergeAdapterReports(
 assert.equal(mergedExternal[0]?.chatSupported, false);
 assert.equal(mergedExternal[0]?.installed, true);
 assert.equal(isTrustedChatHarness("codex"), true);
+assert.equal(isTrustedChatHarness("copilot"), true);
 assert.equal(isTrustedChatHarness("hermes"), true);
 assert.equal(isTrustedChatHarness("openclaw"), true);
 assert.equal(isTrustedChatHarness("attacker-adapter"), false);
@@ -160,6 +243,9 @@ assert.equal(isTrustedOnboardingHarness("attacker-adapter"), false);
 assert.equal(canonicalHarnessId("hermes-agent"), "hermes");
 assert.equal(canonicalHarnessId("Hermes-Agent"), "hermes", "alias match is case-insensitive");
 assert.equal(canonicalHarnessId("claude-code"), "claude");
+assert.equal(canonicalHarnessId("github-copilot"), "copilot");
+assert.equal(canonicalHarnessId("copilot-cli"), "copilot");
+assert.equal(isTrustedChatHarness("github-copilot"), true, "the Copilot package alias must clear the chat trust gate");
 assert.equal(canonicalHarnessId("hermes"), "hermes", "canonical id passes through");
 assert.equal(canonicalHarnessId("HERMES"), "hermes", "id match is case-insensitive");
 assert.equal(canonicalHarnessId("attacker-adapter"), "attacker-adapter", "unknown ids are unchanged (still untrusted)");
@@ -175,7 +261,7 @@ assert.deepEqual(
   adapterSetupState(merged.filter((adapter) => !adapter.installed)),
   {
     ok: false,
-    hint: "Install Codex, Claude Code, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install a supported runtime (Codex, Claude Code, Copilot, Hermes, a registry runtime, or an OpenClaw agent), then re-check. External adapters can also be added with Coven adapter manifests.",
   },
 );
 
@@ -190,29 +276,49 @@ assert.deepEqual(
   },
 );
 
+// Scaffolds come straight from the synced coven-runtimes registry — the exact
+// conformance-tested adapter documents (cave-laxg retired the hand-written
+// copilot/hermes copies).
 const hermesManifest = adapterManifestScaffoldForHarness("hermes");
 assert.equal(hermesManifest?.filename, "hermes.json");
-assert.deepEqual(JSON.parse(hermesManifest?.contents ?? "{}"), {
-  adapters: [
-    {
-      id: "hermes",
-      label: "Hermes",
-      executable: "hermes",
-      interactive_prompt_prefix_args: ["chat", "--source", "coven", "-q"],
-      non_interactive_prompt_prefix_args: [
-        "chat",
-        "--source",
-        "coven",
-        "-Q",
-        "-q",
-      ],
-      install_hint:
-        "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
-      system_prompt_flag: null,
-    },
-  ],
-});
-assert.equal(adapterManifestScaffoldForHarness("codex"), null);
+{
+  const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
+  const adapter = parsed.adapters?.[0];
+  assert.equal(adapter?.id, "hermes");
+  assert.equal(adapter?.executable, "hermes-coven", "hermes launches via the hermes-coven shim (hermes chat has no positional prompt slot)");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"], "hermes keeps the coven-source chat entry; the shim maps the prompt to -q");
+  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q"]);
+  assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
+}
+assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
+
+// Registry-accepted runtimes scaffold their exact adapter manifest from the
+// synced registry module (opencode is in the canonical registry today).
+{
+  const opencodeManifest = adapterManifestScaffoldForHarness("opencode");
+  assert.equal(opencodeManifest?.filename, "opencode.json");
+  const parsed = JSON.parse(opencodeManifest?.contents ?? "{}");
+  assert.equal(parsed.adapters?.[0]?.id, "opencode", "registry scaffold embeds the accepted adapter document");
+}
+assert.equal(adapterManifestScaffoldForHarness("not-a-runtime"), null);
+
+// Copilot's manifest is the registry's conformance-tested document: one-shot
+// via `-s -p`, interactive via `-i`, JSONL streaming + session pre-assignment
+// declared in stream_args, and the argv-list sandbox mapping (verified against
+// Copilot CLI 1.0.69 flags).
+const copilotManifest = adapterManifestScaffoldForHarness("copilot");
+assert.equal(copilotManifest?.filename, "copilot.json");
+{
+  const adapter = JSON.parse(copilotManifest?.contents ?? "{}").adapters?.[0];
+  assert.equal(adapter?.id, "copilot");
+  assert.equal(adapter?.executable, "copilot");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["-i"]);
+  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["-s", "-p"]);
+  assert.equal(adapter?.model_flag, "--model", "model parity forwards through --model");
+  assert.deepEqual(adapter?.sandbox?.full_args, ["--allow-all"], "full permission maps to --allow-all (replaces the old hardcoded --allow-all-tools)");
+  assert.deepEqual(adapter?.sandbox?.read_only_args, ["--deny-tool", "write", "--deny-tool", "shell"]);
+  assert.equal(adapter?.stream_args?.session_id_flag, "--session-id");
+}
 
 assert.deepEqual(
   runtimeSourceSetupState(

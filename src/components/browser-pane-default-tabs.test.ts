@@ -5,10 +5,10 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const defaults = source.match(/function defaultPinnedTabs\(\): BrowserTab\[\] \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-assert.match(
+assert.doesNotMatch(
   defaults,
-  /url: "https:\/\/x\.com\/OpenCvn"[\s\S]*title: "OpenCvn"/,
-  "Browser defaults should include the OpenCoven X profile",
+  /x\.com\/OpenCvn|id: "opencvn-x"/,
+  "Browser defaults should not include the OpenCoven X profile",
 );
 
 // The "Coven" sidebar surface was folded into the browser — its docs + feedback

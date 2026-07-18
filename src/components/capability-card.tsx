@@ -81,7 +81,9 @@ export function CapabilitiesView({
   if (items.length === 0) {
     return (
       <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
-        No runtime capabilities found. Start the daemon or add a local runtime to see its instructions, skills, and plugins.
+        Nothing to show yet — this tab lists what each runtime on your machine can do (its global
+        instructions, installed skills, and plugins). Start the daemon or add a local runtime and it
+        fills in.
       </p>
     );
   }
@@ -106,18 +108,18 @@ export function CapabilitiesView({
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
           className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
         >
-          <span className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-muted" />
+          <span className="ui-skeleton h-10 w-10 shrink-0" />
           <span className="flex-1 space-y-1.5">
-            <span className="block h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <span className="block h-2.5 w-3/4 animate-pulse rounded bg-muted" />
+            <span className="ui-skeleton block h-3 w-1/2" />
+            <span className="ui-skeleton block h-2.5 w-3/4" />
           </span>
-          <span className="h-5 w-5 animate-pulse rounded-full bg-muted" />
+          <span className="ui-skeleton ui-skeleton--avatar shrink-0" style={{ height: 20, width: 20 }} />
         </div>
       ))}
     </div>
@@ -178,8 +180,11 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
 
         {manifest.skills.length > 0 ? (
           <div className="px-4 py-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
-              Automations / skills · {manifest.skills.length}
+            <p
+              className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]"
+              title="SKILL.md procedures this runtime has installed"
+            >
+              Skills · {manifest.skills.length}
             </p>
             <ul className="space-y-1.5">
               {manifest.skills.map((skill) => (
@@ -196,17 +201,6 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
             </ul>
           </div>
         ) : null}
-
-        {manifest.skills && manifest.skills.length > 0 && (
-          <div className="px-4 py-2">
-            <p className="text-[11px] text-muted-foreground">
-              Skills · {manifest.skills.length}
-              {" — "}
-              {manifest.skills.slice(0, 3).map((s) => s.name).join(", ")}
-              {manifest.skills.length > 3 ? ` +${manifest.skills.length - 3} more` : ""}
-            </p>
-          </div>
-        )}
 
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">

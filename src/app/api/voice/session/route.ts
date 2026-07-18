@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { caveHome } from "../../../../lib/coven-paths.ts";
 import { resolveSecret } from "../../../../lib/vault.ts";
 import { getVoiceProvider } from "../../../../lib/voice/registry.ts";
 import { hydrateForVoiceCall } from "../../../../lib/voice/hydrate-instructions.ts";
+import {
+  DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+} from "../../../../lib/voice/elevenlabs-shared.ts";
 import { isSafeConversationSessionId } from "../../../../lib/cave-conversations.ts";
 
 export const runtime = "nodejs";
@@ -14,11 +18,25 @@ export const dynamic = "force-dynamic";
 const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   gemini: "GOOGLE_API_KEY",
+  elevenlabs: "ELEVENLABS_API_KEY",
 };
 
+// Providers whose brain lives on this machine (or behind our own chat bridge)
+// and therefore mint without any vault secret.
+const KEYLESS_PROVIDERS = new Set(["local", "familiar"]);
+
 const DEFAULTS: Record<string, { model: string; voice: string }> = {
-  openai: { model: "gpt-4o-realtime-preview", voice: "alloy" },
+  openai: { model: "gpt-realtime", voice: "alloy" },
   gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
+  // Model = the loopback LLM (Ollama/LM Studio) model name; voice = a system
+  // synthesizer voice name, empty for the platform default.
+  local: { model: "llama3.2", voice: "" },
+  // The familiar's own harness is the brain — there is no voice model to pick,
+  // and the voice is a system synthesizer voice name.
+  familiar: { model: "", voice: "" },
+  // Brain = the familiar's harness (like `familiar`); voice = an ElevenLabs
+  // voice id and model = an ElevenLabs model id, spoken through our TTS proxy.
+  elevenlabs: { model: DEFAULT_ELEVENLABS_MODEL_ID, voice: DEFAULT_ELEVENLABS_VOICE_ID },
 };
 
 type FamiliarRecord = {
@@ -31,7 +49,7 @@ type FamiliarRecord = {
 async function loadFamiliar(id: string): Promise<FamiliarRecord | null> {
   try {
     const raw = await readFile(
-      path.join(homedir(), ".coven", "cave-config.json"),
+      path.join(caveHome(), "config.json"),
       "utf8",
     );
     const parsed = JSON.parse(raw) as { familiars?: Record<string, FamiliarRecord> };
@@ -82,18 +100,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "unknown_provider" }, { status: 400 });
   }
 
-  const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
-  if (!vaultKey) {
-    return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
-  }
-  const apiKey = resolveSecret(vaultKey);
-  if (!apiKey) {
-    return NextResponse.json({
-      ok: false,
-      error: "vault_key_unresolved",
-      missingKey: vaultKey,
-      hint: `Set ${vaultKey} in Vault settings.`,
-    }, { status: 400 });
+  // Keyless providers have no secret — their brain is a loopback server or the
+  // familiar's own harness, reached through our own routes. Everything else
+  // needs a vault key.
+  let apiKey = "";
+  if (!KEYLESS_PROVIDERS.has(provider.id)) {
+    const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
+    if (!vaultKey) {
+      return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
+    }
+    const resolved = resolveSecret(vaultKey);
+    if (!resolved) {
+      return NextResponse.json({
+        ok: false,
+        error: "vault_key_unresolved",
+        missingKey: vaultKey,
+        hint: `Set ${vaultKey} in Vault settings.`,
+      }, { status: 400 });
+    }
+    apiKey = resolved;
   }
 
   const { instructions, conversationSeed } = await hydrateForVoiceCall(
@@ -113,6 +138,7 @@ export async function POST(req: Request) {
       voice,
       instructions,
       conversationSeed,
+      sessionId,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

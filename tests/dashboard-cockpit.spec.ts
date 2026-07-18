@@ -55,25 +55,26 @@ const GH_ASSIGNED = STALLED_PRS.map((p) => ({
 }));
 
 const SPACE_AREAS = [
-  { id: "conversations", label: "Chat transcripts", relPath: "~/.coven/cave-conversations", exists: true, bytes: 9_000_000, files: 220, lastModifiedMs: NOW - 3_600_000, truncated: false },
+  { id: "conversations", label: "Chat transcripts", relPath: "~/.coven/cave/conversations", exists: true, bytes: 9_000_000, files: 220, lastModifiedMs: NOW - 3_600_000, truncated: false },
   { id: "workspaces", label: "Familiar workspaces", relPath: "~/.coven/workspaces", exists: true, bytes: 1_400_000_000, files: 17_000, lastModifiedMs: NOW - 60_000, truncated: true },
   { id: "memory", label: "Familiar memory", relPath: "~/.coven/memory", exists: true, bytes: 7_000_000, files: 4, lastModifiedMs: NOW - 86_400_000, truncated: false },
   { id: "flows", label: "Flows", relPath: "~/.coven/flows", exists: true, bytes: 7_000, files: 2, lastModifiedMs: NOW - 2 * 86_400_000, truncated: false },
   { id: "journal", label: "Journal", relPath: "~/.coven/journal", exists: false, bytes: 0, files: 0, lastModifiedMs: null, truncated: false },
 ];
 
-async function gotoDashboard(page: Page) {
+async function gotoDashboard(page: Page, inboxItems: unknown[] = []) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars", (route) => route.fulfill({ json: { ok: true, familiars: FAMILIARS } }));
   await page.route("**/api/familiars/*/contract", (route) => route.fulfill({ status: 404, json: {} }));
+  await page.route("**/api/familiars/*/self-reports**", (route) => route.fulfill({ json: { ok: true, reports: [], total: 0 } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: SESSIONS } }));
   await page.route("**/api/github/activity", (route) => route.fulfill({ json: { items: GH_ACTIVITY } }));
   await page.route("**/api/github/assigned", (route) => route.fulfill({ json: { items: GH_ASSIGNED } }));
   await page.route("**/api/space-usage", (route) => route.fulfill({ json: { ok: true, areas: SPACE_AREAS } }));
   await page.route("**/api/board", (route) => route.fulfill({ json: { cards: [] } }));
-  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: inboxItems } }));
   await page.route("**/api/coven-memory", (route) => route.fulfill({ json: { entries: [] } }));
   await page.route("**/api/retro-runs**", (route) => route.fulfill({ json: { snapshot: null } }));
   await page.goto("/dashboard");
@@ -154,4 +155,80 @@ test("signals dedupe same-URL PRs, lead with the stalest, and cap with an overfl
   const more = page.locator("a.cockpit-signal--more");
   await expect(more).toContainText("+2 more");
   await expect(more).toHaveAttribute("href", "/?mode=github");
+});
+
+// ── Needs you — live from the poll, honest when caught up (cave-456r) ────────
+// The model used to be a first-paint server snapshot: fired items appearing
+// after load never rendered, and clearing the last item husked the panel.
+// These pin the client-built model path end-to-end.
+
+test("caught up: the Needs you section stays, reading all clear", async ({ page }) => {
+  await gotoDashboard(page); // inbox mocked empty
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs).toBeVisible();
+  await expect(needs).toContainText("All clear — nothing needs you right now.");
+  await expect(needs.locator(".dr-count")).toHaveCount(0);
+});
+
+test("a fired reminder from the poll renders in Needs you with a live count", async ({ page }) => {
+  const nowIso = new Date(NOW).toISOString();
+  await gotoDashboard(page, [{
+    id: "r-fired", kind: "reminder", status: "fired", title: "Water the familiars",
+    createdAt: nowIso, updatedAt: nowIso, firedAt: nowIso, recurrence: "none", source: "user",
+  }]);
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs.locator(".dr-row__title")).toContainText("Water the familiars");
+  await expect(needs.locator(".dr-count")).toHaveText("1");
+  await expect(needs).not.toContainText("All clear");
+});
+
+const openResponse = (id: string, title: string) => {
+  const nowIso = new Date(NOW).toISOString();
+  return {
+    id, kind: "response-needed", title, status: "pending",
+    createdAt: nowIso, updatedAt: nowIso, firedAt: nowIso, recurrence: null, source: "agent",
+  };
+};
+
+test("clearing the last visible item lands on the all-clear moment", async ({ page }) => {
+  await gotoDashboard(page, [openResponse("r1", "Reply to Sage"), openResponse("r2", "Review the plan")]);
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs.locator(".dr-count")).toHaveText("2");
+
+  // Acting removes the row optimistically and the badge tracks it. (The POST
+  // hits the same **/api/inbox** mock — the buttons only check res.ok.)
+  await needs.locator(".dash-inbox__row", { hasText: "Reply to Sage" }).getByRole("button", { name: "Done" }).click();
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(1);
+  await expect(needs.locator(".dr-count")).toHaveText("1");
+
+  await needs.locator(".dash-inbox__row").getByRole("button", { name: "Done" }).click();
+  await expect(needs).toContainText("All clear — nothing needs you right now.");
+  await expect(needs.locator(".dr-count")).toHaveCount(0);
+});
+
+test("counts stay truthful past the display cap, with an overflow drill-through", async ({ page }) => {
+  const items = Array.from({ length: 10 }, (_, i) => openResponse(`r${i + 1}`, `Open item ${i + 1}`));
+  await gotoDashboard(page, items);
+  const needs = page.locator('section[aria-label="Needs you"]');
+
+  // Badge reads the uncapped total; the visible list is capped and the
+  // overflow drills into the owning Rituals surface.
+  await expect(needs.locator(".dr-count")).toHaveText("10");
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(8);
+  const more = needs.locator("a.dash-inbox__more");
+  await expect(more).toContainText("+2 more");
+  await expect(more).toHaveAttribute("href", "/?mode=inbox");
+
+  // The Needs-you vital shows the same uncapped total and drills through.
+  const kpi = page.locator(".cockpit-kpi", { hasText: "Needs you" });
+  await expect(kpi.locator(".cockpit-kpi__value")).toHaveText("10");
+  await expect(kpi).toHaveAttribute("href", "/?mode=inbox");
+
+  // Clearing all 8 visible rows is NOT all clear — 2 open items remain.
+  await needs.getByRole("button", { name: "Select" }).click();
+  await needs.getByRole("button", { name: "Select all" }).click();
+  await needs.getByRole("button", { name: "Done 8" }).click();
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(0);
+  await expect(needs).not.toContainText("All clear");
+  await expect(needs.locator(".dr-count")).toHaveText("2");
 });

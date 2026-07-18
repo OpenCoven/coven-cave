@@ -78,6 +78,9 @@ const cancelledTurn = cancelledConv?.turns.find((turn) => turn.id === "turn-assi
 assert.equal(cancelledTurn?.cancelled, true, "cancelled flag must round-trip through the store");
 assert.equal(cancelledTurn?.isError, false, "a user cancel is not an error");
 assert.equal(cancelledTurn?.text, "Roses are red, violets", "partial streamed text must survive the save");
+const cancelledSummary = (await listConversations()).find((row) => row.sessionId === "cancelled-turn");
+assert.equal(cancelledSummary?.status, "completed", "cancelled conversations remain non-failures");
+assert.equal(cancelledSummary?.exitCode, 0, "cancelled conversations retain a successful exit code");
 assert.equal(await deleteConversation("cancelled-turn"), true);
 
 // CHAT-D12-02: per-turn token usage and cost round-trip through the store —
@@ -192,6 +195,145 @@ assert.equal(failedSummary?.status, "failed", "conversation summaries expose fai
 assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose exit code 1");
 assert.equal(await deleteConversation("summary-ok"), true);
 assert.equal(await deleteConversation("summary-failed"), true);
+
+// Issue #3266: metadata scans read each large transcript once, then use the
+// stat-keyed summary cache until that specific file changes.
+{
+  const {
+    clearConversationListMetadataCache,
+    CONV_DIR,
+    getConversationListMetrics,
+  } = await import("./cave-conversations.ts");
+  const { mkdir, rm, writeFile, utimes } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+  const fixtureIds = Array.from({ length: 12 }, (_, index) => `metadata-perf-${index}`);
+  const largeText = "x".repeat(128 * 1024);
+
+  for (const [index, sessionId] of fixtureIds.entries()) {
+    await writeFile(
+      path.join(CONV_DIR, `${sessionId}.json`),
+      JSON.stringify({
+        sessionId,
+        familiarId: "charm",
+        harness: "codex",
+        title: `Cached ${index}`,
+        branch: "main",
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: `2026-06-12T00:00:${String(index).padStart(2, "0")}.000Z`,
+        turns: [
+          {
+            id: `${sessionId}-assistant`,
+            role: "assistant",
+            text: largeText,
+            createdAt: "2026-06-12T00:00:00.000Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+  }
+
+  clearConversationListMetadataCache();
+  const coldRows = await listConversations();
+  const cold = getConversationListMetrics();
+  assert.equal(coldRows.length, fixtureIds.length);
+  assert.equal(cold.cacheMisses, fixtureIds.length);
+  assert.ok(cold.bytesRead >= fixtureIds.length * largeText.length);
+  assert.ok(cold.peakReadConcurrency <= 8, "cache misses stay under the read concurrency cap");
+
+  const warmRows = await listConversations();
+  const warm = getConversationListMetrics();
+  assert.deepEqual(warmRows, coldRows, "warm metadata rows remain identical");
+  assert.equal(warm.cacheHits, fixtureIds.length);
+  assert.equal(warm.cacheMisses, 0);
+  assert.equal(warm.cacheHitRate, 1);
+  assert.equal(warm.bytesRead, 0, "unchanged scans do not reread transcript bodies");
+
+  const externallyChanged = fixtureIds[0];
+  const externalFile = path.join(CONV_DIR, `${externallyChanged}.json`);
+  await writeFile(
+    externalFile,
+    JSON.stringify({
+      sessionId: externallyChanged,
+      familiarId: "charm",
+      harness: "codex",
+      title: "Changed outside Cave",
+      branch: "agent/external-change",
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+      activeLeafId: "external-assistant",
+      turns: [
+        {
+          id: "external-assistant",
+          role: "assistant",
+          text: "failed externally",
+          isError: true,
+          createdAt: "2026-06-13T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const future = new Date(Date.now() + 60_000);
+  await utimes(externalFile, future, future);
+  const changedRows = await listConversations();
+  const changed = changedRows.find((row) => row.sessionId === externallyChanged);
+  const changedMetrics = getConversationListMetrics();
+  assert.equal(changed?.title, "Changed outside Cave");
+  assert.equal(changed?.branch, "agent/external-change");
+  assert.equal(changed?.status, "failed");
+  assert.equal(changedMetrics.cacheMisses, 1, "only the externally changed file is reread");
+  assert.equal(changedMetrics.cacheHits, fixtureIds.length - 1);
+
+  const saved = await loadConversation(fixtureIds[1]);
+  assert.ok(saved);
+  saved.title = "Changed through saveConversation";
+  saved.branch = "agent/saved-change";
+  await saveConversation(saved);
+  const savedRows = await listConversations();
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.title,
+    "Changed through saveConversation",
+  );
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.branch,
+    "agent/saved-change",
+  );
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "save invalidates one summary");
+
+  for (const sessionId of fixtureIds) assert.equal(await deleteConversation(sessionId), true);
+  assert.deepEqual(await listConversations(), []);
+  assert.equal(getConversationListMetrics().cacheEntries, 0, "deleted entries are pruned");
+
+  await writeFile(path.join(CONV_DIR, "metadata-corrupt.json"), "{ not json", "utf8");
+  const corruptRows = await listConversations();
+  assert.equal(corruptRows[0]?.sessionId, "metadata-corrupt");
+  assert.equal(corruptRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(getConversationListMetrics().bytesRead, 0, "corrupt fallback rows are cached too");
+  assert.equal(await deleteConversation("metadata-corrupt"), true);
+
+  await writeFile(path.join(CONV_DIR, "metadata-invalid-shape.json"), "{}", "utf8");
+  const invalidShapeRows = await listConversations();
+  assert.equal(invalidShapeRows[0]?.sessionId, "metadata-invalid-shape");
+  assert.equal(invalidShapeRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(
+    getConversationListMetrics().bytesRead,
+    0,
+    "valid JSON with an invalid conversation shape keeps the cached fallback row",
+  );
+  assert.equal(await deleteConversation("metadata-invalid-shape"), true);
+
+  const unreadablePath = path.join(CONV_DIR, "metadata-unreadable.json");
+  await mkdir(unreadablePath);
+  const unreadableRows = await listConversations();
+  assert.equal(unreadableRows[0]?.sessionId, "metadata-unreadable");
+  await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "read failures are retried");
+  assert.equal(getConversationListMetrics().cacheHits, 0, "read failures are not cached");
+  await rm(unreadablePath, { recursive: true });
+}
 
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
@@ -356,5 +498,37 @@ console.log("cave-conversations.test.ts: ok");
 
   const again = await searchConversations("unique-marker-bbb");
   assert.equal(again.length, 1, "repeat search via the cache returns the same hit");
+}
+
+// ── Atomic persistence (cave-1v95): no torn writes, no temp residue ──────────
+{
+  const { readdir, readFile } = await import("node:fs/promises");
+  const { CONV_DIR } = await import("./cave-conversations.ts");
+  await saveConversation({
+    sessionId: "atomic-check",
+    familiarId: "charm",
+    harness: "codex",
+    createdAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+    turns: [],
+  });
+  const entries = await readdir(CONV_DIR);
+  assert.ok(entries.includes("atomic-check.json"), "the conversation file lands");
+  assert.equal(
+    entries.filter((name) => name.endsWith(".tmp")).length,
+    0,
+    "atomic replace leaves no temp residue behind",
+  );
+  const source = await readFile(new URL("./cave-conversations.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /writeJsonAtomic\(pathFor\(conv\.sessionId\), conv\)/,
+    "saveConversation must go through the atomic writer",
+  );
+  assert.doesNotMatch(
+    source,
+    /writeFile\(pathFor/,
+    "plain writeFile on a conversation path would reintroduce torn writes",
+  );
 }
 console.log("cave-conversations cache test OK");

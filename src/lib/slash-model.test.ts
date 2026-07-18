@@ -7,9 +7,9 @@ assert.equal(modelSlashOptions("/mod", "claude"), null, "not /model arg position
 assert.equal(modelSlashOptions("/familiar researcher", "claude"), null, "ignores other commands");
 
 const all = modelSlashOptions("/model ", "claude");
-assert.ok(Array.isArray(all) && all.length === 5, "‘/model ’ lists every claude model");
+assert.ok(Array.isArray(all) && all.length === 6, "‘/model ’ lists every claude model");
 
-assert.equal(modelSlashOptions("/m ", "claude").length, 5, "the /m alias works too");
+assert.equal(modelSlashOptions("/m ", "claude").length, 6, "the /m alias works too");
 
 const opus = modelSlashOptions("/model opus", "claude");
 assert.ok(opus.every((m) => /opus/i.test(m.label)), "filters by partial label");

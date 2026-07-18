@@ -1,0 +1,33 @@
+{
+  "name": "oracles-measure",
+  "version": "0.1.0",
+  "description": "Evaluation design, rigor review, and benchmark execution.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Oracle's Measure",
+    "shortDescription": "Evaluation design, rigor review, and benchmark execution.",
+    "longDescription": "Evaluation design, rigor review, and benchmark execution.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Oracle's Measure to open a bounded research direction."
+    ]
+  }
+}

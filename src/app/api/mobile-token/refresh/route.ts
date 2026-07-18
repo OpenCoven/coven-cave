@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { refreshMobileAccessToken } from "@/lib/mobile-token-refresh";
+import { recordMobileSeen } from "@/lib/server/mobile-paired";
 import { ACCESS_TOKEN_COOKIE, ACCESS_TOKEN_QUERY_PARAM } from "@/proxy-helpers";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,9 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
   }
+  // Paired-signal beat (cave-i74f): a successful refresh IS the proof a paired
+  // device is alive — record it so the desktop's Settings card can say so.
+  await recordMobileSeen();
   return NextResponse.json({
     ok: true,
     token: result.token,

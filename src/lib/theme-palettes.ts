@@ -1,5 +1,5 @@
 /**
- * 19-theme roster metadata + swatch lookup for the appearance settings UI.
+ * 21-theme roster metadata + swatch lookup for the appearance settings UI.
  * The actual palette CSS lives in `src/app/globals.css`; this module
  * mirrors the accent values and a representative background swatch
  * per (theme, mode) so the settings grid can preview each card.
@@ -25,9 +25,11 @@ export const THEME_IDS = [
   "ghosty",
   "claymorphism",
   "claude",
+  "openai",
   "pastel-dreams",
   "meatseeks",
   "trucker",
+  "snow",
   "contrast",
   "beacon",
   "solstice",
@@ -125,6 +127,12 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     hue: 17, accentDark: "#d97757", accentLight: "#c96442",
     bgDark: "#262624", bgLight: "#faf9f5",
   },
+  openai: {
+    name: "OpenAI",
+    description: "Codex black. Void-dark monochrome; the cursor blinks back.",
+    hue: 0, accentDark: "#ececec", accentLight: "#0d0d0d",
+    bgDark: "#0d0d0d", bgLight: "#ffffff",
+  },
   "pastel-dreams": {
     name: "Pastel Dreams",
     description: "Soft violet pastels with lifted white surfaces.",
@@ -142,6 +150,12 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     description: "Roadside evergreen, blacktop panels, and clean cab lights.",
     hue: 156, accentDark: "#21704a", accentLight: "#005735",
     bgDark: "#020504", bgLight: "#f5fcf9",
+  },
+  snow: {
+    name: "Snow",
+    description: "First-snow hush. Powder-blue light over midnight ice.",
+    hue: 237, accentDark: "#4aade5", accentLight: "#1b6ca8",
+    bgDark: "#03152d", bgLight: "#f8fafc",
   },
   contrast: {
     name: "High Contrast",

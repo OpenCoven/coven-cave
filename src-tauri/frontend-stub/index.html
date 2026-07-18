@@ -161,6 +161,32 @@
         color: #ffb4a8;
         font-size: 13px;
       }
+
+      .steps {
+        margin: 0;
+        padding-left: 20px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .diagnostics {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid rgba(255, 180, 168, 0.4);
+        border-radius: 8px;
+        background: rgba(255, 180, 168, 0.08);
+        color: rgba(247, 247, 242, 0.82);
+        font-size: 13px;
+      }
+
+      .diagnostics[hidden] {
+        display: none;
+      }
+
+      .diagnostics strong {
+        color: #ffb4a8;
+      }
     </style>
   </head>
   <body>
@@ -168,9 +194,22 @@
       <div class="mark" aria-hidden="true">C</div>
       <h1>Connect to CovenCave</h1>
       <p>
+        Your Cave lives on your desktop — this phone is a remote for it.
         On your Mac, open CovenCave, click the phone icon, then scan the QR code
         or paste the invite link here.
       </p>
+      <details id="prereq">
+        <summary>First time here? Both devices need Tailscale</summary>
+        <p>
+          CovenCave talks to your desktop over your private Tailscale network —
+          no cloud in between. Three steps, once:
+        </p>
+        <ol class="steps">
+          <li>Install the free <strong>Tailscale</strong> app from the App Store on this phone.</li>
+          <li>Sign in with the same Tailscale account your desktop uses.</li>
+          <li>Turn Tailscale on, then come back here and connect.</li>
+        </ol>
+      </details>
       <section class="saved" id="saved-card" aria-live="polite">
         <strong>Saved connection</strong>
         <span id="saved-host"></span>
@@ -194,11 +233,24 @@
           or if CovenCave is running without an invite gate.
         </details>
         <div class="actions">
-          <button type="submit">Connect</button>
+          <button type="submit" id="connect-btn">Connect</button>
           <button class="secondary" id="paste-url" type="button">Paste invite link</button>
           <button class="link-button" id="clear-url" type="button" hidden>Clear saved URL</button>
         </div>
         <div class="error" id="error" role="status" aria-live="polite"></div>
+        <section class="diagnostics" id="diagnostics" hidden aria-live="polite">
+          <strong id="diagnostics-title">Can’t reach your desktop from this phone</strong>
+          <p>Most likely causes, in order — fix the first that applies:</p>
+          <ol class="steps">
+            <li><strong>Tailscale is off on this phone.</strong> Open the Tailscale app and connect (install it first if it’s missing).</li>
+            <li><strong>Your desktop is asleep.</strong> Wake it up.</li>
+            <li><strong>CovenCave isn’t open on the desktop.</strong> Open it and make sure Mobile mode is on in Settings → Phone.</li>
+          </ol>
+          <div class="actions">
+            <button type="button" id="retry-connect">Try again</button>
+            <button type="button" class="secondary" id="connect-anyway">Connect anyway</button>
+          </div>
+        </section>
       </form>
     </main>
 
@@ -212,6 +264,11 @@
         const error = document.getElementById("error");
         const savedCard = document.getElementById("saved-card");
         const savedHost = document.getElementById("saved-host");
+        const connectBtn = document.getElementById("connect-btn");
+        const diagnostics = document.getElementById("diagnostics");
+        const diagnosticsTitle = document.getElementById("diagnostics-title");
+        const retryConnect = document.getElementById("retry-connect");
+        const connectAnyway = document.getElementById("connect-anyway");
 
         function hostLabel(value) {
           try {
@@ -249,13 +306,68 @@
           window.location.assign(next);
         }
 
+        // Progressive unreachable diagnostics: before leaving this screen for
+        // a URL that may just hang, prove the desktop answers at all. no-cors
+        // keeps the response opaque — resolve/reject is the only signal we
+        // need. A false negative must never trap anyone: "Connect anyway"
+        // skips the probe.
+        async function desktopReachable(target) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6000);
+          try {
+            await fetch(new URL(target).origin + "/", {
+              mode: "no-cors",
+              cache: "no-store",
+              signal: controller.signal,
+            });
+            return true;
+          } catch {
+            return false;
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+
+        async function guardedConnect(raw) {
+          const next = normalize(raw);
+          diagnostics.hidden = true;
+          connectBtn.disabled = true;
+          connectBtn.textContent = "Checking…";
+          try {
+            if (await desktopReachable(next)) {
+              connect(raw);
+              return;
+            }
+            diagnostics.hidden = false;
+            diagnosticsTitle.textContent =
+              "Can’t reach " + hostLabel(next) + " from this phone";
+          } finally {
+            connectBtn.disabled = false;
+            connectBtn.textContent = "Connect";
+          }
+        }
+
+        function showInputError(err) {
+          error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
+        }
+
         form.addEventListener("submit", (event) => {
           event.preventDefault();
+          error.textContent = "";
+          guardedConnect(input.value).catch(showInputError);
+        });
+
+        retryConnect.addEventListener("click", () => {
+          error.textContent = "";
+          guardedConnect(input.value).catch(showInputError);
+        });
+
+        connectAnyway.addEventListener("click", () => {
           error.textContent = "";
           try {
             connect(input.value);
           } catch (err) {
-            error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
+            showInputError(err);
           }
         });
 

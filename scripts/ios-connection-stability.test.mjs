@@ -69,15 +69,20 @@ assert.match(
   "dev-tab requests must send the Bearer token — without it the Developer tab 401s on a paired desktop",
 );
 
-// --- Discovery: concurrent probes, ordered adjudication, 401 stays terminal -
+// --- Discovery: credential-safe probes, ordered adjudication, 401 terminal -
 assert.match(
   model,
-  /static func discoverBaseURL[\s\S]*?withTaskGroup/,
-  "candidates should be probed concurrently (wall-clock = one probe, not the sum)",
+  /if CaveConnection\.accessToken != nil \{\s*\n\s*return await discoverBaseURLSequentially\(candidates\)/,
+  "paired discovery must probe sequentially so Bearer tokens are not sent to speculative sibling ports",
 );
 assert.match(
   model,
-  /for \(index, result\) in results\.enumerated\(\)[\s\S]*?case \.ok: return \.found\(candidates\[index\]\)[\s\S]*?case \.unauthorized: return \.unauthorized/,
+  /let results = await withTaskGroup/,
+  "unpaired discovery can still probe concurrently (wall-clock = one probe, not the sum)",
+);
+assert.match(
+  model,
+  /private static func adjudicateDiscoveryResults[\s\S]*?for \(index, result\) in results\.enumerated\(\)[\s\S]*?case \.ok: return \.found\(candidates\[index\]\)[\s\S]*?case \.unauthorized: return \.unauthorized/,
   "results must be adjudicated in candidate order with 401/403 still terminal (sibling-port safety)",
 );
 

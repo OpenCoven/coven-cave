@@ -104,7 +104,7 @@ assert.equal(
 // titles ("Runtime filesystem boundary: - This is the local…", duplicated per
 // project). Tie the rejection to the real builder so the literal can't drift.
 assert.equal(
-  sanitizeSessionTitle(buildRuntimeScopePreamble({ kind: "local", root: "/Users/buns/proj" })),
+  sanitizeSessionTitle(buildRuntimeScopePreamble({ kind: "local", root: "/Users/dev/proj" })),
   null,
   "titles that leaked the runtime-scope preamble are rejected",
 );
@@ -181,7 +181,7 @@ const rows3 = mergeSessionRows({
   daemonSessions: [
     {
       id: "def67890-dead-beef-0000-000000000000",
-      project_root: "/Users/buns/proj",
+      project_root: "/Users/dev/proj",
       harness: "claude",
       title: "Runtime filesystem boundary: - This is the local runtime boundary for this Cave",
       status: "completed",

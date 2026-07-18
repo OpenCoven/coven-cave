@@ -6,10 +6,6 @@ const source = readFileSync(
   new URL("./opencoven-submission-panel.tsx", import.meta.url),
   "utf8",
 );
-const capabilitiesView = readFileSync(
-  new URL("./capabilities-view.tsx", import.meta.url),
-  "utf8",
-);
 
 assert.match(source, /OpenCoven submissions/);
 assert.match(source, /Runtime[\s\S]*Harness/, "authors should choose Runtime or Harness");
@@ -42,6 +38,8 @@ assert.doesNotMatch(
   "submission panel should use shared card/control radius tokens",
 );
 assert.doesNotMatch(source, /clawhub|openclaw/i, "submission panel must not point authors at external publishing paths");
-assert.match(capabilitiesView, /OpenCovenSubmissionPanel/, "Capabilities tab should render the OpenCoven submission panel");
+// The Capabilities surface (the panel's former mount point) was retired with
+// the marketplace Capabilities section (cave-4n7j); the panel stays parked
+// until the submissions flow ships on its own surface.
 
 console.log("opencoven-submission-panel.test.ts: ok");

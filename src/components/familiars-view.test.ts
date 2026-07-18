@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   source,
-  /<FamiliarAvatar familiar=\{familiar\} size="sm" \/>/,
-  "FamiliarsView detail header/card should render FamiliarAvatar instead of raw daemon icons",
+  /<FamiliarAvatar familiar=\{familiar\} size="lg" \/>/,
+  "FamiliarsView roster card should render FamiliarAvatar instead of raw daemon icons",
 );
 
 assert.match(
@@ -53,6 +53,50 @@ assert.match(
   /usePausablePoll\(\(\) => void loadMemory\(\), 30_000\)/,
   "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
 );
+
+// (cave-5dnw) FamiliarsView's poll is the ONLY memory poll while the studio is
+// open: the embedded FamiliarsMemoryView mounts consume the parent's data via
+// the memoryFeed prop instead of running a duplicate fetch+poll of the same
+// two endpoints.
+assert.match(
+  source,
+  /const memoryFeed = useMemo<MemoryFeed>\(/,
+  "FamiliarsView builds a single memoized memory feed",
+);
+assert.match(
+  source,
+  /reload: loadMemory,/,
+  "the feed exposes the parent's loader as reload",
+);
+assert.ok(
+  (source.match(/feed=\{memoryFeed\}/g) ?? []).length >= 2,
+  "both embedded FamiliarsMemoryView mounts (overlay + detail tab) receive the feed",
+);
+{
+  const memView = readFileSync(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+  assert.match(
+    memView,
+    /usePausablePoll\(\(\) => void load\(\), 30_000, \{ enabled: !feed \}\)/,
+    "FamiliarsMemoryView's own poll is disabled in parent-fed mode",
+  );
+  assert.match(
+    memView,
+    /if \(!feed\) void load\(\);/,
+    "FamiliarsMemoryView skips its initial self-fetch in parent-fed mode",
+  );
+  // The parent-fed mirror must keep the pending-delete filter, or a parent poll
+  // landing inside the 4s undo window resurrects the optimistically-removed row.
+  assert.match(
+    memView,
+    /setCovenEntries\(feed\.covenEntries\.filter\(\(e\) => e\.path !== pendingDelete\)\)/,
+    "the feed mirror filters the pending-delete path (coven entries)",
+  );
+  assert.match(
+    memView,
+    /setFileEntries\(feed\.fileEntries\.filter\(\(e\) => e\.fullPath !== pendingDelete\)\)/,
+    "the feed mirror filters the pending-delete path (file entries)",
+  );
+}
 
 assert.match(
   source,
@@ -128,8 +172,8 @@ assert.match(
 
 assert.match(
   source,
-  /familiar\.avatarImage \?[\s\S]*className="h-full w-full object-cover"/,
-  "Avatar preview enlarges uploaded avatar images",
+  /<AuthedImage[\s\S]*src=\{familiar\.avatarImage\}[\s\S]*className="h-full w-full object-cover"[\s\S]*fallback=/,
+  "Avatar preview enlarges uploaded avatar images via the authenticated image renderer",
 );
 
 assert.match(
@@ -230,3 +274,63 @@ assert.match(source, /role="tabpanel"[\s\S]{0,120}?aria-labelledby=\{`familiar-d
 assert.doesNotMatch(source, /aria-current=\{tab === id \? "page"/, "old aria-current=page tab pattern is gone");
 
 console.log("familiars-view: all assertions passed");
+
+// The detail panel header carries a per-familiar overflow menu — the
+// discoverable entry points for Edit-in-Studio and Remove. Remove must ROUTE
+// to the Studio lifecycle tab (the canonical confirm + undo + tombstone flow),
+// never confirm or DELETE from this surface.
+assert.match(
+  source,
+  /aria-label=\{`\$\{familiar\.display_name\} options`\}[\s\S]{0,600}openFamiliarStudio\(familiar\.id, "identity"\)/,
+  "Detail panel overflow menu opens the familiar's Studio (Edit in Studio)",
+);
+assert.match(
+  source,
+  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "lifecycle"\)[\s\S]{0,120}Remove familiar/,
+  "Remove familiar routes to the Studio lifecycle tab where the canonical confirm lives",
+);
+assert.doesNotMatch(
+  source,
+  /fetch\([^)]*\/api\/familiars\/[^)]*\{\s*method:\s*"DELETE"/,
+  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle tab",
+);
+
+// Sessions tab: each row keeps its open-in-chat primary action AND gains a
+// Trace action that opens the daemon event timeline (SessionTraceOverlay) —
+// buttons are siblings, never nested (invalid HTML + broken AT semantics).
+assert.match(
+  source,
+  /import \{ SessionTraceOverlay, type TraceTarget \} from "@\/components\/session-trace-overlay"/,
+  "Sessions tab wires the shared trace overlay",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setTraceTarget\(\{ id: s\.id, title: s\.title \}\)\}/,
+  "each session row can open its trace",
+);
+assert.match(
+  source,
+  /aria-label=\{`Trace \$\{s\.title \|\| s\.id\}`\}/,
+  "the trace button names its session for AT",
+);
+assert.match(
+  source,
+  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{\(\) => setTraceTarget\(null\)\} \/>\s*\) : null\}/,
+  "the overlay renders from panel state and closes cleanly",
+);
+
+// ── cave-ibvl: the summon-event listener consumes the latch ──────────────────
+// requestSummonFamiliar() arms the module latch unconditionally; a mounted
+// view that only reacted to the event left the latch armed, so the NEXT
+// FamiliarsView mount popped the circle open uninvited. Both intake paths
+// must consume it: the mount check and the live event listener.
+assert.match(
+  source,
+  /if \(consumeSummonPending\(\)\) setCreateOpen\(true\);/,
+  "a fresh mount consumes the summon latch",
+);
+assert.match(
+  source,
+  /const open = \(\) => \{\s*consumeSummonPending\(\);\s*setCreateOpen\(true\);\s*\};/,
+  "the already-mounted event listener also consumes the latch (cave-ibvl)",
+);

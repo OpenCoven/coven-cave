@@ -15,11 +15,11 @@ import {
  */
 export function ReadingWeightController() {
   useEffect(() => {
-    applyReadingWeight(readReadingWeight());
+    applyReadingWeight(readReadingWeight(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_WEIGHT_KEY) return;
-      applyReadingWeight(readReadingWeight());
+      applyReadingWeight(readReadingWeight(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

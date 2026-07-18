@@ -1,8 +1,4 @@
 // @ts-nocheck
-// Pins the desktop side of "override the desktop theme from your phone": the
-// RemoteThemeController polls GET /api/theme, adopts a remote preset that
-// differs from what's applied, guards against clobbering itself / custom themes,
-// and is mounted app-wide in the root layout.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -12,78 +8,63 @@ const controller = await readFile(
 );
 const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 
-// ── Mounted globally (not just on Settings) ──────────────────────────────────
 assert.match(
   layout,
   /import \{ RemoteThemeController \} from "@\/components\/remote-theme-controller"/,
-  "root layout imports the remote-theme controller",
+  "root layout imports the reconciliation controller",
 );
+assert.match(layout, /<RemoteThemeController \/>/, "reconciliation runs on every surface");
+
+assert.match(controller, /subscribeAppPreferences\(reconcileCanonical\)/);
 assert.match(
-  layout,
-  /<RemoteThemeController \/>/,
-  "root layout mounts RemoteThemeController so theme overrides apply on every surface",
+  controller,
+  /function reconcileCanonical\(\)[\s\S]*themeRuntimeSignature\(theme, mode\)[\s\S]*data-theme[\s\S]*data-mode/,
+  "canonical notifications reconcile the DOM without depending on selection revision",
+);
+assert.doesNotMatch(
+  controller,
+  /selectionRevision\s*[!=<>]=?[^\n]*reconcileCanonical/,
+  "DOM reconciliation must not be gated on a selection revision change",
 );
 
-// ── Polls and adopts ─────────────────────────────────────────────────────────
-assert.match(controller, /"use client"/, "controller runs on the client");
+assert.match(controller, /matchMedia\("\(prefers-color-scheme: dark\)"\)/);
+assert.match(controller, /colorScheme\.addEventListener\("change", onColorSchemeChange\)/);
 assert.match(
   controller,
-  /fetch\("\/api\/theme", \{ cache: "no-store" \}\)/,
-  "controller polls GET /api/theme without caching",
+  /theme\.resolvedMode !== mode[\s\S]*updateAppPreferences\(\{ appearance: \{ theme: \{ resolvedMode: mode \} \} \}\)/,
+  "an OS mode flip updates only derived resolvedMode",
 );
 assert.match(
   controller,
-  /setInterval\(\(\) => void reconcile\(\), POLL_MS\)/,
-  "controller reconciles on an interval",
-);
-assert.match(
-  controller,
-  /addEventListener\("visibilitychange"/,
-  "controller also reconciles when the tab becomes visible again",
-);
-assert.match(
-  controller,
-  /applyRemoteTheme\(snap\.themeId, mode\)/,
-  "a differing remote preset is applied to the DOM",
-);
-assert.match(
-  controller,
-  /setAttribute\("data-theme", themeId\)[\s\S]*setAttribute\("data-mode", mode\)/,
-  "applying a theme sets both data-theme and data-mode",
+  /applyThemeToRoot\(html, theme, mode, lastAppliedCustom\)[\s\S]*lastAppliedCustom = theme\.id === "custom"[\s\S]*reapplyIndependentAppearance\(\{ preserveCustomDefaults: theme\.id === "custom" \}\)/,
+  "theme changes clear the actually-applied custom palette and restore independent preferences",
 );
 
-// ── Loop / clobber safety ────────────────────────────────────────────────────
+assert.match(controller, /fetch\("\/api\/theme", \{ cache: "no-store" \}\)/);
 assert.match(
   controller,
-  /if \(!isPreset\(snap\.themeId\)\) return/,
-  "custom / unknown remote ids are ignored so they can't clobber a custom theme",
+  /remoteThemeNeedsRefresh\(remote, local\)[\s\S]*refreshAppPreferences\(\)/,
+  "polling treats the remote view as an invalidation signal, including same-selection mode changes",
 );
-assert.match(
-  controller,
-  /if \(snap\.updatedAt && snap\.updatedAt <= synced\) return/,
-  "already-reconciled publishes are skipped via the persisted updatedAt watermark",
-);
-assert.match(
-  controller,
-  /if \(!synced\) \{[\s\S]*setItem\(SYNCED_KEY, snap\.updatedAt\)[\s\S]*return;/,
-  "the first reconcile takes a baseline instead of adopting, so a stale mirror can't revert a fresh local pick",
-);
-assert.match(
-  controller,
-  /snap\.themeId === html\.getAttribute\("data-theme"\) && mode === html\.getAttribute\("data-mode"\)/,
-  "a publish that already matches the applied theme is a no-op (no ping-pong)",
-);
+assert.doesNotMatch(controller, /localStorage\.(?:getItem|setItem|removeItem)/);
+assert.doesNotMatch(controller, /applyRemoteTheme|SYNCED_KEY/);
 
-// ── Re-publishes resolved tokens for phone clients ───────────────────────────
 assert.match(
   controller,
-  /republishTokens\(snap\.themeId, mode\)/,
-  "after adopting, the controller re-publishes resolved hex tokens",
+  /await flushAppPreferences\(\)[\s\S]*generation !== publishGeneration[\s\S]*themeRuntimeSignature\(current, mode\) !== signature/,
+  "publication is cancelled when a newer rendered selection wins during the flush",
 );
 assert.match(
   controller,
-  /rgbaBytesToHex\(r, g, b, a\)/,
-  "token resolution rasterises to plain sRGB hex via the shared helper",
+  /tokenOnly: true,[\s\S]*expectedSelectionRevision,[\s\S]*resolvedMode/,
+  "phone token publication carries the current selection guard and resolved system mode",
 );
+assert.match(
+  controller,
+  /republishTokens\(current\.selectionRevision, mode\)/,
+  "phone tokens are published against the post-flush canonical selection revision",
+);
+assert.match(controller, /res\.status === 409[\s\S]*refreshAppPreferences\(\)/);
+assert.match(controller, /rgbaBytesToHex\(r, g, b, a\)/);
 
 console.log("remote-theme-controller.test.ts: ok");

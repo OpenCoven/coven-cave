@@ -13,11 +13,11 @@ const SESSION = {
   title: "Task: Review Version Control in Cave",
   status: "running",
   origin: "board",
-  project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  project_root: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   harness: "claude",
   familiarId: "nova",
   model: "openclaw-local",
-  runtime: "local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  runtime: "local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   exit_code: null,
   archived_at: null,
   created_at: ISO,
@@ -32,7 +32,7 @@ const CARD = {
   priority: "medium",
   familiarId: "nova",
   sessionId: "s-task",
-  cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  cwd: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   links: [],
   github: [],
   labels: [],
@@ -90,7 +90,7 @@ async function setup(page: Page) {
     }
     return route.continue();
   });
-  await page.goto("/");
+  await page.goto("/?mode=chat");
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");
   await page.waitForSelector(".chat-surface", { timeout: 30_000 });

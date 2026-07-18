@@ -1,0 +1,37 @@
+{
+  "name": "seekers-lens",
+  "version": "0.1.0",
+  "description": "Discovery and ideation for bounded research work, from broad exploration through a reviewable pilot direction.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "ideation",
+    "discovery",
+    "brainstorming",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Seeker's Lens",
+    "shortDescription": "Discovery and ideation for bounded research work, from broad exploration through a reviewable pilot direction.",
+    "longDescription": "Discovery and ideation for bounded research work, from broad exploration through a reviewable pilot direction.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "filesystem.read",
+      "network.http",
+      "memory.local",
+      "reasoning.sequential"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Seeker's Lens to open a bounded research direction."
+    ]
+  }
+}

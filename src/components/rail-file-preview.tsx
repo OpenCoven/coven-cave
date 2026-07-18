@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -353,7 +355,9 @@ export function RailFilePreview({
             </span>
           </div>
         ) : file?.kind === "text" && isMarkdownPath(path) ? (
-          <MarkdownBlock text={file.content} className="comux-md max-w-[72ch]" />
+          // No 72ch clamp here — the rail preview is a pane, not a transcript
+          // column; clamping left a dead band to the right of wide panes.
+          <MarkdownBlock text={file.content} className="comux-md" />
         ) : file?.kind === "text" ? (
           <SyntaxBlock text={file.content} lang={path.split(".").pop()} className="leading-relaxed" />
         ) : null}

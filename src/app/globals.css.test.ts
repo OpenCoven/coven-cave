@@ -50,8 +50,8 @@ console.log("globals.css.test.ts (task 3) OK");
 // solstice), which the original loop of 9 never covered.
 const otherThemes = [
   "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
-  "ghosty", "claymorphism", "claude", "pastel-dreams", "meatseeks", "trucker",
-  "contrast", "beacon", "solstice",
+  "ghosty", "claymorphism", "claude", "openai", "pastel-dreams", "meatseeks",
+  "trucker", "snow", "contrast", "beacon", "solstice",
 ];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
@@ -136,6 +136,19 @@ assert.doesNotMatch(
   modeFadeRule,
   /\bboth\b|\bforwards\b/,
   ".cave-mode-fade must not retain end-state animation styles (containing-block trap, cave-cco)",
+);
+
+// The chat/code sidebar responds to its own panel width, not the viewport —
+// at narrow drag widths the per-row project tile yields its slot to the title.
+assert.match(
+  css,
+  /\.cnav\s*\{[\s\S]*?container-type:\s*inline-size;[\s\S]*?container-name:\s*cnav;/,
+  ".cnav is an inline-size query container",
+);
+assert.match(
+  css,
+  /@container cnav \(max-width: 212px\)\s*\{[\s\S]*?\.cnav__thread-proj\s*\{\s*display:\s*none;/,
+  "narrow cnav panels drop the per-row project tile so titles keep room",
 );
 
 console.log("globals.css.test.ts (mode-fade containing block) OK");

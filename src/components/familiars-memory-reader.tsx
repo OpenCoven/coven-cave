@@ -197,11 +197,11 @@ export function MemoryReaderPane({
             <button
               type="button"
               onClick={() => openGrimoireDoc("memory", row.contentPath!)}
-              title="Open in the Grimoire editor"
+              title="Open in the Memories editor"
               className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:book-open" width={11} aria-hidden />
-              Grimoire
+              Memories
             </button>
           ) : null}
         </div>

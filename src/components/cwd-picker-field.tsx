@@ -64,6 +64,7 @@ export function CwdPickerField({
   return (
     <>
       <textarea
+        aria-label="Working directories, one per line"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={3}

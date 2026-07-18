@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 
 type EncryptedSecret = {
   v: 1;
@@ -22,27 +22,27 @@ function normalizeSecretKey(key: string): string {
 }
 
 function localVaultDir(): string {
-  return join(covenHome(), "cave");
+  return caveHome();
 }
 
 function localVaultKeyPath(): string {
-  return process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE?.trim() || join(localVaultDir(), "local-vault.key");
+  return process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE?.trim() || join(/* turbopackIgnore: true */ localVaultDir(), "local-vault.key");
 }
 
 function localVaultPath(): string {
-  return process.env.COVEN_CAVE_LOCAL_VAULT_FILE?.trim() || join(localVaultDir(), "local-vault.enc.json");
+  return process.env.COVEN_CAVE_LOCAL_VAULT_FILE?.trim() || join(/* turbopackIgnore: true */ localVaultDir(), "local-vault.enc.json");
 }
 
 function writePrivateText(file: string, value: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, value, { encoding: "utf8", mode: 0o600 });
-  try { chmodSync(file, 0o600); } catch { /* Windows ignores POSIX modes. */ }
+  mkdirSync(/* turbopackIgnore: true */ dirname(file), { recursive: true });
+  writeFileSync(/* turbopackIgnore: true */ file, value, { encoding: "utf8", mode: 0o600 });
+  try { chmodSync(/* turbopackIgnore: true */ file, 0o600); } catch { /* Windows ignores POSIX modes. */ }
 }
 
 function readOrCreateKey(): Buffer {
   const file = localVaultKeyPath();
-  if (existsSync(file)) {
-    const raw = readFileSync(file, "utf8").trim();
+  if (existsSync(/* turbopackIgnore: true */ file)) {
+    const raw = readFileSync(/* turbopackIgnore: true */ file, "utf8").trim();
     const key = Buffer.from(raw, "base64");
     if (key.length === 32) return key;
     throw new Error("local encrypted vault key is invalid");
@@ -55,9 +55,9 @@ function readOrCreateKey(): Buffer {
 
 function readStore(): LocalVaultStore {
   const file = localVaultPath();
-  if (!existsSync(file)) return { version: 1, secrets: {} };
+  if (!existsSync(/* turbopackIgnore: true */ file)) return { version: 1, secrets: {} };
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<LocalVaultStore>;
+    const parsed = JSON.parse(readFileSync(/* turbopackIgnore: true */ file, "utf8")) as Partial<LocalVaultStore>;
     if (parsed.version !== 1 || !parsed.secrets || typeof parsed.secrets !== "object") {
       return { version: 1, secrets: {} };
     }
@@ -69,11 +69,11 @@ function readStore(): LocalVaultStore {
 
 function writeStore(store: LocalVaultStore): void {
   const file = localVaultPath();
-  mkdirSync(dirname(file), { recursive: true });
+  mkdirSync(/* turbopackIgnore: true */ dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(store, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  try { chmodSync(tmp, 0o600); } catch { /* Windows ignores POSIX modes. */ }
-  renameSync(tmp, file);
+  writeFileSync(/* turbopackIgnore: true */ tmp, `${JSON.stringify(store, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  try { chmodSync(/* turbopackIgnore: true */ tmp, 0o600); } catch { /* Windows ignores POSIX modes. */ }
+  renameSync(/* turbopackIgnore: true */ tmp, file);
 }
 
 export function setLocalEncryptedSecret(key: string, value: string): void {

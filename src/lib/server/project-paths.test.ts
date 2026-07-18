@@ -33,21 +33,27 @@ try {
   delete process.env.COVEN_WORKSPACE_ROOT;
   delete process.env.WORKSPACE_ROOT;
   delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
-  delete process.env.OPENCLAW_WORKSPACE_ROOT;
-
   const canonical = path.join(process.env.COVEN_HOME, "workspaces", "familiars", "sage");
   const savedProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "coven-docs");
+  const openclawWorkspaceRoot = path.join(tmp, ".openclaw", "workspace");
+  process.env.OPENCLAW_WORKSPACE_ROOT = openclawWorkspaceRoot;
   await mkdir(canonical, { recursive: true });
+  const sensitiveFileRoot = path.join(tmp, "sensitive-config");
   await mkdir(path.join(savedProjectRoot, "docs"), { recursive: true });
+  await writeFile(sensitiveFileRoot, "SECRET\n");
+  await mkdir(path.join(openclawWorkspaceRoot, "agent-other", "private"), { recursive: true });
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,
     JSON.stringify({
       version: 1,
-      projects: [{ id: "docs", name: "Coven Docs", root: savedProjectRoot }],
+      projects: [
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
+        { id: "sensitive", name: "Sensitive", root: sensitiveFileRoot },
+      ],
     }),
   );
 
-  const { resolveAllowedProjectPath } = await import("./project-paths.ts");
+  const { isAllowedNewProjectRoot, resolveAllowedProjectPath, validateCaveProjectRoot } = await import("./project-paths.ts");
   const legacy = path.join(process.env.COVEN_HOME, "workspace", "familiars", "sage");
 
   assert.equal(
@@ -60,6 +66,86 @@ try {
     resolveAllowedProjectPath(path.join(savedProjectRoot, "docs")),
     await realpath(path.join(savedProjectRoot, "docs")),
     "saved Cave project roots are allowed for file tree browsing",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot(savedProjectRoot),
+    false,
+    "saved Cave projects must not expand the trusted base for new project registration",
+  );
+
+  // Research mission workspaces live under cave state, not a registered
+  // project; they must still be valid session roots (research runs failed
+  // with "invalid project root" without this).
+  const missionWorkspace = path.join(
+    process.env.COVEN_HOME,
+    "cave",
+    "research-missions",
+    "research-fixture",
+  );
+  await mkdir(missionWorkspace, { recursive: true });
+  assert.equal(
+    resolveAllowedProjectPath(missionWorkspace),
+    await realpath(missionWorkspace),
+    "research mission workspaces are allowed project roots",
+  );
+
+  // Allowed roots must be computed per call: a project saved after module
+  // load was invisible until restart, failing sessions with "invalid project root".
+  const lateProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "late-project");
+  await mkdir(lateProjectRoot, { recursive: true });
+  assert.equal(
+    resolveAllowedProjectPath(lateProjectRoot),
+    null,
+    "unregistered roots stay rejected",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
+        { id: "late", name: "Late Project", root: lateProjectRoot },
+      ],
+    }),
+  );
+  assert.equal(
+    resolveAllowedProjectPath(lateProjectRoot),
+    await realpath(lateProjectRoot),
+    "projects saved after startup are allowed without a server restart",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot(lateProjectRoot),
+    false,
+    "late saved projects do not authorize more arbitrary project roots",
+  );
+
+  assert.equal(
+    isAllowedNewProjectRoot("~"),
+    false,
+    "tilde project roots are checked after home-directory expansion",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot("~/secret"),
+    false,
+    "tilde subpaths cannot masquerade as relative paths under the current working directory",
+  );
+
+  assert.equal(
+    resolveAllowedProjectPath(sensitiveFileRoot),
+    null,
+    "saved Cave project roots that point at files are not promoted into the allowlist",
+  );
+
+  assert.deepEqual(
+    validateCaveProjectRoot(sensitiveFileRoot),
+    { ok: false, error: "root must be a directory" },
+    "project roots must be existing directories",
+  );
+
+  assert.equal(
+    resolveAllowedProjectPath(path.join(openclawWorkspaceRoot, "agent-other", "private", "secrets.json")),
+    null,
+    "OpenClaw workspace roots are not globally allowed for generic project file/tree APIs",
   );
 } finally {
   restoreEnv();

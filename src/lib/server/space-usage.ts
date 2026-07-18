@@ -31,7 +31,7 @@ export type SpaceUsageArea = {
 /** Fixed allow-list of scanned areas. `dir` is relative to the coven home;
  *  `filesOnly` limits the walk to the top-level plain files (app-state JSON). */
 const AREAS: { id: string; label: string; dir: string; filesOnly?: boolean }[] = [
-  { id: "conversations", label: "Chat transcripts", dir: "cave-conversations" },
+  { id: "conversations", label: "Chat transcripts", dir: "cave/conversations" },
   { id: "workspaces", label: "Familiar workspaces", dir: "workspaces" },
   { id: "memory", label: "Familiar memory", dir: "memory" },
   { id: "knowledge", label: "Knowledge vault", dir: "knowledge" },
@@ -40,7 +40,7 @@ const AREAS: { id: string; label: string; dir: string; filesOnly?: boolean }[] =
   { id: "prompts", label: "Prompt templates", dir: "prompts" },
   { id: "skills", label: "Skills", dir: "skills" },
   { id: "trash", label: "Trash", dir: ".trash" },
-  { id: "state", label: "App state", dir: ".", filesOnly: true },
+  { id: "state", label: "App state", dir: "cave", filesOnly: true },
 ];
 
 const MAX_ENTRIES_PER_AREA = 20_000;
@@ -75,7 +75,7 @@ async function walk(root: string, filesOnly: boolean): Promise<WalkTally | null>
         tally.truncated = true;
         return tally;
       }
-      const full = path.join(dir, entry.name);
+      const full = path.join(/* turbopackIgnore: true */ dir, entry.name);
       if (entry.isDirectory()) {
         if (filesOnly) continue;
         if (depth + 1 > MAX_DEPTH) {
@@ -104,7 +104,7 @@ async function walk(root: string, filesOnly: boolean): Promise<WalkTally | null>
 export async function collectSpaceUsage(home = covenHome()): Promise<SpaceUsageArea[]> {
   return Promise.all(
     AREAS.map(async (area): Promise<SpaceUsageArea> => {
-      const root = area.dir === "." ? home : path.join(home, area.dir);
+      const root = area.dir === "." ? home : path.join(/* turbopackIgnore: true */ home, area.dir);
       const tally = await walk(root, area.filesOnly ?? false);
       return {
         id: area.id,

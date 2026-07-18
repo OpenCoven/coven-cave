@@ -4,27 +4,34 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { Segmented } from "@/components/ui/settings-controls";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
+  accessLevelMeta,
   auditDecisionMeta,
   auditReasonLabel,
+  effectiveAccessRows,
   grantKey,
   grantSourceMeta,
+  groupsForFamiliar,
   isSupreme,
   nameResolver,
   proposalStatusMeta,
   splitProposals,
   surfaceLabel,
+  type ConsoleAccessGroup,
   type ConsoleAuditEntry,
   type ConsoleGrant,
   type ConsoleProject,
   type ConsoleProposal,
   type Tone,
 } from "@/lib/permissions-console";
+import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -85,6 +92,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const [projects, setProjects] = useState<ConsoleProject[]>([]);
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [grantMeta, setGrantMeta] = useState<Map<string, ConsoleGrant>>(new Map());
+  const [accessGroups, setAccessGroups] = useState<ConsoleAccessGroup[]>([]);
   const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ConsoleProposal[]>([]);
   const [audit, setAudit] = useState<ConsoleAuditEntry[]>([]);
@@ -106,6 +114,9 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
       const grants = Array.isArray(grantRes?.grants) ? (grantRes.grants as ConsoleGrant[]) : [];
       setGranted(new Set(grants.map((g) => grantKey(g.familiarId, g.projectId))));
       setGrantMeta(new Map(grants.map((g) => [grantKey(g.familiarId, g.projectId), g])));
+      setAccessGroups(
+        Array.isArray(grantRes?.accessGroups) ? (grantRes.accessGroups as ConsoleAccessGroup[]) : [],
+      );
       setSupremeFamiliarId(
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
@@ -124,7 +135,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   }, [load]);
 
   const toggle = useCallback(
-    async (projectId: string, next: boolean) => {
+    async (projectId: string, next: boolean, access: ProjectAccessLevel = "write") => {
       const key = grantKey(familiar.id, projectId);
       setPending((p) => new Set(p).add(key));
       // Optimistic.
@@ -138,10 +149,16 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         const res = await fetch("/api/project-grants", {
           method: next ? "POST" : "DELETE",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ targetFamiliarId: familiar.id, projectId }),
+          body: JSON.stringify(
+            next
+              ? { targetFamiliarId: familiar.id, projectId, access }
+              : { targetFamiliarId: familiar.id, projectId },
+          ),
         });
         if (!res.ok) throw new Error(String(res.status));
         setError(null);
+        // Re-sync so grant metadata (level, source, time) reflects the server.
+        await load();
       } catch {
         // Revert on failure.
         setGranted((g) => {
@@ -159,11 +176,17 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         });
       }
     },
-    [familiar.id],
+    [familiar.id, load],
+  );
+
+  // Re-granting at a different level moves the direct grant read⇄write.
+  const setAccess = useCallback(
+    (projectId: string, access: ProjectAccessLevel) => toggle(projectId, true, access),
+    [toggle],
   );
 
   const resolveProposal = useCallback(
-    async (id: string, decision: "accepted" | "rejected") => {
+    async (id: string, decision: "accepted" | "rejected" | "undo") => {
       setResolving((s) => new Set(s).add(id));
       try {
         const res = await fetch(`/api/grant-proposals/${id}`, {
@@ -194,6 +217,41 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
     () => projects.reduce((n, p) => (granted.has(grantKey(familiar.id, p.id)) ? n + 1 : n), 0),
     [projects, granted, familiar.id],
   );
+
+  // Effective access = union-max of the direct grant + this familiar's access
+  // groups, resolved with the SAME helper the server enforces with.
+  const effectiveByProject = useMemo(() => {
+    const rows = effectiveAccessRows({
+      projects,
+      grants: [...grantMeta.values()],
+      groups: accessGroups,
+      familiarId: familiar.id,
+    });
+    return new Map(rows.map((row) => [row.project.id, row.effective]));
+  }, [projects, grantMeta, accessGroups, familiar.id]);
+  const memberGroups = useMemo(
+    () => groupsForFamiliar(accessGroups, familiar.id),
+    [accessGroups, familiar.id],
+  );
+
+  // Grant-list filter — rosters run to dozens of projects, so the list is
+  // searchable by name or path once it's big enough to need it.
+  const [projectQuery, setProjectQuery] = useState("");
+  const q = projectQuery.trim().toLowerCase();
+  const visibleProjects = useMemo(
+    () =>
+      q
+        ? projects.filter(
+            (p) => p.name.toLowerCase().includes(q) || (p.root ?? "").toLowerCase().includes(q),
+          )
+        : projects,
+    [projects, q],
+  );
+
+  // Decision history is an audit log — it grows unbounded, so it renders a
+  // recent window with the rest one click away.
+  const AUDIT_PREVIEW = 6;
+  const [showAllAudit, setShowAllAudit] = useState(false);
 
   // Everything below is scoped to THIS familiar — the protocol relocated from a
   // cross-familiar console into each familiar's own tab.
@@ -255,12 +313,42 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
           label="Project access"
           description={`${grantedCount} of ${projects.length} granted`}
         >
-          {projects.map((project) => {
+          {projects.length > 6 ? (
+            <div className="border-b border-[var(--border-hairline)] px-4 py-2">
+              <label className="flex items-center gap-2">
+                <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                <input
+                  type="search"
+                  value={projectQuery}
+                  onChange={(e) => setProjectQuery(e.target.value)}
+                  placeholder="Filter projects…"
+                  aria-label="Filter projects by name or path"
+                  className="w-full bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                />
+                {projectQuery ? (
+                  <IconButton
+                    icon="ph:x-bold"
+                    size="xs"
+                    aria-label="Clear project filter"
+                    onClick={() => setProjectQuery("")}
+                  />
+                ) : null}
+              </label>
+            </div>
+          ) : null}
+          {q && visibleProjects.length === 0 ? (
+            <p className="px-4 py-3 text-[12px] text-[var(--text-muted)]">
+              No projects match “{projectQuery.trim()}”.
+            </p>
+          ) : null}
+          {visibleProjects.map((project) => {
             const key = grantKey(familiar.id, project.id);
             const on = granted.has(key);
             const busy = pending.has(key);
             const meta = grantMeta.get(key);
             const source = on && meta ? grantSourceMeta(meta.source, userDisplayName(profileSnapshot?.profile)) : null;
+            const level: ProjectAccessLevel = meta?.access === "read" ? "read" : "write";
+            const groupSources = effectiveByProject.get(project.id)?.groups ?? [];
             return (
               <div key={project.id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -290,28 +378,89 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                         </>
                       )}
                     </p>
+                    {groupSources.length > 0 && (
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {groupSources.map((g) => {
+                          const levelMeta = accessLevelMeta(g.access);
+                          return (
+                            <span
+                              key={g.groupId}
+                              title={`Granted through the “${g.groupName}” access group — ${levelMeta.title}. Manage it in Settings → Access groups.`}
+                              className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                            >
+                              <Icon name="ph:users-three" width={11} height={11} className="shrink-0" aria-hidden />
+                              {g.groupName} · {levelMeta.label}
+                            </span>
+                          );
+                        })}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={on}
-                  aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
-                  disabled={busy}
-                  onClick={() => toggle(project.id, !on)}
-                  className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
-                    on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
-                  } ${busy ? "opacity-60" : ""}`}
-                >
-                  <span
-                    className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
-                      on ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
+                <div className="flex shrink-0 items-center gap-2.5">
+                  {on && (
+                    <div className={busy ? "pointer-events-none opacity-60" : ""}>
+                      <Segmented
+                        options={["read", "write"] as const}
+                        value={level}
+                        onChange={(candidate) => {
+                          if (!busy && candidate !== level) void setAccess(project.id, candidate);
+                        }}
+                        getLabel={(option) => accessLevelMeta(option).label}
+                        ariaLabel={`Access level for ${project.name}`}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
+                    disabled={busy}
+                    onClick={() => toggle(project.id, !on)}
+                    className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-[var(--radius-pill)] transition-colors duration-150 ${
+                      on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
+                    } ${busy ? "opacity-60" : ""}`}
+                  >
+                    <span
+                      className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-[var(--radius-pill)] bg-white shadow transition-transform duration-150 ${
+                        on ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             );
           })}
+        </SettingsGroup>
+      )}
+
+      {/* ── Access groups this familiar belongs to ── */}
+      {!supreme && memberGroups.length > 0 && (
+        <SettingsGroup
+          label={`Access groups (${memberGroups.length})`}
+          description="Base project access inherited through group membership — manage groups in Settings"
+        >
+          {memberGroups.map((group) => (
+            <div key={group.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <ToneIcon tone="neutral" icon="ph:users-three" size={15} />
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] text-[var(--text-primary)]">{group.name}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                    {group.projectGrants.length === 1
+                      ? "1 project"
+                      : `${group.projectGrants.length} projects`}
+                    {" · "}
+                    {group.memberFamiliarIds.length === 1
+                      ? "1 member"
+                      : `${group.memberFamiliarIds.length} members`}
+                    {group.description ? ` · ${group.description}` : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
         </SettingsGroup>
       )}
 
@@ -320,6 +469,32 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         <SettingsGroup label={`Access requests (${pendingProposals.length})`}>
           {pendingProposals.map((p) => {
             const busy = resolving.has(p.id);
+            if (p.status === "accepting") {
+              return (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-[var(--text-primary)]">
+                      Granting <span className="font-medium">{projectName(p.projectId)}</span> to
+                      this familiar
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                      <FinalizeCountdown finalizesAt={p.finalizesAt} onElapsed={load} />
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => resolveProposal(p.id, "undo")}
+                      disabled={busy}
+                      aria-label={`Undo granting ${projectName(p.projectId)} to ${familiar.display_name}`}
+                    >
+                      <Icon name="ph:arrow-counter-clockwise" width={14} height={14} aria-hidden />
+                      Undo
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
@@ -379,7 +554,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
       {/* ── Recent access decisions for this familiar ── */}
       {famAudit.length > 0 && (
         <SettingsGroup label={`Recent decisions (${famAudit.length})`}>
-          {famAudit.map((e) => {
+          {(showAllAudit ? famAudit : famAudit.slice(0, AUDIT_PREVIEW)).map((e) => {
             const meta = auditDecisionMeta(e.decision);
             return (
               <div key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
@@ -401,8 +576,59 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
               </div>
             );
           })}
+          {famAudit.length > AUDIT_PREVIEW ? (
+            <div className="border-t border-[var(--border-hairline)] px-2 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start"
+                onClick={() => setShowAllAudit((v) => !v)}
+                aria-expanded={showAllAudit}
+              >
+                {showAllAudit ? "Show recent only" : `Show all ${famAudit.length} decisions`}
+              </Button>
+            </div>
+          ) : null}
         </SettingsGroup>
       )}
     </div>
+  );
+}
+
+// Live undo-window countdown for an `accepting` proposal (cave-6mdg). Ticks
+// once a second; when the deadline passes it fires `onElapsed` exactly once so
+// the parent reloads — the proposal now reads `accepted` and the grant shows
+// up in the matrix.
+function FinalizeCountdown({
+  finalizesAt,
+  onElapsed,
+}: {
+  finalizesAt?: string;
+  onElapsed: () => void | Promise<void>;
+}) {
+  const deadline = finalizesAt ? Date.parse(finalizesAt) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  const remainingMs = Number.isFinite(deadline) ? deadline - now : 0;
+  const elapsed = remainingMs <= 0;
+
+  useEffect(() => {
+    if (elapsed) {
+      void onElapsed();
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+    // onElapsed is a stable useCallback in the parent; re-arming on `elapsed`
+    // keeps exactly one interval alive and fires the reload once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed]);
+
+  if (elapsed) return <>Grant finalized</>;
+  const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  return (
+    <>
+      Accepted — takes effect in {seconds}s. Undo to keep it pending.
+    </>
   );
 }

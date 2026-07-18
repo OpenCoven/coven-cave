@@ -13,7 +13,7 @@ import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
 import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
 import { FamiliarStudioProjectsTab } from "./familiar-studio-projects-tab";
 import { FamiliarStudioJournalTab } from "./familiar-studio-journal-tab";
-import { FamiliarAvatar } from "./familiar-avatar";
+import { SettingsFamiliarPicker } from "./settings-familiar-picker";
 import { VaultPanel } from "./vault-panel";
 import type { Familiar } from "@/lib/types";
 
@@ -22,6 +22,10 @@ type Props = {
   familiars: Familiar[];
   /** Resolved roster (cave overrides applied) — drives the master list + tab bodies. */
   resolved: ResolvedFamiliar[];
+  /** Opens the summoning circle from the familiar picker's fixed footer. */
+  onSummon?: () => void;
+  /** Re-fetch the roster after the Lifecycle tab removes/restores a familiar. */
+  onRosterChanged?: () => void;
 };
 
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
@@ -50,7 +54,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
  * tab-body components as the drawer. The Settings provider instance is isolated
  * from the Workspace one, so selecting here never auto-opens the drawer there.
  */
-export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
+export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRosterChanged }: Props) {
   const { activeFamiliarId, activeTab, setActiveTab, openFamiliarStudio } = useFamiliarStudio();
   const daemonSync = useDaemonSyncStatus();
 
@@ -95,40 +99,12 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
       className="familiar-studio-inline"
       style={familiar ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties) : undefined}
     >
-      <div className="familiar-studio-inline__selector">
-        <span className="familiar-studio-inline__selector-label" id="settings-familiar-picker-label">
-          Familiar
-        </span>
-        <div
-          className="familiar-studio-inline__picker"
-          role="radiogroup"
-          aria-label="Choose familiar to edit"
-          aria-labelledby="settings-familiar-picker-label"
-        >
-          {resolved.map((f) => {
-            const active = f.id === familiar?.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => openFamiliarStudio(f.id, activeTab)}
-                className="familiar-studio-inline__chip"
-                data-active={active ? "true" : undefined}
-                style={{ ["--chip-accent"]: f.color } as CSSProperties}
-                title={f.role ? `${f.display_name} — ${f.role}` : f.display_name}
-              >
-                <FamiliarAvatar familiar={f} size="md" />
-                <span className="familiar-studio-inline__chip-text">
-                  <span className="familiar-studio-inline__chip-name">{f.display_name}</span>
-                  {f.role ? <span className="familiar-studio-inline__chip-role">{f.role}</span> : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <SettingsFamiliarPicker
+        familiars={resolved}
+        value={activeFamiliarId}
+        onChange={(id) => openFamiliarStudio(id, activeTab)}
+        onSummon={onSummon}
+      />
 
       <div className="familiar-studio-inline__detail">
         {familiar ? (
@@ -164,7 +140,11 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
               ) : null}
               {activeTab === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
               {activeTab === "lifecycle" ? (
-                <FamiliarStudioLifecycleTab familiar={familiar} allResolved={resolved} />
+                <FamiliarStudioLifecycleTab
+                  familiar={familiar}
+                  allResolved={resolved}
+                  onRosterChanged={onRosterChanged}
+                />
               ) : null}
               {activeTab === "memory" ? (
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />

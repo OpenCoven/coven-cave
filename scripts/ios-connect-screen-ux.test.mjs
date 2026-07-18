@@ -29,8 +29,20 @@ assert.match(
 
 assert.match(
   src,
-  /private func connectionRecoveryCallout\(message: String, systemImage: String\) -> some View \{[\s\S]*?Open Cave on your desktop and scan the latest QR code/,
+  /else if case \.needsAuth\(let message\) = app\.connectionState \{[\s\S]*?title: "Pairing needed"[\s\S]*?Open Cave on your desktop and scan the latest QR code/,
   "pairing-required state should render as a clear recovery callout",
+);
+
+assert.match(
+  src,
+  /if case \.unreachable\(let message\) = app\.connectionState \{[\s\S]*?connectionRecoveryCallout\(\s*title: "Tailscale disconnected\?",[\s\S]*?guidance: "Open Tailscale on this phone and make sure it says Connected/,
+  "unreachable state should explicitly point at Tailscale being disconnected before asking the user to re-pair",
+);
+
+assert.match(
+  src,
+  /else if case \.needsAuth\(let message\) = app\.connectionState \{[\s\S]*?connectionRecoveryCallout\(\s*title: "Pairing needed",[\s\S]*?guidance: "Open Cave on your desktop and scan the latest QR code/,
+  "auth failures should keep the pairing-needed QR guidance",
 );
 
 assert.match(
