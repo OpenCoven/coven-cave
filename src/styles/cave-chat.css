@@ -3822,12 +3822,12 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Full-height reopen rail on the chat surface's right edge — the reflection
-   of the left nav's collapsed rail (.chat-sidebar__rail): icon over a vertical
-   uppercase label ("Code"), reading top→bottom with the glyph face to the
-   right/outside (vertical-rl). An in-flow flex child (NOT absolutely
-   positioned): the rail reserves its own layout width so content sits beside
-   it, never underneath. Carries the same glass as the left panel. */
+/* Full-height reopen rail on the chat surface's right edge — the reflection of
+   the left-side shell chrome beside Chat (collapsed global nav / Chats list):
+   icon over a vertical uppercase label ("Code"), reading top→bottom with the
+   glyph face to the right/outside (vertical-rl). An in-flow flex child (NOT
+   absolutely positioned): the rail reserves its own layout width so content
+   sits beside it, never underneath. Carries the same glass as the left panel. */
 .workspace-rail-reopen {
   position: relative;
   display: flex;
@@ -3876,4 +3876,3 @@ details[open] > .cave-tool-summary::before {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-

@@ -101,9 +101,9 @@ type Props = {
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
-  /** Drop the in-surface project/thread rail. Set when the left nav has been
-   *  swapped for the ChatSidebar (chat mode), which already owns the
-   *  project-grouped thread list — so the in-surface rail would duplicate it. */
+  /** Drop the in-surface project/thread rail. Set when the outer
+   *  WorkspaceSidebar already owns the project-grouped chat list (desktop list
+   *  pane or mobile list drawer), so the in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
 };
 
@@ -139,8 +139,8 @@ export function ChatSurface({
   onOpenUrl,
   hideThreadRail = false,
 }: Props) {
-  // The in-surface project/thread rail is dropped in chat mode (the ChatSidebar
-  // left nav owns it).
+  // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
+  // already owns chats beside the surface.
   const compactRail = hideThreadRail;
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   // Below the desktop shell breakpoint there's no room for the code rail
