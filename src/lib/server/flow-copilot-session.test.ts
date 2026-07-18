@@ -79,18 +79,24 @@ test("spawns with the prompt as one argv element and persists the transcript", a
 test("addDirs ride as repeatable --add-dir trust flags ahead of the prompt", async () => {
   const runRoot = mkdtempSync(join(TMP, "adddir-run-"));
   const workspace = join(TMP, "familiar-workspace");
+  const secondWorkspace = join(TMP, "second-familiar-workspace");
   const { done } = startCopilotFlowRun({
     spec: SPEC,
     prompt: "hello",
     projectRoot: runRoot,
     familiarId: "sage",
-    addDirs: [workspace],
+    addDirs: [` ${workspace} `, "", runRoot, workspace, secondWorkspace],
   });
   await done;
   const argv = JSON.parse(readFileSync(join(runRoot, "argv.json"), "utf8"));
-  const flagIndex = argv.indexOf("--add-dir");
+  const flagIndexes = argv.flatMap((arg, index) => arg === "--add-dir" ? [index] : []);
+  const flagIndex = flagIndexes[0];
   assert.ok(flagIndex >= 0, "add-dir trust flag present");
-  assert.equal(argv[flagIndex + 1], workspace);
+  assert.deepEqual(
+    flagIndexes.map((index) => argv[index + 1]),
+    [workspace, secondWorkspace],
+    "trust grants are trimmed and deduped, with blanks and the spawn cwd excluded",
+  );
   assert.ok(flagIndex < argv.indexOf("-p"), "trust flags ride ahead of the prompt flag");
 });
 
