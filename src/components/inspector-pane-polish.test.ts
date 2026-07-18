@@ -18,7 +18,7 @@ test("the pane is memory-only — the familiar section moved to its own surface"
   assert.doesNotMatch(src, /FamiliarAnalyticsView|InboxTab|SnoozeMenu/, "no analytics or automations rendering remains");
   assert.match(
     chatSurface,
-    /<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
+    /<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?daemonRunning=\{daemonRunning\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
     "the chat surface's Familiar tab mounts the purpose-built view (presence threaded)",
   );
   assert.doesNotMatch(chatSurface, /INSPECTOR_SECTIONS/, "the promoted right-panel section strip is gone");
@@ -29,9 +29,11 @@ test("InspectorEmpty helper is defined and used for the memory error state", () 
   const usages = src.match(/<InspectorEmpty\b/g) ?? [];
   assert.ok(usages.length >= 1, `expected >=1 usage, got ${usages.length}`);
   assert.match(src, /icon="ph:warning"\s+title="Memory unavailable"/, "memory error state");
-  // The familiar empty state lives with the familiar surface now.
+  // The familiar lifecycle states live with the familiar surface now; a null
+  // active familiar is no longer treated as a no-selection state.
   const familiarView = readFileSync(resolve(here, "./chat-familiar-view.tsx"), "utf8");
-  assert.match(familiarView, /No familiar selected/, "familiar empty state moved with the tab");
+  assert.match(familiarView, /deriveFamiliarTabState/, "familiar state contract lives with the tab");
+  assert.doesNotMatch(familiarView, /No familiar selected/, "all and multi scopes cannot regress to the singular empty state");
 });
 
 test("memory inner mode toggle uses the shared Vercel-style Tabs (2px underline)", () => {
@@ -59,4 +61,3 @@ test("inspector empty helper imports IconName for type-safe icon prop", () => {
   assert.match(src, /import \{ Icon, type IconName \} from "@\/lib\/icon"/, "IconName imported");
   assert.match(src, /icon: IconName;/, "InspectorEmpty.icon typed as IconName");
 });
-

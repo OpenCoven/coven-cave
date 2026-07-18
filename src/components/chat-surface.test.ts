@@ -224,8 +224,8 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-  "the familiar scope renders the purpose-built familiar view for the active familiar",
+  /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
+  "the familiar scope renders the scope-aware view with the canonical selection callback",
 );
 
 assert.match(

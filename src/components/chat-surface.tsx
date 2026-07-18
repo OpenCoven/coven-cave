@@ -30,6 +30,7 @@ import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { InitialCommandControls } from "@/lib/command-controls";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ type Props = {
   sessions: SessionRow[];
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
+  selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
@@ -85,6 +87,7 @@ type Props = {
   pendingChatAction?: PendingChatAction;
   pendingCodeRailOpen?: PendingCodeRailOpen | null;
   onSetActiveFamiliar: (id: string | null) => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
   onPendingCodeRailOpenHandled: () => void;
@@ -110,6 +113,7 @@ export function ChatSurface({
   sessions,
   activeFamiliar,
   activeFamiliarId,
+  selectedFamiliarIds,
   daemonRunning,
   routerRef,
   sessionsLoaded,
@@ -121,6 +125,7 @@ export function ChatSurface({
   pendingChatAction,
   pendingCodeRailOpen,
   onSetActiveFamiliar,
+  onFamiliarScopeChange,
   onClearPendingProjectRoot,
   onPendingChatActionHandled,
   onPendingCodeRailOpenHandled,
@@ -532,6 +537,8 @@ export function ChatSurface({
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           <Tabs<FamiliarsScope>
             bordered={false}
+            ariaLabel="Chat sections"
+            className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             value={scope}
             onChange={(s) => {
               setScope(s);
@@ -547,7 +554,7 @@ export function ChatSurface({
               { id: "settings", label: "Settings" },
             ]}
           />
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.
@@ -600,7 +607,19 @@ export function ChatSurface({
           // describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
             <div className="h-full w-full max-w-7xl">
-              <ChatFamiliarView familiar={activeFamiliar} daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
+              <ChatFamiliarView
+                familiar={activeFamiliar}
+                familiars={familiars}
+                selectedFamiliarIds={selectedFamiliarIds}
+                familiarsLoaded={familiarsLoaded}
+                familiarsError={familiarsError}
+                daemonRunning={daemonRunning}
+                onRetryFamiliars={onRetryFamiliars}
+                onCreateFamiliar={requestSummonFamiliar}
+                onOpenOnboarding={onOpenOnboarding}
+                onFamiliarScopeChange={onFamiliarScopeChange}
+                onStartChat={startFamiliarHeroChat}
+              />
             </div>
           </div>
         ) : scope === "settings" ? (

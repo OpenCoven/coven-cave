@@ -87,8 +87,8 @@ test("sticky hero pins inside the Familiar tab scroll region without hiding focu
 test("the chat surface gives the tab a wide canvas and threads presence", () => {
   assert.match(
     chatSurface,
-    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-    "Familiar tab hosts the purpose-built view in a max-w-7xl column with daemonRunning threaded",
+    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?daemonRunning=\{daemonRunning\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
+    "Familiar tab hosts the scope-aware view in a max-w-7xl column with daemonRunning threaded",
   );
 });
 
