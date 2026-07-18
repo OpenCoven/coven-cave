@@ -100,7 +100,10 @@ export function createSubdirWithinRoot(
     return { ok: false, reason: "invalid-name" };
   }
 
-  const target = path.join(parent, name);
+  // The parent is validated at runtime against real entries beneath $HOME.
+  // Keep Turbopack from interpreting that dynamic path as a project-root glob
+  // and tracing the entire checkout into the standalone sidecar bundle.
+  const target = path.join(/* turbopackIgnore: true */ parent, name);
   try {
     fs.mkdirSync(target);
     return { ok: true, path: target };

@@ -11,6 +11,13 @@ import {
 const ROOT = path.resolve("/home/alice");
 const TEST_ARTIFACTS_ROOT = path.join(process.cwd(), ".test-artifacts");
 
+const source = fs.readFileSync(new URL("./home-browse.ts", import.meta.url), "utf8");
+assert.match(
+  source,
+  /path\.join\(\/\* turbopackIgnore: true \*\/ parent, name\)/,
+  "dynamic user-home creation paths must not trace the entire checkout into the standalone bundle",
+);
+
 function withScratchDir(run: (base: string) => void) {
   fs.mkdirSync(TEST_ARTIFACTS_ROOT, { recursive: true });
   const base = fs.mkdtempSync(path.join(TEST_ARTIFACTS_ROOT, "home-browse-"));
