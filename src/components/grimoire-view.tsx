@@ -24,6 +24,8 @@ import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-edi
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { JournalEntries } from "@/components/journal/journal-entries";
 import "@/styles/journal.css";
+import "@/styles/grimoire-launcher.css";
+import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import type { Familiar } from "@/lib/types";
 import { serializeMdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
@@ -894,8 +896,30 @@ export function GrimoireView({
     });
   }, []);
 
-  const closeTab = useCallback((key: string) => {
-    setDirtyTabs((prev) => {
+  // Launcher-driven stitch prefill (URL capture / template row): bumping the
+  // nonce re-keys the StitchIntake mount so its mount-time initial state takes.
+  // Plain "New stitch" opens never bump it — refocusing the open intake must
+  // not blow away pinned sources.
+  const [stitchPrefill, setStitchPrefill] = useState<{
+    nonce: number;
+    patternId?: string;
+    pinUrl?: string;
+  }>({ nonce: 0 });
+  const openStitchNew = useCallback(
+    (opts?: { patternId?: string; pinUrl?: string }) => {
+      if (opts?.patternId || opts?.pinUrl) {
+        setStitchPrefill((prev) => ({
+          nonce: prev.nonce + 1,
+          ...(opts.patternId ? { patternId: opts.patternId } : {}),
+          ...(opts.pinUrl ? { pinUrl: opts.pinUrl } : {}),
+        }));
+      }
+      openDoc({ kind: "stitch-new" });
+    },
+    [openDoc],
+  );
+
+  const closeTab = useCallback((key: string) => {    setDirtyTabs((prev) => {
       if (!(key in prev)) return prev;
       const next = { ...prev };
       delete next[key];
@@ -1254,6 +1278,9 @@ export function GrimoireView({
     if (tab.kind === "stitch-new") {
       return (
         <StitchIntake
+          key={`stitch-new-${stitchPrefill.nonce}`}
+          initialRef={stitchPrefill.pinUrl}
+          initialPatternId={stitchPrefill.patternId ?? null}
           onSewn={(entryId) => {
             replaceTab(key, { kind: "knowledge", id: entryId });
             void load();
@@ -1299,13 +1326,21 @@ export function GrimoireView({
 
   const detail =
     openTabs.length === 0 ? (
-      <div className="grid h-full min-h-0 place-items-center p-8">
-        <EmptyState
-          icon="ph:book-open"
-          headline="Select a document"
-          subtitle="Pick a stitch, memory file, or journal day — or pin sources into a new stitch."
-        />
-      </div>
+      // No open tabs → the Knowledge launcher ("Memories Prototype"): aurora
+      // banner, one big search-or-capture field, and a bento of live entry
+      // points — all driven by the lists this view already loaded.
+      <GrimoireLauncher
+        knowledge={knowledge ?? []}
+        memory={memory ?? []}
+        journal={journal ?? []}
+        graph={graph}
+        journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
+        onOpen={openDoc}
+        onNewStitch={openStitchNew}
+        onBlankEntry={() => openDoc({ kind: "knowledge-new" })}
+        onShowJournal={() => setView("journal")}
+        onShowGraph={() => setView("graph")}
+      />
     ) : (
       <div className="flex h-full min-h-0 flex-col">
         <div
@@ -1398,73 +1433,58 @@ export function GrimoireView({
 
   return (
     <div className="grimoire-view flex h-full min-h-0 flex-col @container/grimoire">
-      {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
-          Marketplace / Tasks): small title on the left, the surface verbs on the
-          right. The rail keeps its own search (it filters the rail list). */}
-      <header className="surface-compact-header">
+      {/* Compact band, launcher-era layout: title left, the Knowledge/Journal/
+          Relations segmented tabs centered, contextual verbs right (the dashed
+          "New stitch" pill only makes sense on the Knowledge tab). */}
+      <header className="surface-compact-header grimoire-header">
         <h1 className="surface-compact-title">Memories</h1>
+        <div role="group" aria-label="Memories view" className="grimoire-tabs">
+          <button
+            type="button"
+            aria-pressed={view === "docs"}
+            onClick={() => setView("docs")}
+            className="focus-ring grimoire-tab"
+          >
+            Knowledge
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "journal"}
+            onClick={() => setView("journal")}
+            className="focus-ring grimoire-tab"
+          >
+            Journal
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "graph"}
+            onClick={() => setView("graph")}
+            className="focus-ring grimoire-tab"
+          >
+            Relations
+          </button>
+        </div>
         <div className="surface-compact-actions">
-          <div
-            role="group"
-            aria-label="Memories view"
-            className="inline-flex h-[26px] items-center gap-0.5 rounded-md border border-[var(--border-hairline)] p-0.5"
-          >
-            <button
-              type="button"
-              aria-pressed={view === "docs"}
-              onClick={() => setView("docs")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
-                view === "docs"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:book-open" width={11} aria-hidden />
-              Docs
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "journal"}
-              onClick={() => setView("journal")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
-                view === "journal"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:calendar-blank" width={11} aria-hidden />
-              Journal
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "graph"}
-              onClick={() => setView("graph")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
-                view === "graph"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:graph" width={11} aria-hidden />
-              Graph
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => openDoc({ kind: "stitch-new" })}
-            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--accent-presence)]/20"
-          >
-            <Icon name="ph:push-pin" width={11} aria-hidden />
-            New stitch
-          </button>
-          <button
-            type="button"
-            onClick={() => openDoc({ kind: "knowledge-new" })}
-            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:plus" width={11} aria-hidden />
-            Blank entry
-          </button>
+          {view === "docs" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => openStitchNew()}
+                className="focus-ring grimoire-newstitch"
+              >
+                <Icon name="ph:push-pin" width={11} aria-hidden />
+                New stitch
+              </button>
+              <button
+                type="button"
+                onClick={() => openDoc({ kind: "knowledge-new" })}
+                className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:plus" width={11} aria-hidden />
+                Blank entry
+              </button>
+            </>
+          ) : null}
         </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">

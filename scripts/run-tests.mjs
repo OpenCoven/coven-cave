@@ -717,6 +717,8 @@ export const SUITES = {
     "src/components/md-editor/md-editor.test.ts",
     "src/components/grimoire-view.test.ts",
     "src/components/grimoire-stub-links.test.ts",
+    "src/components/grimoire-launcher.test.ts",
+    "src/lib/grimoire-launcher-data.test.ts",
     "src/lib/knowledge-flags.test.ts",
     "src/components/grimoire-graph-view.test.ts",
     "src/components/stitch-intake.test.ts",
