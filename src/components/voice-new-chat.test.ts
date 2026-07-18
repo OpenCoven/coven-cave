@@ -29,6 +29,10 @@ test("chat-router: openSession accepts autoVoice and arms the voice nonce for it
   // not just skip arming it.
   assert.match(chatRouter, /setPendingVoice\(autoVoice \? \{ nonce: Date\.now\(\), sessionId \} : null\)/);
   assert.match(chatRouter, /openVoiceNonce=\{pendingVoice\?\.nonce\}/);
+  // The nonce alone doesn't identify which session it was armed for — the
+  // consuming effect also needs the target session id, so a pre-session mint
+  // that resolves after the user switched sessions can't misfire there.
+  assert.match(chatRouter, /openVoiceSessionId=\{pendingVoice\?\.sessionId\}/);
 });
 
 test("chat-router: onVoiceSessionCreated promotes the session and arms the nonce for it", () => {
@@ -62,11 +66,19 @@ test("chat-view: voice nonce effect opens the overlay for the routed session", (
   );
 });
 
-test("chat-view: voice nonce effect checks sessionId before consuming the nonce", () => {
+test("chat-view: voice nonce effect checks the target session before consuming the nonce", () => {
   // Guard order matters: consuming the nonce (marking it fired) before the
-  // sessionId check would permanently lose the request across the one-render
-  // gap while session promotion lands.
-  assert.match(chatView, /if \(!sessionId\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/);
+  // session checks would permanently lose the request across the one-render
+  // gap while session promotion lands. The sessionId !== openVoiceSessionId
+  // half of the guard closes a race: a pre-session mint that resolves after
+  // the user has switched this view to a different session must not
+  // auto-open the call overlay (and its discard-on-close path) there.
+  assert.match(chatView, /openVoiceSessionId\?: string;/);
+  assert.match(
+    chatView,
+    /if \(!sessionId \|\| sessionId !== openVoiceSessionId\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/,
+  );
+  assert.match(chatView, /\}, \[openVoiceNonce, sessionId, openVoiceSessionId\]\);/);
 });
 
 const workspace = read("./workspace.tsx");
@@ -126,5 +138,20 @@ test("home-composer: voice call button gates itself on an in-flight mint and alw
   assert.match(
     homeComposer,
     /onStartVoiceCall\?: \(familiarId: string, projectRoot: string \| null\) => void \| Promise<void>/,
+  );
+});
+
+test("chat-view: call button works pre-session by creating the conversation first", () => {
+  assert.match(chatView, /aria-label="Voice call"/);
+  assert.match(
+    chatView,
+    /const openVoiceCall = useCallback\(async \(\) => \{[\s\S]*?if \(sessionId\) \{[\s\S]*?setVoiceCallOpen\(true\);[\s\S]*?startVoiceConversation\(familiar\.id, projectRoot \?\? null\)[\s\S]*?onVoiceSessionCreated\?\.\(result\.sessionId\)/,
+  );
+});
+
+test("chat-view: closing an auto-created call discards the session when empty", () => {
+  assert.match(
+    chatView,
+    /voiceAutoCreatedRef\.current = false;[\s\S]*?discardVoiceSessionIfEmpty\(sessionId\)[\s\S]*?onSessionsChanged\?\.\(\)/,
   );
 });

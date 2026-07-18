@@ -88,7 +88,7 @@ import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models"
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
-import { discardVoiceSessionIfEmpty } from "@/lib/voice/start-voice-chat";
+import { discardVoiceSessionIfEmpty, startVoiceConversation } from "@/lib/voice/start-voice-chat";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { readUserProfileSnapshot, useUserProfile, userDisplayName } from "@/lib/user-profile";
@@ -353,6 +353,11 @@ type Props = {
   /** Voice new-chat: fire-once nonce; opens the voice call overlay for the
    *  freshly routed session (Home call button / pre-session promotion). */
   openVoiceNonce?: number;
+  /** The session id `openVoiceNonce` was armed for. The nonce effect only
+   *  consumes the request when this matches the live `sessionId` — guards
+   *  against a late pre-session mint landing after the user has already
+   *  switched this view to a different session. */
+  openVoiceSessionId?: string;
   daemonRunning?: boolean;
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
@@ -2319,10 +2324,22 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
   return detail ? `${base}: ${detail}` : base;
 }
 
+// Voice new-chat mint failures come back as machine codes (start-voice-chat.ts /
+// voice-chat-create.ts: "familiar_not_found", "save_failed", "missing_familiarId",
+// "network", or "create_failed_http_<n>") — translate the common ones to human
+// copy for the announcement and fall back to a generic-but-legible message for
+// the rest. Mirrors workspace.tsx's voiceChatStartErrorMessage for the Home
+// call button, kept local here since that helper isn't exported.
+function voiceChatStartErrorMessage(code: string): string {
+  if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
+  if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
+  return `Couldn't start a voice chat (${code}).`;
+}
+
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2545,6 +2562,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // True when the current overlay session was created FOR the call (voice
   // new-chat) — close with zero turns then discards the empty conversation.
   const voiceAutoCreatedRef = useRef(false);
+  // Voice call entry point: mid-session opens the overlay directly;
+  // pre-session (voice new-chat) creates the conversation first, then the
+  // router promotes it and re-enters through the openVoiceNonce effect.
+  const openVoiceCall = useCallback(async () => {
+    if (sessionId) {
+      setVoiceCallOpen(true);
+      return;
+    }
+    const result = await startVoiceConversation(familiar.id, projectRoot ?? null);
+    if (!result.ok) {
+      announce(voiceChatStartErrorMessage(result.error));
+      return;
+    }
+    onVoiceSessionCreated?.(result.sessionId);
+  }, [sessionId, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
@@ -3134,15 +3166,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Voice new-chat: open the call overlay when routed here with autoVoice.
   // Nonce-keyed like the find effect above so it fires once per request; the
-  // sessionId guard covers the one-render gap while promotion lands.
+  // sessionId guard covers the one-render gap while promotion lands, AND
+  // must match openVoiceSessionId — the session the nonce was armed for —
+  // so a pre-session mint that resolves late (after the user switched this
+  // view to a different session) can never auto-open the overlay there.
   const openVoiceNonceRef = useRef(0);
   useEffect(() => {
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
-    if (!sessionId) return;
+    if (!sessionId || sessionId !== openVoiceSessionId) return;
     openVoiceNonceRef.current = openVoiceNonce;
     voiceAutoCreatedRef.current = true;
     setVoiceCallOpen(true);
-  }, [openVoiceNonce, sessionId]);
+  }, [openVoiceNonce, sessionId, openVoiceSessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -5909,20 +5944,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:paperclip" width={14} aria-hidden />
                   </button>
-                  {/* Voice needs a live session (the overlay attaches to it), so
-                      pre-session the button is hidden, not disabled-forever —
-                      it appears once the first send creates the session. */}
-                  {sessionId ? (
-                    <button
-                      type="button"
-                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                      title="Voice"
-                      aria-label="Voice"
-                      onClick={() => setVoiceCallOpen(true)}
-                    >
-                      <Icon name="ph:microphone" width={15} aria-hidden />
-                    </button>
-                  ) : null}
+                  {/* Voice call — pre-session it creates the conversation
+                      first (voice new-chat), so the button renders from turn
+                      zero. Mic = dictation, phone = call, on every surface. */}
+                  <button
+                    type="button"
+                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                    title="Voice call"
+                    aria-label="Voice call"
+                    onClick={() => {
+                      void openVoiceCall();
+                    }}
+                  >
+                    <Icon name="ph:phone" width={15} aria-hidden />
+                  </button>
                   <ComposerOptionsMenu
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}

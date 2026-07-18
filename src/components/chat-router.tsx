@@ -736,6 +736,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       openFindQuery={pendingFind?.query}
       openFindNonce={pendingFind?.nonce}
       openVoiceNonce={pendingVoice?.nonce}
+      openVoiceSessionId={pendingVoice?.sessionId}
       daemonRunning={daemonRunning}
       sessions={sessions}
       onSessionsChanged={onSessionsChanged}
