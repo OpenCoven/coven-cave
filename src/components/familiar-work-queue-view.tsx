@@ -670,7 +670,7 @@ function AttentionStrip({
                 leadingIcon="ph:plus-circle"
                 loading={filingPr === pr.number}
                 onClick={() => void fileBead(pr)}
-                disabled={!onFileBead}
+                disabled={!onFileBead || filingPr != null}
                 title="File a bead for this PR so it joins the queue"
               >
                 File bead

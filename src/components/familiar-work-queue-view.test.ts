@@ -53,6 +53,11 @@ assert.match(
 assert.match(view, /\{unlinked \? \(\s*<Button[^]*?File bead/, "only unlinked rows offer File bead");
 assert.match(view, /leadingIcon="ph:plus-circle"/, "File bead carries the plus-circle icon");
 assert.match(view, /loading=\{filingPr === pr\.number\}/, "busy state pins to the clicked row");
+assert.match(
+  view,
+  /disabled=\{!onFileBead \|\| filingPr != null\}/,
+  "all File bead buttons are disabled while a request is in flight",
+);
 // The create payload links the bead back to the PR twice over: externalRef
 // gh-<n> for the visibility layer, and the PR URL in the description for the
 // ready-output ref join (external_ref is absent from `bd ready --json`).
