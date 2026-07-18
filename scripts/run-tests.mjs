@@ -928,6 +928,7 @@ export const SUITES = {
     "src/lib/voice/append-voice-turn.test.ts",
     "src/lib/voice/openai-realtime.test.ts",
     "src/lib/voice/openai-voices.test.ts",
+    "src/lib/voice/start-voice-chat.test.ts",
     "src/app/api/voice/session/route.test.ts",
     "src/app/api/voice/engines/route.test.ts",
     "src/app/api/voice/preview/route.test.ts",
