@@ -29,25 +29,40 @@ const sidebarLabels = extractLabels(
   "FOLDER_MODES",
   /const FOLDER_MODES[\s\S]*?\n\];/,
 );
-const mobileLabels = extractLabels(
+
+// ── Mobile bottom tabs DERIVE from the sidebar's primary cluster ─────────────
+// Parity by construction (issue #3283 acceptance: "Desktop and mobile present
+// the same conceptual hierarchy"): the tab strip maps FOLDER_MODES rows that
+// are neither quiet nor navHidden, reusing the canonical label as both the
+// visible label and the accessible name. No hand-copied row list may return.
+assert.match(
   mobileTabs,
-  "TABS",
-  /const TABS[\s\S]*?\n\];/,
+  /import \{ FOLDER_MODES \} from "@\/components\/sidebar-minimal";/,
+  "mobile tabs must import the sidebar's FOLDER_MODES source of truth",
+);
+assert.match(
+  mobileTabs,
+  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)\.map\(\s*\(fm\) => \(\{ id: fm\.id, label: fm\.label, ariaLabel: fm\.label, iconName: fm\.iconName \}\),?\s*\)/,
+  "mobile tabs must be derived from the sidebar's primary (non-quiet, non-hidden) cluster",
+);
+assert.doesNotMatch(
+  mobileTabs,
+  /\{ id: "[a-z-]+", label: "/,
+  "mobile tabs must not hand-copy id/label rows — derive them from FOLDER_MODES",
 );
 
-// ── Mobile bottom tabs use the sidebar's canonical labels ────────────────────
-let sharedTabs = 0;
-for (const [id, label] of mobileLabels) {
-  const canonical = sidebarLabels.get(id);
-  if (canonical === undefined) continue;
-  sharedTabs += 1;
-  assert.equal(
-    label,
-    canonical,
-    `mobile tab "${id}" must use the canonical sidebar label "${canonical}", got "${label}"`,
-  );
+// The primary cluster the tabs mirror stays the four daily destinations, and
+// the drawer keeps the rest reachable: quiet rows exist in FOLDER_MODES.
+const primaryIds = [];
+const folderBlock = sidebar.match(/const FOLDER_MODES[\s\S]*?\n\];/)[0];
+for (const row of folderBlock.matchAll(/\{ id: "([a-z-]+)", label: "([^"]+)"[^\n]*/g)) {
+  if (!/quiet: true/.test(row[0]) && !/navHidden: true/.test(row[0])) primaryIds.push(row[1]);
 }
-assert.ok(sharedTabs >= 3, "mobile tabs should share several destinations with the sidebar");
+assert.deepEqual(
+  primaryIds,
+  ["home", "chat", "board", "inbox"],
+  "sidebar primary cluster (→ mobile tabs) should be the four daily destinations",
+);
 
 // ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
 const titlesBlock = workspace.match(

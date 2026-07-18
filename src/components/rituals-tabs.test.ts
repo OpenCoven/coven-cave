@@ -27,8 +27,8 @@ assert.match(
 );
 assert.match(
   mobileTabs,
-  /\{ id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" \}/,
-  "Mobile bottom tab uses the canonical Rituals label (one surface, one name — issue #3283)",
+  /import \{ FOLDER_MODES \} from "@\/components\/sidebar-minimal";/,
+  "Mobile bottom tabs derive rows from the sidebar's FOLDER_MODES, so the inbox tab inherits the canonical Rituals label (one surface, one name — issue #3283)",
 );
 assert.match(
   notificationBell,
