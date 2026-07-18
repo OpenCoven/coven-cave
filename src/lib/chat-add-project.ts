@@ -1,4 +1,5 @@
 import type { CaveProject } from "./cave-projects.ts";
+import { emitProjectRegistryMutation } from "./project-registry-events.ts";
 
 export type AddChatProjectResult =
   | { ok: true; projectId: string }
@@ -64,5 +65,6 @@ export async function addChatProject(args: {
     }
   }
 
+  emitProjectRegistryMutation();
   return { ok: true, projectId };
 }

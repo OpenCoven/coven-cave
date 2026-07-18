@@ -4,6 +4,12 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import \{ emitProjectRegistryMutation, subscribeProjectRegistryReload \} from "\.\/project-registry-events\.ts";/,
+  "useProjects imports the shared project-registry notification helpers",
+);
+
 // When the scope (familiarId) changes or the hook re-enables, the previous
 // scope's list must be dropped before the refetch resolves. Otherwise a
 // familiar-scoped consumer (new-card modal, command palette) keeps showing —
@@ -47,6 +53,16 @@ assert.equal(
   (source.match(/invalidateProjectsCache\(\);/g) ?? []).length,
   5,
   "all five mutations (create/rename/updateRoot/updateColor/delete) invalidate the cache",
+);
+assert.equal(
+  (source.match(/emitProjectRegistryMutation\(\);/g) ?? []).length,
+  5,
+  "all five successful mutations notify every mounted projects hook scope",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*if \(!enabled\) return;\s*return subscribeProjectRegistryReload\(\(\) => load\(\{ force: true \}\)\);\s*\}, \[enabled, load\]\);/,
+  "each enabled hook instance subscribes to shared project-registry notifications and force-reloads its own scope",
 );
 
 assert.match(

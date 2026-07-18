@@ -133,6 +133,8 @@ export const SUITES = {
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
+    "src/lib/project-registry-events.test.ts",
+    "src/lib/first-project-gate-retry.test.ts",
     "src/lib/session-project-scope.test.ts",
     "scripts/sync-marketplace.test.mjs",
     "scripts/crafts-audited-content.test.mjs",

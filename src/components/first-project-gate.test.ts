@@ -7,7 +7,7 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 test("the first-project gate is a sticky portaled modal with no dismiss path", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ createPortal \} from "react-dom"/, "uses a portal");
-  assert.match(src, /const visible = open \|\| Boolean\(registeredProject\);/, "stays visible while a registered project still needs a grant retry");
+  assert.match(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "stays visible while a restored or newly-created project still needs a grant retry");
   assert.match(src, /useFocusTrap\(visible && !pickerOpen, dialogRef\);/, "suspends the outer trap while the nested directory picker is open");
   assert.doesNotMatch(src, /useFocusTrap\(visible, dialogRef, \{/, "does not wire onEscape for this mandatory gate");
   assert.match(src, /role="dialog"/, "exposes dialog semantics");
@@ -54,6 +54,7 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   const src = read("./workspace.tsx");
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
   assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
+  assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
   assert.match(
     src,
     /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
@@ -61,6 +62,17 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(src, /const \[onboardingResolved, setOnboardingResolved\] = useState\(false\);/, "onboarding resolution starts false");
   assert.match(src, /const \[projectsInitiallyResolved, setProjectsInitiallyResolved\] = useState\(false\);/, "project-load resolution starts false");
+  assert.match(src, /const archivedFamiliars = useArchivedFamiliars\(\);/, "workspace reads the archived familiar map");
+  assert.match(
+    src,
+    /const visibleFamiliars = useMemo\(\s*\(\) => familiars\.filter\(\(familiar\) => !\(familiar\.id in archivedFamiliars\)\),\s*\[familiars, archivedFamiliars\],\s*\);/,
+    "workspace derives the non-archived familiar list for gate targeting",
+  );
+  assert.match(
+    src,
+    /const projectGateFamiliarId = activeId && !\(activeId in archivedFamiliars\)\s*\?\s*activeId\s*:\s*visibleFamiliars\[0\]\?\.id \?\? null;/,
+    "the gate uses the active familiar only when it is non-archived, otherwise the first non-archived fallback",
+  );
   assert.match(
     src,
     /useEffect\(\(\) => \{\s*if \(!projectsLoading\) setProjectsInitiallyResolved\(true\);\s*\}, \[projectsLoading\]\);/,
@@ -79,13 +91,13 @@ test("workspace wires the first-project gate after onboarding resolves and the f
   );
   assert.match(
     src,
-    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
-    "the gate only opens for home or chat after onboarding and the first project load have resolved with zero projects",
+    /const firstProjectGateOpen =\s*onboardingResolved\s*&& !onboardingOpen\s*&& \(mode === "home" \|\| mode === "chat"\)\s*&& familiarsLoaded\s*&& projectGateFamiliarId !== null\s*&& projectsInitiallyResolved\s*&& registeredProjects\.length === 0;/,
+    "the gate only opens for home or chat after onboarding, familiars, and the first project load have resolved with an available non-archived familiar target",
   );
   assert.doesNotMatch(src, /const firstProjectGateOpen =[^;]*!projectsLoading/, "later reloads do not hide the gate while Retry is in flight");
   assert.match(
     src,
-    /<FirstProjectGate[\s\S]*familiarId=\{activeId \?\? familiars\[0\]\?\.id \?\? null\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
+    /<FirstProjectGate[\s\S]*familiarId=\{projectGateFamiliarId\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
     "workspace passes the required familiar and project props into the gate",
   );
   assert.match(
@@ -110,14 +122,32 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   const src = read("./first-project-gate.tsx");
   assert.match(src, /import \{ addChatProject \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
   assert.match(src, /const project = await createProjectOrThrow\(name, root\);/, "wraps the throwing createProjectOrThrow prop in the addChatProject adapter");
-  assert.match(src, /type RegisteredProjectSnapshot = Pick<CaveProject, "id" \| "name" \| "root">;/, "stores the created project snapshot, not only the id");
-  assert.match(src, /const \[registeredProject, setRegisteredProject\] = useState<RegisteredProjectSnapshot \| null>\(null\);/, "tracks the registered project snapshot for partial failures");
-  assert.match(src, /setRegisteredProject\(\{ id: project\.id, name: project\.name, root: project\.root \}\);/, "captures the stored id, name, and root before the grant can fail");
+  assert.match(
+    src,
+    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    "the gate uses shared helpers for pending-grant persistence",
+  );
+  assert.match(
+    src,
+    /const \[pendingGrant, setPendingGrant\] = useState<PendingFirstProjectAccessSnapshot \| null>\(\(\) => readPendingFirstProjectAccessSnapshot\(\)\);/,
+    "tracks the pending project+familiar snapshot for partial failures and reload restores",
+  );
+  assert.match(src, /const registeredProject = pendingGrant\?\.project \?\? null;/, "derived locked fields come from the persisted project snapshot");
+  assert.match(src, /const submitFamiliarId = pendingGrant\?\.familiarId \?\? familiarId;/, "retries keep using the stored target familiar");
+  assert.match(
+    src,
+    /const snapshot: PendingFirstProjectAccessSnapshot = \{\s*familiarId,\s*project: \{ id: project\.id, name: project\.name, root: project\.root \},\s*\};[\s\S]*writePendingFirstProjectAccessSnapshot\(snapshot\);[\s\S]*setPendingGrant\(snapshot\);/,
+    "create success persists the retry snapshot immediately before the grant can fail",
+  );
   assert.match(src, /const submitName = lockedProject\?\.name \?\? nameDraft\.trim\(\);/, "retries use the stored project name instead of mutable drafts");
   assert.match(src, /const submitRoot = lockedProject\?\.root \?\? rootDraft\.trim\(\);/, "retries use the stored project root instead of mutable drafts");
-  assert.match(src, /existingProjectId: registeredProject\?\.id/, "retries grant against the already-created project instead of creating a duplicate");
+  assert.match(src, /existingProjectId: pendingGrant\?\.project\.id/, "retries grant against the already-created project instead of creating a duplicate");
   assert.match(src, /name: submitName/, "passes the stored-or-drafted name through addChatProject");
-  assert.match(src, /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*setRegisteredProject\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/, "announces the stored project name on success and clears the snapshot only after the grant succeeds");
+  assert.match(
+    src,
+    /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*setPendingGrant\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/,
+    "announces the stored project name on success and clears persisted retry state only after the grant succeeds",
+  );
   assert.match(src, /if \(submitting \|\| loadingProjects \|\| Boolean\(projectsError\)\) return;/, "the submit handler rejects busy or registry-blocked submits before any mutation");
   assert.match(src, /if \(!lockedProject && !submitName\) \{[\s\S]*setSubmitError\("Enter a project name\."\);/, "blank project names are blocked before the first registration");
   assert.match(src, /if \(!lockedProject && !submitRoot\) \{[\s\S]*setSubmitError\("Enter an absolute project root\."\);/, "blank project roots are blocked before the first registration");
@@ -129,7 +159,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /disabled=\{submitting \|\| loadingProjects \|\| Boolean\(projectsError\) \|\| !canSubmit\}/, "creation stays blocked while the registry is still loading or errored");
   assert.match(src, /disabled=\{Boolean\(registeredProject\) \|\| submitting\}/, "name, root, and Browse controls lock once only the access grant needs retry");
   assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the submit action relabels to Retry access for partial-grant retries");
-  assert.match(src, /Project <span className="font-medium text-\[var\(--text-primary\)\]">\{registeredProject\.name\}<\/span> was[\s\S]*Retry access so this familiar can use[\s\S]*\{registeredProject\.root\}/, "copy explains that the project was created and only access still needs retry");
+  assert.match(src, /Project <span className="font-medium text-\[var\(--text-primary\)\]">\{registeredProject\.name\}<\/span> was[\s\S]*Retry access so the required familiar can use[\s\S]*\{registeredProject\.root\}/, "copy explains that the project was created and only access still needs retry without rebinding to another familiar");
   assert.doesNotMatch(src, /Project created, but chat still needs access:/, "retry context lives in the descriptive copy, not as a prefixed error wrapper");
 });
 

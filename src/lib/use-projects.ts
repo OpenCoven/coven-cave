@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { createSwrCache } from "./swr-cache.ts";
+import { emitProjectRegistryMutation, subscribeProjectRegistryReload } from "./project-registry-events.ts";
 
 type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
 type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
@@ -137,6 +138,11 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     };
   }, [enabled, load]);
 
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeProjectRegistryReload(() => load({ force: true }));
+  }, [enabled, load]);
+
   // Post-mutation refresh: bypass the microcache so callers always see the
   // just-mutated list.
   const reload = useCallback(() => {
@@ -146,6 +152,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const applyCreatedProject = useCallback((project: CaveProject): CaveProject => {
     invalidateProjectsCache();
     setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    emitProjectRegistryMutation();
     return project;
   }, []);
 
@@ -195,6 +202,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -212,6 +220,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -229,6 +238,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       setProjects((prev) =>
         sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
       );
+      emitProjectRegistryMutation();
       return true;
     }
     return false;
@@ -240,6 +250,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     if (data.ok) {
       invalidateProjectsCache();
       setProjects((prev) => prev.filter((project) => project.id !== id));
+      emitProjectRegistryMutation();
       return true;
     }
     return false;

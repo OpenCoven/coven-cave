@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject } from "@/lib/chat-add-project";
+import {
+  clearPendingFirstProjectAccessSnapshot,
+  readPendingFirstProjectAccessSnapshot,
+  writePendingFirstProjectAccessSnapshot,
+  type PendingFirstProjectAccessSnapshot,
+} from "@/lib/first-project-gate-retry";
 import { isTauri } from "@/lib/tauri-platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
@@ -29,8 +35,6 @@ type FirstProjectGateProps = {
   reloadProjects: () => void;
 };
 
-type RegisteredProjectSnapshot = Pick<CaveProject, "id" | "name" | "root">;
-
 export function FirstProjectGate({
   open,
   familiarId,
@@ -45,14 +49,16 @@ export function FirstProjectGate({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [registeredProject, setRegisteredProject] = useState<RegisteredProjectSnapshot | null>(null);
+  const [pendingGrant, setPendingGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const wasVisibleRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
   const rootHintId = useId();
-  const visible = open || Boolean(registeredProject);
+  const visible = open || Boolean(pendingGrant);
+  const registeredProject = pendingGrant?.project ?? null;
+  const submitFamiliarId = pendingGrant?.familiarId ?? familiarId;
   const lockedProject = registeredProject;
   const submitName = lockedProject?.name ?? nameDraft.trim();
   const submitRoot = lockedProject?.root ?? rootDraft.trim();
@@ -84,9 +90,16 @@ export function FirstProjectGate({
 
   const createProjectWithRegistration = useCallback(async (name: string, root: string) => {
     const project = await createProjectOrThrow(name, root);
-    setRegisteredProject({ id: project.id, name: project.name, root: project.root });
+    if (familiarId) {
+      const snapshot: PendingFirstProjectAccessSnapshot = {
+        familiarId,
+        project: { id: project.id, name: project.name, root: project.root },
+      };
+      writePendingFirstProjectAccessSnapshot(snapshot);
+      setPendingGrant(snapshot);
+    }
     return project;
-  }, [createProjectOrThrow]);
+  }, [createProjectOrThrow, familiarId]);
 
   const handleBrowse = useCallback(() => {
     if (isTauri()) {
@@ -125,14 +138,15 @@ export function FirstProjectGate({
     try {
       const result = await addChatProject({
         root: submitRoot,
-        familiarId,
+        familiarId: submitFamiliarId,
         createProject: createProjectWithRegistration,
-        existingProjectId: registeredProject?.id,
+        existingProjectId: pendingGrant?.project.id,
         name: submitName,
       });
       if (result.ok) {
         const createdProjectName = registeredProject?.name ?? submitName;
-        setRegisteredProject(null);
+        clearPendingFirstProjectAccessSnapshot();
+        setPendingGrant(null);
         setSubmitError(null);
         announce(`Created project ${createdProjectName}. Chat is ready.`);
       } else {
@@ -143,7 +157,7 @@ export function FirstProjectGate({
     } finally {
       setSubmitting(false);
     }
-  }, [announce, createProjectWithRegistration, familiarId, loadingProjects, projectsError, registeredProject, submitName, submitRoot, submitting, lockedProject]);
+  }, [announce, createProjectWithRegistration, loadingProjects, pendingGrant, projectsError, registeredProject, submitFamiliarId, submitName, submitRoot, submitting, lockedProject]);
 
   if (!visible || typeof document === "undefined") return null;
 
@@ -175,7 +189,7 @@ export function FirstProjectGate({
               {registeredProject ? (
                 <>
                   Project <span className="font-medium text-[var(--text-primary)]">{registeredProject.name}</span> was
-                  created. Retry access so this familiar can use
+                  created. Retry access so the required familiar can use
                   {" "}
                   <span className="font-mono text-[var(--text-primary)]">{registeredProject.root}</span>
                   {" "}

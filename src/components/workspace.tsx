@@ -135,6 +135,7 @@ import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
 } from "@/lib/workspace-tiles";
+import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
@@ -294,6 +295,7 @@ export function Workspace() {
   // behaves exactly as before at 0–1 selections; ≥2 is the new filter case.
   const [scopeIds, setScopeIds] = useState<Set<string>>(() => new Set());
   const activeId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
+  const archivedFamiliars = useArchivedFamiliars();
   // Back-compat shim for the call sites that scope to a single familiar (e.g.
   // opening a session) or clear to All: writes the multiselect set accordingly.
   const setActiveId = useCallback((id: string | null) => {
@@ -301,6 +303,10 @@ export function Workspace() {
   }, []);
   const [activeFamiliarHydrated, setActiveFamiliarHydrated] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const visibleFamiliars = useMemo(
+    () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
+    [familiars, archivedFamiliars],
+  );
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -2318,9 +2324,14 @@ export function Workspace() {
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
   const calendarFamiliarId = activeId ?? familiars[0]?.id ?? null;
+  const projectGateFamiliarId = activeId && !(activeId in archivedFamiliars)
+    ? activeId
+    : visibleFamiliars[0]?.id ?? null;
   const firstProjectGateOpen = onboardingResolved
     && !onboardingOpen
     && (mode === "home" || mode === "chat")
+    && familiarsLoaded
+    && projectGateFamiliarId !== null
     && projectsInitiallyResolved
     && registeredProjects.length === 0;
 
@@ -2929,7 +2940,7 @@ export function Workspace() {
 
       <FirstProjectGate
         open={firstProjectGateOpen}
-        familiarId={activeId ?? familiars[0]?.id ?? null}
+        familiarId={projectGateFamiliarId}
         loadingProjects={projectsLoading}
         projectsError={projectsError}
         createProjectOrThrow={createProjectOrThrow}
