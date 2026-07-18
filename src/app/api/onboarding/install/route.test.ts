@@ -40,6 +40,18 @@ assert.match(
   "hermes Windows installer URL is pinned to the official script",
 );
 
+assert.equal(
+  source.match(/rejectNonLocalRequest\(req\)/g)?.length,
+  3,
+  "installer status, cancellation, and start requests require a loopback desktop origin",
+);
+
+assert.match(
+  source,
+  /if \(body\.confirmInstall !== true\)/,
+  "POST requires the desktop UI to send an explicit install confirmation flag",
+);
+
 assert.match(
   source,
   /if \(!isInstallTarget\(body\.target\)\)/,
