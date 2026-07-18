@@ -38,7 +38,6 @@ import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { SearchInput } from "@/components/ui/search-input";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
-import { Tabs } from "@/components/ui/tabs";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { CwdPickerField } from "@/components/cwd-picker-field";

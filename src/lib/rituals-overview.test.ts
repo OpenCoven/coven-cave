@@ -19,9 +19,10 @@ function item(id: string, overrides: Partial<InboxItem> = {}): InboxItem {
 
 describe("buildRitualWeek", () => {
   it("returns the Sunday-starting week and marks scheduled days", () => {
+    const friday = new Date(2026, 6, 17, 14);
     const week = buildRitualWeek(
-      [item("friday", { fireAt: "2026-07-17T14:00:00.000Z" })],
-      new Date("2026-07-17T16:00:00.000Z"),
+      [item("friday", { fireAt: friday.toISOString() })],
+      new Date(2026, 6, 17, 16),
     );
 
     assert.deepEqual(week.map((day) => day.key), [
@@ -38,8 +39,8 @@ describe("buildRitualWeek", () => {
   });
 
   it("moves to the next week at Sunday midnight", () => {
-    const saturday = buildRitualWeek([], new Date("2026-07-18T16:00:00.000Z"));
-    const sunday = buildRitualWeek([], new Date("2026-07-19T16:00:00.000Z"));
+    const saturday = buildRitualWeek([], new Date(2026, 6, 18, 16));
+    const sunday = buildRitualWeek([], new Date(2026, 6, 19, 16));
 
     assert.equal(saturday[0]?.key, "2026-07-12");
     assert.equal(sunday[0]?.key, "2026-07-19");
