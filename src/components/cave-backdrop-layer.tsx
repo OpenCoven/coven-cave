@@ -49,8 +49,11 @@ export function CaveBackdropLayer({
   const familiarOn = familiarId
     ? isFamiliarBackdropOn(prefs, familiarId, familiarUrl !== null)
     : false;
-  // The app image is wanted when the app backdrop is on, or as the fallback
-  // for a familiar explicitly switched on without its own image.
+  // The app image is wanted when the app backdrop is on, or for any familiar
+  // explicitly switched on — even one whose own image is showing, so the
+  // fallback stays warm. Deliberately keyed on prefs alone (not the async
+  // familiarUrl): gating on image absence would churn the fetch on every
+  // mount and blank-flash when a familiar image is removed.
   const wantsAppImage =
     prefs.enabled || (familiarId ? prefs.familiars[familiarId] === true : false);
   const familiarImageShowing = familiarOn && familiarUrl !== null;
