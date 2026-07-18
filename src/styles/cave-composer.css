@@ -735,7 +735,7 @@
 
 /* Composer dictation (voice new-chat): live-partial caption + pulsing mic. */
 .hc-dictation-caption {
-  padding: 0 14px 6px;
+  padding: 0 var(--space-4) var(--space-2);
   font-size: var(--text-sm);
   font-style: italic;
   color: var(--text-muted);
