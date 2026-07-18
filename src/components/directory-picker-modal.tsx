@@ -67,10 +67,6 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!preserveBusy) setCreateBusy(false);
   }, []);
 
-  const focusDialog = useCallback(() => {
-    dialogRef.current?.focus({ preventScroll: true });
-  }, []);
-
   const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
     if (sessionGeneration !== modalSessionRef.current) return;
     setLoading(true);
@@ -134,7 +130,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!cwd || createBusy) return;
     const sessionGeneration = modalSessionRef.current;
     let shouldRefocusInput = false;
-    focusDialog();
+    let shouldRefocusTrigger = false;
+    newFolderTriggerRef.current?.focus({ preventScroll: true });
     setCreateBusy(true);
     setNewFolderError(null);
     try {
@@ -154,7 +151,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       }
       resetCreateFolderState({ preserveBusy: true });
       await load(body.path, sessionGeneration);
-      if (sessionGeneration === modalSessionRef.current) focusDialog();
+      if (sessionGeneration === modalSessionRef.current) shouldRefocusTrigger = true;
     } catch {
       if (sessionGeneration !== modalSessionRef.current) return;
       shouldRefocusInput = true;
@@ -162,11 +159,14 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     } finally {
       if (sessionGeneration !== modalSessionRef.current) return;
       setCreateBusy(false);
+      if (shouldRefocusTrigger) {
+        requestAnimationFrame(() => newFolderTriggerRef.current?.focus({ preventScroll: true }));
+      }
       if (shouldRefocusInput) {
         requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
       }
     }
-  }, [createBusy, cwd, focusDialog, load, newFolderName, resetCreateFolderState]);
+  }, [createBusy, cwd, load, newFolderName, resetCreateFolderState]);
 
   const onCreateRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {

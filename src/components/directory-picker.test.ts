@@ -86,7 +86,11 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(src, /const newFolderTriggerRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the New folder trigger");
   assert.match(src, /ref=\{newFolderTriggerRef\}/, "wires the trigger ref to the New folder button");
-  assert.match(src, /focusDialog\(\);\s*setCreateBusy\(true\);/, "focus moves to the dialog before busy disables inline controls");
+  assert.match(
+    src,
+    /newFolderTriggerRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
+    "submit keeps focus on the New folder trigger before busy disables inline controls",
+  );
   assert.match(
     src,
     /requestAnimationFrame\(\(\) => newFolderTriggerRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
@@ -99,8 +103,13 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(
     src,
-    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) focusDialog\(\);/,
-    "successful creation leaves focus on the modal after navigation",
+    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) shouldRefocusTrigger = true;/,
+    "successful creation refocuses the New folder trigger after navigation",
+  );
+  assert.doesNotMatch(
+    src,
+    /dialogRef\.current\?\.focus\(/,
+    "the flow no longer focuses the dialog panel directly",
   );
   assert.match(
     src,
