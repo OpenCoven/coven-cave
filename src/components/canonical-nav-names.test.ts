@@ -40,11 +40,23 @@ assert.match(
   /import \{ FOLDER_MODES \} from "@\/components\/sidebar-minimal";/,
   "mobile tabs must import the sidebar's FOLDER_MODES source of truth",
 );
+const tabsDeclaration = mobileTabs.match(
+  /const\s+TABS\s*=\s*FOLDER_MODES[\s\S]*?;(?=\s*\n)/,
+)?.[0];
+assert.ok(tabsDeclaration, "mobile tabs must derive TABS directly from FOLDER_MODES");
 assert.match(
-  mobileTabs,
-  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)\.map\(\s*\(fm\) => \(\{ id: fm\.id, label: fm\.label, ariaLabel: fm\.label, iconName: fm\.iconName \}\),?\s*\)/,
+  tabsDeclaration,
+  /\.filter\(\s*\(?\s*fm\s*\)?\s*=>\s*!fm\.quiet\s*&&\s*!fm\.navHidden\s*\)/,
   "mobile tabs must be derived from the sidebar's primary (non-quiet, non-hidden) cluster",
 );
+for (const field of ["id", "label", "ariaLabel", "iconName"]) {
+  const sourceField = field === "ariaLabel" ? "label" : field;
+  assert.match(
+    tabsDeclaration,
+    new RegExp(`\\b${field}\\s*:\\s*fm\\.${sourceField}\\b`),
+    `mobile tabs must derive ${field} from the canonical FOLDER_MODES row`,
+  );
+}
 assert.doesNotMatch(
   mobileTabs,
   /\{ id: "[a-z-]+", label: "/,
@@ -55,8 +67,12 @@ assert.doesNotMatch(
 // the drawer keeps the rest reachable: quiet rows exist in FOLDER_MODES.
 const primaryIds = [];
 const folderBlock = sidebar.match(/const FOLDER_MODES[\s\S]*?\n\];/)[0];
-for (const row of folderBlock.matchAll(/\{ id: "([a-z-]+)", label: "([^"]+)"[^\n]*/g)) {
-  if (!/quiet: true/.test(row[0]) && !/navHidden: true/.test(row[0])) primaryIds.push(row[1]);
+for (const row of folderBlock.matchAll(/\{[\s\S]*?\}/g)) {
+  const id = row[0].match(/\bid\s*:\s*"([a-z-]+)"/)?.[1];
+  if (!id) continue;
+  if (!/\bquiet\s*:\s*true\b/.test(row[0]) && !/\bnavHidden\s*:\s*true\b/.test(row[0])) {
+    primaryIds.push(id);
+  }
 }
 assert.deepEqual(
   primaryIds,
