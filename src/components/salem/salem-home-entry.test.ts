@@ -16,7 +16,7 @@ assert.match(card, /if \(saveState === "idle"\)[\s\S]{0,80}setSaveState\("confir
 assert.match(card, /Confirm — save to Tasks/, "second click confirms the save");
 assert.match(card, /salem-pf__action--save/, "renders a dedicated save button");
 
-// Salem panel: home card is wired to save to the Board with labels + steps.
+// Salem panel: home card is wired to save to Tasks with labels + steps.
 assert.match(widget, /onSave=\{saveCardToBoard\}/, "panel passes the save handler");
 assert.match(widget, /\/api\/board/, "save posts to the board API");
 assert.match(widget, /labels: \["salem", "happy-path", card\.recommendedPathId\]/, "tags the board card");

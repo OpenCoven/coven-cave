@@ -65,7 +65,7 @@ export function ReminderLinkField({
       cardCache = list;
       setCards(list);
     } catch {
-      setFetchError("Couldn't load board cards.");
+      setFetchError("Couldn't load task cards.");
     } finally {
       setLoading(false);
     }
@@ -148,11 +148,11 @@ export function ReminderLinkField({
       {kind === "card" && (
         <div className="relative">
           {loading && !cards ? (
-            <div className={hintClass}>Loading board cards…</div>
+            <div className={hintClass}>Loading task cards…</div>
           ) : fetchError ? (
             <div className={hintClass}>{fetchError}</div>
           ) : cards && cards.length === 0 ? (
-            <div className={hintClass}>No board cards yet.</div>
+            <div className={hintClass}>No task cards yet.</div>
           ) : (
             <StandardSelect
               label="Task card"

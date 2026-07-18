@@ -25,9 +25,9 @@ const ACTION_KINDS = new Set(["cave-route", "copy-command", "run-doctor", "save-
 // Home full card offers Save to Tasks; setup (slim) card does not.
 {
   const home = buildCard({ mode: "home", userMessage: "i want a familiar on my machine" }, matchPath({ mode: "home", userMessage: "i want a familiar on my machine" }));
-  assert.ok(home.secondaryActions.some((a) => a.kind === "save-board-checklist"), "home card can save to board");
+  assert.ok(home.secondaryActions.some((a) => a.kind === "save-board-checklist"), "home card can save to Tasks");
   const setup = buildCard({ mode: "setup", userMessage: "i want a familiar on my machine" }, matchPath({ mode: "setup", userMessage: "i want a familiar on my machine" }));
-  assert.ok(!setup.secondaryActions.some((a) => a.kind === "save-board-checklist"), "setup card does not save to board");
+  assert.ok(!setup.secondaryActions.some((a) => a.kind === "save-board-checklist"), "setup card does not save to Tasks");
 }
 
 // isSafeCommand whitelist

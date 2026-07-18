@@ -300,7 +300,7 @@ function ThreadSignalsTable({
       });
     }
     if (succeeded.length === targets.length) {
-      announce(succeeded.length === 1 ? "Added 1 task to the board." : `Added ${succeeded.length} tasks to the board.`);
+      announce(succeeded.length === 1 ? "Added 1 task to Tasks." : `Added ${succeeded.length} tasks to Tasks.`);
     } else {
       announce(`Added ${succeeded.length} of ${targets.length} tasks — the rest failed, try again.`);
     }
@@ -349,7 +349,7 @@ function ThreadSignalsTable({
                 disabled={isAdded || isPending}
                 onSelect={() => void createTasks([row])}
               >
-                {isAdded ? "Task already on board" : "Add task to board"}
+                {isAdded ? "Task already in Tasks" : "Add task to Tasks"}
               </PopoverItem>
             </OverflowMenu>
           ) : (
@@ -367,7 +367,7 @@ function ThreadSignalsTable({
                 </Button>
               ) : null}
               {isAdded ? (
-                <span className="fa-thread-table__added" title="A task card exists on the board for this signal">
+                <span className="fa-thread-table__added" title="A task card exists in Tasks for this signal">
                   <Icon name="ph:check-circle" width={13} aria-hidden /> Task
                 </span>
               ) : (
@@ -378,7 +378,7 @@ function ThreadSignalsTable({
                   leadingIcon="ph:plus"
                   onClick={() => void createTasks([row])}
                   aria-label={`Add task for ${row.signal}`}
-                  title="Create a task card on the board from this signal"
+                  title="Create a task card in Tasks from this signal"
                 >
                   Task
                 </Button>
@@ -422,7 +422,7 @@ function ThreadSignalsTable({
           leadingIcon="ph:kanban"
           disabled={selectedCount === 0}
           onClick={() => void createTasks(allRows.filter((row) => selected.has(row.id)))}
-          title="Create board task cards from the selected signals"
+          title="Create task cards in Tasks from the selected signals"
         >
           Add {selectedCount > 0 ? selectedCount : ""} as tasks
         </Button>

@@ -26,7 +26,7 @@ const CAPTURES = [
   { file: "home.png",     label: "HomeComposer cold-start",      click: "Home" },
   { file: "shell.png",    label: "Three-pane shell + chat",      click: "Chat" },
   { file: "chat.png",     label: "Chat view",                    click: "Chat" },
-  { file: "board.png",    label: "Board view",                   click: "Board" },
+  { file: "board.png",    label: "Tasks view",                   click: "Tasks" },
   { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
   { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
 ];

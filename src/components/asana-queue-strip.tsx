@@ -99,7 +99,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
       setBusyGid(item.gid);
       try {
         const res = await createBoardCardFromAsanaItem(item, null);
-        announce(res.ok ? `Added "${item.title}" to the board.` : `Couldn't add to board: ${res.error}`, res.ok ? "polite" : "assertive");
+        announce(res.ok ? `Added "${item.title}" to Tasks.` : `Couldn't add to Tasks: ${res.error}`, res.ok ? "polite" : "assertive");
       } finally {
         setBusyGid(null);
       }
@@ -193,9 +193,9 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
                 leadingIcon="ph:plus"
                 loading={busy}
                 onClick={() => void addToBoard(item)}
-                title="Create a board card from this task"
+                title="Create a task card from this Asana task"
               >
-                Board
+                Tasks
               </Button>
               <Button
                 variant="secondary"

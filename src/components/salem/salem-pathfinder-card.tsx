@@ -76,7 +76,7 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
     setFeedback("sent");
   };
 
-  // Save-to-Board requires an explicit confirm: first click arms, second saves.
+  // Save-to-Tasks requires an explicit confirm: first click arms, second saves.
   const handleSave = async () => {
     if (!onSave) return;
     if (saveState === "idle") {

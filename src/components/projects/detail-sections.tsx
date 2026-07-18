@@ -209,7 +209,7 @@ export function TasksSection({
                     onOpenBoard?.();
                     window.location.hash = `card-${card.id}`;
                   }}
-                  title={`Open "${card.title}" on the board`}
+                  title={`Open "${card.title}" in Tasks`}
                   className="focus-ring-inset flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 >
                   <span
@@ -226,7 +226,7 @@ export function TasksSection({
           </ul>
           {open.length > TASK_CAP ? (
             <p className="mt-1 px-1 text-[10px] text-[var(--text-muted)]">
-              +{open.length - TASK_CAP} more on the board
+              +{open.length - TASK_CAP} more in Tasks
               {doneCount > 0 ? ` · ${doneCount} done` : ""}
             </p>
           ) : doneCount > 0 ? (

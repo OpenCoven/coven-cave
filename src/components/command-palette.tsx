@@ -1211,7 +1211,7 @@ export function CommandPalette({
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Create task: {row.title}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          New card on the board, scoped to the active familiar
+                          New task in Tasks, scoped to the active familiar
                         </span>
                       </span>
                       {active ? <span className="text-[10px] text-[var(--text-muted)]">create</span> : null}
