@@ -20,25 +20,31 @@ test("first-project gate policy opens only on Home/Chat once onboarding, roster,
       familiarRosterLoadedSuccessfully: true,
       projectsInitiallyResolved: true,
     }),
-    { open: true, familiarId: "sage" },
+    { open: true, familiarId: "sage", blockChatLaunch: true },
     "zero projects opens the gate on Home once the shared eligibility checks pass",
   );
 
+  const hiddenButBlocked = resolveFirstProjectGatePolicy({
+    activeFamiliarId: "sage",
+    visibleFamiliars,
+    registeredProjects: [],
+    pendingGrant: null,
+    onboardingResolved: true,
+    onboardingOpen: false,
+    mode: "agents",
+    familiarsLoaded: true,
+    familiarRosterLoadedSuccessfully: true,
+    projectsInitiallyResolved: true,
+  });
   assert.equal(
-    resolveFirstProjectGatePolicy({
-      activeFamiliarId: "sage",
-      visibleFamiliars,
-      registeredProjects: [],
-      pendingGrant: null,
-      onboardingResolved: true,
-      onboardingOpen: false,
-      mode: "agents",
-      familiarsLoaded: true,
-      familiarRosterLoadedSuccessfully: true,
-      projectsInitiallyResolved: true,
-    }).open,
+    hiddenButBlocked.open,
     false,
     "non-chat navigation stays usable because the gate hides outside Home/Chat",
+  );
+  assert.equal(
+    hiddenButBlocked.blockChatLaunch,
+    true,
+    "chat launch stays blocked even while the gate is hidden on other surfaces",
   );
 
   assert.equal(
@@ -56,6 +62,22 @@ test("first-project gate policy opens only on Home/Chat once onboarding, roster,
     }).open,
     false,
     "the gate waits for onboarding resolution",
+  );
+  assert.equal(
+    resolveFirstProjectGatePolicy({
+      activeFamiliarId: "sage",
+      visibleFamiliars,
+      registeredProjects: [],
+      pendingGrant: null,
+      onboardingResolved: false,
+      onboardingOpen: false,
+      mode: "home",
+      familiarsLoaded: true,
+      familiarRosterLoadedSuccessfully: true,
+      projectsInitiallyResolved: true,
+    }).blockChatLaunch,
+    false,
+    "chat launch also waits for authoritative onboarding resolution",
   );
 });
 
@@ -78,7 +100,7 @@ test("first-project gate policy keeps a pending retry bound to its original fami
       familiarRosterLoadedSuccessfully: true,
       projectsInitiallyResolved: true,
     }),
-    { open: true, familiarId: "ember" },
+    { open: true, familiarId: "ember", blockChatLaunch: true },
     "a valid pending retry stays bound to its original familiar even when another familiar is active",
   );
 
@@ -95,7 +117,7 @@ test("first-project gate policy keeps a pending retry bound to its original fami
       familiarRosterLoadedSuccessfully: true,
       projectsInitiallyResolved: true,
     }),
-    { open: false, familiarId: "ember" },
+    { open: false, familiarId: "ember", blockChatLaunch: true },
     "the same pending retry hides on non-Home/Chat surfaces and can reopen later without losing its target",
   );
 });

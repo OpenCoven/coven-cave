@@ -53,7 +53,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /const startFamiliarChat = useCallback\([\s\S]*setPendingChatAction\(\{[\s\S]*kind: "new"[\s\S]*familiarId[\s\S]*projectRoot[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\)/,
+  /const startFamiliarChat = useCallback\([\s\S]*if \(chatProjectBlockedRef\.current\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setPendingChatAction\(\{[\s\S]*kind: "new"[\s\S]*familiarId[\s\S]*projectRoot[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\)/,
   "New chat should enqueue a pending chat action before entering chat mode",
 );
 

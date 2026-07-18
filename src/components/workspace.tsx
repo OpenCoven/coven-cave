@@ -1885,6 +1885,11 @@ export function Workspace() {
     initialControls?: InitialCommandControls | null,
     initialAttachments?: ChatAttachment[] | null,
   ) => {
+    if (chatProjectBlockedRef.current) {
+      if (familiarId) setActiveId(familiarId);
+      setMode("home");
+      return;
+    }
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
     setPendingChatAction({
@@ -2400,7 +2405,11 @@ export function Workspace() {
 
   const active = visibleFamiliars.find((f) => f.id === activeId) ?? null;
   const calendarFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
-  const { open: firstProjectGateOpen, familiarId: projectGateFamiliarId } = resolveFirstProjectGatePolicy({
+  const {
+    open: firstProjectGateOpen,
+    familiarId: projectGateFamiliarId,
+    blockChatLaunch: chatProjectBlocked,
+  } = resolveFirstProjectGatePolicy({
     activeFamiliarId: activeId,
     visibleFamiliars,
     registeredProjects,
@@ -2412,6 +2421,8 @@ export function Workspace() {
     familiarRosterLoadedSuccessfully,
     projectsInitiallyResolved,
   });
+  const chatProjectBlockedRef = useRef(chatProjectBlocked);
+  chatProjectBlockedRef.current = chatProjectBlocked;
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
@@ -2875,7 +2886,13 @@ export function Workspace() {
           reloadProjects={reloadProjects}
         />
       ) : null}
-      {detailContent}
+      <div
+        className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"
+        aria-hidden={firstProjectGateOpen ? true : undefined}
+        inert={firstProjectGateOpen || undefined}
+      >
+        {detailContent}
+      </div>
     </div>
   );
 

@@ -116,6 +116,24 @@ assert.equal(projectNameForRoot(""), "");
   unsubscribe();
 }
 
+// Transport failure after creation → return an explicit error and publish the
+// one needed refresh for the newly-created project.
+{
+  resetProjectRegistryListenersForTests();
+  let notifications = 0;
+  const unsubscribe = subscribeProjectRegistryMutation(() => {
+    notifications += 1;
+  });
+  const createProject = async (name, root) => ({ id: "p4", name, root });
+  const fetchImpl = async () => {
+    throw new Error("network down");
+  };
+  const result = await addChatProject({ root: "/transport-fail", familiarId: "sage", createProject, fetchImpl });
+  assert.deepEqual(result, { ok: false, error: "network down" });
+  assert.equal(notifications, 1, "rejected grant transport still fans out the created project exactly once");
+  unsubscribe();
+}
+
 // Caller created the project first (ProjectsView's scoped create path) → a grant
 // failure should still publish the new project to unscoped consumers.
 {

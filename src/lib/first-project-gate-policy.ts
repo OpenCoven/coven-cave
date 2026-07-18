@@ -19,6 +19,7 @@ export type FirstProjectGatePolicyInput = {
 export type FirstProjectGatePolicy = {
   open: boolean;
   familiarId: string | null;
+  blockChatLaunch: boolean;
 };
 
 export function preferredFirstProjectGateFamiliarId(
@@ -33,16 +34,17 @@ export function resolveFirstProjectGatePolicy(
 ): FirstProjectGatePolicy {
   const familiarId = input.pendingGrant?.familiarId
     ?? preferredFirstProjectGateFamiliarId(input.activeFamiliarId, input.visibleFamiliars);
-  const eligible = input.onboardingResolved
+  const blockChatLaunch = input.onboardingResolved
     && !input.onboardingOpen
-    && (input.mode === "home" || input.mode === "chat")
     && input.familiarsLoaded
     && input.familiarRosterLoadedSuccessfully
     && input.projectsInitiallyResolved
-    && familiarId !== null;
+    && familiarId !== null
+    && (input.registeredProjects.length === 0 || input.pendingGrant !== null);
 
   return {
-    open: eligible && (input.registeredProjects.length === 0 || input.pendingGrant !== null),
+    open: blockChatLaunch && (input.mode === "home" || input.mode === "chat"),
     familiarId,
+    blockChatLaunch,
   };
 }
