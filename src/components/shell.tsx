@@ -508,6 +508,10 @@ function ShellInner({
       previousNavPolicyRef.current = navPolicy;
       return;
     }
+    if (isMobile) {
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
     if (
       previousNavPolicyRef.current !== navPolicy ||
       navPrefArmedGroupRef.current !== groupId
@@ -517,7 +521,7 @@ function ShellInner({
       setNavOpen(false);
     }
     previousNavPolicyRef.current = navPolicy;
-  }, [mounted, groupId, navPolicy]);
+  }, [mounted, groupId, isMobile, navPolicy]);
   useEffect(() => {
     if (navPolicy !== "remembered") {
       navPrefArmedGroupRef.current = null;
