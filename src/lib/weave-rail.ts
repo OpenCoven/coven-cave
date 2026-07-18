@@ -11,7 +11,7 @@ import {
   type TensionView,
   type ThreadsEnvelope,
   type ThreadsMeta,
-  type WeaveListView,
+  type WeaveListEntry,
   type WeaveDetail,
   type WeaveSummary,
 } from "./threads-read.ts";
@@ -277,15 +277,17 @@ export type WeaveRailModel = {
   familiars: string[];
 };
 
-export function railModel(data: WeaveListView): WeaveRailModel {
+export function railModel(data: WeaveListEntry[]): WeaveRailModel {
+  const weaves = data.filter((entry): entry is WeaveSummary => !("kind" in entry));
+  const degraded = data.filter((entry): entry is DegradedFamiliarView => "kind" in entry);
   const familiars = [
     ...new Set(
-      [...data.weaves.map((w) => w.familiarId), ...data.degraded.map((d) => d.familiarId)].filter(
+      [...weaves.map((w) => w.familiarId), ...degraded.map((d) => d.familiarId)].filter(
         (f) => f.length > 0,
       ),
     ),
   ].sort();
-  return { weaves: data.weaves, degraded: data.degraded, familiars };
+  return { weaves, degraded, familiars };
 }
 
 export type ThreadPaneModel = {

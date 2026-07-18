@@ -36,14 +36,14 @@ import {
   type ThreadsAdapterKind,
   type ThreadsEnvelope,
   type ThreadView,
-  type WeaveListView,
+  type WeaveListEntry,
   type WeaveDetail,
   type WeaveSummary,
 } from "./threads-read.ts";
 
 export interface ThreadsReadAdapter {
   kind: ThreadsAdapterKind;
-  listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListView>>;
+  listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListEntry[]>>;
   weave(id: string): Promise<ThreadsEnvelope<WeaveDetail>>;
   thread(id: string): Promise<ThreadsEnvelope<ThreadView>>;
   strands(threadId: string): Promise<ThreadsEnvelope<StrandView[]>>;
@@ -55,21 +55,20 @@ export interface ThreadsReadAdapter {
 
 const AUDIT_PAGE_SIZE = 200;
 
-function normalizeWeaveList(entries: RawWeaveEntry[], familiar?: string): WeaveListView {
-  const weaves: WeaveSummary[] = [];
-  const degraded = [];
+function normalizeWeaveList(entries: RawWeaveEntry[], familiar?: string): WeaveListEntry[] {
+  const normalized: WeaveListEntry[] = [];
   for (const entry of entries) {
     const weave = normalizeWeaveSummary(entry);
     if (weave) {
-      if (!familiar || weave.familiarId === familiar) weaves.push(weave);
+      if (!familiar || weave.familiarId === familiar) normalized.push(weave);
       continue;
     }
     const degradedFamiliar = normalizeDegradedFamiliar(entry);
     if (degradedFamiliar && (!familiar || degradedFamiliar.familiarId === familiar)) {
-      degraded.push(degradedFamiliar);
+      normalized.push(degradedFamiliar);
     }
   }
-  return { weaves, degraded };
+  return normalized;
 }
 
 function pendingDirCursor(dir: string): string {
@@ -175,8 +174,8 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     }
   }
 
-  async listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListView>> {
-    const timeout = this.timedOut<WeaveListView>();
+  async listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListEntry[]>> {
+    const timeout = this.timedOut<WeaveListEntry[]>();
     if (timeout) return timeout;
     const entries = this.loadWeaveEntries();
     if (!entries) return blockedEnvelope("no-fixture", this.meta(this.weaveCursor(), false));
@@ -345,14 +344,15 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     return { entries: res.data };
   }
 
-  async listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListView>> {
+  async listWeaves(familiar?: string): Promise<ThreadsEnvelope<WeaveListEntry[]>> {
     const fetched = await this.fetchWeaveEntries();
     if ("blocked" in fetched) return fetched.blocked;
     const list = normalizeWeaveList(fetched.entries, familiar);
-    const cursorBits = [
-      ...list.weaves.map((w) => w.weaveHash),
-      ...list.degraded.map((d) => `degraded:${d.familiarId}:${d.reason}`),
-    ];
+    const cursorBits = list.map((entry) =>
+      "kind" in entry
+        ? `degraded:${entry.familiarId}:${entry.reason}:${createHash("sha256").update(entry.error).digest("hex").slice(0, 12)}`
+        : entry.weaveHash,
+    );
     return okEnvelope(list, this.meta(`weave:${cursorBits.join(",").slice(0, 64)}`, true));
   }
 
