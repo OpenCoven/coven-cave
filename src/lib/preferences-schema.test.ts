@@ -288,6 +288,15 @@ assert.ok(
   "clearing the map is a real write (revision bumps)",
 );
 
+const familiarsClearedAgain = applyPreferencesPatch(familiarsCleared, {
+  appearance: { backdrop: { familiars: {} } },
+});
+assert.equal(
+  familiarsClearedAgain.revision,
+  familiarsCleared.revision,
+  "clearing an already-empty map is a no-op (no revision bump)",
+);
+
 const oversizedFamiliars: Record<string, boolean> = {};
 for (let i = 0; i < 257; i += 1) oversizedFamiliars[`fam-${i}`] = true;
 assert.throws(
