@@ -6,13 +6,12 @@ import { APP_VERSION } from "@/lib/app-version";
 /**
  * The left side-panel footer — Dashboard + Settings, then the app-version line.
  *
- * Extracted so it renders identically in BOTH nav hosts: the labeled
- * `SidebarMinimal` (shown on every non-chat surface) and the chat-thread
- * `WorkspaceSidebar` (shown on Chat, which swaps out SidebarMinimal). Without
- * this the footer vanished on chat pages — the one surface where the nav panel
- * is replaced. Styles (`.sidebar-foot*`, `.sidebar-version`) live in
- * sidebar-minimal.css, which globals.css imports app-wide, so they apply here
- * regardless of host.
+ * Extracted so it renders identically in BOTH hosts: the global-nav
+ * `SidebarMinimal` and Chat's independent `WorkspaceSidebar` thread list.
+ * Without this, the Chats list could drift from the global nav footer or lose
+ * its Dashboard / Settings / version row entirely. Styles (`.sidebar-foot*`,
+ * `.sidebar-version`) live in sidebar-minimal.css, which globals.css imports
+ * app-wide, so they apply here regardless of host.
  */
 export function SidebarFooter({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
