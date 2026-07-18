@@ -280,7 +280,7 @@ assert.match(
     document: {
       documentElement: html,
       getElementById: (id: string) => id === "cave-preferences-bootstrap"
-        ? { textContent: JSON.stringify(preferences) }
+        ? { textContent: JSON.stringify(preferences), getAttribute: () => "true" }
         : null,
     },
     localStorage: {
