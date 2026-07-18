@@ -19,8 +19,8 @@ const backdropRoute = await readFile(
 
 assert.match(
   clientStore,
-  /window\.__COVEN_CAVE_PREFERENCES__[\s\S]*getElementById\(BOOTSTRAP_ID\)/,
-  "the client store should begin from the canonical server bootstrap",
+  /__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__[\s\S]*getAttribute\("data-authoritative"\)/,
+  "the client store should reject paint-only bootstrap data as canonical",
 );
 assert.match(
   clientStore,
@@ -96,6 +96,11 @@ assert.match(
 );
 assert.match(
   clientStore,
+  /if \(!canonicalLoaded\) return snapshot/,
+  "failed or malformed canonical reads must fail closed before any PATCH",
+);
+assert.match(
+  clientStore,
   /new BroadcastChannel\(CHANNEL_NAME\)[\s\S]*channel\.onmessage = \(\) => void refreshAppPreferences\(\)/,
   "same-origin tabs should converge on the server snapshot",
 );
@@ -105,6 +110,12 @@ assert.match(
   /await initializeAppPreferences\(\)[\s\S]*migrateLegacyBackdropImage\(\)/,
   "preference and legacy backdrop migration should run after hydration/auth bootstrap",
 );
+assert.match(controller, /PREFERENCES_SLOW_MS = 2_000[\s\S]*severity: "warning"/, "slow reconciliation is surfaced after shell mount");
+assert.match(controller, /severity: "error"[\s\S]*label: "Retry"/, "terminal bootstrap failure has an actionable retry");
+assert.match(controller, /dismissBanner\(PREFERENCES_BANNER_ID\)/, "successful recovery clears degraded status");
+for (const timing of ["response-commit", "shell-visible", "reconciliation-settled"]) {
+  assert.ok(controller.includes(`\"${timing}\"`), `bootstrap controller records ${timing}`);
+}
 assert.match(controller, /window\.addEventListener\("pagehide", flush\)/, "pending writes flush on page exit");
 assert.match(
   controller,
