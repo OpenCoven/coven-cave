@@ -57,7 +57,38 @@ assert.match(
 // that guard and 401'd every local terminal. Native mobile mode configures
 // only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
-assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured (credential-less loopback is the local app)");
+assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated && !isDirectLoopbackRequest\(req\)\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured, except for a socket-verified direct loopback peer (cave-vn2r)");
+// Direct-loopback classification (cave-vn2r): trusted only because ALL three
+// hold — the socket peer is loopback, no forwarding markers are present
+// (tailscale serve delivers remote phones over loopback WITH x-forwarded-*),
+// and the Host is loopback. The stamp forwarded to proxy.ts must be the
+// per-boot secret, minted fresh (never inherited from ambient env), and any
+// client-supplied copy of the header must die before Next sees the request.
+assert.match(
+  src,
+  /function isDirectLoopbackRequest\(req: IncomingMessage\): boolean \{\s*if \(!isLoopbackAddress\(req\.socket\.remoteAddress\)\) return false;/,
+  "direct-loopback classification starts from the non-spoofable socket peer address",
+);
+assert.match(
+  src,
+  /FORWARDING_HEADERS = \[\s*"forwarded",\s*"x-forwarded-for",\s*"x-forwarded-host",\s*"x-forwarded-proto",\s*"via",?\s*\]/,
+  "forwarded requests (tailscale serve arrives over loopback) must never classify as direct loopback",
+);
+assert.match(
+  src,
+  /return isLoopbackHost\(req\.headers\.host\);\s*\}/,
+  "direct-loopback classification also requires a loopback Host authority",
+);
+assert.match(
+  src,
+  /const LOCAL_PEER_SECRET = randomUUID\(\);\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;/,
+  "the local-peer secret is minted per boot and overwrites any inherited env value",
+);
+assert.match(
+  src,
+  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
+  "client-supplied local-peer headers are stripped before the server stamps its own",
+);
 assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");
 // Credentials are verified BEFORE the source gate: a paired device over
 // `tailscale serve` arrives with a non-loopback `<host>.ts.net` Host, so a

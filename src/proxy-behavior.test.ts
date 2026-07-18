@@ -25,6 +25,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isTrustedLocalPeer,
   timingSafeEqualString,
   isHtmlNavigationRequest,
   accessGatePage,
@@ -362,6 +363,33 @@ assert.equal(
   true,
   "supplied credentials should still be verified and redirected on loopback",
 );
+assert.equal(
+  shouldRequireMobileAccessCredential("localhost:3000", false, true),
+  false,
+  "a server-verified direct loopback peer is exempt from the mobile gate (cave-vn2r)",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false),
+  true,
+  "without the server's local-peer stamp the gate stays armed for every host",
+);
+
+// ─── isTrustedLocalPeer ───────────────────────────────────────────────────
+// The exemption above is keyed to server.ts's per-boot secret; only an exact
+// match counts, and a missing secret (Next without server.ts) fails closed.
+assert.equal(isTrustedLocalPeer("per-boot-secret", "per-boot-secret"), true);
+assert.equal(
+  isTrustedLocalPeer("guessed-value", "per-boot-secret"),
+  false,
+  "a client-guessed header value must not pass",
+);
+assert.equal(isTrustedLocalPeer(null, "per-boot-secret"), false, "absent header never passes");
+assert.equal(
+  isTrustedLocalPeer("anything", undefined),
+  false,
+  "no per-boot secret configured (Next running without server.ts) fails closed",
+);
+assert.equal(isTrustedLocalPeer("", ""), false, "empty header and secret never match");
 
 // ─── bearerFromReferer ─────────────────────────────────────────────────────
 assert.equal(

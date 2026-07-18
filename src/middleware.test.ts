@@ -135,6 +135,26 @@ assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens shoul
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
 
+// ── Direct-loopback exemption from the mobile gate (cave-vn2r) ────────────
+// The exemption must be keyed to the per-boot secret server.ts stamps after
+// verifying the actual TCP peer — never to a bare header value or a Host,
+// both of which any client can send.
+assert.match(
+  source,
+  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
+  "the local-peer exemption must verify the server-stamped per-boot secret",
+);
+assert.doesNotMatch(
+  source,
+  /LOCAL_PEER_HEADER\)\s*===\s*"1"/,
+  "a bare marker value must never satisfy the local-peer exemption (spoofable without server.ts)",
+);
+assert.match(
+  source,
+  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,?\s*\)/,
+  "the mobile gate must consult the verified local-peer stamp",
+);
+
 // ── HTML access gate for unauthenticated browser navigations ──────────────
 // Same 401 fail-closed posture; only the body differs by client. The page's
 // form re-enters the query-token exchange above — no new auth logic.
