@@ -104,6 +104,17 @@ const art = (id, code, extra = {}) => ({
   assert.equal(replaced.savedId, "art-three", "same-id update replaces in place");
   assert.equal(replaced.file.artifacts.length, 3, "same-id update does not grow the store");
 
+  // Same-id replacement remains authoritative even if the replacement now
+  // matches another artifact's content. It must not delete the edited record
+  // and settle under the other id.
+  const matchingReplace = await upsertCanvasArtifact(art("art-three", "<!doctype html>same"));
+  assert.equal(matchingReplace.savedId, "art-three", "same-id update does not settle under a twin");
+  assert.equal(matchingReplace.file.artifacts.length, 3, "same-id update does not collapse distinct records");
+  assert.equal(
+    matchingReplace.file.artifacts.find((artifact) => artifact.id === "art-three")?.code,
+    "<!doctype html>same",
+  );
+
   // Unusable payload leaves the store untouched and reports no saved id.
   const junk = await upsertCanvasArtifact({ nope: true });
   assert.equal(junk.savedId, null, "an unusable payload settles nowhere");
