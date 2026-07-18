@@ -103,6 +103,11 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
+    /useEffect\(\(\) => \{\s*if \(!chatProjectBlocked\) return;[\s\S]*setSplitTargets\(\(prev\) => \{[\s\S]*prev\.filter\(\(target\) => !splitTargetRendersMode\(target, "chat"\)\)[\s\S]*return next\.length === prev\.length \? prev : next;[\s\S]*\}\);\s*\}, \[chatProjectBlocked\]\);/,
+    "when chat becomes authoritatively blocked, workspace prunes any existing chat-rendering split tiles while preserving non-chat ordering",
+  );
+  assert.match(
+    src,
     /<FirstProjectGate[\s\S]*familiarId=\{projectGateFamiliarId\}[\s\S]*pendingGrant=\{reconciledPendingFirstProjectGrant\}[\s\S]*onPendingGrantChange=\{setPendingFirstProjectGrant\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
     "workspace passes the policy target, reconciled pending retry, and update callback into the gate",
   );
