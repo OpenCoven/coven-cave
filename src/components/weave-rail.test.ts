@@ -30,6 +30,11 @@ assert.match(rail, /thread\{weave\.threadCount === 1 \? "" : "s"\}/, "rail count
 assert.match(rail, /read-only until repair/, "degraded surfaces render the read-only rule");
 assert.match(rail, /ward unreadable — protection not verifiable/, "R12 degraded familiar row renders exact blocked copy");
 assert.match(rail, /visibleDegraded\.map/, "R12 degraded rows render separately from healthy weaves");
+assert.match(
+  rail,
+  /key={`degraded:\${entry\.familiarId}:\${entry\.reason}`}/,
+  "R12 degraded rows have stable keys across reasons for one familiar",
+);
 const degradedRowsSource = rail.slice(rail.indexOf("{visibleDegraded.map"));
 assert.doesNotMatch(degradedRowsSource, /onSelect/, "R12 degraded rows do not expose selection/action affordances");
 // familiar filter

@@ -154,7 +154,7 @@ export function WeaveRail({
           })}
           {visibleDegraded.map((entry) => (
             <li
-              key={`degraded:${entry.familiarId}`}
+              key={`degraded:${entry.familiarId}:${entry.reason}`}
               className="rounded border-l-2 border-[var(--border-strong,#555)] bg-[var(--bg-raised)]/40 px-2 py-2"
             >
               <div className="flex items-center justify-between gap-2">
