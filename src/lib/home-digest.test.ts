@@ -64,8 +64,10 @@ assert.ok(
     familiarNameById,
     nowMs: NOW,
   });
+  const chainedSummary = chained.find((card) => card.kind === "summary");
+  assert.ok(chainedSummary, "a streak contributes to the daily summary");
   assert.ok(
-    chained[0].lines.includes("2-day streak"),
+    chainedSummary.lines.includes("2-day streak"),
     "two consecutive active days surface as the ambient streak chip",
   );
 }
