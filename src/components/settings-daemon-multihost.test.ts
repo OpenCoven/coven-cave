@@ -13,7 +13,7 @@ assert.match(
 
 assert.match(
   shell,
-  /fetch\("\/api\/config", \{ cache: "no-store" \}\)/,
+  /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/,
   "Daemon settings should load Cave config before rendering connection controls",
 );
 
@@ -88,5 +88,14 @@ assert.match(
   /keywords: "daemon status running start stop restart hub server executor private network tailscale"/,
   "Settings search should route hub/server/executor queries to the Daemon section",
 );
+
+// ── Fetch guards (cave-dgac) ─────────────────────────────────────────────────
+// Start/Restart/Manual-Offline each trigger a status refresh; without
+// cancellation a slow earlier response can land after a newer one and flash a
+// stale pre-action status. Once-on-mount loads abort on unmount too.
+assert.match(shell, /refreshCtlRef\.current\?\.abort\(\);/, "each daemon-status refresh aborts the in-flight one");
+assert.match(shell, /fetch\("\/api\/daemon\/status", \{ cache: "no-store", signal: ctl\.signal \}\)/, "daemon-status fetches carry an abort signal");
+assert.match(shell, /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/, "the multi-host config load carries an abort signal");
+assert.doesNotMatch(shell, /getItem\("coven-custom-theme"\)/, "the custom-theme key goes through COVEN_CUSTOM_THEME_KEY, never a string literal");
 
 console.log("settings-daemon-multihost.test.ts: ok");

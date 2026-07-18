@@ -8,7 +8,7 @@
     "macOS",
     "windows"
   ],
-  "windows": [
+  "webviews": [
     "main"
   ],
   "permissions": [

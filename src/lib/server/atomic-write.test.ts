@@ -15,6 +15,13 @@ await writeJsonAtomic(target, { a: 1 });
 assert.deepEqual(JSON.parse(await readFile(target, "utf8")), { a: 1 }, "second write replaces");
 assert.deepEqual(await tmps(), [], "no .tmp lingers after a write");
 
+// Binary payloads use the same atomic path without string coercion.
+const binaryTarget = path.join(dir, "image.bin");
+const binary = Uint8Array.from([0x00, 0x89, 0xff, 0x7f]);
+await writeFileAtomic(binaryTarget, binary);
+assert.deepEqual(await readFile(binaryTarget), Buffer.from(binary), "binary bytes round-trip exactly");
+assert.deepEqual(await tmps(), [], "no .tmp lingers after a binary write");
+
 // 2. Concurrent writers all settle without ENOENT. A shared `.tmp` made the
 //    second rename race to ENOENT and crash (#1516); unique temp names let each
 //    writer rename its own file. Last writer wins; the file is never torn.

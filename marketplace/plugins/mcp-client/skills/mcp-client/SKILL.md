@@ -16,10 +16,11 @@ This skill is located at: `.claude/skills/mcp-client/`
 ## Configuration
 
 The script looks for config in this order:
-1. `MCP_CONFIG_PATH` env var (custom path)
+1. `MCP_CONFIG_PATH` env var (custom path for trusted config files)
 2. **`references/mcp-config.json`** (this skill's config - recommended)
-3. `.mcp.json` in project root
-4. `~/.claude.json`
+3. `~/.claude.json`
+
+Project-local `.mcp.json` files are not auto-discovered because they can define executable stdio servers. To use a workspace config, inspect it first and pass it explicitly with `MCP_CONFIG_PATH=/path/to/.mcp.json`.
 
 **Your config file:** `.claude/skills/mcp-client/references/mcp-config.json`
 
@@ -44,7 +45,7 @@ python .claude/skills/mcp-client/scripts/mcp_client.py call <server> <tool> '{"a
 
 ## Workflow
 
-1. **Check config exists** - Run `servers` command. If error, create `.mcp.json`
+1. **Check config exists** - Run `servers` command. If error, create `references/mcp-config.json` in this skill or set `MCP_CONFIG_PATH` to a trusted config file.
 2. **List servers** - See what MCP servers are configured
 3. **List tools** - Get tool schemas from a specific server
 4. **Call tool** - Execute a tool with arguments
@@ -101,7 +102,7 @@ Config file format (`references/mcp-config.json`):
 
 **Transport detection:**
 - `url` + `api_key` → FastMCP with Bearer auth (Zapier)
-- `command` + `args` → stdio (local servers like sequential-thinking)
+- `command` + `args` → stdio (local servers like sequential-thinking). Stdio servers receive only a minimal launch environment plus explicit per-server `env` values, not the caller's full environment.
 - `url` ending in `/sse` → SSE transport
 - `url` ending in `/mcp` → Streamable HTTP
 
@@ -112,7 +113,7 @@ Errors return JSON:
 {"error": "message", "type": "configuration|validation|connection"}
 ```
 
-- `configuration` - Config file not found. Create `.mcp.json`
+- `configuration` - Config file not found. Create `references/mcp-config.json` in this skill, set `MCP_CONFIG`, or set `MCP_CONFIG_PATH` to a trusted config file.
 - `validation` - Invalid server or tool name
 - `connection` - Failed to connect to server
 

@@ -57,7 +57,7 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
+      className="flex w-fit shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
     >
       {options.map((option) => {
         const active = value === option;
@@ -68,7 +68,7 @@ export function Segmented<T extends string>({
             aria-pressed={active}
             aria-label={`${ariaLabel}: ${getLabel(option)}`}
             onClick={() => onChange(option)}
-            className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+            className={`focus-ring rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
               equalWidth ? "min-w-12 text-center" : ""
             } ${
               active

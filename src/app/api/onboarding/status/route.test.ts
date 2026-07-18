@@ -54,26 +54,32 @@ assert.match(
 
 assert.match(
   source,
-  /openCovenToolStatuses/,
-  "onboarding status uses the shared OpenCoven tool detector",
+  /openCovenToolReadinessStatuses/,
+  "onboarding status uses the local-only OpenCoven readiness detector",
 );
 
 assert.match(
   source,
-  /checkCovenCli\(tool: OpenCovenToolStatus \| undefined\)/,
-  "coven CLI status is derived from the shared coven-cli tool result",
+  /checkCovenCli\(tool: OpenCovenToolReadinessStatus \| undefined\)/,
+  "Coven CLI readiness is derived from installed/current local facts",
 );
 
 assert.match(
   source,
-  /tool\.outdated[\s\S]{0,240}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
-  "startup should require the latest coven CLI version, not just any installed version",
+  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
+  "startup requires a locally compatible Coven CLI without waiting for npm latest",
+);
+
+assert.doesNotMatch(
+  source,
+  /openCovenToolStatuses|checkNpmLatestVersion|npm view/,
+  "the frequently-polled status route never invokes package-registry discovery",
 );
 
 assert.match(
   source,
   /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
-  "startup identifies the coven CLI by the shared tool id",
+  "startup identifies the Coven CLI by the shared tool id",
 );
 
 assert.match(
@@ -84,7 +90,7 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /Install the coven CLI from OpenCoven\/coven/,
+  /Install the Coven CLI from OpenCoven\/coven/,
   "onboarding status should not return stale repo-source CLI install guidance",
 );
 
@@ -100,6 +106,25 @@ assert.match(
   source,
   /s\.ok \|\| s\.optional/,
   "complete treats optional steps as non-blocking",
+);
+
+// Familiar creation lives in the in-app Summoning Circle now: the familiars
+// and binding checks stay in the payload for diagnostics and Salem context,
+// but they are advisory — `complete` means the infrastructure is ready.
+assert.match(
+  source,
+  /Summon your first familiar inside Cave/,
+  "the familiars hint points at the in-app summoning circle",
+);
+assert.match(
+  source,
+  /binding: \{ \.\.\.binding, optional: true \}/,
+  "the binding step is advisory — it must never gate completion",
+);
+assert.match(
+  source,
+  /async function checkFamiliars[\s\S]{0,700}optional: true[\s\S]{0,700}optional: true/,
+  "the familiars step is advisory on both its ok and not-ok branches",
 );
 assert.match(
   source,

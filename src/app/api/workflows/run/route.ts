@@ -180,7 +180,9 @@ async function runViaSession(body: RunBody) {
 
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow.familiar ?? null;
-  const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const binding = familiarId
+    ? bindingFor(config, familiarId)
+    : { harness: config.defaults.harness, model: config.defaults.model };
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json(
       { ok: false, error: `harness '${binding.harness}' can't run as an agent session` },
@@ -196,7 +198,13 @@ async function runViaSession(body: RunBody) {
     // the source, not only in cave-state. The daemon keys on camelCase
     // `familiarId` on input (verified live) and renames it to `familiar_id` in
     // its response. recordSessionFamiliar below still mirrors it for Cave's UI.
-    body: { projectRoot, harness: binding.harness, prompt, ...(familiarId ? { familiarId } : {}) },
+    body: {
+      projectRoot,
+      harness: binding.harness,
+      model: binding.model,
+      prompt,
+      ...(familiarId ? { familiarId } : {}),
+    },
     timeoutMs: 8000,
   });
 

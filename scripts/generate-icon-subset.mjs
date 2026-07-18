@@ -19,6 +19,8 @@ const require = createRequire(import.meta.url);
 export const ICON_TSX_URL = new URL("../src/lib/icon.tsx", import.meta.url);
 export const SUBSET_URL = new URL("../src/lib/ph-icons-subset.json", import.meta.url);
 export const GLYPH_URL = new URL("../src/lib/ph-glyph-catalog.json", import.meta.url);
+export const FAMILIAR_GLYPH_TS_URL = new URL("../src/lib/familiar-glyph.ts", import.meta.url);
+export const FAMILIAR_CORE_URL = new URL("../src/lib/ph-familiar-core.json", import.meta.url);
 
 // Variant suffixes Phosphor uses; stripping them gives the base glyph name.
 const GLYPH_VARIANT_RE = /-fill$|-bold$|-duotone$|-light$|-thin$/;
@@ -33,6 +35,16 @@ export function loadPhosphorCollection() {
 export function usedIconNames(iconTsxText) {
   const block = iconTsxText.match(/ICON_NAMES\s*=\s*\[([\s\S]*?)\]\s*as const;/);
   if (!block) throw new Error("Could not find the ICON_NAMES array in icon.tsx");
+  const names = [...block[1].matchAll(/"ph:([^"]+)"/g)].map((m) => m[1]);
+  return [...new Set(names)].sort();
+}
+
+/** Extract the deliberately-small always-loaded familiar glyph whitelist. */
+export function familiarCoreGlyphNames(familiarGlyphText) {
+  const block = familiarGlyphText.match(
+    /FAMILIAR_CORE_GLYPH_NAMES\s*=\s*\[([\s\S]*?)\]\s*as const;/,
+  );
+  if (!block) throw new Error("Could not find FAMILIAR_CORE_GLYPH_NAMES in familiar-glyph.ts");
   const names = [...block[1].matchAll(/"ph:([^"]+)"/g)].map((m) => m[1]);
   return [...new Set(names)].sort();
 }
@@ -114,23 +126,48 @@ export function serializeSubset(subset) {
 /** Full pipeline: read icon.tsx + Phosphor, return both subsets. */
 export function generate() {
   const iconTsx = readFileSync(ICON_TSX_URL, "utf8");
+  const familiarGlyphTs = readFileSync(FAMILIAR_GLYPH_TS_URL, "utf8");
   const names = usedIconNames(iconTsx);
+  const familiarCoreNames = familiarCoreGlyphNames(familiarGlyphTs);
   const collection = loadPhosphorCollection();
   const { subset, missing } = buildSubset(collection, names);
+  const { subset: familiarCore, missing: missingFamiliarCore } = buildSubset(
+    collection,
+    familiarCoreNames,
+  );
   const glyphs = buildGlyphSubset(collection);
-  return { subset, missing, names, glyphs };
+  return {
+    subset,
+    missing,
+    names,
+    glyphs,
+    familiarCore,
+    familiarCoreNames,
+    missingFamiliarCore,
+  };
 }
 
-// CLI entry — write both files (and hard-fail on unknown icon names).
+// CLI entry — write all generated collections (and hard-fail on unknown names).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { subset, missing, names, glyphs } = generate();
-  if (missing.length) {
-    console.error(`✗ ${missing.length} icon name(s) not found in Phosphor: ${missing.join(", ")}`);
+  const {
+    subset,
+    missing,
+    names,
+    glyphs,
+    familiarCore,
+    familiarCoreNames,
+    missingFamiliarCore,
+  } = generate();
+  const allMissing = [...missing, ...missingFamiliarCore];
+  if (allMissing.length) {
+    console.error(`✗ ${allMissing.length} icon name(s) not found in Phosphor: ${allMissing.join(", ")}`);
     process.exit(1);
   }
   writeFileSync(SUBSET_URL, serializeSubset(subset));
   writeFileSync(GLYPH_URL, serializeSubset(glyphs));
+  writeFileSync(FAMILIAR_CORE_URL, serializeSubset(familiarCore));
   const kb = (s) => (Buffer.byteLength(serializeSubset(s)) / 1024).toFixed(1);
   console.log(`✓ ph-icons-subset.json:  ${names.length} chrome icons, ${kb(subset)} KB`);
+  console.log(`✓ ph-familiar-core.json: ${familiarCoreNames.length} startup glyphs, ${kb(familiarCore)} KB`);
   console.log(`✓ ph-glyph-catalog.json: ${Object.keys(glyphs.icons).length} picker glyphs, ${kb(glyphs)} KB`);
 }

@@ -96,3 +96,33 @@ export function issueContentionKey(repo: string, number?: number | null): string
   const n = Number.isFinite(number) && number ? Math.trunc(number as number) : 0;
   return `${repo.trim().toLowerCase()}#${n}`;
 }
+
+// ── User-named branch worktrees (chat composer's "New worktree…") ────────────
+
+/**
+ * Strict allow-list for a user-typed branch name that will reach a git argv.
+ * Deliberately tighter than git-check-ref-format: alphanumeric head, then
+ * `[A-Za-z0-9._/-]`, no `..`, no `//`, no `.lock`/`/`/`.` endings, no dot-led
+ * or `.lock`-tailed path segments. Rejecting a leading `-` is what makes the
+ * name safe to pass as a positional git argument (never parsed as an option).
+ */
+export function isSafeBranchName(name: string): boolean {
+  if (!name || name.length > 120) return false;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name)) return false;
+  if (name.includes("..") || name.includes("//")) return false;
+  if (name.endsWith("/") || name.endsWith(".") || name.endsWith(".lock")) return false;
+  const segments = name.split("/");
+  return segments.every(
+    (seg) => seg !== "" && !seg.startsWith(".") && !seg.endsWith(".lock"),
+  );
+}
+
+/**
+ * Repo-relative worktree directory for a user-named branch, mirroring the
+ * repository convention (`feat/chat-x` → `.worktrees/feat-chat-x`). Callers
+ * must validate with `isSafeBranchName` first; the slash flattening keeps the
+ * checkout a single directory level under `.worktrees/`.
+ */
+export function branchWorktreeDir(branch: string): string {
+  return `.worktrees/${branch.replace(/\//g, "-")}`;
+}

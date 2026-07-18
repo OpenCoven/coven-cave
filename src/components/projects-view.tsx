@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 // The Projects hub's styling (every `projects-hub`/`projects-list-row`/
@@ -9,6 +11,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import "@/styles/projects.css";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { deriveProjectStatus } from "@/lib/project-status";
@@ -56,11 +59,12 @@ type ProjectsViewProps = {
   familiars?: Familiar[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** When set, only projects this familiar has been granted are shown. */
   activeFamiliarId?: string | null;
 };
 
-export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, onSessionsDeleted, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
   // Mutations that only show visually (create, undo) get announced here; move
@@ -83,6 +87,24 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   // never surprisingly hidden). It only narrows the list; it never reorders it,
   // so the alphabetical order stays stable.
   const [statusFilter, setStatusFilter] = useState<"all" | "active">("all");
+  // List order: alphabetical (stable, scannable) or most-recently-active first
+  // (find what you were just working on). Persisted per machine.
+  const [sortMode, setSortMode] = useState<"az" | "recent">(() => {
+    if (typeof window === "undefined") return "az";
+    try {
+      return window.localStorage.getItem("cave:projects:sort") === "recent" ? "recent" : "az";
+    } catch {
+      return "az";
+    }
+  });
+  const changeSortMode = (mode: "az" | "recent") => {
+    setSortMode(mode);
+    try {
+      window.localStorage.setItem("cave:projects:sort", mode);
+    } catch {
+      /* private mode — sort stays session-only */
+    }
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -175,10 +197,18 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   // refetch on window refocus (throttled) — never per selection switch. The
   // Tasks section filters client-side by projectId/cwd.
   const [boardCards, setBoardCards] = useState<Card[]>([]);
+  // Abort the in-flight load per refetch (mount + every refocus): overlapping
+  // loads could land out of order and show stale board cards, and an unmount
+  // mid-flight leaked the setState (cave-psp8; mirrors useProjects.load).
+  const boardAbortRef = useRef<AbortController | null>(null);
   const loadBoardCards = async () => {
+    boardAbortRef.current?.abort();
+    const controller = new AbortController();
+    boardAbortRef.current = controller;
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
+      const res = await fetch("/api/board", { cache: "no-store", signal: controller.signal });
       const json = await res.json();
+      if (controller.signal.aborted) return;
       if (json?.ok && Array.isArray(json.cards)) setBoardCards(json.cards as Card[]);
     } catch {
       /* transient — the Tasks section keeps the last known cards */
@@ -186,6 +216,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
   useEffect(() => {
     void loadBoardCards();
+    return () => boardAbortRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useRefreshOnFocus(loadBoardCards);
@@ -225,20 +256,29 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     return byRoot;
   }, [sessions, projectOverrides, order, deletePending]);
 
-  // Keep projects stable and scannable: alphabetical by project name/root.
-  // Session rows inside the detail pane keep their own manual/recency ordering.
-  const sortedProjects = useMemo(() => {
-    return sortProjectsAlphabetically(projects);
-  }, [projects]);
-
-  // Resolve the selection each render: the stored id when it still exists,
-  // otherwise the most recently active project (then the first). Deleting the
-  // selected project or a familiar-scope change re-runs this automatically.
   const lastActiveByRootKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const [root, list] of chatsByRoot) map.set(root, lastActiveMs(list));
     return map;
   }, [chatsByRoot]);
+
+  // List order per the sort toggle: alphabetical (stable, scannable) or by
+  // last session activity, newest first (alphabetical tiebreak so idle
+  // projects don't shuffle). Session rows inside the detail pane keep their
+  // own manual/recency ordering either way.
+  const sortedProjects = useMemo(() => {
+    const az = sortProjectsAlphabetically(projects);
+    if (sortMode === "az") return az;
+    return [...az].sort(
+      (a, b) =>
+        (lastActiveByRootKey.get(normalizeProjectRoot(b.root)) ?? 0) -
+        (lastActiveByRootKey.get(normalizeProjectRoot(a.root)) ?? 0),
+    );
+  }, [projects, sortMode, lastActiveByRootKey]);
+
+  // Resolve the selection each render: the stored id when it still exists,
+  // otherwise the most recently active project (then the first). Deleting the
+  // selected project or a familiar-scope change re-runs this automatically.
   const selectedProjectId = useMemo(
     () =>
       resolveSelectedProjectId(
@@ -388,7 +428,8 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
 
   // Delete one chat, mirroring the Chats list delete (DELETE
-  // /api/chat/conversation/:id). Returns whether it succeeded; callers refetch.
+  // /api/chat/conversation/:id). Returns whether it succeeded; callers report
+  // confirmed ids to the Workspace-owned deletion boundary.
   const deleteOneSession = async (sessionId: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
@@ -404,15 +445,15 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     }
   };
 
-  // Delete a single chat from the detail pane, then ask the parent to refetch
-  // sessions so the row disappears everywhere.
+  // Delete a single chat from the detail pane, then report it so Workspace
+  // removes the row from every shared-session surface before reloading.
   const handleDeleteSession = async (sessionId: string) => {
     setSessionError(null);
-    if (await deleteOneSession(sessionId)) onSessionsChanged?.();
+    if (await deleteOneSession(sessionId)) onSessionsDeleted([sessionId]);
   };
 
   // Bulk-delete the chats selected in the detail pane — deferred + undoable:
-  // hide them now, fire the DELETEs only after the undo window, refetch once.
+  // hide them now, then report only confirmed ids after the undo window.
   const handleDeleteSessions = async (sessionIds: string[]) => {
     setSessionError(null);
     if (sessionIds.length === 0) return;
@@ -425,7 +466,8 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
       async () => {
         const results = await Promise.all(removed.map((s) => deleteOneSession(s.id)));
-        if (results.some(Boolean)) onSessionsChanged?.();
+        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
+        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
       },
     );
   };
@@ -450,10 +492,10 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
+    <div className="projects-view flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
+      <header className="projects-toolbar shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
+        <div className="projects-toolbar__row flex items-center justify-between gap-3">
+          <div className="projects-toolbar__controls flex min-w-0 items-center gap-2.5">
             <span className="shrink-0 text-[12px] text-[var(--text-muted)]">
               {query.trim() && visibleProjects.length !== projects.length ? (
                 `${visibleProjects.length} of ${projects.length} projects`
@@ -497,8 +539,36 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 ))}
               </div>
             ) : null}
+            {projects.length > 1 ? (
+              <div
+                role="group"
+                aria-label="Sort projects"
+                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
+              >
+                {([
+                  { value: "az", label: "A–Z", help: "Alphabetical" },
+                  { value: "recent", label: "Recent", help: "Most recently active first" },
+                ] as const).map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => changeSortMode(opt.value)}
+                    aria-pressed={sortMode === opt.value}
+                    title={opt.help}
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                      sortMode === opt.value
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="projects-toolbar__actions flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
@@ -564,7 +634,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           }}
           className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-4 py-3 sm:px-6"
         >
-          <div className="grid gap-2 lg:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
+          <div className="grid gap-2 @min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
             <input
               autoFocus
               value={nameDraft}

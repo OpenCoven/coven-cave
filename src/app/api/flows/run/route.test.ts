@@ -5,8 +5,6 @@ import { readFile } from "node:fs/promises";
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const executor = await readFile(new URL("../../../../lib/server/flow-executor.ts", import.meta.url), "utf8");
 const flows = await readFile(new URL("../../../../lib/flows.ts", import.meta.url), "utf8");
-const view = await readFile(new URL("../../../../components/flow/flow-view.tsx", import.meta.url), "utf8");
-const detail = await readFile(new URL("../../../../components/flow/node-detail-view.tsx", import.meta.url), "utf8");
 
 assert.match(route, /type RunBody = \{[^}]*targetNodeId\?: string \| null/s, "run route accepts a target node id");
 assert.match(route, /flowSnapshot\?: FlowDoc \| null/, "run route accepts an original workflow snapshot for retry");
@@ -31,14 +29,8 @@ assert.match(flows, /mode\?: FlowExecutionMode/, "FlowRunRecord should store the
 assert.match(flows, /customData\?: Record<string, string>/, "FlowRunRecord should store saved custom execution data");
 assert.match(flows, /redacted\?: boolean/, "FlowRunRecord should mark executions whose node data was not saved");
 
-assert.match(view, /const executeNode = useCallback/, "FlowView wires selected-node execution");
-assert.match(view, /runFlow\(runDoc\.id, nodeId, flowSnapshot\)/, "selected-node execution posts the target node id and optional retry snapshot");
-assert.match(view, /mode: "manual"/, "local preview records should preserve manual execution mode");
-assert.match(view, /redacted: flowRunRedactsData\(runDoc, "manual"\) \|\| undefined/, "local preview records should preserve manual redaction policy");
-assert.match(view, /finalizeFlowSteps\(activeRun\.steps, progress\.steps, \{ redactDetails: activeRun\.redacted \}\)/, "completed runs should omit stored step details when redacted");
-assert.match(view, /onExecuteNode=\{\(\) => void executeNode\(selectedNode\.id\)\}/, "NDV receives execute-node action");
-
-assert.match(detail, /onExecuteNode: \(\) => void/, "NDV exposes execute-step callback");
-assert.match(detail, /Execute step/, "NDV renders n8n-style Execute step action");
+// (FlowView/NDV client pins left with the retired components — cave-c3yt.
+// The route/executor/flows-lib contracts above are the live surface: the
+// flow engine still powers /api/flows + webhooks.)
 
 console.log("flows run route.test.ts: ok");

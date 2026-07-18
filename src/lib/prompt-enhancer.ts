@@ -70,6 +70,101 @@ function normalizeContext(context: unknown): PromptEnhanceContext {
   return typeof context === "object" && context !== null ? (context as PromptEnhanceContext) : {};
 }
 
+// ── Model-backed enhancement (cave-b6c2) ─────────────────────────────────────
+// The rule engine below remains the instant offline/failure fallback; the
+// premium path streams a real rewrite from the user's familiar. These helpers
+// are pure so both the hook and tests can exercise the protocol directly.
+
+export type EnhanceIntent = "auto" | "clarify" | "expand" | "specific" | "shorten" | "criteria";
+
+export const ENHANCE_INTENTS: { id: EnhanceIntent; label: string; goal: string }[] = [
+  { id: "auto", label: "Smart enhance", goal: "Improve the prompt however helps most: sharpen the ask, add the missing specifics, and structure the expected output." },
+  { id: "clarify", label: "Clarify", goal: "Remove ambiguity: make the ask, scope, and success criteria unmistakable without adding new work." },
+  { id: "expand", label: "Expand", goal: "Broaden a thin draft into a complete brief: fill in the implied requirements, context, and output expectations." },
+  { id: "specific", label: "Make specific", goal: "Replace vague language with concrete names, quantities, file paths, and observable outcomes." },
+  { id: "shorten", label: "Shorten", goal: "Compress to the essential ask: keep every constraint, drop every redundancy. Aim for half the length." },
+  { id: "criteria", label: "Add acceptance criteria", goal: "Keep the draft's body, then append a short 'Acceptance criteria' list of 3-5 observable checks that prove completion." },
+];
+
+const MODE_EXPECTATION: Record<PromptEnhanceMode, string> = {
+  chat: "General request: favor a clear question or directive plus the expected output shape.",
+  code: "Code request: favor root-cause framing, smallest-change expectations, conventions, tests, and a verification summary.",
+  image: "Image request: favor composition, lighting, style, color palette, and output constraints.",
+  research: "Research request: favor primary questions, method, sources/confidence, and an executive-summary-first output format.",
+  task: "Task request: favor a title, outcome, acceptance criteria, ordered subtasks, and verification.",
+};
+
+/** The meta-prompt sent to the familiar. The model rewrites the draft — it
+ *  must never ANSWER it — and returns only the rewrite inside <enhanced> tags
+ *  so streaming extraction has an unambiguous frame. */
+export function buildEnhanceInstruction({
+  draft,
+  mode,
+  intent,
+  context,
+}: {
+  draft: string;
+  mode: PromptEnhanceMode;
+  intent: EnhanceIntent;
+  context?: unknown;
+}): string {
+  const goal = (ENHANCE_INTENTS.find((i) => i.id === intent) ?? ENHANCE_INTENTS[0]).goal;
+  const ctx = contextLines(normalizeContext(context));
+  return [
+    "You are a prompt engineer. Rewrite the user's draft prompt into a stronger prompt.",
+    `Goal: ${goal}`,
+    MODE_EXPECTATION[mode],
+    "Rules: preserve the user's objective, tone, and every explicit constraint. Do not answer the prompt, do not invent new work, do not address the user.",
+    ctx.length ? `Context available to the final assistant:\n- ${ctx.join("\n- ")}` : "",
+    "Return ONLY the rewritten prompt wrapped exactly in <enhanced></enhanced> tags — no preamble, no commentary.",
+    "",
+    "Draft prompt:",
+    "```",
+    draft,
+    "```",
+  ].filter(Boolean).join("\n");
+}
+
+/** Streaming-safe extraction of the rewrite. While the stream is mid-flight
+ *  the text may hold an unopened/unclosed tag or a trailing partial fragment
+ *  of `</enhanced` — trim those so the preview never flashes tag noise. A
+ *  finished stream with no tags at all falls back to the whole trimmed text
+ *  (models occasionally ignore wrapping) minus stray code fences. */
+export function extractEnhancedPrompt(text: string): { partial: string; complete: boolean } {
+  const OPEN = "<enhanced>";
+  const CLOSE = "</enhanced>";
+  const open = text.indexOf(OPEN);
+  if (open >= 0) {
+    const start = open + OPEN.length;
+    const close = text.indexOf(CLOSE, start);
+    if (close >= 0) return { partial: text.slice(start, close).trim(), complete: true };
+    // Mid-stream: trim a trailing partial of the closing tag (longest suffix
+    // of the body that is a prefix of "</enhanced>") so it never renders.
+    let body = text.slice(start);
+    for (let n = Math.min(CLOSE.length - 1, body.length); n > 0; n -= 1) {
+      if (body.endsWith(CLOSE.slice(0, n))) {
+        body = body.slice(0, body.length - n);
+        break;
+      }
+    }
+    return { partial: body.trimStart(), complete: false };
+  }
+  // No opening tag yet. If everything so far could still become the tag
+  // (a prefix of it, ignoring leading whitespace), show nothing.
+  const lead = text.trimStart();
+  if (lead.length < OPEN.length && OPEN.startsWith(lead)) return { partial: "", complete: false };
+  // A tagless stream is usable as-is once trimmed of stray code fences —
+  // models occasionally ignore the wrapping instruction.
+  const cleaned = lead.trim().replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+  return { partial: cleaned, complete: false };
+}
+
+/** The race rule: if the draft changed while the rewrite streamed, never
+ *  overwrite — surface the result as a suggestion instead. */
+export function settleEnhance(baseDraft: string, currentDraft: string): "apply" | "suggest" {
+  return baseDraft === currentDraft ? "apply" : "suggest";
+}
+
 export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhanceResult {
   const mode = normalizeEnhanceMode(input.mode);
   const draft = cleanDraft(input.draft);

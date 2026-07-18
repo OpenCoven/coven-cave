@@ -53,4 +53,12 @@ assert.match(
 // Balanced style keeps the list visible on iPad.
 assert.match(src, /\.navigationSplitViewStyle\(\.balanced\)/, "should use the balanced split style");
 
+// cave-bgmg: wide-but-compact windows (non-Max iPhone landscape) promote to a
+// regular size class so the splits engage instead of one sparse full-width
+// column; narrow windows keep the inherited class untouched.
+const appRoot = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
+assert.match(appRoot, /struct WideSplitEnabler<Content: View>: View/, "the app root defines the wide-window size-class promoter");
+assert.match(appRoot, /geo\.size\.width >= 700 \? \.regular : inherited/, "≥700pt promotes to regular; narrower keeps the inherited class");
+assert.match(appRoot, /WideSplitEnabler \{\s*\n\s*RootView\(\)/, "RootView rides inside the promoter so every tab's split engages");
+
 console.log("ios-ipad-split-chats: OK");

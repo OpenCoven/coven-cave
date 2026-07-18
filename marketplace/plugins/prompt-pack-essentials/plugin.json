@@ -35,6 +35,7 @@
     }
   },
   "prompts": [
+    "explain-code",
     "debug-this",
     "write-tests",
     "refactor-safely",

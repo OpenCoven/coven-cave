@@ -4,10 +4,12 @@ import { test } from "node:test";
 import {
   parseSemver,
   compareSemver,
+  classifyFallbackReleaseCheck,
   isUpdateAvailable,
   resolveDownloadUrls,
   downloadTargetFor,
   pickDownloadUrl,
+  resolveFallbackAfterNative,
 } from "./app-update.ts";
 
 // Mirrors a real release's asset list (see releases/v0.0.114).
@@ -51,6 +53,56 @@ test("isUpdateAvailable is true only when latest is strictly newer", () => {
   assert.equal(isUpdateAvailable("0.0.80", "0.0.80"), false);
   assert.equal(isUpdateAvailable("0.0.79", "0.0.80"), false);
   assert.equal(isUpdateAvailable("garbage", "0.0.80"), false);
+});
+
+test("a HTTP-200 GitHub error body is unavailable, never confirmed current", () => {
+  const result = classifyFallbackReleaseCheck(true, {
+    current: "0.0.180",
+    latest: null,
+    available: false,
+    url: "https://github.com/OpenCoven/coven-cave/releases/latest",
+    checkedAt: "2026-07-12T12:00:00.000Z",
+    error: "github 503",
+  });
+  assert.deepEqual(result, { kind: "unavailable", message: "github 503" });
+});
+
+test("a complete successful fallback check can confirm current or availability", () => {
+  const current = classifyFallbackReleaseCheck(true, {
+    current: "0.0.180",
+    latest: "0.0.180",
+    available: false,
+    url: "https://github.com/OpenCoven/coven-cave/releases/latest",
+    checkedAt: "2026-07-12T12:00:00.000Z",
+  });
+  const available = classifyFallbackReleaseCheck(true, {
+    current: "0.0.180",
+    latest: "0.0.181",
+    available: true,
+    url: "https://github.com/OpenCoven/coven-cave/releases/latest",
+    checkedAt: "2026-07-12T12:00:00.000Z",
+  });
+  assert.equal(current.kind, "current");
+  assert.equal(available.kind, "available");
+});
+
+test("native updater failure plus fallback failure remains unavailable", () => {
+  const result = resolveFallbackAfterNative("signature manifest unavailable", {
+    kind: "unavailable",
+    message: "github 503",
+  });
+  assert.equal(result.kind, "unavailable");
+  assert.match(result.message, /signature manifest unavailable/);
+  assert.match(result.message, /github 503/);
+});
+
+test("a fallback timeout remains unavailable and offers no false currency", () => {
+  const result = resolveFallbackAfterNative(null, {
+    kind: "unavailable",
+    message: "release check could not be reached: timeout",
+  });
+  assert.equal(result.kind, "unavailable");
+  assert.match(result.message, /timeout/);
 });
 
 test("resolveDownloadUrls picks the end-user installer per platform, skips updater + .sig artifacts", () => {

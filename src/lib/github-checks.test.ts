@@ -92,3 +92,47 @@ assert.equal(summarizeChecks([], undefined), null, "no checks + undefined status
 assert.equal(summarizeChecks([], "unknown_state"), null, "unrecognized combined state → null");
 
 console.log("github-checks.test.ts OK");
+
+// ── countChecks (chat GitHub card strip, cave-fpqx.7) ────────────────────────
+
+{
+  const { countChecks } = await import("./github-checks.ts");
+
+  assert.deepEqual(
+    countChecks([
+      { status: "completed", conclusion: "success" },
+      { status: "completed", conclusion: "failure" },
+      { status: "completed", conclusion: "timed_out" },
+      { status: "in_progress", conclusion: null },
+      { status: "queued", conclusion: null },
+    ]),
+    { passed: 1, failed: 2, pending: 2, total: 5 },
+    "buckets: success passes, FAIL_CONCLUSIONS fail, non-completed pend",
+  );
+
+  assert.deepEqual(
+    countChecks([
+      { status: "completed", conclusion: "neutral" },
+      { status: "completed", conclusion: "skipped" },
+      { status: "completed", conclusion: "cancelled" },
+      { status: "completed", conclusion: "stale" },
+    ]),
+    { passed: 4, failed: 0, pending: 0, total: 4 },
+    "non-blocking conclusions count as passed, mirroring summarizeChecks",
+  );
+
+  assert.deepEqual(countChecks([]), { passed: 0, failed: 0, pending: 0, total: 0 }, "empty → zeroed counts");
+}
+
+console.log("github-checks: ok");
+
+// isFailConclusion is the shared single source for fail semantics.
+{
+  const { isFailConclusion } = await import("./github-checks.ts");
+  for (const c of ["failure", "timed_out", "action_required", "startup_failure"]) {
+    assert.equal(isFailConclusion(c), true, c);
+  }
+  for (const c of ["success", "neutral", "skipped", "cancelled", "stale", null, undefined, ""]) {
+    assert.equal(isFailConclusion(c), false, String(c));
+  }
+}

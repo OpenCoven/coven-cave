@@ -13,7 +13,7 @@ const { appendVoiceOriginTurn } = await import("./append-voice-turn.ts");
 const SESSION_ID = "sess-app";
 
 function seedConv() {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, `${SESSION_ID}.json`),
@@ -31,7 +31,7 @@ function seedConv() {
 }
 
 function readConv() {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   return JSON.parse(readFileSync(join(dir, `${SESSION_ID}.json`), "utf8"));
 }
 
@@ -77,6 +77,6 @@ test("does nothing when session file is missing (matches appendTurn behavior)", 
     text: "x",
     createdAt: "2026-06-09T12:00:00Z",
   });
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   assert.equal(existsSync(join(dir, "no-such-session.json")), false);
 });

@@ -30,6 +30,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/skills", hint: "browse skills", description: "Show every available skill to pick from.", section: "chat" },
   { name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt", description: "Drop a starter prompt into the composer for editing.", argPlaceholder: "name", section: "chat" },
   { name: "/prompts", hint: "browse prompts", description: "Show every prompt template to pick from.", section: "chat" },
+  { name: "/save", aliases: ["/link"], hint: "save links", description: "Save one or more links to the Research desk, auto-organized by kind.", argPlaceholder: "url…", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },
@@ -46,7 +47,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline in chat.", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
-  { name: "/schedules", hint: "Schedules", description: "Open Schedules.", section: "view" },
+  { name: "/rituals", hint: "Rituals", description: "Open Rituals — calendar and scheduled jobs.", section: "view" },
   { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
   { name: "/projects", hint: "Projects", description: "Open the project browser and file preview view.", section: "view" },

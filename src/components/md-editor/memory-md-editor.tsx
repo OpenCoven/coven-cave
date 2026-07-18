@@ -11,30 +11,101 @@
  * / merge) and re-baselines the expected mtime so the chosen resolution can
  * land — while still guarding against writes that happen after the 409.
  *
+ * Live-follow (agents write these files while they're open): a light
+ * `?stat=1` poll watches the file's mtime while the tab is visible.
+ *   - Doc CLEAN  → the view re-fetches and follows the disk version live.
+ *   - Doc DIRTY  → the draft is never clobbered; a banner offers an explicit
+ *     "Reload from disk" (and the 409 conflict panel still guards saves).
+ *
  * Reused by the memory reader's edit mode and the Grimoire surface.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+
+/** How often the open document checks the disk for agent writes. */
+export const LIVE_FOLLOW_INTERVAL_MS = 5000;
 
 export function MemoryMdEditor({
   path,
   sourceLabel,
   onCancel,
   onSaved,
+  onDirtyChange,
 }: {
   path: string;
   sourceLabel?: string;
   onCancel?: () => void;
   /** Called after each successful save with the saved text. */
   onSaved?: (text: string) => void;
+  /** Forwarded to the inner editor (unsaved-edits indicator). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const { text, error, loading, mtimeMs } = useMemoryFile(path, { reveal: true });
+  // Bumping the token re-fetches (and re-mounts) the editor with disk state.
+  const [refreshToken, setRefreshToken] = useState(0);
+  const { text, error, loading, mtimeMs } = useMemoryFile(path, { reveal: true, refreshToken });
   const mtimeRef = useRef<number | null>(null);
   if (mtimeMs !== null && mtimeRef.current === null) mtimeRef.current = mtimeMs;
+
+  // Dirty tracking mirrors the editor: baseline = last loaded/saved text.
+  const baselineRef = useRef<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  if (text !== null && baselineRef.current === null) {
+    baselineRef.current = text;
+    draftRef.current = text;
+  }
+  const [diskChanged, setDiskChanged] = useState(false);
+
+  const reloadFromDisk = useCallback(() => {
+    mtimeRef.current = null;
+    baselineRef.current = null;
+    draftRef.current = null;
+    setDiskChanged(false);
+    setRefreshToken((n) => n + 1);
+  }, []);
+
+  // Live-follow poll: visibility-aware mtime watch. Clean docs follow the
+  // disk automatically; dirty docs surface the banner instead.
+  useEffect(() => {
+    let cancelled = false;
+    let checking = false;
+    const check = async () => {
+      if (cancelled || checking || typeof document === "undefined" || document.hidden) return;
+      if (mtimeRef.current === null) return; // nothing loaded yet
+      checking = true;
+      try {
+        const res = await fetch(
+          `/api/memory/file?path=${encodeURIComponent(path)}&stat=1`,
+          { cache: "no-store" },
+        );
+        const json = await res.json();
+        if (cancelled || !json.ok || typeof json.mtimeMs !== "number") return;
+        if (Math.floor(json.mtimeMs) === Math.floor(mtimeRef.current ?? 0)) return;
+        const dirty =
+          draftRef.current !== null &&
+          baselineRef.current !== null &&
+          draftRef.current !== baselineRef.current;
+        if (dirty) {
+          setDiskChanged(true);
+        } else {
+          reloadFromDisk();
+        }
+      } catch {
+        /* transient poll failure — next tick retries */
+      } finally {
+        checking = false;
+      }
+    };
+    const timer = window.setInterval(() => void check(), LIVE_FOLLOW_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [path, reloadFromDisk]);
 
   const save = useCallback(
     async (raw: string): Promise<MdEditorSaveResult> => {
@@ -66,6 +137,9 @@ export function MemoryMdEditor({
           return { ok: false, error: json.error ?? "Save failed" };
         }
         if (typeof json.mtimeMs === "number") mtimeRef.current = json.mtimeMs;
+        baselineRef.current = raw;
+        draftRef.current = raw;
+        setDiskChanged(false);
         onSaved?.(raw);
         return { ok: true };
       } catch (err) {
@@ -88,12 +162,47 @@ export function MemoryMdEditor({
     );
   }
   return (
-    <MdEditor
-      key={path}
-      value={text}
-      sourceLabel={sourceLabel}
-      onSave={save}
-      onCancel={onCancel}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {diskChanged ? (
+        <div
+          role="status"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-1.5 text-[11px] text-[var(--text-primary)]"
+        >
+          <Icon name="ph:warning-circle" width={12} aria-hidden />
+          <span className="min-w-0 flex-1">
+            This file changed on disk while you were editing — an agent may have written it.
+          </span>
+          <button
+            type="button"
+            onClick={reloadFromDisk}
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" width={10} aria-hidden />
+            Reload from disk
+          </button>
+          <button
+            type="button"
+            onClick={() => setDiskChanged(false)}
+            aria-label="Dismiss and keep editing"
+            className="focus-ring inline-flex h-6 items-center rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            Keep editing
+          </button>
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">
+        <MdEditor
+          key={`${path}:${refreshToken}`}
+          value={text}
+          sourceLabel={sourceLabel}
+          onSave={save}
+          onCancel={onCancel}
+          onDirtyChange={onDirtyChange}
+          onChange={(raw) => {
+            draftRef.current = raw;
+          }}
+        />
+      </div>
+    </div>
   );
 }

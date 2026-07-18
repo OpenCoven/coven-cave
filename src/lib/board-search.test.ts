@@ -14,7 +14,7 @@ const card = {
   priority: "medium",
   familiarId: "cody",
   sessionId: "session-1",
-  cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  cwd: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   projectId: "coven-cave",
   links: ["https://github.com/OpenCoven/coven-cave/pull/153"],
   github: [{
@@ -73,13 +73,29 @@ assert.match(boardApi, /links\?: string\[\]/, "Create API should accept task lin
 assert.match(boardApi, /cwd\?: string \| null/, "Create API should accept task cwd");
 assert.match(boardApi, /projectId\?: string \| null/, "Create API should accept task projectId");
 
+// cave-pw83: a card's cwd is derived server-side from its assigned project, never
+// trusted from the client body (a mismatched cwd would poison board search/display).
+const projectsLib = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
+assert.match(projectsLib, /export async function trustedProjectCwd/, "cave-projects exposes a server-trusted cwd resolver");
+assert.match(boardApi, /trustedProjectCwd\(body\.projectId\)/, "Create API resolves the assigned project's cwd server-side");
+assert.match(boardApi, /cwd = resolved\.root/, "Create API stores the server-resolved project root as cwd, not the client's");
+
+const boardIdApi = await readFile(new URL("../app/api/board/[id]/route.ts", import.meta.url), "utf8");
+assert.match(boardIdApi, /trustedProjectCwd\(body\.projectId\)/, "PATCH API derives cwd when a project is (re)assigned");
+assert.match(
+  boardIdApi,
+  /body\.cwd !== undefined && body\.projectId === undefined[\s\S]*?trustedProjectCwd\(current\.projectId\)/,
+  "PATCH API re-derives cwd from the card's current project when cwd changes alone (no client override)",
+);
+
 const boardView = await readFile(new URL("../components/board-view.tsx", import.meta.url), "utf8");
 assert.match(boardView, /board-search-input/, "Tasks header should expose one search input");
 assert.doesNotMatch(boardView, /label="Labels"/, "Tasks header should not show Labels as a separate filter control");
 assert.doesNotMatch(boardView, /allLabels/, "Tasks view should not build a dedicated labels filter row");
 
 const newCardModal = await readFile(new URL("../components/new-card-modal.tsx", import.meta.url), "utf8");
-assert.match(newCardModal, /label="CWD"/, "New task modal should include cwd");
+assert.doesNotMatch(newCardModal, /label="CWD"/, "New task modal should not expose a raw cwd field — the project picker drives cwd");
+assert.match(newCardModal, /cwd: selectedProject\?\.root \?\? null/, "New task modal derives cwd from the selected project");
 assert.match(newCardModal, /label="Links"/, "New task modal should include links");
 assert.match(newCardModal, /label="Session \(optional\)"/, "New task modal should mark session optional");
 

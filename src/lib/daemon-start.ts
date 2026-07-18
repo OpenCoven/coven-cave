@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenBin } from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
+import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 export type DaemonStartResult =
   | { ok: true; alreadyRunning: true }
@@ -28,7 +29,10 @@ export async function startLocalDaemon({
     const child = spawn(covenBin(), ["daemon", "start"], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
-      env: covenSpawnEnv(),
+      // The daemon must never hold scoped vault secrets: daemon-launched
+      // sessions would inherit them wholesale. Scoped keys flow only through
+      // Cave's own per-familiar spawn path (cave-4nu6).
+      env: harnessSpawnEnv(),
       shell: process.platform === "win32",
     });
 

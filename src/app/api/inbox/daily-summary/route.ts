@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  loadInbox,
-  saveInbox,
   withInboxLock,
   type InboxItem,
 } from "@/lib/cave-inbox";
@@ -16,6 +14,7 @@ import { completedCardsForDay, unionMergedPrs } from "@/lib/daily-report-facts";
 import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
 import { loadBoard } from "@/lib/cave-board";
 import type { SessionRow } from "@/lib/types";
+import { extractNextPaths } from "@/lib/next-paths";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +34,12 @@ function sanitizeNarrative(
   if (!input) return null;
   if (typeof input.text !== "string" || typeof input.familiarId !== "string") return null;
   if (typeof input.factsHash !== "string" || !input.factsHash) return null;
+  // The narrative rides the chat pipeline, which appends a `<coven:next-paths>`
+  // suggestions block; the report has no chip row, so never persist the block.
   // eslint-disable-next-line no-control-regex
-  const text = input.text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  const text = extractNextPaths(input.text)
+    .visible.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim();
   if (!text) return null;
   return {
     text: text.slice(0, NARRATIVE_MAX_STORED_CHARS),
@@ -91,8 +94,8 @@ export async function POST(req: Request) {
     cardsCompleted: board ? completedCardsForDay(board.cards, now) : undefined,
   };
 
-  const result = await withInboxLock(async () => {
-    const file = await loadInbox();
+  const result = await withInboxLock(async ({ load, save }) => {
+    const file = await load();
     const draft = buildDailySummaryContent({
       items: file.items,
       sessions,
@@ -119,7 +122,7 @@ export async function POST(req: Request) {
         updatedAt: now.toISOString(),
       };
       file.items = file.items.map((item) => (item.id === existing.id ? refreshed : item));
-      await saveInbox(file);
+      await save(file);
       return { item: refreshed, created: false };
     }
 
@@ -143,7 +146,7 @@ export async function POST(req: Request) {
       auto: draft.auto,
     };
     file.items.push(next);
-    await saveInbox(file);
+    await save(file);
     return { item: next, created: true };
   });
 

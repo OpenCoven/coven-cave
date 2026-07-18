@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildPreviewSrcDoc,
+  buildArtifactRepairPrompt,
   buildRefinePrompt,
   buildSketchPrompt,
   clampArtifactCode,
@@ -12,6 +13,7 @@ import {
   MAX_ARTIFACT_CODE_CHARS,
   sanitizeArtifacts,
   STARTER_ARTIFACT_HTML,
+  STARTER_ARTIFACT_REACT,
   titleFromPrompt,
 } from "./canvas-artifacts.ts";
 
@@ -74,6 +76,13 @@ assert.match(refine, /<!doctype html><html><\/html>/, "refine prompt embeds the 
 assert.match(refine, /FULL updated document/, "refine asks for the full document, not a diff");
 
 assert.match(STARTER_ARTIFACT_HTML, /^<!doctype html>/i, "starter template is a full document");
+assert.match(STARTER_ARTIFACT_REACT, /export default function App/, "React starter is a complete default-exported component");
+
+const repair = buildArtifactRepairPrompt("a responsive dashboard");
+assert.match(repair, /a responsive dashboard/, "repair carries the original intent");
+assert.match(repair, /one complete `html` or `tsx` fenced artifact/, "repair requests exactly one supported artifact");
+assert.doesNotMatch(repair, /previous response[\s\S]*```/, "repair does not echo an arbitrarily large malformed response");
+assert.match(buildArtifactRepairPrompt("add a button", "react"), /one complete `tsx` fenced artifact/);
 
 // ── sanitizeArtifacts: trust boundary for disk + request bodies ────────────
 
@@ -91,6 +100,49 @@ assert.equal(
   "build a thing",
   "a missing title is derived from the prompt",
 );
+
+// ── sanitizeArtifact hardening (cave-byr5) ──────────────────────────────────
+
+import { MAX_ARTIFACT_PROMPT_CHARS } from "./canvas-artifacts.ts";
+
+{
+  const [longPrompt] = sanitizeArtifacts([{ id: "p", prompt: "x".repeat(MAX_ARTIFACT_PROMPT_CHARS + 500) }]);
+  assert.equal(
+    longPrompt.prompt.length,
+    MAX_ARTIFACT_PROMPT_CHARS,
+    "an unbounded prompt is clamped — it rides every store read and card tooltip",
+  );
+
+  assert.equal(
+    sanitizeArtifacts([{ id: "i".repeat(300), prompt: "p" }]).length,
+    0,
+    "an absurdly long id is rejected outright (truncating could collide)",
+  );
+
+  const [badDates] = sanitizeArtifacts([
+    { id: "d", prompt: "p", createdAt: "not-a-date", updatedAt: "also-not" },
+  ]);
+  assert.equal(badDates.createdAt, "", "unparseable createdAt is coerced to empty");
+  assert.equal(
+    badDates.updatedAt,
+    "",
+    "unparseable updatedAt is coerced too — garbage sorted a sketch as newest forever",
+  );
+
+  const [fallback] = sanitizeArtifacts([
+    { id: "f", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "garbage" },
+  ]);
+  assert.equal(
+    fallback.updatedAt,
+    "2026-07-18T00:00:00Z",
+    "a garbage updatedAt falls back to the valid createdAt",
+  );
+
+  const [kept] = sanitizeArtifacts([
+    { id: "k", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "2026-07-18T01:00:00Z" },
+  ]);
+  assert.equal(kept.updatedAt, "2026-07-18T01:00:00Z", "valid timestamps pass through untouched");
+}
 
 // ── extractArtifact: classify React vs HTML ────────────────────────────────
 

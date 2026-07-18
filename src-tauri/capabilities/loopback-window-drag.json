@@ -7,7 +7,7 @@
     "macOS",
     "windows"
   ],
-  "windows": [
+  "webviews": [
     "main",
     "quick-chat"
   ],

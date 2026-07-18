@@ -15,21 +15,32 @@ import { tags as t } from "@lezer/highlight";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 
 type MoodTheme = {
-  colors: Record<string, string>;
-  tokenColors: { scope: string[]; settings: { foreground?: string; fontStyle?: string } }[];
+  colors?: Record<string, string>;
+  // Per the VS Code theme spec, a tokenColors entry's scope may be a string,
+  // an array, or absent entirely (a global default entry). Shiki's in-place
+  // normalization (cave-h1hi) can also inject a scope-less global entry.
+  tokenColors?: { scope?: string | string[]; settings?: { foreground?: string; fontStyle?: string } }[];
 };
 const mood = moodCTheme as MoodTheme;
 
+/** Look up a scope's foreground in the mood-c palette. Defensive on shape:
+ *  beyond the spec's `string | string[] | undefined` scope, Turbopack's dev
+ *  JSON modules have surfaced partial objects here — and this runs at module
+ *  evaluation, where a throw takes down every editor surface that imports it.
+ *  Each fallback mirrors the JSON value, so a miss renders identically. */
 function moodColor(scope: string, fallback: string): string {
-  for (const tc of mood.tokenColors) {
-    if (tc.scope.includes(scope) && tc.settings.foreground) return tc.settings.foreground;
+  for (const tc of mood.tokenColors ?? []) {
+    // Scope-less entries are valid TextMate global settings (and Shiki's
+    // in-place normalization can inject one — cave-h1hi); skip, don't crash.
+    const scopes = Array.isArray(tc.scope) ? tc.scope : typeof tc.scope === "string" ? [tc.scope] : [];
+    if (scopes.includes(scope) && tc.settings?.foreground) return tc.settings.foreground;
   }
   return fallback;
 }
 
-export const moodInk = mood.colors["editor.foreground"] ?? "#c9c2dc";
-const gutterInk = mood.colors["editorLineNumber.foreground"] ?? "#4a4560";
-const gutterActiveInk = mood.colors["editorLineNumber.activeForeground"] ?? "#7a6fa0";
+export const moodInk = mood.colors?.["editor.foreground"] ?? "#c9c2dc";
+const gutterInk = mood.colors?.["editorLineNumber.foreground"] ?? "#4a4560";
+const gutterActiveInk = mood.colors?.["editorLineNumber.activeForeground"] ?? "#7a6fa0";
 
 const C = {
   comment: moodColor("comment", "#4a4560"),

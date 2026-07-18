@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
@@ -73,6 +73,15 @@ export function GhReviewActions({ pr, familiars }: { pr: PrInfo; familiars: Fami
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [familiarId, setFamiliarId] = useState<string>(familiars[0]?.id ?? "");
+
+  // `familiars` loads async, so on first mount it's usually [] and the initializer
+  // above captures "". A useState initializer never re-runs, which left the
+  // "Review with" button permanently disabled (disabled on !familiarId) even after
+  // familiars arrived. Backfill the first familiar once the list populates, without
+  // clobbering a selection the user has already made.
+  useEffect(() => {
+    if (!familiarId && familiars[0]) setFamiliarId(familiars[0].id);
+  }, [familiars, familiarId]);
 
   const reset = () => {
     setError(null);

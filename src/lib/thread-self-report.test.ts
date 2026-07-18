@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  aggregateResponseConfidenceEvents,
+  aggregateThreadSignals,
   buildReflectTranscript,
   buildThreadReflectPrompt,
-  buildThreadSignalDiscussionPrompt,
+  buildThreadSignalResolutionPrompt,
   contextPressureLabel,
   deriveThreadScore,
-  normalizeResponseConfidenceEvent,
-  type ResponseConfidenceEvent,
   type ThreadSelfReport,
 } from "./thread-self-report.ts";
 
@@ -82,86 +80,6 @@ describe("thread self-report helpers", () => {
     assert.equal(report.id, "report-1");
     assert.equal(report.persistentBlockers[0].impact, "medium");
   });
-
-  it("normalizes response confidence events by clamping scores and preserving diagnostics", () => {
-    const event = normalizeResponseConfidenceEvent({
-      id: "event-1",
-      familiarId: "cody",
-      sessionId: "session-1",
-      responseId: "response-1",
-      responseAt: "2026-06-28T06:00:00.000Z",
-      reportedAt: "2026-06-28T06:00:03.000Z",
-      overallConfidence: 123,
-      factors: {
-        toolUse: { score: 0, weight: 1.5, reason: "Tool failed.", signals: ["tool-failed"] },
-        context: { score: -8, weight: 1, reason: "Context was missing.", signals: ["context-missing"] },
-        skills: { score: 88, weight: 0.8, reason: "Correct skill used.", signals: ["skill-used"] },
-        permissions: { score: 65, weight: 0.7, reason: "No permission block.", signals: [] },
-        memory: { score: 74, weight: 0.9, reason: "Memory was partial.", signals: ["memory-partial"] },
-        instructionFit: { score: 91, weight: 1.2, reason: "Matched the ask.", signals: ["on-task"] },
-        evidence: { score: 101, weight: 1.1, reason: "Tests cited.", signals: ["tests-run"] },
-      },
-      diagnosticTags: ["tool-failed", "context-missing", "tool-failed"],
-      calibrationNotes: "Low confidence was warranted.",
-      rubricVersion: "2026-06-28.v1",
-    });
-
-    assert.equal(event.overallConfidence, 100);
-    assert.equal(event.factors.toolUse.score, 1);
-    assert.equal(event.factors.context.score, 1);
-    assert.equal(event.factors.evidence.score, 100);
-    assert.deepEqual(event.diagnosticTags, ["tool-failed", "context-missing"]);
-    assert.equal(event.calibrationNotes, "Low confidence was warranted.");
-  });
-
-  it("aggregates response confidence events into weighted factor trends", () => {
-    const base: ResponseConfidenceEvent = normalizeResponseConfidenceEvent({
-      id: "event-1",
-      familiarId: "cody",
-      sessionId: "session-1",
-      responseId: "response-1",
-      responseAt: "2026-06-28T06:00:00.000Z",
-      reportedAt: "2026-06-28T06:00:05.000Z",
-      overallConfidence: 50,
-      factors: {
-        toolUse: { score: 20, weight: 2, reason: "Tool failed.", signals: ["tool-failed"] },
-        context: { score: 40, weight: 1, reason: "Context tight.", signals: ["context-tight"] },
-        skills: { score: 70, weight: 1, reason: "Skill ok.", signals: [] },
-        permissions: { score: 80, weight: 1, reason: "No block.", signals: [] },
-        memory: { score: 60, weight: 1, reason: "Partial.", signals: [] },
-        instructionFit: { score: 90, weight: 1, reason: "Fit.", signals: [] },
-        evidence: { score: 30, weight: 1, reason: "Thin evidence.", signals: ["needs-source"] },
-      },
-      diagnosticTags: ["tool-failed", "needs-source"],
-      rubricVersion: "2026-06-28.v1",
-    });
-    const newer: ResponseConfidenceEvent = normalizeResponseConfidenceEvent({
-      ...base,
-      id: "event-2",
-      responseId: "response-2",
-      reportedAt: "2026-06-28T07:00:05.000Z",
-      overallConfidence: 90,
-      factors: {
-        ...base.factors,
-        toolUse: { score: 100, weight: 1, reason: "Tool clean.", signals: [] },
-        evidence: { score: 80, weight: 1, reason: "Evidence present.", signals: [] },
-      },
-      diagnosticTags: ["needs-source", "context-tight"],
-    });
-
-    const rollup = aggregateResponseConfidenceEvents([base, newer]);
-
-    assert.equal(rollup.eventCount, 2);
-    assert.equal(rollup.averageConfidence, 70);
-    assert.equal(rollup.lowConfidenceCount, 1);
-    assert.equal(rollup.newestEvent?.id, "event-2");
-    assert.equal(rollup.factorAverages.toolUse, 47);
-    assert.equal(rollup.factorAverages.evidence, 55);
-    assert.deepEqual(rollup.topDiagnosticTags.slice(0, 2), [
-      { tag: "needs-source", count: 2 },
-      { tag: "context-tight", count: 1 },
-    ]);
-  });
 });
 
 describe("buildReflectTranscript", () => {
@@ -205,21 +123,87 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(prompt.includes("Reflect on the thread just completed (session: sess-2)"));
   });
 
-  it("builds a focused discussion prompt for a selected review item", () => {
-    const prompt = buildThreadSignalDiscussionPrompt({
+  it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
+    const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",
       severity: "critical",
+      sourceId: "github",
       title: "github",
       detail: "needs push access to land PRs",
     });
     assert.ok(prompt.includes("skill access gap"), "names the item kind in plain language");
     assert.ok(prompt.includes("**github**"), "highlights the topic title");
     assert.ok(prompt.includes("needs push access to land PRs"), "carries the detail");
-    assert.ok(/root cause/i.test(prompt), "asks for a root cause + concrete fix");
+    assert.ok(/root cause/i.test(prompt), "asks for a root-cause diagnosis");
+    assert.ok(/apply the concrete fix/i.test(prompt), "instructs the thread to actually apply the fix");
+    assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
+    assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {
-      const p = buildThreadSignalDiscussionPrompt({ kind, severity: "info", title: "t", detail: "d" });
+      const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", sourceId: "t", title: "t", detail: "d" });
       assert.doesNotMatch(p, /undefined/, `${kind} resolves to a label`);
     }
+  });
+});
+
+describe("aggregateThreadSignals vital capabilities", () => {
+  function reportWithVital(
+    id: string,
+    reportedAt: string,
+    vital: ThreadSelfReport["capabilitiesVital"],
+  ): ThreadSelfReport {
+    return { ...fullReport(), id, sessionId: id, reportedAt, capabilitiesVital: vital };
+  }
+
+  it("uses the latest report's currentState per capability, so recovered capabilities stop surfacing as missing", () => {
+    // Regression: a capability broken in one old session (e.g. the pre-#2985
+    // copilot permission regression) must not pin `status: missing` after
+    // newer reports observe it available (cave-hdkx).
+    const stale = reportWithVital("session-old", "2026-07-12T01:39:00.000Z", [
+      { name: "command execution for builds/tests", currentState: "missing", notes: "Denied by permission layer." },
+    ]);
+    const recovered = reportWithVital("session-new", "2026-07-14T21:30:00.000Z", [
+      { name: "command execution for builds/tests", currentState: "available", notes: "cargo/pnpm/node verified." },
+    ]);
+    // Order of the input array must not matter — only reportedAt recency.
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      const aggregate = aggregateThreadSignals(reports);
+      assert.deepEqual(aggregate.capabilitiesVital, [
+        { name: "command execution for builds/tests", currentState: "available", notes: "cargo/pnpm/node verified." },
+      ]);
+    }
+  });
+
+  it("keeps a newest-report degradation visible", () => {
+    const wasFine = reportWithVital("session-old", "2026-07-10T08:00:00.000Z", [
+      { name: "GitHub CLI", currentState: "available", notes: "Authenticated." },
+    ]);
+    const nowBroken = reportWithVital("session-new", "2026-07-14T09:00:00.000Z", [
+      { name: "GitHub CLI", currentState: "missing", notes: "Token expired." },
+    ]);
+    const aggregate = aggregateThreadSignals([wasFine, nowBroken]);
+    assert.deepEqual(aggregate.capabilitiesVital, [
+      { name: "GitHub CLI", currentState: "missing", notes: "Token expired." },
+    ]);
+  });
+
+  it("tracks distinct capability names independently", () => {
+    const a = reportWithVital("session-a", "2026-07-13T10:00:00.000Z", [
+      { name: "shell command execution", currentState: "available" },
+    ]);
+    const b = reportWithVital("session-b", "2026-07-14T10:00:00.000Z", [
+      { name: "artifact capture", currentState: "degraded", notes: "Flaky screenshots." },
+    ]);
+    const aggregate = aggregateThreadSignals([b, a]);
+    assert.deepEqual(
+      new Map(aggregate.capabilitiesVital.map((c) => [c.name, c.currentState])),
+      new Map([
+        ["shell command execution", "available"],
+        ["artifact capture", "degraded"],
+      ]),
+    );
   });
 });

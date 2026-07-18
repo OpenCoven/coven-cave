@@ -8,15 +8,91 @@ const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.me
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
 assert.match(src, /app\.getUpgradeHandler\(\)/, "server forwards non-PTY upgrades to Next.js");
+assert.doesNotMatch(
+  src,
+  /import\s+\{\s*parse\s*\}\s+from\s+"node:url"/,
+  "server does not import the deprecated node:url parser",
+);
+assert.doesNotMatch(src, /\bparse\(req\.url/, "server does not call deprecated url.parse for requests");
+assert.match(src, /void handle\(req, res\);/, "ordinary HTTP parsing stays owned by Next.js");
+assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
+assert.match(
+  src,
+  /new URL\(`\/\.\$\{rootedPath\}`, UPGRADE_URL_BASE\)/,
+  "origin-form targets keep authority-looking prefixes in the path",
+);
+assert.match(src, /const query: UpgradeQuery = Object\.create\(null\)/, "upgrade query records have no prototype");
+assert.match(src, /MAX_UPGRADE_QUERY_SEGMENTS = 1_000/, "upgrade query parsing retains the legacy 1,000-segment cap");
+assert.match(
+  src,
+  /if \(segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS\) return rawQuery\.slice\(0, index\)/,
+  "empty query segments count toward the legacy cutoff",
+);
+assert.match(
+  src,
+  /parsedUrl\.search = `\?\$\{boundedUpgradeQuery\(suffix\)\}`/,
+  "the raw query is bounded without consuming a data-leading question mark",
+);
+assert.match(
+  src,
+  /else if \(Array\.isArray\(current\)\) current\.push\(value\);\s*else query\[key\] = \[current, value\];/,
+  "duplicate query values retain insertion order",
+);
+assert.match(
+  src,
+  /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
+  "malformed upgrade targets fail with HTTP 400 and a closed socket",
+);
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
-assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails closed when no access token is configured");
-// The 401 only applies when a token is actually configured (remote/mobile). With
-// no token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
-// connections working. #714 dropped this guard and 401'd every local terminal.
-assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+assert.match(
+  src,
+  /const secret = accessToken\(\);\s*if \(!secret \|\| !value\) return false/,
+  "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
+);
+// The 401 applies when a remote/mobile credential is configured. With neither
+// token (the local desktop app / dev server) the loopback host+origin gate is
+// the protection, preserving credential-less local connections — #714 dropped
+// that guard and 401'd every local terminal. Native mobile mode configures
+// only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
+assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
+assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured (credential-less loopback is the local app)");
+assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");
+// Credentials are verified BEFORE the source gate: a paired device over
+// `tailscale serve` arrives with a non-loopback `<host>.ts.net` Host, so a
+// valid signed token must relax the host gate (mirrors proxy.ts's
+// isAllowedApiHost(mobileAccessAuthenticated) on REST). Without this the
+// paired iOS terminal 403s at the host gate while REST works — the "terminal
+// tab never connects" bug (cave-iz1j).
+assert.match(
+  src,
+  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
+  "PTY upgrade verifies the access or sidecar token before the source gate",
+);
+assert.match(
+  src,
+  /isAllowedUpgradeSource\(req, tokenAuthenticated\)/,
+  "token-authenticated upgrades pass the non-loopback host gate (paired iOS terminal over tailscale serve)",
+);
+assert.match(
+  src,
+  /if \(!host\) return false;/,
+  "non-loopback host gate fails closed when the Host header is missing",
+);
+assert.match(
+  src,
+  /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);/,
+  "a verified token relaxes the non-loopback host gate but still passes the origin gate",
+);
+// Serve terminates TLS, so a legit handoff browser page is https://<host>.ts.net
+// while the expectation string is built as http://<Host> — host equality (the
+// real cross-site defence) must satisfy the origin gate regardless of scheme.
+assert.match(
+  src,
+  /if \(url\.host === expected\.host\) return true;/,
+  "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
+);
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
@@ -29,8 +105,8 @@ assert.match(
 );
 assert.match(
   src,
-  /if \(timingSafeEqualString\(value, ACCESS_TOKEN\)\) return true;\s*\n\s*return isValidSignedAccessToken\(value, ACCESS_TOKEN\);/,
-  "isExpectedToken accepts the raw secret OR a valid signed token",
+  /if \(timingSafeEqualString\(value, secret\)\) return true;\s*\n\s*return isValidSignedAccessToken\(value, secret\);/,
+  "isExpectedAccessToken accepts the raw secret OR a valid signed token",
 );
 assert.match(
   src,
@@ -53,7 +129,7 @@ assert.match(
   "signed-token signatures compare in constant time",
 );
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
-assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
+assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server classifies loopback WebSocket hosts");
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
 assert.match(src, /sameOrigin\(req\.headers\.origin/, "server rejects cross-origin WebSocket upgrades");
 assert.match(src, /process\.env\.HOSTNAME \?\? "127\.0\.0\.1"/, "server binds to loopback by default");
@@ -75,22 +151,46 @@ assert.match(
   /\^npm_/,
   "sanitizer strips the npm_* lifecycle/config namespace",
 );
+// cave-o01k: terminals must not inherit the sidecar's internal namespaces —
+// the serialized Next standalone config breaks builds run from the shell,
+// and the sidecar auth tokens are secrets that would 401-gate a dev server.
+assert.match(
+  src,
+  /PTY_ENV_DROPPED_PREFIXES = \["COVEN_CAVE_", "__NEXT_PRIVATE_"\]/,
+  "sanitizer drops the sidecar-internal env namespaces (cave-o01k)",
+);
+assert.match(
+  src,
+  /PTY_ENV_DROPPED_PREFIXES\.some\(\(prefix\) => key\.startsWith\(prefix\)\)/,
+  "the prefix drop is applied per key in sanitizedEnv",
+);
 assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
+assert.match(src, /tag === 0x05/, "server receives an explicit kill tag 0x05 (cave-wujw)");
+assert.match(
+  src,
+  /tag === 0x05[\s\S]{0,500}sessions\.delete\(threadId\)[\s\S]{0,200}session\.pty\.kill\(\)/,
+  "the 0x05 kill frame reaps the shell immediately (clear detach timer, delete, kill), bypassing the grace window",
+);
 // Always loopback by default (both dev and prod)
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
-assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
+assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server only relaxes the loopback host gate through an explicit non-loopback branch");
 // The peer address is always loopback-gated, even in tokenless tailnet mode —
 // tailscale serve forwards from 127.0.0.1, so a non-loopback peer is a direct
 // LAN/WAN connection that must never be trusted.
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
-// Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1) relaxes ONLY the
-// loopback *host* gate, so the iOS terminal reaches /api/pty-ws over the tailnet
-// (tailscale serve forwards the <host>.ts.net Host). Mirrors the REST gate in
-// proxy.ts; the sameOrigin gate still blocks cross-site browser upgrades.
-assert.match(src, /process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless tailnet app mode relaxes the WebSocket host gate for tailnet-forwarded upgrades");
+// Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
+// that host only after the mobile access token authenticates the upgrade;
+// tailnet membership alone must not relax the host gate.
+assert.match(src, /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false/, "the upgrade credential is verified before the host gate");
+assert.match(
+  src,
+  /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,
+  "credential-less remote-looking WebSocket upgrades are rejected outright",
+);
+assert.doesNotMatch(src, /COVEN_CAVE_TAILNET_TRUST/, "tailnet trust must not bypass WebSocket host auth");
 assert.match(packageJson.scripts.postinstall ?? "", /fix-node-pty-spawn-helper\.mjs/, "postinstall repairs node-pty spawn-helper mode");
 assert.equal(
   existsSync(new URL("../scripts/fix-node-pty-spawn-helper.mjs", import.meta.url)),
@@ -105,7 +205,13 @@ assert.equal(
 const sidecarBundle = readFileSync(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8");
 assert.match(
   sidecarBundle,
-  /cp "\$ROOT\/server\.mjs" "\$DEST\/server\.mjs"/,
+  /node "\$ROOT\/scripts\/sidecar-runtime-closure\.mjs"/,
+  "sidecar bundle delegates packaging to the traced runtime assembler",
+);
+const sidecarClosure = readFileSync(new URL("../scripts/sidecar-runtime-closure.mjs", import.meta.url), "utf8");
+assert.match(
+  sidecarClosure,
+  /copyResolvedEntry\(path\.join\(projectRoot, "server\.mjs"\), path\.join\(destination, "server\.mjs"\)/,
   "sidecar bundle ships the custom PTY-bridge server next to the standalone tree",
 );
 const tauriLib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
@@ -215,5 +321,118 @@ assert.match(
 // above keepAliveTimeout so a reused socket isn't reaped mid-headers.
 assert.match(src, /server\.keepAliveTimeout = 75_000/, "server extends the idle keep-alive window past client reuse");
 assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds keepAliveTimeout");
+
+// Execute the parser itself without starting Next or the PTY server. Extracting
+// this inline block keeps the production build bundle-free while covering the
+// legacy maxKeys behavior that URLSearchParams does not preserve by default.
+{
+  const parserBlock = src.match(
+    /type UpgradeQuery[\s\S]+?(?=\nfunction isPtyAuthRequired)/,
+  );
+  assert.ok(parserBlock, "upgrade parser block is available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${parserBlock[0]}\nexport { parseUpgradeTarget };`,
+    { loader: "ts", format: "esm", target: "node22" },
+  );
+  const parserModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`
+  );
+  const parseUpgradeTarget = parserModule.parseUpgradeTarget as (
+    rawUrl: string,
+  ) => { query: Record<string, string | string[] | undefined> };
+
+  const dataLeadingQuestionMark = parseUpgradeTarget(
+    "/api/pty-ws??coven_access_token=value",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query["?coven_access_token"],
+    "value",
+    "a second question mark remains part of the query key",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query.coven_access_token,
+    undefined,
+    "a malformed double-question-mark key cannot become a valid credential",
+  );
+
+  const acceptedAtLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(999)}coven_access_token=valid`,
+  );
+  assert.equal(
+    acceptedAtLegacyLimit.query.coven_access_token,
+    "valid",
+    "the 1,000th raw query segment is still parsed",
+  );
+
+  const rejectedBeyondLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(1_000)}coven_access_token=valid`,
+  );
+  assert.equal(
+    rejectedBeyondLegacyLimit.query.coven_access_token,
+    undefined,
+    "empty segments consume maxKeys so credentials beyond the legacy cutoff stay ignored",
+  );
+}
+
+// Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
+// server.ts security fix that skips `pnpm build:server` silently ships nothing
+// (PR #3200's sidecar-token gate initially missed the twin exactly this way).
+// Transpile server.ts with the same flags as the build:server script and
+// require the committed artifact to match byte-for-byte.
+{
+  const { buildSync } = await import("esbuild");
+  const serverTsUrl = new URL("../server.ts", import.meta.url);
+  const out = buildSync({
+    entryPoints: [serverTsUrl.pathname],
+    bundle: false,
+    platform: "node",
+    target: "node22",
+    format: "esm",
+    write: false,
+  });
+  const generated = out.outputFiles[0].text;
+  const committed = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.equal(
+    committed,
+    generated,
+    "server.mjs must be regenerated from server.ts (run `pnpm build:server` and commit the result)",
+  );
+}
+
+// ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────
+// Long-lived servers died with "Ineffective mark-compacts near heap limit"
+// after hours, leaving no evidence. The monitor logs a structured warning at a
+// high watermark and captures one heap snapshot per episode near the limit.
+assert.match(src, /const HEAP_WARN_RATIO = 0\.85/, "heap monitor warns at 85% of the V8 heap limit");
+assert.match(src, /const HEAP_SNAPSHOT_RATIO = 0\.95/, "heap monitor snapshots at 95% of the V8 heap limit");
+assert.match(
+  src,
+  /process\.env\.COVEN_CAVE_HEAP_MONITOR !== "0"/,
+  "heap monitor has an env kill-switch (COVEN_CAVE_HEAP_MONITOR=0)",
+);
+assert.match(
+  src,
+  /setInterval\(tick, HEAP_MONITOR_INTERVAL_MS\)\.unref\(\)/,
+  "heap monitor timer is unref'd so it never keeps the process alive",
+);
+assert.match(src, /writeHeapSnapshot\(file\)/, "approaching the limit captures a V8 heap snapshot");
+assert.match(
+  src,
+  /if \(ratio < HEAP_SNAPSHOT_RATIO \|\| snapshotWritten\) return/,
+  "at most one snapshot per high-heap episode",
+);
+assert.match(
+  src,
+  /if \(ratio < HEAP_WARN_RATIO\) \{\s*\n\s*snapshotWritten = false;/,
+  "the snapshot latch re-arms after heap usage recovers",
+);
+assert.match(src, /while \(snapshots\.length > HEAP_SNAPSHOT_KEEP\)/, "old snapshots are pruned (bounded diagnostics dir)");
+assert.match(
+  src,
+  /ptySessions=\$\{sessions\.size\}/,
+  "the warning line carries server-owned state context (PTY session count)",
+);
+assert.match(src, /startHeapMonitor\(\);/, "the heap monitor starts with the server");
 
 console.log("server-pty-ws.test.ts OK");

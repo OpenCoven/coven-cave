@@ -23,6 +23,17 @@ export type PopoverProps = {
   offset?: number;
   /** Optional minimum width override; defaults to anchor width. */
   minWidth?: number;
+  /**
+   * Which layer owns vertical scrolling when content exceeds the available
+   * viewport height. "popover" preserves the simple-menu default; "content"
+   * lets a composite child keep its own header/footer fixed around a scroller.
+   */
+  scrollStrategy?: "popover" | "content";
+  /**
+   * Adds data-compact when the visual-viewport-aware available height is at or
+   * below this pixel threshold, so composite children can tighten fixed chrome.
+   */
+  compactAtHeight?: number;
   className?: string;
   /** Accessible name for the dialog. role="dialog" requires a name; without one
    *  screen readers announce the popover with no title. */
@@ -42,12 +53,15 @@ export function Popover({
   placement = "bottom-start",
   offset = 6,
   minWidth,
+  scrollStrategy = "popover",
+  compactAtHeight,
   className,
   ariaLabel,
   children,
 }: PopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [style, setStyle] = useState<CSSProperties>({});
+  const [compact, setCompact] = useState(false);
 
   const compute = useCallback(() => {
     const a = anchorRef.current;
@@ -83,14 +97,19 @@ export function Popover({
       : popH > spaceBelow && spaceAbove > spaceBelow;
     const isEnd = placement.endsWith("end");
 
+    const availableHeight = Math.round(
+      Math.max(Math.min(isTop ? spaceAbove : spaceBelow, viewH - 2 * MARGIN), 120),
+    );
+    setCompact(compactAtHeight !== undefined && availableHeight <= compactAtHeight);
+
     const next: CSSProperties = {
       position: "absolute",
       minWidth: minWidth ?? r.width,
       // Never exceed the chosen side's visible space; scroll inside if it must. Floor
       // low (120px) rather than 160 so a keyboard-shrunk viewport still clamps inside
       // the visible band instead of disappearing under the keyboard.
-      maxHeight: `${Math.round(Math.max(Math.min(isTop ? spaceAbove : spaceBelow, viewH - 2 * MARGIN), 120))}px`,
-      overflowY: "auto",
+      maxHeight: `${availableHeight}px`,
+      overflowY: scrollStrategy === "content" ? "hidden" : "auto",
     };
     if (isTop) {
       next.bottom = window.innerHeight - r.top + offset;
@@ -104,7 +123,7 @@ export function Popover({
       next.left = Math.max(MARGIN, Math.min(r.left, viewLeft + viewW - popW - MARGIN));
     }
     setStyle(next);
-  }, [anchorRef, placement, offset, minWidth]);
+  }, [anchorRef, placement, offset, minWidth, scrollStrategy, compactAtHeight]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -170,8 +189,23 @@ export function Popover({
         ref={popoverRef}
         className={["ui-popover", className ?? ""].filter(Boolean).join(" ")}
         style={style}
+        // Non-modal dialog: the page behind stays interactive (light dismiss on
+        // outside click/scroll), so no aria-modal and no focus trap — instead
+        // the popover closes when keyboard focus moves out of it, so an open
+        // "dialog" never floats astray while Tab walks the page behind it.
         role="dialog"
         aria-label={ariaLabel}
+        data-compact={compact || undefined}
+        tabIndex={-1}
+        onBlur={(e) => {
+          const next = e.relatedTarget as Node | null;
+          // relatedTarget is null when focus leaves the document (window blur,
+          // native pickers) — don't treat that as Tab-out.
+          if (!next) return;
+          if (popoverRef.current?.contains(next)) return;
+          if (anchorRef.current?.contains(next)) return;
+          onOpenChange(false);
+        }}
       >
         {children}
       </div>

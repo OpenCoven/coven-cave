@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/md-editor.css";
+
 /**
  * MdEditor — the Cave's OpenKnowledge-style markdown editor shell.
  *
@@ -22,6 +24,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Trailing debounce before an autosave fires once typing pauses. */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
@@ -38,8 +41,11 @@ import { diffLines, mergeThreeWay, type LineDiffOp } from "@/lib/line-diff";
 const MdEditorVisual = dynamic(() => import("./md-editor-visual"), {
   ssr: false,
   loading: () => (
-    <div className="grid h-full place-items-center text-[11px] text-[var(--text-muted)]">
-      Loading editor…
+    // Skeleton lines instead of a bare text flash while the editor chunk loads.
+    <div className="space-y-2.5 p-4" aria-label="Loading editor" aria-busy="true">
+      {["92%", "85%", "97%", "70%"].map((w, i) => (
+        <Skeleton key={i} variant="text" width={w} />
+      ))}
     </div>
   ),
 });
@@ -87,6 +93,9 @@ export type MdEditorProps = {
   onCancel?: () => void;
   /** Observe every raw-document change (e.g. to mirror into caller state). */
   onChange?: (raw: string) => void;
+  /** Observe dirty-state transitions (unsaved edits vs baseline) — e.g. to
+   *  surface an unsaved dot on the host's tab. */
+  onDirtyChange?: (dirty: boolean) => void;
   /**
    * Persist edits automatically a short while after typing stops, in addition
    * to the explicit Save button. Only safe for **idempotent** surfaces whose
@@ -105,6 +114,7 @@ export function MdEditor({
   onSave,
   onCancel,
   onChange,
+  onDirtyChange,
   autoSave = false,
 }: MdEditorProps) {
   const [raw, setRaw] = useState(value);
@@ -132,6 +142,14 @@ export function MdEditor({
   const doc = useMemo(() => parseMdDocument(raw), [raw]);
   const stats = useMemo(() => computeMdDocStats(doc.body), [doc.body]);
   const dirty = raw !== baseline;
+
+  // Report dirty transitions through a ref so an unstable callback identity
+  // never re-fires the effect.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
 
   const applyHeader = useCallback(
     (header: { title?: string | null; tags?: string[] }) => {
@@ -406,7 +424,9 @@ export function MdEditor({
               {saveError}
             </span>
           ) : savedFlash ? (
-            <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
+            // role=status: saves (incl. debounced autosaves) were visual-only —
+            // the flash is the sole confirmation, so SRs should hear it too.
+            <span role="status" className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
               <Icon name="ph:check" width={11} aria-hidden />
               Saved
             </span>

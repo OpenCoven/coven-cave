@@ -25,6 +25,8 @@ export function normalizeReadingAlign(value: unknown): ReadingAlign {
 }
 
 export function readReadingAlign(): ReadingAlign {
+  const central = normalizeReadingAlign(readAppPreferences().appearance.reading.align);
+  if (central !== DEFAULT_READING_ALIGN || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_ALIGN;
   try {
     return normalizeReadingAlign(window.localStorage.getItem(READING_ALIGN_KEY));
@@ -37,9 +39,12 @@ export function readReadingAlign(): ReadingAlign {
  * Apply the alignment: set `--cave-reading-align` on <html> (or remove it for
  * the default so the stylesheet fallback wins) and persist the choice.
  */
-export function applyReadingAlign(align: ReadingAlign) {
+export function applyReadingAlign(align: ReadingAlign, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingAlign(align);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { align: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_ALIGN) {
     root.style.removeProperty("--cave-reading-align");
@@ -53,3 +58,4 @@ export function applyReadingAlign(align: ReadingAlign) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

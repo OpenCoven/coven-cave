@@ -68,20 +68,11 @@ assert.doesNotMatch(
 );
 
 // ───────── Task 10: sticky rail footer ─────────
+// (cave-kdkg) RailMemoryList was removed as dead code — never imported. The
+// .rail-memory__open-full pin stays because inspector-pane's memory tab still
+// uses the class for its "Open full memory" footer button.
 
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-
-assert.match(
-  cssSource,
-  /\.rail-memory\s*\{[^}]*overflow:\s*hidden/,
-  "rail-memory container must hide overflow so the inner scroll pane handles it",
-);
-
-assert.match(
-  cssSource,
-  /\.rail-memory__scroll\s*\{[^}]*flex:\s*1[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/,
-  "rail-memory__scroll must define the inner scroll surface",
-);
 
 assert.match(
   cssSource,
@@ -89,10 +80,10 @@ assert.match(
   "rail-memory__open-full must be pinned (flex-shrink: 0)",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /<div className="rail-memory__scroll">\s*<FamiliarsMemoryView/,
-  "RailMemoryList must wrap FamiliarsMemoryView in a .rail-memory__scroll div",
+  /RailMemoryList/,
+  "RailMemoryList stays deleted (was dead code — no importers)",
 );
 
 console.log("familiars-memory-view-rail.test.ts: ok");

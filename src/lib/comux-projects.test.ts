@@ -109,8 +109,8 @@ assert.deepEqual(deriveComuxProjects([], "/workspace/fallback"), [
 // ── projectTint: deterministic, stable, in-gamut ──
 {
   assert.equal(
-    projectTint("/Users/buns/.coven/workspaces/familiars/nova"),
-    projectTint("/Users/buns/.coven/workspaces/familiars/nova"),
+    projectTint("/Users/dev/.coven/workspaces/familiars/nova"),
+    projectTint("/Users/dev/.coven/workspaces/familiars/nova"),
     "same root yields the same tint across calls",
   );
   assert.notEqual(

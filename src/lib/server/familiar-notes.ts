@@ -41,7 +41,8 @@ export type DailyNoteSummary = {
 async function notesDir(id: string): Promise<string> {
   if (!isValidFamiliarId(id)) throw new Error("invalid familiar id");
   const workspace = await familiarWorkspace(id);
-  return path.join(workspace, "notes");
+  // Familiar notes are runtime user data under the validated workspace.
+  return path.join(/* turbopackIgnore: true */ workspace, "notes");
 }
 
 /** Resolve the on-disk file for one day's note, asserting it stays within the notes dir. */
@@ -51,7 +52,7 @@ async function noteFile(id: string, date: string): Promise<{ dir: string; file: 
   const dir = await notesDir(id);
   // `date` is a validated YYYY-MM-DD slug (no separators / `..`), so basename is a
   // no-op barrier that documents the invariant for static analysis.
-  const file = path.join(dir, `${path.basename(date)}.md`);
+  const file = path.join(/* turbopackIgnore: true */ dir, `${path.basename(date)}.md`);
   if (path.relative(dir, file).startsWith("..")) throw new Error("path not allowed");
   return { dir, file };
 }
@@ -59,7 +60,10 @@ async function noteFile(id: string, date: string): Promise<{ dir: string; file: 
 export async function readDailyNote(id: string, date: string): Promise<DailyNoteRecord> {
   const { file } = await noteFile(id, date);
   try {
-    const [raw, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
+    const [raw, info] = await Promise.all([
+      readFile(/* turbopackIgnore: true */ file, "utf8"),
+      stat(/* turbopackIgnore: true */ file),
+    ]);
     return { date, exists: true, note: parseDailyNote(raw), modified: info.mtime.toISOString() };
   } catch {
     return { date, exists: false, note: { notes: "", reflection: "" }, modified: null };
@@ -73,16 +77,16 @@ export async function writeDailyNote(id: string, date: string, note: DailyNote):
     await deleteDailyNote(id, date);
     return { date, exists: false, note: { notes: "", reflection: "" }, modified: null };
   }
-  await mkdir(dir, { recursive: true });
-  await writeFile(file, formatDailyNote(date, note), "utf8");
-  const info = await stat(file);
+  await mkdir(/* turbopackIgnore: true */ dir, { recursive: true });
+  await writeFile(/* turbopackIgnore: true */ file, formatDailyNote(date, note), "utf8");
+  const info = await stat(/* turbopackIgnore: true */ file);
   return { date, exists: true, note, modified: info.mtime.toISOString() };
 }
 
 export async function deleteDailyNote(id: string, date: string): Promise<boolean> {
   const { file } = await noteFile(id, date);
   try {
-    await unlink(file);
+    await unlink(/* turbopackIgnore: true */ file);
     return true;
   } catch {
     return false;
@@ -94,7 +98,7 @@ export async function listDailyNotes(id: string): Promise<DailyNoteSummary[]> {
   const dir = await notesDir(id);
   let names: string[];
   try {
-    names = await readdir(dir);
+    names = await readdir(/* turbopackIgnore: true */ dir);
   } catch {
     return [];
   }

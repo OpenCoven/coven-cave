@@ -1,0 +1,24 @@
+{
+  "id": "cccccccc-0002-4002-8002-000000000002",
+  "familiar_id": "eeeeeeee-0000-4000-8000-000000000001",
+  "writer": "familiar:echo",
+  "channel": "Deliberate",
+  "thread_id": "aaaaaaa2-0002-4002-8002-000000000001",
+  "fray": {
+    "Frayed": {
+      "strand": null,
+      "channel": "Deliberate",
+      "reason": { "RequiredStrandMissing": { "kind": "ContentHash" } }
+    }
+  },
+  "edits": [
+    {
+      "surface": "MEMORY.md",
+      "contents": {
+        "encoding": "base64",
+        "data": "AAECAwQFBgc="
+      }
+    }
+  ],
+  "staged_at": [2026, 196, 9, 30, 0, 0, 0, 0, 0]
+}

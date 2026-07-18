@@ -86,7 +86,9 @@ assert.match(
 // transform), now the true viewport (root cause fixed in cave-cco). width/
 // height:100v* stacked on a containing-block offset is what clipped the
 // diffs pane — the rule must never size to viewport units.
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const fullscreenBlock = css.slice(
   css.indexOf(".workspace-rail--fullscreen {"),
   css.indexOf("}", css.indexOf(".workspace-rail--fullscreen {")),

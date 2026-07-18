@@ -15,11 +15,11 @@ import {
  */
 export function ReadingHyphensController() {
   useEffect(() => {
-    applyReadingHyphens(readReadingHyphens());
+    applyReadingHyphens(readReadingHyphens(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_HYPHENS_KEY) return;
-      applyReadingHyphens(readReadingHyphens());
+      applyReadingHyphens(readReadingHyphens(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

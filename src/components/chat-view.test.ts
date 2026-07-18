@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 const assistantTurnRule = styles.match(/\.cave-turn-assistant\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
 const assistantContentRule = styles.match(/\.cave-turn-content\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
@@ -60,8 +62,16 @@ assert.match(
 
 assert.match(
   source,
-  /HeaderReflectButton[\s\S]*Reflect on this thread[\s\S]*ph:brain-bold/,
-  "ChatView should expose a Reflect action in the chat header",
+  /Reflect on this thread[\s\S]{0,600}ph:phone/,
+  "ChatView should expose a Reflect action in the session overflow menu",
+);
+// Reflect must not reuse the thinking toggle's brain — two identical brains
+// in one menu made the actions indistinguishable. Sparkle matches the daily
+// note's Reflection section where reflections land.
+assert.match(
+  source,
+  /reflecting \? "ph:circle-notch-bold" : "ph:sparkle-bold"/,
+  "the Reflect action keeps its sparkle (spinner while reflecting), distinct from the thinking brain",
 );
 
 assert.match(
@@ -172,4 +182,28 @@ assert.doesNotMatch(
   source,
   /projectRoot: activeProjectRoot,/,
   "ChatView must not echo the raw activeProjectRoot (session cwd) as an explicit projectRoot",
+);
+
+// ── #2618: a failed chat send keeps the user in-chat with the message preserved,
+// and the coven-CLI-missing case offers a soft "Open Setup" link (overlay, not a
+// hard navigation to the wizard). ──────────────────────────────────────────────
+assert.match(
+  source,
+  /setLastFailedSend\(request\);/,
+  "a failed send preserves the request so the composer message can be retried",
+);
+assert.match(
+  source,
+  /const covenMissing = useMemo\(\s*\(\) => \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
+  "the error strip detects the coven-CLI-missing failure class",
+);
+assert.match(
+  source,
+  /onOpenSetup=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:onboarding-open"\)\)\}/,
+  "Open Setup opens the wizard as a soft overlay event, never a route change",
+);
+assert.doesNotMatch(
+  source,
+  /router\.(push|replace)\([`"'][^`"']*onboard/i,
+  "a send failure must never hard-navigate the router to onboarding",
 );

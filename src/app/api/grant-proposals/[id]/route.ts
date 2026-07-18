@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { isLocalOrigin } from "@/lib/server/local-origin";
+
 import {
   ProjectAccessDeniedError,
   resolveGrantProposal,
+  undoGrantProposal,
 } from "@/lib/project-permissions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +28,12 @@ export async function PATCH(
   req: Request,
   { params: rawParams }: { params: Promise<{ id: string }> },
 ) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json(
+      { ok: false, error: "proposal decisions must be confirmed from the local desktop" },
+      { status: 403 },
+    );
+  }
   const params = await rawParams;
   let payload: Record<string, unknown>;
   try {
@@ -34,20 +43,25 @@ export async function PATCH(
   }
   const rejected = rejectRelayedApproval(payload);
   if (rejected) return rejected;
-  const decision = payload.decision === "accepted" || payload.decision === "rejected"
-    ? payload.decision
-    : null;
+  const decision =
+    payload.decision === "accepted" ||
+    payload.decision === "rejected" ||
+    payload.decision === "undo"
+      ? payload.decision
+      : null;
   if (!decision) {
     return NextResponse.json(
-      { ok: false, error: "decision must be accepted or rejected" },
+      { ok: false, error: "decision must be accepted, rejected, or undo" },
       { status: 400 },
     );
   }
   try {
-    const proposal = await resolveGrantProposal({
-      proposalId: params.id,
-      decision,
-    });
+    const proposal = decision === "undo"
+      ? await undoGrantProposal({ proposalId: params.id })
+      : await resolveGrantProposal({
+          proposalId: params.id,
+          decision,
+        });
     return NextResponse.json({ ok: true, proposal });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {

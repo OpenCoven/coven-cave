@@ -9,7 +9,7 @@
   height: 100%;
   overflow: hidden;
   padding: 10px 6px 10px;
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--text-secondary);
   gap: 10px;
   background: linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 55%, transparent), transparent 42%),
@@ -27,9 +27,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 2px 4px 2px 7px;
+  padding: 2px var(--space-1) 2px 7px;
   flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -63,8 +63,46 @@
   border-color: transparent;
 }
 
+/* Header familiar switcher (cave-vtk9) — the scope selector on every page.
+   Zero horizontal padding so the trigger's edges line up exactly with the
+   New-chat CTA below it (.sidebar-actions is also flush). */
+.sidebar-familiar-switch {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 0;
+}
+.sidebar-familiar-switch .familiar-quickswitch {
+  min-width: 0;
+  flex: 1;
+}
+/* The trigger wears the New-chat CTA's exact chrome (outlined accent, 34px,
+   control radius) as a full-width multiselector dropdown — the two stacked
+   full-width controls read as one family; the caret marks the selector. */
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  gap: 10px;
+  padding: 0 var(--space-2);
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 2px solid var(--accent-presence);
+  background: transparent;
+}
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+.sidebar-familiar-switch .familiar-switcher__trigger-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
 .sidebar-title {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-primary);
@@ -100,13 +138,13 @@
   align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   min-height: 34px;
   border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -162,11 +200,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 
 .sidebar-action-kbd {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -186,13 +224,13 @@
 
 .sidebar-familiar-filter {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .sidebar-familiar-filter__label {
   padding: 0 2px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -236,9 +274,9 @@
   background: transparent;
   color: inherit;
   outline: none;
-  padding: 0 28px 0 32px;
+  padding: 0 28px 0 var(--space-8);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
 }
 
@@ -268,14 +306,14 @@
   scrollbar-color: var(--border-hairline) transparent;
   /* Sections are separated by whitespace alone (no rules) for a calmer,
      Codex-style nav. */
-  gap: 4px;
+  gap: var(--space-1);
   padding: 2px 0 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
 .sidebar-foot {
   flex-shrink: 0;
-  padding: 8px 6px 0;
+  padding: var(--space-2) 6px 0;
   /* Softer than a full hairline — the footer should read as a calm boundary,
      not a hard rule competing with the nav. */
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
@@ -285,7 +323,7 @@
      vertical stack below. */
   display: flex;
   flex-direction: row;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .sidebar-foot-bell,
@@ -298,12 +336,12 @@
   flex: 1;
   min-width: 0;
   gap: 10px;
-  padding: 0 8px;
-  border-radius: 8px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
@@ -318,7 +356,7 @@
   min-height: 34px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -329,7 +367,7 @@
    muted, unselectable; the footer above keeps its calm hairline boundary. */
 .sidebar-version {
   flex-shrink: 0;
-  padding: 3px 6px 4px;
+  padding: 3px 6px var(--space-1);
   font-size: 10.5px;
   line-height: 1;
   text-align: center;
@@ -362,7 +400,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--text-base);
   min-width: 0;
   color: inherit;
 }
@@ -378,8 +416,8 @@
   place-items: center;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
   background: var(--color-danger);
   color: var(--text-primary);
   font-size: 9.5px;
@@ -406,7 +444,7 @@
 }
 
 .sidebar-addins {
-  padding-top: 4px;
+  padding-top: var(--space-1);
 }
 
 /* Quiet eyebrow labels: muted uppercase text with a small accent tick, no
@@ -416,15 +454,15 @@
 .sidebar-section-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  margin: 12px 0 2px;
-  padding: 4px 10px;
+  margin: var(--space-3) 0 2px;
+  padding: var(--space-1) 10px;
   border-radius: 7px;
   background: transparent;
   border: 1px solid transparent;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -441,7 +479,7 @@
 }
 
 .sidebar-section-label:focus-visible {
-  outline: 2px solid var(--accent, currentColor);
+  outline: 2px solid var(--ring-focus, currentColor);
   outline-offset: 1px;
 }
 
@@ -467,8 +505,10 @@
   width: 2px;
   height: 11px;
   align-self: center;
-  border-radius: 999px;
-  background: var(--accent, currentColor);
+  border-radius: var(--radius-pill);
+  /* Brand accent — var(--accent) is the shadcn surface token and reads as
+     background here, hiding the tick. */
+  background: var(--accent-presence, currentColor);
   opacity: 0.55;
   flex: none;
 }
@@ -476,7 +516,7 @@
 .sidebar-divider {
   height: 1px;
   background: var(--border-hairline);
-  margin: 4px 9px;
+  margin: var(--space-1) 9px;
   display: none;
 }
 
@@ -491,7 +531,7 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -556,9 +596,9 @@
 }
 
 .sidebar-badge {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   padding: 0.05em 0.45em;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
   color: var(--accent-presence);
   flex-shrink: 0;
@@ -567,12 +607,12 @@
 
 /* ── Recents header ──────────────────────────────────────────────────────── */
 .sidebar-recents-header {
-  margin: 4px 6px 3px;
-  padding: 4px 8px;
+  margin: var(--space-1) 6px 3px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 6px;
   background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
   border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -600,8 +640,8 @@
 }
 
 .sidebar-recents-empty {
-  padding: 6px 8px;
-  font-size: 11px;
+  padding: 6px var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -611,12 +651,12 @@
   align-items: baseline;
   width: 100%;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -644,7 +684,7 @@
 
 .sidebar-recent-ts {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -655,13 +695,13 @@
   border-top: 0;
   padding: 0 0 10px;
   padding-top: 6px;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 
 /* Footer rows slightly smaller/dimmer than header rows */
 .sidebar-actions--footer .sidebar-action-row {
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 5px 10px;
   color: var(--text-muted);
 }
@@ -676,7 +716,7 @@
 
 .sidebar-bottom {
   flex-shrink: 0;
-  padding: 6px 7px 8px;
+  padding: 6px 7px var(--space-2);
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 
@@ -690,7 +730,7 @@
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -720,7 +760,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 6px;
+  padding: var(--space-2) 10px 6px;
   border-bottom: 1px solid var(--border-hairline);
   flex-shrink: 0;
   overflow-x: auto;
@@ -759,11 +799,11 @@
 /* ── Familiars section (left nav) ────────────────────────────────────────── */
 .sidebar-familiar-section-label {
   margin: 5px 6px 2px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 6px;
   background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
   border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -775,7 +815,7 @@
 .sidebar-familiar-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0 0;
+  padding: var(--space-1) 0 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
 }
@@ -832,7 +872,7 @@
 
 .sidebar-familiar-row-name {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -845,10 +885,10 @@
 }
 
 .sidebar-familiar-row-count {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   background: var(--bg-raised);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 1px 5px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -899,7 +939,7 @@
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
   padding: 0 11px;
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 
 .sidebar-action-stack .sidebar-action-row:hover {
@@ -921,7 +961,7 @@
   gap: 6px;
   min-height: 30px;
   border-radius: var(--radius-control);
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   color: var(--text-secondary);
 }
 
@@ -957,11 +997,11 @@
 @media (max-height: 760px) {
   .sidebar-minimal {
     gap: 7px;
-    padding-top: 8px;
+    padding-top: var(--space-2);
   }
 
   .sidebar-nav-scroll {
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .sidebar-folder-row,
@@ -998,7 +1038,7 @@
   cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
 .recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
 .recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent, currentColor); opacity: 0.55; flex: none; }
+.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent-presence, currentColor); opacity: 0.55; flex: none; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -1037,11 +1077,34 @@
   align-items: center;
 }
 
-/* Wordmark, section headers, and the recent-activity rollup have no compact
-   form, so they drop out entirely in the rail. */
-.shell-nav--rail .sidebar-header,
+/* Section headers and the recent-activity rollup have no compact form, so
+   they drop out entirely in the rail. */
 .shell-nav--rail .sidebar-section-label,
 .shell-nav--rail .recent-activity {
+  display: none;
+}
+
+/* The header familiar switcher survives the rail as the avatar-only trigger:
+   the trigger label drops, the 28px avatar stays reachable. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
+  display: none;
+}
+.shell-nav--rail .sidebar-familiar-switch {
+  padding: 0;
+  justify-content: center;
+}
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-width: 1px;
+}
+/* The dropdown caret is expanded-state chrome — drop it on the rail. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
   display: none;
 }
 
@@ -1071,7 +1134,7 @@
   padding: 0;
   font-size: 0;
   line-height: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-presence);
   color: transparent;
 }

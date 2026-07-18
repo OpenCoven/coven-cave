@@ -1,0 +1,12 @@
+{
+  "id": "diverge-converge-refine",
+  "name": "Diverge, converge, refine",
+  "description": "Move from a broad topic to a reviewable pilot without starting execution.",
+  "steps": [
+    "Define the research space, stakeholders, constraints, and explicit resource bounds.",
+    "Generate diverse candidate directions with multiple ideation lenses.",
+    "Challenge candidates with contradiction, boundary, simplicity, and feasibility checks.",
+    "Rank the strongest directions and expose assumptions, evidence gaps, and likely objections.",
+    "Draft one bounded pilot and stop at a human go/no-go checkpoint."
+  ]
+}

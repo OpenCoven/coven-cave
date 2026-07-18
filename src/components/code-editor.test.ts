@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 // plain textarea with real syntax highlighting + line numbers).
 
 const editor = await readFile(new URL("./code-editor.tsx", import.meta.url), "utf8");
-const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
+const railPreview = await readFile(new URL("./rail-file-preview.tsx", import.meta.url), "utf8");
 const pkg = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 
 // Deps are present and pinned exact (dependency-policy guards the pinning).
@@ -49,6 +49,22 @@ assert.match(
 assert.match(theme, /export const moodHighlight = HighlightStyle\.define\(/, "a HighlightStyle maps lezer tags to the mood-c palette");
 assert.match(theme, /syntaxHighlighting\(moodHighlight\)/, "the highlight style ships in the combined theme extension");
 assert.match(editor, /syntaxHighlighting\(moodHighlight\)/, "the editor installs the shared highlight style");
+// The JSON import is a shared module singleton, and Shiki normalizes themes
+// IN PLACE (prepends a scope-less global tokenColors entry). moodColor must
+// skip scope-less entries instead of crashing every editor surface loaded
+// after a chat code block rendered, and message-bubble must hand Shiki a
+// clone, never the module instance (cave-h1hi).
+assert.match(
+  theme,
+  /const scopes = Array\.isArray\(tc\.scope\) \? tc\.scope : typeof tc\.scope === "string" \? \[tc\.scope\] : \[\]/,
+  "moodColor guards scope-less tokenColors entries (valid TextMate globals; Shiki injects one)",
+);
+const bubbleSource = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+assert.match(
+  bubbleSource,
+  /themes: \[structuredClone\(moodCTheme\)/,
+  "Shiki receives a clone of the theme, never the shared JSON module instance",
+);
 // The code surface stays dark in EVERY app theme (light modes included), so
 // editor text/gutter inks must be fixed mood-c inks, not theme text tokens
 // (--text-primary is a dark ink in light themes → dark-on-dark).
@@ -62,13 +78,11 @@ assert.match(theme, /caretColor: "var\(--accent-presence\)"/, "caret uses the ap
 assert.match(editor, /from "@\/components\/code-editor-theme"/, "the editor consumes the shared theme module");
 assert.match(editor, /theme=\{appTheme\}/, "the editor uses the app theme");
 
-// comux uses CodeEditor in edit mode — the plain textarea is gone.
-assert.match(comux, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "comux imports CodeEditor");
-assert.match(
-  comux,
-  /editing \? \([\s\S]*?<CodeEditor[\s\S]*?value=\{editValue\}[\s\S]*?onChange=\{setEditValue\}[\s\S]*?onSave=\{[\s\S]*?saveEdit[\s\S]*?onCancel=\{cancelEditing\}/,
-  "edit mode renders CodeEditor wired to the edit state",
-);
-assert.doesNotMatch(comux, /<textarea[\s\S]*?value=\{editValue\}/, "the plain edit textarea is replaced");
+// The rail file preview (the app's live file viewer) uses CodeEditor in edit
+// mode — the plain textarea is gone. (Pinned via ComuxView before its
+// deletion, cave-c3yt.)
+assert.match(railPreview, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "rail file preview imports CodeEditor");
+assert.match(railPreview, /const saveEdit = useCallback/, "rail file preview wires a save handler for the editor");
+assert.doesNotMatch(railPreview, /<textarea[\s\S]*?value=\{editValue\}/, "the plain edit textarea is replaced");
 
 console.log("code-editor.test.ts: ok");

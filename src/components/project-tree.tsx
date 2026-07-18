@@ -602,7 +602,7 @@ function TreeRow({
             className={`ml-auto mr-1 shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
               added
                 ? "text-[var(--accent-presence)]"
-                : "text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100"
+                : "touch-always-visible text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100 group-focus-within:opacity-100"
             }`}
           >
             {added ? "Added" : "Use"}

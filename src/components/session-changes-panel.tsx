@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +12,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { buildChangesReviewPrompt } from "@/lib/changes-review";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -449,16 +451,22 @@ export function SessionChangesInner({
   const [creatingPr, setCreatingPr] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Default is a FORCED fetch through the shared changes-summary gate
+  // (cave-v8hh): the mount/visibility/`cave:changes-refresh`/post-mutation
+  // callers all follow a state change and must not reuse a cached response.
+  // Only the 5s running poll passes shared:true — that's the call that piles
+  // up with the chip/header/badge pollers on the same root, and one real
+  // request per window is exactly what it needs.
+  const load = useCallback(async (opts?: { shared?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, {
-        cache: "no-store",
+      const { httpOk, status, json: raw } = await fetchChangesSummary(projectRoot, {
+        force: !opts?.shared,
       });
-      const json = (await res.json()) as ChangesResponse;
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      const json = raw as ChangesResponse;
+      if (!httpOk || !json.ok) throw new Error(json.error ?? `http ${status}`);
       setNotARepo(json.repo === false);
       setRepoRoot(json.repoRoot ?? null);
       // Content-guard: an unchanged 5s poll keeps the previous reference so the
@@ -508,7 +516,7 @@ export function SessionChangesInner({
   useEffect(() => {
     if (!running) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ shared: true });
     }, POLL_MS);
     return () => window.clearInterval(id);
   }, [load, running]);
@@ -580,14 +588,24 @@ export function SessionChangesInner({
 
   // Jump-to-diff: when a transcript edit tool is clicked, expand that file's
   // diff. The changes list is repo-relative while focusPath may be absolute (or
-  // vice versa), so match on exact path or suffix. Keyed on focusNonce + the
-  // file list so it retries once the just-edited file appears in the diff list.
+  // vice versa), so match on exact path or a /-boundary suffix (a bare string
+  // suffix would let `utils/foo.ts` match a sibling `s/foo.ts`). Keyed on
+  // focusNonce + the file list so it retries once the just-edited file appears
+  // in the diff list — but each nonce applies exactly ONCE: filesSig churns on
+  // every 5s poll while an agent is editing (+/- counts change), and without
+  // the consumed guard the stale focus re-expanded its file on every refresh,
+  // snapping the panel away from whichever diff the user had selected.
+  const appliedFocusNonceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (!focusPath) return;
+    if (!focusPath || focusNonce === undefined) return;
+    if (appliedFocusNonceRef.current === focusNonce) return;
+    const suffixMatch = (long: string, short: string) =>
+      long === short || long.endsWith(`/${short}`);
     const match = files.find(
-      (f) => f.path === focusPath || focusPath.endsWith(f.path) || f.path.endsWith(focusPath),
+      (f) => suffixMatch(focusPath, f.path) || suffixMatch(f.path, focusPath),
     );
     if (!match) return;
+    appliedFocusNonceRef.current = focusNonce;
     setExpandedPath(match.path);
     if (!diffs[match.path]) void fetchDiff(match.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -772,6 +790,23 @@ export function SessionChangesInner({
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
+  // Commit review — start a NEW chat session whose opening prompt reviews the
+  // working-tree changes. Dispatched through the cave:agents-new-chat bridge:
+  // the Workspace opens the chat when this panel lives on a non-chat surface
+  // (the Code view), and ChatSurface handles it directly when already in chat.
+  const startReviewSession = useCallback(() => {
+    const root = repoRoot ?? projectRoot;
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: {
+          projectRoot: root,
+          initialPrompt: buildChangesReviewPrompt({ repoRoot: root, files }),
+        },
+      }),
+    );
+    announce("Review session started on the working-tree changes.");
+  }, [repoRoot, projectRoot, files, announce]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: honest scope copy + refresh */}
@@ -801,6 +836,18 @@ export function SessionChangesInner({
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1">
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:git-diff"
+              className="shrink-0"
+              onClick={startReviewSession}
+              disabled={!canCommit}
+              title="Start a new session that reviews these changes like a commit review"
+              aria-label="Review changes in a new session"
+            >
+              Review
+            </Button>
             <IconButton
               icon="ph:archive"
               size="sm"

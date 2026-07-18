@@ -16,11 +16,11 @@ import {
  */
 export function ReadingLeadingController() {
   useEffect(() => {
-    applyReadingLeading(readReadingLeading());
+    applyReadingLeading(readReadingLeading(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_LEADING_KEY) return;
-      applyReadingLeading(readReadingLeading());
+      applyReadingLeading(readReadingLeading(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

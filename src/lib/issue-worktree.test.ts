@@ -6,6 +6,8 @@ import {
   issueWorktreeDir,
   issueWorktreeBranch,
   shouldIsolateInWorktree,
+  isSafeBranchName,
+  branchWorktreeDir,
   issueContentionKey,
 } from "./issue-worktree.ts";
 
@@ -85,5 +87,30 @@ assert.equal(
 assert.equal(issueContentionKey("OpenCoven/Coven-Cave", 267), "opencoven/coven-cave#267");
 assert.equal(issueContentionKey("a/b"), "a/b#0", "missing number → #0");
 assert.equal(issueContentionKey("a/b", 9.9), "a/b#9", "number is truncated");
+
+// ── user-named branch worktrees (chat composer) ──────────────────────────────
+assert.equal(isSafeBranchName("feat/chat-git-ergonomics"), true, "conventional feature branch is safe");
+assert.equal(isSafeBranchName("release-1.2.3"), true, "dots and dashes are fine mid-name");
+assert.equal(isSafeBranchName("a"), true, "single alphanumeric char is allowed");
+assert.equal(isSafeBranchName(""), false, "empty name rejected");
+assert.equal(isSafeBranchName("-rf"), false, "leading dash (option injection) rejected");
+assert.equal(isSafeBranchName("feat/../escape"), false, "dotdot rejected");
+assert.equal(isSafeBranchName("feat//x"), false, "double slash rejected");
+assert.equal(isSafeBranchName("feat/"), false, "trailing slash rejected");
+assert.equal(isSafeBranchName("feat."), false, "trailing dot rejected");
+assert.equal(isSafeBranchName("feat.lock"), false, "trailing .lock rejected");
+assert.equal(isSafeBranchName("feat/.hidden"), false, "dot-led segment rejected");
+assert.equal(isSafeBranchName("feat/x.lock/y"), false, ".lock-tailed segment rejected");
+assert.equal(isSafeBranchName("has space"), false, "spaces rejected");
+assert.equal(isSafeBranchName("semi;rm"), false, "shell metacharacters rejected");
+assert.equal(isSafeBranchName("x".repeat(121)), false, "over-long names rejected");
+assert.equal(isSafeBranchName("x".repeat(120)), true, "120 chars is the inclusive cap");
+
+assert.equal(
+  branchWorktreeDir("feat/chat-git-ergonomics"),
+  ".worktrees/feat-chat-git-ergonomics",
+  "slashes flatten to dashes so the checkout is one level under .worktrees/",
+);
+assert.equal(branchWorktreeDir("fix"), ".worktrees/fix", "plain names pass through");
 
 console.log("issue-worktree.test.ts OK");

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 // Starter mobile spec. Loads the home route on the pixel-5 and
 // iphone-13 viewport projects and asserts the phase 1 foundations:
@@ -14,6 +14,20 @@ import { expect, test } from "@playwright/test";
 // Surface-specific specs (chat composer, board card-stack, calendar
 // agenda, hover-tap) belong in their own files; this one is the
 // "did the foundation land at all" canary.
+
+type PreferencesResponse = {
+  ok: boolean;
+  preferences: { appearance: { screenScale: number } };
+};
+
+async function writePersistedScreenScale(request: APIRequestContext, scale: number) {
+  const response = await request.patch("/api/preferences", {
+    data: { appearance: { screenScale: scale } },
+  });
+  const body = await response.json() as PreferencesResponse;
+  expect(response.ok(), `preference PATCH failed: ${JSON.stringify(body)}`).toBe(true);
+  expect(body.preferences.appearance.screenScale).toBe(scale);
+}
 
 test.describe("mobile foundations", () => {
   test.beforeEach(async ({ page }) => {
@@ -160,44 +174,60 @@ test.describe("mobile foundations", () => {
     expect(fatalConsole, `fatal React render errors while sweeping surfaces:\n${fatalConsole.join("\n")}`).toEqual([]);
   });
 
-  test("persisted screen magnification scales the app without window scroll", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto("/");
-    await page.evaluate(() => {
-      window.localStorage.setItem("cave:screen-scale", "125");
-    });
-    await page.reload();
-    await page.waitForSelector(".shell-frame");
-    // Wait for the ScreenMagnificationController effect to fire and stamp the
-    // data-screen-scale attribute on <html> before reading metrics.
-    await page.waitForFunction(
-      () => document.documentElement.hasAttribute("data-screen-scale"),
-      { timeout: 5000 },
-    );
+  test("persisted screen magnification scales the app without window scroll", async ({ page, request }) => {
+    // Preferences are app-owned now, so seed the same canonical endpoint used
+    // by Settings. Legacy localStorage is only a first-run migration input and
+    // must not override an initialized store on reload. Playwright schedules
+    // the three copies of this test as a dependency chain so this reset cannot
+    // race another project or leak scale=125 into the normal parallel suite.
+    await writePersistedScreenScale(request, 100);
+    try {
+      await writePersistedScreenScale(request, 125);
 
-    const metrics = await page.evaluate(() => {
-      const frame = document.querySelector(".shell-frame");
-      const frameRect = frame?.getBoundingClientRect();
-      return {
-        scale: document.documentElement.getAttribute("data-screen-scale"),
-        // Magnification is rem-based root font scaling (not an app-wide zoom,
-        // which broke getBoundingClientRect math): :root sets --cave-screen-scale
-        // and html font-size = calc(16px * var). 125% → 20px root font.
-        scaleVar: getComputedStyle(document.documentElement).getPropertyValue("--cave-screen-scale").trim(),
-        rootFontSize: getComputedStyle(document.documentElement).fontSize,
-        documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-        bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
-        frameBottom: frameRect?.bottom ?? 0,
-        viewportHeight: window.innerHeight,
-      };
-    });
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto("/");
+      await page.waitForSelector(".shell-frame");
+      // The boot script stamps the default too, so presence alone is not a
+      // readiness signal. Wait until the persisted value is actually applied.
+      await page.waitForFunction(
+        () => document.documentElement.getAttribute("data-screen-scale") === "125",
+        { timeout: 5000 },
+      );
 
-    expect(metrics.scale).toBe("125");
-    expect(metrics.scaleVar).toBe("1.25");
-    expect(metrics.rootFontSize).toBe("20px");
-    expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
-    expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
-    expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+      // Prove the same canonical value is restored on a normal reload.
+      await page.reload();
+      await page.waitForSelector(".shell-frame");
+      await page.waitForFunction(
+        () => document.documentElement.getAttribute("data-screen-scale") === "125",
+        { timeout: 5000 },
+      );
+
+      const metrics = await page.evaluate(() => {
+        const frame = document.querySelector(".shell-frame");
+        const frameRect = frame?.getBoundingClientRect();
+        return {
+          scale: document.documentElement.getAttribute("data-screen-scale"),
+          // Magnification is rem-based root font scaling (not an app-wide zoom,
+          // which broke getBoundingClientRect math): :root sets --cave-screen-scale
+          // and html font-size = calc(16px * var). 125% → 20px root font.
+          scaleVar: getComputedStyle(document.documentElement).getPropertyValue("--cave-screen-scale").trim(),
+          rootFontSize: getComputedStyle(document.documentElement).fontSize,
+          documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+          bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
+          frameBottom: frameRect?.bottom ?? 0,
+          viewportHeight: window.innerHeight,
+        };
+      });
+
+      expect(metrics.scale).toBe("125");
+      expect(metrics.scaleVar).toBe("1.25");
+      expect(metrics.rootFontSize).toBe("20px");
+      expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
+      expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
+      expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+    } finally {
+      await writePersistedScreenScale(request, 100);
+    }
   });
 
   test("mobile drawer toggles render on phone viewport", async ({ page }) => {
@@ -226,11 +256,11 @@ test.describe("mobile foundations", () => {
     test.slow();
     // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
-    // this red. Two modes are intentionally excluded: "journal" retired as a
-    // standalone surface and now redirects to Settings → Familiars (swept
-    // separately after the loop, asserting the redirect); "grimoire" mounts a
-    // heavy Milkdown editor whose cold compile under next dev makes this fast
-    // canary flaky — it has its own coverage (see cave follow-up).
+    // this red. Two modes are intentionally excluded: "journal" now opens the
+    // Grimoire surface on its Journal tab (swept separately after the loop);
+    // "grimoire" mounts a heavy Milkdown editor whose cold compile under next
+    // dev makes this fast canary flaky — it has its own coverage (see cave
+    // follow-up), and the journal step below exercises the same mount.
     const IN_SHELL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
       "browser", "terminal", "github", "roles", "marketplace",
@@ -261,31 +291,28 @@ test.describe("mobile foundations", () => {
       await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
     }
 
-    // Assert no in-shell surface render-crashed BEFORE the journal redirect
-    // below. That step navigates cross-document to /settings, which cancels the
-    // workspace's in-flight chunk/fetch requests; next dev and WebKit surface
-    // those cancellations as benign pageerrors ("Failed to load chunk",
-    // "aborted", "…due to access control checks") that are loading artifacts,
-    // not render crashes. Checking here keeps the canary meaningful without
-    // enumerating every benign message.
+    // Assert no in-shell surface render-crashed while sweeping.
     expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
 
-    // "journal" is a WorkspaceMode but no longer an in-shell surface: it
-    // hard-redirects to Settings → Familiars (openFamiliarStudioSettingsTab →
-    // window.location.assign("/settings#familiars")). Run it last — its
-    // navigation away from the workspace would strand the sweep otherwise — and
-    // assert the redirect lands on the Settings shell. A render crash there
-    // unmounts to the error boundary, so .settings-shell never appears.
+    // "journal" is now an in-shell surface: it opens the Grimoire surface on its
+    // Journal tab (setGrimoireView("journal") → mode "grimoire"), no longer a
+    // cross-document redirect to Settings. Assert the shell survives and the
+    // Grimoire surface mounts (a render crash there unmounts to the error
+    // boundary, so .grimoire-view never appears).
     current = "journal";
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
     );
-    // /settings now mounts the Milkdown-backed memory/journal editor, whose
-    // first-hit compile under next dev can run well past 15s — wait generously.
-    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 45_000 });
+    await page.waitForTimeout(250);
     await expect(
-      page.locator(".settings-shell"),
-      "journal must redirect to the Settings shell without crashing",
+      page.locator(".shell-frame"),
+      "journal must keep the app shell mounted (no crash)",
+    ).toBeVisible();
+    // The Grimoire surface (with its Journal tab) mounts in-shell; its first-hit
+    // compile under next dev can run well past 15s — wait generously.
+    await expect(
+      page.locator(".grimoire-view"),
+      "journal opens the Grimoire surface without crashing",
     ).toBeVisible({ timeout: 45_000 });
   });
 });

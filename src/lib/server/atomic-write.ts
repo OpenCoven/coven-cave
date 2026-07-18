@@ -1,6 +1,27 @@
 import { rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 
+const TRANSIENT_RENAME_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+async function renameReplacing(source: string, target: string): Promise<void> {
+  // Windows can transiently return EPERM/EBUSY when several unique temp files
+  // race to replace the same destination. The source remains intact after that
+  // failure, so retrying the same atomic rename is safe. Persistent failures
+  // (for example, the target is a directory) still propagate after the short
+  // bounded retry window and are cleaned up by the caller.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (!TRANSIENT_RENAME_ERRORS.has(code) || attempt >= 6) throw error;
+      const delayMs = Math.min(50, 2 ** (attempt + 1));
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 /**
  * Atomically replace `path`'s contents with `data`.
  *
@@ -14,11 +35,14 @@ import { randomBytes } from "node:crypto";
  *
  * The target's directory must already exist (callers typically `mkdir` first).
  */
-export async function writeFileAtomic(path: string, data: string): Promise<void> {
+export async function writeFileAtomic(path: string, data: string | Uint8Array): Promise<void> {
   const tmp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
-    await writeFile(tmp, data, "utf8");
-    await rename(tmp, path);
+    // fs.writeFile already defaults strings to UTF-8 and writes typed arrays
+    // byte-for-byte. Keeping the binary path here lets image/file stores share
+    // the same unique-temp + rename safety as JSON stores.
+    await writeFile(tmp, data);
+    await renameReplacing(tmp, path);
   } catch (err) {
     await rm(tmp, { force: true }).catch(() => {});
     throw err;

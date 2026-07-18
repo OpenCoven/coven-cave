@@ -30,8 +30,8 @@ assert.match(
 
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\)/,
-  "ChatList should ask the shell to refresh sessions after deleting a chat",
+  /onSessionsDeleted\(\[sessionId\]\)/,
+  "ChatList should report a confirmed single delete to the Workspace boundary",
 );
 
 assert.match(
@@ -82,16 +82,19 @@ assert.deepEqual(
 assert.equal(sorted[1], groups[1], "groups without pins keep their reference");
 assert.equal(sortPinnedFirst(groups, []), groups, "no pins → groups returned untouched");
 
-// ChatList wiring: persisted pin state drives a pinned-first ordering.
+// ChatList wiring: the shared cross-surface pin store drives a pinned-first
+// ordering. ChatList must NOT keep a private useState copy of the pin list —
+// that's the stale-clobber bug (pin in the thread rail, then pin here, and the
+// stale copy overwrote the first pin on write).
 assert.match(
   source,
-  /setPinnedIds\(readPinnedSessions\(\)\)/,
-  "ChatList should hydrate pinned ids from the localStorage store after mount",
+  /const pinnedIds = usePinnedSessions\(\)/,
+  "ChatList should read pinned ids from the shared subscribable store",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /window\.localStorage\.setItem\(PINNED_SESSIONS_KEY, JSON\.stringify\(pinnedIds\)\)/,
-  "ChatList should persist pin toggles back to the localStorage store",
+  /setPinnedIds/,
+  "ChatList must not hold a private pin-list state that can clobber other surfaces",
 );
 assert.match(
   source,
@@ -100,7 +103,7 @@ assert.match(
 );
 assert.match(
   source,
-  /togglePinnedSession\(prev, sessionId\)/,
+  /toggleStoredPinnedSession\(sessionId\)/,
   "ChatList pin action should toggle through the shared store helper",
 );
 assert.match(
@@ -133,6 +136,26 @@ assert.match(
   source,
   /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}`, \{\s*method: "PATCH",[\s\S]*?JSON\.stringify\(\{ archived \}\)/,
   "Archive action should persist through the sessions PATCH endpoint",
+);
+assert.match(
+  source,
+  /const setSessionKeep = async \(sessionId: string, keep: boolean\) =>[\s\S]*\{ keep \}/,
+  "Keep toggle should route the keep field through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /const extendSessionAutoArchive = async \(sessionId: string, days: number\) =>[\s\S]*\{ extendDays: days \}/,
+  "Auto-archive extension should route extendDays through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /OverflowMenu[\s\S]*Archive controls for chat/,
+  "Chat rows should expose an archive-controls overflow menu for keep/extend actions",
+);
+assert.match(
+  source,
+  /Extend auto-archive \+7 days[\s\S]*Extend auto-archive \+30 days/,
+  "Archive-controls menu should offer quick +7d and +30d extension actions",
 );
 assert.match(
   source,
@@ -218,8 +241,8 @@ assert.match(
 );
 assert.match(
   source,
-  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,200}?animate-pulse/,
-  "Content search shows the shimmer idiom while the first fetch is in flight",
+  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,300}?ui-skeleton/,
+  "Content search shows the shared shimmer skeleton while the first fetch is in flight",
 );
 assert.match(
   source,
@@ -289,7 +312,7 @@ assert.match(
 // Both pills must share one base rule so adjacent pills read as siblings.
 assert.match(
   globals,
-  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*999px;[\s\S]*?\}/,
+  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
   "Origin and initiator pills must share a single base chrome rule",
 );
 // The three row action buttons (pin/archive/delete) must be uniform squares.
@@ -304,8 +327,8 @@ assert.match(
 );
 assert.match(
   source,
-  /window\.dispatchEvent\(new CustomEvent\("cave:debug-open"\)\)/,
-  "Chat row Debug action should reuse the existing debug panel event bridge",
+  /requestDebugOpen\(\)/,
+  "Chat row Debug action should use the latched debug-open request (survives ChatView mounting after the dispatch)",
 );
 assert.doesNotMatch(
   source,
@@ -333,12 +356,14 @@ assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} set
 assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
 assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+assert.match(source, /successfulSessionIds\(removed\.map\(\(session\) => session\.id\), results\)/, "bulk delete selects only confirmed ids");
+assert.match(source, /if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/, "bulk delete reports confirmed ids once");
 // Bulk delete is deferred + undoable via the shared undo toast.
 assert.match(source, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
 assert.match(source, /scheduleBulkDelete\(\s*removed,/, "bulk delete schedules the batch through the undo window");
 assert.match(source, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted rows are hidden from the list until commit");
 assert.match(source, /<UndoToast[\s\S]{0,160}onUndo=\{undoBulkDelete\}[\s\S]{0,40}onDismiss=\{commitBulkDelete\}/, "an undo toast offers to restore the batch");
-assert.match(source, /const allVisibleSelected = displayIds\.length > 0 && displayIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware");
+assert.match(source, /const allVisibleSelected = visibleIds\.length > 0 && visibleIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware (excludes collapsed rows)");
 assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
 
 console.log("chat-list-delete.test.ts: ok");

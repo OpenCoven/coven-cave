@@ -17,6 +17,7 @@ import {
   COLLECTIONS,
   sanitizeMarketplaceCatalogCards,
   sanitizeMarketplacePlugins,
+  isCraftInstallationVerified,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -26,7 +27,7 @@ const marketplacePlugins = [
   { name: "legacy", displayName: "Legacy", category: "Other", trust: "preview-local", policy: { installation: "UNAVAILABLE", authentication: "NONE" } },
 ];
 const manifests = {
-  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PAT" } } },
   fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"], mcpServers: { fetch: { command: "npx", type: "stdio" } } },
   "tinyfish-search": { version: "1.0.0", description: "Search the web with an API.", author: "TinyFish", keywords: ["search", "api"], capabilities: ["network", "api"], userConfig: { token: { required: true, sensitive: true, env: "TINYFISH_API_KEY" } } },
   // legacy: intentionally no manifest -> degraded card, no mcpServers -> kind "skill"
@@ -61,6 +62,8 @@ const fetchP = merged.find((p) => p.id === "fetch");
 assert.equal(fetchP.author, "Anthropic"); // string author form
 assert.equal(fetchP.installed, true);
 assert.equal(fetchP.requiresSetup, false);
+assert.deepEqual(fetchP.installation, installed.fetch, "legacy install state remains visible without new fields");
+assert.equal(fetchP.updateAvailable, false);
 
 const tinyfish = merged.find((p) => p.id === "tinyfish-search");
 assert.equal(tinyfish.kind, "api", "non-MCP configured API plugins should be first-class API entries");
@@ -103,13 +106,13 @@ assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other", "We
 
 // --- requiredConfig + configured + badge state (credential collection) ---
 const rcManifests = {
-  github: { userConfig: { github_token: { required: true, sensitive: true, title: "GitHub Token", description: "PAT", env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  github: { userConfig: { github_token: { required: true, sensitive: true, title: "GitHub Token", description: "PAT", env: "GITHUB_PAT" } } },
   fs: { userConfig: { filesystem_root: { required: true, sensitive: false, type: "directory", title: "Root", env: "COVEN_MCP_FILESYSTEM_ROOT" } } },
   none: { userConfig: { opt: { required: false, env: "X" }, noenv: { required: true } } }, // neither qualifies
 };
 
 assert.deepEqual(requiredConfigFromManifest(rcManifests.github), [
-  { key: "github_token", env: "GITHUB_PERSONAL_ACCESS_TOKEN", title: "GitHub Token", description: "PAT", sensitive: true },
+  { key: "github_token", env: "GITHUB_PAT", title: "GitHub Token", description: "PAT", sensitive: true },
 ]);
 assert.deepEqual(requiredConfigFromManifest(rcManifests.fs), [
   { key: "filesystem_root", env: "COVEN_MCP_FILESYSTEM_ROOT", title: "Root", description: undefined, sensitive: false },
@@ -140,7 +143,7 @@ const rcMerged = mergeCatalog(
 const gh = rcMerged[0];
 assert.equal(gh.requiresSetup, true);
 assert.equal(gh.configured, false);
-assert.deepEqual(gh.requiredConfig.map((f) => f.env), ["GITHUB_PERSONAL_ACCESS_TOKEN"]);
+assert.deepEqual(gh.requiredConfig.map((f) => f.env), ["GITHUB_PAT"]);
 
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true, configured: false }), "needs-setup");
 assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true, configured: false }), "needs-setup");
@@ -191,7 +194,75 @@ assert.equal(deriveKind({ prompts: ["debug-this"] }), "prompt");
 assert.equal(deriveKind({ prompts: [] }), "skill"); // empty pack -> not a prompt kind
 // An MCP server wins over shipped prompts — the server defines the runtime shape.
 assert.equal(deriveKind({ prompts: ["a"], mcpServers: { x: { command: "npx" } } }), "mcp");
+assert.equal(
+  deriveKind({ kind: "craft", mcpServers: { x: { command: "npx" } } }),
+  "craft",
+  "an explicit Craft kind wins over its bundled runtime components",
+);
 assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifest -> skill
+
+const craftSpec = {
+  schemaVersion: "opencoven.craft.v1",
+  components: { required: ["fetch"], optional: ["exa"] },
+  bundled: {
+    skills: [{
+      id: "brainstorming-research-ideas",
+      sourcePath: "craft-sources/seekers-lens/brainstorming-research-ideas/SKILL.md",
+      upstreamPath: "21-research-ideation/brainstorming-research-ideas/SKILL.md",
+      contentHash: "sha256:8422a1a6dc0a88d05f02b9fbe0f8c2ae06a77024856d18125efa13d19d855d46",
+      modifications: ["Normalized frontmatter for Codex."],
+    }],
+    prompts: [],
+    workflows: [],
+  },
+  requiredCapabilities: ["network.http"],
+  recommendedRoles: ["researcher"],
+  provenance: {
+    source: "https://github.com/orchestra-research/AI-Research-SKILLs",
+    commit: "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    license: "MIT",
+    licensePath: "craft-sources/orchestra-research/LICENSE",
+  },
+};
+const craftMerged = mergeCatalog(
+  [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
+  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec, mcpServers: { local: { command: "research-search", args: ["--stdio"] } } } },
+  {
+    "seekers-lens": {
+      version: "0.1.0",
+      source: "catalog",
+      installedAt: "2026-07-09T23:30:00.000Z",
+      runtime: "codex",
+      verifiedAt: "2026-07-09T23:30:00.000Z",
+      craftVersion: "0.1.0",
+    },
+  },
+);
+assert.equal(craftMerged[0].kind, "craft");
+assert.deepEqual(craftMerged[0].craft, craftSpec, "Craft metadata is exposed through the marketplace model");
+assert.equal(craftMerged[0].installation.runtime, "codex");
+assert.equal(craftMerged[0].installation.verifiedAt, "2026-07-09T23:30:00.000Z");
+assert.equal(craftMerged[0].installation.craftVersion, "0.1.0");
+assert.equal(craftMerged[0].updateAvailable, false);
+assert.equal(isCraftInstallationVerified(craftMerged[0]), true);
+
+const legacyCraftMerged = mergeCatalog(
+  [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
+  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec } },
+  {
+    "seekers-lens": {
+      version: "0.1.0",
+      source: "catalog",
+      installedAt: "2026-07-09T23:30:00.000Z",
+    },
+  },
+);
+assert.equal(isCraftInstallationVerified(legacyCraftMerged[0]), false);
+assert.equal(
+  legacyCraftMerged[0].updateAvailable,
+  true,
+  "legacy Craft installs must offer the Codex verification/update transaction",
+);
 
 // --- filterPlugins: kind + ids ---
 assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
@@ -201,14 +272,15 @@ assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) =>
 assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
 
 // --- countByKind ---
-assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0 });
+assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0, craft: 0, "knowledge-pack": 0 });
+assert.deepEqual(countByKind(craftMerged), { api: 0, mcp: 0, skill: 0, prompt: 0, craft: 1, "knowledge-pack": 0 });
 
 // --- groupPluginsByCategory ---
 const groups = groupPluginsByCategory(merged);
 assert.deepEqual(groups.map((g) => g.category), ["Developer Tools", "Other", "Web"]);
 assert.deepEqual(groups[0].plugins.map((p) => p.id), ["fetch", "github"]);
-assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0 });
-assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0 });
+assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0, craft: 0, "knowledge-pack": 0 });
+assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0, craft: 0, "knowledge-pack": 0 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);
@@ -265,7 +337,7 @@ assert.ok(!prodNames.has("openclaw-skills"), "bundled OpenClaw Skills umbrella s
 for (const name of ["ocr", "higgsfield-generate", "prompt-vault"]) {
   assert.ok(prodNames.has(name), `individual OpenClaw skill "${name}" should be a Cave marketplace card`);
 }
-for (const familiarSkill of ["coven-nova", "coven-kitty", "coven-cody", "coven-charm", "coven-sage", "coven-astra", "coven-echo"]) {
+for (const familiarSkill of ["coven-nova", "coven-kitty", "coven-cody", "coven-charm", "coven-sage", "coven-astra", "coven-echo", "coven-salem"]) {
   assert.ok(!prodNames.has(familiarSkill), `${familiarSkill} should not be exposed as a hardcoded familiar skill`);
 }
 	assert.ok(!prodNames.has("rollcall"), "rollcall should not be exposed as a hardcoded familiar skill");
@@ -274,16 +346,23 @@ for (const plugin of sanitizedProductionPlugins) {
   assert.deepEqual(plugin.roleAffinity ?? [], [], `${plugin.name} should not expose hardcoded familiar role affinity`);
 }
 for (const plugin of sanitizedProductionCards) {
-  assert.doesNotMatch(JSON.stringify(plugin).toLowerCase(), /\b(nova|kitty|cody|charm|sage|astra|echo)\b/, `${plugin.id} should not mention named familiars`);
+  assert.doesNotMatch(JSON.stringify(plugin).toLowerCase(), /\b(nova|kitty|cody|charm|sage|astra|echo|salem)\b/, `${plugin.id} should not mention named familiars`);
 }
 for (const [label, source] of [
   ["/api/marketplace", marketplaceRoute],
-  ["/api/marketplace/install", marketplaceInstallRoute],
   ["/api/marketplace/uninstall", marketplaceUninstallRoute],
   ["marketplace catalog-config", marketplaceCatalogConfig],
 ]) {
   assert.match(source, /sanitizeMarketplacePlugins/, `${label} should resolve ids through the familiar-safe marketplace catalog`);
 }
+// The install route delegates id-resolution and Craft classification to the
+// shared, path-injection-safe catalog helper (which sanitizes the catalog), so it no
+// longer names sanitizeMarketplacePlugins directly (cave-1f9h).
+assert.match(
+  marketplaceInstallRoute,
+  /resolveCatalogPlugin/,
+  "/api/marketplace/install should resolve ids through the shared catalog resolver",
+);
 
 // --- production prompt pack: card derives kind "prompt", template files exist ---
 const packCard = sanitizedProductionCards.find((p) => p.id === "prompt-pack-essentials");

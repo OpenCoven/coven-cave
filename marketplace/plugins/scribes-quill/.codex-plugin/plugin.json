@@ -1,0 +1,33 @@
+{
+  "name": "scribes-quill",
+  "version": "0.1.0",
+  "description": "Evidence-grounded synthesis, papers, plots, and conference talks.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Scribe's Quill",
+    "shortDescription": "Evidence-grounded synthesis, papers, plots, and conference talks.",
+    "longDescription": "Evidence-grounded synthesis, papers, plots, and conference talks.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Scribe's Quill to open a bounded research direction."
+    ]
+  }
+}

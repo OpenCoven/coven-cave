@@ -119,8 +119,9 @@ assert.match(source, /profileCache\.set\(login, profile\)/, "a fetched profile p
 
 // Checks live-refresh: while the rollup is pending, poll every 30s; the same-PR
 // refresh is silent (no skeleton flash) and a hidden tab spends no rate limit.
-assert.match(source, /if \(rollup !== "pending"\) return;[\s\S]{0,240}setInterval[\s\S]{0,160}30_000/, "a pending rollup schedules a 30s live-refresh");
-assert.match(source, /document\.hidden\) return;[\s\S]{0,60}setTick/, "the live-refresh skips fetching while the tab is hidden");
+// The poll goes through usePausablePoll (cave-e794): hidden pause is built in
+// and returning to the tab ticks immediately instead of waiting out the 30s.
+assert.match(source, /usePausablePoll\(\(\) => setTick\(\(t\) => t \+ 1\), 30_000, \{ enabled: rollup === "pending" \}\)/, "a pending rollup schedules a 30s live-refresh (paused while hidden, instant on return)");
 assert.match(source, /const silent = keyRef\.current === key;[\s\S]{0,120}if \(!silent\) setState\(\{ status: "loading" \}\)/, "a same-PR refresh keeps the list mounted (no loading flash)");
 assert.match(source, /else if \(!silent\) setState\(\{ status: "error" \}\)/, "a failed silent refresh keeps the last good list");
 

@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
   source,
@@ -31,7 +33,7 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear-header\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*top\s*:\s*0[\s\S]*padding\s*:\s*8px 12px 9px/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear-header\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*top\s*:\s*0[\s\S]*padding\s*:\s*var\(--space-2\) var\(--space-3\) 9px/,
   "Mobile chat header should stay compact under the shell-owned safe area",
 );
 

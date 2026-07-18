@@ -13,20 +13,29 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { AuthedImage } from "@/components/ui/authed-image";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
-import type { FileMemoryEntry } from "@/components/familiars-memory-view";
+import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
+import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
+  ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type FamiliarCardStats,
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
+import { deriveRenown } from "@/lib/familiar-renown";
+import { compactCount } from "@/lib/profile-card";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
+import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -53,6 +62,12 @@ type AgentsViewProps = {
   onOpenUrl: (url: string) => void;
   /** Refresh the roster after a familiar is created and focus the new one. */
   onFamiliarCreated?: (id: string) => void;
+  /** Last roster-load failure. When set with an empty roster the surface must
+   *  NOT show first-run copy — the familiars may exist but be unreadable
+   *  (daemon flap, auth) (cave-atzv). */
+  familiarsError?: string | null;
+  /** Retry a failed roster load. */
+  onRetryFamiliars?: () => void;
 };
 
 function familiarMatches(familiar: Familiar, query: string): boolean {
@@ -78,13 +93,34 @@ export function FamiliarsView({
   onOpenOnboarding,
   onOpenUrl,
   onFamiliarCreated,
+  familiarsError,
+  onRetryFamiliars,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [createOpen, setCreateOpen] = useState(false);
+  // Other surfaces request the Summoning Circle through summon-events: the
+  // retained latch covers the fresh-mount race (mode flip → this view mounts
+  // after the event fired); the event covers the already-mounted case. The
+  // listener consumes the latch too — requestSummonFamiliar arms it
+  // unconditionally, so an already-mounted view that only reacted to the
+  // event left it armed and the NEXT mount popped the circle open uninvited
+  // (cave-ibvl).
+  useEffect(() => {
+    if (consumeSummonPending()) setCreateOpen(true);
+    const open = () => {
+      consumeSummonPending();
+      setCreateOpen(true);
+    };
+    window.addEventListener(SUMMON_FAMILIAR_EVENT, open);
+    return () => window.removeEventListener(SUMMON_FAMILIAR_EVENT, open);
+  }, []);
+  // When set, the summoning circle opens as the Enhancement Rite for this familiar.
+  const [enhanceTarget, setEnhanceTarget] = useState<ResolvedFamiliar | null>(null);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [memoryLoadedAt, setMemoryLoadedAt] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
@@ -143,6 +179,7 @@ export function FamiliarsView({
       setMemoryError(err instanceof Error ? err.message : "memory unavailable");
     } finally {
       setMemoryLoaded(true);
+      setMemoryLoadedAt(new Date().toISOString());
     }
   }, []);
 
@@ -151,6 +188,21 @@ export function FamiliarsView({
   }, [loadMemory]);
   // Pauses in a hidden tab; refreshes on return.
   usePausablePoll(() => void loadMemory(), 30_000);
+
+  // Single source of truth for the memory endpoints: the embedded
+  // FamiliarsMemoryView mounts consume this instead of running their own
+  // duplicate fetch + 30s poll of the same two APIs (cave-5dnw).
+  const memoryFeed = useMemo<MemoryFeed>(
+    () => ({
+      covenEntries,
+      fileEntries,
+      error: memoryError,
+      loaded: memoryLoaded,
+      lastLoadedAt: memoryLoadedAt,
+      reload: loadMemory,
+    }),
+    [covenEntries, fileEntries, memoryError, memoryLoaded, memoryLoadedAt, loadMemory],
+  );
 
   const stats = useMemo(
     () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
@@ -195,11 +247,8 @@ export function FamiliarsView({
       <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <Icon name="ph:users-three" width={16} className="text-[var(--accent-presence)]" />
-              <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiars</h1>
-            </div>
-            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            <h1 className="familiars-view__wordmark">Familiars</h1>
+            <p className="familiars-view__tagline mt-1.5">
               Roster of every familiar — identity, status, recent activity, memory at a glance.
             </p>
           </div>
@@ -207,11 +256,11 @@ export function FamiliarsView({
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              title="Create a new familiar"
+              title="Open the summoning circle"
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--bg-base)] hover:opacity-90"
             >
-              <Icon name="ph:plus" width={12} />
-              New familiar
+              <Icon name="ph:magic-wand-fill" width={12} />
+              Summon familiar
             </button>
             <button
               type="button"
@@ -253,7 +302,7 @@ export function FamiliarsView({
                 }
               }}
               placeholder="Search familiars…"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
             {!query && (
               <kbd
@@ -283,10 +332,33 @@ export function FamiliarsView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {familiars.length === 0 ? (
           <div className="p-4">
-            <FamiliarsEmptyState
-              onCreate={() => setCreateOpen(true)}
-              onOpenOnboarding={onOpenOnboarding}
-            />
+            {familiarsError ? (
+              // The roster failed to load — familiars may exist but be
+              // unreadable right now. First-run "summon your first" copy here
+              // would read as "your familiars were deleted" (cave-atzv).
+              <EmptyState
+                className="familiars-view__empty mx-auto my-16 max-w-md"
+                icon="ph:plugs"
+                headline="Can't reach your familiars"
+                subtitle={
+                  daemonRunning
+                    ? "The roster didn't load. Your familiars are safe — retry in a moment."
+                    : "The daemon is offline, so the roster can't be read. Your familiars are safe — start the daemon, then retry."
+                }
+                actions={
+                  onRetryFamiliars ? (
+                    <Button variant="primary" leadingIcon="ph:arrow-clockwise" onClick={onRetryFamiliars}>
+                      Retry
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <FamiliarsEmptyState
+                onCreate={() => setCreateOpen(true)}
+                onOpenOnboarding={onOpenOnboarding}
+              />
+            )}
           </div>
         ) : viewMode === "detail" && selectedFamiliar ? (
           <div className="familiars-view__detail flex h-full min-h-0">
@@ -304,9 +376,11 @@ export function FamiliarsView({
               fileEntries={fileEntries}
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
+              memoryFeed={memoryFeed}
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
+              onEnhance={() => setEnhanceTarget(selectedFamiliar)}
               onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
               onOpenMemoryFile={onOpenMemoryFile}
               onOpenUrl={onOpenUrl}
@@ -326,8 +400,10 @@ export function FamiliarsView({
             />
           </div>
         ) : (
-          <div className="p-4">
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="@container p-4">
+            {/* Columns follow the PANE (container), not the viewport — in a
+                split tile a 1680px window must not force xl's 4 columns. */}
+            <div className="grid gap-3 @min-[700px]:grid-cols-2 @min-[1050px]:grid-cols-3 @min-[1400px]:grid-cols-4">
               {visibleFamiliars.map((familiar) => (
                 <FamiliarRosterCard
                   key={familiar.id}
@@ -347,6 +423,7 @@ export function FamiliarsView({
         <FamiliarMemoryOverlay
           familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
+          memoryFeed={memoryFeed}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />
@@ -357,12 +434,19 @@ export function FamiliarsView({
           onClose={() => setPreviewFamiliar(null)}
         />
       ) : null}
-      <CreateFamiliarDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
+      <FamiliarSummoningCircle
+        open={createOpen || enhanceTarget !== null}
+        onClose={() => {
+          setCreateOpen(false);
+          setEnhanceTarget(null);
+        }}
         existingIds={familiars.map((f) => f.id)}
         defaultHarness={familiars.find((f) => f.defaultHarness)?.defaultHarness}
         onCreated={(id) => onFamiliarCreated?.(id)}
+        enhance={enhanceTarget}
+        onEnhanced={(id) => onFamiliarCreated?.(id)}
+        daemonRunning={daemonRunning}
+        onStartChat={onStartChat}
       />
     </div>
   );
@@ -373,8 +457,11 @@ function emptyStats(): FamiliarCardStats {
     memoryCount: 0,
     latestMemory: null,
     lastSessionAt: null,
+    sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    streakDays: 0,
+    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
 
@@ -389,12 +476,12 @@ function FamiliarsEmptyState({
     <EmptyState
       className="familiars-view__empty mx-auto my-16 max-w-md"
       icon="ph:sparkle"
-      headline="No familiars yet"
-      subtitle="Create your first familiar to populate the roster."
+      headline="The circle awaits"
+      subtitle="A familiar is an AI agent with its own identity, memory, and runtime. Summon your first — it can run on this machine, on a remote host over SSH, or bridge an OpenClaw agent you already keep."
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="primary" leadingIcon="ph:plus" onClick={onCreate}>
-            Create a familiar
+          <Button variant="primary" leadingIcon="ph:magic-wand-fill" onClick={onCreate}>
+            Summon a familiar
           </Button>
           <Button variant="ghost" onClick={onOpenOnboarding}>
             Run full setup
@@ -425,83 +512,160 @@ function FamiliarRosterCard({
   onSelect,
 }: AgentRosterCardProps) {
   const lastSessionLabel = stats.lastSessionAt
-    ? `Last session ${age(stats.lastSessionAt)}`
+    ? `last session ${age(stats.lastSessionAt)}`
     : "No sessions yet";
-  const sessionsLabel =
-    stats.sessionsLast7d > 0 ? ` · ${stats.sessionsLast7d} this week` : "";
+  const stripTotal = stats.activity.reduce((sum, n) => sum + n, 0);
+  // Renown — earned standing derived from real work (sessions + curated
+  // memories), never a synthetic counter. Tier reads as quiet metadata in the
+  // microlabel voice; the tooltip carries the score and the next rung.
+  const renown = deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount });
+  const renownTitle = renown.next
+    ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
+    : `${renown.score} renown · top of the ladder`;
+  const streakTitle =
+    stats.streakDays > 0
+      ? `${stats.streakDays} consecutive day${stats.streakDays === 1 ? "" : "s"} with sessions`
+      : "No active streak — a session today starts one";
   return (
-    <div className="flex h-full flex-col">
+    // De-boxed card (cave-g2r6) restyled as a terminal stat tile (cave-uw7c):
+    // the wrapper carries the wash + soft hairline so the open button and the
+    // profile/analytics links can sit inside one visual card as sibling
+    // interactive elements (no nested controls). Typography and the stat band
+    // follow the profile share card (src/styles/profile-card.css) — monospace
+    // lowercase labels, hairline-divided tiles, glowing numerals.
+    <div className="familiars-view__card group relative flex h-full flex-col">
       <button
         type="button"
         onClick={onSelect}
-        className="focus-ring familiars-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
+        className="focus-ring flex flex-1 flex-col items-stretch rounded-[inherit] text-left"
         aria-label={`Open ${familiar.display_name}`}
       >
-        <div className="flex items-center gap-2">
-          <FamiliarAvatar familiar={familiar} size="sm" />
+        <span className="flex items-center gap-2.5 px-3 pt-3">
+          <span className="familiars-view__avatar-tile" aria-hidden="true">
+            <FamiliarAvatar familiar={familiar} size="lg" />
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            <span className="block truncate font-mono text-[13px] font-semibold tracking-wide text-[var(--text-primary)]">
               {familiar.display_name}
             </span>
-            <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
-              {familiar.role || familiar.harness || familiar.id}
+            <span className="familiars-view__microlabel mt-1 flex min-w-0 items-center gap-1">
+              <span className="truncate">{familiar.role || familiar.harness || familiar.id}</span>
+              <span aria-hidden="true">·</span>
+              <span className="shrink-0 text-[var(--text-secondary)]" title={renownTitle}>
+                {renown.tier.label}
+              </span>
             </span>
           </span>
-        </div>
+          <span className="familiars-view__microlabel inline-flex shrink-0 items-center gap-1.5 self-start">
+            <span
+              className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)] familiars-view__status-dot--live" : "bg-[var(--text-muted)]"}`}
+              aria-hidden="true"
+            />
+            {daemonRunning ? "online" : "offline"}
+          </span>
+        </span>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
-          <span
-            className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`}
-            aria-hidden="true"
-          />
-          <span>{daemonRunning ? "online" : "offline"}</span>
-          {stats.hasActiveSession ? (
-            <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[9px] text-[var(--accent-presence)]">
-              active session
+        {stats.hasActiveSession || responseNeeded ? (
+          <span className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+            {stats.hasActiveSession ? (
+              <span className="familiars-view__chip text-[var(--accent-presence)]">
+                active session
+              </span>
+            ) : null}
+            {responseNeeded ? (
+              <span className="familiars-view__chip familiars-view__chip--warning">
+                response needed
+              </span>
+            ) : null}
+          </span>
+        ) : null}
+
+        <span className="familiars-view__statband mt-3">
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">sessions</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsTotal)}</span>
+          </span>
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">this week</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast7d)}</span>
+          </span>
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">memories</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.memoryCount)}</span>
+          </span>
+          <span className="familiars-view__stat" title={streakTitle}>
+            <span className="familiars-view__stat-label">streak</span>
+            <span className="familiars-view__stat-value">
+              {stats.streakDays > 0 ? `${stats.streakDays}d` : "—"}
             </span>
-          ) : null}
-          {responseNeeded ? (
-            <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] text-[var(--color-warning)]">
-              response needed
-            </span>
-          ) : null}
-        </div>
+          </span>
+        </span>
 
-        <p className="text-[11px] text-[var(--text-secondary)]">
-          {lastSessionLabel}{sessionsLabel}
-        </p>
+        <span
+          className="familiars-view__strip"
+          aria-hidden="true"
+          title={`${stripTotal} session${stripTotal === 1 ? "" : "s"} in the last ${ACTIVITY_DAYS} days`}
+        >
+          {stats.activity.map((count, index) => (
+            <i key={index} data-level={activityLevel(count, stats.activity)} />
+          ))}
+        </span>
 
-        <div className="mt-auto border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-secondary)]">
+        <span className="familiars-view__microlabel mt-auto block truncate px-3 pb-2.5 pt-2">
+          {lastSessionLabel}
+        </span>
+      </button>
+
+      {/* Card footer — memory snapshot as a quiet one-liner + the profile and
+          analytics links folded inside the card (they used to float orphaned
+          below the border). Hairline divider, no second box. */}
+      <div className="familiars-view__card-footer flex items-center justify-between gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-2 font-mono text-[10px]">
+        <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={stats.latestMemory?.title}>
           {memoryStatus === "loading" ? (
-            <span className="text-[var(--text-muted)]">Loading memory…</span>
+            // Shimmer instead of a "Loading memory…" string — one loading
+            // language across the roster, and no dead-looking text while the
+            // first fetch is cold (cave-5qmm).
+            <span aria-hidden className="block py-0.5">
+              <Skeleton variant="text-sm" width="55%" />
+            </span>
           ) : memoryStatus === "error" ? (
-            <span className="text-[var(--text-muted)]">Memory unavailable</span>
+            "Memory unavailable"
           ) : stats.memoryCount === 0 ? (
-            <span className="text-[var(--text-muted)]">No memories yet</span>
+            "No memories yet"
           ) : (
             <>
-              <span className="block">
-                {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
-                {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
-              </span>
-              {stats.latestMemory ? (
-                <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">
-                  {stats.latestMemory.title}
-                </span>
-              ) : null}
+              {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
+              {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
             </>
           )}
-        </div>
-      </button>
-      <Link
-        href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
-        aria-label={`Open analytics for ${familiar.display_name}`}
-        className="mt-1 self-start text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-presence)]"
-      >
-        Analytics →
-      </Link>
+        </span>
+        <Link
+          href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
+          aria-label={`Open profile for ${familiar.display_name}`}
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] lowercase text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        >
+          Profile →
+        </Link>
+        <Link
+          href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+          aria-label={`Open analytics for ${familiar.display_name}`}
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] lowercase text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        >
+          Analytics →
+        </Link>
+      </div>
     </div>
   );
+}
+
+/**
+ * Bucket a day's count against the strip max — same 1..4 ramp as the profile
+ * card heatmap (src/lib/profile-card.ts levelFor) so both surfaces agree.
+ */
+function activityLevel(count: number, activity: number[]): 0 | 1 | 2 | 3 | 4 {
+  const max = Math.max(0, ...activity);
+  if (count <= 0 || max <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((count / max) * 4))) as 1 | 2 | 3 | 4;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -511,11 +675,12 @@ function FamiliarRosterCard({
 type AgentMemoryOverlayProps = {
   familiars: ResolvedFamiliar[];
   familiar: ResolvedFamiliar;
+  memoryFeed: MemoryFeed;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
 
-function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
+function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
   useFocusTrap(true, panelRef, { onEscape: onClose });
@@ -547,6 +712,7 @@ function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile 
           familiars={familiars}
           activeFamiliar={familiar}
           lockToFamiliar
+          feed={memoryFeed}
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>
@@ -590,7 +756,7 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview, onBack
                   onSelect(f.id);
                   onPreview(f);
                 }}
-                className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border ${
                   active
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -630,13 +796,74 @@ type AgentDetailPanelProps = {
   fileEntries: FileMemoryEntry[];
   memoryError: string | null;
   memoryLoaded: boolean;
+  memoryFeed: MemoryFeed;
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
+  /** Open the summoning circle in Enhancement Rite mode for this familiar. */
+  onEnhance: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
   onOpenUrl: (url: string) => void;
 };
+
+// Per-familiar overflow menu on the detail panel header. Remove routes to the
+// Studio lifecycle tab rather than confirming here — the destructive flow
+// (confirm copy, undo toast, tombstone coupling) lives only in
+// familiar-studio-lifecycle-tab.tsx, and this menu is the discoverable
+// entry point the Familiars surface lacked.
+function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
+  const { openFamiliarStudio } = useFamiliarStudio();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        aria-label={`${familiar.display_name} options`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Familiar options"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="ph:dots-three-vertical" width={14} aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={200}
+        ariaLabel="Familiar options"
+      >
+        <PopoverBody>
+          <PopoverItem
+            icon="ph:pencil-simple"
+            onSelect={() => {
+              setOpen(false);
+              openFamiliarStudio(familiar.id, "identity");
+            }}
+          >
+            Edit in Studio
+          </PopoverItem>
+          <PopoverSeparator />
+          <PopoverItem
+            icon="ph:trash"
+            danger
+            onSelect={() => {
+              setOpen(false);
+              openFamiliarStudio(familiar.id, "lifecycle");
+            }}
+          >
+            Remove familiar…
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
 
 function FamiliarDetailPanel({
   familiar,
@@ -645,14 +872,18 @@ function FamiliarDetailPanel({
   fileEntries,
   memoryError,
   memoryLoaded,
+  memoryFeed,
   onClose,
   onPreview,
   onStartChat,
+  onEnhance,
   onOpenSession,
   onOpenMemoryFile,
   onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>("memory");
+  // Session trace overlay — the daemon event timeline behind one session.
+  const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const familiarSessions = useMemo(
     () =>
       sessions
@@ -682,10 +913,10 @@ function FamiliarDetailPanel({
             <FamiliarAvatar familiar={familiar} size="xl" />
           </button>
           <div className="min-w-0">
-            <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
+            <h2 className="familiars-view__nameplate truncate">
               {familiar.display_name}
             </h2>
-            <p className="truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+            <p className="familiars-view__microlabel mt-1 truncate">
               {familiar.role || familiar.harness || familiar.id}
             </p>
           </div>
@@ -700,6 +931,16 @@ function FamiliarDetailPanel({
             <Icon name="ph:chat-circle-dots" width={12} />
             Start
           </button>
+          <button
+            type="button"
+            onClick={onEnhance}
+            title={`Enhance ${familiar.display_name} in the circle`}
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+          >
+            <Icon name="ph:magic-wand-fill" width={12} />
+            Enhance
+          </button>
+          <FamiliarPanelMenu familiar={familiar} />
           <button
             type="button"
             onClick={onClose}
@@ -732,6 +973,7 @@ function FamiliarDetailPanel({
             familiars={familiars}
             activeFamiliar={familiar}
             lockToFamiliar
+            feed={memoryFeed}
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "daily-notes" ? (
@@ -782,11 +1024,11 @@ function FamiliarDetailPanel({
             ) : (
               <ul className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
                 {familiarSessions.map((s) => (
-                  <li key={s.id}>
+                  <li key={s.id} className="flex items-stretch">
                     <button
                       type="button"
                       onClick={() => onOpenSession(s.id)}
-                      className="focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                      className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
                     >
                       <Icon name="ph:terminal-window" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                       <span className="min-w-0 flex-1">
@@ -799,6 +1041,16 @@ function FamiliarDetailPanel({
                       </span>
                       <RelativeTime iso={s.updated_at} className="shrink-0 text-[10px] text-[var(--text-muted)]" />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setTraceTarget({ id: s.id, title: s.title })}
+                      className="focus-ring-inset flex shrink-0 items-center gap-1 border-l border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                      title="Trace this session's daemon events"
+                      aria-label={`Trace ${s.title || s.id}`}
+                    >
+                      <Icon name="ph:tree-structure" width={12} aria-hidden />
+                      Trace
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -806,6 +1058,10 @@ function FamiliarDetailPanel({
           </div>
         )}
       </div>
+
+      {traceTarget ? (
+        <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+      ) : null}
     </section>
   );
 }
@@ -829,21 +1085,18 @@ function FamiliarAvatarPreviewOverlay({ familiar, onClose }: FamiliarAvatarPrevi
     >
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
-          {familiar.avatarImage ? (
-            <img
-              src={familiar.avatarImage}
-              alt={`${familiar.display_name} avatar`}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <FamiliarAvatar familiar={familiar} size="xl" />
-          )}
+          <AuthedImage
+            src={familiar.avatarImage}
+            alt={`${familiar.display_name} avatar`}
+            className="h-full w-full object-cover"
+            fallback={<FamiliarAvatar familiar={familiar} size="xl" />}
+          />
         </div>
         <div className="min-w-0">
           <div className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
             {familiar.display_name}
           </div>
-          <div className="mt-0.5 truncate text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+          <div className="familiars-view__microlabel mt-1 truncate">
             {familiar.role || familiar.harness || familiar.id}
           </div>
         </div>

@@ -32,6 +32,8 @@ export function normalizeReadingTracking(value: unknown): ReadingTracking {
 }
 
 export function readReadingTracking(): ReadingTracking {
+  const central = normalizeReadingTracking(readAppPreferences().appearance.reading.tracking);
+  if (central !== DEFAULT_READING_TRACKING || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_TRACKING;
   try {
     return normalizeReadingTracking(window.localStorage.getItem(READING_TRACKING_KEY));
@@ -44,9 +46,12 @@ export function readReadingTracking(): ReadingTracking {
  * Apply the level: set `--cave-reading-tracking` on <html> (or remove it for
  * the default so the stylesheet fallback wins) and persist the choice.
  */
-export function applyReadingTracking(level: ReadingTracking) {
+export function applyReadingTracking(level: ReadingTracking, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingTracking(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { tracking: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_TRACKING) {
     root.style.removeProperty("--cave-reading-tracking");
@@ -60,3 +65,4 @@ export function applyReadingTracking(level: ReadingTracking) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

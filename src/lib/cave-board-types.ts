@@ -37,6 +37,33 @@ export type CardGitHubLink = {
   updatedAt?: string;
 };
 
+export type CardAsanaKind = "task" | "subtask" | "project";
+
+/**
+ * A structured connection between a board card and an Asana object, mirroring
+ * {@link CardGitHubLink}. Populated when a user attaches an assigned Asana task
+ * from the inspector, pastes an app.asana.com URL into a card's links (backfilled
+ * server-side), or a familiar working through the Asana MCP files the task here.
+ * `url` is the Asana permalink; `gid` is Asana's stable object id.
+ */
+export type CardAsanaLink = {
+  id: string;
+  kind: CardAsanaKind;
+  gid: string;
+  title: string;
+  url: string;
+  projectGid?: string;
+  projectName?: string;
+  /** Assignee display name/email, when known from the assigned-tasks fetch. */
+  assignee?: string;
+  completed?: boolean;
+  /** Due date as YYYY-MM-DD, when the task carries one. */
+  dueOn?: string | null;
+  source?: "assigned" | "manual" | "legacy-link";
+  savedAt?: string;
+  updatedAt?: string;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -50,6 +77,7 @@ export type Card = {
   projectId?: string | null;
   links: string[];
   github: CardGitHubLink[];
+  asana: CardAsanaLink[];
   labels: string[];
   startDate?: string | null;
   endDate?: string | null;

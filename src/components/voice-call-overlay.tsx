@@ -1,12 +1,15 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
-import type { LiveSession, VoiceSessionGrant } from "@/lib/voice/types";
+import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine } from "@/lib/voice/types";
+import { voiceErrorHint } from "@/lib/voice/types";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 
 type Props = {
@@ -70,21 +73,30 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           return;
         }
         try {
+          // The familiar-brain provider runs real chat turns — /api/chat/send
+          // already persisted both sides, so appending voice-origin transcript
+          // turns would double every exchange.
+          const persistTranscript = !provider.persistsTranscripts;
           const live = await provider.clientAdapter.connect(grant, mic, {
-            onUserTranscriptFinal: (text) => postTranscript(sessionId, callId, "user", text),
-            onAssistantTranscriptFinal: (text) => postTranscript(sessionId, callId, "assistant", text),
+            onUserTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "user", text);
+            },
+            onAssistantTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "assistant", text);
+            },
             onPartialTranscript: () => { /* live caption surface, not persisted */ },
-            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message }),
+            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) }),
             onDisconnect: () => dispatch({ type: "DISCONNECTED" }),
           });
           if (cancelled) { await live.close(); return; }
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
-          dispatch({ type: "CONNECTED", startedAt: Date.now() });
+          dispatch({ type: "CONNECTED", startedAt: Date.now(), earsEngine: live.earsEngine });
         } catch (err) {
           dispatch({
             type: "PROVIDER_ERROR",
             errorCode: err instanceof Error ? err.message : "connect_failed",
+            hint: voiceErrorHint(err),
           });
         }
       } else if (state.state === "ending") {
@@ -154,6 +166,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
         </header>
         <div className="voice-call-overlay__body">
+          {state.state === "live" && state.earsEngine && (
+            <span className="voice-call-overlay__ears" title="How this call hears you">
+              {earsEngineLabel(state.earsEngine)}
+            </span>
+          )}
           {state.state === "error" && (
             <div className="voice-call-overlay__error" role="alert">
               <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
@@ -196,6 +213,16 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   return createPortal(overlay, document.body);
 }
 
+// The engine badge is honest, not decorative: "On-device" is the no-cloud
+// promise kept; the other modes tell the user their audio rides a service.
+function earsEngineLabel(engine: VoiceEarsEngine): string {
+  switch (engine) {
+    case "native-on-device": return "Hearing on-device";
+    case "native-dictation": return "Hearing via Apple dictation";
+    case "web-speech": return "Hearing via browser speech";
+  }
+}
+
 function labelFor(s: CallState): string {
   switch (s.state) {
     case "requesting-mic": return "Requesting microphone…";
@@ -212,6 +239,11 @@ function labelFor(s: CallState): string {
 // Turn the machine-readable error code into something a person can act on. The
 // raw code (and any provider detail) still surfaces via the `hint` line below.
 function errorMessage(code: string | undefined): string {
+  // Connection-phase rejections (e.g. an invalid voiceModel only surfaces at
+  // the SDP exchange); the provider's own detail renders as the hint below.
+  if (code?.startsWith("sdp_exchange_failed_")) {
+    return "The voice provider rejected the call setup.";
+  }
   switch (code) {
     case "microphone_denied":
       return "Microphone access was denied. Allow it in your browser settings to start a call.";
@@ -221,6 +253,27 @@ function errorMessage(code: string | undefined): string {
       return "Something went wrong setting up the call. Please try again.";
     case "connect_failed":
       return "The call couldn't connect. Please try again.";
+    // STT / speech recognition
+    case "stt_unavailable":
+      return "Speech recognition isn't available in this window.";
+    // Vault / key issues
+    case "vault_key_unresolved":
+      return "A required API key isn't set up in your Vault.";
+    case "voice_not_configured":
+      return "This familiar has no voice provider configured.";
+    // ElevenLabs-specific
+    case "elevenlabs_key_invalid":
+    case "elevenlabs_key_missing":
+      return "The ElevenLabs API key is missing or invalid.";
+    case "elevenlabs_probe_failed":
+    case "elevenlabs_unreachable":
+      return "Couldn't reach ElevenLabs. Check your connection and try again.";
+    case "elevenlabs_tts_failed":
+      return "ElevenLabs speech synthesis failed.";
+    // Brain / familiar runtime issues
+    case "familiar_brain_failed":
+    case "provider_mint_failed":
+      return "The familiar's voice brain couldn't start.";
     default:
       return "The call ran into a problem. Please try again.";
   }

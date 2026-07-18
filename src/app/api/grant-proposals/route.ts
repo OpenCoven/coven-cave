@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { isLocalOrigin } from "@/lib/server/local-origin";
+
 import {
   ProjectAccessDeniedError,
   createGrantProposal,
@@ -13,6 +15,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json(
+      { ok: false, error: "grant proposals must be created from the local desktop" },
+      { status: 403 },
+    );
+  }
   let payload: Record<string, unknown>;
   try {
     payload = (await req.json()) as Record<string, unknown>;

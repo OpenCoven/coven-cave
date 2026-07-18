@@ -39,7 +39,7 @@ assert.match(
 
 assert.match(
   menuBar,
-  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*<span>\{enrichingTasks \? enrichLabel : "Enhance"\}<\/span>[\s\S]*onClick=\{onViewTasks\}/,
+  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}[\s\S]*onClick=\{onViewTasks\}/,
   "Desktop menu bar should place Enhance next to Tasks and disable it without a selected familiar",
 );
 

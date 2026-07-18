@@ -25,3 +25,17 @@ export function consumeCovenTabPending(): boolean {
   covenTabPending = false;
   return pending;
 }
+
+// Same latch for the Projects tab: board→Projects handoffs (board-inspector,
+// ⌘9, /projects) dispatched CHAT_OPEN_PROJECTS_EVENT on a 0ms timeout while
+// ChatSurface — the only listener — was still mounting; a lost race landed on
+// Chat without the Projects tab (cave-c2zf).
+let projectsTabPending = false;
+export function markProjectsTabPending(): void {
+  projectsTabPending = true;
+}
+export function consumeProjectsTabPending(): boolean {
+  const pending = projectsTabPending;
+  projectsTabPending = false;
+  return pending;
+}

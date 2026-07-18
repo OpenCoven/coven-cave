@@ -5,6 +5,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
+import { useKeySymbols } from "@/lib/platform-keys";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -64,6 +65,7 @@ const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 
 export function TopBar(props: Props) {
+  const keys = useKeySymbols();
   const {
     onOpenPalette,
     searchQuery,
@@ -159,11 +161,12 @@ export function TopBar(props: Props) {
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search or ask Salem..."
-          aria-label="Search anything or ask Salem"
+          aria-label="Search anything or ask Salem, the docs familiar"
+          title="Search everything — or ask Salem, the familiar trained on the OpenCoven docs"
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>⌘K</kbd>
+        <kbd>{keys.mod}K</kbd>
       </form>
 
       <div className="top-bar__actions">
@@ -217,7 +220,7 @@ export function TopBar(props: Props) {
             </OverflowMenu>
             {taskCount && taskCount > 0 ? (
               <span className="top-bar__tasks-badge" aria-hidden="true">
-                {taskCount > 99 ? "99+" : taskCount}
+                {taskCount > 9 ? "9+" : taskCount}
               </span>
             ) : null}
           </span>

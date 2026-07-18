@@ -19,6 +19,15 @@ export type SidebarRowState = "active" | "split" | "idle";
 const MODE_ALIASES: Record<string, string> = {
   roles: "marketplace",
   capabilities: "marketplace",
+  // Deep-linkable modes that render inside another surface left every row
+  // idle (cave-s9p6): the calendar lives on Schedules, the Queue is a tab of
+  // the Tasks hub, and retired "flow" remaps to Schedules in setMode.
+  calendar: "inbox",
+  "familiar-work-queue": "board",
+  flow: "inbox",
+  // Journal has no sidebar row of its own anymore — it's a tab inside the
+  // Memories (grimoire) surface, so that row stays lit on either tab.
+  journal: "grimoire",
 };
 
 function normalizeMode(mode: string): string {
