@@ -83,7 +83,7 @@ test("launcherWeekStats counts trailing-7-day touches and reflections", () => {
 
 test("launcherWeekStats caps the window at end-of-today (no future inflation)", () => {
   const dayMs = 24 * 60 * 60 * 1000;
-  const futureItem = buildLauncherItems({
+  const futureItems = buildLauncherItems({
     knowledge: [
       { id: "skewed", title: "Skewed clock", tags: [], modified: new Date(NOW + 2 * dayMs).toISOString() },
       { id: "fresh", title: "Fresh", tags: [], modified: new Date(NOW - dayMs).toISOString() },
@@ -92,7 +92,7 @@ test("launcherWeekStats caps the window at end-of-today (no future inflation)", 
     journal: [],
   });
   const stats = launcherWeekStats(
-    futureItem,
+    futureItems,
     [
       { date: "2026-07-18", preview: "", modified: null }, // today, noon anchor — counts even in the morning
       { date: "2026-07-19", preview: "", modified: null }, // tomorrow — never counts
