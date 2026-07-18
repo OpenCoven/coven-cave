@@ -475,7 +475,8 @@ export function ChatSurface({
       if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
       setScope("conversation");
       const findQuery = pendingChatAction.findQuery;
-      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery), 0);
+      const autoVoice = pendingChatAction.autoVoice;
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice), 0);
       onPendingChatActionHandled();
       return;
     }

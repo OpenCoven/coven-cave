@@ -14,7 +14,16 @@ export type PendingChatAction =
       initialControls?: InitialCommandControls | null;
       nonce: number;
     }
-  | { kind: "open"; sessionId: string; familiarId?: string | null; findQuery?: string; nonce: number }
+  | {
+      kind: "open";
+      sessionId: string;
+      familiarId?: string | null;
+      findQuery?: string;
+      /** Voice new-chat: auto-open the voice call overlay once the session
+       *  is mounted (the session was pre-created for a call). */
+      autoVoice?: boolean;
+      nonce: number;
+    }
   | {
       /** Open the conversation in a split pane beside the current chat
        *  (thread-rail ⌥↵ / alt-click). Falls back to a plain open when the
