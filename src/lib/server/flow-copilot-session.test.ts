@@ -35,6 +35,7 @@ const SPEC = {
   sessionIdFlag: "--session-id",
   resumeFlag: "--resume",
   modelFlag: "--model",
+  addDirFlag: "--add-dir",
   sandboxFullArgs: ["--allow-all"],
   sandboxReadOnlyArgs: [],
 };
@@ -62,6 +63,7 @@ test("spawns with the prompt as one argv element and persists the transcript", a
   assert.match(argv[promptIndex], /\[Identity: You are Sage, a Researcher\./);
   assert.equal(argv.length, promptIndex + 1, "nothing trails the prompt argument");
   assert.ok(argv.includes("--session-id"), "fresh session id is pre-assigned");
+  assert.ok(!argv.includes("--add-dir"), "no trust flags when addDirs is omitted");
 
   // The finished transcript is a Cave conversation under the session id, with
   // the assistant's final content (trailing control markers intact).
@@ -72,6 +74,30 @@ test("spawns with the prompt as one argv element and persists the transcript", a
   assert.match(conv.turns[1].text, /@@research-control/);
   assert.match(conv.turns[1].text, /"decision":"complete"/);
   assert.ok(!conv.turns[1].isError, "successful run is not an error turn");
+});
+
+test("addDirs ride as repeatable --add-dir trust flags ahead of the prompt", async () => {
+  const runRoot = mkdtempSync(join(TMP, "adddir-run-"));
+  const workspace = join(TMP, "familiar-workspace");
+  const secondWorkspace = join(TMP, "second-familiar-workspace");
+  const { done } = startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: runRoot,
+    familiarId: "sage",
+    addDirs: [` ${workspace} `, "", runRoot, workspace, secondWorkspace],
+  });
+  await done;
+  const argv = JSON.parse(readFileSync(join(runRoot, "argv.json"), "utf8"));
+  const flagIndexes = argv.flatMap((arg, index) => arg === "--add-dir" ? [index] : []);
+  const flagIndex = flagIndexes[0];
+  assert.ok(flagIndex >= 0, "add-dir trust flag present");
+  assert.deepEqual(
+    flagIndexes.map((index) => argv[index + 1]),
+    [workspace, secondWorkspace],
+    "trust grants are trimmed and deduped, with blanks and the spawn cwd excluded",
+  );
+  assert.ok(flagIndex < argv.indexOf("-p"), "trust flags ride ahead of the prompt flag");
 });
 
 test("a failed spawn persists an error turn instead of dropping the run", async () => {

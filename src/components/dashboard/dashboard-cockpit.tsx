@@ -414,7 +414,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       // and its frozen count husked after the last item was cleared.
       case "needs": return <ActionInbox initialItems={model.needsAttention} openCount={model.openCount} onOpenCount={setLiveOpen} />;
       case "board": return (
-        <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">
+        <Panel title="Tasks" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">
           <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />
         </Panel>);
       case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
@@ -525,7 +525,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
         <SectionHead icon="ph:squares-four" title="Jump back in" />
         <div className="cockpit-quicklinks">
           <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
-          <QuickLink href="/?mode=board" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
+          <QuickLink href="/?mode=board" icon="ph:kanban-bold" label="Tasks" sub="Cards & tasks" />
           <QuickLink href="/dashboard/familiars/growth" icon="ph:chart-bar-bold" label="Growth" sub="Familiar performance" />
           <QuickLink href="/?mode=calendar" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
           <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />

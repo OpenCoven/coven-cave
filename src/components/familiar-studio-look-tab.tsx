@@ -7,9 +7,15 @@ import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import { useFamiliarImages } from "@/lib/cave-familiar-images";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
+import { readAppPreferences } from "@/lib/app-preferences";
 import {
+  isFamiliarBackdropOn,
   prepareBackdropImage,
+  readBackdropPrefs,
   readFamiliarBackdropImage,
+  setFamiliarBackdropEnabled,
+  useBackdropImageRevision,
+  useBackdropPrefs,
   useFamiliarBackdropRevision,
   writeFamiliarBackdropImage,
 } from "@/lib/cave-backdrop";
@@ -300,7 +306,11 @@ function colorInputValue(color: string | null): string {
 // (Settings → Appearance), which stays the fallback/default.
 function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
   const revision = useFamiliarBackdropRevision(familiarId);
+  const prefs = useBackdropPrefs();
+  useBackdropImageRevision();
+  const appImagePresent = readAppPreferences().appearance.backdrop.image.present;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const enabled = isFamiliarBackdropOn(prefs, familiarId, previewUrl !== null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const removeConfirm = useArmedConfirm();
@@ -334,6 +344,9 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
       const { blob } = await prepareBackdropImage(file);
       await writeFamiliarBackdropImage(familiarId, blob);
       setNote("Backdrop set — shows in chat while this familiar is active.");
+      if (readBackdropPrefs().familiars[familiarId] !== true) {
+        setFamiliarBackdropEnabled(familiarId, true);
+      }
     } catch (err) {
       const heicLike = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
       setNote(
@@ -363,6 +376,23 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
 
   return (
     <div className="flex flex-col gap-2">
+      <label className="flex items-center justify-between gap-3 text-[12px] text-[var(--text-secondary)]">
+        <span>Show backdrop while this familiar is active</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Show backdrop while this familiar is active"
+          onClick={() => setFamiliarBackdropEnabled(familiarId, !enabled)}
+          className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[12px] transition-colors ${
+            enabled
+              ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+              : "border-[var(--border-hairline)] text-[var(--text-secondary)]"
+          }`}
+        >
+          {enabled ? "On" : "Off"}
+        </button>
+      </label>
       <div className="flex flex-wrap items-center gap-3">
         <label className="familiar-studio-look__upload">
           <Icon name="ph:cloud-arrow-up-bold" width={14} />
@@ -400,8 +430,13 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
         ) : null}
       </div>
       <p className="familiar-studio-look__note">
-        Overrides the app backdrop in chat while this familiar is selected. Without one, the app
-        backdrop (Settings → Appearance) is the default.
+        {enabled
+          ? previewUrl
+            ? "Shows in chat while this familiar is active — this image overrides the app backdrop."
+            : appImagePresent
+              ? "No image uploaded — the app backdrop image is used."
+              : "No image uploaded — only the backdrop tint shows until an image is set here or in Settings → Appearance."
+          : "Off — the app backdrop (Settings → Appearance) applies as usual."}
       </p>
       {note ? <p className="familiar-studio-look__toast" role="status">{note}</p> : null}
     </div>

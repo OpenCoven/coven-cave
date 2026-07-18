@@ -65,13 +65,21 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
 assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");
-// The roles/capabilities → marketplace aliasing moved into the pure row-state
-// helper (lib/sidebar-nav-state) that the sidebar derives every row from.
+// The roles/capabilities → marketplace aliasing lives in the shared
+// MODE_ALIASES table (lib/workspace-mode, cave-m4ih.3); the pure row-state
+// helper (lib/sidebar-nav-state) that the sidebar derives every row from
+// imports it.
 const sidebarNavState = await readFile(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
+const workspaceModeLib = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 assert.match(
-  sidebarNavState,
+  workspaceModeLib,
   /roles: "marketplace",\s*\n\s*capabilities: "marketplace",/,
   "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
+);
+assert.match(
+  sidebarNavState,
+  /import \{ MODE_ALIASES, isAliasWorkspaceMode \} from "\.\/workspace-mode\.ts"/,
+  "Row highlighting derives from the shared MODE_ALIASES table",
 );
 assert.match(
   sidebar,

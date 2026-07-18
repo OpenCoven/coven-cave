@@ -400,7 +400,7 @@ export function ChatEmptyState({
                           );
                         })}
                         {moreCount > 0 ? (
-                          <span className="cave-chat-empty-work-more">+{moreCount} more on the board</span>
+                          <span className="cave-chat-empty-work-more">+{moreCount} more in Tasks</span>
                         ) : null}
                       </>
                     )}

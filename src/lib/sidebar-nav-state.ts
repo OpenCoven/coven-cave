@@ -13,25 +13,17 @@
  * Kept as a pure function (no React) so the highlight rules are unit-testable.
  */
 
+import { MODE_ALIASES, isAliasWorkspaceMode } from "./workspace-mode.ts";
+
 export type SidebarRowState = "active" | "split" | "idle";
 
-/** Modes that light up a row other than their own (hub sections → hub row). */
-const MODE_ALIASES: Record<string, string> = {
-  roles: "marketplace",
-  capabilities: "marketplace",
-  // Deep-linkable modes that render inside another surface left every row
-  // idle (cave-s9p6): the calendar lives on Schedules, the Queue is a tab of
-  // the Tasks hub, and retired "flow" remaps to Schedules in setMode.
-  calendar: "inbox",
-  "familiar-work-queue": "board",
-  flow: "inbox",
-  // Journal has no sidebar row of its own anymore — it's a tab inside the
-  // Memories (grimoire) surface, so that row stays lit on either tab.
-  journal: "grimoire",
-};
-
+// Alias modes light their canonical surface's row (hub sections → hub row,
+// tab aliases → host row): the calendar lives on Rituals, the Queue is a tab
+// of the Tasks hub, Journal is a tab inside Memories, Roles/Capabilities are
+// Marketplace hub sections, and retired "flow" remaps to Rituals in setMode
+// (cave-s9p6). MODE_ALIASES is the workspace-wide alias→canonical table.
 function normalizeMode(mode: string): string {
-  return MODE_ALIASES[mode] ?? mode;
+  return isAliasWorkspaceMode(mode) ? MODE_ALIASES[mode] : mode;
 }
 
 export function sidebarRowState(

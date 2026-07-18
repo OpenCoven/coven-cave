@@ -27,6 +27,7 @@ import {
   createBackdropImageState,
   type BackdropMigrationResult,
 } from "@/lib/backdrop-image-state";
+import { MAX_FAMILIAR_BACKDROPS } from "@/lib/preferences-schema";
 
 const PREFS_KEY = "cave:backdrop:v1";
 const DB_NAME = "cave-backdrop";
@@ -49,6 +50,9 @@ export type BackdropPrefs = {
    *  image is effectively monochrome. Lightness is re-fit against the live
    *  background at apply time, so one seed serves dark and light modes. */
   accentSeed: BackdropAccentSeed | null;
+  /** Explicit per-familiar enablement (cave-kf8p). Absent id ⇒ default rule:
+   *  on iff that familiar has an uploaded backdrop image. */
+  familiars: Record<string, boolean>;
 };
 
 const DEFAULT_PREFS: BackdropPrefs = {
@@ -56,6 +60,7 @@ const DEFAULT_PREFS: BackdropPrefs = {
   intensity: 50,
   matchAccent: true,
   accentSeed: null,
+  familiars: {},
 };
 
 // ── prefs store (localStorage + useSyncExternalStore) ───────────────────────
@@ -75,6 +80,7 @@ export function readBackdropPrefs(): BackdropPrefs {
     intensity: clamp(central.intensity, 0, 100),
     matchAccent: central.matchAccent,
     accentSeed: central.accentSeed ? { ...central.accentSeed } : null,
+    familiars: { ...central.familiars },
   };
   return cachedPrefs;
 }
@@ -99,6 +105,34 @@ export function writeBackdropPrefs(patch: Partial<BackdropPrefs>): BackdropPrefs
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/** Effective per-familiar enablement: the explicit switch wins; with no entry,
+ *  an uploaded image means on (cave-j0dz compatibility). */
+export function isFamiliarBackdropOn(
+  prefs: Pick<BackdropPrefs, "familiars">,
+  familiarId: string,
+  hasImage: boolean,
+): boolean {
+  // Own-property guard: a plain-object map inherits Object.prototype, so a
+  // familiar id like "constructor" would otherwise read a truthy function.
+  if (!Object.hasOwn(prefs.familiars, familiarId)) return hasImage;
+  return prefs.familiars[familiarId];
+}
+
+/** Record an explicit per-familiar backdrop choice. Always writes the full
+ *  map so `writeBackdropPrefs`'s shallow merge can't drop sibling entries.
+ *  The schema hard-caps the map (MAX_FAMILIAR_BACKDROPS); evict the oldest
+ *  other entries rather than let an over-cap write 400 server-side — that
+ *  error would terminally halt the whole preferences pipe for the session. */
+export function setFamiliarBackdropEnabled(familiarId: string, enabled: boolean): BackdropPrefs {
+  const familiars = { ...readBackdropPrefs().familiars, [familiarId]: enabled };
+  while (Object.keys(familiars).length > MAX_FAMILIAR_BACKDROPS) {
+    const oldest = Object.keys(familiars).find((key) => key !== familiarId);
+    if (oldest === undefined) break;
+    delete familiars[oldest];
+  }
+  return writeBackdropPrefs({ familiars });
 }
 
 const getServerPrefs = () => DEFAULT_PREFS;
