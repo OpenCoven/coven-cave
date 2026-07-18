@@ -69,7 +69,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/removed", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/familiars", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/feedback/message", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/fs-browse", methods: ["GET"], kind: "json", pathGuard: true, localOriginGuard: true },
+  { route: "/fs-browse", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true, localOriginGuard: true },
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
   { route: "/github/checks", methods: ["GET"], kind: "json" },
