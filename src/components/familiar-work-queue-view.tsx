@@ -6,6 +6,8 @@ import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { SearchInput } from "@/components/ui/search-input";
+import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -160,6 +162,14 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
+  // Triage tools (cave-u2p1): text search over title/bead-id/PR number, a
+  // priority band filter, and an in-lane sort toggle. All client-side over
+  // the already-fetched queue.
+  const [search, setSearch] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | "p0" | "p1" | "p2plus">("all");
+  const [sortMode, setSortMode] = useState<"priority" | "recent">("priority");
+  // Bead detail drawer — the id being inspected, null = closed.
+  const [detailId, setDetailId] = useState<string | null>(null);
   // Per-lane disclosure + show-all state. Collapse persists across sessions;
   // "show all" is per-visit intent and resets on reload (cave-19jy).
   const [collapsedLanes, setCollapsedLanes] = useState<Set<WorkQueueLaneKey>>(() => new Set(DEFAULT_COLLAPSED));
@@ -310,13 +320,44 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     [announce, load],
   );
 
+  // Search matches title, bead id, and PR number; priority bands map P2+
+  // together (protocol priorities rarely exceed 2 in practice).
   const visibleLanes = useMemo(() => {
     if (!queue) return [];
-    if (!familiarFilter) return queue.lanes;
+    const q = search.trim().toLowerCase();
+    const matchesSearch = (item: WorkQueueItem): boolean => {
+      if (!q) return true;
+      const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "";
+      const prNumber = item.pr?.number ?? item.merged?.number ?? null;
+      return (
+        title.toLowerCase().includes(q) ||
+        (item.bead?.id.toLowerCase().includes(q) ?? false) ||
+        (prNumber != null && (`#${prNumber}`.includes(q) || String(prNumber).includes(q)))
+      );
+    };
+    const matchesPriority = (item: WorkQueueItem): boolean => {
+      if (priorityFilter === "all") return true;
+      const p = item.bead?.priority;
+      if (p == null) return false;
+      if (priorityFilter === "p0") return p === 0;
+      if (priorityFilter === "p1") return p === 1;
+      return p >= 2;
+    };
+    const recency = (item: WorkQueueItem): number =>
+      Date.parse(item.pr?.updatedAt ?? item.merged?.mergedAt ?? item.bead?.updated_at ?? "") || 0;
     return queue.lanes
-      .map((lane) => ({ ...lane, items: lane.items.filter((i) => i.familiar === familiarFilter) }))
+      .map((lane) => {
+        let items = lane.items.filter(
+          (i) => (!familiarFilter || i.familiar === familiarFilter) && matchesSearch(i) && matchesPriority(i),
+        );
+        // "priority" keeps buildWorkQueue's deterministic triage order;
+        // "recent" re-sorts the filtered copy without touching queue state
+        // (sameQueue identity across polls stays stable).
+        if (sortMode === "recent") items = [...items].sort((a, b) => recency(b) - recency(a));
+        return { ...lane, items };
+      })
       .filter((lane) => lane.items.length > 0);
-  }, [queue, familiarFilter]);
+  }, [queue, familiarFilter, search, priorityFilter, sortMode]);
 
   if (!hasLoaded) {
     return (
@@ -404,6 +445,47 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
       ) : null}
 
+      {/* Triage toolbar (cave-u2p1): search · priority bands · sort. */}
+      <div className="fwq-toolbar" role="group" aria-label="Queue triage tools">
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          onClear={() => setSearch("")}
+          placeholder="Search title, bead id, PR #…"
+          aria-label="Search the queue"
+          containerClassName="fwq-toolbar-search"
+        />
+        <div className="fwq-toolbar-group" role="group" aria-label="Filter by priority">
+          {(
+            [
+              ["all", "All"],
+              ["p0", "P0"],
+              ["p1", "P1"],
+              ["p2plus", "P2+"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`fwq-chip${priorityFilter === value ? " is-active" : ""}`}
+              aria-pressed={priorityFilter === value}
+              onClick={() => setPriorityFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="fwq-chip fwq-toolbar-sort"
+          onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
+          title="Toggle lane ordering"
+        >
+          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={13} aria-hidden />
+          {sortMode === "priority" ? "Priority · oldest" : "Recently updated"}
+        </button>
+      </div>
+
       {/* Truthful-degradation banners. Text is static (only the tooltip carries
           the raw error) so role=alert doesn't re-announce every failing poll. */}
       {error ? (
@@ -450,11 +532,22 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         ) : visibleLanes.length === 0 ? (
           <EmptyState
             icon="ph:funnel"
-            headline={`Nothing for ${familiarName(familiarFilter ?? "")}`}
-            subtitle="Clear the filter to see the whole queue."
+            headline="Nothing matches the current filters"
+            subtitle={
+              search.trim()
+                ? `No queue item matches “${search.trim()}”.`
+                : "Clear the filters to see the whole queue."
+            }
             actions={
-              <Button variant="secondary" onClick={() => setFamiliarFilter(null)}>
-                Show all
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFamiliarFilter(null);
+                  setSearch("");
+                  setPriorityFilter("all");
+                }}
+              >
+                Clear filters
               </Button>
             }
           />
@@ -501,6 +594,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                           onClaim={() => void runAction(item, "claim")}
                           onClose={() => void runAction(item, "close")}
                           onComment={(text) => runComment(item, text)}
+                          onInspect={item.bead ? () => setDetailId(item.bead!.id) : undefined}
                         />
                       ))}
                     </ul>
@@ -530,7 +624,139 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           })
         )}
       </div>
+
+      {detailId ? (
+        <BeadDetailModal
+          id={detailId}
+          onClose={() => setDetailId(null)}
+          onClaim={() => {
+            const item = q.lanes.flatMap((l) => l.items).find((i) => i.bead?.id === detailId);
+            if (item) void runAction(item, "claim");
+            setDetailId(null);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Bead inspector (cave-u2p1) — the queue row names the work; this shows the
+ * work itself. Reads `bd show --json` through the existing (previously
+ * unused) GET /api/beads?mode=show contract. Read-mostly: Claim + copy-id
+ * ride along; notes stay on the card's composer.
+ */
+function BeadDetailModal({
+  id,
+  onClose,
+  onClaim,
+}: {
+  id: string;
+  onClose: () => void;
+  onClaim: () => void;
+}) {
+  type BeadDetail = {
+    id?: string;
+    title?: string;
+    description?: string | null;
+    status?: string;
+    priority?: number;
+    assignee?: string | null;
+    owner?: string | null;
+    labels?: string[] | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    dependencies?: unknown[] | null;
+    comment_count?: number | null;
+  };
+  const [detail, setDetail] = useState<BeadDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    let alive = true;
+    setDetail(null);
+    setDetailError(null);
+    fetch(`/api/beads?mode=show&id=${encodeURIComponent(id)}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (!alive) return;
+        if (!json.ok) throw new Error(json.error || "bead unavailable");
+        // bd show --json returns the bead object (or a one-element array).
+        const data = Array.isArray(json.data) ? json.data[0] : json.data;
+        setDetail((data ?? {}) as BeadDetail);
+      })
+      .catch((err) => {
+        if (alive) setDetailError(err instanceof Error ? err.message : "bead unavailable");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  return (
+    <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Bead ${id}`}>
+      <div className="fwq-detail">
+        {detailError ? (
+          <p className="fwq-detail-error" role="alert">{detailError}</p>
+        ) : !detail ? (
+          <SkeletonRows count={4} />
+        ) : (
+          <>
+            <h2 className="fwq-detail-title">{detail.title ?? id}</h2>
+            <div className="fwq-card-meta">
+              {detail.status ? <span className="fwq-tag">{detail.status}</span> : null}
+              {detail.priority != null ? (
+                <span className={`fwq-tag fwq-tag--p${Math.min(detail.priority, 3)}`}>P{detail.priority}</span>
+              ) : null}
+              {detail.assignee ? <span className="fwq-tag fwq-tag--familiar">{detail.assignee}</span> : null}
+              {(detail.labels ?? []).map((label) => (
+                <span key={label} className="fwq-tag">{label}</span>
+              ))}
+              {detail.updated_at ? (
+                <span className="fwq-card-time" title={new Date(detail.updated_at).toLocaleString()}>
+                  updated {relativeTime(detail.updated_at)}
+                </span>
+              ) : null}
+            </div>
+            {detail.description ? (
+              <pre className="fwq-detail-desc">{detail.description}</pre>
+            ) : (
+              <p className="fwq-detail-empty">No description on this bead.</p>
+            )}
+            {Array.isArray(detail.dependencies) && detail.dependencies.length > 0 ? (
+              <p className="fwq-detail-deps">
+                {detail.dependencies.length} dependenc{detail.dependencies.length === 1 ? "y" : "ies"}
+                {detail.comment_count ? ` · ${detail.comment_count} comment${detail.comment_count === 1 ? "" : "s"}` : ""}
+              </p>
+            ) : detail.comment_count ? (
+              <p className="fwq-detail-deps">
+                {detail.comment_count} comment{detail.comment_count === 1 ? "" : "s"}
+              </p>
+            ) : null}
+            <div className="fwq-detail-actions">
+              <Button
+                variant="ghost"
+                size="xs"
+                leadingIcon="ph:copy"
+                onClick={() => {
+                  void import("@/lib/clipboard").then(async ({ copyText }) => {
+                    announce((await copyText(id)) ? `Copied ${id}.` : "Copy failed.", "polite");
+                  });
+                }}
+              >
+                Copy id
+              </Button>
+              {detail.status === "open" || detail.status === "ready" ? (
+                <Button variant="secondary" size="xs" leadingIcon="ph:hand" onClick={onClaim}>
+                  Claim
+                </Button>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -603,6 +829,7 @@ function WorkQueueCard({
   onClaim,
   onClose,
   onComment,
+  onInspect,
 }: {
   item: WorkQueueItem;
   familiarLabel: string;
@@ -612,6 +839,8 @@ function WorkQueueCard({
   onClaim: () => void;
   onClose: () => void;
   onComment: (text: string) => Promise<boolean>;
+  /** Opens the bead inspector; absent on rows with no bead. */
+  onInspect?: () => void;
 }) {
   const beadId = item.bead?.id ?? null;
   const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
@@ -650,7 +879,18 @@ function WorkQueueCard({
       <div className="fwq-card-main">
         <div className="fwq-card-title">
           {prNumber != null ? <span className="fwq-pr-num">#{prNumber}</span> : null}
-          <span className="fwq-card-name">{title}</span>
+          {onInspect ? (
+            <button
+              type="button"
+              className="fwq-card-name fwq-card-name--link focus-ring-inset"
+              title={`Inspect ${beadId}`}
+              onClick={onInspect}
+            >
+              {title}
+            </button>
+          ) : (
+            <span className="fwq-card-name">{title}</span>
+          )}
         </div>
         <div className="fwq-card-meta">
           <span className="fwq-tag fwq-tag--familiar">{familiarLabel}</span>

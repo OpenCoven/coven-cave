@@ -41,4 +41,27 @@ assert.match(
 assert.match(view, /fwq-tag--p\$\{Math\.min\(item\.bead\.priority, 3\)\}/);
 assert.match(css, /\.fwq-tag--p0,\s*\.fwq-tag--p1 \{/, "warm tint for high priorities");
 
+// ── Triage tools (cave-u2p1) ─────────────────────────────────────────────────
+// Search matches title, bead id, and PR number — all client-side.
+assert.match(view, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/);
+assert.match(view, /onValueChange=\{setSearch\}/, "search is controlled");
+assert.match(view, /item\.bead\?\.id\.toLowerCase\(\)\.includes\(q\)/, "bead ids are searchable");
+assert.match(view, /`#\$\{prNumber\}`\.includes\(q\)/, "PR numbers are searchable");
+// Priority bands + sort toggle.
+assert.match(view, /useState<"all" \| "p0" \| "p1" \| "p2plus">\("all"\)/);
+assert.match(view, /useState<"priority" \| "recent">\("priority"\)/, "priority-oldest is the default order");
+assert.match(view, /if \(sortMode === "recent"\) items = \[\.\.\.items\]\.sort/, "recent re-sorts a copy — queue identity untouched");
+assert.match(view, /setSortMode\(\(cur\) => \(cur === "priority" \? "recent" : "priority"\)\)/);
+// The filtered-empty state clears everything at once.
+assert.match(view, /setFamiliarFilter\(null\);\s*setSearch\(""\);\s*setPriorityFilter\("all"\);/);
+
+// ── Bead inspector (cave-u2p1) ───────────────────────────────────────────────
+// Bead titles open a focus-trapped dialog over the existing show contract.
+assert.match(view, /className="fwq-card-name fwq-card-name--link focus-ring-inset"/);
+assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}/, "drawer reads bd show --json");
+assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses the focus-trapped house dialog");
+assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
+assert.match(view, /import\("@\/lib\/clipboard"\)/, "copy-id uses the shared clipboard helper");
+assert.match(css, /\.fwq-detail-desc \{/, "description block has real styles");
+
 console.log("familiar-work-queue-view.test.ts: ok");
