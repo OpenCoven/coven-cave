@@ -344,6 +344,8 @@ assert.match(pane, /new ResizeObserver\(scheduleImmediateReconcile\)/, "resizes 
 assert.match(pane, /portalObserver\.observe\(document\.body, \{\s*childList: true,\s*\}\)/, "only direct body portal mounts are mutation-observed");
 assert.match(pane, /animationstart[\s\S]{0,600}transitionend/, "CSS motion opens and closes a bounded reconcile window");
 assert.match(shell, /dispatchEvent\(new Event\("cave:native-webview-layout"\)\)[\s\S]{0,80}\[banners\]/, "shell banner layout changes explicitly schedule native bounds reconciliation");
+assert.match(workspace, /dispatchEvent\(new Event\("cave:native-webview-cover-change"\)\)[\s\S]{0,180}onboardingOpen/, "workspace overlays explicitly reconcile even when they open without a DOM interaction");
+assert.match(pane, /addEventListener\("cave:native-webview-cover-change", onCoverChange\)/, "programmatic workspace overlays schedule a coalesced visibility reconcile");
 assert.match(pane, /__CAVE_BROWSER_RECONCILE_METRICS__/, "reconciliation count and duration are exposed for native profiling");
 assert.match(pane, /visibilitychange[\s\S]{0,300}hideAll\(\)/, "backgrounding immediately hides native webviews");
 

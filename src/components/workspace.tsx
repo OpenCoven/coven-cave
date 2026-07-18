@@ -493,6 +493,12 @@ export function Workspace() {
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const [mobileModeAutoRetryBlocked, setMobileModeAutoRetryBlocked] = useState(false);
+  // Workspace-owned overlays are siblings of Shell rather than body portals,
+  // so BrowserPane's narrow portal observer cannot see programmatic opens
+  // (notably first-run onboarding after its status request completes).
+  useEffect(() => {
+    window.dispatchEvent(new Event("cave:native-webview-cover-change"));
+  }, [paletteOpen, shortcutsOpen, onboardingOpen, reminderModalOpen, glyphPickerFor, mobileHandoffOpen]);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch

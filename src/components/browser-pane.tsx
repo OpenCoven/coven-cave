@@ -619,9 +619,11 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     // state rather than a body portal. The rAF runs after the DOM commit.
     const onInteraction = () => scheduleImmediateReconcile();
     const onShellLayout = () => startMotionWindow();
+    const onCoverChange = () => scheduleImmediateReconcile();
     window.addEventListener("resize", scheduleImmediateReconcile);
     window.addEventListener("scroll", scheduleImmediateReconcile, true);
     window.addEventListener("cave:native-webview-layout", onShellLayout);
+    window.addEventListener("cave:native-webview-cover-change", onCoverChange);
     window.addEventListener("cave:onboarding-open", onShellLayout);
     document.addEventListener("animationstart", onMotionStart, true);
     document.addEventListener("animationend", onMotionEnd, true);
@@ -644,6 +646,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       window.removeEventListener("resize", scheduleImmediateReconcile);
       window.removeEventListener("scroll", scheduleImmediateReconcile, true);
       window.removeEventListener("cave:native-webview-layout", onShellLayout);
+      window.removeEventListener("cave:native-webview-cover-change", onCoverChange);
       window.removeEventListener("cave:onboarding-open", onShellLayout);
       document.removeEventListener("animationstart", onMotionStart, true);
       document.removeEventListener("animationend", onMotionEnd, true);
