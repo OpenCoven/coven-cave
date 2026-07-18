@@ -58,12 +58,27 @@ assert.match(
   /const SHELL_GROUP_ID = "cave\.shell\.widths\.v3"/,
   "Shell layout persistence should use the v3 key (bumped so the minimized nav default applies once)",
 );
+assert.match(
+  shell,
+  /export type ShellListPolicy = "collapsible" \| "persistent"/,
+  "Shell exports a list policy that distinguishes collapsible from persistent list panes",
+);
+assert.match(
+  shell,
+  /const groupId = twoPane \? `\$\{SHELL_GROUP_ID\}\.two-pane` : listPolicy === "persistent" \? `\$\{SHELL_GROUP_ID\}\.persistent-list` : SHELL_GROUP_ID;/,
+  "persistent list layouts use a fresh group id suffix so stale collapsible layouts cannot hide Chats",
+);
 
 // Collapse-to-rail must survive the px conversion.
 assert.match(
   shell,
   /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
   "Nav should still collapse to the icons-only rail on desktop (0 on mobile)",
+);
+assert.match(
+  shell,
+  /collapsible=\{isMobile \|\| listPolicy === "collapsible"\}/,
+  "List panel is drawer-capable on mobile but non-collapsible on desktop under the persistent policy",
 );
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —

@@ -27,8 +27,6 @@ assert.match(workspaceSidebar, /function groupMeta\(group: ChatProjectGroup\): s
 assert.match(workspaceSidebar, /<ProjectAvatar name=\{label\} root=\{group\.projectRoot\} color=\{group\.projectColor\} size="sm" className="cnav__folder" \/>/, "group header avatar uses the explicit project color");
 assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav__group-name[\s\S]*?<span className="cnav__group-meta">\{groupMeta\(group\)\}<\/span>/, "group header stacks name over the activity meta line");
 assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired — the meta line carries the count");
-// New features from code-sidebar
-assert.match(workspaceSidebar, /cave:code-select-project/, "should broadcast code-select-project on project expand");
 // One-row quick actions: New chat + the Scheduled/Plugins icon chips share a
 // single row (no stacked mini-row), and the header hosts the familiar switcher.
 assert.doesNotMatch(workspaceSidebar, /cnav__mini-row/, "the stacked mini-row is retired — quick actions are one row");
@@ -43,10 +41,19 @@ assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph o
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
+assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");
 // The search placeholder must fit the panel's ~200px minimum width (the old
 // "Search projects or threads…" clipped); the aria-label keeps the full scope.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
 assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
+assert.match(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace mounts Chats as the persistent list pane only in chat mode");
+assert.match(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode visits start with the global nav collapsed");
+assert.match(workspace, /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/, "chat mode keeps the Chats list persistent on desktop");
+assert.match(workspace, /nav=\{sidebar\}\s*list=\{list\}/, "workspace always passes the global nav as nav and the chat sidebar as list");
+assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile list drawer");
+assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile list drawer");
+assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile list drawer");
+assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile list drawer");
 // chat-view wiring (unchanged — just verify it still exists)
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
