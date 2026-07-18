@@ -263,7 +263,10 @@ export function buildWorkQueue(
 function itemSortKey(item: WorkQueueItem): string {
   if (item.pr) return `0:${String(item.pr.number).padStart(8, "0")}`;
   if (item.merged) return `0:${String(item.merged.number).padStart(8, "0")}`;
-  if (item.bead) return `1:${item.bead.priority}:${item.bead.id}`;
+  // Beads triage priority-first, then OLDEST update first so long-waiting
+  // work surfaces above fresh arrivals (cave-19jy). An undated bead can't
+  // prove its age, so it sorts after dated peers of the same priority.
+  if (item.bead) return `1:${item.bead.priority}:${item.bead.updated_at || "9999"}:${item.bead.id}`;
   return `2:${item.key}`;
 }
 
