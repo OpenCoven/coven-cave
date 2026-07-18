@@ -63,11 +63,20 @@ export async function addChatProject(args: {
   // Grant the active familiar access. A no-familiar context (operator/Supreme
   // view) has nothing to grant and is left to the server's own access rules.
   if (args.familiarId) {
-    const res = await doFetch("/api/project-grants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
-    });
+    let res: Response;
+    try {
+      res = await doFetch("/api/project-grants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
+      });
+    } catch (error) {
+      if (createdProject || args.projectJustCreated) emitProjectRegistryMutation();
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "grant request failed",
+      };
+    }
     if (!res.ok) {
       // Creation still succeeded, so publish that partial registry mutation
       // even though the bundled grant did not complete.

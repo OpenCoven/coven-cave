@@ -61,6 +61,7 @@ export function FirstProjectGate({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasVisibleRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
@@ -80,11 +81,12 @@ export function FirstProjectGate({
     if (wasVisibleRef.current) return;
 
     wasVisibleRef.current = true;
+    const initialFocusTarget = registeredProject ? submitButtonRef.current : nameInputRef.current;
     const frame = window.requestAnimationFrame(() => {
-      nameInputRef.current?.focus({ preventScroll: true });
+      initialFocusTarget?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [open, registeredProject]);
 
   const applyPickedRoot = useCallback((dir: string) => {
     const trimmed = dir.trim();
@@ -313,6 +315,7 @@ export function FirstProjectGate({
 
                 <div className="flex items-center justify-end">
                   <Button
+                    ref={submitButtonRef}
                     type="submit"
                     variant="primary"
                     size="sm"

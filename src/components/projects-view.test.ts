@@ -41,6 +41,18 @@ assert.match(
   /addChatProject\(\{[\s\S]{0,220}?familiarId: activeFamiliarId,[\s\S]{0,220}?existingProjectId: project\.id,[\s\S]{0,220}?projectJustCreated: true/,
   "Creating a project should also grant it to the scoped familiar and mark partial grant failures as newly-created registry entries",
 );
+assert.match(projectsView, /const \[projectError, setProjectError\] = useState<string \| null>\(null\)/, "project-creation failures track their own alert state");
+assert.match(
+  projectsView,
+  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*setProjectError\(error instanceof Error \? error\.message : "Could not create that project\."\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
+  "handleCreate uses try/finally so the busy state always clears, even if create or grant unexpectedly throws",
+);
+assert.match(projectsView, /if \(!granted\.ok\) setProjectError\(`Project created, but grant failed: \$\{granted\.error\}`\);/, "grant failures still surface as explicit project alerts");
+assert.match(
+  projectsView,
+  /projectError \? \([\s\S]{0,500}?<span className="min-w-0 truncate">\{projectError\}<\/span>[\s\S]{0,260}?onClick=\{\(\) => setProjectError\(null\)\}/,
+  "project alerts render independently from chat-delete errors and can be dismissed",
+);
 assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
 assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
 assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");

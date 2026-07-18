@@ -575,10 +575,10 @@ tr[role="checkbox"]:focus-visible {
  * would lose sync if the shell-detail scroll container drifts.
  * Also ensure the cave-mode-fade wrapper stretches to fill the detail
  * panel so the browser toolbar row is always visible. */
-.shell-detail:has(> .cave-mode-fade > .browser-pane) {
+.shell-detail:has(> .cave-mode-fade > .workspace-detail-content > .browser-pane) {
   overflow: hidden;
 }
-.shell-detail > .cave-mode-fade:has(> .browser-pane) {
+.shell-detail > .cave-mode-fade:has(> .workspace-detail-content > .browser-pane) {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -588,7 +588,7 @@ tr[role="checkbox"]:focus-visible {
 /* Home composer spans the viewport width when one or both side panels are
  * open; it needs overflow: visible on the detail panel to paint outside its
  * bounds when translateX shifts the composer. */
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) {
+.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .workspace-detail-content > .home-composer-root) {
   overflow: visible !important;
 }
 
@@ -8594,7 +8594,7 @@ a.mobile-handoff__link:hover {
    can be adjusted without threading conditional class strings through every
    row. */
 @media (max-width: 767px) {
-  .shell-detail:has(> .cave-mode-fade > .chat-surface) {
+  .shell-detail:has(> .cave-mode-fade > .workspace-detail-content > .chat-surface) {
     overflow: hidden;
   }
 

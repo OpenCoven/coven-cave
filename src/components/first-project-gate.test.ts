@@ -28,7 +28,7 @@ test("the gate copy makes project creation mandatory for chat", () => {
   assert.match(src, /Chat requires a project/, "copy explains that chat cannot proceed without a project");
 });
 
-test("the gate stays prop-driven and focuses the name field on first visibility", () => {
+test("the gate stays prop-driven and focuses the correct first control on first visibility", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
@@ -36,6 +36,7 @@ test("the gate stays prop-driven and focuses the name field on first visibility"
     "the gate stays prop-driven with the required integration fields",
   );
   assert.match(src, /const nameInputRef = useRef<HTMLInputElement \| null>\(null\);/, "keeps a stable ref for the project-name field");
+  assert.match(src, /const submitButtonRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the primary action");
   assert.match(
     src,
     /if \(!open\) \{\s*wasVisibleRef\.current = false;\s*return;\s*\}\s*if \(wasVisibleRef\.current\) return;/,
@@ -43,10 +44,11 @@ test("the gate stays prop-driven and focuses the name field on first visibility"
   );
   assert.match(
     src,
-    /window\.requestAnimationFrame\(\(\) => \{\s*nameInputRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
-    "requestAnimationFrame restores initial focus to the name field after the panel opens",
+    /const initialFocusTarget = registeredProject \? submitButtonRef\.current : nameInputRef\.current;[\s\S]*window\.requestAnimationFrame\(\(\) => \{\s*initialFocusTarget\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
+    "requestAnimationFrame restores initial focus to Retry access when pending, otherwise the name field",
   );
   assert.match(src, /ref=\{nameInputRef\}/, "the stable focus ref is wired to the project-name input");
+  assert.match(src, /ref=\{submitButtonRef\}/, "the stable submit ref is wired to the primary action");
   assert.doesNotMatch(src, /autoFocus/, "initial focus no longer depends on DOM-order-sensitive autoFocus");
 });
 
@@ -96,8 +98,8 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
-    /const \{ open: firstProjectGateOpen, familiarId: projectGateFamiliarId \} = resolveFirstProjectGatePolicy\(\{[\s\S]*pendingGrant: reconciledPendingFirstProjectGrant,[\s\S]*\}\);/,
-    "workspace policy opens the gate for zero-project or pending-retry states only after the shared eligibility checks pass",
+    /const \{[\s\S]*open: firstProjectGateOpen,[\s\S]*familiarId: projectGateFamiliarId,[\s\S]*blockChatLaunch: chatProjectBlocked,[\s\S]*\} = resolveFirstProjectGatePolicy\(\{[\s\S]*pendingGrant: reconciledPendingFirstProjectGrant,[\s\S]*\}\);/,
+    "workspace policy derives both gate visibility and the central chat-block condition from the shared helper",
   );
   assert.match(
     src,
@@ -106,13 +108,8 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
-    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*\{detailContent\}[\s\S]*<\/div>/,
-    "workspace renders the gate as an absolute sibling overlay inside the detail container while leaving the surface itself as the same direct child",
-  );
-  assert.doesNotMatch(
-    src,
-    /<div aria-hidden=\{firstProjectGateOpen \|\| undefined\} inert=\{firstProjectGateOpen \|\| undefined\}>[\s\S]*\{renderSurface\(mode\)\}[\s\S]*<\/div>/,
-    "workspace no longer inserts an intermediate detail wrapper between cave-mode-fade and the rendered surface",
+    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div[\s\S]*className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"[\s\S]*aria-hidden=\{firstProjectGateOpen \? true : undefined\}[\s\S]*inert=\{firstProjectGateOpen \|\| undefined\}[\s\S]*>\s*\{detailContent\}\s*<\/div>[\s\S]*<\/div>/,
+    "workspace renders the gate as an absolute sibling overlay and puts the underlying surface inside an inert, full-height wrapper",
   );
   assert.match(src, /mode === "chat" \? \(\s*<ChatSurface/, "Chat stays a direct render branch");
   assert.match(src, /mode === "browser" \? \(\s*<BrowserPane/, "Browser stays a direct render branch");
@@ -182,6 +179,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /disabled=\{submitting \|\| loadingProjects \|\| Boolean\(projectsError\) \|\| !canSubmit\}/, "creation stays blocked while the registry is still loading or errored");
   assert.match(src, /disabled=\{Boolean\(registeredProject\) \|\| submitting\}/, "name, root, and Browse controls lock once only the access grant needs retry");
   assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the submit action relabels to Retry access for partial-grant retries");
+  assert.match(src, /ref=\{submitButtonRef\}/, "Retry access can receive initial focus via the enabled submit button");
   assert.match(src, /Project <span className="font-medium text-\[var\(--text-primary\)\]">\{registeredProject\.name\}<\/span> was[\s\S]*Retry access so the required familiar can use[\s\S]*\{registeredProject\.root\}/, "copy explains that the project was created and only access still needs retry without rebinding to another familiar");
   assert.doesNotMatch(src, /Project created, but chat still needs access:/, "retry context lives in the descriptive copy, not as a prefixed error wrapper");
 });
