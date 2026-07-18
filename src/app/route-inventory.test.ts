@@ -35,8 +35,8 @@ const ROUTE_INVENTORY = {
   "/retro": { kind: "redirect", target: "/dashboard/familiars/growth" },
   "/dashboard/retro": { kind: "redirect", target: "/dashboard/familiars/growth" },
   "/familiars/growth": { kind: "redirect", target: "/dashboard/familiars/growth" },
-  "/familiars/[id]/analytics": { kind: "redirect", target: "/dashboard/familiars/" },
-  "/familiars/[id]/profile": { kind: "redirect", target: "/dashboard/familiars/" },
+  "/familiars/[id]/analytics": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/analytics" },
+  "/familiars/[id]/profile": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/profile" },
   "/aesthetic": { kind: "dev-only" },
   "/mockup": { kind: "dev-only" },
   "/mockup/familiar-chatout-codex": { kind: "dev-only" },
@@ -76,18 +76,29 @@ for (const route of declared) {
 }
 
 // ── Redirect stubs actually redirect, into their declared canonical target ───
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
   if (spec.kind !== "redirect") continue;
   const file = path.join(appDir, route.replace(/^\//, ""), "page.tsx");
   const source = readFileSync(file, "utf8");
+  const executableSource = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.match(
-    source,
+    executableSource,
     /import \{ redirect \} from "next\/navigation"/,
     `${route} must import next/navigation's redirect`,
   );
-  assert.ok(
-    source.includes(`redirect(\`${spec.target}`) || source.includes(`redirect("${spec.target}`),
-    `${route} must redirect into ${spec.target}…`,
+  const leafPattern = spec.leaf ? `[^\\r\\n]*${escapeRegExp(spec.leaf)}[^\\r\\n]*` : "";
+  const redirectPattern = new RegExp(
+    `^\\s*redirect\\(\\s*(["'\\\`])${escapeRegExp(spec.target)}${leafPattern}\\1\\s*\\);?`,
+    "m",
+  );
+  assert.match(
+    executableSource,
+    redirectPattern,
+    `${route} must redirect into ${spec.target}${spec.leaf ?? ""}…`,
   );
   assert.doesNotMatch(source, /return \(|return </, `${route} is a pure stub — it must not render JSX of its own`);
 }
