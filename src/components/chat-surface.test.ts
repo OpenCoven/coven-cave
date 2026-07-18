@@ -312,7 +312,7 @@ assert.match(
 // the count resets on a real root change.
 assert.match(
   chatSurface,
-  /let inFlight = false;[\s\S]*?const load = async \(\) => \{\s*\n\s*if \(inFlight\) return;/,
+  /let inFlight = false;[\s\S]*?const load = async \(opts\?: \{ force\?: boolean \}\) => \{\s*\n\s*if \(inFlight\) return;/,
   "change-count fetch dedupe is scoped per effect-run, not a cross-run ref",
 );
 assert.match(
