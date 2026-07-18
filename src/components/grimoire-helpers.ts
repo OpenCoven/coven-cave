@@ -10,6 +10,8 @@ export type GrimoireKnowledgeEntry = {
   enabled: boolean;
   body: string;
   extra?: Record<string, unknown>;
+  /** File mtime (ISO) from the list API — powers the launcher recency pool. */
+  modified?: string;
 };
 
 export type KnowledgeCollectionSummary = {

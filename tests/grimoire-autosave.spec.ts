@@ -101,6 +101,13 @@ async function gotoGrimoire(page: Page) {
   await page.waitForSelector(".grimoire-view", { timeout: 30_000 });
 }
 
+/** The navigator rail. Row clicks scope here: with no open tabs the main pane
+ *  shows the Knowledge launcher, whose recents duplicate the rail rows'
+ *  accessible names (strict mode would reject the bare getByRole match). */
+function rail(page: Page) {
+  return page.locator(".grimoire-view aside");
+}
+
 // PUT bodies captured by the memory-file mock, reset per test (the negative
 // case asserts none arrive while typing).
 let memoryPuts: Array<Record<string, unknown>> = [];
@@ -124,7 +131,7 @@ test.describe("grimoire autosave (desktop)", () => {
     // The rail formats journal dates through datetime prefs ("Jul 1" /
     // "1 Jul", + year when not current) — match the row by its preview text,
     // which is stable across pref and clock-year changes.
-    await page.getByRole("button", { name: /Shipped the grimoire\./ }).click();
+    await rail(page).getByRole("button", { name: /Shipped the grimoire\./ }).click();
 
     const posted = page.waitForRequest(
       (req) => req.method() === "POST" && req.url().includes("/api/journal"),
@@ -140,7 +147,7 @@ test.describe("grimoire autosave (desktop)", () => {
 
   test("knowledge entries autosave after the debounce — no Save click", async ({ page }) => {
     await gotoGrimoire(page);
-    await page.getByRole("button", { name: /Release checklist/ }).click();
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
 
     const posted = page.waitForRequest(
       (req) => req.method() === "POST" && req.url().includes("/api/knowledge"),
@@ -156,7 +163,7 @@ test.describe("grimoire autosave (desktop)", () => {
 
   test("memory files never autosave — typing leaves the draft unsaved", async ({ page }) => {
     await gotoGrimoire(page);
-    await page.getByRole("button", { name: /notes\.md/ }).click();
+    await rail(page).getByRole("button", { name: /notes\.md/ }).click();
 
     await typeInEditor(page, " A new fact.");
     // The editor tracks the draft as dirty (manual-save surface)…
