@@ -321,12 +321,13 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Chat-first boot (cave-hsa6): the app opens on the conversation — the chat
-  // surface with the thread sidebar (a fresh session lands on the task-aware
-  // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
-  // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
-  // #chat-…) and cave:navigate-mode override this as before.
-  const [mode, setModeRaw] = useState<CaveMode>("chat");
+  // Home-first boot: every fresh launch (desktop app window or web tab)
+  // opens on the Home surface — the daily overview with the universal
+  // composer — per operator direction (this reverses cave-hsa6's chat-first
+  // boot). Chat stays one step away (⌘2 / nav / the composer submit), and
+  // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
+  // before, so restored sessions and share links still land where they point.
+  const [mode, setModeRaw] = useState<CaveMode>("home");
   // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
