@@ -37,6 +37,8 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
+type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
+
 type Props = {
   sessions: SessionRow[];
   /** Roster for the header switcher — familiar selection's one home. */
@@ -52,6 +54,9 @@ type Props = {
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
+  /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
+   *  coordinate mode changes with mobile drawer dismissal. */
+  onNavigate: (mode: WorkspaceSidebarMode) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Opens the thread's pull request in the in-app browser (PR badge click);
@@ -293,6 +298,7 @@ export function WorkspaceSidebar({
   onSelectFamiliar,
   onOpenSession,
   onOpenSessionInSplit,
+  onNavigate,
   onNewChat,
   onDeleteSession,
   onOpenUrl,
@@ -467,7 +473,7 @@ export function WorkspaceSidebar({
             type="button"
             aria-label="Go to Home"
             title="Home"
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "home" } }))}
+            onClick={() => onNavigate("home")}
             className="cnav__back focus-ring ml-auto"
           >
             <Icon name="ph:house-bold" width={15} aria-hidden />
@@ -518,7 +524,7 @@ export function WorkspaceSidebar({
             type="button"
             title="Scheduled"
             aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
+            onClick={() => onNavigate("inbox")}
             className="cnav__mini focus-ring"
           >
             <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
@@ -530,7 +536,7 @@ export function WorkspaceSidebar({
             type="button"
             title="Plugins"
             aria-label="Plugins"
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
+            onClick={() => onNavigate("marketplace")}
             className="cnav__mini focus-ring"
           >
             <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />

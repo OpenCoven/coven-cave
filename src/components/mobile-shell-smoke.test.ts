@@ -86,6 +86,16 @@ assert.match(
 );
 assert.match(
   workspace,
+  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
+  "Chat list Home, Scheduled, and Plugins actions should dismiss the mobile list drawer without touching the desktop list pane",
+);
+assert.match(
+  workspace,
+  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
+  "Chat list PR links should dismiss only the mobile list drawer before opening",
+);
+assert.match(
+  workspace,
   /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
   "Chat list settings should dismiss only the mobile list drawer before routing",
 );
