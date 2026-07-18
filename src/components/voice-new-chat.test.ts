@@ -143,10 +143,57 @@ test("home-composer: voice call button gates itself on an in-flight mint and alw
 
 test("chat-view: call button works pre-session by creating the conversation first", () => {
   assert.match(chatView, /aria-label="Voice call"/);
+  // Ordered end to end: mid-session fast path -> in-flight pending bail ->
+  // the mint call itself -> the familiar-staleness bail -> the success
+  // promote. A rapid re-click or a familiar switch mid-mint must each be
+  // handled before the session is ever promoted onto the view.
   assert.match(
     chatView,
-    /const openVoiceCall = useCallback\(async \(\) => \{[\s\S]*?if \(sessionId\) \{[\s\S]*?setVoiceCallOpen\(true\);[\s\S]*?startVoiceConversation\(familiar\.id, projectRoot \?\? null\)[\s\S]*?onVoiceSessionCreated\?\.\(result\.sessionId\)/,
+    /const openVoiceCall = useCallback\(async \(\) => \{[\s\S]*?if \(sessionId\) \{[\s\S]*?setVoiceCallOpen\(true\);[\s\S]*?if \(voiceCallPending\) return;[\s\S]*?setVoiceCallPending\(true\);[\s\S]*?startVoiceConversation\(requestedFamiliarId, projectRoot \?\? null\)[\s\S]*?if \(familiarIdRef\.current !== requestedFamiliarId\) return;[\s\S]*?onVoiceSessionCreated\?\.\(result\.sessionId\)/,
   );
+});
+
+test("chat-view: voice call button disables itself while a mint is in flight", () => {
+  // Without this, N rapid clicks before the first mint resolves fire N
+  // startVoiceConversation calls: N-1 sessions are orphaned, and if two
+  // resolutions land in the same render batch the last one wins, which can
+  // promote a session the nonce effect never consumes (overlay never opens).
+  assert.match(chatView, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
+  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending\}/);
+});
+
+test("chat-view: openVoiceCall always clears the pending flag, even on failure or an early bail", () => {
+  assert.match(
+    chatView,
+    /if \(voiceCallPending\) return;\s*\n\s*setVoiceCallPending\(true\);\s*\n\s*try \{[\s\S]*?\} finally \{\s*\n\s*setVoiceCallPending\(false\);\s*\n\s*\}/,
+  );
+});
+
+test("chat-view: openVoiceCall bails before promoting a mint onto a switched familiar", () => {
+  // requestedFamiliarId is captured at click time (before the await); if the
+  // familiar the view is showing has moved on by the time the mint resolves,
+  // promoting would silently swap the NEW compose view onto the OLD
+  // familiar's session. The bail must land before onVoiceSessionCreated...
+  assert.match(
+    chatView,
+    /const requestedFamiliarId = familiar\.id;[\s\S]*?if \(familiarIdRef\.current !== requestedFamiliarId\) return;[\s\S]*?onVoiceSessionCreated\?\.\(/,
+  );
+  // ...and before the failure announce too — a flow the user already left
+  // shouldn't surface an error for it.
+  assert.match(
+    chatView,
+    /if \(familiarIdRef\.current !== requestedFamiliarId\) return;[\s\S]*?announce\(voiceChatStartErrorMessage\(result\.error\), "assertive"\)/,
+  );
+  // The ref backing the check must track the live familiar prop, not a
+  // snapshot from mount.
+  assert.match(
+    chatView,
+    /const familiarIdRef = useRef\(familiar\.id\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*familiarIdRef\.current = familiar\.id;\s*\n\s*\}, \[familiar\.id\]\);/,
+  );
+});
+
+test("chat-view: voice mint failure announce is assertive, not the default polite level", () => {
+  assert.match(chatView, /announce\(voiceChatStartErrorMessage\(result\.error\), "assertive"\)/);
 });
 
 test("chat-view: closing an auto-created call discards the session when empty", () => {

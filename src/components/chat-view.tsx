@@ -2562,6 +2562,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // True when the current overlay session was created FOR the call (voice
   // new-chat) — close with zero turns then discards the empty conversation.
   const voiceAutoCreatedRef = useRef(false);
+  // Guards the pre-session mint against rapid re-clicks: without it, N clicks
+  // before the first mint resolves fire N startVoiceConversation calls, each
+  // minting its own session — N-1 are orphaned, and if two resolutions land
+  // in the same render batch the LAST one wins, which can promote a session
+  // the nonce effect never consumes (the overlay silently never opens).
+  const [voiceCallPending, setVoiceCallPending] = useState(false);
+  // The familiar this view is showing right now, readable after an await —
+  // openVoiceCall's own argument is captured at click time and goes stale if
+  // the user switches familiars (same mounted ChatView, new familiar prop,
+  // sessionId still null) while the mint is in flight.
+  const familiarIdRef = useRef(familiar.id);
+  useEffect(() => {
+    familiarIdRef.current = familiar.id;
+  }, [familiar.id]);
   // Voice call entry point: mid-session opens the overlay directly;
   // pre-session (voice new-chat) creates the conversation first, then the
   // router promotes it and re-enters through the openVoiceNonce effect.
@@ -2570,13 +2584,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setVoiceCallOpen(true);
       return;
     }
-    const result = await startVoiceConversation(familiar.id, projectRoot ?? null);
-    if (!result.ok) {
-      announce(voiceChatStartErrorMessage(result.error));
-      return;
+    if (voiceCallPending) return;
+    setVoiceCallPending(true);
+    try {
+      const requestedFamiliarId = familiar.id;
+      const result = await startVoiceConversation(requestedFamiliarId, projectRoot ?? null);
+      // The familiar may have changed while the mint was in flight. Promoting
+      // a session minted for the OLD familiar onto the view now showing a
+      // DIFFERENT one would silently swap them, so bail on both outcomes —
+      // don't promote, and don't announce a failure for a flow the user
+      // already left.
+      if (familiarIdRef.current !== requestedFamiliarId) return; // user switched familiars mid-mint; abandon (orphan mint is the accepted abandon path)
+      if (!result.ok) {
+        announce(voiceChatStartErrorMessage(result.error), "assertive");
+        return;
+      }
+      onVoiceSessionCreated?.(result.sessionId);
+    } finally {
+      setVoiceCallPending(false);
     }
-    onVoiceSessionCreated?.(result.sessionId);
-  }, [sessionId, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
+  }, [sessionId, voiceCallPending, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
@@ -5946,12 +5973,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </button>
                   {/* Voice call — pre-session it creates the conversation
                       first (voice new-chat), so the button renders from turn
-                      zero. Mic = dictation, phone = call, on every surface. */}
+                      zero. Mic = dictation, phone = call, on every surface.
+                      Disabled while a mint is in flight so rapid clicks can't
+                      fire multiple startVoiceConversation calls. */}
                   <button
                     type="button"
                     className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                     title="Voice call"
                     aria-label="Voice call"
+                    disabled={voiceCallPending}
                     onClick={() => {
                       void openVoiceCall();
                     }}
