@@ -166,8 +166,9 @@ for (const rel of [
   "../components/familiar-growth-view.tsx",
   "../components/familiar-analytics-view.tsx",
   "../components/familiars-view.tsx",
-  // The cockpit's avatar-rendering rows live in its presentational panel layer.
-  "../components/dashboard/cockpit-panels.tsx",
+  // The bento dashboard renders familiar avatars in its roster, board and
+  // footer-collaborator rows.
+  "../components/dashboard/bento-dashboard.tsx",
 ]) {
   const src = read(rel);
   assert.match(src, /AuthedImage/, `${rel} renders avatars via <AuthedImage>`);
