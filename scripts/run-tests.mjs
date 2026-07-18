@@ -229,6 +229,7 @@ export const SUITES = {
     "src/lib/dashboard-analytics.test.ts",
     "src/lib/coven-analytics.test.ts",
     "src/app/dashboard-page.test.ts",
+    "src/app/route-inventory.test.ts",
     "src/components/dashboard/dashboard-cockpit-polish.test.ts",
     "src/components/profile-card-view.test.ts",
     "src/app/prod-hardening.test.ts",
