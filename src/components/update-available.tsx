@@ -24,6 +24,7 @@ import {
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
+import { updateDaemonForCaveUpdate } from "@/lib/app-update-daemon";
 
 const BANNER_ID = "update-available";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
@@ -86,6 +87,7 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
 
 /** Install an already downloaded and verified update, then relaunch where supported. */
 async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  await updateDaemonForCaveUpdate(update.version);
   await update.install();
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
@@ -313,7 +315,7 @@ export function UpdateBannerTrigger() {
                         pushBanner({
                           id: BANNER_ID,
                           severity: "info",
-                          title: `Installing update v${r.version}…`,
+                          title: `Updating Coven daemon and installing Cave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
                           await nativeUpdateCoordinator.finishAction(owner);
@@ -611,7 +613,11 @@ export function UpdateSettingsRow() {
       </>
     );
   } else if (state.phase === "installing") {
-    control = <span className="text-[12px] font-medium text-[var(--text-primary)]">Installing…</span>;
+    control = (
+      <span className="text-[12px] font-medium text-[var(--text-primary)]">
+        Updating daemon &amp; installing…
+      </span>
+    );
   } else if (state.phase === "available") {
     const r = state.r; // narrowed to native | fallback
     control = (

@@ -71,8 +71,53 @@ permissions:
   contents: write
 
 jobs:
+  daemon-package:
+    name: Verify matching Coven daemon package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      # Cave updates the user's local daemon through @opencoven/cli before
+      # replacing itself. Refuse to publish a Cave version until the matching
+      # daemon package exists, or the client could only reinstall an older
+      # daemon while presenting a successful desktop update.
+      - name: Require matching @opencoven/cli release
+        shell: bash
+        env:
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          if ! PUBLISHED_JSON=$(npm view "@opencoven/cli@${VERSION}" version --json); then
+            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but that package version is not published."
+            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
+            exit 1
+          fi
+          PUBLISHED=$(printf '%s' "$PUBLISHED_JSON" | node -e '
+            let input = "";
+            process.stdin.on("data", chunk => input += chunk);
+            process.stdin.on("end", () => {
+              const value = JSON.parse(input);
+              process.stdout.write(Array.isArray(value) ? String(value.at(-1) ?? "") : String(value));
+            });
+          ')
+          if [ "$PUBLISHED" != "$VERSION" ]; then
+            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but npm returned '${PUBLISHED:-nothing}'."
+            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
+            exit 1
+          fi
+          echo "Verified @opencoven/cli@$PUBLISHED for the Cave daemon update."
+
   build:
     name: Build ${{ matrix.label }}
+    needs: daemon-package
     strategy:
       fail-fast: false
       matrix:

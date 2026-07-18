@@ -27,6 +27,11 @@ assert.doesNotMatch(
 assert.match(src, /@tauri-apps\/plugin-updater/, "uses the native Tauri updater plugin");
 assert.match(preparationSrc, /update\.download\(/, "downloads through the native updater");
 assert.match(src, /update\.install\(\)/, "installs the prepared native update");
+assert.match(
+  src,
+  /await updateDaemonForCaveUpdate\(update\.version\);\s*await update\.install\(\)/,
+  "updates and verifies the Coven daemon before replacing the Cave app",
+);
 assert.doesNotMatch(src, /downloadAndInstall/, "does not combine download with immediate process exit");
 assert.match(src, /@tauri-apps\/plugin-process/, "relaunches via the process plugin");
 assert.match(src, /relaunch\(\)/, "relaunches the app after install");
@@ -95,6 +100,7 @@ assert.match(src, /Download update/, "native path prepares the update without ex
 assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Verifying signature…/, "shows signature verification progress");
 assert.match(src, /Restart &amp; install/, "prepared update offers an explicit restart action");
+assert.match(src, /Updating daemon &amp; installing/, "install state explains that the daemon is updated first");
 assert.match(src, />\s*Cancel\s*</, "settings row allows preparation cancellation");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
