@@ -296,7 +296,7 @@ export function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
   byStatus: Map<CardStatus, number>; total: number; active: Card[]; loaded: boolean; familiars: Familiar[];
 }) {
   if (!loaded) return <PanelSkeleton rows={3} />;
-  if (total === 0) return <EmptyState icon="ph:kanban-bold">No cards on the board yet.</EmptyState>;
+  if (total === 0) return <EmptyState icon="ph:kanban-bold">No task cards yet.</EmptyState>;
   const segs = STATUS_ORDER.map((s) => ({ s, n: byStatus.get(s) ?? 0 })).filter((x) => x.n > 0);
   const famName = (id: string | null) => familiars.find((f) => f.id === id)?.display_name;
   return (
@@ -305,7 +305,7 @@ export function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
         data={segs.map(({ s, n }) => ({ label: STATUS_META[s].label, value: n, color: STATUS_META[s].color }))}
         size={132}
         thickness={18}
-        ariaLabel={`Board status: ${segs.map(({ s, n }) => `${STATUS_META[s].label} ${n}`).join(", ")}`}
+        ariaLabel={`Task status: ${segs.map(({ s, n }) => `${STATUS_META[s].label} ${n}`).join(", ")}`}
       />
       <div className="cockpit-bar__legend">
         {segs.map(({ s, n }) => (
@@ -595,5 +595,4 @@ export function SpaceUsagePanel({ rows, loaded }: { rows: SpaceUsageRow[]; loade
 function PanelSkeleton({ rows }: { rows: number }) {
   return <div className="cockpit-skel">{Array.from({ length: rows }).map((_, i) => <span key={i} className="cockpit-skel__row" />)}</div>;
 }
-
 

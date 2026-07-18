@@ -2,8 +2,10 @@
 
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
- * viewports. Surfaces the most-used destinations (Home, Familiars, Board, Rituals)
- * as a tablist with icon + label and an active highlight.
+ * viewports. Surfaces the most-used destinations (Home, Chat, Tasks, Rituals)
+ * as a tablist with icon + label and an active highlight. Labels use the
+ * canonical surface names shared with the desktop sidebar (issue #3283 —
+ * one surface, one name).
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
@@ -24,8 +26,8 @@ type TabDef = {
 const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Chat", ariaLabel: "Chat", iconName: "ph:chats" },
-  { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
-  { id: "inbox", label: "Rites", ariaLabel: "Rituals", iconName: "ph:calendar-check" },
+  { id: "board", label: "Tasks", ariaLabel: "Tasks", iconName: "ph:kanban" },
+  { id: "inbox", label: "Rituals", ariaLabel: "Rituals", iconName: "ph:calendar-check" },
 ];
 
 export type MobileBottomTabsProps = {

@@ -167,11 +167,13 @@ function splitTargetTitle(target: SplitTarget): string {
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
 // title, so the detail pane carries a visually-hidden h1 naming the active
-// surface. Labels mirror the sidebar's vocabulary.
+// surface. Labels mirror the sidebar's canonical vocabulary (issue #3283 —
+// one surface, one name): alias modes that render another surface's view
+// (calendar, familiar-work-queue) reuse that surface's name.
 const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   agents: "Familiars",
   home: "Home",
-  chat: "Familiars",
+  chat: "Chat",
   groupchat: "Group Chat",
   board: "Tasks",
   calendar: "Rituals",
@@ -183,7 +185,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
-  "familiar-work-queue": "Queue",
+  "familiar-work-queue": "Tasks",
   journal: "Journal",
   grimoire: "Memories",
 };

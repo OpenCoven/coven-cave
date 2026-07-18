@@ -46,7 +46,7 @@ export function buildDailyNarrativePrompt(
     }
   }
   if (typeof stats.cardsCompleted === "number" && stats.cardsCompleted > 0) {
-    facts.push(`Board cards completed: ${stats.cardsCompleted}`);
+    facts.push(`Task cards completed: ${stats.cardsCompleted}`);
     for (const card of (report.cardsCompleted ?? []).slice(0, 8)) {
       facts.push(`- done: ${card.title}`);
     }

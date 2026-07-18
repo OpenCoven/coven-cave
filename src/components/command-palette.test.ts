@@ -208,10 +208,10 @@ assert.match(
   "workspace latches then opens the Projects tab and focuses the chosen project",
 );
 
-// Board view-switch: the palette offers "Board: Kanban/Table/Gantt" rows that
-// jump to the board and set its view; the board honors the live switch.
+// Tasks view-switch: the palette offers "Tasks: Kanban/Table/Gantt" rows that
+// jump to the Tasks board and set its view; the board honors the live switch.
 assert.match(source, /kind: "set-board-view"; view: "kanban" \| "table" \| "gantt"/, "a set-board-view intent exists");
-assert.match(source, /label: "Board: Gantt timeline"/, "a Gantt board-view row is offered");
+assert.match(source, /label: "Tasks: Gantt timeline"/, "a Gantt board-view row is offered");
 assert.match(source, /intent: \{ kind: "set-board-view", view: v\.view \}/, "board-view rows carry the set-board-view intent");
 assert.match(source, /\.\.\.boardViewRows/, "board-view rows are included in the result list");
 assert.match(
