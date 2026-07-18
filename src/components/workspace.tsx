@@ -6,7 +6,7 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
-import { filterDeletedSessions } from "@/lib/session-list-deletes";
+import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -1008,6 +1008,25 @@ export function Workspace() {
       }
     })();
   }, [activeId]);
+
+  const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
+    const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
+    if (confirmedIds.length === 0) return;
+
+    baseSessionsRef.current = filterDeletedSessions(
+      baseSessionsRef.current,
+      locallyDeletedSessionIdsRef.current,
+    );
+    setSessions((currentSessions) => {
+      const nextSessions = filterDeletedSessions(
+        currentSessions,
+        locallyDeletedSessionIdsRef.current,
+      );
+      return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
+    });
+    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    void loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     loadFamiliars();
@@ -2489,14 +2508,7 @@ export function Workspace() {
           throw new Error(json.error ?? "delete failed");
         }
 
-        locallyDeletedSessionIdsRef.current.add(session.id);
-        baseSessionsRef.current = filterDeletedSessions(baseSessionsRef.current, locallyDeletedSessionIdsRef.current);
-        setSessions((currentSessions) => {
-          const nextSessions = filterDeletedSessions(currentSessions, locallyDeletedSessionIdsRef.current);
-          return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
-        });
-        invalidateConversation(session.id);
-        void loadSessions();
+        handleSessionsDeleted([session.id]);
       }}
       onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
@@ -2570,6 +2582,7 @@ export function Workspace() {
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
       />

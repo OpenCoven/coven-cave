@@ -92,6 +92,7 @@ type Props = {
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
   onSessionsChanged?: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Forwarded to ChatRouter → ChatView so the Task chip in the chat header
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
@@ -127,6 +128,7 @@ export function ChatSurface({
   onSlashFromChat,
   onOpenOnboarding,
   onSessionsChanged,
+  onSessionsDeleted,
   onOpenTask,
   onOpenUrl,
   hideThreadRail = false,
@@ -585,7 +587,7 @@ export function ChatSurface({
         </div>
 
         {scope === "projects" ? (
-          <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+          <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} onSessionsDeleted={onSessionsDeleted} activeFamiliarId={activeFamiliarId} />
         ) : scope === "canvas" ? (
           // Saved-sketch gallery: everything "Save to Canvas" persisted from
           // inline chat artifacts, browsable/reopenable/deletable in place.
@@ -643,6 +645,7 @@ export function ChatSurface({
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
+                  onSessionsDeleted={onSessionsDeleted}
                   onSlashFromChat={onSlashFromChat}
                   onOpenOnboarding={onOpenOnboarding}
                   pendingProjectRoot={pendingProjectRoot}
