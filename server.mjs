@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -40,6 +40,16 @@ function accessToken() {
   return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 }
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
+const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
+const LOCAL_PEER_SECRET = randomUUID();
+process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
+const FORWARDING_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "via"
+];
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
@@ -114,6 +124,13 @@ function isLoopbackAddress(value) {
   if (value === "::1" || value === "127.0.0.1") return true;
   if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
   return false;
+}
+function isDirectLoopbackRequest(req) {
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  for (const header of FORWARDING_HEADERS) {
+    if (req.headers[header] !== void 0) return false;
+  }
+  return isLoopbackHost(req.headers.host);
 }
 function sameOrigin(value, expectedOrigin) {
   if (!value) return true;
@@ -385,6 +402,10 @@ const wss = new WebSocketServer({ noServer: true });
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 const server = createServer((req, res) => {
+  delete req.headers[LOCAL_PEER_HEADER];
+  if (isDirectLoopbackRequest(req)) {
+    req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
+  }
   void handle(req, res);
 });
 server.on("upgrade", (req, socket, head) => {
@@ -410,7 +431,7 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  if (isPtyAuthRequired() && !tokenAuthenticated) {
+  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

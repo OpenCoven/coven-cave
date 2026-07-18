@@ -136,12 +136,30 @@ export function isAllowedRequestSourceAny(value: string | null, expectedOrigins:
 export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
+  trustedLocalPeer = false,
 ) {
   // The Host header is client-controlled, so it cannot prove that the actual
-  // TCP peer is loopback. When COVEN_CAVE_ACCESS_TOKEN is configured, require
-  // a valid mobile credential for every request unless a future caller can pass
-  // a non-spoofable remote socket address into this decision.
-  return true;
+  // TCP peer is loopback — a host value alone never exempts a request. The
+  // one thing that CAN prove it is server.ts, which sees the raw socket: it
+  // stamps LOCAL_PEER_HEADER with the per-boot COVEN_CAVE_LOCAL_PEER_SECRET
+  // only when the TCP peer is loopback, the request carries no forwarding
+  // markers (a Tailscale-Serve-forwarded phone arrives over loopback too, but
+  // always with x-forwarded-* headers), and the Host is loopback. Callers
+  // verify that stamp with isTrustedLocalPeer and pass the result here.
+  return !trustedLocalPeer;
+}
+
+/**
+ * True when the request's LOCAL_PEER_HEADER value equals the per-boot
+ * local-peer secret minted by server.ts. The custom server deletes any
+ * client-supplied copy of the header before stamping its own, and the secret
+ * never leaves the process, so a match proves server.ts classified this
+ * request as a direct (unforwarded) loopback connection. An unset secret —
+ * Next running without server.ts in front — fails closed.
+ */
+export function isTrustedLocalPeer(headerValue: string | null, secret: string | undefined) {
+  if (!headerValue || !secret) return false;
+  return timingSafeEqualString(headerValue, secret);
 }
 
 export function bearerFromReferer(value: string | null, expectedOrigin: string) {
@@ -275,6 +293,10 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
 }
 
 export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
+// Stamped by server.ts (with the per-boot COVEN_CAVE_LOCAL_PEER_SECRET) on
+// requests whose TCP peer it verified as direct loopback. Mirrored in
+// server.ts, which cannot import from src/.
+export const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";

@@ -6,6 +6,7 @@ import {
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
+  LOCAL_PEER_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
   isLoopbackHost,
@@ -17,6 +18,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isTrustedLocalPeer,
   isHtmlNavigationRequest,
   accessGatePage,
 } from "./proxy-helpers";
@@ -79,7 +81,23 @@ async function mobileAccessGate(req: NextRequest) {
   if (!expected) return null;
 
   const suppliedTokens = mobileAccessSuppliedTokens(req);
-  if (!shouldRequireMobileAccessCredential(req.headers.get("host"), suppliedTokens.length > 0)) {
+  // A direct loopback connection (server.ts verified the TCP peer and the
+  // absence of forwarding headers, then stamped the per-boot secret) is the
+  // local desktop app or a local browser — it needs no mobile invite even
+  // while the pairing secret is armed. Tailscale-Serve-forwarded phones also
+  // arrive over loopback but always carry x-forwarded-* headers, so they are
+  // never stamped and stay token-gated.
+  const trustedLocalPeer = isTrustedLocalPeer(
+    req.headers.get(LOCAL_PEER_HEADER),
+    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
+  );
+  if (
+    !shouldRequireMobileAccessCredential(
+      req.headers.get("host"),
+      suppliedTokens.length > 0,
+      trustedLocalPeer,
+    )
+  ) {
     return null;
   }
 

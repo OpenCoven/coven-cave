@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
@@ -71,6 +71,28 @@ function accessToken(): string {
   return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 }
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
+
+// Local-peer stamp (cave-vn2r): only this file sees the raw TCP socket, so
+// only it can prove a request truly came from this machine. Requests whose
+// peer is loopback AND that carry no forwarding markers get LOCAL_PEER_HEADER
+// stamped with a per-boot random secret; proxy.ts exempts exact matches from
+// the mobile access-token gate. The secret is minted fresh every boot and
+// deliberately OVERWRITES any inherited env value, so nothing outside this
+// process can pre-arrange a passing stamp. Mirrors LOCAL_PEER_HEADER in
+// src/proxy-helpers.ts (this file cannot import from src/).
+const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
+const LOCAL_PEER_SECRET = randomUUID();
+process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
+// `tailscale serve` (the paired-phone path) forwards over loopback but always
+// adds forwarding headers — their presence means the true peer is remote.
+const FORWARDING_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "via",
+] as const;
+
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
@@ -192,6 +214,24 @@ function isLoopbackAddress(value: string | undefined): boolean {
   if (value === "::1" || value === "127.0.0.1") return true;
   if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
   return false;
+}
+
+/**
+ * A request that provably originated on this machine: the TCP peer is
+ * loopback (non-spoofable — read off the socket), no proxy forwarded it
+ * (Tailscale Serve delivers remote phones over loopback but always adds
+ * forwarding headers the remote client cannot strip), and the Host is a
+ * loopback authority (a Serve route that forwards the ts.net Host fails this
+ * even if its forwarding headers were ever absent). Deliberately redundant:
+ * both the forwarding-marker and Host checks must fail for a forwarded
+ * request to be misclassified as local.
+ */
+function isDirectLoopbackRequest(req: IncomingMessage): boolean {
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  for (const header of FORWARDING_HEADERS) {
+    if (req.headers[header] !== undefined) return false;
+  }
+  return isLoopbackHost(req.headers.host);
 }
 
 function sameOrigin(value: string | undefined, expectedOrigin: string): boolean {
@@ -592,6 +632,12 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
+  // The local-peer stamp is trustworthy only because any client-supplied copy
+  // dies here, before Next (and proxy.ts) ever see the request.
+  delete req.headers[LOCAL_PEER_HEADER];
+  if (isDirectLoopbackRequest(req)) {
+    req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
+  }
   void handle(req, res);
 });
 
@@ -635,7 +681,11 @@ server.on("upgrade", (req, socket, head) => {
   // server-pty-ws.test.ts warns about). Native mobile mode configures only
   // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
   // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  if (isPtyAuthRequired() && !tokenAuthenticated) {
+  // A direct loopback peer (verified off the socket, never forwarded — see
+  // isDirectLoopbackRequest) is the local app or a local browser and is
+  // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
+  // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
+  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
