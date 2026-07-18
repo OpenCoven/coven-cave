@@ -1720,9 +1720,30 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // viewport actually matches mobile. Keeps server/client markup in sync.
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
+  const [mobileRibbonDayOpen, setMobileRibbonDayOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const openDateValue = (date?: string | null) => {
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      const next = new Date(`${date}T12:00:00`);
+      if (Number.isNaN(next.getTime())) return;
+      setAnchor(next);
+      setMobileRibbonDayOpen(true);
+      setViewMode("day");
+    };
+    const openDate = (event: Event) => {
+      openDateValue((event as CustomEvent<{ date?: string }>).detail?.date);
+    };
+    const pendingDate = window.sessionStorage.getItem("cave:calendar:pending-open-date");
+    if (pendingDate) {
+      window.sessionStorage.removeItem("cave:calendar:pending-open-date");
+      openDateValue(pendingDate);
+    }
+    window.addEventListener("cave:calendar:open-date", openDate);
+    return () => window.removeEventListener("cave:calendar:open-date", openDate);
+  }, []);
   // Week view needs ~7 usable columns; inside a narrow split tile (~360px)
   // they floor at ~40px each. Below 560px of CONTAINER width, week renders
   // with the day presentation instead — the user's stored week choice is
@@ -1760,8 +1781,14 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // have a `min-w-[560px]` floor, which would overflow a 360px screen.
   // Lets the user swap back to a grid once they're on a tablet+.
   useEffect(() => {
-    if (isMobile && viewMode !== "agenda") setViewMode("agenda");
-  }, [isMobile, viewMode]);
+    if (isMobile && viewMode !== "agenda" && !(mobileRibbonDayOpen && viewMode === "day")) {
+      setMobileRibbonDayOpen(false);
+      setViewMode("agenda");
+    }
+  }, [isMobile, mobileRibbonDayOpen, viewMode]);
+  useEffect(() => {
+    if (viewMode !== "day" && mobileRibbonDayOpen) setMobileRibbonDayOpen(false);
+  }, [mobileRibbonDayOpen, viewMode]);
 
   // Hard-scope: filter every downstream view (agenda/day/week/month) to the
   // active familiar. Defensive null escape: bypass the filter entirely.

@@ -2750,7 +2750,7 @@ export function Workspace() {
       // remounts so the deep link lands on it.
       <InboxEscalationsView
         key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "inbox"}
+        initialTab={mode === "calendar" ? "calendar" : "overview"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);

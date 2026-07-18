@@ -14,8 +14,9 @@ assert.match(vault, /No secrets match/, "vault shows a no-matches message");
 
 const auto = read("./automations-view.tsx");
 assert.match(auto, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/, "automations imports SearchInput");
-assert.match(auto, /<SearchInput[\s\S]*?aria-label=\{activeTab === "inbox" \? "Filter inbox" : "Filter crons"\}/, "automations renders a tab-scoped filter (inbox/crons)");
-// The text filter applies to both tabs' source derivations (the inbox feed is
+assert.match(auto, /placeholder="Filter rituals…"[\s\S]*?aria-label="Filter rituals"/, "the Rituals overview exposes its compact search on demand");
+assert.match(auto, /placeholder="Filter crons…"[\s\S]*?aria-label="Filter crons"/, "Cron management retains a scoped text filter");
+// The text filter applies to both modes' source derivations (the overview is
 // the selection universe, so a live search term = "every match").
 assert.match(auto, /items\.filter\(\(it\) => !hiddenIds\.has\(it\.id\) && \(!q \|\| \(it\.title \?\? ""\)\.toLowerCase\(\)\.includes\(q\)\)\)/, "the inbox feed honors the text filter");
 assert.match(auto, /a\.name\.toLowerCase\(\)\.includes\(q\)/, "automations honor the text filter");

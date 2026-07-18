@@ -1,6 +1,6 @@
 // @ts-nocheck
 // cave-hlxn: subscribing/unsubscribing to GitHub events is one click away
-// everywhere the events surface — the Rituals Inbox (manager + per-row
+// everywhere the events surface — the Rituals overview (manager + per-row
 // unwatch) and the GitHub surface (watch chip for the repo you're viewing).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -8,11 +8,11 @@ import { readFileSync } from "node:fs";
 const automations = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const githubView = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8");
 
-// ── Rituals Inbox: the Subscriptions manager is one click from the feed ──────
+// ── Rituals: the Subscriptions manager stays in the overview options menu ────
 assert.match(
   automations,
-  /leadingIcon="ph:github-logo"[\s\S]{0,200}Subscriptions/,
-  "the Inbox tab header offers a Subscriptions button",
+  /<PopoverItem icon="ph:github-logo"[\s\S]{0,200}Subscriptions/,
+  "the overview options menu offers Subscriptions",
 );
 assert.match(
   automations,
@@ -53,8 +53,8 @@ assert.match(
 );
 assert.match(
   automations,
-  /onUnwatch=\{\(item, repo\) => void unwatchRepo\(item, repo\)\}/,
-  "the feed wires the unwatch handler through to rows",
+  /<RitualNeedsRow[\s\S]{0,700}onUnwatch=\{\(next, repo\) => void unwatchRepo\(next, repo\)\}/,
+  "the visible Needs-you queue wires the unwatch handler through to GitHub rows",
 );
 
 // ── GitHub surface: watch the repo you're viewing ────────────────────────────

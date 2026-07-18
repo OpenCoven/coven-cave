@@ -44,7 +44,7 @@ assert.match(
 assert.equal(MODE_ALIASES.calendar, "inbox");
 assert.match(
   workspace,
-  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \? "calendar" : "inbox"\}/,
+  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
   "the calendar alias renders the Rituals surface on its Calendar tab (keyed remount)",
 );
 
