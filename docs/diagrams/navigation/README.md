@@ -43,4 +43,4 @@ maps go stale:
 There is no generator; the maps are hand-maintained against the sources named
 in each file's header. When navigation structure changes: update the affected
 map, refresh its `%% Regenerated from` line with the new `main` short SHA, and
-keep the legend's class vocabulary (`00-navigation-legend.mmd`) authoritative.
+keep the legend's shared class vocabulary (`00-navigation-legend.mmd`) authoritative (add any new shared class there before using it across multiple maps).
