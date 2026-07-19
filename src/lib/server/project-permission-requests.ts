@@ -102,11 +102,22 @@ export async function assertProjectApiAccess(args: {
   await assertProjectAccess({ familiarId }, project.id, surface);
 }
 
+const MOBILE_READ_FALLBACK_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set([
+  "file-browse",
+  "file-read",
+  "project-api",
+]);
+
 export function projectPermissionSurfaceForRequest(
   req: Request,
   fallback: ProjectPermissionSurface,
 ): ProjectPermissionSurface {
-  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return "mobile";
+  if (
+    req.headers.get(MOBILE_ACCESS_HEADER) === "1" &&
+    MOBILE_READ_FALLBACK_SURFACES.has(fallback)
+  ) {
+    return "mobile";
+  }
   return fallback;
 }
 
