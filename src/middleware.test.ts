@@ -78,8 +78,18 @@ assert.match(
 // (cookies auto-send cross-origin → CSRF).
 assert.match(
   source,
-  /const headerCsrfTrusted =\s*Boolean\(sidecarToken\) &&\s*req\.headers\.get\(TOKEN_HEADER\) === sidecarToken &&\s*isHeaderCsrfTrustedApiPath\(req\.nextUrl\.pathname\)/,
-  "origin/referer gate bypass must be keyed to the custom sidecar header token and mobile endpoint allowlist",
+  /const headerCsrfTrusted =\s*sidecarTokenMatches\(req\.headers\.get\(TOKEN_HEADER\)\) &&\s*isHeaderCsrfTrustedApiPath\(req\.nextUrl\.pathname\)/,
+  "origin/referer gate bypass must be keyed to the custom sidecar header token (timing-safe) and mobile endpoint allowlist",
+);
+assert.match(
+  source,
+  /const sidecarTokenMatches = \(supplied: string \| null \| undefined\) => \{\s*if \(!sidecarToken \|\| !supplied\) return false;\s*return timingSafeEqualString\(supplied, sidecarToken\);\s*\}/,
+  "sidecar auth must compare the supplied token with timingSafeEqualString",
+);
+assert.match(
+  source,
+  /const sidecarAuthenticated = sidecarTokenMatches\(suppliedToken\)/,
+  "sidecarAuthenticated must use the shared timing-safe matcher",
 );
 assert.match(
   source,
