@@ -23,7 +23,7 @@ export function BarChart({
 }) {
   return (
     <div className="cave-chart cave-chart--bar" style={{ height }}>
-      <ParentSize>
+      <ParentSize debounceTime={0}>
         {({ width }) => (
           <BarInner width={width} height={height} data={data} defaultColor={defaultColor} />
         )}

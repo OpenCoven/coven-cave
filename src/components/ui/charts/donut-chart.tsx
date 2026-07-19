@@ -26,7 +26,7 @@ export function DonutChart({
 }) {
   return (
     <div className="cave-chart cave-chart--donut" style={{ height: size }}>
-      <ParentSize>
+      <ParentSize debounceTime={0}>
         {({ width }) => <DonutInner width={width} size={size} thickness={thickness} data={data} ariaLabel={ariaLabel} />}
       </ParentSize>
     </div>
