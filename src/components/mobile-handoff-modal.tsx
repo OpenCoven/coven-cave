@@ -68,6 +68,8 @@ export function MobileHandoffModal({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<"host" | "invite" | null>(null);
   const lastAutoCopyRequestRef = useRef(0);
+  /** Aborts an in-flight start when the modal closes, remounts, or Refresh races. */
+  const startAbortRef = useRef<AbortController | null>(null);
 
   const copyHandoffUrl = useCallback(async (nextHandoff: HandoffReady) => {
     const url = nextHandoff.inviteUrl || nextHandoff.url || nextHandoff.nativeUrl;
@@ -82,6 +84,10 @@ export function MobileHandoffModal({
   }, []);
 
   const start = useCallback(async (copyRequest = 0) => {
+    startAbortRef.current?.abort();
+    const controller = new AbortController();
+    startAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
     setCopied(null);
@@ -91,8 +97,11 @@ export function MobileHandoffModal({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(chatId ? { action: "app-start", chatId } : { action: "app-start" }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
+      if (controller.signal.aborted) return;
       if (!json.ok) {
         setHandoff(null);
         setError(json.stderr || json.error || "Mobile handoff failed.");
@@ -100,19 +109,34 @@ export function MobileHandoffModal({
       }
       setHandoff(json);
       if (copyRequest > 0 && copyRequest !== lastAutoCopyRequestRef.current) {
-        lastAutoCopyRequestRef.current = copyRequest;
         await copyHandoffUrl(json);
+        if (controller.signal.aborted) return;
+        lastAutoCopyRequestRef.current = copyRequest;
       }
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
       setHandoff(null);
       setError(err instanceof Error ? err.message : "Mobile handoff failed.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
+      if (startAbortRef.current === controller) startAbortRef.current = null;
     }
   }, [chatId, copyHandoffUrl]);
 
   useEffect(() => {
-    if (open) void start(autoCopyRequest);
+    if (!open) {
+      startAbortRef.current?.abort();
+      startAbortRef.current = null;
+      setLoading(false);
+      return;
+    }
+    void start(autoCopyRequest);
+    return () => {
+      startAbortRef.current?.abort();
+      startAbortRef.current = null;
+    };
   }, [autoCopyRequest, open, start]);
 
   const copyUrl = useCallback(async () => {
@@ -131,6 +155,10 @@ export function MobileHandoffModal({
   }, [handoff]);
 
   const resetServe = useCallback(async () => {
+    startAbortRef.current?.abort();
+    const controller = new AbortController();
+    startAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
@@ -138,14 +166,21 @@ export function MobileHandoffModal({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset" }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
+      if (controller.signal.aborted) return;
       if (!json.ok) setError(json.stderr || json.error || "Tailscale Serve reset failed.");
       setHandoff(null);
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Tailscale Serve reset failed.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
+      if (startAbortRef.current === controller) startAbortRef.current = null;
     }
   }, []);
 
