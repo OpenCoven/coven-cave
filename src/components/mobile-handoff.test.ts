@@ -65,7 +65,7 @@ assert.match(modal, /new AbortController\(\)/, "Modal should abort stale handoff
 assert.match(modal, /signal: controller\.signal/, "Modal handoff fetch must pass AbortSignal");
 assert.match(
   modal,
-  /controller\.signal\.aborted \|\| \(err instanceof DOMException && err\.name === "AbortError"\)/,
+  /controller\.signal\.aborted \|\| \(err instanceof Error && err\.name === "AbortError"\)/,
   "Modal must ignore AbortError instead of clobbering state with a failure",
 );
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");

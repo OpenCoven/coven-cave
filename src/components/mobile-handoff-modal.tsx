@@ -99,6 +99,7 @@ export function MobileHandoffModal({
         body: JSON.stringify(chatId ? { action: "app-start", chatId } : { action: "app-start" }),
         signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
       if (controller.signal.aborted) return;
       if (!json.ok) {
@@ -108,11 +109,12 @@ export function MobileHandoffModal({
       }
       setHandoff(json);
       if (copyRequest > 0 && copyRequest !== lastAutoCopyRequestRef.current) {
-        lastAutoCopyRequestRef.current = copyRequest;
         await copyHandoffUrl(json);
+        if (controller.signal.aborted) return;
+        lastAutoCopyRequestRef.current = copyRequest;
       }
     } catch (err) {
-      if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
         return;
       }
       setHandoff(null);
@@ -172,7 +174,7 @@ export function MobileHandoffModal({
       if (!json.ok) setError(json.stderr || json.error || "Tailscale Serve reset failed.");
       setHandoff(null);
     } catch (err) {
-      if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
         return;
       }
       setError(err instanceof Error ? err.message : "Tailscale Serve reset failed.");
