@@ -6,8 +6,8 @@ const globals = await readFile(new URL("./globals.css", import.meta.url), "utf8"
 
 assert.match(
   globals,
-  /:root \{[\s\S]*?--background:\s*oklch\(0\.13 0\.022 293\);/,
-  "Default Coven Cave background should stay on the dark lavender-inked oklch foundation",
+  /:root \{[\s\S]*?--background:\s*oklch\(0\.24 0\.006 291\);/,
+  "Default Coven Cave background should stay on the dark neutral-inked oklch foundation",
 );
 
 assert.match(

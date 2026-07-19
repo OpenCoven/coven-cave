@@ -596,12 +596,12 @@ async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
         // overrides the plugin's default "loose" so diagrams from untrusted
         // chat content can't smuggle scripts/click handlers (postProcess
         // output bypasses our sanitizer).
-        const accent = themeToken("--accent-presence", "#9a8ecd");
-        const raised = themeToken("--bg-raised", "#1c1a24");
-        const panel = themeToken("--bg-panel", "#14121b");
+        const accent = themeToken("--accent-presence", "#9386d0");
+        const raised = themeToken("--bg-raised", "#242327");
+        const panel = themeToken("--bg-panel", "#1a1a1d");
         const textPrimary = themeToken("--text-primary", "#e6e6f0");
-        const textSecondary = themeToken("--text-secondary", "#a5a1b6");
-        const hairline = themeToken("--border-strong", "#3a3648");
+        const textSecondary = themeToken("--text-secondary", "#929198");
+        const hairline = themeToken("--border-strong", "#807f80");
         const plugin = mermaidPlugin({
           // "base" is the only mermaid theme that honors themeVariables;
           // darkMode below keeps its derived shades on the dark ramp.
