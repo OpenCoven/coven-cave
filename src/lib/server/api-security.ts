@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
-import { isLocalOrigin } from "./local-origin";
+import { isLocalOrigin } from "./local-origin.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 

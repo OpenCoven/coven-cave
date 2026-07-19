@@ -1,47 +1,57 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { afterEach, test } from "node:test";
 
-const source = readFileSync(new URL("./api-security.ts", import.meta.url), "utf8");
+import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
+import { rejectNonLocalRequest } from "./api-security.ts";
 
-// The desktop-only policy (mobile marker, sidecar token, loopback Host) lives
-// in the shared isLocalOrigin gate (see local-origin.ts, behaviorally covered
-// by local-origin.test.ts). api-security must DELEGATE to that gate rather than
-// re-implement the checks, so the security policy can't drift across two files.
-assert.match(
-  source,
-  /import \{ isLocalOrigin \} from "\.\/local-origin"/,
-  "rejectNonLocalRequest should delegate the desktop-only policy to the shared isLocalOrigin gate",
-);
-assert.match(
-  source,
-  /if \(!isLocalOrigin\(req\)\) \{[\s\S]*?status:\s*403/,
-  "a request that fails the shared local-origin gate must be rejected with 403",
-);
+const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
 
-// The duplicated sidecar-token machinery must NOT be re-implemented here.
-assert.doesNotMatch(
-  source,
-  /timingSafeEqualString/,
-  "api-security must not re-implement the timing-safe sidecar-token comparison",
-);
-assert.doesNotMatch(
-  source,
-  /COVEN_CAVE_AUTH_TOKEN/,
-  "api-security must not read the sidecar token directly (single source of truth in local-origin)",
-);
-assert.doesNotMatch(
-  source,
-  /MOBILE_ACCESS_HEADER/,
-  "api-security must not re-check the mobile proxy marker (delegated to isLocalOrigin)",
-);
+function restoreEnv() {
+  if (ORIGINAL_SIDECAR_TOKEN === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  else process.env.COVEN_CAVE_AUTH_TOKEN = ORIGINAL_SIDECAR_TOKEN;
+}
 
-// This route family still layers its stricter cross-origin Origin-header check
-// on top of the shared gate.
-assert.match(
-  source,
-  /const origin = req\.headers\.get\("origin"\)/,
-  "cross-origin Origin check is preserved on top of the shared gate",
-);
+function request(headers: HeadersInit) {
+  return new Request("http://x/", { headers });
+}
+
+afterEach(() => {
+  restoreEnv();
+});
+
+test("rejects mobile-marked requests with 403", async () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+
+  const res = rejectNonLocalRequest(
+    request({ host: "127.0.0.1:3000", [MOBILE_ACCESS_HEADER]: "1" }),
+  );
+
+  assert.ok(res);
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { ok: false, error: "forbidden" });
+});
+
+test("rejects sidecar token mismatches with 403", async () => {
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
+
+  const res = rejectNonLocalRequest(
+    request({ host: "127.0.0.1:3000", [TOKEN_HEADER]: "wrong" }),
+  );
+
+  assert.ok(res);
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { ok: false, error: "forbidden" });
+});
+
+test("accepts valid loopback plus sidecar token requests", () => {
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
+
+  const res = rejectNonLocalRequest(
+    request({ host: "127.0.0.1:3000", [TOKEN_HEADER]: "sidecar-secret" }),
+  );
+
+  assert.equal(res, null);
+});
 
 console.log("api-security.test.ts: ok");
