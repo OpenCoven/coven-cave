@@ -4420,6 +4420,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
         if (eventCursor != null) cursor = eventCursor;
+        // The resume route emits this marker when the bounded event ring
+        // dropped output before our cursor. We can render the remaining tail,
+        // but must still rehydrate after settle to restore the missing middle.
+        if (ev.kind === "progress" && ev.id === "resume-gap") needsTranscriptResync = true;
         if (ev.kind === "assistant_chunk") {
           // Hot path: buffer instead of committing per token.
           chunkCoalescer.push(ev.text);

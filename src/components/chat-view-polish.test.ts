@@ -593,6 +593,11 @@ assert.match(
 );
 assert.match(
   source,
+  /ev\.kind === "progress" && ev\.id === "resume-gap"\)[\s\S]{0,100}?needsTranscriptResync = true/,
+  "An evicted replay gap must rehydrate the persisted transcript after the resumed stream settles",
+);
+assert.match(
+  source,
   /<LinkedContextRow\b/,
   "ChatView should render LinkedContextRow for task/GitHub chips",
 );

@@ -129,6 +129,7 @@ export const SUITES = {
     "src/lib/chat-session-prefs.test.ts",
     "src/lib/conversation-tree.test.ts",
     "src/lib/stream-text.test.ts",
+    "src/lib/chat-sse.test.ts",
     "src/lib/chat-project-selection.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
