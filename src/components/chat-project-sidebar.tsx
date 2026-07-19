@@ -24,6 +24,8 @@ import {
   writeSessionOrder,
 } from "@/lib/chat-session-order";
 import { Icon, type IconName } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import {
   CHAT_SESSION_DRAG_MIME,
@@ -612,6 +614,28 @@ export function ChatProjectSidebar({
               </SortableContext>
             </DndContext>
           )
+        ) : null}
+
+        {/* ── Zero sessions — a friendly invitation instead of a blank rail.
+              Without this, a familiar with no sessions yet rendered an empty
+              nav and the rail read as broken. onNewChat(null) opens a fresh
+              compose view (no project scope) — the same path as the folder
+              "+" buttons. */}
+        {!hasSearch && groups.length === 0 ? (
+          <div className="px-3 pt-4">
+            <EmptyState
+              compact
+              className="rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon="ph:chat-circle-dots"
+              headline="No conversations yet"
+              subtitle="Start a chat and your sessions will appear here."
+              actions={
+                <Button size="sm" variant="primary" leadingIcon="ph:plus" onClick={() => onNewChat(null)}>
+                  Start a chat
+                </Button>
+              }
+            />
+          </div>
         ) : null}
 
         {/* ── Projects — scope the list to one working directory ── */}

@@ -158,6 +158,7 @@ export const SUITES = {
     "src/lib/home-greeting.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
+    "src/components/chat-project-sidebar-empty.test.ts",
     "src/lib/session-pr-status.test.ts",
     "src/lib/merged-chat-auto-archive.test.ts",
     "src/lib/branch-pr-context.test.ts",
