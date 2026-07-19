@@ -103,6 +103,22 @@ for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
   assert.doesNotMatch(source, /return \(|return </, `${route} is a pure stub — it must not render JSX of its own`);
 }
 
+// ── Destination pages carry the standalone left side-panel ───────────────────
+// Destination routes render outside the SPA workspace (which owns
+// SidebarMinimal), so without a shell they'd have no nav at all — the exact
+// "dashboard has no sidepanel" gap (cave-4i6u). Every destination page must
+// mount AnalyticsPageShell, the standalone rail with ?mode= deep links back
+// into the SPA. Window-hosts (overlay windows) and dev-only pages stay bare.
+for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
+  if (spec.kind !== "destination") continue;
+  const file = path.join(appDir, route.replace(/^\//, ""), "page.tsx");
+  const source = readFileSync(file, "utf8");
+  assert.ok(
+    source.includes("AnalyticsPageShell"),
+    `${route} is a destination route — it must mount AnalyticsPageShell so the left side-panel is present on every page (cave-4i6u)`,
+  );
+}
+
 // ── Dev-only pages stay out of every navigation host ─────────────────────────
 const componentsDir = new URL("../components/", import.meta.url);
 const navHosts = [

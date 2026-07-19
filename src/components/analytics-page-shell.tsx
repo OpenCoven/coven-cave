@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
 import "@/styles/analytics-page-shell.css";
 
@@ -24,14 +25,20 @@ const PRIMARY: RailDest[] = [
 const NAV_ICON = CAVE_ICON_SIZE.sidePanelNav;
 
 /**
- * Standalone-route left side-panel. The familiar-analytics route renders OUTSIDE
- * the SPA workspace (which owns SidebarMinimal), so on its own it has no nav. This
- * shell gives it the app's left rail at EVERY screen size (goal: the left
- * sidepanel on analytics, all screens): a compact, always-visible icon column of
- * the primary destinations (deep-linking back into the SPA) plus Dashboard — so
- * you can navigate away from analytics without a browser Back.
+ * Standalone-route left side-panel. Destination routes (/dashboard, /weaves,
+ * /proposals, /settings, /profile, /daily-report, familiar analytics) render
+ * OUTSIDE the SPA workspace (which owns SidebarMinimal), so on their own they
+ * have no nav. This shell gives every one of them the app's left rail at EVERY
+ * screen size: a compact, always-visible icon column of the primary
+ * destinations (deep-linking back into the SPA) plus Dashboard — so you can
+ * navigate away without a browser Back. route-inventory.test.ts enforces that
+ * every destination page mounts it.
  */
 export function AnalyticsPageShell({ children }: { children: ReactNode }) {
+  // Only the Dashboard foot link can be "current" — the PRIMARY rows deep-link
+  // into the SPA at `/`, which this shell never wraps.
+  const pathname = usePathname();
+  const onDashboard = pathname === "/dashboard";
   return (
     <div className="aps">
       <nav className="aps-rail" aria-label="Primary">
@@ -47,7 +54,13 @@ export function AnalyticsPageShell({ children }: { children: ReactNode }) {
             </li>
           ))}
         </ul>
-        <a className="aps-rail-link aps-rail-foot" href="/dashboard" aria-label="Dashboard" title="Dashboard">
+        <a
+          className="aps-rail-link aps-rail-foot"
+          href="/dashboard"
+          aria-label="Dashboard"
+          title="Dashboard"
+          aria-current={onDashboard ? "page" : undefined}
+        >
           <Icon name="ph:squares-four" width={NAV_ICON} height={NAV_ICON} aria-hidden />
         </a>
       </nav>

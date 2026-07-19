@@ -5,8 +5,13 @@ export const metadata: Metadata = {
 };
 
 export default function SettingsPage() {
-  return <SettingsShell />;
+  return (
+    <AnalyticsPageShell>
+      <SettingsShell />
+    </AnalyticsPageShell>
+  );
 }
 
-// Client shell lives below — keeps page.tsx a server component for metadata
+// Client shells live below — keeps page.tsx a server component for metadata
+import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { SettingsShell } from "@/components/settings-shell";

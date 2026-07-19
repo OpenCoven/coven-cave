@@ -18,6 +18,8 @@ assert.match(page, /buildDashboardModel/, "dashboard builds the first-paint view
 assert.match(page, /BentoDashboard/, "dashboard renders the bento surface");
 assert.match(page, /dr-page dr-page--bento/, "page opts into the flex shell so the frame fills the viewport");
 assert.match(page, /dr-topbar/, "the sticky breadcrumb topbar stays");
+assert.match(page, /AnalyticsPageShell/, "dashboard mounts the standalone left side-panel (cave-4i6u)");
+assert.doesNotMatch(page, /<main /, "the shell's aps-main is the page's main landmark — no nested <main>");
 
 // ── Component wiring ──────────────────────────────────────────────────────────
 
