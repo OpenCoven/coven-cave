@@ -37,6 +37,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { SearchInput } from "@/components/ui/search-input";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
@@ -101,6 +102,12 @@ function linkLabel(link: LinkRef): string {
 // Calendar and Crons. The broader Automations/Flow experience lives on
 // feature/automations-flow.
 type AutomationTab = "overview" | "calendar" | "crons";
+
+const RITUAL_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "calendar", label: "Calendar" },
+  { id: "crons", label: "Crons" },
+] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -2599,13 +2606,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
         <div className="surface-compact-header rituals-overview__header">
-          {activeTab !== "overview" ? (
-            <Button size="xs" variant="ghost" leadingIcon="ph:arrow-left" onClick={() => selectTab("overview")}>
-              Overview
-            </Button>
-          ) : (
-            <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
-          )}
+          <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
           <h1 className="surface-compact-title">Rituals</h1>
           {activeTab === "overview" ? (
             <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
@@ -2704,14 +2705,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   ariaLabel="Rituals options"
                 >
                   <PopoverBody role="menu" ariaLabel="Rituals options">
-                    {calendarSlot ? (
-                      <PopoverItem icon="ph:calendar-check" onSelect={() => { setManageMenuOpen(false); selectTab("calendar"); }}>
-                        Open full calendar
-                      </PopoverItem>
-                    ) : null}
-                    <PopoverItem icon="ph:clock-countdown" onSelect={() => { setManageMenuOpen(false); selectTab("crons"); }}>
-                      Manage crons
-                    </PopoverItem>
                     <PopoverItem icon="ph:github-logo" onSelect={() => { setManageMenuOpen(false); void openSubscriptions(); }}>
                       Subscriptions
                     </PopoverItem>
@@ -2750,6 +2743,24 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             ) : null}
           </div>
         </div>
+        <Tabs
+          items={RITUAL_TABS}
+          value={activeTab}
+          onChange={selectTab}
+          ariaLabel="Rituals sections"
+          idPrefix="automations"
+          size="sm"
+          className="shrink-0 px-3"
+        />
+        {RITUAL_TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={`automations-panel-${tab.id}`}
+            aria-labelledby={`automations-tab-${tab.id}`}
+            hidden
+          />
+        ))}
 
         {error && (
           <div
@@ -2770,8 +2781,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
         {/* List (or the Calendar surface when that tab is active) */}
         <div
-          role="region"
+          role="tabpanel"
           id={`automations-panel-${activeTab}`}
+          aria-labelledby={`automations-tab-${activeTab}`}
           aria-label={activeTab === "overview" ? "Rituals overview" : activeTab === "calendar" ? "Rituals calendar" : "Rituals crons"}
           className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
           {activeTab === "calendar" ? (
