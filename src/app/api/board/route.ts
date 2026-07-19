@@ -13,8 +13,8 @@ import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_VALUES = new Set<string>(STATUSES);
-const PRIORITY_VALUES = new Set<string>(PRIORITIES);
+const STATUS_VALUES = new Set<CardStatus>(STATUSES);
+const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
 
 export async function GET() {
   const board = await loadBoard();

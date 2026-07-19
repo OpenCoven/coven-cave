@@ -8,13 +8,13 @@ assert.match(source, /STATUSES/, "board create must import STATUSES for validati
 assert.match(source, /PRIORITIES/, "board create must import PRIORITIES for validation");
 assert.match(
   source,
-  /const STATUS_VALUES = new Set<string>\(STATUSES\)/,
-  "board create must build a status allowlist from STATUSES",
+  /const STATUS_VALUES = new Set<CardStatus>\(STATUSES\)/,
+  "board create must build a CardStatus allowlist from STATUSES",
 );
 assert.match(
   source,
-  /const PRIORITY_VALUES = new Set<string>\(PRIORITIES\)/,
-  "board create must build a priority allowlist from PRIORITIES",
+  /const PRIORITY_VALUES = new Set<CardPriority>\(PRIORITIES\)/,
+  "board create must build a CardPriority allowlist from PRIORITIES",
 );
 assert.match(
   source,
