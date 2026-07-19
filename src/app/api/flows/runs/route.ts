@@ -78,6 +78,9 @@ export async function PATCH(req: Request) {
   const patch: Partial<Omit<FlowRunRecord, "id">> = {};
   if (body.status) patch.status = body.status;
   if (body.steps !== undefined) {
+    if (!Array.isArray(body.steps)) {
+      return NextResponse.json({ ok: false, error: "steps must be an array" }, { status: 400 });
+    }
     const steps = validateSteps<FlowRunStepRecord>(body.steps);
     if (!steps.ok) {
       return NextResponse.json({ ok: false, error: steps.error }, { status: 413 });
