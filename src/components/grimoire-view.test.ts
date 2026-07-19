@@ -24,7 +24,21 @@ assert.match(view, /export function GrimoireView\(/, "GrimoireView must be expor
 assert.match(view, /fetch\("\/api\/knowledge"/, "navigator lists the knowledge vault");
 assert.match(view, /fetch\("\/api\/memory"/, "navigator lists memory files");
 assert.match(view, /fetch\("\/api\/journal"/, "navigator lists journal days");
-assert.match(view, /aria-label="Search grimoire documents"/, "navigator search is labelled");
+assert.match(view, /aria-label="Search grimoire documents"/, "doc search is labelled");
+// cave-zqhr: the doc search moved OUT of the navigator rail into the compact
+// header beside the Knowledge/Journal/Relations tabs. It must be the shared
+// SearchInput in the actions cluster, and the rail must not grow a second
+// input back.
+assert.match(
+  view,
+  /surface-compact-actions[\s\S]{0,700}<SearchInput\s[\s\S]{0,300}containerClassName="surface-compact-search"/,
+  "the doc search is a shared SearchInput in the header actions cluster, not in the rail",
+);
+assert.doesNotMatch(
+  view,
+  /<aside[\s\S]*?type="search"/,
+  "the navigator rail carries no search input of its own (header owns it — cave-zqhr)",
+);
 assert.match(view, /New stitch/, "stitches can be sewn from pinned sources here");
 assert.match(view, /Blank entry/, "hand-written entries can still be created");
 assert.match(
