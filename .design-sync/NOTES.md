@@ -26,6 +26,7 @@
 
 ## Known render warns
 
+- Chart cards may screenshot as "No data yet" in validate's full sweep: @visx `useParentSize` applies measurements via `requestAnimationFrame`, and occluded/backgrounded headless pages get rAF throttled/starved — nondeterministic per page load; live/visible pages render in ~1 frame (the debounce has a leading-edge call, so `debounceTime` is irrelevant). Not a bundle defect. Mitigate in screenshot harnesses with `--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling`, or triage the warn against this note.
 - `[TOKENS_MISSING]` (~14 vars): `--toast-accent` (set at runtime via inline style by inbox-toast), `--x` (JS-set), `--accent-rose`, `--bg-sunken`, `--danger-bg/-border/-text`, `--accent-contrast` etc. — referenced by app surfaces (inbox-toast, craft-dossier, projects-view) but never defined in the repo either; pre-existing app quirk, not a bundle defect.
 - `[EXPORT_COLLISION] Icon` — false positive, see above.
 
