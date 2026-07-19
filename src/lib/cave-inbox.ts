@@ -88,6 +88,13 @@ export type InboxItem = {
    * again.
    */
   readAt?: string | null;
+  /**
+   * Per-item delivery mute — quiets the toast/native-notification/sound for
+   * this one reminder without touching the kind- or familiar-level mutes in
+   * inbox-prefs.ts. The item still lists and still fires on schedule; only
+   * the attention-grabbing moment is skipped. See workspace.tsx's isMuted.
+   */
+  muted?: boolean | null;
 };
 
 type InboxFile = {

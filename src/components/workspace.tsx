@@ -1199,6 +1199,7 @@ export function Workspace() {
     // Quiet delivery, not suppression: muted items still land in the inbox and
     // bell — they just skip the toast/native-notification/sound moment.
     const isMuted = (item: InboxItem) =>
+      !!item.muted ||
       (!!item.familiarId &&
         inboxPrefsRef.current.mutedFamiliars.includes(item.familiarId)) ||
       (inboxPrefsRef.current.mutedKinds as readonly string[]).includes(item.kind);
