@@ -73,6 +73,16 @@ test("Apple ID notarization avoids putting the app password in process arguments
   assert.doesNotMatch(setupFunctions, /--password/);
   assert.doesNotMatch(logFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
   assert.doesNotMatch(submitFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
+
+  const setupCall = releaseScript.lastIndexOf("setup_notary_keychain_profile");
+  assert(
+    setupCall > releaseScript.indexOf('echo "==> Signing DMG container"'),
+    "the credential profile must not exist during build or packaging",
+  );
+  assert(
+    setupCall < releaseScript.indexOf('echo "==> Submitting DMG for notarization"'),
+    "the credential profile should be created immediately before notarization",
+  );
 });
 
 test("notary rejection stops before stapling and prints the Apple log", () => {
