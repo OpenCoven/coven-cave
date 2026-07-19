@@ -242,7 +242,6 @@ function ThreadRow({
       danger: true,
       disabled: deleting,
       onSelect: () => {
-        setContextMenu(null);
         queueMicrotask(onRequestDelete);
       },
     },

@@ -13,7 +13,7 @@ assert.match(actionMenu, /function SidebarActionItems\(/, "action menu helper ex
 assert.ok((actionMenu.match(/<SidebarActionItems/g) ?? []).length === 2, "both menu adapters render the same action-item mapper");
 assert.match(actionMenu, /export function SidebarOverflowMenu[\s\S]*<OverflowMenu[\s\S]*className="cnav__overflow"[\s\S]*placement="bottom-end"/, "overflow adapter uses the shared OverflowMenu with the stable cnav__overflow trigger");
 assert.match(actionMenu, /export function SidebarContextMenu[\s\S]*<ContextMenu[\s\S]*ariaLabel=\{ariaLabel\}/, "context adapter uses the shared ContextMenu");
-assert.match(actionMenu, /onActionSelect=\{\(action\) => \{[\s\S]*onClose\(\);[\s\S]*action\.onSelect\(\);[\s\S]*\}\}/, "context-menu selection closes before invoking the action");
+assert.match(actionMenu, /<ContextMenu[\s\S]*closeOnSelect[\s\S]*>\s*<SidebarActionItems actions=\{actions\} \/>/, "context adapter delegates enabled-item close + focus restore to ContextMenu");
 
 // Thread rows: one action contract powers the persistent overflow and the
 // right-click path, while the row's primary click / alt-open / drag behavior stays.
@@ -21,7 +21,8 @@ assert.match(sidebar, /rowInstanceKey: string;/, "thread rows require a stable r
 assert.match(sidebar, /const \[contextMenu, setContextMenu\] = useState<ContextMenuState>\(null\);/, "thread rows keep focused local ContextMenuState");
 assert.match(sidebar, /onContextMenu=\{\(e\) => \{[\s\S]*openContextMenuAt\(setContextMenu\)\(e\);[\s\S]*\}\}/, "thread rows open the shared context menu from the stable row");
 assert.match(sidebar, /const actions = compactActions\(\[[\s\S]*onOpenInSplit[\s\S]*\? \{[\s\S]*label: "Open in split"[\s\S]*: null,[\s\S]*label: pinned \? "Unpin" : "Pin"[\s\S]*label: "Delete"/, "thread rows define one typed action array with split, pin, and delete");
-assert.match(sidebar, /onSelect: \(\) => \{[\s\S]*setContextMenu\(null\);[\s\S]*queueMicrotask\(onRequestDelete\);[\s\S]*\}/, "delete action clears any open context menu before starting confirmation");
+assert.match(sidebar, /onSelect: \(\) => \{[\s\S]*queueMicrotask\(onRequestDelete\);[\s\S]*\}/, "delete action waits for the menu close path, then starts confirmation");
+assert.doesNotMatch(sidebar, /onSelect: \(\) => \{[\s\S]*setContextMenu\(null\);[\s\S]*queueMicrotask\(onRequestDelete\);[\s\S]*\}/, "delete action no longer bypasses ContextMenu's close + focus restoration");
 assert.match(sidebar, /useEffect\(\(\) => \{[\s\S]*if \(confirming\) setContextMenu\(null\);[\s\S]*\}, \[confirming\]\)/, "thread rows force-close the context menu while confirming");
 assert.match(sidebar, /state=\{confirming \? null : contextMenu\}/, "confirming rows hide the context menu entirely");
 assert.match(sidebar, /const confirmCancelRef = useRef<HTMLButtonElement \| null>\(null\);/, "thread rows keep a stable inline confirmation focus target");

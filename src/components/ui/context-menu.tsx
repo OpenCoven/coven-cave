@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { Popover } from "@/components/ui/popover";
+import { Popover, PopoverBody, activatedMenuItem } from "@/components/ui/popover";
 
 /** Cursor position for an open context menu, or null when closed. */
 export type ContextMenuState = { x: number; y: number } | null;
@@ -22,11 +22,13 @@ export function ContextMenu({
   onClose,
   ariaLabel,
   children,
+  closeOnSelect = false,
 }: {
   state: ContextMenuState;
   onClose: () => void;
   ariaLabel: string;
   children: ReactNode;
+  closeOnSelect?: boolean;
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   // Remember the element that had focus when the menu opened (typically the
@@ -36,6 +38,16 @@ export function ContextMenu({
   const open = state !== null;
   useEffect(() => {
     if (open) returnFocusRef.current = document.activeElement as HTMLElement | null;
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      const el = returnFocusRef.current;
+      const active = document.activeElement;
+      if (el && document.contains(el) && typeof el.focus === "function" && (!active || active === document.body)) {
+        el.focus();
+      }
+    };
   }, [open]);
   return (
     <>
@@ -48,17 +60,22 @@ export function ContextMenu({
         open={open}
         onOpenChange={(next) => {
           if (next) return;
-          onClose();
-          const el = returnFocusRef.current;
-          if (el && document.contains(el) && typeof el.focus === "function") el.focus();
+          if (!next) onClose();
         }}
         anchorRef={anchorRef}
         placement="bottom-start"
         ariaLabel={ariaLabel}
       >
-        <div role="menu" className="ui-popover-body">
+        <PopoverBody
+          role="menu"
+          ariaLabel={ariaLabel}
+          onClick={(e) => {
+            const shouldCloseOnSelect = closeOnSelect && Boolean(activatedMenuItem(e.target));
+            if (shouldCloseOnSelect) onClose();
+          }}
+        >
           {children}
-        </div>
+        </PopoverBody>
       </Popover>
     </>
   );

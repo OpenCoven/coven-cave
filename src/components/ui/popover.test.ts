@@ -121,13 +121,17 @@ assert.match(
 // menuitem/menuitemradio descendants, Home/End jump to the ends, and text-entry
 // controls inside a popover are left alone.
 assert.match(src, /role === "menu"/, "keyboard navigation only attaches to menu popovers");
+assert.match(src, /autoFocusMenuItem\?: boolean/, "menu bodies expose opt-in first-item autofocus");
+assert.match(src, /const shouldAutoFocusMenuItem = autoFocusMenuItem \?\? role === "menu"/, "first-item autofocus defaults on only for menu bodies");
+assert.match(src, /enabledMenuItems\(bodyRef\.current\)\[0\]\?\.focus\(\)/, "menu popovers focus the first enabled item on open");
 assert.match(src, /e\.key === "ArrowDown"/, "menu navigation handles ArrowDown");
 assert.match(src, /e\.key === "ArrowUp"/, "menu navigation handles ArrowUp");
 assert.match(src, /e\.key === "Home"/, "menu navigation handles Home");
 assert.match(src, /e\.key === "End"/, "menu navigation handles End");
 assert.match(src, /\[role="menuitem"\], \[role="menuitemradio"\]/, "menu navigation targets shared menu items");
-assert.match(src, /!item\.hasAttribute\("disabled"\)/, "menu navigation skips disabled items");
-assert.match(src, /item\.getAttribute\("aria-disabled"\) !== "true"/, "menu navigation also skips aria-disabled items");
+assert.match(src, /item\.hasAttribute\("disabled"\)/, "menu navigation understands disabled items");
+assert.match(src, /item\.getAttribute\("aria-disabled"\) === "true"/, "menu navigation also understands aria-disabled items");
+assert.match(src, /const items = enabledMenuItems\(/, "keyboard navigation walks only enabled menu items");
 assert.match(src, /target\.closest\('input, textarea, select, \[contenteditable\]'\)/, "menu navigation does not hijack embedded text-entry controls");
 assert.match(src, /\(currentIndex \+ 1\) % items\.length/, "ArrowDown wraps to the first enabled item");
 assert.match(src, /\(currentIndex - 1 \+ items\.length\) % items\.length/, "ArrowUp wraps to the last enabled item");

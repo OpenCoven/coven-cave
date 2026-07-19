@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEventHandler,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -222,12 +223,24 @@ export function PopoverBody({
   className,
   role,
   ariaLabel,
+  autoFocusMenuItem,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
   role?: "menu";
   ariaLabel?: string;
+  autoFocusMenuItem?: boolean;
+  onClick?: MouseEventHandler<HTMLDivElement>;
 }) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoFocusMenuItem = autoFocusMenuItem ?? role === "menu";
+  useLayoutEffect(() => {
+    if (!shouldAutoFocusMenuItem || !bodyRef.current) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && bodyRef.current.contains(active)) return;
+    enabledMenuItems(bodyRef.current)[0]?.focus();
+  }, [children, shouldAutoFocusMenuItem]);
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (role === "menu") {
       if (
@@ -264,9 +277,11 @@ export function PopoverBody({
   };
   return (
     <div
+      ref={bodyRef}
       className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}
       role={role}
       aria-label={ariaLabel}
+      onClick={onClick}
       onKeyDown={onKeyDown}
     >
       {children}
@@ -284,11 +299,23 @@ export function PopoverSeparator() {
 
 function enabledMenuItems(root: HTMLElement) {
   return [...root.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')].filter(
-    (item) =>
-      !item.hasAttribute("disabled") &&
-      item.getAttribute("aria-disabled") !== "true" &&
-      !(item as HTMLButtonElement).disabled,
+    (item) => !isDisabledMenuItem(item),
   );
+}
+
+function isDisabledMenuItem(item: HTMLElement) {
+  return (
+    item.hasAttribute("disabled") ||
+    item.getAttribute("aria-disabled") === "true" ||
+    (item as HTMLButtonElement).disabled
+  );
+}
+
+export function activatedMenuItem(target: EventTarget | null) {
+  const item = (target as Element | null)?.closest?.('[role="menuitem"], [role="menuitemradio"]');
+  if (!item) return null;
+  if (isDisabledMenuItem(item as HTMLElement)) return null;
+  return item as HTMLElement;
 }
 
 export function PopoverItem({

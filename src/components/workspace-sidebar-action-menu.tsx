@@ -16,10 +16,8 @@ export type WorkspaceSidebarAction = {
 
 function SidebarActionItems({
   actions,
-  onActionSelect,
 }: {
   actions: WorkspaceSidebarAction[];
-  onActionSelect?: (action: WorkspaceSidebarAction) => void;
 }) {
   return actions.map((action) => (
     <PopoverItem
@@ -27,10 +25,7 @@ function SidebarActionItems({
       icon={action.icon}
       danger={action.danger}
       disabled={action.disabled}
-      onSelect={() => {
-        if (onActionSelect) onActionSelect(action);
-        else action.onSelect();
-      }}
+      onSelect={action.onSelect}
     >
       {action.label}
     </PopoverItem>
@@ -64,14 +59,8 @@ export function SidebarContextMenu({
   actions: WorkspaceSidebarAction[];
 }) {
   return (
-    <ContextMenu state={state} onClose={onClose} ariaLabel={ariaLabel}>
-      <SidebarActionItems
-        actions={actions}
-        onActionSelect={(action) => {
-          onClose();
-          action.onSelect();
-        }}
-      />
+    <ContextMenu state={state} onClose={onClose} ariaLabel={ariaLabel} closeOnSelect>
+      <SidebarActionItems actions={actions} />
     </ContextMenu>
   );
 }
