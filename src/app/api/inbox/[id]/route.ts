@@ -20,6 +20,7 @@ startScheduler();
 // shapes the scheduler can't handle.
 const PATCHABLE_FIELDS = [
   "title", "body", "status", "fireAt", "snoozeUntil", "recurrence", "whenText", "familiarId", "link",
+  "readAt", "muted",
 ] as const;
 
 export async function PATCH(
@@ -43,6 +44,12 @@ export async function PATCH(
     // a malformed client can't store an object/number on the item.
     if (key === "whenText" && raw.whenText !== null && typeof raw.whenText !== "string") {
       return NextResponse.json({ ok: false, error: "whenText must be a string or null" }, { status: 400 });
+    }
+    if (key === "readAt" && raw.readAt !== null && typeof raw.readAt !== "string") {
+      return NextResponse.json({ ok: false, error: "readAt must be a string or null" }, { status: 400 });
+    }
+    if (key === "muted" && raw.muted !== null && typeof raw.muted !== "boolean") {
+      return NextResponse.json({ ok: false, error: "muted must be a boolean or null" }, { status: 400 });
     }
     (body as Record<string, unknown>)[key] = raw[key];
   }
