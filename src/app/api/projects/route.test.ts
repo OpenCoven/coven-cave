@@ -25,7 +25,7 @@ assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 w
 assert.match(
   listRoute,
   /export async function POST\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest\(req\);/,
-  "POST /api/projects must enforce loopback before registering \$HOME-scoped roots",
+  "POST /api/projects must enforce desktop-local access before registering \$HOME-scoped roots",
 );
 assert.doesNotMatch(
   listRoute,
@@ -39,7 +39,7 @@ assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects
 assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] should require existing directory roots before persisting them");
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
-assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
+assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce desktop-local access before mutating project roots");
 
 assert.match(seedRoute, /seedDefaultProjectsIfEmpty/, "seed route should invoke default seeding");
 assert.match(seedRoute, /export async function POST\(\)/, "seed route should expose POST only");

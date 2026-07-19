@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { MOBILE_ACCESS_HEADER, TOKEN_HEADER, timingSafeEqualString } from "../../proxy-helpers.ts";
+
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
 export type JsonBodyResult<T> =
@@ -17,6 +19,18 @@ function isLocalHost(value: string | null): boolean {
 }
 
 export function rejectNonLocalRequest(req: Request): NextResponse | null {
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+
+  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
+  if (
+    sidecarToken &&
+    !timingSafeEqualString(req.headers.get(TOKEN_HEADER) ?? "", sidecarToken)
+  ) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+
   const host = req.headers.get("host");
   if (!isLocalHost(host)) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
