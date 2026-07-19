@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import {
   createCard,
   loadBoard,
+  PRIORITIES,
+  STATUSES,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
@@ -10,6 +12,9 @@ import type { ChatAttachment } from "@/lib/chat-attachments";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
+
+const STATUS_VALUES = new Set<string>(STATUSES);
+const PRIORITY_VALUES = new Set<string>(PRIORITIES);
 
 export async function GET() {
   const board = await loadBoard();
@@ -43,6 +48,14 @@ export async function POST(req: Request) {
   }
   if (!body.title || !body.title.trim()) {
     return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+  }
+  // Reject unknown column/priority values so hand-edited or agent payloads cannot
+  // plant strings that break Board filters and lifecycle inference.
+  if (body.status !== undefined && !STATUS_VALUES.has(body.status)) {
+    return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
+  }
+  if (body.priority !== undefined && !PRIORITY_VALUES.has(body.priority)) {
+    return NextResponse.json({ ok: false, error: "invalid priority" }, { status: 400 });
   }
   // A card assigned to a project derives its cwd from that project server-side —
   // never from the client body, which could contradict the project (cave-pw83).
