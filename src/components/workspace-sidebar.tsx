@@ -33,7 +33,13 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
+import { openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
+import {
+  SidebarContextMenu,
+  SidebarOverflowMenu,
+  type WorkspaceSidebarAction,
+} from "@/components/workspace-sidebar-action-menu";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -70,6 +76,10 @@ type Props = {
 };
 
 const THREADS_PREVIEW = 6;
+
+function compactActions(actions: Array<WorkspaceSidebarAction | null>): WorkspaceSidebarAction[] {
+  return actions.filter((action): action is WorkspaceSidebarAction => action !== null);
+}
 
 function bareTime(iso: string): string {
   return relativeTime(iso, Date.now(), "bare");
@@ -196,12 +206,45 @@ function ThreadRow({
   onConfirmDelete,
 }: ThreadRowProps) {
   const title = sessionRailTitle(session);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   // Real PR context beats the title-heuristic glyph — when the thread's work
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = sessionPrStatus(session.pullRequest);
+  const actions = compactActions([
+    onOpenInSplit
+      ? {
+          id: "open-split",
+          label: "Open in split",
+          icon: "ph:sidebar-simple",
+          onSelect: onOpenInSplit,
+        }
+      : null,
+    {
+      id: "pin",
+      label: pinned ? "Unpin" : "Pin",
+      icon: pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple",
+      onSelect: onTogglePin,
+    },
+    {
+      id: "delete",
+      label: "Delete",
+      icon: "ph:trash",
+      danger: true,
+      disabled: deleting,
+      onSelect: () => {
+        queueMicrotask(onRequestDelete);
+      },
+    },
+  ]);
   return (
-    <div className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}`}>
+    <div
+      className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}`}
+      onContextMenu={(e) => {
+        if (confirming) return;
+        openContextMenuAt(setContextMenu)(e);
+      }}
+    >
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -263,28 +306,14 @@ function ThreadRow({
           </button>
         </span>
       ) : (
-        <span className="cnav__row-actions">
-          <button
-            type="button"
-            title={pinned ? "Unpin thread" : "Pin thread"}
-            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-            aria-pressed={pinned}
-            onClick={onTogglePin}
-            className={`cnav__icon-btn focus-ring${pinned ? " is-on" : ""}`}
-          >
-            <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
-          </button>
-          <button
-            type="button"
-            title="Delete thread"
-            aria-label={`Delete thread ${title}`}
-            onClick={onRequestDelete}
-            className="cnav__icon-btn is-danger focus-ring"
-          >
-            <Icon name="ph:x-bold" width={10} aria-hidden />
-          </button>
-        </span>
+        <SidebarOverflowMenu ariaLabel={`Chat actions for ${title}`} actions={actions} />
       )}
+      <SidebarContextMenu
+        state={contextMenu}
+        onClose={() => setContextMenu(null)}
+        ariaLabel={`Chat actions for ${title}`}
+        actions={actions}
+      />
     </div>
   );
 }
@@ -321,6 +350,8 @@ export function WorkspaceSidebar({
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
+  const [projectContextMenu, setProjectContextMenu] = useState<ContextMenuState>(null);
+  const [projectContextKey, setProjectContextKey] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
@@ -586,40 +617,28 @@ export function WorkspaceSidebar({
             <section aria-label="Pinned threads">
               <div className="cnav__label">Pinned</div>
               <ul>
-                {/* Pinned rail is compact; the trailing always-visible bookmark
-                    doubles as the pin marker AND a one-click unpin — otherwise
-                    the only unpin lives on the (possibly truncated/collapsed)
-                    copy of the row further down the rail. */}
                 {pinnedSessions.map((session) => {
-                  const title = sessionRailTitle(session);
-                  const active = activeSessionId === session.id;
-                  const prStatus = sessionPrStatus(session.pullRequest);
                   return (
                     <li key={`pin-${session.id}`}>
-                      <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
-                        {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
-                        <button
-                          type="button"
-                          aria-current={active ? "page" : undefined}
-                          onClick={() => onOpenSession(session)}
-                          className="cnav__thread-main focus-ring"
-                        >
-                          {prStatus ? null : (
-                            <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
-                          )}
-                          <span className="cnav__thread-title" title={title}>{title}</span>
-                        </button>
-                        <button
-                          type="button"
-                          title="Unpin chat"
-                          aria-label={`Unpin ${title}`}
-                          aria-pressed
-                          onClick={() => togglePin(session.id)}
-                          className="cnav__icon-btn is-on focus-ring"
-                        >
-                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
-                        </button>
-                      </div>
+                      <ThreadRow
+                        session={session}
+                        active={activeSessionId === session.id}
+                        pinned
+                        confirming={confirmingSessionId === session.id}
+                        deleting={deletingSessionId === session.id}
+                        indent="flat"
+                        project={sessionProjectById.get(session.id) ?? null}
+                        glyph={threadLeadingIcon(sessionRailTitle(session))}
+                        onOpenUrl={onOpenUrl}
+                        onOpen={() => onOpenSession(session)}
+                        onOpenInSplit={
+                          onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                        }
+                        onTogglePin={() => togglePin(session.id)}
+                        onRequestDelete={() => setConfirmingSessionId(session.id)}
+                        onCancelDelete={() => setConfirmingSessionId(null)}
+                        onConfirmDelete={() => void handleDeleteSession(session)}
+                      />
                     </li>
                   );
                 })}
@@ -700,7 +719,13 @@ export function WorkspaceSidebar({
                   : group.sessions.slice(0, THREADS_PREVIEW);
                 return (
                   <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
-                    <div className="cnav__group-head">
+                    <div
+                      className="cnav__group-head"
+                      onContextMenu={(e) => {
+                        setProjectContextKey(key);
+                        openContextMenuAt(setProjectContextMenu)(e);
+                      }}
+                    >
                       <button
                         type="button"
                         aria-expanded={expanded}
@@ -721,30 +746,44 @@ export function WorkspaceSidebar({
                           <span className="cnav__group-meta">{groupMeta(group)}</span>
                         </span>
                       </button>
-                      {unregistered ? (
-                        <button
-                          type="button"
-                          disabled={registering}
-                          onClick={() => handleRegister(group)}
-                          title={`Register ${label} as a project`}
-                          aria-label={`Register ${label} as a project`}
-                          className="cnav__icon-btn is-accent focus-ring"
-                        >
-                          <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        // (cave-gg5d) A "cave:code-select-project" dispatch used
-                        // to precede this — its only listener lived in the
-                        // retired (now deleted) ComuxView; onNewChat does the work.
-                        onClick={() => onNewChat(group.projectRoot)}
-                        title={`New chat in ${label}`}
-                        aria-label={`New chat in ${label}`}
-                        className="cnav__icon-btn focus-ring"
-                      >
-                        <Icon name="ph:plus" width={12} aria-hidden />
-                      </button>
+                      {(() => {
+                        const projectHeaderActions = compactActions([
+                          unregistered
+                            ? {
+                                id: "register",
+                                label: "Register project",
+                                icon: registering ? "ph:arrows-clockwise" : "ph:folders-bold",
+                                disabled: registering,
+                                onSelect: () => {
+                                  void handleRegister(group);
+                                },
+                              }
+                            : null,
+                          {
+                            id: "new-chat",
+                            label: "New chat",
+                            icon: "ph:plus",
+                            onSelect: () => onNewChat(group.projectRoot),
+                          },
+                        ]);
+                        return (
+                          <>
+                            <SidebarOverflowMenu
+                              ariaLabel={`Project actions for ${label}`}
+                              actions={projectHeaderActions}
+                            />
+                            <SidebarContextMenu
+                              state={projectContextKey === key ? projectContextMenu : null}
+                              onClose={() => {
+                                setProjectContextKey(null);
+                                setProjectContextMenu(null);
+                              }}
+                              ariaLabel={`Project actions for ${label}`}
+                              actions={projectHeaderActions}
+                            />
+                          </>
+                        );
+                      })()}
                     </div>
                     {expanded ? (
                       group.sessions.length === 0 ? (

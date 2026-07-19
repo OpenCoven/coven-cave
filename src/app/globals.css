@@ -1059,41 +1059,23 @@ tr[role="checkbox"]:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Reveal-on-hover icon buttons (group +new / register; thread pin / delete) */
-.cnav__icon-btn {
-  display: grid;
-  place-items: center;
+.cnav__overflow {
   width: 22px;
   height: 22px;
-  flex-shrink: 0;
+  margin-left: var(--space-1);
   border-radius: 6px;
   color: var(--text-muted);
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard),
+  opacity: 0.62;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
-.cnav__group-head:hover .cnav__icon-btn,
-.cnav__thread:hover .cnav__icon-btn,
-.cnav__icon-btn:focus-visible {
+.cnav__thread:hover .cnav__overflow,
+.cnav__group-head:hover .cnav__overflow,
+.cnav__overflow:focus-visible,
+.cnav__overflow.ui-icon-btn--active {
   opacity: 1;
-}
-.cnav__icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.cnav__icon-btn.is-accent {
-  color: var(--accent-presence);
-}
-.cnav__icon-btn.is-danger:hover {
-  color: var(--color-danger);
-}
-.cnav__icon-btn.is-on {
-  opacity: 1;
-  color: var(--accent-presence);
-}
-.cnav__icon-btn:disabled {
-  opacity: 0.4;
 }
 
 /* Thread row — a container so a main button + trailing actions can coexist */
@@ -1121,31 +1103,6 @@ tr[role="checkbox"]:focus-visible {
 /* Recent/flat rows align with their section label instead of indenting under a folder. */
 .cnav__thread--flat .cnav__thread-main {
   padding-left: 13px;
-}
-/* Row actions overlay the right edge so they reserve NO layout width — the title
-   and timestamp use the full row when not hovered, then the actions fade in over
-   the (now-hidden) timestamp on hover. */
-.cnav__row-actions {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 6px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-.cnav__thread:hover .cnav__row-actions,
-.cnav__row-actions:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-/* Only when hovered does the title reserve room for the revealed actions; when
-   not hovered the row is full-width (no dead space for hidden buttons). */
-.cnav__thread:hover .cnav__thread-main {
-  padding-right: 52px;
 }
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
@@ -1266,10 +1223,6 @@ tr[role="checkbox"]:focus-visible {
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-/* On hover / active-with-actions, the timestamp yields to the row actions */
-.cnav__thread:hover .cnav__time {
-  display: none;
 }
 
 /* Narrow panel: the title is the row's reason to exist — reclaim the project

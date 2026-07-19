@@ -10,7 +10,8 @@ const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "ut
 // workspace-sidebar.tsx feature assertions
 assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/, "should group by project with overrides");
 assert.match(workspaceSidebar, /handleRegister/, "should offer register-as-project for unregistered roots");
-assert.match(workspaceSidebar, /Register \$\{label\} as a project/, "register label must be accessible");
+assert.match(workspaceSidebar, /Project actions for \$\{label\}/, "project header actions must be titled accessibly");
+assert.match(workspaceSidebar, /label: "Register project"/, "register action should remain available for unregistered roots");
 assert.match(workspaceSidebar, /deriveChatRecencyBuckets\(/, "should derive time buckets for Recent view");
 assert.match(workspaceSidebar, /Organize sidebar/, "should expose Organize sidebar menu");
 assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");
