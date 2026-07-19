@@ -1469,6 +1469,13 @@ export async function POST(req: Request) {
   // fallback (and every other adapter keeps it unconditionally).
   const copilotStream =
     !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+  // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
+  // its Coven adapter convention requires a POSIX shell shim to translate the
+  // positional prompt that `coven run` appends. The shim cannot be installed
+  // beside Hermes's Windows executable, which left Cave showing only a timer.
+  // Spawn Hermes directly for native local chats, as we already do for the
+  // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  const hermesDirect = !sshRuntime && binding.harness === "hermes";
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
@@ -1515,6 +1522,15 @@ export async function POST(req: Request) {
         // session/sandbox flags above.
         addDirs: grantDirs,
       });
+    }
+    if (hermesDirect) {
+      const a = ["chat", "--source", "coven", "-Q"];
+      if (resumeSessionId) a.push("--resume", resumeSessionId);
+      // `hermes-local` is Cave's runtime marker, not a Hermes model id.
+      const hermesModel = cleanModelId(desiredModel);
+      if (hermesModel && hermesModel !== "hermes-local") a.push("--model", hermesModel);
+      a.push("--query", prompt);
+      return a;
     }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
@@ -1904,6 +1920,16 @@ export async function POST(req: Request) {
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
+        // Quiet Hermes one-shot turns print the final response followed by the
+        // durable session id. Capture that id for a later `--resume`, but do
+        // not render the implementation detail as assistant prose.
+        if (hermesDirect) {
+          const hermesSession = trimmed.match(/^Session ID:\s*(\S+)\s*$/i);
+          if (hermesSession && !sessionId) {
+            announceSession(hermesSession[1]);
+            return;
+          }
+        }
         // Snapshot error-looking stdout lines for the empty-response diagnostic.
         recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
@@ -1987,12 +2013,17 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot stream turns spawn the adapter binary directly with
-                // its manifest-declared JSONL args; everything else goes
+                // Copilot's JSONL mode and Hermes's documented one-shot mode
+                // are direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const { command, fixedArgs } = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
-                  : covenLaunchCommand();
+                  : hermesDirect
+                    ? {
+                        command: process.platform === "win32" ? "hermes.exe" : "hermes",
+                        fixedArgs: [] as string[],
+                      }
+                    : covenLaunchCommand();
                 return spawn(command, [...fixedArgs, ...spawnArgs], {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -2057,7 +2088,9 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
-                      : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+                      : hermesDirect
+                        ? "Hermes CLI not found on PATH. Install Hermes, then try again."
+                        : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });
