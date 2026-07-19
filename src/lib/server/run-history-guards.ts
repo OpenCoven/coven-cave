@@ -9,11 +9,11 @@ import { isLocalOrigin } from "@/lib/server/local-origin";
  *
  * 1. OWNERSHIP. Run records are executor/daemon owned in production. The
  *    daemon is the authoritative writer of production status transitions and
- *    it presents the first-party sidecar token, so only a request that clears
- *    `isLocalOrigin` (desktop/loopback with the configured token) may claim
- *    `source: "daemon"`. Every other caller — including tokenless local dev
- *    and, critically, anything on the tailnet/phone — is pinned to
- *    `source: "cave"`. Client POSTs remain allowed for editor preview / dry-run
+  *    it presents the first-party sidecar token, so only a request that passes
+  *    `isLocalOrigin` may claim `source: "daemon"` (this implicitly requires the
+  *    token when `COVEN_CAVE_AUTH_TOKEN` is configured). Mobile/tailnet callers
+  *    are always pinned to `source: "cave"`. Client POSTs remain allowed for editor preview / dry-run
+  *    snapshots, but they cannot forge daemon provenance.
  *    snapshots, but they cannot forge daemon provenance.
  *
  * 2. DESKTOP-ONLY MUTATION. All mutators are gated by `isLocalOrigin`, which
