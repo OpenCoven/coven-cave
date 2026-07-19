@@ -1078,9 +1078,62 @@
 }
 
 /* Section headers and the recent-activity rollup have no compact form, so
-   they drop out entirely in the rail. */
+   they drop out entirely in the rail. (Rooms cluster label included.) */
 .shell-nav--rail .sidebar-section-label,
+.shell-nav--rail .sidebar-rooms-label,
 .shell-nav--rail .recent-activity {
+  display: none;
+}
+
+/* ── Rail-only bookends (chat-revamp phase D) ────────────────────────────────
+ * The brand mark tops the rail (28px accent-tinted rounded square, star
+ * glyph) and the account avatar circle closes it under Settings. Both are
+ * hidden in the expanded panel, which leads with the familiar switcher and
+ * ends with the shared footer instead. */
+.sidebar-brand-mark,
+.sidebar-user-avatar {
+  display: none;
+}
+
+.shell-nav--rail .sidebar-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  margin: 0 auto var(--space-1);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--accent-presence);
+}
+
+.shell-nav--rail .sidebar-user-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  /* The rail's own column gap separates it from Settings above. */
+  margin: 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-primary) 10%, transparent);
+  color: var(--text-secondary);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.shell-nav--rail .sidebar-user-avatar:hover {
+  background: color-mix(in oklch, var(--text-primary) 16%, transparent);
+  color: var(--text-primary);
+}
+
+/* Primary-surfaces-only rail (phase D): the quiet cluster (Memories /
+   Marketplace / GitHub) and the Dashboard link stay reachable from the
+   EXPANDED panel (⌘B, hover-peek) and the ⌘K palette, but don't earn rail
+   slots — the rail carries the daily destinations plus Settings + account. */
+.shell-nav--rail .sidebar-folder-row--quiet,
+.shell-nav--rail a.sidebar-foot-btn[href="/dashboard"] {
   display: none;
 }
 
@@ -1169,10 +1222,10 @@
   display: none;
 }
 
-/* Every rail control is the same centered 40px rounded square — one shared
-   hit-area box so the compose, nav, and footer icons read as a single family
-   (previously: compose had a 2px accent outline, the active row a tinted box
-   with a left bar, and the rest were bare icons). */
+/* Every rail control is the same centered 36px rounded square (phase-D rail
+   geometry) — one shared hit-area box so the compose, nav, and footer icons
+   read as a single family (previously: compose had a 2px accent outline, the
+   active row a tinted box with a left bar, and the rest were bare icons). */
 .shell-nav--rail .sidebar-folder-row,
 .shell-nav--rail .sidebar-action-row,
 .shell-nav--rail .sidebar-foot-btn,
@@ -1180,8 +1233,8 @@
   justify-content: center;
   flex: none;
   gap: 0;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   min-height: 0;
   padding: 0;
   margin: 0 auto;

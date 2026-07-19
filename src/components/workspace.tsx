@@ -122,6 +122,11 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
+import { NotificationBell } from "@/components/notification-bell";
+import { StatusBar } from "@/components/status-bar";
+import { sessionStatusTone } from "@/lib/session-status";
+import { sessionPrStatus } from "@/lib/session-pr-status";
+import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { FirstProjectGate } from "@/components/first-project-gate";
 import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
 import {
@@ -2446,6 +2451,15 @@ export function Workspace() {
     [openTaskCards, activeId],
   );
 
+  // Live daemon activity for the top bar's "N running" pill: sessions whose
+  // status reads as running (shared sessionStatusTone vocabulary — running /
+  // starting / working), excluding archived rows. Derived from the same
+  // 4s-polled sessions list every other chrome badge uses.
+  const runningSessionCount = useMemo(
+    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running").length,
+    [sessions],
+  );
+
   // Ephemeral bridge: turn each "needs response" familiar into a transient
   // InboxItem so the bell badge, inbox view, and inspector tab all surface it
   // without writing anything to disk. IDs are prefixed `eph:` so dismiss/snooze
@@ -2882,6 +2896,38 @@ export function Workspace() {
       />
     );
 
+  // ── Bottom status bar (chat-revamp phase D) ────────────────────────────────
+  // Quiet context strip under the Home/Chat detail column. Chat feeds it the
+  // ACTIVE session's metadata (registered-project name, model, per-session
+  // workBranch — falling back to the poll-time checkout branch — cwd, and the
+  // attached PR via the shared sessionPrStatus derivation). Home has no session
+  // context, so it degrades to the active familiar's model + the Tasks count;
+  // other surfaces don't render the strip at all.
+  const statusSessionId = routerRef.current?.currentSessionId() ?? null;
+  const statusSession =
+    mode === "chat" && statusSessionId
+      ? sessions.find((s) => s.id === statusSessionId) ?? null
+      : null;
+  const statusProject = statusSession
+    ? registeredProjects.find(
+        (p) => normalizeProjectRoot(p.root) === normalizeProjectRoot(statusSession.project_root),
+      ) ?? null
+    : null;
+  const statusPr = sessionPrStatus(statusSession?.pullRequest);
+  const statusBar =
+    mode === "home" || mode === "chat" ? (
+      <StatusBar
+        projectName={statusProject?.name ?? null}
+        model={statusSession?.model ?? active?.model ?? null}
+        branch={statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null}
+        cwd={statusSession?.project_root ?? null}
+        pr={statusPr}
+        taskCount={boardTaskCount}
+        onViewTasks={() => setMode("board")}
+        onOpenPr={(url) => openUrlInApp(url)}
+      />
+    ) : null;
+
   const detailContent = renderSurface(mode);
   const detail = (
     <div
@@ -2912,6 +2958,10 @@ export function Workspace() {
       >
         {detailContent}
       </div>
+      {/* Phase-D status strip: a flex sibling of the flex-1 content above, so
+          it claims its 28px and the surface shrinks around it. Hidden while
+          the first-project gate holds the surface inert. */}
+      {firstProjectGateOpen ? null : statusBar}
     </div>
   );
 
@@ -2980,6 +3030,25 @@ export function Workspace() {
           <>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
+              activeFamiliarName={active?.display_name ?? null}
+              runningCount={runningSessionCount}
+              // Desktop notifications: the same NotificationBell the mobile
+              // TopBar hosts, mounted in this bar's right status cluster.
+              bell={
+                <NotificationBell
+                  items={inboxItemsWithEphemeral}
+                  familiars={familiars}
+                  prefs={inboxPrefs}
+                  badgeCount={notificationUnreadCount}
+                  onOpenInbox={() => setMode("inbox")}
+                  onOpenItem={(item) => {
+                    markInboxItemRead(item.id);
+                    if (item.familiarId) setActiveId(item.familiarId);
+                    setMode("inbox");
+                  }}
+                  onPrefsChanged={refreshPrefs}
+                />
+              }
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
