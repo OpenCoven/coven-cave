@@ -65,6 +65,9 @@ export function checkTurnBounds(turns: ChatTurn[]): TurnBoundsError | null {
     };
   }
   for (const turn of turns) {
+    if (typeof (turn as any).text !== "string") {
+      return { ok: false, status: 400, error: "turn text must be a string" };
+    }
     if (turn.text.length > MAX_TURN_TEXT_CHARS) {
       return {
         ok: false,
