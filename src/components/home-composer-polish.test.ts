@@ -139,14 +139,19 @@ assert.match(
 
 // ── "Jump back in" recent-chats strip REMOVED ──
 // The standalone recents strip was dropped from the home surface; resume now
-// lives only in the two-column footer's Continue column.
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue column)");
+// lives in the hearth card's Continue section.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue section)");
 assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Resume still reaches the recent-chats track of the digest carousel.
-assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the digest carousel");
-assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
+// Chat revamp 1a: the digest carousel is HIDDEN from the default home (the
+// component file survives); its signal folds into Continue + Open work.
+assert.doesNotMatch(source, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
+assert.match(
+  source,
+  /<HomeContinue[\s\S]*?sessions=\{sessions\}[\s\S]*?familiarNameById=\{familiarNameById\}[\s\S]*?onOpenSession=\{onOpenSession\}/,
+  "the Continue section receives the resume handler",
+);
 
 console.log("home-composer-polish.test.ts: ok");

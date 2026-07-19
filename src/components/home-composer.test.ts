@@ -35,10 +35,28 @@ assert.match(
   "HomeComposer should load a familiar-scoped project list for the project selector",
 );
 
+// Chat revamp 1a: the hero is the hearth card's heading — greeting kicker,
+// "What are we casting today?", then a live-context subtitle (familiar ·
+// role · model). The project name moved into the composer context pill.
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "CovenCave"\}/,
-  "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
+  /home-composer-headline">What are we casting today\?<\/h1>/,
+  "HomeComposer heading is the hearth card's 'What are we casting today?'",
+);
+assert.match(
+  source,
+  /\{contextLine \? <p className="home-composer-sub">\{contextLine\}<\/p> : null\}/,
+  "the heading is followed by the live-context subtitle when derivable",
+);
+assert.match(
+  source,
+  /const contextLine = useMemo\(\(\) => \{[\s\S]*?selectedFamiliar\?\.display_name[\s\S]*?selectedFamiliar\?\.role[\s\S]*?\}, \[selectedFamiliar, selectedRuntime, selectedModelId\]\)/,
+  "the subtitle derives from the live familiar + runtime/model state (no invented user profile)",
+);
+assert.match(
+  source,
+  /className="home-hearth-card"/,
+  "home renders inside the single centered hearth card",
 );
 
 // ── Hero presence eyebrow ────────────────────────────────────────────────────

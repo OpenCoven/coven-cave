@@ -55,9 +55,15 @@ import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
+import { HomeContinue } from "@/components/home/home-continue";
+import { HomeOpenWork } from "@/components/home/home-open-work";
+import { HomeSnippets } from "@/components/home/home-snippets";
+import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
+import { HomeSuggestionPills } from "@/components/home/home-suggestion-pills";
+import { useBoardCards } from "@/components/home/use-board-cards";
+import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -160,6 +166,9 @@ export function HomeComposer({
   // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
   // into the modal so edits while it is open don't mutate the form seed.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
+  // Prompt-snippets browser (chat revamp 1a): the hearth card's "Show all…"
+  // and the "+" menu both open the existing PromptSnippetsModal.
+  const [snippetsBrowserOpen, setSnippetsBrowserOpen] = useState(false);
   // Composer "+" (chat revamp 1d): one resting utility button; the options
   // panel ("Model & tuning…") chains off the same anchor, caller-owned.
   const plusAnchorRef = useRef<HTMLButtonElement>(null);
@@ -385,6 +394,30 @@ export function HomeComposer({
     for (const f of familiars) m.set(f.id, f.display_name);
     return m;
   }, [familiars]);
+
+  // One /api/board snapshot shared by the suggestion pills (task-derived
+  // prompts) and the Open work section (pending-task row).
+  const boardCards = useBoardCards();
+
+  // Live-context subtitle under the heading: active familiar · role · model.
+  const contextLine = useMemo(() => {
+    const model = selectedModelId
+      ? `${selectedRuntime}/${selectedModelId}`
+      : selectedRuntime;
+    return [
+      selectedFamiliar?.display_name ?? null,
+      selectedFamiliar?.role?.trim() || null,
+      model,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }, [selectedFamiliar, selectedRuntime, selectedModelId]);
+
+  // From-task row (chat revamp 1a): prop-driven and ready, but UNWIRED — no
+  // surface routes a task into the home composer today (board cards open
+  // chats directly via pending-chat-action). First task→home handoff sets
+  // this from its payload and the row lights up. See home-from-task.tsx.
+  const taskOrigin: HomeTaskOrigin | null = null;
 
   // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
   const { resize: autoGrow } = useAutogrowTextarea(textareaRef, text, {
@@ -677,21 +710,19 @@ export function HomeComposer({
   return (
     <div className="home-composer-root">
 
-      {/* Headline — mono presence eyebrow over the display face; the project
-          name carries the accent tint (presence lives in the place you're
-          working). */}
+      {/* The hearth card (chat revamp 1a): one centered panel holding the
+          greeting, the composer, and the resume/work/snippet sections. */}
+      <div className="home-hearth-card">
+
+      {/* Headline — presence kicker over the display face, then a one-line
+          live-context subtitle (familiar · role · model). */}
       <div className="home-composer-hero">
         <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
           <span className="home-composer-eyebrow-dot" aria-hidden />
           {greeting ?? "\u00A0"}
         </p>
-        <h1 className="home-composer-headline">
-          {"What should we build in "}
-          <span className="home-composer-headline-project">
-            {selectedProject?.name ?? "CovenCave"}
-          </span>
-          ?
-        </h1>
+        <h1 className="home-composer-headline">What are we casting today?</h1>
+        {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -951,6 +982,7 @@ export function HomeComposer({
                   disabled: sending || !text.trim(),
                   loading: promptEnhance.state.phase === "loading",
                 }}
+                promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={() => setOptionsOpen(true)}
               />
               {/* One quiet context pill — Project · Model — replacing the
@@ -1068,21 +1100,58 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Continue + News as an auto-scrolling digest carousel: two horizontal
-          tracks only — the chats row folds in the "needs you" attention tier
-          (warning-tinted, leading) and the suggested-prompt quick actions
-          (accent-tinted, trailing) around today's recent chats; the media row
-          keeps the freshest headlines. Both pause on hover and fall back to a
-          manual scroll under prefers-reduced-motion. */}
-      <HomeDigestCarousel
+      {/* Suggestions demoted below the composer (chat revamp 1a): the
+          From-task row when home opened from a task (unwired today — see
+          home-from-task.tsx), else the quick-action pill row. The digest
+          carousel is hidden from the default home; its signal folds into
+          the sections below. */}
+      {taskOrigin ? (
+        <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
+      ) : (
+        <HomeSuggestionPills
+          cards={boardCards}
+          projectName={selectedProject?.name ?? null}
+          onPick={insertPrompt}
+        />
+      )}
+
+      {/* Continue — the two most recent resumable sessions as side-by-side
+          resume cards. */}
+      <HomeContinue
         sessions={sessions}
         familiarNameById={familiarNameById}
         onOpenSession={onOpenSession}
+      />
+
+      {/* Open work — collapsible ledger: branch PR, pending tasks, the
+          needs-you tier, uncommitted changes. */}
+      <HomeOpenWork
+        projectRoot={selectedProject?.root ?? null}
+        boardCards={boardCards}
         needsYou={needsYou}
+        onOpenBoard={onNavigateToBoard}
         onOpenInboxItem={onOpenInboxItem}
         onOpenSchedules={onOpenSchedules}
-        projectName={selectedProject?.name ?? null}
-        onPickSuggestion={insertPrompt}
+      />
+
+      {/* Prompt snippets — collapsed by default; top three saved prompts
+          insert into the composer, Show all opens the snippets browser. */}
+      <HomeSnippets
+        prompts={prompts}
+        onInsert={insertPromptTemplate}
+        onShowAll={() => setSnippetsBrowserOpen(true)}
+      />
+
+      </div>{/* /.home-hearth-card */}
+
+      <PromptSnippetsModal
+        open={snippetsBrowserOpen}
+        onClose={() => setSnippetsBrowserOpen(false)}
+        prompts={prompts}
+        onPick={(p) => {
+          setSnippetsBrowserOpen(false);
+          insertPromptTemplate(p);
+        }}
       />
       <SaveTemplateModal
         open={saveTemplateSeed !== null}
