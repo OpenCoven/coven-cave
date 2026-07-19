@@ -43,7 +43,9 @@ function BarInner({
   data: BarDatum[];
   defaultColor: string;
 }) {
-  const margin = { top: 8, right: 4, bottom: 4, left: 4 };
+  // Bottom margin reserves a row for the category labels (.cave-chart__label
+  // is --text-2xs = 10px; 14px clears descenders).
+  const margin = { top: 8, right: 4, bottom: 14, left: 4 };
   const iw = Math.max(0, width - margin.left - margin.right);
   const ih = Math.max(0, height - margin.top - margin.bottom);
   if (data.length === 0 || width === 0) {
@@ -60,17 +62,27 @@ function BarInner({
         {data.map((d) => {
           const bw = xScale.bandwidth();
           const bh = ih - (yScale(d.value) ?? ih);
+          const x = xScale(d.label) ?? 0;
           return (
-            <Bar
-              key={d.label}
-              className="cave-chart__bar"
-              x={xScale(d.label) ?? 0}
-              y={yScale(d.value)}
-              width={bw}
-              height={Math.max(0, bh)}
-              rx={3}
-              fill={d.color ?? defaultColor}
-            />
+            <Group key={d.label}>
+              <Bar
+                className="cave-chart__bar"
+                x={x}
+                y={yScale(d.value)}
+                width={bw}
+                height={Math.max(0, bh)}
+                rx={3}
+                fill={d.color ?? defaultColor}
+              />
+              <text
+                className="cave-chart__label"
+                x={x + bw / 2}
+                y={ih + 10}
+                textAnchor="middle"
+              >
+                {d.label}
+              </text>
+            </Group>
           );
         })}
       </Group>
