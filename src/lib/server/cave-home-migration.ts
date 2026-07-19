@@ -101,11 +101,25 @@ export async function withCaveHomeReconciledStore<T>(
   legacy: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  await ensureCaveHomeReconciled(legacy);
+  return withCaveHomeReconciledStores([legacy], operation);
+}
+
+/**
+ * Keep one read-only snapshot of several Cave-owned stores outside migration
+ * replacements without acquiring and releasing the cross-process lock for
+ * each individual file.
+ */
+export async function withCaveHomeReconciledStores<T>(
+  legacies: readonly string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  for (const legacy of legacies) await ensureCaveHomeReconciled(legacy);
   return withCaveHomeReconciliationLock(async () => {
     // Another process may have reconciled the entry between the preflight and
     // lock acquisition. Revalidate preserved stores while we own the lock.
-    await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+    for (const legacy of legacies) {
+      await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+    }
     return operation();
   });
 }

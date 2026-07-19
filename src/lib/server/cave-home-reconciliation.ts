@@ -116,6 +116,8 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only unlock rename override. */
   lockReleaseRename?: typeof rename;
+  /** Test-only candidate owner-record writer override. */
+  lockCandidateOwnerWrite?: (candidate: string, owner: { pid: number; token: string; startedAt: string }) => Promise<void>;
   /** Test-only candidate publication rename override. */
   lockCandidateRename?: typeof rename;
   /** Test-only stale-lock fencing rename override. */
@@ -515,8 +517,17 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
   };
   diagnostic("waiting", "pending");
 
+  // A Windows directory rename can transiently retain the source directory.
+  // Keep one candidate for this acquisition instead of creating a new random
+  // candidate every 50ms; that bounds leftover debris if cleanup is delayed.
+  const token = randomBytes(16).toString("hex");
+  const candidate = `${lock}.candidate-${token}`;
+  let candidatePrepared = false;
+  const removeCandidate = () => rm(candidate, { recursive: true, force: true }).catch(() => {});
+
   for (;;) {
     if (Date.now() >= deadline) {
+      await removeCandidate();
       const timeout = new Error(`timed out acquiring cave home reconciliation lock after ${timeoutMs}ms`) as NodeJS.ErrnoException;
       timeout.code = "ETIMEDOUT";
       throw terminalError(timeout);
@@ -525,17 +536,22 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
       slowDiagnosticEmitted = true;
       diagnostic("waiting", "pending", undefined, true);
     }
-    const token = randomBytes(16).toString("hex");
-    const candidate = `${lock}.candidate-${token}`;
     try {
-      await mkdir(candidate);
-      try {
-        await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
-        await renameLockCandidate(candidate, lock, options.lockCandidateRename);
-      } catch (error) {
-        await rm(candidate, { recursive: true, force: true });
-        throw error;
+      if (!candidatePrepared) {
+        try {
+          await mkdir(candidate);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        const owner = { pid: process.pid, token, startedAt: nowIso() };
+        if (options.lockCandidateOwnerWrite) {
+          await options.lockCandidateOwnerWrite(candidate, owner);
+        } else {
+          await writeJsonAtomic(path.join(candidate, "owner.json"), owner);
+        }
+        candidatePrepared = true;
       }
+      await renameLockCandidate(candidate, lock, options.lockCandidateRename);
       activeLockTokens().add(token);
       const release = async () => {
         const owner = await readLockOwner(lock);
@@ -590,8 +606,8 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
       diagnostic("acquired", "acquired");
       return release;
     } catch (error) {
-      await rm(candidate, { recursive: true, force: true }).catch(() => {});
       if (!["EEXIST", "ENOTEMPTY", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+        await removeCandidate();
         throw terminalError(error);
       }
       try {
