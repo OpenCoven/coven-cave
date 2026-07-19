@@ -1,4 +1,4 @@
-import { isLocalOrigin } from "@/lib/server/local-origin";
+import { isLocalOrigin } from "./local-origin.ts";
 
 /**
  * Run-history ownership + forge-resistance model (issue #3470).
