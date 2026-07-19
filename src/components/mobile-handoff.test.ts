@@ -60,6 +60,14 @@ assert.doesNotMatch(
 );
 assert.match(workspace, /setMobileModeEnabled/, "Workspace should expose a way to toggle mobile mode from Settings");
 assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile handoff API");
+assert.match(modal, /startAbortRef/, "Modal should keep an AbortController ref for in-flight start/reset");
+assert.match(modal, /new AbortController\(\)/, "Modal should abort stale handoff fetches on refresh/close");
+assert.match(modal, /signal: controller\.signal/, "Modal handoff fetch must pass AbortSignal");
+assert.match(
+  modal,
+  /controller\.signal\.aborted \|\| \(err instanceof Error && err\.name === "AbortError"\)/,
+  "Modal must ignore AbortError instead of clobbering state with a failure",
+);
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
 assert.match(modal, /expiresAtIso/, "Modal should display the invite expiry");
 assert.match(modal, /copyText\(/, "Modal should support copying the authenticated URL");

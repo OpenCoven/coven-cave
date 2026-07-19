@@ -87,6 +87,7 @@ test("chat-view: voice nonce effect checks the target session before consuming t
 
 const workspace = read("./workspace.tsx");
 const homeComposer = read("./home-composer.tsx");
+const plusMenu = read("./composer-plus-menu.tsx");
 
 test("workspace: startVoiceChat creates the session then routes with autoVoice", () => {
   assert.match(
@@ -119,24 +120,26 @@ test("workspace: voice chat mint errors are translated to human toast copy", () 
   assert.match(workspace, /pushToast\(voiceChatStartErrorMessage\(result\.error\)\)/);
 });
 
-test("home-composer: call button starts a voice chat, summoning when no familiar", () => {
-  assert.match(homeComposer, /aria-label="Start a voice call in a new chat"/);
-  assert.match(homeComposer, /"ph:phone"/);
+test("home-composer: call item starts a voice chat, summoning when no familiar", () => {
+  // The call affordance rides the composer "+" menu (chat revamp 1d) — the
+  // phone icon and "Voice call" accessible name live in the shared menu.
+  assert.match(plusMenu, /icon="ph:phone"/);
+  assert.match(plusMenu, /ariaLabel="Voice call"/);
   assert.match(
     homeComposer,
     /if \(voiceCallPending\) return;[\s\S]*?if \(!selectedFamiliarId\) \{[\s\S]*?requestSummonFamiliar\(\);[\s\S]*?\}/,
   );
 });
 
-test("home-composer: voice call button gates itself on an in-flight mint and always resets", () => {
+test("home-composer: voice call item gates itself on an in-flight mint and always resets", () => {
   assert.match(homeComposer, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
-  assert.match(homeComposer, /disabled=\{sending \|\| voiceCallPending\}/);
+  assert.match(homeComposer, /disabled: sending \|\| voiceCallPending/);
   // The mint must be gated start-to-finish: set pending before the call,
-  // reset it in .finally so a rejected/failed mint can't leave the button
+  // reset it in .finally so a rejected/failed mint can't leave the item
   // permanently disabled.
   assert.match(
     homeComposer,
-    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\(onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\)\)\.finally\(\(\) =>\s*setVoiceCallPending\(false\)/,
+    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\([\s\S]{0,120}?onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\),?[\s\S]{0,40}?\)\.finally\(\(\) => setVoiceCallPending\(false\)/,
   );
   // The prop type must allow returning a promise, or callers couldn't chain
   // .finally onto it to reset the pending flag.
@@ -146,8 +149,8 @@ test("home-composer: voice call button gates itself on an in-flight mint and alw
   );
 });
 
-test("chat-view: call button works pre-session by creating the conversation first", () => {
-  assert.match(chatView, /aria-label="Voice call"/);
+test("chat-view: call item works pre-session by creating the conversation first", () => {
+  assert.match(chatView, /void openVoiceCall\(\);/);
   // Ordered end to end: mid-session fast path -> in-flight pending bail ->
   // the mint call itself -> the familiar-staleness bail -> the success
   // promote. A rapid re-click or a familiar switch mid-mint must each be
@@ -168,7 +171,7 @@ test("chat-view: voice call button disables itself while a mint is in flight, an
   // sessionId yet) — a click there would mint an unrelated second session
   // and the null-guarded promotion effect would swap the view onto it
   // mid-stream. Mid-session (sessionId set) stays available while busy.
-  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}/);
+  assert.match(chatView, /openVoiceCall\(\);[\s\S]{0,120}disabled: voiceCallPending \|\| \(busy && !sessionId\)/);
 });
 
 test("chat-view: openVoiceCall always clears the pending flag, even on failure or an early bail", () => {
@@ -231,10 +234,10 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
     chatView,
     /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) onVoiceSessionDiscarded\?\.\(\);/,
   );
-  // Finding 4: the phone button can't fork a streaming first send by
+  // Finding 4: the call item can't fork a streaming first send by
   // minting a second, unrelated session underneath it (pre-session only —
   // mid-session stays available while busy).
-  assert.match(chatView, /aria-label="Voice call"[\s\S]{0,200}disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}/);
+  assert.match(chatView, /openVoiceCall\(\);[\s\S]{0,120}disabled: voiceCallPending \|\| \(busy && !sessionId\)/);
   // Router side: the callback resets to a fresh compose state for the same
   // familiar/project, mirroring the onVoiceSessionCreated promotion shape
   // but back to sessionId: null.
@@ -247,8 +250,7 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
 test("both composers mount dictation with fill-and-review append", () => {
   for (const [name, src] of [["chat-view", chatView], ["home-composer", homeComposer]] as const) {
     assert.match(src, /useDictation\(/, `${name} mounts useDictation`);
-    assert.match(src, /aria-label=\{dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, `${name} mic label`);
-    assert.match(src, /dictation\.available \?/, `${name} hides the mic when no ears exist`);
+    assert.match(src, /dictation\.available\s*\n?\s*\?/, `${name} hides the mic when no ears exist`);
     assert.match(src, /hc-dictation-caption/, `${name} renders the live partial caption`);
     // The streaming partial would re-announce on every update if it carried
     // aria-live — SR hostile. The mic's aria-pressed already announces toggle
@@ -256,11 +258,15 @@ test("both composers mount dictation with fill-and-review append", () => {
     // coarse state, not the fast-changing text underneath it).
     assert.doesNotMatch(src, /hc-dictation-caption" aria-live/, `${name} caption has no aria-live`);
   }
+  // The mic item lives in the shared "+" menu (chat revamp 1d): its label swap
+  // and aria-pressed state survive the relocation.
+  assert.match(plusMenu, /ariaLabel=\{dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, "plus-menu mic label");
+  assert.match(plusMenu, /ariaPressed=\{dictation\.listening\}/, "plus-menu mic keeps aria-pressed");
   // A live toggle must always accept "stop": a disabled mic mid-listen would
   // leave the user with a hot mic they can't turn off for the whole agent
   // turn (chat) or send window (home). Only START stays gated on busy/sending.
-  assert.match(chatView, /disabled=\{busy && !dictation\.listening\}/, "chat-view mic allows stop while busy");
-  assert.match(homeComposer, /disabled=\{sending && !dictation\.listening\}/, "home-composer mic allows stop while sending");
+  assert.match(chatView, /disabled: busy && !dictation\.listening/, "chat-view mic allows stop while busy");
+  assert.match(homeComposer, /disabled: sending && !dictation\.listening/, "home-composer mic allows stop while sending");
 
   // A live call and composer dictation can't share the mic engine: opening
   // the call overlay — direct fast path, the auto-create nonce path, or any

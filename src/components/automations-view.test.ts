@@ -273,7 +273,7 @@ assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-
 assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create announces");
 assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
-assert.match(source, /role="region"[\s\S]{0,220}aria-label=\{activeTab === "overview" \? "Rituals overview"/, "the content region names the active Rituals mode without relying on visible tabs");
+assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");
 assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); setTemplateInitialValues\(undefined\); \}\}/, "the create dialog closes through one reset path");
 assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");
 

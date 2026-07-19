@@ -92,10 +92,10 @@ assert.match(chatView, /onInsertPrompt: \(p\) => insertPrompt\(p\)/, "the hook's
 assert.match(chatView, /const insertPrompt = \(p: PromptOption\)/, "chat-view has the shared insert helper");
 assert.doesNotMatch(chatView, /sendRaw\([^)]*promptInsertion/, "prompt insertion is never routed into sendRaw");
 assert.doesNotMatch(chatView, /sendRaw\([^)]*\.body\b/, "a template body is never sent directly");
-// Prompt snippets fold into the composer Options overflow (cave-xsq.4): no
-// standalone utility button, reachable via the menu's onOpenPromptSnippets.
-assert.match(chatView, /<ComposerOptionsMenu[\s\S]*onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/, "the composer Options menu opens Prompt snippets");
-assert.match(chatView, /onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/, "empty state / composer can open the snippets modal");
+// Prompt snippets fold into the composer "+" menu (chat revamp 1d): no
+// standalone utility button, reachable via the menu's promptSnippets item.
+assert.match(chatView, /promptSnippets=\{\{ onSelect: \(\) => setPromptSnippetsOpen\(true\) \}\}/, "the composer + menu opens Prompt snippets");
+assert.match(chatView, /onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/, "empty state can open the snippets modal");
 
 // ── Prompt snippets modal ────────────────────────────────────────────────────
 const modal = await readFile(new URL("../components/prompt-snippets-modal.tsx", import.meta.url), "utf8");

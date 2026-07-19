@@ -112,7 +112,10 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
     url: BASE_URL,
-    timeout: 120_000,
+    // The availability probe waits on the FIRST dev compile of "/", which can
+    // run past two minutes on a loaded machine (observed 2m51s cold /
+    // 1m51s warm on 2026-07-19); 120s read slow-compile as a dead server.
+    timeout: 240_000,
     // Preference tests mutate the canonical app-owned store. Never attach them
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,

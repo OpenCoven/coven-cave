@@ -36,7 +36,7 @@ assert.doesNotMatch(
 //    Anchored to the first :root { … } block (no attribute selector) so the
 //    assertion can't drift into another theme's background.
 const covenRootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
-assert.match(covenRootBlock, /--background\s*:\s*oklch\(0\.13 0\.022 293\)/, "coven dark background");
+assert.match(covenRootBlock, /--background\s*:\s*oklch\(0\.24 0\.006 291\)/, "coven dark background");
 assert.match(
   covenRootBlock,
   /--accent-presence-foreground\s*:\s*var\(--primary-foreground\)/,

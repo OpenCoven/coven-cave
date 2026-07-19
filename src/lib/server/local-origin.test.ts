@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
 import { isLocalOrigin } from "./local-origin.ts";
+
+const localOriginSource = readFileSync(fileURLToPath(new URL("./local-origin.ts", import.meta.url)), "utf8");
+assert.match(
+  localOriginSource,
+  /timingSafeEqualString\(req\.headers\.get\(TOKEN_HEADER\) \?\? "", sidecarToken\)/,
+  "packaged sidecar token check must be timing-safe",
+);
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
 

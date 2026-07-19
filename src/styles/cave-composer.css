@@ -12,8 +12,9 @@
 
 .cave-composer-panel {
   overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 18px;
+  /* Chat revamp 1d: quieter card — hairline border, 14px radius token. */
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-xl);
   background:
     linear-gradient(
       180deg,
@@ -757,4 +758,219 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hc-mic-live { animation: none; }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CHAT REVAMP 1d — one "+" button · one context pill · circular send
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* The composer's single resting utility button. 30px, control radius (8px),
+   6% text tint — highlights with an accent border + ~12% accent tint while
+   its popover is open. */
+.cave-composer-plus {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-plus:hover:not(:disabled) {
+  background: var(--bg-raised);
+}
+
+.cave-composer-plus[aria-expanded="true"] {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--accent-presence);
+}
+
+.cave-composer-plus:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* "+" popover rows: icon · label · trailing shortcut hint. */
+.composer-plus__panel {
+  padding: var(--space-1);
+}
+
+.composer-plus__item {
+  gap: 10px;
+}
+
+.composer-plus__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-plus__hint {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.composer-plus__item:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.composer-plus__icon--live {
+  color: var(--accent-presence);
+  animation: hc-mic-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-plus__icon--live { animation: none; }
+}
+
+/* The one quiet context pill — project swatch · "Project · Model · branch" ·
+   chevron. Control radius, hairline border, 6% text tint, 12px text. */
+.cave-context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  min-width: 0;
+  max-width: min(46vw, 340px);
+  flex: 0 1 auto;
+  padding: 0 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-context-pill:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.cave-context-pill[aria-expanded="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-strong));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-context-pill:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.cave-context-pill__swatch {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.cave-context-pill__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-context-pill__chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* Circular 32px send: accent outline on transparent at rest; ~18% accent tint
+   once the draft is non-empty; the busy variant keeps cancel's red ✕ in the
+   same circle. */
+.cave-composer-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--accent-presence);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent-presence);
+  cursor: pointer;
+}
+
+.cave-composer-send[data-typing="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.cave-composer-send:hover:not(:disabled):not(.cave-composer-send--busy) {
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+}
+
+.cave-composer-send:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.cave-composer-send--busy {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--color-danger) 90%, transparent);
+  color: white;
+}
+
+.cave-composer-send--busy:hover {
+  background: var(--color-danger);
+}
+
+/* Typing hint — one line, top-right inside the input area, 10.5px mono muted.
+   Rendered only while the draft is non-empty; never persistent chrome. */
+.cave-composer-input-wrap {
+  position: relative;
+}
+
+.cave-composer-typing-hint {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  pointer-events: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+@media (max-width: 767px) {
+  /* Skip the hint on mobile widths; grow the new controls to touch size
+     (radius language stays — the plus keeps its 8px corner, the send its
+     circle). */
+  .cave-composer-typing-hint {
+    display: none;
+  }
+
+  .cave-composer-plus,
+  .cave-composer-send {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-context-pill {
+    height: var(--touch-target);
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
 }

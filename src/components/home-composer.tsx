@@ -48,16 +48,22 @@ import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { ProjectPicker } from "@/components/project-picker";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
-import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
+import { ComposerPlusMenu } from "@/components/composer-plus-menu";
+import { ComposerContextPill } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
+import { HomeContinue } from "@/components/home/home-continue";
+import { HomeOpenWork } from "@/components/home/home-open-work";
+import { HomeSnippets } from "@/components/home/home-snippets";
+import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
+import { HomeSuggestionPills } from "@/components/home/home-suggestion-pills";
+import { useBoardCards } from "@/components/home/use-board-cards";
+import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -71,7 +77,7 @@ import {
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
+import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -160,6 +166,13 @@ export function HomeComposer({
   // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
   // into the modal so edits while it is open don't mutate the form seed.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
+  // Prompt-snippets browser (chat revamp 1a): the hearth card's "Show all…"
+  // and the "+" menu both open the existing PromptSnippetsModal.
+  const [snippetsBrowserOpen, setSnippetsBrowserOpen] = useState(false);
+  // Composer "+" (chat revamp 1d): one resting utility button; the options
+  // panel ("Model & tuning…") chains off the same anchor, caller-owned.
+  const plusAnchorRef = useRef<HTMLButtonElement>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
   // home records slash commands in history too, so pushes stay at call sites.
   const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
@@ -381,6 +394,30 @@ export function HomeComposer({
     for (const f of familiars) m.set(f.id, f.display_name);
     return m;
   }, [familiars]);
+
+  // One /api/board snapshot shared by the suggestion pills (task-derived
+  // prompts) and the Open work section (pending-task row).
+  const boardCards = useBoardCards();
+
+  // Live-context subtitle under the heading: active familiar · role · model.
+  const contextLine = useMemo(() => {
+    const model = selectedModelId
+      ? `${selectedRuntime}/${selectedModelId}`
+      : selectedRuntime;
+    return [
+      selectedFamiliar?.display_name ?? null,
+      selectedFamiliar?.role?.trim() || null,
+      model,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }, [selectedFamiliar, selectedRuntime, selectedModelId]);
+
+  // From-task row (chat revamp 1a): prop-driven and ready, but UNWIRED — no
+  // surface routes a task into the home composer today (board cards open
+  // chats directly via pending-chat-action). First task→home handoff sets
+  // this from its payload and the row lights up. See home-from-task.tsx.
+  const taskOrigin: HomeTaskOrigin | null = null;
 
   // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
   const { resize: autoGrow } = useAutogrowTextarea(textareaRef, text, {
@@ -642,6 +679,12 @@ export function HomeComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        if (!sending && attachments.length < 10) fileInputRef.current?.click();
+        return;
+      }
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
       // take priority over history/submit while one is open — shared hook.
       if (handleMenuKey(e)) return;
@@ -661,27 +704,25 @@ export function HomeComposer({
       }
       if (handleArrowKey(e, text, setText)) return;
     },
-    [handleMenuKey, handleSubmit, handleArrowKey, text],
+    [handleMenuKey, handleSubmit, handleArrowKey, text, sending, attachments.length],
   );
 
   return (
     <div className="home-composer-root">
 
-      {/* Headline — mono presence eyebrow over the display face; the project
-          name carries the accent tint (presence lives in the place you're
-          working). */}
+      {/* The hearth card (chat revamp 1a): one centered panel holding the
+          greeting, the composer, and the resume/work/snippet sections. */}
+      <div className="home-hearth-card">
+
+      {/* Headline — presence kicker over the display face, then a one-line
+          live-context subtitle (familiar · role · model). */}
       <div className="home-composer-hero">
         <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
           <span className="home-composer-eyebrow-dot" aria-hidden />
           {greeting ?? "\u00A0"}
         </p>
-        <h1 className="home-composer-headline">
-          {"What should we build in "}
-          <span className="home-composer-headline-project">
-            {selectedProject?.name ?? "CovenCave"}
-          </span>
-          ?
-        </h1>
+        <h1 className="home-composer-headline">What are we casting today?</h1>
+        {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -834,6 +875,7 @@ export function HomeComposer({
         )}
 
         {/* Textarea */}
+        <div className="cave-composer-input-wrap">
         <textarea
           ref={textareaRef}
           className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
@@ -855,6 +897,15 @@ export function HomeComposer({
           inputMode="text"
           enterKeyHint="send"
         />
+        {/* Typing hint (chat revamp 1d): appears with the first character,
+            inside the input area — not persistent chrome. Hidden on phone
+            widths (CSS). */}
+        {text.trim() && !sending ? (
+          <span className="cave-composer-typing-hint" aria-hidden>
+            ↵ send · ⇧↵ newline
+          </span>
+        ) : null}
+        </div>
 
         {/* Enhance status strip (shared): streaming preview, apply/dismiss
             for late arrivals, one-tap revert after an in-place apply. */}
@@ -887,16 +938,70 @@ export function HomeComposer({
           />
           <div className="cave-composer-control-row">
             <div className="cave-composer-utility-row">
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Attach images, videos, or files"
-                aria-label="Attach images, videos, or files"
-                disabled={sending || attachments.length >= 10}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Icon name="ph:plus" width={15} aria-hidden />
-              </button>
+              {/* One resting utility button (chat revamp 1d): attach,
+                  dictation, voice call, enhance, and the Model & tuning
+                  panel all fold behind the "+". Item gates mirror the
+                  standalone buttons they replace. */}
+              <ComposerPlusMenu
+                triggerRef={plusAnchorRef}
+                attach={{
+                  onSelect: () => fileInputRef.current?.click(),
+                  disabled: sending || attachments.length >= 10,
+                  hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                }}
+                dictation={
+                  dictation.available
+                    ? {
+                        listening: dictation.listening,
+                        toggle: dictation.toggle,
+                        disabled: sending && !dictation.listening,
+                      }
+                    : undefined
+                }
+                call={
+                  onStartVoiceCall
+                    ? {
+                        onSelect: () => {
+                          if (voiceCallPending) return;
+                          if (!selectedFamiliarId) {
+                            onToast("No familiar yet — summon one to start a voice chat.");
+                            requestSummonFamiliar();
+                            return;
+                          }
+                          setVoiceCallPending(true);
+                          void Promise.resolve(
+                            onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null),
+                          ).finally(() => setVoiceCallPending(false));
+                        },
+                        disabled: sending || voiceCallPending,
+                      }
+                    : undefined
+                }
+                enhance={{
+                  onEnhance: promptEnhance.enhance,
+                  disabled: sending || !text.trim(),
+                  loading: promptEnhance.state.phase === "loading",
+                }}
+                promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
+                onOpenModelTuning={() => setOptionsOpen(true)}
+              />
+              {/* One quiet context pill — Project · Model — replacing the
+                  footer band's picker row (home has no git context). */}
+              <ComposerContextPill
+                projects={projects}
+                projectValue={selectedProjectId || null}
+                onProjectChange={setSelectedProjectId}
+                allowNoProject
+                familiarId={selectedFamiliarId || null}
+                createProject={createProject}
+                runtime={selectedRuntime}
+                modelValue={selectedModelId}
+                modelOptions={runtimeModelOptions}
+                onPickRuntime={handleSelectRuntime}
+                onPickModel={handleSelectModel}
+                disabled={sending}
+                ariaLabel="Composer context: project and model"
+              />
               <div
                 className="hc-dest-pills hc-dest-pills--inline"
                 role="radiogroup"
@@ -922,54 +1027,14 @@ export function HomeComposer({
               </div>
             </div>
             <div className="cave-composer-submit-row">
-              {/* Voice: phone = live call in a brand-new chat (voice
-                  new-chat); the dictation mic renders beside it when an
-                  ears engine exists. */}
-              {dictation.available ? (
-                <button
-                  type="button"
-                  className={`cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40${dictation.listening ? " hc-mic-live" : ""}`}
-                  title={dictation.listening ? "Stop dictation" : "Dictate your message"}
-                  aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
-                  aria-pressed={dictation.listening}
-                  disabled={sending && !dictation.listening}
-                  onClick={dictation.toggle}
-                >
-                  <Icon name="ph:microphone" width={15} aria-hidden />
-                </button>
-              ) : null}
-              {onStartVoiceCall ? (
-                <button
-                  type="button"
-                  className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                  title="Start a voice call in a new chat"
-                  aria-label="Start a voice call in a new chat"
-                  disabled={sending || voiceCallPending}
-                  onClick={() => {
-                    if (voiceCallPending) return;
-                    if (!selectedFamiliarId) {
-                      onToast("No familiar yet — summon one to start a voice chat.");
-                      requestSummonFamiliar();
-                      return;
-                    }
-                    setVoiceCallPending(true);
-                    void Promise.resolve(onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null)).finally(() => setVoiceCallPending(false));
-                  }}
-                >
-                  <Icon name="ph:phone" width={15} aria-hidden />
-                </button>
-              ) : null}
-              <EnhanceControl
-                state={promptEnhance.state}
-                onEnhance={promptEnhance.enhance}
-                onCancel={promptEnhance.cancel}
-                disabled={sending || !text.trim()}
-              />
+              {/* Circular 32px send (chat revamp 1d): accent outline at rest,
+                  ~18% accent tint while the draft is non-empty. */}
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={(!text.trim() && attachments.length === 0) || sending}
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                data-typing={text.trim() ? "true" : undefined}
+                className="cave-composer-send focus-ring transition-colors"
                 title={`Send message (${keys.enter})`}
                 aria-label="Send"
               >
@@ -981,40 +1046,14 @@ export function HomeComposer({
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Footer band — the darker strip attached to the card's underside
-            (reference layout): where the message runs (project) and what runs
-            it (runtime + model) on the left, run settings (Options) on the
-            right. The familiar is chosen in the side panel — home no longer
-            duplicates that selector here. */}
-        <div className="hc-footer-band">
-          <div className="hc-footer-band-left">
-            {/* Project selector — picks which project the new chat runs in
-                (mirrors the chat composer). */}
-            <ProjectPicker
-              projects={projects}
-              value={selectedProjectId || null}
-              onChange={setSelectedProjectId}
-              allowNoProject
-              familiarId={selectedFamiliarId || null}
-              createProject={createProject}
-              disabled={sending}
-              ariaLabel="Choose project"
-              className="hc-project-selector"
-            />
-            {/* Always-visible runtime mark + model, one click to switch —
-                parity with the chat composer's chip (cave-yq5l). */}
-            <ComposerRuntimeChip
-              runtime={selectedRuntime}
-              modelValue={selectedModelId}
-              modelOptions={runtimeModelOptions}
-              onPickRuntime={handleSelectRuntime}
-              onPickModel={handleSelectModel}
-              disabled={sending}
-            />
-          </div>
+          {/* Model & tuning panel — the existing Options popover, opened from
+              the "+" menu and anchored to it (the footer band it used to sit
+              in collapsed into the context pill + "+" popover). */}
           <ComposerOptionsMenu
+            open={optionsOpen}
+            onOpenChange={setOptionsOpen}
+            anchorRef={plusAnchorRef}
             hostValue={runtimeHost ?? LOCAL_HOST_ID}
             onHostPick={setRuntimeHost}
             disabled={sending}
@@ -1061,21 +1100,58 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Continue + News as an auto-scrolling digest carousel: two horizontal
-          tracks only — the chats row folds in the "needs you" attention tier
-          (warning-tinted, leading) and the suggested-prompt quick actions
-          (accent-tinted, trailing) around today's recent chats; the media row
-          keeps the freshest headlines. Both pause on hover and fall back to a
-          manual scroll under prefers-reduced-motion. */}
-      <HomeDigestCarousel
+      {/* Suggestions demoted below the composer (chat revamp 1a): the
+          From-task row when home opened from a task (unwired today — see
+          home-from-task.tsx), else the quick-action pill row. The digest
+          carousel is hidden from the default home; its signal folds into
+          the sections below. */}
+      {taskOrigin ? (
+        <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
+      ) : (
+        <HomeSuggestionPills
+          cards={boardCards}
+          projectName={selectedProject?.name ?? null}
+          onPick={insertPrompt}
+        />
+      )}
+
+      {/* Continue — the two most recent resumable sessions as side-by-side
+          resume cards. */}
+      <HomeContinue
         sessions={sessions}
         familiarNameById={familiarNameById}
         onOpenSession={onOpenSession}
+      />
+
+      {/* Open work — collapsible ledger: branch PR, pending tasks, the
+          needs-you tier, uncommitted changes. */}
+      <HomeOpenWork
+        projectRoot={selectedProject?.root ?? null}
+        boardCards={boardCards}
         needsYou={needsYou}
+        onOpenBoard={onNavigateToBoard}
         onOpenInboxItem={onOpenInboxItem}
         onOpenSchedules={onOpenSchedules}
-        projectName={selectedProject?.name ?? null}
-        onPickSuggestion={insertPrompt}
+      />
+
+      {/* Prompt snippets — collapsed by default; top three saved prompts
+          insert into the composer, Show all opens the snippets browser. */}
+      <HomeSnippets
+        prompts={prompts}
+        onInsert={insertPromptTemplate}
+        onShowAll={() => setSnippetsBrowserOpen(true)}
+      />
+
+      </div>{/* /.home-hearth-card */}
+
+      <PromptSnippetsModal
+        open={snippetsBrowserOpen}
+        onClose={() => setSnippetsBrowserOpen(false)}
+        prompts={prompts}
+        onPick={(p) => {
+          setSnippetsBrowserOpen(false);
+          insertPromptTemplate(p);
+        }}
       />
       <SaveTemplateModal
         open={saveTemplateSeed !== null}

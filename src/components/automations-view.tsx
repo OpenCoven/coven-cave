@@ -37,6 +37,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { SearchInput } from "@/components/ui/search-input";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
@@ -101,6 +102,12 @@ function linkLabel(link: LinkRef): string {
 // Calendar and Crons. The broader Automations/Flow experience lives on
 // feature/automations-flow.
 type AutomationTab = "overview" | "calendar" | "crons";
+
+const RITUAL_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "calendar", label: "Calendar" },
+  { id: "crons", label: "Crons" },
+] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -225,6 +232,39 @@ function StatusIcon({ item }: { item: InboxItem }) {
   );
 }
 
+// A one-time (non-recurring) reminder that has already fired behaves like a
+// notification, not a schedule: Done/Snooze/Delete matter, Run-now/Pause do
+// not (there's nothing left to run or pause — see the fired/one-time example
+// in the "Rituals side panel" design pass, cave-notif-panel).
+function isFiredOneTimeReminder(item: InboxItem): boolean {
+  return (
+    item.kind === "reminder" &&
+    (!item.recurrence || item.recurrence.type === "none") &&
+    (item.status === "fired" || item.status === "done")
+  );
+}
+
+function tagStyle(kind: "outline" | "neutral" | "accent"): { background: string; border?: string; color: string } {
+  if (kind === "accent") {
+    return { background: "var(--accent-presence)", color: "var(--accent-presence-foreground)" };
+  }
+  if (kind === "neutral") {
+    return { background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-muted)" };
+  }
+  return { background: "transparent", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" };
+}
+
+function DetailTag({ children, tone = "outline" }: { children: ReactNode; tone?: "outline" | "neutral" | "accent" }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+      style={tagStyle(tone)}
+    >
+      {children}
+    </span>
+  );
+}
+
 // ── Detail panel (slides in on row click) ────────────────────────────────────
 function DetailPanel({
   item,
@@ -237,6 +277,14 @@ function DetailPanel({
   removeItem,
   onEdit,
   onOpenLink,
+  onDone,
+  onReopen,
+  onSnooze10,
+  onSnooze60,
+  onSnoozeTomorrow,
+  onCancelSnooze,
+  onToggleMute,
+  onToggleRead,
 }: {
   item: InboxItem;
   familiarLabel: (fid?: string | null) => string | null;
@@ -248,6 +296,14 @@ function DetailPanel({
   removeItem: (id: string) => void;
   onEdit?: (item: InboxItem) => void;
   onOpenLink?: (link: LinkRef) => void;
+  onDone?: (item: InboxItem) => void;
+  onReopen?: (item: InboxItem) => void;
+  onSnooze10?: (item: InboxItem) => void;
+  onSnooze60?: (item: InboxItem) => void;
+  onSnoozeTomorrow?: (item: InboxItem) => void;
+  onCancelSnooze?: (item: InboxItem) => void;
+  onToggleMute?: (item: InboxItem) => void;
+  onToggleRead?: (item: InboxItem) => void;
 }) {
   const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
   const isRecurring = item.recurrence && item.recurrence.type !== "none";
@@ -257,6 +313,15 @@ function DetailPanel({
   // Run/Pause/Edit mutations only make sense for actual reminders.
   const isReminder = item.kind === "reminder";
   const busy = busyId === item.id;
+  const unread = item.status === "fired" && !item.readAt;
+  const isDone = item.status === "done";
+  const now = Date.now();
+  const isSnoozed =
+    item.status === "pending" &&
+    !!item.snoozeUntil &&
+    Date.parse(item.snoozeUntil) > now;
+  const oneTimeNotification = isFiredOneTimeReminder(item);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
 
   // The detail panel is a dialog: trap focus, close on Escape, and restore focus
   // to the row that opened it (useFocusTrap does the return-focus). aria-modal is
@@ -268,89 +333,177 @@ function DetailPanel({
 
   return (
     <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
-      className="flex h-full flex-col focus:outline-none"
-      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
+      className="flex h-full flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)] focus:outline-none">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 id={titleId} className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
-        </h2>
+      <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-5 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
+          </h2>
+          {unread && (
+            <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-[var(--radius-pill)] bg-[var(--accent-presence)]" />
+          )}
+          <span className="sr-only">{unread ? "Unread" : ""}</span>
+        </div>
         <Button
           variant="ghost"
           size="xs"
           onClick={onClose}
           aria-label="Close"
-          className="rounded-[var(--radius-control)] p-1 text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+          className="shrink-0 rounded-[var(--radius-control)] p-1 text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
           leadingIcon="ph:x"
         />
       </div>
 
+      {/* Snoozed / done banners — state the panel is currently in, mirroring
+          the header pills the row itself would show. */}
+      {isSnoozed && (
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+          <span>Snoozed — until {formatTimestamp(item.snoozeUntil!, readDateTimePrefs())}</span>
+          {onCancelSnooze && (
+            <Button variant="ghost" size="xs" onClick={() => onCancelSnooze(item)} disabled={busy}
+              className="shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-primary)] underline-offset-2 hover:underline disabled:opacity-40">
+              Cancel
+            </Button>
+          )}
+        </div>
+      )}
+      {isDone && (
+        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+          <Icon name="ph:check-circle-fill" width={13} className="text-[var(--accent-presence)]" aria-hidden />
+          <span>Marked done — it won&apos;t fire again</span>
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        <div className="flex flex-wrap gap-1.5">
+          <DetailTag tone="neutral">{inboxKindLabel(item.kind)}</DetailTag>
+          {isReminder && <DetailTag tone="neutral">{isRecurring ? "Recurring" : "One-time"}</DetailTag>}
+        </div>
+
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: "var(--text-muted)" }}>Name</p>
-          <p className="text-[14px] font-medium" style={{ color: "var(--text-primary)" }}>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Name</p>
+          <p className="text-[14px] font-medium text-[var(--text-primary)]">
             {item.title}
           </p>
         </div>
 
         {item.body && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Description</p>
-            <p className="text-[12px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Description</p>
+            <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">
               {item.body}
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4">
-          {isReminder && (
+        <div className="grid grid-cols-2 gap-4">
+          {isReminder && !oneTimeNotification && (
             <div>
               <FieldLabel>Schedule</FieldLabel>
-              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+              <p className="text-[12px] text-[var(--text-primary)]">
                 {humanSchedule(item.recurrence)}
               </p>
+            </div>
+          )}
+          {isReminder && oneTimeNotification && (
+            <div>
+              <FieldLabel>Scheduled</FieldLabel>
+              <p
+                className="text-[12px] text-[var(--text-primary)]"
+                title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
+              >
+                {item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : "—"}
+              </p>
+              {item.firedAt && (
+                <p className="text-[11px] text-[var(--text-muted)]">fired {relTime(item.firedAt)}</p>
+              )}
             </div>
           )}
           <div>
             <FieldLabel>Status</FieldLabel>
             <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
-              {paused ? "Paused" : item.status}
+              {paused ? "Paused" : isSnoozed ? "Snoozed" : item.status}
             </p>
           </div>
-          {isReminder && (
+          {isReminder && !oneTimeNotification && (
             <div>
               <FieldLabel>Next run</FieldLabel>
               <p
-                className="text-[12px]"
-                style={{ color: "var(--text-primary)" }}
+                className="text-[12px] text-[var(--text-primary)]"
                 title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
               >
                 {relTime(item.fireAt)}
               </p>
             </div>
           )}
-          <div>
-            <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
-            <p
-              className="text-[12px]"
-              style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
-              title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
-            >
-              {item.firedAt ? relTime(item.firedAt) : isReminder ? "Never" : "—"}
-            </p>
+          {!oneTimeNotification && (
+            <div>
+              <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
+              <p
+                className="text-[12px]"
+                style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
+                title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
+              >
+                {item.firedAt ? relTime(item.firedAt) : isReminder ? "Never" : "—"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Notifications — mark read/unread and mute delivery for this one
+            item, distinct from the kind-/familiar-level mutes in the bell's
+            settings panel. Every control here actually changes state. */}
+        <div>
+          <FieldLabel>Notifications</FieldLabel>
+          <div className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12px] text-[var(--text-primary)]">Delivery</p>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  {item.muted ? "Muted — no toast, sound, or system alert" : "Toast, sound, and system alert on fire"}
+                </p>
+              </div>
+              {onToggleMute && (
+                <Button
+                  variant={item.muted ? "secondary" : "ghost"}
+                  size="xs"
+                  disabled={busy}
+                  onClick={() => onToggleMute(item)}
+                  aria-pressed={!!item.muted}
+                  leadingIcon={item.muted ? "ph:bell-slash-fill" : "ph:bell-slash"}
+                  className={`shrink-0 rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] disabled:opacity-40${item.muted ? "" : " border border-[var(--border-hairline)] text-[var(--text-secondary)]"}`}
+                >
+                  {item.muted ? "Muted" : "Mute"}
+                </Button>
+              )}
+            </div>
+            <div className="h-px bg-[var(--border-hairline)]" />
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12px] text-[var(--text-primary)]">Read state</p>
+                <p className="text-[11px] text-[var(--text-muted)]">Reading quiets the badge; the item stays listed</p>
+              </div>
+              {onToggleRead && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={busy || item.status !== "fired"}
+                  onClick={() => onToggleRead(item)}
+                  className="shrink-0 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] disabled:opacity-40"
+                >
+                  {item.readAt ? "Mark unread" : "Mark read"}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
         {familiarLabel(item.familiarId) && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 py-1 text-[11px]"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar</p>
+            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
               {familiarLabel(item.familiarId)}
             </span>
           </div>
@@ -358,15 +511,13 @@ function DetailPanel({
 
         {item.link && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Link</p>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Link</p>
             <Button
               variant="ghost"
               size="xs"
               leadingIcon="ph:link"
               onClick={() => item.link && onOpenLink?.(item.link)}
-              className="max-w-full rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
+              className="max-w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
             >
               <span className="truncate">{linkLabel(item.link)}</span>
             </Button>
@@ -375,70 +526,126 @@ function DetailPanel({
       </div>
 
       {/* Actions */}
-      <div className="border-t px-5 py-4 space-y-2"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        {onEdit && isReminder && (
-          <Button
-            variant="secondary"
-            fullWidth
-            disabled={busy}
-            onClick={() => onEdit(item)}
-            className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
-            leadingIcon="ph:pencil-simple"
-          >
-            Edit
-          </Button>
-        )}
-        {isReminder && (
+      <div className="border-t border-[var(--border-hairline)] px-5 py-4 space-y-2">
+        {isReminder && oneTimeNotification ? (
           <>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                disabled={busy}
+                onClick={() => (isDone ? onReopen?.(item) : onDone?.(item))}
+                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+              >
+                {isDone ? "Reopen" : "Done"}
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                disabled={busy || isDone}
+                onClick={() => setSnoozeOpen((v) => !v)}
+                aria-expanded={snoozeOpen}
+                className="rounded-[var(--radius-control)] border-[var(--border-hairline)] py-2 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+              >
+                Snooze…
+              </Button>
+            </div>
+            {snoozeOpen && !isDone && (
+              <div className="flex flex-wrap justify-center gap-1.5 py-0.5">
+                <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze10?.(item); setSnoozeOpen(false); }}
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  10 min
+                </Button>
+                <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze60?.(item); setSnoozeOpen(false); }}
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  1 hour
+                </Button>
+                <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnoozeTomorrow?.(item); setSnoozeOpen(false); }}
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  Tomorrow, 9 AM
+                </Button>
+              </div>
+            )}
+            <div className="flex justify-center gap-4 pt-0.5">
+              {onEdit && (
+                <Button variant="ghost" size="xs" onClick={() => onEdit(item)} disabled={busy}
+                  className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[var(--text-muted)] transition-colors disabled:opacity-40 hover:underline">
+                  Edit
+                </Button>
+              )}
+              <Button variant="ghost" size="xs" onClick={() => removeItem(item.id)} disabled={busy}
+                className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
+                Delete
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            {onEdit && isReminder && (
+              <Button
+                variant="secondary"
+                fullWidth
+                disabled={busy}
+                onClick={() => onEdit(item)}
+                className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                leadingIcon="ph:pencil-simple"
+              >
+                Edit
+              </Button>
+            )}
+            {isReminder && (
+              <>
+                <Button
+                  variant="primary"
+                  fullWidth
+                  disabled={busy || paused}
+                  onClick={() => runNow(item.id)}
+                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+                >
+                  Run now
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  disabled={busy}
+                  onClick={() => togglePaused(item)}
+                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+                  style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                >
+                  {paused ? "Resume" : "Pause"}
+                </Button>
+              </>
+            )}
+            {isRecurring && isReminder && (
+              <Button
+                variant="secondary"
+                fullWidth
+                disabled={busy}
+                onClick={() => stopRecurrence(item.id)}
+                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+              >
+                Stop repeating
+              </Button>
+            )}
             <Button
-              variant="primary"
-              fullWidth
-              disabled={busy || paused}
-              onClick={() => runNow(item.id)}
-              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
-            >
-              Run now
-            </Button>
-            <Button
-              variant="secondary"
+              variant="danger-ghost"
               fullWidth
               disabled={busy}
-              onClick={() => togglePaused(item)}
-              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-              style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+              onClick={() => removeItem(item.id)}
+              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
+              style={{ color: "oklch(0.65 0.18 20)" }}
             >
-              {paused ? "Resume" : "Pause"}
+              Delete
             </Button>
           </>
         )}
-        {isRecurring && isReminder && (
-          <Button
-            variant="secondary"
-            fullWidth
-            disabled={busy}
-            onClick={() => stopRecurrence(item.id)}
-            className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
-          >
-            Stop repeating
-          </Button>
-        )}
-        <Button
-          variant="danger-ghost"
-          fullWidth
-          disabled={busy}
-          onClick={() => removeItem(item.id)}
-          className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
-          style={{ color: "oklch(0.65 0.18 20)" }}
-        >
-          Delete
-        </Button>
       </div>
     </div>
   );
 }
+
 
 // Row quick-actions (run-now, pause/resume) are wired once at the top of the
 // view and read by each leaf row — so the most-used actions sit right on the
@@ -2240,6 +2447,49 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     return actItem(item.id, "dismiss");
   };
 
+  // ── Detail panel notification controls (mark read/unread, mute, snooze
+  // presets, reopen) — the panel-level counterparts to the row quick-actions
+  // above, wired to the same endpoints. ─────────────────────────────────────
+  const snoozeItemFor = (item: InboxItem, minutes: number, label: string) => {
+    announce(`Snoozed '${item.title}' for ${label}.`);
+    return actItem(item.id, "snooze", { minutes });
+  };
+  const snoozeItemUntilTomorrow = (item: InboxItem) => {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    next.setHours(9, 0, 0, 0);
+    announce(`Snoozed '${item.title}' until tomorrow, 9 AM.`);
+    return actItem(item.id, "snooze", { untilIso: next.toISOString() });
+  };
+  const cancelSnoozeItem = (item: InboxItem) => {
+    announce(`Cancelled snooze for '${item.title}'.`);
+    return patchItem(item.id, { status: "fired", snoozeUntil: null });
+  };
+  const reopenInboxItem = (item: InboxItem) => {
+    announce(`Reopened '${item.title}'.`);
+    return patchItem(item.id, { status: "fired", readAt: null });
+  };
+  const toggleMuteItem = (item: InboxItem) => {
+    announce(item.muted ? `Unmuted '${item.title}'.` : `Muted '${item.title}'.`);
+    return patchItem(item.id, { muted: !item.muted });
+  };
+  const toggleReadItem = useCallback(async (item: InboxItem) => {
+    const action = item.readAt ? "unread" : "read";
+    setBusyId(item.id);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ids: [item.id] }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(action === "read" ? `Marked '${item.title}' as read.` : `Marked '${item.title}' as unread.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "action failed");
+    } finally { setBusyId(null); }
+  }, [load, announce]);
+
   const openSubscriptions = useCallback(async () => {
     // The modal renders a connect hint without a PAT — resolve the live
     // status on open instead of polling it alongside the feed.
@@ -2599,13 +2849,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
         <div className="surface-compact-header rituals-overview__header">
-          {activeTab !== "overview" ? (
-            <Button size="xs" variant="ghost" leadingIcon="ph:arrow-left" onClick={() => selectTab("overview")}>
-              Overview
-            </Button>
-          ) : (
-            <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
-          )}
+          <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
           <h1 className="surface-compact-title">Rituals</h1>
           {activeTab === "overview" ? (
             <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
@@ -2704,14 +2948,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   ariaLabel="Rituals options"
                 >
                   <PopoverBody role="menu" ariaLabel="Rituals options">
-                    {calendarSlot ? (
-                      <PopoverItem icon="ph:calendar-check" onSelect={() => { setManageMenuOpen(false); selectTab("calendar"); }}>
-                        Open full calendar
-                      </PopoverItem>
-                    ) : null}
-                    <PopoverItem icon="ph:clock-countdown" onSelect={() => { setManageMenuOpen(false); selectTab("crons"); }}>
-                      Manage crons
-                    </PopoverItem>
                     <PopoverItem icon="ph:github-logo" onSelect={() => { setManageMenuOpen(false); void openSubscriptions(); }}>
                       Subscriptions
                     </PopoverItem>
@@ -2750,6 +2986,24 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             ) : null}
           </div>
         </div>
+        <Tabs
+          items={RITUAL_TABS}
+          value={activeTab}
+          onChange={selectTab}
+          ariaLabel="Rituals sections"
+          idPrefix="automations"
+          size="sm"
+          className="shrink-0 px-3"
+        />
+        {RITUAL_TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={`automations-panel-${tab.id}`}
+            aria-labelledby={`automations-tab-${tab.id}`}
+            hidden
+          />
+        ))}
 
         {error && (
           <div
@@ -2770,8 +3024,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
         {/* List (or the Calendar surface when that tab is active) */}
         <div
-          role="region"
+          role="tabpanel"
           id={`automations-panel-${activeTab}`}
+          aria-labelledby={`automations-tab-${activeTab}`}
           aria-label={activeTab === "overview" ? "Rituals overview" : activeTab === "calendar" ? "Rituals calendar" : "Rituals crons"}
           className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
           {activeTab === "calendar" ? (
@@ -3011,6 +3266,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               removeItem={removeItem}
               onEdit={onEdit}
               onOpenLink={onOpenLink}
+              onDone={completeInboxItem}
+              onReopen={reopenInboxItem}
+              onSnooze10={(next) => snoozeItemFor(next, 10, "10 minutes")}
+              onSnooze60={(next) => snoozeItemFor(next, 60, "1 hour")}
+              onSnoozeTomorrow={snoozeItemUntilTomorrow}
+              onCancelSnooze={cancelSnoozeItem}
+              onToggleMute={toggleMuteItem}
+              onToggleRead={(next) => void toggleReadItem(next)}
             />
           )}
           {selectedCodex && (

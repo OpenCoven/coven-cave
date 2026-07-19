@@ -164,10 +164,10 @@ async function createXterm(
     // Required for the search addon's match decorations (highlights + count).
     allowProposedApi: true,
     theme: {
-      background: "oklch(0.11 0.022 293)",
+      background: "oklch(0.22 0.006 291)",
       foreground: "#e6e6f0",
-      cursor: "#9a8ecd",
-      selectionBackground: "rgba(154,142,205,0.35)",
+      cursor: "#9386d0",
+      selectionBackground: "rgba(147,134,208,0.35)",
     },
   });
   const fit = new FitAddon();

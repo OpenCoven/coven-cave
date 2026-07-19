@@ -226,54 +226,54 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
     display: grid;
     place-items: center;
     min-height: 100vh;
-    background: oklch(0.13 0.022 293);
-    color: oklch(0.93 0.01 293);
+    background: oklch(0.24 0.006 291);
+    color: oklch(0.93 0.004 291);
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
   main {
     width: min(360px, calc(100vw - 48px));
     padding: 28px;
-    border: 1px solid oklch(0.93 0.01 293 / 12%);
+    border: 1px solid oklch(0.93 0.004 291 / 12%);
     border-radius: 16px;
-    background: oklch(0.165 0.025 293);
+    background: oklch(0.26 0.007 291);
   }
   .dot {
     width: 8px;
     height: 8px;
     border-radius: 999px;
-    background: #9a8ecd;
-    box-shadow: 0 0 0 4px oklch(0.62 0.08 293 / 16%);
+    background: #9386d0;
+    box-shadow: 0 0 0 4px oklch(0.62 0.09 291 / 16%);
     margin-bottom: 16px;
   }
   h1 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
-  p { margin: 0 0 16px; color: oklch(0.66 0.018 293); font-size: 13px; }
+  p { margin: 0 0 16px; color: oklch(0.66 0.010 291); font-size: 13px; }
   .note { color: oklch(0.72 0.14 78); }
   form { display: flex; gap: 8px; }
   input {
     flex: 1;
     min-width: 0;
     padding: 8px 12px;
-    border: 1px solid oklch(0.93 0.01 293 / 22%);
+    border: 1px solid oklch(0.93 0.004 291 / 22%);
     border-radius: 999px;
-    background: oklch(0.13 0.022 293);
+    background: oklch(0.22 0.006 291);
     color: inherit;
     font: inherit;
   }
   input:focus-visible, button:focus-visible {
-    outline: 2px solid oklch(0.62 0.08 293 / 55%);
+    outline: 2px solid oklch(0.62 0.09 291 / 55%);
     outline-offset: 1px;
   }
   button {
     padding: 8px 16px;
-    border: 1px solid oklch(0.93 0.01 293 / 22%);
+    border: 1px solid oklch(0.93 0.004 291 / 22%);
     border-radius: 999px;
-    background: oklch(0.20 0.028 293);
+    background: oklch(0.29 0.008 291);
     color: inherit;
     font: inherit;
     font-weight: 600;
     cursor: pointer;
   }
-  button:hover { background: oklch(0.24 0.030 293); }
+  button:hover { background: oklch(0.32 0.009 291); }
 </style>
 </head>
 <body>

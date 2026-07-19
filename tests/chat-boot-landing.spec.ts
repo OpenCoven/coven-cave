@@ -133,10 +133,11 @@ test.describe("chat boot landing", () => {
     await expect(composer).toHaveValue(/Continue the task: Fix login flow/);
     await expect(empty).toBeVisible();
 
-    // Voice no longer needs a session: the call button is present from turn
-    // zero (it mints a conversation on demand), alongside the dictation mic
-    // when the browser supports speech recognition.
-    await expect(page.getByRole("button", { name: "Voice call" })).toBeVisible();
+    // Voice no longer needs a session: the call action is present from turn
+    // zero inside the composer "+" menu (it mints a conversation on demand).
+    await page.getByRole("button", { name: "Composer actions" }).click();
+    await expect(page.getByRole("menuitem", { name: "Voice call" })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     // Dosed discoverability: the ready line mentions the slash entry point.
     await expect(empty.getByText("/ for commands", { exact: false })).toBeVisible();

@@ -10,6 +10,7 @@ const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url)
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
@@ -72,6 +73,36 @@ assert.match(
 );
 assert.match(
   automations,
+  /import\s+\{\s*Tabs,\s*type\s+TabItem\s*\}\s+from\s+"@\/components\/ui\/tabs";/,
+  "Rituals imports the shared Tabs primitive",
+);
+assert.match(
+  automations,
+  /const\s+RITUAL_TABS\s*=\s*\[[\s\S]{0,300}\{\s*id:\s*"overview",\s*label:\s*"Overview"\s*\}[\s\S]{0,160}\{\s*id:\s*"calendar",\s*label:\s*"Calendar"\s*\}[\s\S]{0,160}\{\s*id:\s*"crons",\s*label:\s*"Crons"\s*\}[\s\S]{0,240}satisfies\s+ReadonlyArray<TabItem<AutomationTab>>/,
+  "RITUAL_TABS should define Overview, Calendar, and Crons as typed shared tab items",
+);
+assert.match(
+  automations,
+  /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTab\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
+  "Rituals tabs should be driven by the shared Tabs component with accessible wiring",
+);
+assert.match(
+  automations,
+  /role="tabpanel"[\s\S]{0,160}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,160}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/,
+  "Active tab content should use wired tabpanel semantics",
+);
+assert.match(
+  automations,
+  /RITUAL_TABS\.filter\(\(tab\) => tab\.id !== activeTab\)\.map\(\(tab\) => \([\s\S]{0,220}<div[\s\S]{0,220}id=\{`automations-panel-\$\{tab\.id\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{tab\.id\}`\}[\s\S]{0,120}hidden[\s\S]{0,40}\/>[\s\S]{0,40}\)\)/,
+  "Inactive tabs should render hidden tabpanel targets so shared tabs always point at real elements",
+);
+assert.doesNotMatch(
+  automations,
+  /Open full calendar|Manage crons/,
+  "The old overflow-only calendar/crons links should be removed",
+);
+assert.match(
+  automations,
   /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*initialTab === "crons" \? "crons" : "overview",?\s*\)/,
   "Surface defaults to the unified overview unless a deep link asks otherwise",
 );
@@ -96,13 +127,41 @@ assert.match(
   /initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
   "Workspace lands on the overview unless the Calendar deep link asked for Calendar",
 );
-assert.match(automations, /setActiveTab\("calendar"\)|selectTab\("calendar"\)/, "the full Calendar remains reachable");
-assert.match(automations, /setActiveTab\("crons"\)|selectTab\("crons"\)/, "Cron management remains reachable");
 assert.match(automations, /sessionStorage\.setItem\("cave:calendar:pending-open-date", day\.key\)[\s\S]{0,100}selectTab\("calendar"\)/, "a ribbon day queues its date before Calendar mounts");
 assert.match(calendar, /sessionStorage\.getItem\("cave:calendar:pending-open-date"\)[\s\S]{0,180}openDateValue\(pendingDate\)/, "Calendar consumes a queued ribbon date on mount");
 assert.match(calendar, /addEventListener\("cave:calendar:open-date", openDate\)/, "Calendar accepts a day selected from the overview ribbon");
 assert.match(calendar, /setAnchor\(next\);[\s\S]{0,140}setViewMode\("day"\)/, "a ribbon day opens the matching single-day calendar");
 assert.match(calendar, /mobileRibbonDayOpen && viewMode === "day"/, "mobile preserves an explicitly selected ribbon day instead of forcing Agenda");
+assert.doesNotMatch(
+  globals,
+  /\.rituals-overview__events,\s*\.rituals-overview__lower\s*\{[^}]*width:\s*min\(920px,\s*100%\)/,
+  "events/lower should no longer cap width at 920px",
+);
+assert.doesNotMatch(
+  globals,
+  /\.rituals-overview__needs\s*\{[^}]*width:\s*min\(920px,\s*100%\)/,
+  "needs should no longer cap width at 920px",
+);
+assert.doesNotMatch(
+  globals,
+  /\.rituals-overview__selection\s*\{[^}]*width:\s*min\(920px,\s*100%\)/,
+  "selection should no longer cap width at 920px",
+);
+assert.match(
+  globals,
+  /\.rituals-overview__events,\s*\.rituals-overview__lower\s*\{[^}]*width:\s*100%/,
+  "events and lower should expand to full width",
+);
+assert.match(
+  globals,
+  /\.rituals-overview__needs\s*\{[^}]*width:\s*100%/,
+  "needs should expand to full width",
+);
+assert.match(
+  globals,
+  /\.rituals-overview__selection\s*\{[^}]*width:\s*100%/,
+  "selection should expand to full width",
+);
 assert.match(automations, /function useRitualNow\(\): Date \| null[\s\S]{0,560}setNow\(new Date\(\)\);[\s\S]{0,80}scheduleMidnight/, "the hydration-stable week clock starts in the browser and refreshes at local midnight");
 assert.match(automations, /ritualNow \? buildRitualWeek\(inboxVisible, ritualNow\) : \[\]/, "the week ribbon waits for the browser-local date before derivation");
 assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");

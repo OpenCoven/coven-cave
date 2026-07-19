@@ -1,14 +1,15 @@
 // @ts-nocheck
-// Source pins for the chat composer footer band (cave-8eo2): the session's
-// metadata — project · runtime/model · git context · linked tasks — rides a
-// darker band attached to the composer panel's underside (the home composer's
-// hc-footer-band grammar), moved OUT of the input's control row and the chat
-// header so the write surface above stays a minimal box: textarea + attach /
-// voice / Options on the left, enhance / send on the right.
+// Source pins for the chat composer's context grammar (chat revamp 1d,
+// superseding the cave-8eo2 band layout): the session's project · runtime/
+// model · git context collapsed into ONE quiet context pill in the control
+// row, the utility cluster collapsed into ONE "+" menu, and the footer band
+// now carries only the linked-work strip (tasks · GitHub · link/create). The
+// write surface stays minimal: textarea + "+" · pill · circular send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
@@ -20,42 +21,51 @@ assert.match(
   "the footer band renders after the composer controls, inside the panel",
 );
 
-// ── Band contents: project · runtime · git on the left, tasks on the right ──
+// ── Band contents: the linked-work strip only ───────────────────────────────
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*<div className="cave-composer-footer-band__context">\s*<ProjectPicker/,
-  "the band's context cluster leads with the project picker",
-);
-assert.match(
-  source,
-  /<ProjectPicker\s*\n\s*projects=\{projects\}\s*\n\s*value=\{resolvedProjectId\}\s*\n\s*onChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
-  "the project chip shows the RESOLVED selection (draft → task project → session cwd) and writes the draft",
-);
-assert.match(
-  source,
-  /createProject=\{createProject\}[\s\S]{0,200}?className="cave-chat-project-selector"/,
-  "the project chip folds in the add-project flow (register + grant) like the home band",
-);
-assert.match(
-  source,
-  /className="cave-composer-footer-band__context">[\s\S]{0,900}?<ComposerRuntimeChip[\s\S]{0,900}?<ComposerGitChip projectRoot=\{activeProjectRoot\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "runtime/model and git context sit beside the project chip in the band",
-);
-assert.match(
-  source,
-  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}\s*\n\s*<\/div>/,
-  "the linked-context strip (tasks · GitHub · link/create) trails the band",
+  /className="cave-composer-footer-band">\s*\{linkedContextRow\}\s*\n\s*<\/div>/,
+  "the band carries the linked-context strip (tasks · GitHub · link/create) alone",
 );
 
-// ── The input box is minimal: no metadata chips in the utility row ───────────
+// ── The context pill replaces the band's picker cluster ─────────────────────
+assert.match(
+  source,
+  /<ComposerContextPill\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
+  "the pill shows the RESOLVED project selection (draft → task project → session cwd) and writes the draft",
+);
+assert.match(
+  source,
+  /createProject=\{createProject\}[\s\S]{0,600}?projectRoot=\{activeProjectRoot\}[\s\S]{0,120}?onOpenUrl=\{onOpenUrl\}/,
+  "the pill folds in the add-project flow and the git/PR context (register + grant, branch, PR open)",
+);
+assert.doesNotMatch(
+  source,
+  /cave-composer-footer-band__context|<ProjectPicker\b|<ComposerRuntimeChip|<ComposerGitChip/,
+  "the band's old picker cluster is gone — project/runtime/git live behind the pill",
+);
+
+// ── The pill's hub popover has the three sections ───────────────────────────
+assert.match(
+  pill,
+  /<PopoverLabel>Project<\/PopoverLabel>[\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?<PopoverLabel>Branch<\/PopoverLabel>/,
+  "the pill's hub popover sections read Project / Model / Branch in order",
+);
+assert.match(
+  pill,
+  /hasGit \? \(/,
+  "the Branch section elides for git-less composers (home, no-project chats)",
+);
+
+// ── The utility row is just "+" then the pill ───────────────────────────────
 const utilityRow = source.match(
-  /className="cave-composer-utility-row">[\s\S]*?<\/div>\s*<div className="cave-composer-submit-row">/,
+  /className="cave-composer-utility-row">[\s\S]*?<div className="cave-composer-submit-row">/,
 )?.[0] ?? "";
 assert.ok(utilityRow, "chat composer utility row is present");
-assert.doesNotMatch(
+assert.match(
   utilityRow,
-  /ComposerRuntimeChip|ComposerGitChip/,
-  "the utility row carries no runtime/git metadata — attach · voice · Options only",
+  /<ComposerPlusMenu[\s\S]*<ComposerContextPill/,
+  "the utility row leads with the + menu, then the context pill",
 );
 
 // ── The header no longer hosts the linked-context strip ─────────────────────
@@ -64,7 +74,7 @@ assert.ok(header, "chat header is present");
 assert.doesNotMatch(
   header,
   /linkedContextRow/,
-  "the header renders MetaLine only — the linked-context strip moved to the band",
+  "the header renders MetaLine only — the linked-context strip stays in the band",
 );
 
 // ── Band chrome: attached underside strip, one tone deeper ──────────────────
@@ -73,22 +83,44 @@ assert.match(
   /\.cave-composer-footer-band \{[\s\S]*?border-top: 1px solid var\(--border-hairline\);[\s\S]*?background: color-mix\(in oklch, var\(--bg-base\) 62%, transparent\);/,
   "the band is the darker hairline-topped strip clipped into the panel's bottom corners",
 );
+
+// ── Pill chrome: control radius, hairline border, quiet 6% text tint ────────
 assert.match(
   css,
-  /\.cave-composer-footer-band .cave-project-picker__trigger\.cave-chat-project-selector \{[\s\S]*?height: 30px;[\s\S]*?border-radius: var\(--radius-pill\);/,
-  "the project chip matches the 30px pill family of the chips beside it",
+  /\.cave-context-pill \{[\s\S]{0,400}?height: 30px;[\s\S]{0,200}?border: 1px solid var\(--border-hairline\);\s*\n\s*border-radius: var\(--radius-control\);\s*\n\s*background: color-mix\(in oklch, var\(--text-primary\) 6%, transparent\);\s*\n\s*color: var\(--text-secondary\);\s*\n\s*font-size: var\(--text-sm\);/,
+  "the context pill is the quiet 30px control-radius pill (hairline border, 6% text tint, 12px text token)",
+);
+assert.match(
+  css,
+  /\.cave-composer-plus\[aria-expanded="true"\] \{[\s\S]*?border-color: var\(--accent-presence\);[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 12%, transparent\);/,
+  "the + trigger highlights (accent border + ~12% tint) while its popover is open",
+);
+assert.match(
+  css,
+  /\.cave-composer-send \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?border: 1px solid var\(--accent-presence\);[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?background: transparent;/,
+  "send is the circular 32px accent-outline button",
+);
+assert.match(
+  css,
+  /\.cave-composer-send\[data-typing="true"\] \{\s*\n\s*background: color-mix\(in oklch, var\(--accent-presence\) 18%, transparent\);/,
+  "typing adds the ~18% accent tint fill to send",
+);
+assert.match(
+  css,
+  /\.cave-composer-typing-hint \{[\s\S]*?font-family: var\(--font-mono\);[\s\S]*?font-size: 10\.5px;/,
+  "the enter-to-send hint is the 10.5px mono whisper inside the input area",
+);
+assert.match(
+  css,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.cave-composer-typing-hint \{\s*\n\s*display: none;/,
+  "phone widths skip the typing hint",
 );
 
 // ── Reveal + mobile behavior ─────────────────────────────────────────────────
 assert.match(
   css,
   /\.cave-composer-footer-band:hover \.cave-chat-linked-context \.cave-chat-linked-chip--link-task/,
-  "the bare link-a-task affordance reveals on band hover (was header hover)",
-);
-assert.match(
-  css,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-footer-band,\s*\.cave-composer-footer-band__context \{\s*flex-wrap: wrap;/,
-  "phone widths wrap the band's chips instead of crushing them",
+  "the bare link-a-task affordance reveals on band hover",
 );
 // On phones the linked-context cluster stays hidden (class-wide rule) — the
 // header's MobileHeaderTask chip carries the affiliation there.

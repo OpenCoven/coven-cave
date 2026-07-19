@@ -10,7 +10,7 @@ import "@/styles/cave-composer.css";
 // inline choices extracted from ComposerHostChip; its Connect-new-host dialog is
 // rendered as a sibling of the Popover so it survives the panel closing.
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import {
@@ -91,6 +91,9 @@ export function ComposerOptionsMenu({
   onOpenPromptSnippets,
   onSaveAsTemplate,
   saveAsTemplateDisabled,
+  open: controlledOpen,
+  onOpenChange,
+  anchorRef: externalAnchorRef,
 }: {
   hostValue: string;
   onHostPick: (id: string) => void;
@@ -107,33 +110,56 @@ export function ComposerOptionsMenu({
    *  (cave-jg6k). Callers disable it while the draft is empty. */
   onSaveAsTemplate?: () => void;
   saveAsTemplateDisabled?: boolean;
+  /** Controlled mode (chat revamp): when `anchorRef` is provided the menu
+   *  renders no trigger of its own — the panel anchors to the caller's
+   *  element (the composer "+" button) and open state is caller-owned via
+   *  `open` / `onOpenChange` ("Model & tuning…" chaining). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const [connectOpen, setConnectOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const internalAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const anchorRef = externalAnchorRef ?? internalAnchorRef;
   const { options: hostOptions, load, removeHost } = useComposerHosts(hostValue);
+
+  // Trigger-less mode never sees the trigger's onClick, so refresh the host
+  // list whenever the caller opens the panel (same load the trigger did).
+  useEffect(() => {
+    if (open) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const showDot = Boolean(indicator) || hostValue !== LOCAL_HOST_ID;
 
   return (
     <>
-      <button
-        ref={anchorRef}
-        type="button"
-        className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-        disabled={disabled}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label="Composer options"
-        title="Composer options"
-        onClick={() => {
-          void load();
-          setOpen((v) => !v);
-        }}
-      >
-        <Icon name="ph:sliders-horizontal" width={15} aria-hidden />
-        {showDot ? <span className="composer-options__dot" aria-hidden /> : null}
-      </button>
+      {externalAnchorRef ? null : (
+        <button
+          ref={internalAnchorRef}
+          type="button"
+          className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+          disabled={disabled}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="Composer options"
+          title="Composer options"
+          onClick={() => {
+            void load();
+            setOpen(!open);
+          }}
+        >
+          <Icon name="ph:sliders-horizontal" width={15} aria-hidden />
+          {showDot ? <span className="composer-options__dot" aria-hidden /> : null}
+        </button>
+      )}
       <Popover
         open={open}
         onOpenChange={setOpen}

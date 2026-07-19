@@ -22,61 +22,49 @@ import { RUNTIME_MODEL_CATALOG, type RuntimeModelOption } from "@/lib/runtime-mo
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import "@/styles/composer-runtime-chip.css";
 
-export function ComposerRuntimeChip({
+/** The effective label a runtime+model pair displays: the curated model label,
+ *  a trailing path segment for custom ids, or null (runtime-only adapters). */
+export function runtimeModelLabel(
+  modelValue: string,
+  modelOptions: RuntimeModelOption[],
+): string | null {
+  return (
+    modelOptions.find((m) => m.id === modelValue)?.label ??
+    (modelValue ? modelValue.split("/").pop() ?? modelValue : null)
+  );
+}
+
+/** Controlled Runtime · Model popover — the menu half of the chip, anchored to
+ *  any caller-owned trigger (the chip below, or the composer context pill). */
+export function ComposerRuntimePopover({
+  open,
+  onOpenChange,
+  anchorRef,
   runtime,
   modelValue,
   modelOptions,
   onPickRuntime,
   onPickModel,
-  disabled,
 }: {
-  /** Active runtime (harness id): codex | claude | copilot | hermes | openclaw. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
   runtime: string;
-  /** Effective model id ("" when the runtime has no curated models). */
   modelValue: string;
-  /** Curated models for the active runtime (catalogForRuntime). */
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string) => void;
-  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
-
-  const runtimeName = runtimeDisplayName(runtime);
-  // The chip shows the model when the runtime has one, else the runtime name
-  // alone — hermes/openclaw run their own adapters without a curated menu.
-  const modelLabel =
-    modelOptions.find((m) => m.id === modelValue)?.label ??
-    (modelValue ? modelValue.split("/").pop() ?? modelValue : null);
-
+  const setOpen = onOpenChange;
   return (
-    <>
-      <button
-        ref={anchorRef}
-        type="button"
-        className="cave-composer-select cave-composer-runtime-chip"
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Runtime: ${runtimeName}${modelLabel ? ` · Model: ${modelLabel}` : ""}`}
-        title={`Runtime: ${runtimeName}${modelLabel ? ` · Model: ${modelLabel}` : ""}`}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="cave-runtime-chip__logo" aria-hidden>
-          <RuntimeLogo runtime={runtime} size={13} />
-        </span>
-        <span className="cave-composer-select__value">{modelLabel ?? runtimeName}</span>
-        <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
-      </button>
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
-        anchorRef={anchorRef}
-        placement="top-start"
-        minWidth={230}
-        ariaLabel="Runtime and model"
-      >
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      anchorRef={anchorRef}
+      placement="top-start"
+      minWidth={230}
+      ariaLabel="Runtime and model"
+    >
         <PopoverBody role="menu" ariaLabel="Runtime and model">
           <PopoverLabel>Runtime</PopoverLabel>
           {Object.values(RUNTIME_MODEL_CATALOG).map((catalog) => (
@@ -120,7 +108,65 @@ export function ComposerRuntimeChip({
             </>
           )}
         </PopoverBody>
-      </Popover>
+    </Popover>
+  );
+}
+
+export function ComposerRuntimeChip({
+  runtime,
+  modelValue,
+  modelOptions,
+  onPickRuntime,
+  onPickModel,
+  disabled,
+}: {
+  /** Active runtime (harness id): codex | claude | copilot | hermes | openclaw. */
+  runtime: string;
+  /** Effective model id ("" when the runtime has no curated models). */
+  modelValue: string;
+  /** Curated models for the active runtime (catalogForRuntime). */
+  modelOptions: RuntimeModelOption[];
+  onPickRuntime: (runtime: string) => void;
+  onPickModel: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+
+  const runtimeName = runtimeDisplayName(runtime);
+  // The chip shows the model when the runtime has one, else the runtime name
+  // alone — hermes/openclaw run their own adapters without a curated menu.
+  const modelLabel = runtimeModelLabel(modelValue, modelOptions);
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className="cave-composer-select cave-composer-runtime-chip"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Runtime: ${runtimeName}${modelLabel ? ` · Model: ${modelLabel}` : ""}`}
+        title={`Runtime: ${runtimeName}${modelLabel ? ` · Model: ${modelLabel}` : ""}`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="cave-runtime-chip__logo" aria-hidden>
+          <RuntimeLogo runtime={runtime} size={13} />
+        </span>
+        <span className="cave-composer-select__value">{modelLabel ?? runtimeName}</span>
+        <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
+      </button>
+      <ComposerRuntimePopover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        runtime={runtime}
+        modelValue={modelValue}
+        modelOptions={modelOptions}
+        onPickRuntime={onPickRuntime}
+        onPickModel={onPickModel}
+      />
     </>
   );
 }

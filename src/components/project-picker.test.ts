@@ -35,11 +35,14 @@ assert.doesNotMatch(
   "picker should use shared CSS/tokenized radii instead of hard-coded rounded classes",
 );
 
-// ── Home composer: project picker rendered in the toolbar ───────────────────
+// ── Home composer: project picker reached from the context pill ─────────────
 // The selector lets the user choose which project a new chat runs in (mirrors
-// the chat composer). It's a standalone ProjectPicker with the hc-project-selector
-// styling — its own search popover, so it can't nest in the ⚙ Options menu.
-assert.match(homeComposer, /className="hc-project-selector"/, "home composer renders the project selector in its toolbar");
+// the chat composer). The pill chains to the shared ProjectPickerPopover, so
+// selection reads the same everywhere (chat revamp 1d).
+assert.match(homeComposer, /<ComposerContextPill[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context pill hosts the shared project picker");
+const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
+assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");

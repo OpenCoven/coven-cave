@@ -5,6 +5,8 @@
    error pages stop downloading conversation/terminal CSS (#3264). The
    retired XYFlow global import is gone with the Flow surface. */
 @import "../styles/sidebar-minimal.css";
+/* Bottom status strip (Home/Chat detail column) — shell-level chrome. */
+@import "../styles/status-bar.css";
 
 /* ============================================================
    Coven aesthetic tokens (Mood C — foundation, issue #14)
@@ -19,7 +21,7 @@
      - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
    Both resolve to the same colours so they stay in sync.
 
-   Brand: OpenCoven lavender (#9A8ECD) lives at --accent-presence.
+   Brand: OpenCoven lavender (#9386D0) lives at --accent-presence.
    Reserved for familiar presence dots and the health strip — not
    for primary CTAs.
 
@@ -31,21 +33,27 @@
 
 :root {
   /* ---- Palette (oklch — same colour science as shadcn) ----
-     Coven dark: lavender-inked grimoire. The chroma is real,
-     not a hint — surfaces should read violet, not gray. */
-  --background: oklch(0.13 0.022 293);
+     Coven dark v1.3: charcoal-graphite surfaces (chroma pared back to a
+     whisper) with the violet reserved for the brand accent — reads as
+     ink-and-graphite, not a tinted gray, matching the reference "New
+     automation" mock (cave: default-theme-repaint). */
+  --background: oklch(0.24 0.006 291);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.165 0.025 293);
+  --card: oklch(0.26 0.007 291);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.165 0.025 293);
+  --popover: oklch(0.26 0.007 291);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 293);
-  --primary-foreground: oklch(0.165 0.025 293);
-  --secondary: oklch(0.20 0.028 293);
+  --primary: oklch(0.92 0.004 291);
+  /* Dark ink, not tied to --card — --primary-foreground also paints text on
+     --brand/--accent-presence (a mid-tone violet), which needs a genuinely
+     dark ink for 4.5:1, not whatever lightness the raised surface happens
+     to be (theme-contrast-audit.test.ts). */
+  --primary-foreground: oklch(0.16 0.008 291);
+  --secondary: oklch(0.29 0.008 291);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.20 0.028 293);
-  --muted-foreground: oklch(0.66 0.018 293);
-  --accent: oklch(0.20 0.028 293);
+  --muted: oklch(0.29 0.008 291);
+  --muted-foreground: oklch(0.66 0.010 291);
+  --accent: oklch(0.29 0.008 291);
   --accent-foreground: oklch(0.985 0 0);
   --border: color-mix(in oklch, var(--foreground) 12%, transparent);
   /* WCAG 1.4.11: --border-strong marks interactive boundaries (inputs,
@@ -53,14 +61,14 @@
      22% composited under 2:1 on every theme. Hairline stays decorative. */
   --border-strong: color-mix(in oklch, var(--foreground) 48%, transparent);
   --input: color-mix(in oklch, var(--foreground) 18%, transparent);
-  --ring: oklch(0.55 0.08 293);
+  --ring: oklch(0.55 0.075 291);
 
   /* ---- Coven brand ----
      Lavender presence accent. Use sparingly — familiar dots,
      status strip, the gradient AI toggle in #22. */
-  --accent-presence: #9a8ecd;
+  --accent-presence: #9386d0;
   --accent-presence-foreground: var(--primary-foreground);
-  --accent-presence-soft: oklch(0.72 0.08 295);
+  --accent-presence-soft: oklch(0.70 0.10 293);
   --brand: var(--accent-presence);
   /* Follows the per-theme ink choice — hardcoded white failed AA on every
      palette whose accent is light (22 of 32 theme×mode combos). */
@@ -73,15 +81,19 @@
   /* Fixed near-opaque dark "ink" for code surfaces — read code blocks AND the
      file editor share it so the Code page's read↔edit toggle keeps one bg. */
   --code-surface: oklch(0.12 0.012 280 / 92%);
-  --bg-panel: oklch(0.10 0.020 293);        /* deepest — app shell / sidebar floor */
+  --bg-panel: oklch(0.22 0.006 291);        /* deepest — app shell / sidebar floor */
   --bg-raised: var(--card);
   /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
      the raised surface so it tracks every theme — this token was referenced
      by several components while undefined, which computed to transparent
      (cave-fdt5). */
   --bg-subtle: color-mix(in oklch, var(--bg-raised) 72%, transparent);
-  --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */
-  --bg-hover: oklch(0.24 0.030 293);        /* hover state */
+  /* Recessed wells (sticky strips, modal inputs) — one visible step below
+     base. Referenced while undefined (cave-309m); derived from --bg-base so
+     every theme tracks. Light mode overrides below. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
+  --bg-elevated: oklch(0.29 0.008 291);     /* dropdowns / popovers */
+  --bg-hover: oklch(0.32 0.009 291);        /* hover state */
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);
@@ -183,6 +195,15 @@
   --color-danger: oklch(0.74 0.18 24);
   --color-danger-soft: oklch(0.82 0.08 24);
   --color-info: var(--accent-presence);
+  /* Inline danger-alert vocabulary (craft dossier, marketplace, skill
+     builder) — the design-language tint recipe applied to one solid token:
+     14% fill, 38% border, solid text. Referenced while undefined
+     (cave-309m), which computed to transparent fills and inherited text;
+     mixes derive from --color-danger so the light-mode override and all
+     themes track automatically. */
+  --danger-text: var(--color-danger);
+  --danger-bg: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  --danger-border: color-mix(in oklch, var(--color-danger) 38%, transparent);
 
   /* ---- Icon sizes ----
      Replaces ad-hoc width={N} props. Consumers default to --icon-sm
@@ -274,31 +295,34 @@
   color-scheme: light;
   /* No numeral bloom on light surfaces — glow reads as blur on paper. */
   --glow-numeral: none;
-  --background: oklch(0.975 0.012 293);
-  --foreground: oklch(0.18 0.020 293);
-  --card: oklch(0.95 0.014 293);
-  --card-foreground: oklch(0.18 0.020 293);
-  --popover: oklch(0.97 0.014 293);
-  --popover-foreground: oklch(0.18 0.020 293);
-  --primary: oklch(0.20 0.022 293);
-  --primary-foreground: oklch(0.975 0.012 293);
-  --secondary: oklch(0.92 0.018 293);
-  --secondary-foreground: oklch(0.18 0.020 293);
-  --muted: oklch(0.92 0.018 293);
-  --muted-foreground: oklch(0.42 0.024 293);
-  --accent: oklch(0.92 0.018 293);
-  --accent-foreground: oklch(0.18 0.020 293);
-  --ring: oklch(0.55 0.10 293);
+  --background: oklch(0.975 0.004 291);
+  --foreground: oklch(0.18 0.008 291);
+  --card: oklch(0.95 0.005 291);
+  --card-foreground: oklch(0.18 0.008 291);
+  --popover: oklch(0.97 0.005 291);
+  --popover-foreground: oklch(0.18 0.008 291);
+  --primary: oklch(0.20 0.008 291);
+  --primary-foreground: oklch(0.975 0.004 291);
+  --secondary: oklch(0.92 0.007 291);
+  --secondary-foreground: oklch(0.18 0.008 291);
+  --muted: oklch(0.92 0.007 291);
+  --muted-foreground: oklch(0.42 0.009 291);
+  --accent: oklch(0.92 0.007 291);
+  --accent-foreground: oklch(0.18 0.008 291);
+  --ring: oklch(0.55 0.09 291);
 
-  --accent-presence: #6F62A8;
+  --accent-presence: #6859ac;
   --accent-presence-foreground: var(--primary-foreground);
-  --accent-presence-soft: oklch(0.55 0.08 295);
+  --accent-presence-soft: oklch(0.53 0.10 291);
 
   --bg-base: var(--background);
-  --bg-panel: oklch(0.99 0.010 293);
+  --bg-panel: oklch(0.99 0.004 291);
   --bg-raised: var(--card);
-  --bg-elevated: oklch(0.93 0.016 293);
-  --bg-hover: oklch(0.89 0.020 293);
+  --bg-elevated: oklch(0.93 0.006 291);
+  --bg-hover: oklch(0.89 0.008 291);
+  /* Lighter mix step than dark mode — light surfaces need less push to
+     read as recessed. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 96%, black);
 
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
@@ -4683,7 +4707,10 @@ button:active > .edge-rail-chip {
      border seam. Structure below it reads as one continuous surface. */
   background: var(--bg-base);
   border-bottom: 0;
-  overflow: hidden;
+  /* Was overflow: hidden — the desktop notification-bell popover now hangs
+     from the menu bar, and clipping ancestors would truncate it to the slim
+     band. The centered search's width caps keep the bar from overflowing. */
+  overflow: visible;
 }
 
 .shell-titlebar-drag-lane {
@@ -4695,7 +4722,8 @@ button:active > .edge-rail-chip {
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
+  /* overflow must stay visible for the bell popover (see .shell-top). */
+  overflow: visible;
 }
 
 .shell-top .menu-bar {
@@ -5257,7 +5285,9 @@ button:active > .edge-rail-chip {
   border-bottom: 0;
   font-size: var(--text-sm);
   user-select: none;
-  overflow: hidden;
+  /* overflow stays visible so the notification-bell popover (now hosted in
+     this bar's right cluster) can hang below the slim band. */
+  overflow: visible;
 }
 
 @media (min-width: 1024px) {
@@ -5284,16 +5314,19 @@ button:active > .edge-rail-chip {
   left: 50%;
   transform: translateX(-50%);
   /* Stay geometrically centered, but reserve equal room on both sides for the
-     normal 204px action cluster plus breathing room. Basing the third cap on
-     this bar's own width makes compact native windows shrink gracefully. */
-  width: min(480px, 42vw, calc(100% - 432px));
+     action cluster (task verbs + running pill + bell) plus breathing room.
+     Basing the third cap on this bar's own width makes compact native windows
+     shrink gracefully. Phase-D command bar: 557px max per the revamp design. */
+  width: min(557px, 42vw, calc(100% - 560px));
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) 10px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  /* Phase-D command bar: the field sits on the panel surface so it reads as a
+     landmark against the seamless base-canvas band. */
+  background: var(--bg-panel);
   color: var(--text-muted);
   transition: border-color var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard),
@@ -5302,9 +5335,9 @@ button:active > .edge-rail-chip {
 
 /* Enrichment progress is intentionally visible text, so its action grows
    beyond the icon-only baseline. Contract the centered search only while that
-   live label exists; wide windows still keep the 480px search cap. */
+   live label exists; wide windows still keep the 557px search cap. */
 .menu-bar:has(.menu-bar__task-label--live) .menu-bar__search {
-  width: min(480px, 42vw, calc(100% - 564px));
+  width: min(557px, 42vw, calc(100% - 692px));
 }
 
 .menu-bar__search:hover,
@@ -5356,7 +5389,9 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
   padding: 2px 5px;
   border-radius: 4px;
-  border: 1px solid transparent;
+  /* Always-visible keycap (phase-D command bar) — the ⌘K affordance is part
+     of the field's resting look, not hover-only chrome. */
+  border: 1px solid var(--border-hairline);
   background: transparent;
 }
 
@@ -5458,6 +5493,40 @@ button:active > .edge-rail-chip {
   background: var(--accent-presence);
   box-shadow: 0 0 0 2px var(--bg-base);
   pointer-events: none;
+}
+
+/* ── Right status cluster (chat-revamp phase D) ──────────────────────────────
+ * "N running" pill (accent presence dot + live daemon-session count) and the
+ * notification bell, anchoring the bar's right edge. */
+.menu-bar__group--status {
+  flex: 0 0 auto;
+}
+
+.menu-bar__running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.menu-bar__running-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+/* The bell popover hangs from the slim title band; keep it clear of the
+   band's bottom edge (the bar itself no longer clips — see .shell-top). */
+.menu-bar .notification-bell__popover {
+  margin-top: var(--space-1);
 }
 
 /* New-chat quick-compose dropdown (anchored to the "New chat" button). The
@@ -8910,8 +8979,8 @@ a.mobile-handoff__link:hover {
 
 .rituals-overview__events,
 .rituals-overview__lower {
-  width: min(920px, 100%);
-  margin-inline: auto;
+  width: 100%;
+  max-width: 100%;
 }
 
 .rituals-overview__section-toggle {
@@ -8993,8 +9062,9 @@ a.mobile-handoff__link:hover {
 
 .rituals-overview__needs {
   position: relative;
-  width: min(920px, 100%);
-  margin: var(--space-3) auto;
+  width: 100%;
+  max-width: 100%;
+  margin: var(--space-3) 0;
   padding: var(--space-3) var(--space-3) var(--space-2);
   border: 1px dashed color-mix(in oklch, var(--accent-presence) 54%, var(--border-hairline));
   border-radius: var(--radius-panel);
@@ -9225,8 +9295,9 @@ a.mobile-handoff__link:hover {
 }
 
 .rituals-overview__selection {
-  width: min(920px, 100%);
-  margin: var(--space-3) auto 0;
+  width: 100%;
+  max-width: 100%;
+  margin: var(--space-3) 0 0;
 }
 
 @container (max-width: 620px) {

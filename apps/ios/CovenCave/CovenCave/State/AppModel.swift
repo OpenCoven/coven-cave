@@ -1490,13 +1490,38 @@ final class AppModel {
         return dir.appendingPathComponent("cave-threads.json")
     }
 
+    /// Pending debounced thread-persist flush. Not observable state.
+    @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
+
     func persistThreads() {
+        // Debounce: many call sites (message send/receive, edits, archive,
+        // reorder) fire in quick bursts. Encoding every thread + message to
+        // JSON and writing to disk on each call — on the main thread — was a
+        // needless hitch. Coalesce bursts into one write shortly after the last
+        // change, and do the encode + write off the main thread.
+        persistThreadsTask?.cancel()
+        persistThreadsTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.flushThreads()
+        }
+    }
+
+    /// Snapshot on the main actor (cheap value-type map), then encode + write
+    /// off-main. Call directly when a synchronous flush is required (e.g. app
+    /// moving to the background).
+    func flushThreads() {
+        persistThreadsTask?.cancel()
+        persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
-        do {
-            let data = try JSONEncoder().encode(snapshots)
-            try data.write(to: threadsFileURL, options: .atomic)
-        } catch {
-            // Non-fatal: persistence is best-effort.
+        let url = threadsFileURL
+        Task.detached(priority: .utility) {
+            do {
+                let data = try JSONEncoder().encode(snapshots)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                // Non-fatal: persistence is best-effort.
+            }
         }
     }
 

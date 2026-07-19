@@ -2605,7 +2605,7 @@ function MobileModeToggle() {
           disabled={busy}
           className={`settings-mobile-switch rounded-[var(--radius-control)] border px-3 py-1.5 text-[12px] transition-colors ${
             mobileModeEnabled
-              ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-contrast)]"
+              ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
               : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
           }`}
         >

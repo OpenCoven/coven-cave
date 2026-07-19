@@ -234,7 +234,14 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   };
 
   return (
-    <nav className="sidebar-minimal">
+    <nav className="sidebar-minimal" aria-label="Primary">
+      {/* App brand mark — rail-only chrome (chat-revamp phase D): a 28px
+          accent-tinted rounded square with the star glyph, shown by CSS only
+          when the nav is collapsed to the 56px icon rail. The expanded panel
+          keeps leading with the familiar switcher. Decorative — hidden from AT. */}
+      <div className="sidebar-brand-mark" aria-hidden="true">
+        <Icon name="ph:sparkle" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
+      </div>
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
@@ -327,6 +334,20 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           Chat's independent WorkspaceSidebar list so both hosts keep the
           same footer. */}
       <SidebarFooter onOpenSettings={onOpenSettings} />
+
+      {/* Account avatar — rail-only (CSS-gated, like the brand mark): the 28px
+          circle closing the rail per the phase-D design. There is no user
+          profile store yet, so it renders the generic account glyph and opens
+          Settings, same as the footer's Settings button. */}
+      <button
+        type="button"
+        className="sidebar-user-avatar focus-ring"
+        onClick={onOpenSettings}
+        aria-label="Account and settings"
+        title="Account & settings"
+      >
+        <Icon name="ph:user" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} aria-hidden />
+      </button>
     </nav>
   );
 }

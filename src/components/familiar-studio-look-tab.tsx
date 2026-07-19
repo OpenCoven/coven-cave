@@ -37,7 +37,7 @@ const COLOR_PRESETS: ColorPreset[] = [
   {
     label: "Theme",
     color: "color-mix(in oklch, var(--accent-presence) 72%, white 28%)",
-    inputFallback: "#9a8ecd",
+    inputFallback: "#9386d0",
   },
   {
     label: "Lilac",
