@@ -45,6 +45,10 @@ struct CovenCaveApp: App {
                 // A state that *says* connected can be stale after a suspension,
                 // so it gets one cheap validation probe instead of blind trust.
                 .onChange(of: scenePhase) { _, phase in
+                    // Leaving the foreground: flush any debounced thread
+                    // persistence synchronously so an in-flight write isn't
+                    // lost if the app is suspended or terminated.
+                    if phase != .active { app.flushThreads() }
                     guard phase == .active, app.connection != nil else { return }
                     if app.connectionState != .connected,
                        app.connectionState != .checking {
