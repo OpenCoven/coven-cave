@@ -141,5 +141,18 @@ export function resolveAllowedProjectPath(value: string): string | null {
 
 export function isAllowedNewProjectRoot(value: string): boolean {
   const candidate = realpathOrResolve(normalizeNewProjectRootCandidate(value));
-  return uniqueRoots(builtInProjectRoots()).some((root) => isWithinRoot(candidate, root));
+  if (uniqueRoots(builtInProjectRoots()).some((root) => isWithinRoot(candidate, root))) {
+    return true;
+  }
+  // The "New project" folder picker (fs-browse) lets the user navigate
+  // anywhere under $HOME, so registration must accept the same boundary or
+  // the picker offers folders creation then rejects with a 403. This widening
+  // is safe only because the projects POST route is loopback-only (see
+  // rejectNonLocalRequest there): a phone on the tailnet cannot register
+  // arbitrary home paths. Containment is realpath-based, so symlink escapes
+  // out of $HOME are still rejected. $HOME itself is excluded — registering
+  // the entire home directory as one project is never intended and would be
+  // an unbounded root — so only strict descendants qualify.
+  const home = realpathOrResolve(homedir());
+  return candidate !== home && isWithinRoot(candidate, home);
 }

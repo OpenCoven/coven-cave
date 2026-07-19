@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 const originalEnv = {
@@ -122,12 +122,34 @@ try {
   assert.equal(
     isAllowedNewProjectRoot("~"),
     false,
-    "tilde project roots are checked after home-directory expansion",
+    "tilde project roots are checked after home-directory expansion; $HOME itself is never a project root",
   );
   assert.equal(
     isAllowedNewProjectRoot("~/secret"),
+    true,
+    "home-directory descendants are allowed as new project roots (matches the fs-browse folder picker boundary)",
+  );
+
+  // A real directory nested under $HOME is an allowed new-project root, since
+  // the loopback-only folder picker can navigate there. Symlink-safe: the
+  // check realpaths the candidate before containment.
+  const homeChildProject = await mkdtemp(path.join(await realpath(homedir()), "coven-newproj-"));
+  try {
+    assert.equal(
+      isAllowedNewProjectRoot(homeChildProject),
+      true,
+      "an existing directory under $HOME is an allowed new project root",
+    );
+  } finally {
+    await rm(homeChildProject, { recursive: true, force: true });
+  }
+
+  // Paths outside $HOME (e.g. a sibling of the OS tmp home) stay rejected so
+  // registration can't reach arbitrary filesystem locations.
+  assert.equal(
+    isAllowedNewProjectRoot(path.join(tmp, "outside-home")),
     false,
-    "tilde subpaths cannot masquerade as relative paths under the current working directory",
+    "roots outside both the built-in workspace roots and $HOME are rejected",
   );
 
   assert.equal(
