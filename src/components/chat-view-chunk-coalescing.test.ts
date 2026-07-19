@@ -36,8 +36,8 @@ assert.match(
 // ── 3. Stream end flushes ────────────────────────────────────────────────────
 assert.match(
   src,
-  /\n\s*\}\s*\n\s*chunkCoalescer\.flush\(\);\s*\n\s*\} catch \(err\) \{/,
-  "normal stream end must flush the tail of the buffer",
+  /if \(!sawDone && !controller\.signal\.aborted\) \{[\s\S]*?\/api\/chat\/stream[\s\S]*?\}\s*\n\s*chunkCoalescer\.flush\(\);/,
+  "a stream that ends before done must try recovery, then flush the tail of the buffer",
 );
 
 // ── 4. The error/abort path flushes before reading t.text ───────────────────

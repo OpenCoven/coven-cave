@@ -161,6 +161,7 @@ import { ComposerContextPill } from "@/components/composer-context-pill";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
+import { consumeChatSse } from "@/lib/chat-sse";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
@@ -3721,6 +3722,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       );
       setHistoryState("loaded");
     };
+    // A history request can start just before the user sends. By the time its
+    // successful response arrives, its transcript is already stale; applying
+    // it would erase the optimistic user/assistant pair from the screen. The
+    // live registry is the authority until that generation settles.
+    const hasLiveGeneration = () => {
+      const live = readLiveChatGeneration(sessionId);
+      return Boolean(live && isLiveSnapshotActive(live, Date.now()));
+    };
     // A prefetched (hover) or previously loaded transcript paints immediately
     // instead of blanking to the history skeleton. The fetch below still runs
     // as revalidation, so a stale cache entry is corrected as soon as the
@@ -3782,6 +3791,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (cancelled) return;
         setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
+          if (hasLiveGeneration()) {
+            setHistoryState("loaded");
+            return;
+          }
           storeConversation(sessionId, json);
           applyConversationPayload(json);
         } else if (json.ok && json.context) {
@@ -4339,6 +4352,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       apply: (text) => applyAssistantChunk(text, assistantId, liveGeneration),
     });
     const runId = crypto.randomUUID();
+    let needsTranscriptResync = false;
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
     streamOwnerRef.current = true;
@@ -4463,37 +4477,54 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         label: "Connected to chat bridge",
         status: "done",
       }, liveGeneration.sessionId);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx;
-        while ((idx = buffer.indexOf("\n\n")) >= 0) {
-          const frame = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          if (!frame.startsWith("data:")) continue;
-          const payload = frame.slice(5).trim();
-          if (!payload) continue;
-          try {
-            const ev = JSON.parse(payload) as StreamEvent;
-            if (ev.kind === "assistant_chunk") {
-              // Hot path: buffer instead of committing per token.
-              chunkCoalescer.push(ev.text);
-            } else {
-              // Ordering: buffered text must land before any progress /
-              // attachment / done record derived from later frames.
-              chunkCoalescer.flush();
-              handleEvent(ev, assistantId, request, liveGeneration);
-            }
-          } catch {
-            /* skip malformed */
+      let sawDone = false;
+      let cursor = 0;
+      const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
+        if (eventCursor != null) cursor = eventCursor;
+        // The resume route emits this marker when the bounded event ring
+        // dropped output before our cursor. We can render the remaining tail,
+        // but must still rehydrate after settle to restore the missing middle.
+        if (ev.kind === "progress" && ev.id === "resume-gap") needsTranscriptResync = true;
+        if (ev.kind === "assistant_chunk") {
+          // Hot path: buffer instead of committing per token.
+          chunkCoalescer.push(ev.text);
+        } else {
+          // Ordering: buffered text must land before any progress /
+          // attachment / done record derived from later frames.
+          chunkCoalescer.flush();
+          handleEvent(ev, assistantId, request, liveGeneration);
+        }
+      };
+      try {
+        const initial = await consumeChatSse(res.body, applyStreamEvent);
+        cursor = Math.max(cursor, initial.cursor);
+        sawDone = initial.sawDone;
+      } catch (error) {
+        // The bridge records every event in its run buffer. A dropped native
+        // WebView stream is recoverable; only rethrow an intentional Stop.
+        if (controller.signal.aborted) throw error;
+      }
+
+      if (!sawDone && !controller.signal.aborted) {
+        try {
+          const recovery = await fetch(
+            `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
+            { cache: "no-store", signal: controller.signal },
+          );
+          if (recovery.ok && recovery.body) {
+            const resumed = await consumeChatSse(recovery.body, applyStreamEvent);
+            cursor = Math.max(cursor, resumed.cursor);
+            sawDone = resumed.sawDone;
           }
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
         }
       }
       chunkCoalescer.flush();
+      // The buffer can have been reaped after the server persisted its reply
+      // (or the server may have restarted). Re-run history loading once this
+      // owner releases its live snapshot so the screen still catches up.
+      if (!sawDone && !controller.signal.aborted) needsTranscriptResync = true;
     } catch (err) {
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
@@ -4531,6 +4562,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId);
+      if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
+        setHistoryRetryKey((k) => k + 1);
+      }
       // But only tear down the SHARED stream wiring if we still own it. After a
       // thread switch + a second send, a settling *background* stream must not
       // null the newer stream's abort controller / stop keys or re-enable the
