@@ -71,12 +71,41 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
 
       - name: Perform CodeQL analysis
+        id: analyze
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
           # Default setup rejects advanced SARIF uploads. Keep the migration
           # workflow green in analysis-only mode until an administrator
           # disables default setup and sets this repository variable to always.
           upload: ${{ vars.CODEQL_ADVANCED_UPLOAD || 'never' }}
+
+      # The analyze step waits ~2.5 min for server-side SARIF processing, then
+      # WARNS and continues on timeout — a processing failure therefore leaves
+      # this job green while the ruleset's code_scanning gate waits forever for
+      # the missing category and the PR sits BLOCKED with no red X anywhere
+      # (PR #3475: python uploaded "successfully", processing silently died
+      # twice, merge deadlocked; cave-mq1f). Keep polling until the analysis
+      # actually lands, and fail LOUDLY otherwise so a job re-run can heal it.
+      - name: Require SARIF processing to complete
+        if: ${{ steps.analyze.outputs['sarif-id'] != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SARIF_ID: ${{ steps.analyze.outputs['sarif-id'] }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 32); do
+            status=$(gh api "repos/${GITHUB_REPOSITORY}/code-scanning/sarifs/${SARIF_ID}" --jq .processing_status || echo transient)
+            case "$status" in
+              complete) echo "SARIF processing complete."; exit 0 ;;
+              failed)
+                echo "::error::SARIF processing FAILED for ${{ matrix.language }}:"
+                gh api "repos/${GITHUB_REPOSITORY}/code-scanning/sarifs/${SARIF_ID}" --jq '.errors // empty' || true
+                exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::SARIF for ${{ matrix.language }} still unprocessed after 8 minutes — the code_scanning merge gate will deadlock waiting for this category. Re-run this job."
+          exit 1
 
   # Out-of-band swift security audit: weekly + on demand. Scans the generated
   # iOS project on a macOS runner but NEVER uploads to code scanning, so the
