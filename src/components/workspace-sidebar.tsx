@@ -474,7 +474,11 @@ export function WorkspaceSidebar({
     if (!pendingPinnedRailFocusSessionId) return;
     const frame = requestAnimationFrame(() => {
       const target = rowButtonRefs.current.get(pendingPinnedRailFocusSessionId);
-      if (target?.isConnected && !target.disabled) target.focus();
+      if (target?.isConnected && !target.disabled) {
+        target.focus();
+      } else {
+        menuAnchorRef.current?.focus();
+      }
       setPendingPinnedRailFocusSessionId(null);
     });
     return () => cancelAnimationFrame(frame);
