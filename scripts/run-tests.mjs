@@ -1226,6 +1226,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/signal-trends.test.ts",
   "src/lib/server/familiar-self-reports.test.ts",
   "src/lib/server/milestones-ledger.test.ts",
+  // run-history-guards imports local-origin via "@/lib/…" alias
+  "src/lib/server/run-history-guards.test.ts",
   "src/components/thread-signal-card.test.ts",
   "src/components/thread-signals-section.test.ts",
   "src/components/chat-view.test.ts",
