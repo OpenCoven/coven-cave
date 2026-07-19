@@ -34,8 +34,8 @@ assert.ok(pinStart > 0, "the pinned rail section exists");
 const pinnedRail = sidebar.slice(pinStart, sidebar.indexOf('view === "recent"', pinStart));
 assert.match(
   pinnedRail,
-  /<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "pinned rail rows show the PR badge as well",
+  /<ThreadRow[\s\S]*onOpenUrl=\{onOpenUrl\}/,
+  "pinned rail rows route through ThreadRow, which carries the PR badge contract too",
 );
 
 // ── Badge behavior mirrors the chat-list badge ───────────────────────────────

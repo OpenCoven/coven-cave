@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 
-import { Popover } from "@/components/ui/popover";
+import { Popover, PopoverBody, activatedMenuItem } from "@/components/ui/popover";
 
 /** Cursor position for an open context menu, or null when closed. */
 export type ContextMenuState = { x: number; y: number } | null;
@@ -22,21 +22,38 @@ export function ContextMenu({
   onClose,
   ariaLabel,
   children,
+  closeOnSelect = false,
 }: {
   state: ContextMenuState;
   onClose: () => void;
   ariaLabel: string;
   children: ReactNode;
+  closeOnSelect?: boolean;
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
-  // Remember the element that had focus when the menu opened (typically the
-  // right-clicked row) so focus can be returned there on close — rather than
-  // stranding it on <body> or on the hidden cursor anchor.
+  // Capture the pre-open active element before the menu's own autofocus runs so
+  // close can restore focus to the invoking row/project rather than to a menu
+  // item that will unmount with the popover.
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const restoreFocusPendingRef = useRef(false);
   const open = state !== null;
-  useEffect(() => {
-    if (open) returnFocusRef.current = document.activeElement as HTMLElement | null;
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    restoreFocusPendingRef.current = true;
   }, [open]);
+
+  useEffect(() => {
+    if (open) return;
+    if (!restoreFocusPendingRef.current) return;
+    restoreFocusPendingRef.current = false;
+    const el = returnFocusRef.current;
+    returnFocusRef.current = null;
+    const active = document.activeElement as HTMLElement | null;
+    if (canRestoreFocus(el) && (!active || active === document.body)) el.focus();
+  }, [open]);
+
   return (
     <>
       <span
@@ -48,19 +65,32 @@ export function ContextMenu({
         open={open}
         onOpenChange={(next) => {
           if (next) return;
-          onClose();
-          const el = returnFocusRef.current;
-          if (el && document.contains(el) && typeof el.focus === "function") el.focus();
+          if (!next) onClose();
         }}
         anchorRef={anchorRef}
         placement="bottom-start"
         ariaLabel={ariaLabel}
       >
-        <div role="menu" className="ui-popover-body">
+        <PopoverBody
+          role="menu"
+          ariaLabel={ariaLabel}
+          onClick={(e) => {
+            const shouldCloseOnSelect = closeOnSelect && Boolean(activatedMenuItem(e.target));
+            if (shouldCloseOnSelect) onClose();
+          }}
+        >
           {children}
-        </div>
+        </PopoverBody>
       </Popover>
     </>
+  );
+}
+
+function canRestoreFocus(el: HTMLElement | null): el is HTMLElement {
+  if (!el || !el.isConnected || typeof el.focus !== "function") return false;
+  if (el.matches("[disabled], [aria-disabled='true'], [hidden], [inert]")) return false;
+  return (
+    el.matches('[tabindex], a[href], button, input, select, textarea, summary, iframe, [contenteditable="true"]')
   );
 }
 

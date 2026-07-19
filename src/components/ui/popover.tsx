@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEventHandler,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -222,17 +223,66 @@ export function PopoverBody({
   className,
   role,
   ariaLabel,
+  autoFocusMenuItem,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
   role?: "menu";
   ariaLabel?: string;
+  autoFocusMenuItem?: boolean;
+  onClick?: MouseEventHandler<HTMLDivElement>;
 }) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoFocusMenuItem = autoFocusMenuItem ?? role === "menu";
+  useEffect(() => {
+    if (!shouldAutoFocusMenuItem || !bodyRef.current) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && bodyRef.current.contains(active)) return;
+    enabledMenuItems(bodyRef.current)[0]?.focus();
+  }, [children, shouldAutoFocusMenuItem]);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (role === "menu") {
+      if (
+        e.key !== "ArrowDown" &&
+        e.key !== "ArrowUp" &&
+        e.key !== "Home" &&
+        e.key !== "End"
+      ) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('input, textarea, select, [contenteditable]')) return;
+      const items = enabledMenuItems(e.currentTarget);
+      if (items.length === 0) return;
+      const currentIndex = items.findIndex((item) => item === target || item.contains(target));
+      const nextIndex =
+        e.key === "ArrowDown"
+          ? currentIndex === -1
+            ? 0
+            : (currentIndex + 1) % items.length
+          : e.key === "ArrowUp"
+            ? currentIndex === -1
+              ? items.length - 1
+              : (currentIndex - 1 + items.length) % items.length
+            : e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? items.length - 1
+                : currentIndex;
+      e.preventDefault();
+      items[nextIndex]?.focus();
+    }
+  };
   return (
     <div
+      ref={bodyRef}
       className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}
       role={role}
       aria-label={ariaLabel}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
     >
       {children}
     </div>
@@ -245,6 +295,27 @@ export function PopoverLabel({ children }: { children: ReactNode }) {
 
 export function PopoverSeparator() {
   return <div className="ui-popover-separator" role="separator" />;
+}
+
+function enabledMenuItems(root: HTMLElement) {
+  return [...root.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')].filter(
+    (item) => !isDisabledMenuItem(item),
+  );
+}
+
+function isDisabledMenuItem(item: HTMLElement) {
+  return (
+    item.hasAttribute("disabled") ||
+    item.getAttribute("aria-disabled") === "true" ||
+    (item as HTMLButtonElement).disabled
+  );
+}
+
+export function activatedMenuItem(target: EventTarget | null) {
+  const item = (target as Element | null)?.closest?.('[role="menuitem"], [role="menuitemradio"]');
+  if (!item) return null;
+  if (isDisabledMenuItem(item as HTMLElement)) return null;
+  return item as HTMLElement;
 }
 
 export function PopoverItem({

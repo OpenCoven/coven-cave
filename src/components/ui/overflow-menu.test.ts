@@ -21,6 +21,7 @@ assert.match(
 // The body is a real menu (menu > menuitem/menuitemradio hierarchy), reusing the
 // shared Popover scaffold so Escape / outside-click / focus-return come for free.
 assert.match(src, /role="menu"/, "popover body announces as a menu");
+assert.doesNotMatch(src, /autoFocusMenuItem=\{false\}/, "overflow menus keep the shared first-enabled-item autofocus");
 assert.match(src, /from "\.\/popover"/, "reuses the shared Popover scaffold");
 assert.match(src, /from "\.\/icon-button"/, "reuses the shared IconButton trigger");
 
@@ -28,10 +29,10 @@ assert.match(src, /from "\.\/icon-button"/, "reuses the shared IconButton trigge
 // a close() through onSelect. Disabled items must NOT close it.
 assert.match(
   src,
-  /closest\?\.\(\s*'\[role="menuitem"\], \[role="menuitemradio"\]',?\s*\)/,
+  /activatedMenuItem\(e\.target\)/,
   "auto-closes on menuitem activation",
 );
-assert.match(src, /!\(item as HTMLButtonElement\)\.disabled/, "disabled items don't close the menu");
+assert.match(src, /activatedMenuItem/, "disabled items don't close the menu");
 
 // Default glyph is the chrome-action dots (bold weight per icon conventions),
 // default placement hugs the trailing edge where overflow triggers live.
