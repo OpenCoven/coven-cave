@@ -1526,9 +1526,6 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
-      // `hermes-local` is Cave's runtime marker, not a Hermes model id.
-      const hermesModel = cleanModelId(desiredModel);
-      if (hermesModel && hermesModel !== "hermes-local") a.push("--model", hermesModel);
       a.push("--query", prompt);
       return a;
     }

@@ -72,6 +72,12 @@ assert.match(
   "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
 );
 
+assert.doesNotMatch(
+  chatRoute,
+  /const hermesModel = cleanModelId\(desiredModel\);/,
+  "Hermes does not advertise a model flag, so a custom Cave model must not become invalid CLI args",
+);
+
 assert.match(
   chatRoute,
   /captureHermesSessionFromStderr[\s\S]*session_id:\\s\*\(\\S\+\)/,
