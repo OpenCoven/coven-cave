@@ -39,13 +39,21 @@ assert.match(
   "the overflow affordance jumps to the Schedules surface",
 );
 
-// ── Folded into the digest carousel (two carousels only) ─────────────────────
+// ── Folded into the hearth card's Open work section (chat revamp 1a) ─────────
+// The digest carousel is hidden from the default home; the needs-you tier now
+// surfaces as an Open work row, one click from its target (single item) or
+// from Rituals (several). Suggestions insert through the demoted pill row.
 assert.match(
   composer,
-  /<HomeDigestCarousel[\s\S]*?needsYou=\{needsYou\}[\s\S]*?onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*?onOpenSchedules=\{onOpenSchedules\}[\s\S]*?onPickSuggestion=\{insertPrompt\}/,
-  "home forwards the needs-you tier and suggestion insertion into the carousel",
+  /<HomeOpenWork[\s\S]*?needsYou=\{needsYou\}[\s\S]*?onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*?onOpenSchedules=\{onOpenSchedules\}/,
+  "home forwards the needs-you tier into the Open work section",
 );
-assert.doesNotMatch(composer, /HomeNeedsYou|HomeSuggestions/, "the standalone strips are gone (two carousels only)");
+assert.match(
+  composer,
+  /<HomeSuggestionPills[\s\S]*?onPick=\{insertPrompt\}/,
+  "suggestion picks insert into the composer (never auto-send)",
+);
+assert.doesNotMatch(composer, /HomeNeedsYou|HomeSuggestions\b/, "the standalone strips stay gone");
 assert.match(digest, /kind: "needs"/, "the digest builder emits needs-you cards");
 assert.match(digest, /kind: "suggestion"/, "the digest builder emits quick-action suggestion cards");
 assert.match(digest, /"Waiting on you"/, "response-needed cards say so instead of a timestamp");

@@ -7,10 +7,12 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 
 // Hover-to-peek state + handlers on the collapsed nav rail.
 assert.match(shell, /const \[navPeeking, setNavPeeking\] = useState\(false\)/, "shell tracks a nav peek state");
-assert.match(shell, /navPeeking \? " shell-nav--peek" : " shell-nav--rail"/, "hovering the rail swaps it to the peek overlay");
-assert.match(shell, /onMouseEnter=\{!isMobile && !navOpen \? \(\) => setNavPeeking\(true\)/, "hovering the collapsed rail starts the peek");
-assert.match(shell, /onMouseLeave=\{!isMobile && !navOpen \? \(\) => setNavPeeking\(false\)/, "leaving the rail ends the peek");
-assert.match(shell, /if \(navOpen \|\| isMobile\) setNavPeeking\(false\)/, "peek resets when the rail goes away");
+assert.match(shell, /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/, "shell derives whether peek is allowed from nav policy and breakpoint");
+assert.match(shell, /const navPeekVisible = navPeekEnabled && navPeeking;/, "shell derives visible peek state synchronously from the policy-gated flag");
+assert.match(shell, /navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"/, "only a policy-allowed peek renders the overlay class");
+assert.match(shell, /onMouseEnter=\{navPeekEnabled \? \(\) => setNavPeeking\(true\) : undefined\}/, "hovering starts the peek only when the gated handler is armed");
+assert.match(shell, /onMouseLeave=\{navPeekEnabled \? \(\) => setNavPeeking\(false\) : undefined\}/, "leaving ends the peek only when the gated handler is armed");
+assert.match(shell, /if \(!navPeekEnabled\) setNavPeeking\(false\)/, "state still resets whenever policy or breakpoint disables peeking");
 
 // The peek overlay escapes the 56px rail box and floats over content.
 assert.match(globals, /\.shell-nav-panel:has\(> \.shell-nav--peek\) \{[\s\S]*?overflow: visible/, "peek lets the nav escape its panel box");

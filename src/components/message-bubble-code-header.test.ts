@@ -100,13 +100,15 @@ assert.match(
   /\.cave-chat-linear \{[^}]*--cave-chat-measure:\s*[\d.]+rem/,
   "the chat surface defines a shared reading measure token",
 );
-// Widened measure (cave-973a): 52rem read as cramped on desktop panes — the
-// column must stay at least 64rem so wide viewports aren't mostly empty flank.
+// Chat-revamp 1b supersedes cave-973a's 64rem: the avatar-row transcript
+// grammar reads on the design's 760px (47.5rem) column, shared by the
+// suggestion row and composer. Pin the exact value so drift in either
+// direction is a deliberate decision.
 {
   const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
   assert.ok(
-    measure && Number(measure[1]) >= 64,
-    `the reading measure stays ≥ 64rem (got ${measure?.[1] ?? "none"})`,
+    measure && Number(measure[1]) === 47.5,
+    `the reading measure is the chat-revamp 1b 760px column (47.5rem; got ${measure?.[1] ?? "none"})`,
   );
 }
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";

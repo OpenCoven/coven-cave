@@ -10,11 +10,29 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 const summary = readFileSync(new URL("../lib/use-changes-summary.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.url), "utf8");
 
-// ── The chat composer renders the chip from the chat's active project root ──
+// ── The chat composer carries git context from the chat's active root ───────
+// The git context now rides the composer context pill (chat revamp 1d) —
+// same summary hook + branch menu, opened from the pill's Branch section.
 assert.match(
   chatView,
-  /<ComposerGitChip projectRoot=\{activeProjectRoot\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "the chat composer renders the git chip wired to the resolved project root",
+  /<ComposerContextPill[\s\S]*?projectRoot=\{activeProjectRoot\}[\s\S]*?onOpenUrl=\{onOpenUrl\}/,
+  "the chat composer's context pill is wired to the resolved project root",
+);
+const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+assert.match(
+  pill,
+  /useChangesSummary\(\s*\n?\s*root,\s*\n?\s*Boolean\(root\),?\s*\n?\s*\)/,
+  "the pill reads branch/worktree/dirty state from the shared changes-summary hook",
+);
+assert.match(
+  pill,
+  /<GitBranchMenuPopover[\s\S]*?projectRoot=\{root\}[\s\S]*?onSwitched=\{reload\}/,
+  "the pill's Branch section opens the shared branch-switch menu",
+);
+assert.match(
+  pill,
+  /window\.dispatchEvent\(new CustomEvent\("cave:changes-open"\)\)/,
+  "the pill keeps the Git-changes drill-through",
 );
 
 // ── Git-less chats render nothing — the chip gates on a loaded repo status ──
@@ -92,8 +110,13 @@ assert.match(
 );
 assert.match(
   chip,
-  /closeMenu\(\);\s*\n\s*reload\(\);/,
-  "a successful switch refreshes the summary immediately instead of waiting out the poll",
+  /closeMenu\(\);\s*\n\s*onSwitched\?\.\(\);/,
+  "a successful switch notifies the host so it can refresh immediately",
+);
+assert.match(
+  chip,
+  /<GitBranchMenuPopover[\s\S]*?onSwitched=\{reload\}/,
+  "the chip refreshes its summary on a successful switch instead of waiting out the poll",
 );
 assert.match(
   chip,

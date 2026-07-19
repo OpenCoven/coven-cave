@@ -90,9 +90,12 @@ assert.match(
   "General settings exposes the News headlines switch backed by the pref",
 );
 
-// ── Wired into the home composer below "Jump back in" ─────────────────────────
-assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");
-assert.match(composer, /<HomeDigestCarousel/, "home composer renders the carousel");
+// ── Hidden from the default home (chat revamp 1a) — component retained ────────
+// The carousel no longer renders on the home surface: its signal folds into
+// the hearth card's Continue + Open work sections. The component file (and
+// its behavior pins above) survive for any future surface that mounts it.
+assert.doesNotMatch(composer, /<HomeDigestCarousel/, "home no longer renders the carousel");
+assert.doesNotMatch(composer, /import \{ HomeDigestCarousel \}/, "home no longer imports the carousel");
 
 // ── Ambient refresh pauses during composition (sits right below the composer) ──
 assert.match(

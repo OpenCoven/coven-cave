@@ -64,6 +64,11 @@ assert.match(
   /data-mobile-drawer=\{isMobile && mobileDrawer \? mobileDrawer : undefined\}/,
   "shell.tsx wires data-mobile-drawer from mobileDrawer state",
 );
+assert.match(
+  shell,
+  /if \(!isMobile\) \{\s*setMobileDrawer\(null\);\s*return;\s*\}\s*if \(!list\) setMobileDrawer\(\(curr\) => \(curr === "list" \? null : curr\)\);/,
+  "shell.tsx clears only a stale mobile list drawer when the list slot disappears, while preserving the desktop viewport reset",
+);
 // The MobileDrawer overlay mounts at shell-body level.
 assert.match(
   shell,

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 
@@ -7,6 +8,15 @@ type Props = {
   /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
    *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
+  /** Active familiar display name — personalizes the command-bar placeholder
+   *  ("Search or ask <name>…"). Falls back to Salem, the docs familiar. */
+  activeFamiliarName?: string | null;
+  /** Live count of running daemon sessions — drives the "N running" pill
+   *  (hidden at zero). */
+  runningCount?: number;
+  /** Notification bell, rendered by the workspace (it owns the inbox state)
+   *  so this bar stays markup-thin. Sits at the bar's right edge. */
+  bell?: ReactNode;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
   /** Schedule items needing attention — drives the Schedules badge. */
@@ -48,6 +58,9 @@ function fmtBadge(n: number): string {
  */
 export function FamiliarMenuBar({
   activeFamiliarId,
+  activeFamiliarName,
+  runningCount,
+  bell,
   taskCount,
   scheduleNeedsCount,
   onOpenSearch,
@@ -66,6 +79,9 @@ export function FamiliarMenuBar({
       ? `${enrichProgress.done}/${enrichProgress.total}`
       : "Starting..."
     : "Enhance";
+  // The command bar addresses whoever is summoned; without a scoped familiar
+  // it falls back to Salem, the docs familiar, who answers doc questions.
+  const searchTarget = activeFamiliarName?.trim() || "Salem";
 
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
@@ -90,9 +106,9 @@ export function FamiliarMenuBar({
           className="menu-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Search or ask Salem..."
-          aria-label="Search anything or ask Salem, the docs familiar"
-          title="Search everything — or ask Salem, the familiar trained on the OpenCoven docs"
+          placeholder={`Search or ask ${searchTarget}...`}
+          aria-label={`Search anything or ask ${searchTarget}`}
+          title={`Search everything — or ask ${searchTarget} (⌘K opens the command palette)`}
           autoComplete="off"
           spellCheck={false}
         />
@@ -158,6 +174,22 @@ export function FamiliarMenuBar({
             <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
         </button>
+      </div>
+
+      {/* Right edge (chat-revamp phase D): live running-session pill (accent
+          presence dot + count, hidden at zero) and the notification bell. */}
+      <div className="menu-bar__group menu-bar__group--status">
+        {typeof runningCount === "number" && runningCount > 0 ? (
+          <span
+            className="menu-bar__running"
+            role="status"
+            title={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
+          >
+            <span className="menu-bar__running-dot" aria-hidden />
+            {runningCount} running
+          </span>
+        ) : null}
+        {bell}
       </div>
     </nav>
   );

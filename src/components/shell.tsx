@@ -168,6 +168,9 @@ export type ShellHandle = {
   dismissListMobile: () => void;
 };
 
+export type ShellNavPolicy = "remembered" | "visit-collapsed";
+export type ShellListPolicy = "collapsible" | "persistent";
+
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
@@ -189,6 +192,8 @@ function ShellInner({
   onPromoteSplitTile,
   onDropSplitPage,
   onNavOpenChange,
+  navPolicy = "remembered",
+  listPolicy = "collapsible",
   panelShortcutOverrides,
 }: {
   nav: ReactNode;
@@ -208,6 +213,8 @@ function ShellInner({
    *  mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
+  navPolicy?: ShellNavPolicy;
+  listPolicy?: ShellListPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
@@ -235,10 +242,17 @@ function ShellInner({
 
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
-  // a layout that's no longer in mobile mode.
+  // a layout that's no longer in mobile mode. On mobile, if the Chats list
+  // slot disappears under an open list drawer (e.g. a keyboard surface switch
+  // out of Chat), clear only that stale list drawer so the backdrop/body lock
+  // releases without unnecessarily closing an open nav drawer.
   useEffect(() => {
-    if (!isMobile) setMobileDrawer(null);
-  }, [isMobile]);
+    if (!isMobile) {
+      setMobileDrawer(null);
+      return;
+    }
+    if (!list) setMobileDrawer((curr) => (curr === "list" ? null : curr));
+  }, [isMobile, list]);
 
   // Seamless macOS title bar: only the macOS desktop Tauri shell overlays the
   // native title bar (lib.rs sets TitleBarStyle::Overlay). The root
@@ -306,6 +320,7 @@ function ShellInner({
       },
       closeList: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "list" ? null : c)); return; }
+        if (listPolicy === "persistent") return;
         listRef.current?.collapse();
       },
       dismissListMobile: () => {
@@ -313,17 +328,18 @@ function ShellInner({
       },
       toggleList: () => {
         if (isMobile) { toggleDrawer("list"); return; }
+        if (listPolicy === "persistent") return;
         togglePanel(listRef.current);
       },
     };
-  }, [isMobile]);
+  }, [isMobile, listPolicy]);
 
   const twoPane = !list;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID;
+  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : listPolicy === "persistent" ? `${SHELL_GROUP_ID}.persistent-list` : SHELL_GROUP_ID;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -345,9 +361,11 @@ function ShellInner({
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
+  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
-    if (navOpen || isMobile) setNavPeeking(false);
-  }, [navOpen, isMobile]);
+    if (!navPeekEnabled) setNavPeeking(false);
+  }, [navPeekEnabled]);
 
   // Dia-style traffic lights: on the macOS desktop shell the native
   // close/minimize/zoom buttons float over the side panel's top edge. With
@@ -363,7 +381,7 @@ function ShellInner({
   // case: a roomy bar), but marking "hidden" before the buttons actually
   // vanish — pre-update shell without the command, an AppKit hiccup — slid
   // the nav toggle + history chevrons underneath still-visible lights.
-  const trafficLightsVisible = navOpen || navPeeking || isMobile;
+  const trafficLightsVisible = navOpen || navPeekVisible || isMobile;
   useEffect(() => {
     const root = document.documentElement;
     // Only the macOS desktop Tauri shell overlays the title bar; everywhere
@@ -470,8 +488,9 @@ function ShellInner({
   //
   // NOTE: on multi-pane surfaces (chat: nav · session-list · detail · code-rail)
   // the panel solver squeezes the session list when the nav is at the rail — a
-  // known trade-off of minimizing globally. ⌘B / hover-peek expands the nav to
-  // restore the sidebar.
+  // known trade-off of minimizing globally. Chat's visit-collapsed policy keeps
+  // that rail closed for the visit and disables hover-peek; other remembered
+  // groups can still restore the nav from the global shortcut / hover-peek.
   const minimizedGroupsRef = useRef(new Set<string>());
   useEffect(() => {
     if (!settled || isMobile) return;
@@ -489,14 +508,44 @@ function ShellInner({
   }, [settled, isMobile, groupId]);
 
   // Apply the remembered sidebar state on boot and on every panel-group switch
-  // (Home's two-pane shell and Chat's three-pane shell persist their layouts
-  // separately, so without this the OTHER group's stale width wins). Runs after
-  // the minimize-by-default effect above so a saved preference beats the
-  // first-run rail. onResize only writes the preference once this effect has
-  // armed the CURRENT group — the layout churn a group swap fires must never
-  // clobber the user's choice with the incoming group's stale width.
+  // (Home's two-pane shell and the non-Chat remembered groups persist their
+  // layouts separately, so without this the OTHER group's stale width wins).
+  // Runs after the minimize-by-default effect above so a saved preference beats
+  // the first-run rail. Chat's visit-collapsed visits skip this effect entirely
+  // (they stay collapsed for that visit and do not consult or overwrite the
+  // global nav-open preference). onResize only writes the preference once this
+  // effect has armed the CURRENT group — the layout churn a group swap fires
+  // must never clobber the user's choice with the incoming group's stale width.
   const navPrefArmedGroupRef = useRef<string | null>(null);
+  const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+  const visitCollapsedGroupRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    if (navPolicy !== "visit-collapsed") {
+      visitCollapsedGroupRef.current = null;
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    if (isMobile) {
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    if (
+      previousNavPolicyRef.current !== navPolicy ||
+      visitCollapsedGroupRef.current !== groupId
+    ) {
+      navPrefArmedGroupRef.current = null;
+      visitCollapsedGroupRef.current = groupId;
+      navRef.current?.collapse();
+      setNavOpen(false);
+    }
+    previousNavPolicyRef.current = navPolicy;
+  }, [mounted, groupId, isMobile, navPolicy]);
   useEffect(() => {
+    if (navPolicy !== "remembered") {
+      navPrefArmedGroupRef.current = null;
+      return;
+    }
     if (!settled || isMobile) return;
     const pref = readNavOpenPref();
     const panel = navRef.current;
@@ -510,7 +559,7 @@ function ShellInner({
       }
     }
     navPrefArmedGroupRef.current = groupId;
-  }, [settled, isMobile, groupId]);
+  }, [settled, isMobile, groupId, navPolicy]);
 
   useEffect(() => {
     onNavOpenChange?.(navOpen);
@@ -532,7 +581,7 @@ function ShellInner({
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
-        else togglePanel(listRef.current);
+        else if (listPolicy === "collapsible") togglePanel(listRef.current);
       }
     };
     const bottomToggle = (e: KeyboardEvent) => {
@@ -558,7 +607,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, isMobile, panelShortcuts]);
+  }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we soft-collapse
@@ -666,6 +715,7 @@ function ShellInner({
           // expanding, so the restore correctly re-records "open").
           if (
             !isMobile &&
+            navPolicy === "remembered" &&
             navPrefArmedGroupRef.current === groupId &&
             !railAutoCollapsedNavRef.current
           ) {
@@ -676,10 +726,10 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? (navPeeking ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
-          onMouseEnter={!isMobile && !navOpen ? () => setNavPeeking(true) : undefined}
-          onMouseLeave={!isMobile && !navOpen ? () => setNavPeeking(false) : undefined}
+          onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
+          onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
         >
           {nav}
         </aside>
@@ -693,7 +743,7 @@ function ShellInner({
             defaultSize="260px"
             minSize="220px"
             maxSize="420px"
-            collapsible
+            collapsible={isMobile || listPolicy === "collapsible"}
             collapsedSize={0}
             panelRef={listRef}
           >

@@ -7,12 +7,8 @@ const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", impor
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
-// ── Left-sidebar transformation: chat mode swaps the nav for the ChatSidebar. ──
-assert.match(
-  workspace,
-  /mode === "chat" \? chatSidebar : sidebar/,
-  "workspace nav should swap to chatSidebar in chat mode",
-);
+// ── Chat-mode shell wiring: global nav stays in nav; Chats lives in the shell's
+//    persistent list pane on desktop (and the list drawer on mobile). ───────────
 assert.match(
   workspace,
   /const chatSidebar =\s*\(\s*<WorkspaceSidebar/,
@@ -20,8 +16,28 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const exitChatMode = useCallback/,
-  "workspace should provide exitChatMode so the sidebar back control returns to the prior surface",
+  /const list = mode === "chat" \? chatSidebar : undefined;/,
+  "workspace should mount Chats as the list pane only in chat mode",
+);
+assert.match(
+  workspace,
+  /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/,
+  "chat visits should start with the global nav collapsed",
+);
+assert.match(
+  workspace,
+  /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/,
+  "chat mode should keep the Chats list persistent on desktop",
+);
+assert.match(
+  workspace,
+  /nav=\{sidebar\}\s*list=\{list\}/,
+  "workspace should keep SidebarMinimal in nav and pass Chats separately as list content",
+);
+assert.match(
+  workspaceSidebar,
+  /aria-label="Go to Home"/,
+  "the chat sidebar header control is explicitly a Go to Home button",
 );
 
 // ── Home-first boot: the app opens on Home; chat is one step away. ──
@@ -30,14 +46,11 @@ assert.match(
   /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
   "workspace should boot into home mode",
 );
-assert.match(
-  workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
-  "the chat back-control still falls back to home when no other surface was visited",
-);
+assert.doesNotMatch(workspace, /const exitChatMode = useCallback/, "workspace should not keep the unused prior-surface exit helper");
+assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track a stale prior-surface contract");
 
-// ── Subpanel removal: the in-surface thread rail is dropped in chat mode, since
-//    the ChatSidebar now owns the project-grouped thread list. ────────────────
+// ── Subpanel removal: the in-surface thread rail is dropped in chat mode,
+//    because the outer WorkspaceSidebar already owns the project-grouped list. ─
 assert.match(
   workspace,
   /hideThreadRail/,

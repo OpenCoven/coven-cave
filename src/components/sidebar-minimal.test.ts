@@ -6,7 +6,7 @@ const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) now lives in a shared component so
-// it persists across every nav host, including Chat's WorkspaceSidebar.
+// it stays identical in the global nav and Chat's independent WorkspaceSidebar list.
 const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.match(
@@ -407,10 +407,12 @@ assert.match(
   /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
   "the version line is the bottommost element of the shared footer",
 );
+// Phase D (chat-revamp): the rail-only account avatar circle closes the nav,
+// directly under the shared footer — both route to Settings.
 assert.match(
   source,
-  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
-  "the shared footer is the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>[\s\S]{0,700}?<button\s+type="button"\s+className="sidebar-user-avatar focus-ring"\s+onClick=\{onOpenSettings\}[\s\S]{0,300}?<\/button>\s*<\/nav>/,
+  "the shared footer sits above the rail-only account avatar, which is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,

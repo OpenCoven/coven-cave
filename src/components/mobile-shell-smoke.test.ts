@@ -60,10 +60,10 @@ assert.match(
   "Mobile nav toggle should announce whether the navigation drawer is open",
 );
 
-// Selecting a destination dismisses the mobile OVERLAY drawer, but must use
-// the mobile-only `dismissNavMobile`/`dismissListMobile` — NOT `closeNav`/
-// `closeList`, which also collapse the persistent DESKTOP side panel. On
-// desktop the left panel must stay open when an option is selected.
+// Selecting a destination dismisses the active mobile OVERLAY drawer, but must
+// use the mobile-only `dismissNavMobile`/`dismissListMobile` helpers — NOT
+// `closeNav`/`closeList`, which collapse the independent DESKTOP global nav or
+// persistent Chats list panels. Desktop chat keeps both panes available.
 assert.match(
   workspace,
   /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
@@ -73,6 +73,31 @@ assert.match(
   workspace,
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
   "Mobile list drawer session taps should dismiss the list drawer (mobile-only) without collapsing the desktop list",
+);
+assert.match(
+  workspace,
+  /onOpenSession=\{\(session\) => \{[\s\S]*openFamiliarSession\(session\.id, session\.familiarId\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
+  "Chat list session opens should dismiss the mobile list drawer without collapsing the persistent desktop Chats list",
+);
+assert.match(
+  workspace,
+  /onNewChat=\{\(projectRoot\) => \{[\s\S]*startFamiliarChat\(activeId, projectRoot\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
+  "Chat list new-chat actions should dismiss the mobile list drawer without touching the desktop list pane",
+);
+assert.match(
+  workspace,
+  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
+  "Chat list Home, Scheduled, and Plugins actions should dismiss the mobile list drawer without touching the desktop list pane",
+);
+assert.match(
+  workspace,
+  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
+  "Chat list PR links should dismiss only the mobile list drawer before opening",
+);
+assert.match(
+  workspace,
+  /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
+  "Chat list settings should dismiss only the mobile list drawer before routing",
 );
 
 // The mobile-only dismissers must be gated on isMobile and must NOT call the
@@ -93,6 +118,16 @@ assert.match(
   topBar,
   /aria-pressed=\{Boolean\(listDrawerOpen\)\}/,
   "Mobile list toggle should expose pressed state while the list drawer is open",
+);
+assert.match(
+  workspace,
+  /onToggleList=\{list \? \(\) => shellRef\.current\?\.toggleList\(\) : undefined\}/,
+  "Workspace should wire the TopBar list button to the shell list toggle",
+);
+assert.match(
+  workspace,
+  /listDrawerOpen=\{listDrawerOpen\}/,
+  "Workspace should pass the shell's list drawer state through to the TopBar",
 );
 
 assert.match(

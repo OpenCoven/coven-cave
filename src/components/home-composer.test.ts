@@ -35,10 +35,28 @@ assert.match(
   "HomeComposer should load a familiar-scoped project list for the project selector",
 );
 
+// Chat revamp 1a: the hero is the hearth card's heading — greeting kicker,
+// "What are we casting today?", then a live-context subtitle (familiar ·
+// role · model). The project name moved into the composer context pill.
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "CovenCave"\}/,
-  "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
+  /home-composer-headline">What are we casting today\?<\/h1>/,
+  "HomeComposer heading is the hearth card's 'What are we casting today?'",
+);
+assert.match(
+  source,
+  /\{contextLine \? <p className="home-composer-sub">\{contextLine\}<\/p> : null\}/,
+  "the heading is followed by the live-context subtitle when derivable",
+);
+assert.match(
+  source,
+  /const contextLine = useMemo\(\(\) => \{[\s\S]*?selectedFamiliar\?\.display_name[\s\S]*?selectedFamiliar\?\.role[\s\S]*?\}, \[selectedFamiliar, selectedRuntime, selectedModelId\]\)/,
+  "the subtitle derives from the live familiar + runtime/model state (no invented user profile)",
+);
+assert.match(
+  source,
+  /className="home-hearth-card"/,
+  "home renders inside the single centered hearth card",
 );
 
 // ── Hero presence eyebrow ────────────────────────────────────────────────────
@@ -66,13 +84,13 @@ assert.match(
   "the hearth-glow halo renders behind the composer card and is hidden from AT",
 );
 
-// Project selector lives in the composer toolbar so the user can choose which
-// project a new chat runs in (mirrors the chat composer). It's a standalone
-// ProjectPicker — its own search popover, so it can't nest in the ⚙ menu.
+// Project selection lives in the composer's context pill (chat revamp 1d):
+// the pill chains to the shared ProjectPickerPopover so the user can choose
+// which project a new chat runs in (mirrors the chat composer).
 assert.match(
   source,
-  /<ProjectPicker[\s\S]*value=\{selectedProjectId \|\| null\}[\s\S]*onChange=\{setSelectedProjectId\}[\s\S]*className="hc-project-selector"/,
-  "ProjectPicker is rendered in the home composer toolbar, wired to selectedProjectId",
+  /<ComposerContextPill[\s\S]*projectValue=\{selectedProjectId \|\| null\}[\s\S]*onProjectChange=\{setSelectedProjectId\}/,
+  "the context pill hosts the project picker, wired to selectedProjectId",
 );
 
 assert.match(
@@ -269,8 +287,8 @@ assert.doesNotMatch(
 // keyboard handler depends on the hook's dispatcher + the current submit.
 assert.match(
   handleKeyDownBlock,
-  /\[handleMenuKey, handleSubmit, handleArrowKey, text\]/,
-  "HomeComposer Enter-submit keyboard handler should depend on the shared menu dispatcher and the current submit callback",
+  /\[handleMenuKey, handleSubmit, handleArrowKey, text, sending, attachments\.length\]/,
+  "HomeComposer Enter-submit keyboard handler should depend on the shared menu dispatcher, the current submit callback, and the ⌘⇧A attach gate",
 );
 assert.match(
   handleKeyDownBlock,
@@ -414,8 +432,8 @@ assert.match(
 // next to the + attach trigger — not above the card, not in the footer band.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
-  "Destination pills render inside the utility row, after the attach trigger",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
+  "Destination pills render inside the utility row, after the + trigger",
 );
 assert.doesNotMatch(
   source,
@@ -449,8 +467,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
-  "Control row: + attach and Chat/Task pills left, enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?<ComposerContextPill[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu/,
+  "Control row: the + menu, context pill, and Chat/Task pills lead; the circular send hugs the right; the Options panel chains off the + anchor",
 );
 // Voice input is hidden until it actually works — a permanently disabled mic
 // read as broken chrome (user-reported).
@@ -547,8 +565,8 @@ assert.match(
 // ── Attachments ─────────────────────────────────────────────────────────────
 assert.match(
   source,
-  /aria-label="Attach images, videos, or files"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:plus/,
-  "the + button opens the file picker (reference layout)",
+  /attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
+  "the + menu's Attach item opens the file picker (reference layout)",
 );
 assert.match(
   source,

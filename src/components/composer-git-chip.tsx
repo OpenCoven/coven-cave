@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/popover";
 import "@/styles/composer-git-chip.css";
 
-type BranchPr = {
+export type BranchPr = {
   number: number;
   url: string;
   /** gh's PR state: OPEN | MERGED | CLOSED. */
@@ -56,7 +56,7 @@ type BranchRow = {
 
 /** The branch's PR, fetched once per (projectRoot, branch) — null when the
  *  branch has no PR (or gh is unavailable), undefined while unresolved. */
-function useBranchPr(projectRoot: string | undefined, branch: string | null): BranchPr | null {
+export function useBranchPr(projectRoot: string | undefined, branch: string | null): BranchPr | null {
   const [pr, setPr] = useState<BranchPr | null>(null);
   // One fetch per (root, branch) pair — a branch switch refetches, the 5s
   // status poll does not.
@@ -95,22 +95,28 @@ function useBranchPr(projectRoot: string | undefined, branch: string | null): Br
   return pr;
 }
 
-export function ComposerGitChip({
+/**
+ * Controlled branch menu — the switch-branch / new-worktree popover half of the
+ * git chip, anchored to any caller-owned trigger (the chip's branch button, or
+ * the composer context pill). Owns its own list fetch and mutations.
+ */
+export function GitBranchMenuPopover({
+  open,
+  onOpenChange,
+  anchorRef,
   projectRoot,
-  onOpenUrl,
+  onSwitched,
 }: {
-  /** The chat's active project root ("" / undefined when no project). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  /** Repo root the menu operates on (undefined disables everything). */
   projectRoot: string | undefined;
-  /** Opens the PR in the app's browser pane; falls back to window.open. */
-  onOpenUrl?: (url: string) => void;
+  /** Called after a successful branch switch (e.g. reload the status poll). */
+  onSwitched?: () => void;
 }) {
   const root = projectRoot?.trim() ? projectRoot : undefined;
-  const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(root, Boolean(root));
-  const pr = useBranchPr(root, branch);
-
-  // ── Branch menu state ──────────────────────────────────────────────────────
-  const branchButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const menuOpen = open;
   const [rows, setRows] = useState<BranchRow[] | null>(null);
   const [menuBusy, setMenuBusy] = useState(false);
   const [menuError, setMenuError] = useState<string | null>(null);
@@ -149,7 +155,7 @@ export function ComposerGitChip({
   }, [menuOpen, root]);
 
   const closeMenu = () => {
-    setMenuOpen(false);
+    onOpenChange(false);
     setCreating(false);
     setNewBranch("");
     setMenuError(null);
@@ -168,7 +174,7 @@ export function ComposerGitChip({
       const json = (await res.json()) as { ok?: boolean; error?: string; branch?: string };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `switch HTTP ${res.status}`);
       closeMenu();
-      reload();
+      onSwitched?.();
     } catch (err) {
       setMenuError(err instanceof Error ? err.message : "branch switch failed");
     } finally {
@@ -215,6 +221,110 @@ export function ComposerGitChip({
       setMenuBusy(false);
     }
   };
+
+  return (
+    <Popover
+      open={menuOpen}
+      onOpenChange={(next) => {
+        if (!next) closeMenu();
+        else onOpenChange(true);
+      }}
+      anchorRef={anchorRef}
+      placement="top-start"
+      minWidth={240}
+      ariaLabel="Switch branch"
+    >
+      <PopoverBody role="menu" ariaLabel="Branches">
+        <PopoverLabel>Switch branch</PopoverLabel>
+        {rows === null ? (
+          <div className="cave-composer-git-chip__menu-note">Loading branches…</div>
+        ) : (
+          <>
+            {rows.map((row) => (
+              <PopoverItem
+                key={row.name}
+                icon="ph:git-branch"
+                checked={row.current}
+                disabled={menuBusy || row.current || row.worktree !== null}
+                title={
+                  row.worktree && !row.current
+                    ? `Checked out in worktree ${row.worktree}`
+                    : row.current
+                      ? "Current branch"
+                      : `Switch to ${row.name}`
+                }
+                onSelect={() => void switchBranch(row.name)}
+              >
+                {row.name}
+                {row.worktree && !row.current ? ` · ${row.worktree}` : ""}
+              </PopoverItem>
+            ))}
+            {rows.length === 0 && !menuError ? (
+              <div className="cave-composer-git-chip__menu-note">No local branches</div>
+            ) : null}
+          </>
+        )}
+        <PopoverSeparator />
+        {creating ? (
+          <form
+            className="cave-composer-git-chip__worktree-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createWorktree();
+            }}
+          >
+            <input
+              type="text"
+              className="cave-composer-git-chip__worktree-input focus-ring"
+              placeholder="feat/my-branch"
+              aria-label="New worktree branch name"
+              value={newBranch}
+              onChange={(event) => setNewBranch(event.target.value)}
+              disabled={menuBusy}
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="cave-composer-git-chip__worktree-create focus-ring"
+              disabled={menuBusy || !newBranch.trim()}
+            >
+              {menuBusy ? "Creating…" : "Create"}
+            </button>
+          </form>
+        ) : (
+          <PopoverItem
+            icon="ph:tree-structure"
+            disabled={menuBusy}
+            title="Create a .worktrees/<branch> checkout and open a chat rooted in it"
+            onSelect={() => setCreating(true)}
+          >
+            New worktree…
+          </PopoverItem>
+        )}
+        {menuError ? (
+          <div className="cave-composer-git-chip__menu-error" role="alert">
+            {menuError}
+          </div>
+        ) : null}
+      </PopoverBody>
+    </Popover>
+  );
+}
+
+export function ComposerGitChip({
+  projectRoot,
+  onOpenUrl,
+}: {
+  /** The chat's active project root ("" / undefined when no project). */
+  projectRoot: string | undefined;
+  /** Opens the PR in the app's browser pane; falls back to window.open. */
+  onOpenUrl?: (url: string) => void;
+}) {
+  const root = projectRoot?.trim() ? projectRoot : undefined;
+  const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(root, Boolean(root));
+  const pr = useBranchPr(root, branch);
+  const branchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Git-less chats (no project, or a non-repo root) show nothing — the chip
   // only appears once the repo status has actually loaded.
@@ -298,91 +408,13 @@ export function ComposerGitChip({
           <span>#{pr.number}</span>
         </button>
       ) : null}
-      <Popover
+      <GitBranchMenuPopover
         open={menuOpen}
-        onOpenChange={(next) => {
-          if (!next) closeMenu();
-          else setMenuOpen(true);
-        }}
+        onOpenChange={setMenuOpen}
         anchorRef={branchButtonRef}
-        placement="top-start"
-        minWidth={240}
-        ariaLabel="Switch branch"
-      >
-        <PopoverBody role="menu" ariaLabel="Branches">
-          <PopoverLabel>Switch branch</PopoverLabel>
-          {rows === null ? (
-            <div className="cave-composer-git-chip__menu-note">Loading branches…</div>
-          ) : (
-            <>
-              {rows.map((row) => (
-                <PopoverItem
-                  key={row.name}
-                  icon="ph:git-branch"
-                  checked={row.current}
-                  disabled={menuBusy || row.current || row.worktree !== null}
-                  title={
-                    row.worktree && !row.current
-                      ? `Checked out in worktree ${row.worktree}`
-                      : row.current
-                        ? "Current branch"
-                        : `Switch to ${row.name}`
-                  }
-                  onSelect={() => void switchBranch(row.name)}
-                >
-                  {row.name}
-                  {row.worktree && !row.current ? ` · ${row.worktree}` : ""}
-                </PopoverItem>
-              ))}
-              {rows.length === 0 && !menuError ? (
-                <div className="cave-composer-git-chip__menu-note">No local branches</div>
-              ) : null}
-            </>
-          )}
-          <PopoverSeparator />
-          {creating ? (
-            <form
-              className="cave-composer-git-chip__worktree-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void createWorktree();
-              }}
-            >
-              <input
-                type="text"
-                className="cave-composer-git-chip__worktree-input focus-ring"
-                placeholder="feat/my-branch"
-                aria-label="New worktree branch name"
-                value={newBranch}
-                onChange={(event) => setNewBranch(event.target.value)}
-                disabled={menuBusy}
-                autoFocus
-              />
-              <button
-                type="submit"
-                className="cave-composer-git-chip__worktree-create focus-ring"
-                disabled={menuBusy || !newBranch.trim()}
-              >
-                {menuBusy ? "Creating…" : "Create"}
-              </button>
-            </form>
-          ) : (
-            <PopoverItem
-              icon="ph:tree-structure"
-              disabled={menuBusy}
-              title="Create a .worktrees/<branch> checkout and open a chat rooted in it"
-              onSelect={() => setCreating(true)}
-            >
-              New worktree…
-            </PopoverItem>
-          )}
-          {menuError ? (
-            <div className="cave-composer-git-chip__menu-error" role="alert">
-              {menuError}
-            </div>
-          ) : null}
-        </PopoverBody>
-      </Popover>
+        projectRoot={root}
+        onSwitched={reload}
+      />
     </div>
   );
 }

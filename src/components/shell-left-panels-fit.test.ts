@@ -58,12 +58,42 @@ assert.match(
   /const SHELL_GROUP_ID = "cave\.shell\.widths\.v3"/,
   "Shell layout persistence should use the v3 key (bumped so the minimized nav default applies once)",
 );
+assert.match(
+  shell,
+  /export type ShellListPolicy = "collapsible" \| "persistent"/,
+  "Shell exports a list policy that distinguishes collapsible from persistent list panes",
+);
+assert.match(
+  shell,
+  /const groupId = twoPane \? `\$\{SHELL_GROUP_ID\}\.two-pane` : listPolicy === "persistent" \? `\$\{SHELL_GROUP_ID\}\.persistent-list` : SHELL_GROUP_ID;/,
+  "persistent list layouts use a fresh group id suffix so stale collapsible layouts cannot hide Chats",
+);
 
 // Collapse-to-rail must survive the px conversion.
 assert.match(
   shell,
   /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
   "Nav should still collapse to the icons-only rail on desktop (0 on mobile)",
+);
+assert.match(
+  shell,
+  /collapsible=\{isMobile \|\| listPolicy === "collapsible"\}/,
+  "List panel is drawer-capable on mobile but non-collapsible on desktop under the persistent policy",
+);
+assert.match(
+  shell,
+  /if \(meta && key === "\\\\" && !twoPane\) \{[\s\S]{0,140}?if \(isMobile\) toggleDrawerSlot\("list"\);[\s\S]{0,140}?else if \(listPolicy === "collapsible"\) togglePanel\(listRef\.current\);/,
+  "Cmd/Ctrl+\\ toggles the mobile list drawer, and only toggles the desktop list when policy is collapsible",
+);
+assert.match(
+  shell,
+  /closeList: \(\) => \{\s*if \(isMobile\) \{ setMobileDrawer\(\(c\) => \(c === "list" \? null : c\)\); return; \}\s*if \(listPolicy === "persistent"\) return;\s*listRef\.current\?\.collapse\(\);/,
+  "closeList dismisses the mobile list drawer but no-ops on a persistent desktop list",
+);
+assert.match(
+  shell,
+  /toggleList: \(\) => \{\s*if \(isMobile\) \{ toggleDrawer\("list"\); return; \}\s*if \(listPolicy === "persistent"\) return;\s*togglePanel\(listRef\.current\);/,
+  "toggleList toggles the mobile list drawer but no-ops on a persistent desktop list",
 );
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —

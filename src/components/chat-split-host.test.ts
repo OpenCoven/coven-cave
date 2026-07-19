@@ -213,11 +213,11 @@ assert.equal(
   "both row flavors handle ⌥↵",
 );
 
-// ── Live IA wiring (the shell nav is the real thread rail) ───────────────────
-// The Workspace mounts ChatSurface with hideThreadRail (the router's own
-// project sidebar is hidden), so splits must reach the chat through the shell:
-// WorkspaceSidebar rows are drag sources + ⌥↵/⌥-click split openers, routed
-// through the pending-chat-action pipeline into the router handle.
+// ── Live IA wiring (the shell list panel is the real thread rail) ────────────
+// Workspace mounts ChatSurface with hideThreadRail while WorkspaceSidebar owns
+// the project-grouped chat list in the shell list pane (desktop) / list drawer
+// (mobile), so splits must reach the chat through that outer list: its rows are
+// drag sources + ⌥↵/⌥-click split openers, routed through the pending action.
 
 const shellNav = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");

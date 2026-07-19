@@ -25,12 +25,14 @@ assert.match(css, /\.top-bar \{[\s\S]*?background:\s*var\(--bg-base\)[\s\S]*?bor
 assert.match(css, /\.menu-bar__search \{[\s\S]*?position:\s*absolute[\s\S]*?left:\s*50%[\s\S]*?translateX\(-50%\)/, "search is absolutely centered in the title bar");
 assert.match(
   css,
-  /\.menu-bar__search \{[\s\S]*?width:\s*min\(480px, 42vw, calc\(100% - 432px\)\)/,
+  // Phase-D command bar: 557px max, with the side reserves widened for the
+  // right status cluster (running pill + bell) joining the action group.
+  /\.menu-bar__search \{[\s\S]*?width:\s*min\(557px, 42vw, calc\(100% - 560px\)\)/,
   "centered search reserves symmetric room for the normal desktop action group",
 );
 assert.match(
   css,
-  /\.menu-bar:has\(\.menu-bar__task-label--live\) \.menu-bar__search \{[^}]*width:\s*min\(480px, 42vw, calc\(100% - 564px\)\)/,
+  /\.menu-bar:has\(\.menu-bar__task-label--live\) \.menu-bar__search \{[^}]*width:\s*min\(557px, 42vw, calc\(100% - 692px\)\)/,
   "centered search contracts further while live enrichment progress widens the desktop actions",
 );
 assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--border-hairline\)/, "search border is always visible at rest");

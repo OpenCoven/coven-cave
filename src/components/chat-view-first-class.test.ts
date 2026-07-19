@@ -81,10 +81,13 @@ assert.match(
   "The hidden file input behind the plus button should use the shared attachment accept list",
 );
 
+// The attach affordance lives in the shared "+" menu (chat revamp 1d); its
+// accessible label survives the relocation.
+const plusMenuSource = readFileSync(new URL("./composer-plus-menu.tsx", import.meta.url), "utf8");
 assert.match(
-  source,
-  /aria-label="Attach images, videos, or files"/,
-  "Add button should have an explicit accessible label for images, videos, and files",
+  plusMenuSource,
+  /ariaLabel="Attach images, videos, or files"/,
+  "Attach item should keep an explicit accessible label for images, videos, and files",
 );
 
 assert.match(
@@ -113,8 +116,13 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
-  "Composer should keep attachment and send actions in the footer row with the attachment paperclip affordance",
+  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*<ComposerPlusMenu[\s\S]*attach=\{\{[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
+  "Composer should keep attachment (via the + menu) and send actions in the footer row",
+);
+assert.match(
+  plusMenuSource,
+  /icon="ph:paperclip"/,
+  "the + menu's Attach item keeps the paperclip affordance",
 );
 
 assert.match(

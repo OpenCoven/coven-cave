@@ -1,12 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the chat-mode left sidebar (ChatSidebar) — the desktop session
-// navigator that swaps into the nav slot when you enter Chat (⌘2). Defaults
-// to a time-bucketed "Recent chats" view (Today / Yesterday / Previous 7 days /
-// Previous 30 days / Older). A ⋯ "Sidebar options" button opens an Organize
-// menu (role=dialog) with menuitemradio items to switch to "By project" folder
-// grouping. The sidebar owns thread navigation (no in-surface thread rail).
-// Desktop only. /api/familiars + /api/sessions/list are mocked.
+// Verifies Chat mode's Chats sidebar in the shell list pane while the global
+// Sidebar stays a separate nav rail. The list defaults to a time-bucketed
+// "Recent chats" view (Today / Yesterday / Previous 7 days / Previous 30 days /
+// Older). A ⋯ "Sidebar options" button opens an Organize menu (role=dialog)
+// with menuitemradio items to switch to "By project" folder grouping. The list
+// panel owns thread navigation while ChatSurface hides the duplicate internal
+// rail. Desktop only. /api/familiars + /api/sessions/list are mocked.
 
 // Timestamps are relative to the test run so bucket labels are deterministic:
 // s1 → Today, s2 → Yesterday, s3 → Previous 7 days, s4 → Older.
@@ -26,16 +26,24 @@ const SESSIONS = [
   created_at: s.updated_at,
 }));
 
+async function ensureChatSurface(page: Page) {
+  await page.waitForSelector(".shell-frame", { timeout: 30_000 });
+  const surface = page.locator(".chat-surface");
+  if (!(await surface.isVisible().catch(() => false))) {
+    await page.locator('aside[aria-label="Sidebar"]').getByRole("button", { name: /^Chat\b/ }).first().click();
+  }
+  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
+  await page.waitForSelector('aside[aria-label="List pane"] .chat-sidebar', { timeout: 30_000 });
+}
+
 async function gotoChat(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
-    // The nav is minimized-by-default; pre-seed the applied-flag so it stays
-    // expanded here — this suite drives the chat session navigator, which needs
-    // the nav's full width (a rail-width nav narrows the multi-pane chat layout).
-    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
-    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
+    // Seed the remembered global-nav preference OPEN; chat visits must still
+    // collapse the nav for the visit while keeping the separate Chats list open.
+    window.localStorage.setItem("cave:shell:nav-open", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
@@ -44,17 +52,43 @@ async function gotoChat(page: Page) {
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
   await page.goto("/?mode=chat");
-  // Switch to the Chat surface (⌘2) — default landing is Home.
-  await page.waitForTimeout(500);
-  await page.keyboard.press("Meta+2");
-  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
-  await page.waitForSelector(".chat-sidebar", { timeout: 30_000 });
+  // Deep-link to Chat, with a sidebar click fallback if the shell restores Home
+  // before the mode param is applied.
+  await ensureChatSurface(page);
 }
 
 test.describe("chat sidebar (session navigator)", () => {
+  test("chat visit collapses remembered nav but keeps the persistent Chats list", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
+    const nav = page.locator('aside[aria-label="Sidebar"]');
+    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
+
+    // Chat mode keeps the global nav separate and temporarily collapsed even if
+    // the remembered preference is open; the persistent Chats list remains live.
+    await expect(sidebar).toBeVisible();
+    await expect(search).toBeVisible();
+    await expect(nav).toBeVisible();
+    await expect(nav.locator(".chat-sidebar")).toHaveCount(0);
+    await expect(page.locator(".chat-thread-rail")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
+    const navToggle = page.getByRole("button", { name: "Expand navigation" });
+    await expect(navToggle).toHaveAttribute("aria-expanded", "false");
+
+    // The desktop list shortcut must not collapse the persistent Chats list.
+    await page.keyboard.press("Control+\\");
+    await expect(search).toBeVisible();
+    await expect(navToggle).toHaveAttribute("aria-expanded", "false");
+
+    await navToggle.click();
+    await expect(search).toBeVisible();
+    await expect(page.getByRole("button", { name: /Expand navigation|Collapse navigation to icons/ })).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
+  });
+
   test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
     await gotoChat(page);
-    const sidebar = page.locator(".chat-sidebar");
+    const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
 
     // Search control survives in both views.
     await expect(sidebar.getByRole("searchbox", { name: "Search projects and threads" })).toBeVisible();
@@ -79,15 +113,16 @@ test.describe("chat sidebar (session navigator)", () => {
 
     // The organize choice persists across a reload.
     await page.reload();
-    await page.keyboard.press("Meta+2");
-    await page.waitForSelector(".chat-sidebar", { timeout: 30_000 });
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
-    await expect(sidebar.getByText("Today", { exact: true })).toHaveCount(0);
+    await ensureChatSurface(page);
+    const reloadedSidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
+    await expect(page.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");
+    await expect(reloadedSidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
+    await expect(reloadedSidebar.getByText("Today", { exact: true })).toHaveCount(0);
   });
 
   test("search filters threads to matches, with an empty state", async ({ page }) => {
     await gotoChat(page);
-    const sidebar = page.locator(".chat-sidebar");
+    const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
     const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
 
     await search.fill("deploy");

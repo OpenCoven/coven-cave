@@ -18,7 +18,7 @@ assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance
 assert.match(chatView, /familiarId: familiar\.id/, "enhance streams through the thread's familiar");
 assert.match(chatView, /disabled: busy/, "enhance is blocked while a send is in flight");
 assert.doesNotMatch(chatView, /onEnhance[\s\S]{0,600}?send\(/, "enhancing must not send automatically");
-assert.match(chatView, /<EnhanceControl[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/, "the shared sparkle control drives enhance");
+assert.match(chatView, /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/, "the + menu's Enhance-prompt item drives enhance");
 assert.match(chatView, /<EnhanceStrip[\s\S]*?onRevert=\{promptEnhance\.revert\}/, "the shared strip carries the revert affordance");
 
 console.log("chat-prompt-enhance.test.ts: ok");

@@ -19,17 +19,17 @@ assert.doesNotMatch(source, /computeQuickSwitch/, "the strip's pin/recency selec
 assert.doesNotMatch(globals, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
 assert.match(globals, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
 
-// ── Familiar selection: sidenav header everywhere, chat sidebar on chat ──────
-// Chat mode swaps the nav panel for the chat sidebar (SidebarMinimal never
-// renders there), so BOTH hosts are needed: the sidenav header on every other
-// page (cave-vtk9), the chat sidebar header on chat (#2747, cave-l3ay).
+// ── Familiar selection: global nav header + Chats list header ─────────────────
+// Chat keeps the global nav independent, so BOTH hosts are intentional: the
+// SidebarMinimal header carries the switcher in the global nav, and the Chats
+// list header keeps a labeled switcher beside thread navigation on chat.
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.match(sidebar, /<FamiliarSwitcher[\s\S]*?labeled/, "the chat sidebar header hosts the switcher (the chat page's only familiar control)");
+assert.match(sidebar, /<FamiliarSwitcher[\s\S]*?labeled/, "the Chats list header keeps a labeled familiar switcher beside thread navigation");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
   /<div className="sidebar-familiar-switch">[\s\S]*?<FamiliarQuickSwitch[\s\S]*?onSelectFamiliar=\{onFamiliarScopeChange\}[\s\S]*?labeled/,
-  "the sidenav header hosts the labeled familiar switcher on every page",
+  "the global sidenav header keeps the labeled familiar switcher in the nav pane",
 );
 
 console.log("familiar-quick-switch component: all assertions passed");

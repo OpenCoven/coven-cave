@@ -122,6 +122,11 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
+import { NotificationBell } from "@/components/notification-bell";
+import { StatusBar } from "@/components/status-bar";
+import { sessionStatusTone } from "@/lib/session-status";
+import { sessionPrStatus } from "@/lib/session-pr-status";
+import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { FirstProjectGate } from "@/components/first-project-gate";
 import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
 import {
@@ -430,9 +435,9 @@ export function Workspace() {
     }
     setModeRaw(next);
   }, []);
-  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
-  // Its back control returns to the surface the user came from.
-  const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
+  // Chat mode keeps the global nav in the nav pane and mounts the project-
+  // grouped Chats list beside it. The Chats header button explicitly routes
+  // back Home rather than restoring a prior surface.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -608,15 +613,6 @@ export function Workspace() {
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-
-  useEffect(() => {
-    if (mode !== "chat") setLastNonChatMode(mode);
-  }, [mode]);
-
-  const exitChatMode = useCallback(() => {
-    setMode(lastNonChatMode === "chat" ? "home" : lastNonChatMode);
-    shellRef.current?.dismissNavMobile();
-  }, [lastNonChatMode]);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -2455,6 +2451,15 @@ export function Workspace() {
     [openTaskCards, activeId],
   );
 
+  // Live daemon activity for the top bar's "N running" pill: sessions whose
+  // status reads as running (shared sessionStatusTone vocabulary — running /
+  // starting / working), excluding archived rows. Derived from the same
+  // 4s-polled sessions list every other chrome badge uses.
+  const runningSessionCount = useMemo(
+    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running").length,
+    [sessions],
+  );
+
   // Ephemeral bridge: turn each "needs response" familiar into a transient
   // InboxItem so the bell badge, inbox view, and inspector tab all surface it
   // without writing anything to disk. IDs are prefixed `eph:` so dismiss/snooze
@@ -2650,7 +2655,7 @@ export function Workspace() {
       onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
       }}
       onOpenSessionInSplit={(session) => {
         // Open beside the current chat: same pending-action pipeline as a
@@ -2659,11 +2664,15 @@ export function Workspace() {
         // active familiar is left alone — the pane carries its own.
         setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
         setMode("chat");
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
       }}
       onNewChat={(projectRoot) => {
         startFamiliarChat(activeId, projectRoot);
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
+      }}
+      onNavigate={(nextMode) => {
+        setMode(nextMode);
+        shellRef.current?.dismissListMobile();
       }}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
@@ -2674,16 +2683,19 @@ export function Workspace() {
 
         handleSessionsDeleted([session.id]);
       }}
-      onOpenUrl={openUrlInApp}
+      onOpenUrl={(url) => {
+        shellRef.current?.dismissListMobile();
+        openUrlInApp(url);
+      }}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
-        shellRef.current?.dismissNavMobile();
+        shellRef.current?.dismissListMobile();
         nextRouter.push("/settings");
       }}
     />
   );
 
-  const list = undefined;
+  const list = mode === "chat" ? chatSidebar : undefined;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -2884,6 +2896,38 @@ export function Workspace() {
       />
     );
 
+  // ── Bottom status bar (chat-revamp phase D) ────────────────────────────────
+  // Quiet context strip under the Home/Chat detail column. Chat feeds it the
+  // ACTIVE session's metadata (registered-project name, model, per-session
+  // workBranch — falling back to the poll-time checkout branch — cwd, and the
+  // attached PR via the shared sessionPrStatus derivation). Home has no session
+  // context, so it degrades to the active familiar's model + the Tasks count;
+  // other surfaces don't render the strip at all.
+  const statusSessionId = routerRef.current?.currentSessionId() ?? null;
+  const statusSession =
+    mode === "chat" && statusSessionId
+      ? sessions.find((s) => s.id === statusSessionId) ?? null
+      : null;
+  const statusProject = statusSession
+    ? registeredProjects.find(
+        (p) => normalizeProjectRoot(p.root) === normalizeProjectRoot(statusSession.project_root),
+      ) ?? null
+    : null;
+  const statusPr = sessionPrStatus(statusSession?.pullRequest);
+  const statusBar =
+    mode === "home" || mode === "chat" ? (
+      <StatusBar
+        projectName={statusProject?.name ?? null}
+        model={statusSession?.model ?? active?.model ?? null}
+        branch={statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null}
+        cwd={statusSession?.project_root ?? null}
+        pr={statusPr}
+        taskCount={boardTaskCount}
+        onViewTasks={() => setMode("board")}
+        onOpenPr={(url) => openUrlInApp(url)}
+      />
+    ) : null;
+
   const detailContent = renderSurface(mode);
   const detail = (
     <div
@@ -2914,6 +2958,10 @@ export function Workspace() {
       >
         {detailContent}
       </div>
+      {/* Phase-D status strip: a flex sibling of the flex-1 content above, so
+          it claims its 28px and the surface shrinks around it. Hidden while
+          the first-project gate holds the surface inert. */}
+      {firstProjectGateOpen ? null : statusBar}
     </div>
   );
 
@@ -2976,10 +3024,31 @@ export function Workspace() {
         onCloseSplitTile={closeSplitTile}
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
+        navPolicy={mode === "chat" ? "visit-collapsed" : "remembered"}
+        listPolicy={mode === "chat" ? "persistent" : "collapsible"}
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
+              activeFamiliarName={active?.display_name ?? null}
+              runningCount={runningSessionCount}
+              // Desktop notifications: the same NotificationBell the mobile
+              // TopBar hosts, mounted in this bar's right status cluster.
+              bell={
+                <NotificationBell
+                  items={inboxItemsWithEphemeral}
+                  familiars={familiars}
+                  prefs={inboxPrefs}
+                  badgeCount={notificationUnreadCount}
+                  onOpenInbox={() => setMode("inbox")}
+                  onOpenItem={(item) => {
+                    markInboxItemRead(item.id);
+                    if (item.familiarId) setActiveId(item.familiarId);
+                    setMode("inbox");
+                  }}
+                  onPrefsChanged={refreshPrefs}
+                />
+              }
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
@@ -3038,7 +3107,7 @@ export function Workspace() {
           />
           </>
         )}
-        nav={mode === "chat" ? chatSidebar : sidebar}
+        nav={sidebar}
         list={list}
         detail={detail}
       />

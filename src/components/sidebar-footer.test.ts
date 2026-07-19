@@ -8,8 +8,8 @@ const chatNav = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url)
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // The side-panel footer (Dashboard + Settings + version) is a single shared
-// component so it renders identically in every nav host — and, critically,
-// persists on Chat, whose nav panel swaps SidebarMinimal out for WorkspaceSidebar.
+// component so it renders identically in every host — the global nav
+// SidebarMinimal and Chat's independent WorkspaceSidebar thread list.
 
 // The shared component owns the whole footer.
 assert.match(footer, /export function SidebarFooter\(\{ onOpenSettings \}/, "SidebarFooter is a shared component taking onOpenSettings");

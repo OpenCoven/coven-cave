@@ -16,18 +16,13 @@ assert.match(
   "WorkspaceMode union keeps \"agents\" for internal familiar detail flows",
 );
 
-// Home-first boot: the app opens on the Home overview; Chat is one step away
-// and the chat Back control still returns to Home by default.
+// Home-first boot: the app opens on the Home overview; Chat is one step away.
 assert.match(
   workspace,
   /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
   "Default workspace mode lands on Home (home-first boot)",
 );
-assert.match(
-  workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
-  "the chat Back control still returns to Home by default",
-);
+assert.doesNotMatch(workspace, /lastNonChatMode/, "Workspace should not track an unused chat-return surface");
 
 // The "Coven" surface (docs-pane) was purged — its docs/feedback/social live as
 // default Browser tabs now. Guard that the surface stays gone.
