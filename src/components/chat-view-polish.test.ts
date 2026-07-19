@@ -254,8 +254,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
-  "Assistant turns render a large circular avatar + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size=\{expanded \? "xl" : "md"\} \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
+  "Assistant turns render a compact circular avatar (chat-revamp 1b; grows when the inline card opens) + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
 );
 // Lean meta (cave-xsq.2): the static extras collapse into a reveal-on-hover
 // cluster so the default row is just name + time; the turn content is the
@@ -515,8 +515,20 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*var\(--space-1\) 10px 5px;/,
-  "Open chat header should be compressed for a streamlined session UI",
+  /\.cave-chat-linear-header\s*\{[\s\S]*min-height:\s*52px;[\s\S]*padding:\s*var\(--space-1\) var\(--space-4\);/,
+  "Open chat header is the 52px identity band (chat-revamp 1b)",
+);
+// Chat-revamp 1b: the header closes with a fade-ended divider (transparent →
+// hairline 48px from each end), not a full-width hard border.
+assert.match(
+  styles,
+  /\.cave-chat-linear-header::after\s*\{[\s\S]*var\(--border-hairline\) 48px,[\s\S]*var\(--border-hairline\) calc\(100% - 48px\),[\s\S]*transparent\s*\)/,
+  "Chat header bottom edge is the fade-ended divider",
+);
+assert.doesNotMatch(
+  styles.match(/\.cave-chat-linear-header\s*\{[^}]*\}/)?.[0] ?? "",
+  /border-bottom/,
+  "Chat header no longer draws a full-width hard bottom border",
 );
 
 // The standalone header icon buttons (thinking/debug/reflect/delete) are gone —

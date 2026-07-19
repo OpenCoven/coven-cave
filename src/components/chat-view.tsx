@@ -145,6 +145,7 @@ import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
+import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
@@ -1408,14 +1409,14 @@ function ChatTitleEditable({
 
   const inputClassName = headline
     ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
-    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none";
+    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-medium leading-tight text-[var(--text-primary)] outline-none";
 
   // No flex-1 on the title button itself — the wrapper carries the stretch so
   // the pencil sits flush against the title text instead of drifting to the
   // far edge of the free space.
   const buttonClassName = headline
     ? "min-w-0 flex-1 truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
-    : "min-w-0 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
+    : "min-w-0 truncate text-left text-[14px] font-medium leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
   if (editing) {
     return (
@@ -1444,7 +1445,7 @@ function ChatTitleEditable({
   }
 
   return (
-    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
+    <span className={headline ? "cave-chat-title flex w-full min-w-0 items-center gap-1.5" : "cave-chat-title flex min-w-0 flex-1 items-center gap-1"}>
       <button
         type="button"
         className={buttonClassName}
@@ -1860,7 +1861,22 @@ function MetaLine({
     usage,
     costUsd,
   });
+  // The identity line already names the model on settled headers — drop the
+  // provenance cluster's duplicate lead so hover reads dir · duration · usage
+  // without repeating the model id. Live states keep every segment.
+  const provenanceSegments =
+    state === "complete" && metaModel
+      ? segments.filter((seg, i) => !(i === 0 && seg === shortModelLabel(metaModel)))
+      : segments;
   const task = linkedContext?.task ?? null;
+  // Chat-revamp 1b: the header meta carries the session's live git branch
+  // beside the familiar + model. The fetch rides the shared changes-summary
+  // gate (cave-v8hh) — the composer git chip and stage header already poll the
+  // same root, so this subscriber adds no extra requests.
+  const { branch: gitBranch } = useChangesSummary(
+    session?.project_root ?? projectRoot ?? undefined,
+    Boolean(session?.project_root ?? projectRoot),
+  );
   // Same defense-in-depth override as the old headline row: hide a raw
   // "Task context: …" seed prompt that leaked through as the title.
   const titleOverride =
@@ -1870,6 +1886,11 @@ function MetaLine({
   return (
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}`} role="status" aria-live="polite" data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
+      {/* Chat-revamp 1b: the session's familiar leads the header as a small
+          circular avatar, so the title row reads avatar · title · meta. */}
+      <span className="cave-chat-header-avatar" aria-hidden="true">
+        <FamiliarIcon familiar={familiar} size="md" />
+      </span>
       {session ? (
         <ChatTitleEditable
           session={session}
@@ -1878,6 +1899,26 @@ function MetaLine({
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
+        {/* Chat-revamp 1b: the settled header carries a quiet, always-visible
+            identity line — "· <familiar> · <model> · <branch>" — while the
+            heavier provenance (cwd · duration · tokens · cost + meters) stays
+            in the reveal-on-hover cluster below, so nothing is deleted, just
+            demoted. Streaming/failed/offline states keep their live meta. */}
+        {state === "complete" ? (
+          <span className="cave-chat-meta-line__identity">
+            {familiar.display_name}
+            {metaModel ? ` · ${shortModelLabel(metaModel)}` : ""}
+            {gitBranch ? (
+              <>
+                {" · "}
+                <span className="cave-chat-meta-line__branch" title={`Branch: ${gitBranch}`}>
+                  <Icon name="ph:git-branch" width={10} aria-hidden />
+                  {gitBranch}
+                </span>
+              </>
+            ) : null}
+          </span>
+        ) : null}
         {/* Slim header (cave-xsq.3): when the turn has settled, the static
             provenance (model · runtime · dir · duration · usage · meters) is a
             quiet reveal-on-hover cluster so the settled header reads as just the
@@ -1887,9 +1928,9 @@ function MetaLine({
         <span
           className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
         >
-          {segments.map((seg, i) => (
+          {provenanceSegments.map((seg, i) => (
             <Fragment key={i}>
-              {i > 0 ? " · " : null}
+              {i > 0 || state === "complete" ? " · " : null}
               {typeof seg === "string" ? (
                 seg
               ) : (
@@ -3517,6 +3558,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
     return extractNextPaths(last.text).suggestions[0] ?? null;
+  }, [activePath]);
+
+  // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
+  // a pill row directly above the composer (aligned to the reading column) —
+  // the most actionable element sits closest to the input. That turn's in-turn
+  // pill row is suppressed (followUp.turnId → TurnRow) so the suggestions
+  // never render twice; older turns keep their in-turn rows. Capped at 4 and
+  // laid out on the uniform-rows data-count grammar (never a 3+1 wrap).
+  const followUp = useMemo(() => {
+    const empty = { turnId: null as string | null, suggestions: [] as string[] };
+    const last = [...activePath]
+      .reverse()
+      .find((t) => t.role === "assistant" && !t.pending && !t.error);
+    if (!last?.text) return empty;
+    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions.slice(0, 4);
+    return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
 
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
@@ -5416,6 +5473,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onBack={onBack}
         >
           <div className="cave-chat-session-actions">
+            {/* Chat-revamp 1b: the design's header "Mark done" slot. This
+                app's session lifecycle verb is Archive (reversible, kebab has
+                carried it since cave-nuzg) — honest verbs rule, so the ghost
+                button says Archive. Hidden on already-archived sessions (the
+                kebab's Unarchive covers restore). */}
+            {sessionId && session && !session.archived_at ? (
+              <button
+                type="button"
+                className="cave-chat-archive-btn focus-ring"
+                onClick={() => void setChatArchived(true)}
+                disabled={archiving}
+                title="Archive this chat — it leaves the rail but is never deleted"
+              >
+                {archiving ? "Archiving…" : "Archive"}
+              </button>
+            ) : null}
             {turns.length > 0 ? (
               <ChatFindBar
                 open={findOpen}
@@ -5542,6 +5615,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
+            followUpTurnId={followUp.turnId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -5654,6 +5728,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         className="cave-composer-dock"
         style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
       >
+        {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
+            directly above the composer, aligned to the reading column. Same
+            data source (<coven:next-paths>) and pill grammar as the in-turn
+            rows; hidden while a response streams so a stale suggestion can't
+            be clicked mid-turn. */}
+        {followUp.suggestions.length && !busy ? (
+          <div className="cave-chat-followups" role="group" aria-label="Suggested follow-ups">
+            <div className="cave-next-paths cave-chat-followups__row" data-count={followUp.suggestions.length}>
+              {followUp.suggestions.map((s, i) => (
+                <button key={i} type="button" className="cave-next-path" onClick={() => void send(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="cave-composer-shell">
           {mentionOpen ? (
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
@@ -6357,6 +6447,7 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId,
   onOpenUrl,
   handlersRef,
+  followUpTurnId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -6370,6 +6461,9 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
+  /** The turn whose follow-up pills render above the composer instead of
+   *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
+  followUpTurnId: string | null;
 }) {
   const handlers = () => handlersRef.current;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
@@ -6420,6 +6514,7 @@ const TranscriptRows = memo(function TranscriptRows({
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
+          suppressSuggestions={t.id === followUpTurnId}
         />
       );
     }
@@ -6468,6 +6563,7 @@ const TranscriptRows = memo(function TranscriptRows({
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
+              suppressSuggestions={t.id === followUpTurnId}
             />
           );
         })}
@@ -6494,9 +6590,13 @@ function TurnRowImpl({
   onSuggestion,
   feedbackContext,
   branchNav,
+  suppressSuggestions = false,
 }: {
   turn: Turn;
   onSuggestion?: (s: string) => void;
+  /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
+   *  render above the composer instead of at the turn's tail. */
+  suppressSuggestions?: boolean;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -6573,7 +6673,7 @@ function TurnRowImpl({
             <UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" />
           ) : (
             <div className="cave-linear-turn-avatar cave-linear-turn-avatar--system" aria-hidden="true">
-              <Icon name="ph:terminal-window" width={24} height={24} />
+              <Icon name="ph:terminal-window" width={15} height={15} />
             </div>
           )}
           <div className="cave-linear-turn-right">
@@ -6709,6 +6809,18 @@ function TurnRowImpl({
   const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
   const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
 
+  // Chat-revamp 1b: settled tool activity splits once, up front. Codex
+  // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
+  // below the prose — they're the actionable output (Review/Undo), so they
+  // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
+  // greps, bash, …) collapses into the ONE work line ABOVE the answer
+  // ("Worked for <duration> · <N> steps · ran <cmd>"). Streaming turns weave
+  // tools inline instead — see renderSegments.
+  const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
+  const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
+  const editCards = settledTools.filter(isEditCard);
+  const otherTools = settledTools.filter((t) => !isEditCard(t));
+
   return (
     <div
       data-turn-id={turn.id}
@@ -6726,7 +6838,7 @@ function TurnRowImpl({
             aria-label={`Show ${familiar.display_name}'s details`}
             onClick={onToggleAvatar}
           >
-            <FamiliarIcon familiar={familiar} size="xl" />
+            <FamiliarIcon familiar={familiar} size={expanded ? "xl" : "md"} />
           </button>
           {expanded ? (
             <FamiliarInlineCard
@@ -6794,6 +6906,10 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
+            {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
+                answer, so the reader sees "Worked for … · N steps" first and
+                the prose below reads uninterrupted. */}
+            {otherTools.length ? <ToolGroup tools={otherTools} durationMs={turn.durationMs} /> : null}
             {indicatorVisible ? (
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
@@ -6847,19 +6963,10 @@ function TurnRowImpl({
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
-            {/* Designated "Tool activity" section on settled turns. Codex
-                file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE
-                inline — they're the actionable output (Review/Undo), so they must
-                not be buried in the collapsed rollup. All OTHER tool activity
-                (reads, greps, bash, …) collapses into the ToolGroup below the
-                prose. Streaming turns weave tools inline instead — see
-                renderSegments. */}
-            {!turn.pending && turn.tools?.length
+            {/* Edit cards on settled turns (the work line above the answer
+                already collapsed everything else). */}
+            {!turn.pending && turn.tools?.length && editCards.length
               ? (() => {
-                  const isEditCard = (t: ToolEvent) =>
-                    toolInputAsDiff(t.name, t.input) != null;
-                  const editCards = turn.tools.filter(isEditCard);
-                  const otherTools = turn.tools.filter((t) => !isEditCard(t));
                   // Golden path 4 (cave-qva4): a multi-file turn gets ONE
                   // aggregate entry into the working-tree review — the
                   // per-card Review buttons remain, but "which of these five
@@ -6875,40 +6982,35 @@ function TurnRowImpl({
                     ),
                   );
                   return (
-                    <>
-                      {editCards.length ? (
-                        <div className="cave-edit-cards mt-3 space-y-2">
-                          {editedFiles.length > 1 ? (
-                            <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
-                                {editedFiles.length} files changed
-                              </span>
-                              <button
-                                type="button"
-                                className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                                aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
-                                onClick={() =>
-                                  window.dispatchEvent(
-                                    new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
-                                  )
-                                }
-                              >
-                                Review all
-                              </button>
-                            </div>
-                          ) : null}
-                          {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+                    <div className="cave-edit-cards mt-3 space-y-2">
+                      {editedFiles.length > 1 ? (
+                        <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                          <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                            {editedFiles.length} files changed
+                          </span>
+                          <button
+                            type="button"
+                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                            aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                            onClick={() =>
+                              window.dispatchEvent(
+                                new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                              )
+                            }
+                          >
+                            Review all
+                          </button>
                         </div>
                       ) : null}
-                      {otherTools.length ? <ToolGroup tools={otherTools} /> : null}
-                    </>
+                      {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+                    </div>
                   );
                 })()
               : null}
             {/* Suggested follow-ups render LAST — they're the most actionable
                 element (click to send), so they sit closest to the composer and
                 aren't pushed up the turn by the tool-activity section. */}
-            {nextPaths.length > 0 && !turn.pending ? (
+            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions ? (
               // data-count keys the row layout: pills lay out 1, 2, or 3 per
               // row — 4 pills pair into a 2×2, never a 3+1 orphan wrap.
               <div className="cave-next-paths" data-count={nextPaths.length}>
@@ -7076,22 +7178,41 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   );
 }
 
-function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: number }) {
+  // Chat-revamp 1b: agent work collapses to ONE quiet bordered line —
+  // "Worked for <duration> · <N> steps · ran <last command>" — expandable to
+  // the full per-tool detail. aria-expanded mirrors the native <details>
+  // disclosure state for AT that doesn't map summary semantics.
+  const [open, setOpen] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
-  const completed = tools.length - running - errors;
+  const duration = fmtDuration(durationMs);
+  // The last shell-ish command the agent ran — the "· ran `cmd`" mono chip.
+  const lastShellTool = [...tools]
+    .reverse()
+    .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
+  const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
 
   return (
-    <details className="cave-tool-group mt-3" data-default-collapsed="true">
-      <summary className="cave-tool-summary">
-        <span className="inline-flex items-center gap-1.5">
-          <Icon name="ph:wrench" width={12} aria-hidden />
-          Tool activity
+    <details
+      className="cave-tool-group cave-work-line mt-3"
+      data-default-collapsed="true"
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
+        <span className="cave-work-line__label">
+          {duration ? `Worked for ${duration} · ` : ""}
+          {tools.length} {tools.length === 1 ? "step" : "steps"}
         </span>
+        {lastCommand ? (
+          <span className="cave-work-line__ran">
+            {"· ran "}
+            <code className="cave-work-line__cmd">{lastCommand}</code>
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
-          {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
       <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
@@ -7420,6 +7541,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
+    prev.suppressSuggestions === next.suppressSuggestions &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

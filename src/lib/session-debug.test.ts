@@ -341,8 +341,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} \/>/,
-  "settled turns render edit-tool cards inline and collapse other tool activity into the ToolGroup",
+  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} durationMs=\{turn\.durationMs\} \/>/,
+  "settled turns render edit-tool cards inline and collapse other tool activity into the work-line ToolGroup (chat-revamp 1b: above the answer, stamped with the turn duration)",
 );
 assert.match(
   chatViewSource,
