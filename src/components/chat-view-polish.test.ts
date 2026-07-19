@@ -583,6 +583,16 @@ assert.match(
 );
 assert.match(
   source,
+  /const hasLiveGeneration = \(\) => \{[\s\S]*readLiveChatGeneration\(sessionId\)[\s\S]*isLiveSnapshotActive[\s\S]*if \(hasLiveGeneration\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
+  "A stale successful history response must not overwrite an active live transcript",
+);
+assert.match(
+  source,
+  /consumeChatSse\(res\.body, applyStreamEvent\)[\s\S]*\/api\/chat\/stream\?runId=\$\{encodeURIComponent\(runId\)\}&cursor=\$\{cursor\}/,
+  "A chat stream that ends without done reattaches through the buffered stream endpoint",
+);
+assert.match(
+  source,
   /<LinkedContextRow\b/,
   "ChatView should render LinkedContextRow for task/GitHub chips",
 );
