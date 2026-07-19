@@ -33,6 +33,14 @@ assert.equal(
   assert.match(res.error, /text too long/);
 }
 {
+  for (const badText of [null, 42, {}, []]) {
+    const bad = { id: crypto.randomUUID(), role: "user", text: badText, createdAt: new Date().toISOString() };
+    const res = checkTurnBounds([bad]);
+    assert.equal(res?.status, 400, `non-string text (${JSON.stringify(badText)}) returns 400, not a throw`);
+    assert.match(res.error, /must be a string/);
+  }
+}
+{
   // Many medium turns whose serialized size blows the payload cap.
   const chunk = "z".repeat(50_000);
   const many = Array.from({ length: 200 }, () => turn("user", chunk));
