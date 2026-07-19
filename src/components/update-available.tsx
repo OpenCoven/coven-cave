@@ -89,7 +89,6 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
 
 /** Install an already downloaded and verified update, then relaunch where supported. */
 async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
-  await updateDaemonForCaveUpdate(update.version, { confirmInstall: true });
   await update.install();
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
@@ -693,7 +692,7 @@ export function UpdateSettingsRow() {
   } else if (state.phase === "installing") {
     control = (
       <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
-        Updating daemon &amp; installing…
+        Installing update…
       </span>
     );
   } else if (state.phase === "available") {
