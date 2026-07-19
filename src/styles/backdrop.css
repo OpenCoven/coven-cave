@@ -191,3 +191,16 @@ html[data-backdrop-on] .home-composer-root {
     -webkit-backdrop-filter: none;
   }
 }
+
+/* ── Side panes stay solid (the contract above, enforced) ────────────────────
+   A solid background is not enough: the backdrop is a fixed z-0 layer, and
+   panels that sit below it in paint order get the image composited over
+   their solid paint anyway (bit the chats rail after the icon-rail revamp).
+   Lift the nav + list panes one stacking step and ground them on the panel
+   color, so the image shows through the content area only. */
+html[data-backdrop-on] .shell-nav-panel,
+html[data-backdrop-on] .shell-list-panel {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-panel);
+}
