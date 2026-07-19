@@ -997,6 +997,8 @@ export const SUITES = {
     "src/app/api/salem/pathfinder/route.test.ts",
     "src/app/api/changes/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
+    "src/app/api/flows/runs/route.test.ts",
+    "src/lib/server/run-history-guards.test.ts",
     "src/lib/server/project-grant-targets.test.ts",
     "src/app/api/access-groups/route.test.ts",
     "src/app/api/project-permission-routes.test.ts",
