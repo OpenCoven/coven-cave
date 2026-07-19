@@ -286,7 +286,9 @@ export async function clearWorkflowRuns(
   workflowId?: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<{ ok: boolean; cleared?: number; error?: string }> {
-  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "";
+  // Scoped clear passes the id; a full wipe must explicitly opt in with
+  // `?all=1` so the server can reject accidental bare DELETEs (issue #3470).
+  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "?all=1";
   const res = await fetchImpl(`/api/workflows/runs${query}`, { method: "DELETE", cache: "no-store" });
   return res.json() as Promise<{ ok: boolean; cleared?: number; error?: string }>;
 }

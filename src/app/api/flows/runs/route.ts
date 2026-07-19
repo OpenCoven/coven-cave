@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { clearFlowRuns, listFlowRuns, recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
-import type { FlowRunRecord } from "@/lib/flows";
+import { isLocalOrigin } from "@/lib/server/local-origin";
+import {
+  resolveRunSource,
+  resolveWipe,
+  validateSteps,
+} from "@/lib/server/run-history-guards";
+import type { FlowRunRecord, FlowRunStepRecord } from "@/lib/flows";
 
 export const dynamic = "force-dynamic";
 
 const STATUSES = new Set(["preview", "running", "succeeded", "failed"]);
 const MODES = new Set(["manual", "production"]);
+
+const forbidden = () =>
+  NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
 /** Newest-first run history, optionally `?flowId=` filtered. */
 export async function GET(req: Request) {
@@ -16,6 +25,7 @@ export async function GET(req: Request) {
 
 /** Record a run (preview snapshots from the editor, live session executions). */
 export async function POST(req: Request) {
+  if (!isLocalOrigin(req)) return forbidden();
   let body: Partial<Omit<FlowRunRecord, "id">>;
   try {
     body = await req.json();
@@ -28,6 +38,10 @@ export async function POST(req: Request) {
   if (!body.status || !STATUSES.has(body.status)) {
     return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
+  const steps = validateSteps<FlowRunStepRecord>(body.steps);
+  if (!steps.ok) {
+    return NextResponse.json({ ok: false, error: steps.error }, { status: 413 });
+  }
   const run = await recordFlowRun({
     flowId: body.flowId,
     flowName: typeof body.flowName === "string" ? body.flowName : undefined,
@@ -37,9 +51,9 @@ export async function POST(req: Request) {
     redacted: body.redacted === true ? true : undefined,
     startedAt: typeof body.startedAt === "string" ? body.startedAt : new Date().toISOString(),
     finishedAt: typeof body.finishedAt === "string" ? body.finishedAt : undefined,
-    steps: Array.isArray(body.steps) ? body.steps : [],
+    steps: steps.steps,
     summary: typeof body.summary === "string" ? body.summary : undefined,
-    source: body.source === "daemon" ? "daemon" : "cave",
+    source: resolveRunSource(req, body.source),
     sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
     flowSnapshot: coerceFlowSnapshot(body.flowSnapshot),
   });
@@ -48,6 +62,7 @@ export async function POST(req: Request) {
 
 /** Patch a run as it finishes (status / steps / finishedAt). */
 export async function PATCH(req: Request) {
+  if (!isLocalOrigin(req)) return forbidden();
   let body: { id?: string } & Partial<Omit<FlowRunRecord, "id">>;
   try {
     body = await req.json();
@@ -62,7 +77,16 @@ export async function PATCH(req: Request) {
   }
   const patch: Partial<Omit<FlowRunRecord, "id">> = {};
   if (body.status) patch.status = body.status;
-  if (Array.isArray(body.steps)) patch.steps = body.steps;
+  if (body.steps !== undefined) {
+    if (!Array.isArray(body.steps)) {
+      return NextResponse.json({ ok: false, error: "steps must be an array" }, { status: 400 });
+    }
+    const steps = validateSteps<FlowRunStepRecord>(body.steps);
+    if (!steps.ok) {
+      return NextResponse.json({ ok: false, error: steps.error }, { status: 413 });
+    }
+    patch.steps = steps.steps;
+  }
   if (typeof body.finishedAt === "string") patch.finishedAt = body.finishedAt;
   if (typeof body.summary === "string") patch.summary = body.summary;
   if (body.redacted === true) patch.redacted = true;
@@ -86,9 +110,15 @@ function coerceFlowSnapshot(value: unknown): FlowRunRecord["flowSnapshot"] {
     : undefined;
 }
 
-/** Clear run history — one flow's runs (`?flowId=`) or the whole store. */
+/** Clear run history — one flow's runs (`?flowId=`) or the whole store (`?all=1`). */
 export async function DELETE(req: Request) {
-  const flowId = new URL(req.url).searchParams.get("flowId") ?? undefined;
-  const cleared = await clearFlowRuns(flowId);
+  if (!isLocalOrigin(req)) return forbidden();
+  const params = new URL(req.url).searchParams;
+  const flowId = params.get("flowId") ?? undefined;
+  const wipe = resolveWipe(flowId, params);
+  if (!wipe.ok) {
+    return NextResponse.json({ ok: false, error: wipe.error }, { status: 400 });
+  }
+  const cleared = await clearFlowRuns(wipe.scopeId);
   return NextResponse.json({ ok: true, cleared });
 }
