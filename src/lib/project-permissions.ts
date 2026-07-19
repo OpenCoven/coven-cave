@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
+import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 import { loadProjects, projectForRoot } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
@@ -163,13 +164,22 @@ function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-export async function loadHumanPermissionConfig(): Promise<HumanPermissionConfigFile> {
-  const fromEnv = process.env.CAVE_SUPREME_FAMILIAR_ID?.trim();
-  if (fromEnv) return { version: 1, supremeFamiliarId: fromEnv };
+function withProjectPermissionsStore<T>(operation: () => Promise<T>): Promise<T> {
+  if (process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE) return operation();
+  return withCaveHomeReconciledStore("cave-project-permissions.json", operation);
+}
 
+async function loadHumanPermissionConfigUnlocked(): Promise<HumanPermissionConfigFile> {
   const parsed = await readJsonFile<Partial<HumanPermissionConfigFile>>(humanPermissionConfigPath());
   const supremeFamiliarId = parsed?.supremeFamiliarId?.trim() || DEFAULT_SUPREME_FAMILIAR_ID;
   return { version: 1, supremeFamiliarId };
+}
+
+export async function loadHumanPermissionConfig(): Promise<HumanPermissionConfigFile> {
+  const fromEnv = process.env.CAVE_SUPREME_FAMILIAR_ID?.trim();
+  if (fromEnv) return { version: 1, supremeFamiliarId: fromEnv };
+  if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return loadHumanPermissionConfigUnlocked();
+  return withCaveHomeReconciledStore("cave-permission-config.json", loadHumanPermissionConfigUnlocked);
 }
 
 function normalizeGrant(grant: Partial<ProjectGrant>): ProjectGrant | null {
@@ -210,7 +220,7 @@ function normalizeAccessGroup(group: Partial<FamiliarAccessGroup>): FamiliarAcce
   };
 }
 
-export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> {
+async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile> {
   const parsed = await readJsonFile<
     Partial<ProjectPermissionsFile> & { version?: number }
   >(permissionsFilePath());
@@ -232,6 +242,10 @@ export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> 
   };
   materializeDueGrantProposals(file, new Date());
   return file;
+}
+
+export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> {
+  return withProjectPermissionsStore(loadProjectPermissionsUnlocked);
 }
 
 /**
@@ -435,11 +449,11 @@ export async function assertProjectRootAccess(
 }
 
 async function appendAudit(entry: Omit<PermissionAuditEntry, "id" | "at">): Promise<void> {
-  await withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  await withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     file.permissionAudit.push({ id: randomUUID(), at: new Date().toISOString(), ...entry });
     await saveProjectPermissions(file);
-  });
+  }));
 }
 
 export async function grantProjectToFamiliar(input: {
@@ -448,20 +462,20 @@ export async function grantProjectToFamiliar(input: {
   source: ProjectGrantSource;
   access?: ProjectAccessLevel;
 }): Promise<void> {
-  await withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  await withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     if (ensureProjectGrant(file, input)) {
       await saveProjectPermissions(file);
     }
-  });
+  }));
 }
 
 export async function revokeProjectFromFamiliar(input: {
   familiarId: string;
   projectId: string;
 }): Promise<boolean> {
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const next = file.projectGrants.filter(
       (grant) => !(grant.familiarId === input.familiarId && grant.projectId === input.projectId),
     );
@@ -469,7 +483,7 @@ export async function revokeProjectFromFamiliar(input: {
     file.projectGrants = next;
     await saveProjectPermissions(file);
     return true;
-  });
+  }));
 }
 
 export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Promise<void> {
@@ -501,8 +515,8 @@ export async function createGrantProposal(input: {
     throw new ProjectAccessDeniedError("relayed human approval is not accepted");
   }
 
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const proposal: GrantProposal = {
       id: randomUUID(),
       proposedBy: input.proposedBy,
@@ -515,15 +529,15 @@ export async function createGrantProposal(input: {
     file.grantProposals.push(proposal);
     await saveProjectPermissions(file);
     return proposal;
-  });
+  }));
 }
 
 export async function resolveGrantProposal(input: {
   proposalId: string;
   decision: "accepted" | "rejected";
 }): Promise<GrantProposal> {
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
     if (!grantProposal) {
       throw new ProjectAccessDeniedError("grant proposal not found");
@@ -546,7 +560,7 @@ export async function resolveGrantProposal(input: {
     }
     await saveProjectPermissions(file);
     return grantProposal;
-  });
+  }));
 }
 
 /**
@@ -555,8 +569,8 @@ export async function resolveGrantProposal(input: {
  * already materialized the grant and the proposal reads as `accepted`.
  */
 export async function undoGrantProposal(input: { proposalId: string }): Promise<GrantProposal> {
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
     if (!grantProposal) {
       throw new ProjectAccessDeniedError("grant proposal not found");
@@ -575,7 +589,7 @@ export async function undoGrantProposal(input: { proposalId: string }): Promise<
     delete grantProposal.finalizesAt;
     await saveProjectPermissions(file);
     return grantProposal;
-  });
+  }));
 }
 
 // --- Access groups -----------------------------------------------------------
@@ -643,8 +657,8 @@ export async function createAccessGroup(input: {
 }): Promise<FamiliarAccessGroup> {
   const name = input.name.trim();
   if (!name) throw new Error("access group name is required");
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const now = new Date().toISOString();
     const group: FamiliarAccessGroup = {
       id: randomUUID(),
@@ -658,7 +672,7 @@ export async function createAccessGroup(input: {
     file.accessGroups.push(group);
     await saveProjectPermissions(file);
     return group;
-  });
+  }));
 }
 
 export async function updateAccessGroup(input: {
@@ -668,8 +682,8 @@ export async function updateAccessGroup(input: {
   memberFamiliarIds?: string[];
   projectGrants?: { projectId: string; access?: ProjectAccessLevel }[];
 }): Promise<FamiliarAccessGroup> {
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const group = file.accessGroups.find((candidate) => candidate.id === input.groupId);
     if (!group) throw new AccessGroupNotFoundError();
     if (input.name !== undefined) {
@@ -689,16 +703,16 @@ export async function updateAccessGroup(input: {
     group.updatedAt = new Date().toISOString();
     await saveProjectPermissions(file);
     return group;
-  });
+  }));
 }
 
 export async function deleteAccessGroup(groupId: string): Promise<boolean> {
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
     const next = file.accessGroups.filter((group) => group.id !== groupId);
     if (next.length === file.accessGroups.length) return false;
     file.accessGroups = next;
     await saveProjectPermissions(file);
     return true;
-  });
+  }));
 }
