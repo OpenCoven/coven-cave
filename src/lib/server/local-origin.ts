@@ -1,4 +1,8 @@
-import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
+import {
+  MOBILE_ACCESS_HEADER,
+  TOKEN_HEADER,
+  timingSafeEqualString,
+} from "../../proxy-helpers.ts";
 
 /**
  * True when a request is allowed to reach DESKTOP-ONLY local routes (codex
@@ -25,7 +29,12 @@ export function isLocalOrigin(req: Request): boolean {
   if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return false;
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
-  if (sidecarToken && req.headers.get(TOKEN_HEADER) !== sidecarToken) return false;
+  if (
+    sidecarToken &&
+    !timingSafeEqualString(req.headers.get(TOKEN_HEADER) ?? "", sidecarToken)
+  ) {
+    return false;
+  }
 
   const host = req.headers.get("host") ?? "";
   const bare = host.startsWith("[") ? host.slice(1, host.indexOf("]")) : host.split(":")[0];

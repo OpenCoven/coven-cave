@@ -245,9 +245,14 @@ export async function proxy(req: NextRequest) {
   // cross-origin → CSRF) and NOT the query/referer token paths. The token value
   // is still validated below; this only relaxes the CSRF source gate for the
   // allowlisted mobile endpoints.
-  const headerCsrfTrusted =
+  // Match PTY auth: constant-time compare so token checks stay consistent across
+  // the REST proxy and server.ts upgrade path.
+  const sidecarTokenMatches = (supplied: string | null | undefined) =>
     Boolean(sidecarToken) &&
-    req.headers.get(TOKEN_HEADER) === sidecarToken &&
+    Boolean(supplied) &&
+    timingSafeEqualString(supplied as string, sidecarToken as string);
+  const headerCsrfTrusted =
+    sidecarTokenMatches(req.headers.get(TOKEN_HEADER)) &&
     isHeaderCsrfTrustedApiPath(req.nextUrl.pathname);
 
   if (!headerCsrfTrusted) {
@@ -285,7 +290,7 @@ export async function proxy(req: NextRequest) {
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??
     bearerFromRefererAny(req.headers.get("referer"), expectedOrigins);
-  const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
+  const sidecarAuthenticated = sidecarTokenMatches(suppliedToken);
 
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
