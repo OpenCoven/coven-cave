@@ -21,7 +21,7 @@
      - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
    Both resolve to the same colours so they stay in sync.
 
-   Brand: OpenCoven lavender (#9A8ECD) lives at --accent-presence.
+   Brand: OpenCoven lavender (#9386D0) lives at --accent-presence.
    Reserved for familiar presence dots and the health strip — not
    for primary CTAs.
 
@@ -33,21 +33,27 @@
 
 :root {
   /* ---- Palette (oklch — same colour science as shadcn) ----
-     Coven dark: lavender-inked grimoire. The chroma is real,
-     not a hint — surfaces should read violet, not gray. */
-  --background: oklch(0.13 0.022 293);
+     Coven dark v1.3: charcoal-graphite surfaces (chroma pared back to a
+     whisper) with the violet reserved for the brand accent — reads as
+     ink-and-graphite, not a tinted gray, matching the reference "New
+     automation" mock (cave: default-theme-repaint). */
+  --background: oklch(0.24 0.006 291);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.165 0.025 293);
+  --card: oklch(0.26 0.007 291);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.165 0.025 293);
+  --popover: oklch(0.26 0.007 291);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 293);
-  --primary-foreground: oklch(0.165 0.025 293);
-  --secondary: oklch(0.20 0.028 293);
+  --primary: oklch(0.92 0.004 291);
+  /* Dark ink, not tied to --card — --primary-foreground also paints text on
+     --brand/--accent-presence (a mid-tone violet), which needs a genuinely
+     dark ink for 4.5:1, not whatever lightness the raised surface happens
+     to be (theme-contrast-audit.test.ts). */
+  --primary-foreground: oklch(0.16 0.008 291);
+  --secondary: oklch(0.29 0.008 291);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.20 0.028 293);
-  --muted-foreground: oklch(0.66 0.018 293);
-  --accent: oklch(0.20 0.028 293);
+  --muted: oklch(0.29 0.008 291);
+  --muted-foreground: oklch(0.66 0.010 291);
+  --accent: oklch(0.29 0.008 291);
   --accent-foreground: oklch(0.985 0 0);
   --border: color-mix(in oklch, var(--foreground) 12%, transparent);
   /* WCAG 1.4.11: --border-strong marks interactive boundaries (inputs,
@@ -55,14 +61,14 @@
      22% composited under 2:1 on every theme. Hairline stays decorative. */
   --border-strong: color-mix(in oklch, var(--foreground) 48%, transparent);
   --input: color-mix(in oklch, var(--foreground) 18%, transparent);
-  --ring: oklch(0.55 0.08 293);
+  --ring: oklch(0.55 0.075 291);
 
   /* ---- Coven brand ----
      Lavender presence accent. Use sparingly — familiar dots,
      status strip, the gradient AI toggle in #22. */
-  --accent-presence: #9a8ecd;
+  --accent-presence: #9386d0;
   --accent-presence-foreground: var(--primary-foreground);
-  --accent-presence-soft: oklch(0.72 0.08 295);
+  --accent-presence-soft: oklch(0.70 0.10 293);
   --brand: var(--accent-presence);
   /* Follows the per-theme ink choice — hardcoded white failed AA on every
      palette whose accent is light (22 of 32 theme×mode combos). */
@@ -75,7 +81,7 @@
   /* Fixed near-opaque dark "ink" for code surfaces — read code blocks AND the
      file editor share it so the Code page's read↔edit toggle keeps one bg. */
   --code-surface: oklch(0.12 0.012 280 / 92%);
-  --bg-panel: oklch(0.10 0.020 293);        /* deepest — app shell / sidebar floor */
+  --bg-panel: oklch(0.22 0.006 291);        /* deepest — app shell / sidebar floor */
   --bg-raised: var(--card);
   /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
      the raised surface so it tracks every theme — this token was referenced
@@ -86,8 +92,8 @@
      base. Referenced while undefined (cave-309m); derived from --bg-base so
      every theme tracks. Light mode overrides below. */
   --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
-  --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */
-  --bg-hover: oklch(0.24 0.030 293);        /* hover state */
+  --bg-elevated: oklch(0.29 0.008 291);     /* dropdowns / popovers */
+  --bg-hover: oklch(0.32 0.009 291);        /* hover state */
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);
@@ -289,31 +295,31 @@
   color-scheme: light;
   /* No numeral bloom on light surfaces — glow reads as blur on paper. */
   --glow-numeral: none;
-  --background: oklch(0.975 0.012 293);
-  --foreground: oklch(0.18 0.020 293);
-  --card: oklch(0.95 0.014 293);
-  --card-foreground: oklch(0.18 0.020 293);
-  --popover: oklch(0.97 0.014 293);
-  --popover-foreground: oklch(0.18 0.020 293);
-  --primary: oklch(0.20 0.022 293);
-  --primary-foreground: oklch(0.975 0.012 293);
-  --secondary: oklch(0.92 0.018 293);
-  --secondary-foreground: oklch(0.18 0.020 293);
-  --muted: oklch(0.92 0.018 293);
-  --muted-foreground: oklch(0.42 0.024 293);
-  --accent: oklch(0.92 0.018 293);
-  --accent-foreground: oklch(0.18 0.020 293);
-  --ring: oklch(0.55 0.10 293);
+  --background: oklch(0.975 0.004 291);
+  --foreground: oklch(0.18 0.008 291);
+  --card: oklch(0.95 0.005 291);
+  --card-foreground: oklch(0.18 0.008 291);
+  --popover: oklch(0.97 0.005 291);
+  --popover-foreground: oklch(0.18 0.008 291);
+  --primary: oklch(0.20 0.008 291);
+  --primary-foreground: oklch(0.975 0.004 291);
+  --secondary: oklch(0.92 0.007 291);
+  --secondary-foreground: oklch(0.18 0.008 291);
+  --muted: oklch(0.92 0.007 291);
+  --muted-foreground: oklch(0.42 0.009 291);
+  --accent: oklch(0.92 0.007 291);
+  --accent-foreground: oklch(0.18 0.008 291);
+  --ring: oklch(0.55 0.09 291);
 
-  --accent-presence: #6F62A8;
+  --accent-presence: #6859ac;
   --accent-presence-foreground: var(--primary-foreground);
-  --accent-presence-soft: oklch(0.55 0.08 295);
+  --accent-presence-soft: oklch(0.53 0.10 291);
 
   --bg-base: var(--background);
-  --bg-panel: oklch(0.99 0.010 293);
+  --bg-panel: oklch(0.99 0.004 291);
   --bg-raised: var(--card);
-  --bg-elevated: oklch(0.93 0.016 293);
-  --bg-hover: oklch(0.89 0.020 293);
+  --bg-elevated: oklch(0.93 0.006 291);
+  --bg-hover: oklch(0.89 0.008 291);
   /* Lighter mix step than dark mode — light surfaces need less push to
      read as recessed. */
   --bg-sunken: color-mix(in oklch, var(--bg-base) 96%, black);

@@ -25,7 +25,7 @@
      chrome labels must clear AA 4.5:1 on the code surface — 40% composited
      to ~3.7:1. Pinned by theme-contrast-audit.test.ts (chrome section). */
   --code-chrome-ink-faint: oklch(0.985 0 0 / 72%);    /* dark-mode --text-muted */
-  --code-chrome-accent: #9a8ecd;                      /* dark-mode --accent-presence */
+  --code-chrome-accent: #9386d0;                      /* dark-mode --accent-presence */
   /* Fixed chrome surfaces. The body surface is the shared --code-surface
      (globals.css); these are its raised header/footer and control steps.
      Theme borders flip to dark ink in light mode and vanish on this chrome,

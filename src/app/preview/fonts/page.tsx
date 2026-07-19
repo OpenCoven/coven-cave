@@ -118,7 +118,7 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
         <span
           style={{
             fontSize: 13,
-            color: "var(--text-muted, #9a8ecd)",
+            color: "var(--text-muted, #9386d0)",
             fontFamily: "var(--font-sans), system-ui, sans-serif",
           }}
         >
@@ -200,7 +200,7 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
           lineHeight: 1.4,
           margin: "0 0 1.5rem",
           padding: "0.5rem 0 0.5rem 1.25rem",
-          borderLeft: "2px solid var(--oc-purple-primary, #9a8ecd)",
+          borderLeft: "2px solid var(--oc-purple-primary, #9386d0)",
           color: "var(--text-primary, #f4f1fa)",
           maxWidth: "48ch",
         }}
@@ -231,7 +231,7 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
           style={{
             fontFamily: "var(--font-mono), ui-monospace, monospace",
             fontSize: 12,
-            color: "var(--text-muted, #9a8ecd)",
+            color: "var(--text-muted, #9386d0)",
             letterSpacing: "0.06em",
             textTransform: "uppercase",
           }}
@@ -261,7 +261,7 @@ export default function FontPreviewPage() {
               fontSize: 12,
               letterSpacing: "0.16em",
               textTransform: "uppercase",
-              color: "var(--oc-purple-primary, #9a8ecd)",
+              color: "var(--oc-purple-primary, #9386d0)",
               margin: "0 0 0.75rem",
             }}
           >
@@ -310,7 +310,7 @@ export default function FontPreviewPage() {
             borderTop: "1px solid var(--border-subtle, rgba(154, 142, 205, 0.18))",
             fontFamily: "var(--font-mono), ui-monospace, monospace",
             fontSize: 12,
-            color: "var(--text-muted, #9a8ecd)",
+            color: "var(--text-muted, #9386d0)",
             letterSpacing: "0.04em",
           }}
         >
