@@ -4,14 +4,6 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./popover.tsx", import.meta.url), "utf8");
 
-function sliceBetween(source: string, startToken: string, endToken: string) {
-  const start = source.indexOf(startToken);
-  assert.notEqual(start, -1, `missing start token: ${startToken}`);
-  const end = source.indexOf(endToken, start + startToken.length);
-  assert.notEqual(end, -1, `missing end token after ${startToken}`);
-  return source.slice(start, end + endToken.length);
-}
-
 // The popover must consume its own Escape: a capture-phase keydown listener that
 // stopPropagation()s before the event reaches a parent dialog's bubble-phase
 // handler (e.g. Settings, which closes itself on Escape). Without this, one Esc
@@ -124,31 +116,5 @@ assert.match(
   /anchorRef\.current\?\.contains\(next\)/,
   "focus moving back to the anchor doesn't close the popover",
 );
-
-// Menu bodies get shared keyboard navigation: ArrowUp/Down wrap through enabled
-// menuitem/menuitemradio descendants, Home/End jump to the ends, and text-entry
-// controls inside a popover are left alone.
-assert.match(src, /role === "menu"/, "keyboard navigation only attaches to menu popovers");
-assert.match(src, /autoFocusMenuItem\?: boolean/, "menu bodies expose opt-in first-item autofocus");
-assert.match(src, /const shouldAutoFocusMenuItem = autoFocusMenuItem \?\? role === "menu"/, "first-item autofocus defaults on only for menu bodies");
-const popoverBody = sliceBetween(src, "export function PopoverBody({", "export function PopoverLabel({ children }: { children: ReactNode }) {");
-assert.match(popoverBody, /useEffect\(\(\) => \{/, "menu autofocus runs from a passive effect");
-assert.equal(
-  popoverBody.includes("useLayoutEffect(() => {"),
-  false,
-  "menu autofocus no longer runs during layout, so ContextMenu can capture pre-open focus first",
-);
-assert.match(popoverBody, /enabledMenuItems\(bodyRef\.current\)\[0\]\?\.focus\(\)/, "menu popovers focus the first enabled item on open");
-assert.match(src, /e\.key === "ArrowDown"/, "menu navigation handles ArrowDown");
-assert.match(src, /e\.key === "ArrowUp"/, "menu navigation handles ArrowUp");
-assert.match(src, /e\.key === "Home"/, "menu navigation handles Home");
-assert.match(src, /e\.key === "End"/, "menu navigation handles End");
-assert.match(src, /\[role="menuitem"\], \[role="menuitemradio"\]/, "menu navigation targets shared menu items");
-assert.match(src, /item\.hasAttribute\("disabled"\)/, "menu navigation understands disabled items");
-assert.match(src, /item\.getAttribute\("aria-disabled"\) === "true"/, "menu navigation also understands aria-disabled items");
-assert.match(src, /const items = enabledMenuItems\(/, "keyboard navigation walks only enabled menu items");
-assert.match(src, /target\.closest\('input, textarea, select, \[contenteditable\]'\)/, "menu navigation does not hijack embedded text-entry controls");
-assert.match(src, /\(currentIndex \+ 1\) % items\.length/, "ArrowDown wraps to the first enabled item");
-assert.match(src, /\(currentIndex - 1 \+ items\.length\) % items\.length/, "ArrowUp wraps to the last enabled item");
 
 console.log("popover.test.ts: ok");

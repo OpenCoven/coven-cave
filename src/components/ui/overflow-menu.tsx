@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import type { IconName } from "@/lib/icon";
 import { IconButton, type IconButtonProps } from "./icon-button";
-import { Popover, PopoverBody, activatedMenuItem, type PopoverProps } from "./popover";
+import { Popover, PopoverBody, type PopoverProps } from "./popover";
 
 export type OverflowMenuProps = {
   /** Accessible name for both the trigger and the menu (e.g. "More actions"). */
@@ -44,7 +44,10 @@ export function OverflowMenu({
   // Close after any enabled menuitem is activated, without asking every
   // consumer to thread a close() through their onSelect handlers.
   const onBodyClick = useCallback((e: React.MouseEvent) => {
-    if (activatedMenuItem(e.target)) setOpen(false);
+    const item = (e.target as Element).closest?.(
+      '[role="menuitem"], [role="menuitemradio"]',
+    );
+    if (item && !(item as HTMLButtonElement).disabled) setOpen(false);
   }, []);
 
   return (
@@ -73,9 +76,11 @@ export function OverflowMenu({
         minWidth={minWidth}
         ariaLabel={ariaLabel}
       >
-        <PopoverBody role="menu" ariaLabel={ariaLabel} onClick={onBodyClick}>
-          {children}
-        </PopoverBody>
+        <div onClick={onBodyClick}>
+          <PopoverBody role="menu" ariaLabel={ariaLabel}>
+            {children}
+          </PopoverBody>
+        </div>
       </Popover>
     </>
   );
