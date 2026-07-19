@@ -18,6 +18,10 @@ import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
+import {
+  checkTurnBounds,
+  sanitizeClientTurns,
+} from "@/lib/server/conversation-write-guards";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -201,12 +205,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!turns || turns.length === 0) {
     return jsonError("turn or turns required", 400);
   }
+  // Client writers cannot forge harness telemetry onto assistant/system turns.
+  const safeTurns = sanitizeClientTurns(turns);
   const existing = await loadConversation(id);
+  const merged = [...(existing?.turns ?? []), ...safeTurns];
+  const bounds = checkTurnBounds(merged);
+  if (bounds) return jsonError(bounds.error, bounds.status);
   const conversation = buildConversation({
     id,
     body,
     existing,
-    turns: [...(existing?.turns ?? []), ...turns],
+    turns: merged,
   });
   if (!conversation) {
     return jsonError("familiarId and harness are required for new history", 400);
@@ -228,8 +237,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   const turns = normalizeTurns(body);
   if (!turns) return jsonError("turns required", 400);
+  // Client writers cannot forge harness telemetry onto assistant/system turns.
+  const safeTurns = sanitizeClientTurns(turns);
+  const bounds = checkTurnBounds(safeTurns);
+  if (bounds) return jsonError(bounds.error, bounds.status);
   const existing = await loadConversation(id);
-  const conversation = buildConversation({ id, body, existing, turns });
+  const conversation = buildConversation({ id, body, existing, turns: safeTurns });
   if (!conversation) {
     return jsonError("familiarId and harness are required", 400);
   }

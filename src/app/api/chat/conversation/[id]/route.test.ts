@@ -63,6 +63,15 @@ function paramsFor(id: string) {
 }
 
 const { DELETE } = await import("./route.ts");
+const { PUT, POST } = await import("./route.ts");
+
+function writeReq(bodyObj: unknown) {
+  return new Request("http://test/api/chat/conversation/x", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+}
 
 test("DELETE ?ifEmpty=1 on an empty conversation deletes it and does NOT sacrifice", async () => {
   writeConversation("sess-empty", []);
@@ -111,4 +120,49 @@ test("default DELETE (no ifEmpty) still deletes AND sacrifices, even with turns"
   assert.equal(existsSync(conversationPath("sess-default")), false, "file removed");
   const state = readState();
   assert.equal(typeof state.sessionSacrificed["sess-default"], "string", "sacrificed — other callers depend on this");
+});
+
+// --- #3469: client PUT cannot forge harness telemetry onto assistant turns ---
+test("PUT strips client-forged assistant telemetry (usage/cost/tools/reasoning)", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [
+        { role: "user", text: "hi" },
+        {
+          role: "assistant",
+          text: "totally real answer",
+          usage: { inputTokens: 999, outputTokens: 999 },
+          costUsd: 42,
+          tools: [{ id: "t", name: "shell", status: "ok" }],
+          reasoning: "fake",
+        },
+      ],
+    }),
+    paramsFor("sess-forge"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200, "legitimate client write still succeeds");
+  const asst = json.conversation.turns.find((t: any) => t.role === "assistant");
+  assert.ok(asst, "assistant turn persisted");
+  assert.equal(asst.text, "totally real answer", "text preserved");
+  for (const f of ["usage", "costUsd", "tools", "reasoning"]) {
+    assert.equal(f in asst, false, `harness-owned ${f} stripped from client write`);
+  }
+});
+
+test("PUT rejects an over-long turn with 413", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{ role: "user", text: "z".repeat(200_001) }],
+    }),
+    paramsFor("sess-toolong"),
+  );
+  assert.equal(res.status, 413, "over-long turn text is rejected with 413");
+  const json = await res.json();
+  assert.equal(json.ok, false);
+  assert.match(json.error, /too long/);
 });
