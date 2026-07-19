@@ -12,6 +12,7 @@ export {
 import type { CaveProject } from "./cave-projects-types.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
+import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -70,7 +71,12 @@ function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-export async function loadProjects(): Promise<CaveProject[]> {
+function withProjectsStore<T>(operation: () => Promise<T>): Promise<T> {
+  if (process.env.CAVE_PROJECTS_PATH_OVERRIDE) return operation();
+  return withCaveHomeReconciledStore("cave-projects.json", operation);
+}
+
+async function loadProjectsUnlocked(): Promise<CaveProject[]> {
   const raw = await readFileOrNull(projectsFilePath());
   if (!raw) return [];
   try {
@@ -89,6 +95,10 @@ export async function loadProjects(): Promise<CaveProject[]> {
   }
 }
 
+export async function loadProjects(): Promise<CaveProject[]> {
+  return withProjectsStore(loadProjectsUnlocked);
+}
+
 async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = { version: 1, projects };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
@@ -99,8 +109,8 @@ export function createProject(input: {
   root: string;
   color?: string;
 }): Promise<CaveProject> {
-  return withWriteMutex(async () => {
-    const projects = await loadProjects();
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
     const root = normalizeRoot(input.root);
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
@@ -120,7 +130,7 @@ export function createProject(input: {
     };
     await saveProjects([...projects, project]);
     return project;
-  });
+  }));
 }
 
 export function patchProject(
@@ -129,8 +139,8 @@ export function patchProject(
   // root-hash tint); undefined leaves it untouched.
   patch: { name?: string; root?: string; color?: string | null },
 ): Promise<CaveProject | null> {
-  return withWriteMutex(async () => {
-    const projects = await loadProjects();
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
     const idx = projects.findIndex((project) => project.id === id);
     if (idx < 0) return null;
     const current = projects[idx];
@@ -160,17 +170,17 @@ export function patchProject(
     next[idx] = updated;
     await saveProjects(next);
     return updated;
-  });
+  }));
 }
 
 export function deleteProject(id: string): Promise<boolean> {
-  return withWriteMutex(async () => {
-    const projects = await loadProjects();
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
     const next = projects.filter((project) => project.id !== id);
     if (next.length === projects.length) return false;
     await saveProjects(next);
     return true;
-  });
+  }));
 }
 
 export async function seedDefaultProjectsIfEmpty(): Promise<void> {

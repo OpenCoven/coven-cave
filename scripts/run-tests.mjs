@@ -99,6 +99,7 @@ export const SUITES = {
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/familiar-roster-guard.test.ts",
     "src/lib/cave-projects.test.ts",
+    "src/lib/cave-home-project-store-reconciliation.test.ts",
     "src/lib/cave-inbox-create.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
