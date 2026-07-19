@@ -242,10 +242,17 @@ function ShellInner({
 
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
-  // a layout that's no longer in mobile mode.
+  // a layout that's no longer in mobile mode. On mobile, if the Chats list
+  // slot disappears under an open list drawer (e.g. a keyboard surface switch
+  // out of Chat), clear only that stale list drawer so the backdrop/body lock
+  // releases without unnecessarily closing an open nav drawer.
   useEffect(() => {
-    if (!isMobile) setMobileDrawer(null);
-  }, [isMobile]);
+    if (!isMobile) {
+      setMobileDrawer(null);
+      return;
+    }
+    if (!list) setMobileDrawer((curr) => (curr === "list" ? null : curr));
+  }, [isMobile, list]);
 
   // Seamless macOS title bar: only the macOS desktop Tauri shell overlays the
   // native title bar (lib.rs sets TitleBarStyle::Overlay). The root
