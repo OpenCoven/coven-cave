@@ -36,6 +36,7 @@ import {
   type DateTimePrefs,
 } from "@/lib/datetime-format";
 import { GRIMOIRE_HASH_PREFIX } from "@/lib/grimoire-link";
+import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
@@ -1471,6 +1472,20 @@ export function GrimoireView({
           </button>
         </div>
         <div className="surface-compact-actions">
+          {/* Doc search lives up here beside the tabs (it used to sit inside
+              the navigator rail). Same query state — it still filters the
+              rail's Stitches/Memory/Journal sections. Hidden on Relations,
+              where nothing consumes the query. */}
+          {view !== "graph" ? (
+            <SearchInput
+              value={query}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder="Search documents…"
+              aria-label="Search grimoire documents"
+              containerClassName="surface-compact-search"
+            />
+          ) : null}
           {view === "docs" ? (
             <>
               <button
@@ -1503,21 +1518,8 @@ export function GrimoireView({
           selection || view !== "docs" ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
-        {/* Title + surface verbs moved to the compact band above; the rail
-            keeps only its list filter. */}
-        <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && query) setQuery("");
-            }}
-            placeholder="Search documents…"
-            aria-label="Search grimoire documents"
-            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-          />
-        </div>
+        {/* Title, surface verbs, and the doc search all live in the compact
+            band above — the rail is purely the grouped navigator now. */}
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
