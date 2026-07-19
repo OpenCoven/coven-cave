@@ -3,6 +3,42 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+function extractCreateProject(sourceText) {
+  const match = sourceText.match(
+    /const createProject = useCallback\(async \(name: string, root: string\): Promise<CaveProject \| null> => \{([\s\S]*?)\n\s*\}, \[\]\);/,
+  );
+  assert.ok(match, "createProject callback should remain in use-projects.ts");
+  const body = match[1].replace(/\s+as ProjectsPayload \| null/g, "");
+  return new AsyncFunction("fetch", "invalidateProjectsCache", "setProjects", "sortProjectsAlphabetically", "name", "root", body);
+}
+
+async function runCreateProject({
+  response,
+  previousProjects = [],
+  name = "Beta",
+  root = "/beta",
+}) {
+  const requests = [];
+  const invalidations = [];
+  const updates = [];
+  const createProject = extractCreateProject(source);
+  const result = await createProject(
+    async (url, init) => {
+      requests.push([url, init]);
+      return response;
+    },
+    () => invalidations.push("invalidate"),
+    (updater) => {
+      updates.push(updater(previousProjects));
+    },
+    (projects) => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
+    name,
+    root,
+  );
+  return { result, requests, invalidations, updates };
+}
 
 // When the scope (familiarId) changes or the hook re-enables, the previous
 // scope's list must be dropped before the refetch resolves. Otherwise a
@@ -48,5 +84,72 @@ assert.equal(
   5,
   "all five mutations (create/rename/updateRoot/updateColor/delete) invalidate the cache",
 );
+
+// createProject: server failures/malformed payloads throw, preserving a string
+// server error when present.
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: false,
+      status: 403,
+      json: async () => ({ ok: false, error: "Choose a folder inside a configured Cave workspace." }),
+    },
+  }),
+  /Choose a folder inside a configured Cave workspace\./,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: true,
+      status: 422,
+      json: async () => ({ ok: false, error: "Name is required." }),
+    },
+  }),
+  /Name is required\./,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    },
+  }),
+  /Failed to create project \(200\)/,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error("bad json");
+      },
+    },
+  }),
+  /Failed to create project \(500\)/,
+);
+
+// Success returns the created project, invalidates the list cache, and appends
+// the new row via the shared alphabetical sort.
+{
+  const previousProjects = [
+    { id: "g", name: "Gamma", root: "/gamma" },
+    { id: "a", name: "Alpha", root: "/alpha" },
+  ];
+  const responseProject = { id: "b", name: "Beta", root: "/beta" };
+  const { result, requests, invalidations, updates } = await runCreateProject({
+    previousProjects,
+    response: {
+      ok: true,
+      status: 201,
+      json: async () => ({ ok: true, project: responseProject }),
+    },
+  });
+  assert.deepEqual(result, responseProject);
+  assert.equal(requests[0][0], "/api/projects");
+  assert.equal(invalidations.length, 1);
+  assert.deepEqual(updates, [[previousProjects[1], responseProject, previousProjects[0]]]);
+}
 
 console.log("use-projects.test.ts: ok");

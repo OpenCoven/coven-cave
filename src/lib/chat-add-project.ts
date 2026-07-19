@@ -41,25 +41,39 @@ export async function addChatProject(args: {
 
   let projectId = args.existingProjectId ?? null;
   if (!projectId) {
-    const name = (args.name ?? "").trim() || projectNameForRoot(root);
-    const project = await args.createProject(name, root);
-    if (!project) return { ok: false, error: "could not register project" };
-    projectId = project.id;
+    try {
+      const name = (args.name ?? "").trim() || projectNameForRoot(root);
+      const project = await args.createProject(name, root);
+      if (!project) return { ok: false, error: "could not register project" };
+      projectId = project.id;
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "could not register project",
+      };
+    }
   }
 
   // Grant the active familiar access. A no-familiar context (operator/Supreme
   // view) has nothing to grant and is left to the server's own access rules.
   if (args.familiarId) {
-    const res = await doFetch("/api/project-grants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+    try {
+      const res = await doFetch("/api/project-grants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+        return {
+          ok: false,
+          error: typeof data.error === "string" ? data.error : `grant failed (${res.status})`,
+        };
+      }
+    } catch (error) {
       return {
         ok: false,
-        error: typeof data.error === "string" ? data.error : `grant failed (${res.status})`,
+        error: error instanceof Error ? error.message : "grant failed",
       };
     }
   }

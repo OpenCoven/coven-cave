@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 
 type DirEntry = { name: string; path: string };
 type BrowseResponse = {
@@ -156,10 +157,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]">
-            Select the folder you're browsing, or open a subfolder first.
-          </span>
+        <div className="flex items-start justify-between gap-3 border-t border-[var(--border-hairline)] px-3 py-2">
+          <div className="min-w-0 flex-1 space-y-1 text-[11px] text-[var(--text-muted)]">
+            <p>{PROJECT_ROOT_WORKSPACE_HELP}</p>
+            <p>Select the folder you're browsing, or open a subfolder first.</p>
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="secondary"

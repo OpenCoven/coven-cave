@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { createSwrCache } from "./swr-cache.ts";
 
-type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
+type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; project?: CaveProject; error?: string };
 
 /**
  * Module-level dedupe for GET /api/projects (cave-v8hh). The hook has 8+
@@ -144,13 +144,14 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, root }),
     });
-    const data = await res.json();
-    if (data.ok && data.project) {
-      invalidateProjectsCache();
-      setProjects((prev) => sortProjectsAlphabetically([...prev, data.project as CaveProject]));
-      return data.project as CaveProject;
+    const data = (await res.json().catch(() => null)) as ProjectsPayload | null;
+    if (!res.ok || !data?.ok || !data.project) {
+      throw new Error(typeof data?.error === "string" ? data.error : `Failed to create project (${res.status})`);
     }
-    return null;
+    const project = data.project;
+    invalidateProjectsCache();
+    setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    return project;
   }, []);
 
   const renameProject = useCallback(async (id: string, name: string): Promise<boolean> => {

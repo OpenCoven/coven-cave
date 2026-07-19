@@ -78,6 +78,22 @@ assert.equal(projectNameForRoot(""), "");
   assert.equal(granted, false);
 }
 
+// createProject throws a workspace guidance error → surface it, and do not grant.
+{
+  let granted = false;
+  const message = "Choose a folder inside a configured Cave workspace.";
+  const createProject = async () => {
+    throw new Error(message);
+  };
+  const fetchImpl = async () => {
+    granted = true;
+    return { ok: true, json: async () => ({}) };
+  };
+  const result = await addChatProject({ root: "/x", familiarId: "sage", createProject, fetchImpl });
+  assert.deepEqual(result, { ok: false, error: message });
+  assert.equal(granted, false);
+}
+
 // Grant fails → surface the server error.
 {
   const createProject = async (name, root) => ({ id: "p3", name, root });
@@ -89,6 +105,17 @@ assert.equal(projectNameForRoot(""), "");
   const result = await addChatProject({ root: "/y", familiarId: "sage", createProject, fetchImpl });
   assert.equal(result.ok, false);
   assert.match(result.error, /confirmed directly/);
+}
+
+// Create can succeed even when the grant fetch rejects later → surface the
+// grant failure as a normal result so callers can keep the created project.
+{
+  const createProject = async (name, root) => ({ id: "p4", name, root });
+  const fetchImpl = async () => {
+    throw new Error("network down");
+  };
+  const result = await addChatProject({ root: "/z", familiarId: "sage", createProject, fetchImpl });
+  assert.deepEqual(result, { ok: false, error: "network down" });
 }
 
 // Blank root → guarded before any I/O.
