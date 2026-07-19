@@ -9134,6 +9134,14 @@ a.mobile-handoff__link:hover {
   cursor: pointer;
 }
 
+/* Buttons shrink-wrap even as flex containers — without an explicit width the
+   log row (and its hairline separator) ends at its content instead of
+   spanning the pane, and __spacer can't push the timestamp right. need-main
+   stays governed by flex:1 inside its flex-row parent. */
+.rituals-overview__row {
+  width: 100%;
+}
+
 .rituals-overview__need-main {
   padding: var(--space-2) var(--space-1);
 }
