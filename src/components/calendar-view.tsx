@@ -661,13 +661,8 @@ function DeadlineStrip({
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
         <span
-<<<<<<< Updated upstream
-          className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
-          title="Task due dates from Tasks — separate from your scheduled reminders below"
-=======
           className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
-          title="Task due dates from the Board — separate from your scheduled reminders below"
->>>>>>> Stashed changes
+          title="Task due dates from Tasks — separate from your scheduled reminders below"
         >
           Due
         </span>
@@ -2051,7 +2046,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         >
           {legendFamiliars.map((f) => (
             <span key={f.id} className="inline-flex items-center gap-1.5">
-              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: f.color }} />
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: f.color }} />
               <span className="text-[var(--text-secondary)]">{f.name}</span>
             </span>
           ))}

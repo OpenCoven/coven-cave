@@ -723,14 +723,14 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           {projectError ? (
             <div
               role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
             >
               <span className="min-w-0 truncate">{projectError}</span>
               <Button
                 variant="danger-ghost"
                 size="xs"
                 onClick={() => setProjectError(null)}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
               >
                 Dismiss
               </Button>

@@ -1409,25 +1409,15 @@ function ChatTitleEditable({
   };
 
   const inputClassName = headline
-<<<<<<< Updated upstream
-    ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
-    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-medium leading-tight text-[var(--text-primary)] outline-none";
-=======
     ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
     : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] outline-none";
->>>>>>> Stashed changes
 
   // No flex-1 on the title button itself — the wrapper carries the stretch so
   // the pencil sits flush against the title text instead of drifting to the
   // far edge of the free space.
   const buttonClassName = headline
-<<<<<<< Updated upstream
-    ? "min-w-0 flex-1 truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
-    : "min-w-0 truncate text-left text-[14px] font-medium leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
-=======
     ? "min-w-0 flex-1 truncate text-left text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
     : "min-w-0 truncate text-left text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
->>>>>>> Stashed changes
 
   if (editing) {
     return (
@@ -6269,12 +6259,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-<<<<<<< Updated upstream
                       data-typing={input.trim() ? "true" : undefined}
                       className="cave-composer-send focus-ring transition-colors"
-=======
-                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,var(--color-mix-dark))] disabled:opacity-40"
->>>>>>> Stashed changes
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
@@ -7030,16 +7016,15 @@ function TurnRowImpl({
                     ),
                   );
                   return (
-<<<<<<< Updated upstream
                     <div className="cave-edit-cards mt-3 space-y-2">
                       {editedFiles.length > 1 ? (
                         <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                          <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                          <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                             {editedFiles.length} files changed
                           </span>
                           <button
                             type="button"
-                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                             aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
                             onClick={() =>
                               window.dispatchEvent(
@@ -7049,31 +7034,6 @@ function TurnRowImpl({
                           >
                             Review all
                           </button>
-=======
-                    <>
-                      {editCards.length ? (
-                        <div className="cave-edit-cards mt-3 space-y-2">
-                          {editedFiles.length > 1 ? (
-                            <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                              <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                                {editedFiles.length} files changed
-                              </span>
-                              <button
-                                type="button"
-                                className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                                aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
-                                onClick={() =>
-                                  window.dispatchEvent(
-                                    new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
-                                  )
-                                }
-                              >
-                                Review all
-                              </button>
-                            </div>
-                          ) : null}
-                          {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
->>>>>>> Stashed changes
                         </div>
                       ) : null}
                       {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
@@ -7278,17 +7238,13 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
           {duration ? `Worked for ${duration} · ` : ""}
           {tools.length} {tools.length === 1 ? "step" : "steps"}
         </span>
-<<<<<<< Updated upstream
         {lastCommand ? (
           <span className="cave-work-line__ran">
             {"· ran "}
             <code className="cave-work-line__cmd">{lastCommand}</code>
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
-=======
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
->>>>>>> Stashed changes
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
         </span>

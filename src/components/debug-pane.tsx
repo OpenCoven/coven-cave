@@ -154,7 +154,7 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]">
+            <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               {usageBreakdown(turn.usage, turn.costUsd) ?? ""}
             </span>
             {/* Preview-stripped: a pasted screenshot's base64 must not land in
@@ -415,25 +415,21 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
                 onChange={(e) => setEventQuery(e.target.value)}
                 placeholder="Filter events (kind or payload)"
                 aria-label="Filter events by kind or payload text"
-                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               />
               {eventQuery.trim() ? (
-                <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   {visibleEvents.length}/{events.length}
                 </span>
               ) : null}
             </div>
           ) : null}
           {events.length === 0 && !eventsError ? (
-<<<<<<< Updated upstream
-            <div className="py-2 text-[10px] text-[var(--text-muted)]">No events yet.</div>
+            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">No events yet.</div>
           ) : visibleEvents.length === 0 ? (
-            <div className="py-2 text-[10px] text-[var(--text-muted)]">
+            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               No events match “{eventQuery.trim()}”.
             </div>
-=======
-            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">No events yet.</div>
->>>>>>> Stashed changes
           ) : (
             <div className="flex flex-col gap-1">
               {visibleEvents.map((event) => (
@@ -442,7 +438,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
             </div>
           )}
           {tailCapped ? (
-            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-muted)]">
+            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               <span>Long event tail — showing the first {events.length} events.</span>
               <button
                 type="button"

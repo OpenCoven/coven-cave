@@ -416,7 +416,7 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
 function FamiliarRosterWarning({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div
-      className="familiar-scope-overview__notice flex items-center justify-between gap-3 px-4 py-2 text-[11px] text-[var(--color-warning)]"
+      className="familiar-scope-overview__notice flex items-center justify-between gap-3 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
       role="status"
     >
       <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -484,22 +484,22 @@ function FamiliarScopeOverview({
       <header className="familiar-scope-overview__header px-4 pb-3 pt-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <h2 className="font-serif text-[22px] font-medium text-[var(--text-primary)]">{title}</h2>
-            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            <h2 className="font-serif text-[length:var(--text-xl)] font-medium text-[var(--text-primary)]">{title}</h2>
+            <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {kind === "all"
                 ? `${familiars.length} in the active roster. Choose one to inspect its full capabilities.`
                 : `${familiars.length} in this scope. Opening the tab has not changed your selection.`}
             </p>
           </div>
-          {snapshot.loading ? <span className="text-[10px] text-[var(--text-muted)]" role="status">Scanning capabilities…</span> : null}
+          {snapshot.loading ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]" role="status">Scanning capabilities…</span> : null}
         </div>
         {missingCount ? (
-          <p className="mt-2 text-[11px] text-[var(--color-warning)]" role="status">
+          <p className="mt-2 text-[length:var(--text-xs)] text-[var(--color-warning)]" role="status">
             {missingCount} selected familiar{missingCount === 1 ? " is" : "s are"} no longer in the active roster.
           </p>
         ) : null}
         {snapshot.errors.length > 0 ? (
-          <p className="mt-2 text-[11px] text-[var(--text-muted)]" role="status">
+          <p className="mt-2 text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">
             Some capability summaries are unavailable; familiar details remain accessible.
           </p>
         ) : null}
@@ -521,16 +521,16 @@ function FamiliarScopeOverview({
                 </span>
                 <span className="min-w-0">
                   <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate font-mono text-[13px] font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                    <span className="truncate font-mono text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
+                    <span className="inline-flex items-center gap-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                       <span className={`h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`} aria-hidden />
                       {daemonRunning ? "online" : "offline"}
                     </span>
                   </span>
-                  <span className="mt-1 block truncate text-[11px] text-[var(--text-secondary)]">
+                  <span className="mt-1 block truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                     {familiar.role || "No role"} · {summary.runtime}
                   </span>
-                  <span className="familiar-scope-overview__metrics mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                  <span className="familiar-scope-overview__metrics mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
                     <span>{summary.roleCount} role{summary.roleCount === 1 ? "" : "s"}</span>
                     <span>{summary.skillCount} skill{summary.skillCount === 1 ? "" : "s"}</span>
                     <span>{summary.capabilityCount} runtime capabilit{summary.capabilityCount === 1 ? "y" : "ies"}</span>
@@ -930,20 +930,8 @@ export function ChatFamiliarView({
         aria-label="Loading familiars"
         role="status"
       >
-<<<<<<< Updated upstream
         <span className="sr-only">Loading familiar roster</span>
         <SkeletonRows count={4} />
-=======
-        <span className="text-[var(--text-muted)]" aria-hidden>
-          <Icon name="ph:sparkle" width={20} />
-        </span>
-        <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
-          No familiar selected
-        </p>
-        <p className="max-w-[28ch] text-[length:var(--text-xs)] leading-snug text-[var(--text-muted)]">
-          Pick a familiar to see its roles, skills, and runtime capabilities.
-        </p>
->>>>>>> Stashed changes
       </section>
     );
   }
@@ -953,14 +941,14 @@ export function ChatFamiliarView({
       <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Familiar roster unavailable" role="alert">
         <Icon name="ph:plugs" width={22} className="text-[var(--text-muted)]" aria-hidden />
         <div>
-          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Can&apos;t reach your familiars</h2>
-          <p className="mt-1 max-w-[38ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+          <h2 className="text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">Can&apos;t reach your familiars</h2>
+          <p className="mt-1 max-w-[38ch] text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
             Your roster could not be loaded. Your familiars are safe; retry when the daemon is available.
           </p>
           <span className="sr-only">{state.message}</span>
         </div>
         {onRetryFamiliars ? (
-          <button type="button" onClick={onRetryFamiliars} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+          <button type="button" onClick={onRetryFamiliars} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence-foreground)]">
             <Icon name="ph:arrow-clockwise" width={13} aria-hidden /> Retry
           </button>
         ) : null}
@@ -973,19 +961,19 @@ export function ChatFamiliarView({
       <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Empty familiar roster">
         <Icon name="ph:sparkle" width={22} className="text-[var(--text-muted)]" aria-hidden />
         <div>
-          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Summon your first familiar</h2>
-          <p className="mt-1 max-w-[38ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+          <h2 className="text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">Summon your first familiar</h2>
+          <p className="mt-1 max-w-[38ch] text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
             A familiar has its own identity, memory, roles, skills, and runtime. Create one to begin.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
           {onCreateFamiliar ? (
-            <button type="button" onClick={onCreateFamiliar} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+            <button type="button" onClick={onCreateFamiliar} className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence-foreground)]">
               <Icon name="ph:magic-wand-fill" width={13} aria-hidden /> Summon familiar
             </button>
           ) : null}
           {onOpenOnboarding ? (
-            <button type="button" onClick={onOpenOnboarding} className="focus-ring inline-flex min-h-9 items-center rounded-md border border-[var(--border-hairline)] px-3 text-[11px] text-[var(--text-secondary)]">
+            <button type="button" onClick={onOpenOnboarding} className="focus-ring inline-flex min-h-9 items-center rounded-md border border-[var(--border-hairline)] px-3 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
               Run full setup
             </button>
           ) : null}
@@ -999,12 +987,12 @@ export function ChatFamiliarView({
       <section className="chat-familiar-view flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 py-8 text-center" aria-label="Selected familiars unavailable" role="status">
         <Icon name="ph:warning-circle" width={22} className="text-[var(--text-muted)]" aria-hidden />
         <div>
-          <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">Selected familiar unavailable</h2>
-          <p className="mt-1 max-w-[40ch] text-[11px] leading-relaxed text-[var(--text-muted)]">
+          <h2 className="text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">Selected familiar unavailable</h2>
+          <p className="mt-1 max-w-[40ch] text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
             The saved scope references {state.selectedIds.length === 1 ? "a familiar that is" : "familiars that are"} no longer in the active roster.
           </p>
         </div>
-        <button type="button" onClick={() => onFamiliarScopeChange(null, { preserveSurface: true })} className="focus-ring inline-flex min-h-9 items-center rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)]">
+        <button type="button" onClick={() => onFamiliarScopeChange(null, { preserveSurface: true })} className="focus-ring inline-flex min-h-9 items-center rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence-foreground)]">
           View all familiars
         </button>
       </section>

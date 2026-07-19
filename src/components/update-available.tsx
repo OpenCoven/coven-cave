@@ -691,15 +691,11 @@ export function UpdateSettingsRow() {
       </>
     );
   } else if (state.phase === "installing") {
-<<<<<<< Updated upstream
     control = (
-      <span className="text-[12px] font-medium text-[var(--text-primary)]">
+      <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
         Updating daemon &amp; installing…
       </span>
     );
-=======
-    control = <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Installing…</span>;
->>>>>>> Stashed changes
   } else if (state.phase === "available") {
     const r = state.r; // narrowed to native | fallback
     control = (

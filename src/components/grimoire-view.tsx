@@ -1472,7 +1472,6 @@ export function GrimoireView({
           </button>
         </div>
         <div className="surface-compact-actions">
-<<<<<<< Updated upstream
           {/* Doc search lives up here beside the tabs (it used to sit inside
               the navigator rail). Same query state — it still filters the
               rail's Stitches/Memory/Journal sections. Hidden on Relations,
@@ -1487,9 +1486,6 @@ export function GrimoireView({
               containerClassName="surface-compact-search"
             />
           ) : null}
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
           {view === "docs" ? (
             <>
               <button
@@ -1503,76 +1499,13 @@ export function GrimoireView({
               <button
                 type="button"
                 onClick={() => openDoc({ kind: "knowledge-new" })}
-                className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               >
                 <Icon name="ph:plus" width={11} aria-hidden />
                 Blank entry
               </button>
             </>
           ) : null}
-=======
-          <div
-            role="group"
-            aria-label="Memories view"
-            className="inline-flex h-[26px] items-center gap-0.5 rounded-md border border-[var(--border-hairline)] p-0.5"
-          >
-            <button
-              type="button"
-              aria-pressed={view === "docs"}
-              onClick={() => setView("docs")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
-                view === "docs"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:book-open" width={11} aria-hidden />
-              Docs
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "journal"}
-              onClick={() => setView("journal")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
-                view === "journal"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:calendar-blank" width={11} aria-hidden />
-              Journal
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "graph"}
-              onClick={() => setView("graph")}
-              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
-                view === "graph"
-                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:graph" width={11} aria-hidden />
-              Graph
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => openDoc({ kind: "stitch-new" })}
-            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 px-2 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--accent-presence)]/20"
-          >
-            <Icon name="ph:push-pin" width={11} aria-hidden />
-            New stitch
-          </button>
-          <button
-            type="button"
-            onClick={() => openDoc({ kind: "knowledge-new" })}
-            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:plus" width={11} aria-hidden />
-            Blank entry
-          </button>
->>>>>>> Stashed changes
         </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -1585,26 +1518,8 @@ export function GrimoireView({
           selection || view !== "docs" ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
-<<<<<<< Updated upstream
         {/* Title, surface verbs, and the doc search all live in the compact
             band above — the rail is purely the grouped navigator now. */}
-=======
-        {/* Title + surface verbs moved to the compact band above; the rail
-            keeps only its list filter. */}
-        <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && query) setQuery("");
-            }}
-            placeholder="Search documents…"
-            aria-label="Search grimoire documents"
-            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-          />
-        </div>
->>>>>>> Stashed changes
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />

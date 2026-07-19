@@ -209,13 +209,8 @@ export function TasksSection({
                     onOpenBoard?.();
                     window.location.hash = `card-${card.id}`;
                   }}
-<<<<<<< Updated upstream
                   title={`Open "${card.title}" in Tasks`}
-                  className="focus-ring-inset flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-=======
-                  title={`Open "${card.title}" on the board`}
                   className="focus-ring-inset flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
->>>>>>> Stashed changes
                 >
                   <span
                     aria-hidden
@@ -230,13 +225,8 @@ export function TasksSection({
             ))}
           </ul>
           {open.length > TASK_CAP ? (
-<<<<<<< Updated upstream
-            <p className="mt-1 px-1 text-[10px] text-[var(--text-muted)]">
-              +{open.length - TASK_CAP} more in Tasks
-=======
             <p className="mt-1 px-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-              +{open.length - TASK_CAP} more on the board
->>>>>>> Stashed changes
+              +{open.length - TASK_CAP} more in Tasks
               {doneCount > 0 ? ` · ${doneCount} done` : ""}
             </p>
           ) : doneCount > 0 ? (

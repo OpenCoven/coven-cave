@@ -1208,13 +1208,8 @@ export function CommandPalette({
                       <Icon name="ph:plus-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Create task: {row.title}</span>
-<<<<<<< Updated upstream
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          New task in Tasks, scoped to the active familiar
-=======
                         <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          New card on the board, scoped to the active familiar
->>>>>>> Stashed changes
+                          New task in Tasks, scoped to the active familiar
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">create</span> : null}

@@ -1033,12 +1033,8 @@ export function HomeComposer({
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={(!text.trim() && attachments.length === 0) || sending}
-<<<<<<< Updated upstream
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
-=======
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,var(--color-mix-dark))] disabled:opacity-40"
->>>>>>> Stashed changes
                 title={`Send message (${keys.enter})`}
                 aria-label="Send"
               >

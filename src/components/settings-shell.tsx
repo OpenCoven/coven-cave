@@ -259,8 +259,8 @@ export function SettingsShell() {
       {/* The band composes the shared .surface-compact-header metrics (40px,
           hairline, family gap/padding) with .settings-shell__header, which
           keeps the gradient background and the Tauri window drag-region. The
-          token-backed padding utility preserves the mobile safe-area inset on
-          top of the band's 5px. */}
+          inline paddingTop preserves the mobile safe-area inset on top of the
+          band's 5px. */}
       <header
         className="settings-shell__header surface-compact-header shrink-0 [padding-top:calc(5px_+_var(--sai-top))]!"
         // Real window drag on the loopback webview (the CSS app-region hint is
@@ -491,13 +491,8 @@ function StopPhraseField() {
         }}
         placeholder={DEFAULT_STOP_PHRASE}
         maxLength={STOP_PHRASE_MAX_LENGTH}
-<<<<<<< Updated upstream
         aria-label="Stop phrases"
-        className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
-=======
-        aria-label="Stop phrase"
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
->>>>>>> Stashed changes
       />
     </SettingsRow>
   );
@@ -851,8 +846,7 @@ function OmnigentSettingsGroup() {
         label="Enable fleet"
         hint="Master switch (off by default). Off keeps every Omnigent surface hidden — fleet host options, Fleet buttons, per-familiar fleet defaults — and Cave contacts no Omnigent server. Available because OMNIGENT_SERVER_URL is in your Cave Vault."
       >
-<<<<<<< Updated upstream
-        <label className="flex items-center gap-2 text-[12px]">
+        <label className="flex items-center gap-2 text-[length:var(--text-sm)]">
           <input
             type="checkbox"
             checked={enabled}
@@ -864,7 +858,7 @@ function OmnigentSettingsGroup() {
       </SettingControlRow>
       {!enabled && error && (
         <div className="px-4 pb-2.5">
-          <span role="alert" className="text-[11px] text-[var(--color-danger)]">{error}</span>
+          <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</span>
         </div>
       )}
       {enabled ? (
@@ -874,22 +868,12 @@ function OmnigentSettingsGroup() {
         hint="Supplied by OMNIGENT_SERVER_URL in your Cave Vault (it overrides Cave config). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
       >
         <span
-          className="w-full min-w-[260px] max-w-md truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)]"
+          className="w-full min-w-[260px] max-w-md truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"
           aria-label="Omnigent server URL (from Vault)"
           title={activeBaseUrl || undefined}
         >
           {activeBaseUrl || "—"}
         </span>
-=======
-        <input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          aria-label="Omnigent server URL"
-          placeholder="https://omnigent.example.ts.net"
-          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none"
-          spellCheck={false}
-        />
->>>>>>> Stashed changes
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"

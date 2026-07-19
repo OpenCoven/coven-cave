@@ -151,7 +151,7 @@ function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNo
 
 function CronDetailSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
   return (
-    <section className={[`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`, "[border-color:var(--border-hairline)]! [background:color-mix(in_oklch,_var(--bg-base)_72%,_transparent)]!"].filter(Boolean).join(" ")}>
+    <section className={[(`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`), "[border-color:var(--border-hairline)]! [background:color-mix(in_oklch,_var(--bg-base)_72%,_transparent)]!"].filter(Boolean).join(" ")}>
       <div>
         <h3 className="text-[length:var(--text-sm)] font-semibold [color:var(--text-primary)]!">{title}</h3>
         {description ? <p className="mt-0.5 text-[length:var(--text-xs)] [color:var(--text-muted)]!">{description}</p> : null}
@@ -247,7 +247,7 @@ function tagStyle(kind: "outline" | "neutral" | "accent"): { background: string;
 function DetailTag({ children, tone = "outline" }: { children: ReactNode; tone?: "outline" | "neutral" | "accent" }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+      className="inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide"
       style={tagStyle(tone)}
     >
       {children}
@@ -323,12 +323,11 @@ function DetailPanel({
 
   return (
     <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
-<<<<<<< Updated upstream
       className="flex h-full flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)] focus:outline-none">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-5 py-3">
         <div className="flex items-center gap-2 min-w-0">
-          <h2 id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+          <h2 id={titleId} className="truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
             {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
           </h2>
           {unread && (
@@ -336,14 +335,6 @@ function DetailPanel({
           )}
           <span className="sr-only">{unread ? "Unread" : ""}</span>
         </div>
-=======
-      className="flex h-full flex-col focus:outline-none [background:var(--bg-raised)]! [border-left:1px_solid_var(--border-hairline)]!">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3 [border-color:var(--border-hairline)]!">
-        <h2 id={titleId} className="text-[length:var(--text-base)] font-semibold [color:var(--text-primary)]!">
-          {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
-        </h2>
->>>>>>> Stashed changes
         <Button
           variant="ghost"
           size="xs"
@@ -357,18 +348,18 @@ function DetailPanel({
       {/* Snoozed / done banners — state the panel is currently in, mirroring
           the header pills the row itself would show. */}
       {isSnoozed && (
-        <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-5 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
           <span>Snoozed — until {formatTimestamp(item.snoozeUntil!, readDateTimePrefs())}</span>
           {onCancelSnooze && (
             <Button variant="ghost" size="xs" onClick={() => onCancelSnooze(item)} disabled={busy}
-              className="shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-primary)] underline-offset-2 hover:underline disabled:opacity-40">
+              className="shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)] underline-offset-2 hover:underline disabled:opacity-40">
               Cancel
             </Button>
           )}
         </div>
       )}
       {isDone && (
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
           <Icon name="ph:check-circle-fill" width={13} className="text-[var(--accent-presence)]" aria-hidden />
           <span>Marked done — it won&apos;t fire again</span>
         </div>
@@ -382,28 +373,16 @@ function DetailPanel({
         </div>
 
         <div>
-<<<<<<< Updated upstream
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Name</p>
-          <p className="text-[14px] font-medium text-[var(--text-primary)]">
-=======
-          <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!"
-            >Name</p>
-          <p className="text-[length:var(--text-md)] font-medium [color:var(--text-primary)]!">
->>>>>>> Stashed changes
+          <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Name</p>
+          <p className="text-[length:var(--text-md)] font-medium text-[var(--text-primary)]">
             {item.title}
           </p>
         </div>
 
         {item.body && (
           <div>
-<<<<<<< Updated upstream
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Description</p>
-            <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">
-=======
-            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!"
-              >Description</p>
-            <p className="text-[length:var(--text-sm)] leading-relaxed [color:var(--text-secondary)]!">
->>>>>>> Stashed changes
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Description</p>
+            <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
               {item.body}
             </p>
           </div>
@@ -413,11 +392,7 @@ function DetailPanel({
           {isReminder && !oneTimeNotification && (
             <div>
               <FieldLabel>Schedule</FieldLabel>
-<<<<<<< Updated upstream
-              <p className="text-[12px] text-[var(--text-primary)]">
-=======
-              <p className="text-[length:var(--text-sm)] [color:var(--text-primary)]!">
->>>>>>> Stashed changes
+              <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">
                 {humanSchedule(item.recurrence)}
               </p>
             </div>
@@ -426,48 +401,38 @@ function DetailPanel({
             <div>
               <FieldLabel>Scheduled</FieldLabel>
               <p
-                className="text-[12px] text-[var(--text-primary)]"
+                className="text-[length:var(--text-sm)] text-[var(--text-primary)]"
                 title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
               >
                 {item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : "—"}
               </p>
               {item.firedAt && (
-                <p className="text-[11px] text-[var(--text-muted)]">fired {relTime(item.firedAt)}</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">fired {relTime(item.firedAt)}</p>
               )}
             </div>
           )}
           <div>
             <FieldLabel>Status</FieldLabel>
-<<<<<<< Updated upstream
-            <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
-              {paused ? "Paused" : isSnoozed ? "Snoozed" : item.status}
-=======
             <p className="text-[length:var(--text-sm)] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
-              {paused ? "Paused" : item.status}
->>>>>>> Stashed changes
+              {paused ? "Paused" : isSnoozed ? "Snoozed" : item.status}
             </p>
           </div>
           {isReminder && !oneTimeNotification && (
             <div>
               <FieldLabel>Next run</FieldLabel>
               <p
-<<<<<<< Updated upstream
-                className="text-[12px] text-[var(--text-primary)]"
-=======
-                className="text-[length:var(--text-sm)] [color:var(--text-primary)]!"
->>>>>>> Stashed changes
+                className="text-[length:var(--text-sm)] text-[var(--text-primary)]"
                 title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
               >
                 {relTime(item.fireAt)}
               </p>
             </div>
           )}
-<<<<<<< Updated upstream
           {!oneTimeNotification && (
             <div>
               <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
               <p
-                className="text-[12px]"
+                className="text-[length:var(--text-sm)]"
                 style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
                 title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
               >
@@ -485,8 +450,8 @@ function DetailPanel({
           <div className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[12px] text-[var(--text-primary)]">Delivery</p>
-                <p className="text-[11px] text-[var(--text-muted)]">
+                <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">Delivery</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   {item.muted ? "Muted — no toast, sound, or system alert" : "Toast, sound, and system alert on fire"}
                 </p>
               </div>
@@ -498,7 +463,7 @@ function DetailPanel({
                   onClick={() => onToggleMute(item)}
                   aria-pressed={!!item.muted}
                   leadingIcon={item.muted ? "ph:bell-slash-fill" : "ph:bell-slash"}
-                  className={`shrink-0 rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] disabled:opacity-40${item.muted ? "" : " border border-[var(--border-hairline)] text-[var(--text-secondary)]"}`}
+                  className={`shrink-0 rounded-[var(--radius-control)] px-2.5 py-1 text-[length:var(--text-xs)] disabled:opacity-40${item.muted ? "" : " border border-[var(--border-hairline)] text-[var(--text-secondary)]"}`}
                 >
                   {item.muted ? "Muted" : "Mute"}
                 </Button>
@@ -507,8 +472,8 @@ function DetailPanel({
             <div className="h-px bg-[var(--border-hairline)]" />
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[12px] text-[var(--text-primary)]">Read state</p>
-                <p className="text-[11px] text-[var(--text-muted)]">Reading quiets the badge; the item stays listed</p>
+                <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">Read state</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Reading quiets the badge; the item stays listed</p>
               </div>
               {onToggleRead && (
                 <Button
@@ -516,36 +481,19 @@ function DetailPanel({
                   size="xs"
                   disabled={busy || item.status !== "fired"}
                   onClick={() => onToggleRead(item)}
-                  className="shrink-0 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] disabled:opacity-40"
+                  className="shrink-0 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-40"
                 >
                   {item.readAt ? "Mark unread" : "Mark read"}
                 </Button>
               )}
             </div>
-=======
-          <div>
-            <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
-            <p
-              className="text-[length:var(--text-sm)]"
-              style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
-              title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
-            >
-              {item.firedAt ? relTime(item.firedAt) : isReminder ? "Never" : "—"}
-            </p>
->>>>>>> Stashed changes
           </div>
         </div>
 
         {familiarLabel(item.familiarId) && (
           <div>
-<<<<<<< Updated upstream
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
-=======
-            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!"
-              >Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 py-1 text-[length:var(--text-xs)] [background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [color:var(--text-secondary)]!">
->>>>>>> Stashed changes
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar</p>
+            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
               {familiarLabel(item.familiarId)}
             </span>
           </div>
@@ -553,22 +501,13 @@ function DetailPanel({
 
         {item.link && (
           <div>
-<<<<<<< Updated upstream
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Link</p>
-=======
-            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!"
-              >Link</p>
->>>>>>> Stashed changes
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Link</p>
             <Button
               variant="ghost"
               size="xs"
               leadingIcon="ph:link"
               onClick={() => item.link && onOpenLink?.(item.link)}
-<<<<<<< Updated upstream
-              className="max-w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-=======
-              className="max-w-full rounded-[var(--radius-control)] px-2.5 py-1 text-[length:var(--text-xs)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] [background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [color:var(--text-secondary)]!"
->>>>>>> Stashed changes
+              className="max-w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
             >
               <span className="truncate">{linkLabel(item.link)}</span>
             </Button>
@@ -577,25 +516,8 @@ function DetailPanel({
       </div>
 
       {/* Actions */}
-<<<<<<< Updated upstream
       <div className="border-t border-[var(--border-hairline)] px-5 py-4 space-y-2">
         {isReminder && oneTimeNotification ? (
-=======
-      <div className="border-t px-5 py-4 space-y-2 [border-color:var(--border-hairline)]!">
-        {onEdit && isReminder && (
-          <Button
-            variant="secondary"
-            fullWidth
-            disabled={busy}
-            onClick={() => onEdit(item)}
-            className="justify-center rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
-            leadingIcon="ph:pencil-simple"
-          >
-            Edit
-          </Button>
-        )}
-        {isReminder && (
->>>>>>> Stashed changes
           <>
             <div className="grid grid-cols-2 gap-2">
               <Button
@@ -603,7 +525,7 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => (isDone ? onReopen?.(item) : onDone?.(item))}
-                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+                className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
               >
                 {isDone ? "Reopen" : "Done"}
               </Button>
@@ -613,7 +535,7 @@ function DetailPanel({
                 disabled={busy || isDone}
                 onClick={() => setSnoozeOpen((v) => !v)}
                 aria-expanded={snoozeOpen}
-                className="rounded-[var(--radius-control)] border-[var(--border-hairline)] py-2 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+                className="rounded-[var(--radius-control)] border-[var(--border-hairline)] py-2 text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
               >
                 Snooze…
               </Button>
@@ -621,15 +543,15 @@ function DetailPanel({
             {snoozeOpen && !isDone && (
               <div className="flex flex-wrap justify-center gap-1.5 py-0.5">
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze10?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   10 min
                 </Button>
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze60?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   1 hour
                 </Button>
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnoozeTomorrow?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   Tomorrow, 9 AM
                 </Button>
               </div>
@@ -637,12 +559,12 @@ function DetailPanel({
             <div className="flex justify-center gap-4 pt-0.5">
               {onEdit && (
                 <Button variant="ghost" size="xs" onClick={() => onEdit(item)} disabled={busy}
-                  className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[var(--text-muted)] transition-colors disabled:opacity-40 hover:underline">
+                  className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors disabled:opacity-40 hover:underline">
                   Edit
                 </Button>
               )}
               <Button variant="ghost" size="xs" onClick={() => removeItem(item.id)} disabled={busy}
-                className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
+                className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
                 Delete
               </Button>
             </div>
@@ -655,8 +577,7 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => onEdit(item)}
-                className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                className="justify-center rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
                 leadingIcon="ph:pencil-simple"
               >
                 Edit
@@ -669,7 +590,7 @@ function DetailPanel({
                   fullWidth
                   disabled={busy || paused}
                   onClick={() => runNow(item.id)}
-                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+                  className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
                 >
                   Run now
                 </Button>
@@ -678,8 +599,7 @@ function DetailPanel({
                   fullWidth
                   disabled={busy}
                   onClick={() => togglePaused(item)}
-                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                  style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                  className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
                 >
                   {paused ? "Resume" : "Pause"}
                 </Button>
@@ -691,64 +611,22 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => stopRecurrence(item.id)}
-                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
               >
                 Stop repeating
               </Button>
             )}
             <Button
-<<<<<<< Updated upstream
               variant="danger-ghost"
               fullWidth
               disabled={busy}
               onClick={() => removeItem(item.id)}
-              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
-              style={{ color: "oklch(0.65 0.18 20)" }}
-=======
-              variant="primary"
-              fullWidth
-              disabled={busy || paused}
-              onClick={() => runNow(item.id)}
-              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
-            >
-              Run now
-            </Button>
-            <Button
-              variant="secondary"
-              fullWidth
-              disabled={busy}
-              onClick={() => togglePaused(item)}
-              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
->>>>>>> Stashed changes
+              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40 [color:oklch(0.65_0.18_20)]!"
             >
               Delete
             </Button>
           </>
         )}
-<<<<<<< Updated upstream
-=======
-        {isRecurring && isReminder && (
-          <Button
-            variant="secondary"
-            fullWidth
-            disabled={busy}
-            onClick={() => stopRecurrence(item.id)}
-            className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
-          >
-            Stop repeating
-          </Button>
-        )}
-        <Button
-          variant="danger-ghost"
-          fullWidth
-          disabled={busy}
-          onClick={() => removeItem(item.id)}
-          className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40 [color:oklch(0.65_0.18_20)]!"
-        >
-          Delete
-        </Button>
->>>>>>> Stashed changes
       </div>
     </div>
   );
@@ -1535,7 +1413,7 @@ function InboxFeedRow({
         {selectMode ? (
           <span
             aria-hidden
-            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[var(--radius-control)] border transition-colors"
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
             style={{
               borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
               background: checked ? "var(--accent-presence)" : "transparent",
@@ -1630,7 +1508,7 @@ function InboxFeedSection({
             aria-label={`Select every item in ${group.title}`}
             title={`Select all ${group.items.length} in ${group.title}`}
             onClick={() => onToggleGroup(group)}
-            className="focus-ring flex h-[var(--space-4)] w-[var(--space-4)] shrink-0 items-center justify-center rounded-[var(--radius-control)] border transition-colors"
+            className="focus-ring flex h-[var(--space-4)] w-[var(--space-4)] shrink-0 items-center justify-center rounded-[4px] border transition-colors"
             style={{
               borderColor: groupChecked ? "var(--accent-presence)" : "var(--border-strong)",
               background: groupChecked ? "var(--accent-presence)" : "transparent",
@@ -2951,20 +2829,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               )}
             </p>
           )}
-<<<<<<< Updated upstream
-=======
-          {activeTab === "inbox" && initialLoadDone && inboxFeed.needsYou.length + inboxFeed.active.length > 0 && (
-            <p className="surface-compact-summary">
-              {inboxFeed.needsYou.length > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full [background:var(--color-warning)]!" />
-                  {inboxFeed.needsYou.length} need{inboxFeed.needsYou.length === 1 ? "s" : ""} you
-                </span>
-              )}
-              {inboxFeed.active.length > 0 && <span>{inboxFeed.needsYou.length > 0 ? "· " : ""}{inboxFeed.active.length} active</span>}
-            </p>
-          )}
->>>>>>> Stashed changes
           <div className="surface-compact-actions">
             {activeTab === "overview" && searchOpen && initialLoadDone && items.length > 0 ? (
               <div className="surface-compact-search">
@@ -3344,9 +3208,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
       {detailOpen && (
         <div
-          className={[cronDetailExpanded
+          className={[(cronDetailExpanded
               ? "w-full min-w-0 flex-1 overflow-hidden"
-              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]", "[border-left:1px_solid_var(--border-hairline)]!"].filter(Boolean).join(" ")}
+              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"), "[border-left:1px_solid_var(--border-hairline)]!"].filter(Boolean).join(" ")}
         >
           {selectedItem && (
             <DetailPanel

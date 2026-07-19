@@ -887,13 +887,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           {groups.length === 0 ? (
-<<<<<<< Updated upstream
-            <p className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              A coven is a group of familiars you talk to together. Create one to choose how they take turns responding.
-=======
             <p className="px-2 py-3 text-[length:var(--text-sm)] leading-relaxed [color:var(--text-muted)]!">
-              A coven is a group of familiars you talk to together. Create one to broadcast a prompt to all of them at once.
->>>>>>> Stashed changes
+              A coven is a group of familiars you talk to together. Create one to choose how they take turns responding.
             </p>
           ) : (
             <ul className="flex flex-col gap-0.5">
@@ -1020,7 +1015,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     ariaLabel="Coven response mode"
                   />
                 </fieldset>
-                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                <span className="text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
                   {activeGroup.responseMode === "broadcast"
                     ? "Everyone responds at once"
                     : `${nextRoundRobinLead?.display_name ?? "First familiar"} leads next`}

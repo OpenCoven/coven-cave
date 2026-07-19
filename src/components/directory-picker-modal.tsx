@@ -212,12 +212,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       <div
         ref={dialogRef}
         tabIndex={-1}
-<<<<<<< Updated upstream
-        className="flex h-[560px] w-[520px] max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none"
-        style={{ background: "var(--bg-panel)" }}
-=======
-        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none [background:var(--bg-panel)]!"
->>>>>>> Stashed changes
+        className="flex h-[560px] w-[520px] max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none [background:var(--bg-panel)]!"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
@@ -255,7 +250,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             size="xs"
             disabled={loading || createBusy || !cwd || creatingFolder}
             onClick={beginCreatingFolder}
-            className="shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+            className="shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
             leadingIcon="ph:plus"
           >
             New folder
@@ -269,7 +264,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           >
             <label
               htmlFor="directory-picker-new-folder-name"
-              className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
+              className="mb-1 block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
             >
               Folder name
             </label>
@@ -286,7 +281,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 placeholder="New folder"
                 aria-invalid={Boolean(newFolderError)}
                 aria-describedby={newFolderError ? `${newFolderHintId} ${newFolderErrorId}` : newFolderHintId}
-                className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] disabled:opacity-60"
+                className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-60"
               />
               <Button
                 variant="primary"
@@ -294,7 +289,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 loading={createBusy}
                 disabled={!newFolderName.trim()}
                 onClick={() => void createFolder()}
-                className="rounded-[var(--radius-control)] px-3 py-1 text-[12px] font-medium"
+                className="rounded-[var(--radius-control)] px-3 py-1 text-[length:var(--text-sm)] font-medium"
               >
                 Create
               </Button>
@@ -303,16 +298,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 size="sm"
                 disabled={createBusy}
                 onClick={cancelCreatingFolder}
-                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               >
                 Cancel
               </Button>
             </div>
-            <p id={newFolderHintId} className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+            <p id={newFolderHintId} className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
               Create a subfolder in the folder you&apos;re browsing now.
             </p>
             {newFolderError ? (
-              <p id={newFolderErrorId} role="alert" className="mt-1 text-[11px] text-[var(--color-danger,#e5484d)]">
+              <p id={newFolderErrorId} role="alert" className="mt-1 text-[length:var(--text-xs)] text-[var(--color-danger)]">
                 {newFolderError}
               </p>
             ) : null}
@@ -321,11 +316,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {error ? (
-<<<<<<< Updated upstream
-            <p role="alert" className="px-2 py-4 text-[12px] text-[var(--color-danger,#e5484d)]">{error}</p>
-=======
-            <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
->>>>>>> Stashed changes
+            <p role="alert" className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
           ) : loading && entries.length === 0 ? (
             <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
           ) : entries.length === 0 ? (
@@ -337,12 +328,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 variant="ghost"
                 size="sm"
                 onClick={() => void load(e.path)}
-<<<<<<< Updated upstream
                 disabled={createBusy}
-                className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
-=======
                 className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[length:var(--text-base)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
->>>>>>> Stashed changes
                 leadingIcon="ph:folder"
                 trailingIcon="ph:caret-right"
               >
