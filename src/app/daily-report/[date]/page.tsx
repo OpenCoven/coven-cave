@@ -1,5 +1,6 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
+import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { EmptyState, ItemRow, MetricCard, QuickLink, SectionHead } from "@/components/daily-report-ui";
 import {
   breakdownForDay,
@@ -27,7 +28,9 @@ export default async function DailyReportPage({ params }: Props) {
 
   if (!item) {
     return (
-      <main className="dr-page">
+      <AnalyticsPageShell>
+      {/* div, not main: the shell's aps-main is the page's main landmark. */}
+      <div className="dr-page">
         <div className="dr-topbar" data-tauri-drag-region="deep">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />
@@ -58,7 +61,8 @@ export default async function DailyReportPage({ params }: Props) {
             </div>
           </section>
         </div>
-      </main>
+      </div>
+      </AnalyticsPageShell>
     );
   }
 
@@ -101,7 +105,9 @@ export default async function DailyReportPage({ params }: Props) {
     : 0;
 
   return (
-    <main className="dr-page">
+    <AnalyticsPageShell>
+    {/* div, not main: the shell's aps-main is the page's main landmark. */}
+    <div className="dr-page">
       <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/dashboard">
@@ -460,6 +466,7 @@ export default async function DailyReportPage({ params }: Props) {
           stays live.
         </footer>
       </div>
-    </main>
+    </div>
+    </AnalyticsPageShell>
   );
 }

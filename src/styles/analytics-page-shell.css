@@ -72,6 +72,13 @@
   border-color: color-mix(in oklch, var(--border-strong) 60%, transparent);
 }
 
+/* The destination you are on (accent = presence, per the design language). */
+.aps-rail-link[aria-current="page"] {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+
 .aps-rail-foot {
   margin-top: auto;
   flex-shrink: 0;

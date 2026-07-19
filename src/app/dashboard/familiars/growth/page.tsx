@@ -1,28 +1,32 @@
 import { FamiliarGrowthView } from "@/components/familiar-growth-view";
+import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { Icon } from "@/lib/icon";
 
 export const dynamic = "force-dynamic";
 
 export default function FamiliarGrowthDashboardPage() {
   return (
-    <main className="dr-page">
-      <div className="dr-topbar" data-tauri-drag-region="deep">
-        <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
-          <a className="dr-back" href="/dashboard">
-            <Icon name="ph:arrow-left" aria-hidden />
-            Dashboard
-          </a>
-          <span className="dr-crumb-sep" aria-hidden>/</span>
-          {/* ?mode= is the SPA's deep-link param; a bare #familiars hash has
-              no consumer and landed on the boot surface (cave-aka2). */}
-          <a className="dr-back" href="/?mode=agents">
-            Familiars
-          </a>
-          <span className="dr-crumb-sep" aria-hidden>/</span>
-          <span className="dr-crumb-current">Growth</span>
-        </nav>
+    <AnalyticsPageShell>
+      {/* div, not main: the shell's aps-main is the page's main landmark. */}
+      <div className="dr-page">
+        <div className="dr-topbar" data-tauri-drag-region="deep">
+          <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
+            <a className="dr-back" href="/dashboard">
+              <Icon name="ph:arrow-left" aria-hidden />
+              Dashboard
+            </a>
+            <span className="dr-crumb-sep" aria-hidden>/</span>
+            {/* ?mode= is the SPA's deep-link param; a bare #familiars hash has
+                no consumer and landed on the boot surface (cave-aka2). */}
+            <a className="dr-back" href="/?mode=agents">
+              Familiars
+            </a>
+            <span className="dr-crumb-sep" aria-hidden>/</span>
+            <span className="dr-crumb-current">Growth</span>
+          </nav>
+        </div>
+        <FamiliarGrowthView standalone />
       </div>
-      <FamiliarGrowthView standalone />
-    </main>
+    </AnalyticsPageShell>
   );
 }
