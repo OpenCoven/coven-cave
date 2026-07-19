@@ -21,6 +21,7 @@ assert.match(
 // The body is a real menu (menu > menuitem/menuitemradio hierarchy), reusing the
 // shared Popover scaffold so Escape / outside-click / focus-return come for free.
 assert.match(src, /role="menu"/, "popover body announces as a menu");
+assert.doesNotMatch(src, /autoFocusMenuItem=\{false\}/, "overflow menus keep the shared first-enabled-item autofocus");
 assert.match(src, /from "\.\/popover"/, "reuses the shared Popover scaffold");
 assert.match(src, /from "\.\/icon-button"/, "reuses the shared IconButton trigger");
 

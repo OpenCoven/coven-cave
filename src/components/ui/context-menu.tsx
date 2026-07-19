@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 
 import { Popover, PopoverBody, activatedMenuItem } from "@/components/ui/popover";
 
@@ -31,24 +31,29 @@ export function ContextMenu({
   closeOnSelect?: boolean;
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
-  // Remember the element that had focus when the menu opened (typically the
-  // right-clicked row) so focus can be returned there on close — rather than
-  // stranding it on <body> or on the hidden cursor anchor.
+  // Capture the pre-open active element before the menu's own autofocus runs so
+  // close can restore focus to the invoking row/project rather than to a menu
+  // item that will unmount with the popover.
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const restoreFocusPendingRef = useRef(false);
   const open = state !== null;
-  useEffect(() => {
-    if (open) returnFocusRef.current = document.activeElement as HTMLElement | null;
-  }, [open]);
-  useEffect(() => {
+
+  useLayoutEffect(() => {
     if (!open) return;
-    return () => {
-      const el = returnFocusRef.current;
-      const active = document.activeElement;
-      if (el && document.contains(el) && typeof el.focus === "function" && (!active || active === document.body)) {
-        el.focus();
-      }
-    };
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    restoreFocusPendingRef.current = true;
   }, [open]);
+
+  useEffect(() => {
+    if (open) return;
+    if (!restoreFocusPendingRef.current) return;
+    restoreFocusPendingRef.current = false;
+    const el = returnFocusRef.current;
+    returnFocusRef.current = null;
+    const active = document.activeElement as HTMLElement | null;
+    if (canRestoreFocus(el) && (!active || active === document.body)) el.focus();
+  }, [open]);
+
   return (
     <>
       <span
@@ -78,6 +83,14 @@ export function ContextMenu({
         </PopoverBody>
       </Popover>
     </>
+  );
+}
+
+function canRestoreFocus(el: HTMLElement | null): el is HTMLElement {
+  if (!el || !el.isConnected || typeof el.focus !== "function") return false;
+  if (el.matches("[disabled], [aria-disabled='true'], [hidden], [inert]")) return false;
+  return (
+    el.matches('[tabindex], a[href], button, input, select, textarea, summary, iframe, [contenteditable="true"]')
   );
 }
 

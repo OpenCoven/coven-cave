@@ -235,7 +235,7 @@ export function PopoverBody({
 }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoFocusMenuItem = autoFocusMenuItem ?? role === "menu";
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!shouldAutoFocusMenuItem || !bodyRef.current) return;
     const active = document.activeElement as HTMLElement | null;
     if (active && bodyRef.current.contains(active)) return;
