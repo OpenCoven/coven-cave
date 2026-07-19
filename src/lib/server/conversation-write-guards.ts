@@ -94,8 +94,8 @@ export function checkTurnBounds(turns: ChatTurn[]): TurnBoundsError | null {
 
 /**
  * Strip harness-owned telemetry from a client-authored assistant/system turn.
- * User turns are returned unchanged. Returns a new turn object; never mutates
- * the input.
+ * User turns are returned unchanged. Returns the original turn when no fields
+ * are stripped; otherwise returns a shallow clone. Never mutates the input.
  */
 export function sanitizeClientTurn(turn: ChatTurn): ChatTurn {
   if (turn.role === "user") return turn;
