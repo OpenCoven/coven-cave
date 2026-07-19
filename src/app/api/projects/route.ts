@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 
 import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const denied = rejectNonLocalRequest(req);
+  if (denied) return denied;
   await seedDefaultProjectsIfEmpty();
   const projects = await loadProjects();
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || null;
@@ -22,6 +25,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const denied = rejectNonLocalRequest(req);
+  if (denied) return denied;
   let body: Record<string, unknown> = {};
   try {
     body = (await req.json()) as Record<string, unknown>;

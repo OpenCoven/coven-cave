@@ -22,6 +22,12 @@ assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects s
 assert.match(listRoute, /root must be inside an allowed workspace/, "POST /api/projects should reject unsafe roots");
 assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should require existing directory roots before persisting them");
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
+assert.match(listRoute, /rejectNonLocalRequest\(req\)/, "projects route must reject non-loopback requests before touching project state");
+assert.match(
+  listRoute,
+  /rejectNonLocalRequest[\s\S]*export async function POST/,
+  "POST /api/projects must enforce loopback before registering $HOME-scoped roots",
+);
 
 assert.match(itemRoute, /export async function PUT/, "project item route should expose PUT");
 assert.match(itemRoute, /export async function DELETE/, "project item route should expose DELETE");
@@ -29,6 +35,7 @@ assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects
 assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] should require existing directory roots before persisting them");
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
+assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
 
 assert.match(seedRoute, /seedDefaultProjectsIfEmpty/, "seed route should invoke default seeding");
 assert.match(seedRoute, /export async function POST\(\)/, "seed route should expose POST only");

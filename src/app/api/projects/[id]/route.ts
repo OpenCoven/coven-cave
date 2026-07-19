@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = rejectNonLocalRequest(req);
+  if (denied) return denied;
   const { id } = await params;
   let body: Record<string, unknown> = {};
   try {
@@ -56,7 +59,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   return NextResponse.json({ ok: true, project });
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = rejectNonLocalRequest(req);
+  if (denied) return denied;
   const { id } = await params;
   const deleted = await deleteProject(id);
   if (!deleted) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
