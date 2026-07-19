@@ -113,8 +113,10 @@ try {
   const candidateFailureCave = path.join(candidateFailureHome, "cave");
   await mkdir(candidateFailureCave, { recursive: true });
   let candidateAttempts = 0;
-  const persistentEperm = async () => {
+  const candidates = new Set<string>();
+  const persistentEperm = async (candidate: string) => {
     candidateAttempts += 1;
+    candidates.add(candidate);
     const error = new Error("injected persistent Windows EPERM") as NodeJS.ErrnoException;
     error.code = "EPERM";
     throw error;
@@ -124,6 +126,7 @@ try {
     (error) => error?.code === "ETIMEDOUT",
   );
   assert.ok(candidateAttempts >= 2);
+  assert.equal(candidates.size, 1, "candidate retries reuse one directory on Windows");
   assert.equal(
     (await readdir(candidateFailureCave)).some((name) => name.startsWith(".migration.lock.candidate-")),
     false,

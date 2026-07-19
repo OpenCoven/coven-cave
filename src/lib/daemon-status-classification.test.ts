@@ -122,6 +122,18 @@ for (const [name, input] of [
       },
     },
   ],
+  [
+    "Cave home temporarily busy",
+    {
+      responseStatus: 200,
+      responseOk: true,
+      payload: {
+        running: false,
+        availability: "status-unavailable",
+        reason: "Cave home is temporarily busy; status will retry automatically",
+      },
+    },
+  ],
 ]) {
   assert.equal(classifyDaemonStatusPoll(input).kind, "unavailable", name);
 }

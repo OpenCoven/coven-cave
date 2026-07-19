@@ -2,7 +2,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
-import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
 import {
   type ChatAutoArchivePolicy,
@@ -736,6 +736,14 @@ async function loadStateUnlocked(): Promise<CaveState> {
 
 export function loadState(): Promise<CaveState> {
   return withCaveHomeReconciledStore("cave-state.json", loadStateUnlocked);
+}
+
+/** A coherent, lock-protected snapshot for the frequent daemon status poll. */
+export function loadDaemonStatusSnapshot(): Promise<{ config: CaveConfig; state: CaveState }> {
+  return withCaveHomeReconciledStores(["cave-config.json", "cave-state.json"], async () => ({
+    config: await loadConfigUnlocked(),
+    state: await loadStateUnlocked(),
+  }));
 }
 
 async function saveStateUnlocked(state: CaveState): Promise<void> {

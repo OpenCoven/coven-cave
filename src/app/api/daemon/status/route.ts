@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { loadConfig, loadState, recordLocalSubdaemonWakeRequest, recordTravelHubReachability } from "@/lib/cave-config";
+import {
+  loadDaemonStatusSnapshot,
+  loadState,
+  recordLocalSubdaemonWakeRequest,
+  recordTravelHubReachability,
+} from "@/lib/cave-config";
 import {
   callDaemonTarget,
   daemonTargetForConfig,
@@ -55,11 +60,38 @@ function failureAvailability(target: DaemonTarget, res: DaemonResponse<unknown>)
   });
 }
 
+function isCaveHomeStatusFailure(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as NodeJS.ErrnoException).code ?? "")
+    : "";
+  if (["EACCES", "EPERM", "ETIMEDOUT"].includes(code)) return true;
+  return error instanceof Error && error.message.startsWith("Cave home reconciliation failed");
+}
+
+function caveHomeStatusUnavailable() {
+  return NextResponse.json({
+    running: false,
+    availability: "status-unavailable",
+    reason: "Cave home is temporarily busy; status will retry automatically",
+  });
+}
+
 export async function GET() {
-  const config = await loadConfig();
+  let snapshot: Awaited<ReturnType<typeof loadDaemonStatusSnapshot>>;
+  try {
+    snapshot = await loadDaemonStatusSnapshot();
+  } catch (error) {
+    if (!isCaveHomeStatusFailure(error)) throw error;
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as NodeJS.ErrnoException).code ?? "")
+      : "reconciliation";
+    console.warn("[daemon-status] Cave home status snapshot unavailable", { code });
+    return caveHomeStatusUnavailable();
+  }
+  const { config } = snapshot;
   const target = daemonTargetForConfig(config);
   const executorStatuses = await executorStatusesForConfig(config);
-  let travelState = (await loadState()).travel;
+  let travelState = snapshot.state.travel;
   let hubReachable: boolean | null = target.mode === "local" ? true : null;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();

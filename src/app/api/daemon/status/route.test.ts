@@ -6,8 +6,20 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{[^}]*loadConfig[^}]*\} from "@\/lib\/cave-config"/,
-  "daemon status should read Cave config before calling the daemon",
+  /import \{[^}]*loadDaemonStatusSnapshot[^}]*\} from "@\/lib\/cave-config"/,
+  "daemon status should read a lock-protected Cave snapshot before calling the daemon",
+);
+
+assert.match(
+  source,
+  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(\)/,
+  "Cave home lock failures should return a structured status response instead of HTTP 500",
+);
+
+assert.match(
+  source,
+  /availability: "status-unavailable"[\s\S]*?Cave home is temporarily busy/,
+  "the structured degraded response should distinguish local Cave storage from daemon availability",
 );
 
 assert.match(
