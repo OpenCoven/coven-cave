@@ -1082,6 +1082,7 @@ export const SUITES = {
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
     "scripts/ios-message-retry.test.mjs",
+    "scripts/ios-message-bubble-equatable.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-development-code-title.test.mjs",
