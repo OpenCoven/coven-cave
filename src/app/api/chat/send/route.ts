@@ -1701,6 +1701,24 @@ export async function POST(req: Request) {
         ).catch(() => undefined);
       };
 
+      // Hermes's `-Q` mode reserves stdout for the reply and writes the
+      // resumable id to stderr as `session_id: <id>`. Buffer stderr because
+      // Node can split that short line across data events.
+      let hermesStderrBuffer = "";
+      const captureHermesSessionFromStderr = (text: string, flush = false) => {
+        if (!hermesDirect || sessionId) return;
+        hermesStderrBuffer += text;
+        const lines = hermesStderrBuffer.split(/\r?\n/);
+        hermesStderrBuffer = flush ? "" : (lines.pop() ?? "");
+        for (const line of lines) {
+          const hermesSession = line.trim().match(/^session_id:\s*(\S+)\s*$/i);
+          if (hermesSession) {
+            announceSession(hermesSession[1]);
+            return;
+          }
+        }
+      };
+
       // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
       // claude stream-json. Text arrives as message deltas + a full-content
       // message frame (deduped by CopilotTextAssembler); tool calls arrive as
@@ -1920,9 +1938,8 @@ export async function POST(req: Request) {
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
-        // Quiet Hermes one-shot turns print the final response followed by the
-        // durable session id. Capture that id for a later `--resume`, but do
-        // not render the implementation detail as assistant prose.
+        // Older Hermes versions can print the durable session id to stdout.
+        // The current quiet path writes it to stderr (captured separately).
         if (hermesDirect) {
           const hermesSession = trimmed.match(/^Session ID:\s*(\S+)\s*$/i);
           if (hermesSession && !sessionId) {
@@ -2059,6 +2076,7 @@ export async function POST(req: Request) {
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
               adapterConflict = detectBuiltinAdapterConflict(text);
@@ -2101,6 +2119,7 @@ export async function POST(req: Request) {
           });
 
           child.on("close", () => {
+            captureHermesSessionFromStderr("", true);
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,

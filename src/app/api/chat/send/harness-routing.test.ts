@@ -74,6 +74,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /captureHermesSessionFromStderr[\s\S]*session_id:\\s\*\(\\S\+\)/,
+  "Hermes quiet mode must capture its resumable session id from stderr",
+);
+
+assert.match(
+  chatRoute,
   /command: process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
   "Hermes direct chat must use the Windows executable name on Windows",
 );
