@@ -36,15 +36,16 @@ async function ensureChatSurface(page: Page) {
   await page.waitForSelector('aside[aria-label="List pane"] .chat-sidebar', { timeout: 30_000 });
 }
 
-async function gotoChat(page: Page) {
-  await page.addInitScript(() => {
+async function gotoChat(page: Page, options?: { pinnedSessionIds?: string[] }) {
+  await page.addInitScript(({ pinnedSessionIds }) => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(pinnedSessionIds ?? []));
     // Seed the remembered global-nav preference OPEN; chat visits must still
     // collapse the nav for the visit while keeping the separate Chats list open.
     window.localStorage.setItem("cave:shell:nav-open", "1");
-  });
+  }, { pinnedSessionIds: options?.pinnedSessionIds ?? [] });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
@@ -132,5 +133,23 @@ test.describe("chat sidebar (session navigator)", () => {
 
     await search.fill("no-such-session-xyz");
     await expect(sidebar.getByText("No threads match your search")).toBeVisible();
+  });
+
+  test("unpinning from the pinned row overflow moves focus to the surviving recent row", async ({ page }) => {
+    await gotoChat(page, { pinnedSessionIds: ["s1"] });
+    const sidebar = page.locator('aside[aria-label="List pane"] .chat-sidebar');
+    const pinnedSection = sidebar.locator('section[aria-label="Pinned threads"]');
+    const todaySection = sidebar.locator('section[aria-label="Today"]');
+
+    await expect(pinnedSection.getByText("Refactor auth flow")).toBeVisible();
+    await expect(todaySection.getByText("Refactor auth flow")).toBeVisible();
+
+    await pinnedSection.getByRole("button", { name: "Chat actions for Refactor auth flow" }).click();
+    await page.getByRole("menuitem", { name: "Unpin" }).click();
+
+    const survivingRowButton = todaySection.locator('[data-row-instance="recent:s1"] .cnav__thread-main');
+    await expect.poll(() => page.evaluate(() => document.activeElement === document.body)).toBe(false);
+    await expect(survivingRowButton).toBeFocused();
+    await expect(sidebar.locator('[data-row-instance="pinned:s1"]')).toHaveCount(0);
   });
 });

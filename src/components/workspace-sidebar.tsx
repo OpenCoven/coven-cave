@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
@@ -178,6 +178,8 @@ type ThreadRowProps = {
   project?: { root: string; name: string; color: string | null } | null;
   /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
   glyph?: IconName | null;
+  /** Stable ref target for focus restoration after the pinned duplicate unmounts. */
+  rowButtonRef?: (el: HTMLButtonElement | null) => void;
   /** In-app URL opener for the PR badge (new-tab fallback without it). */
   onOpenUrl?: (url: string) => void;
   onOpen: () => void;
@@ -199,6 +201,7 @@ function ThreadRow({
   indent,
   project = null,
   glyph,
+  rowButtonRef,
   onOpenUrl,
   onOpen,
   onOpenInSplit,
@@ -257,6 +260,7 @@ function ThreadRow({
     >
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
+        ref={rowButtonRef}
         type="button"
         aria-current={active ? "page" : undefined}
         onClick={(e) => {
@@ -365,6 +369,8 @@ export function WorkspaceSidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
+  const rowButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [pendingPinnedRailFocusSessionId, setPendingPinnedRailFocusSessionId] = useState<string | null>(null);
 
   // Trap focus inside the Organize menu while it is open (same convention as
   // the GitHub action popover, #2288). Also hydrates the organize-view preference.
@@ -454,6 +460,30 @@ export function WorkspaceSidebar({
   const togglePin = (sessionId: string) => {
     toggleStoredPinnedSession(sessionId);
   };
+
+  const registerRowButton = useCallback((sessionId: string, el: HTMLButtonElement | null) => {
+    if (el) {
+      rowButtonRefs.current.set(sessionId, el);
+      return;
+    }
+    const current = rowButtonRefs.current.get(sessionId);
+    if (!current || !current.isConnected) rowButtonRefs.current.delete(sessionId);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPinnedRailFocusSessionId) return;
+    const frame = requestAnimationFrame(() => {
+      const target = rowButtonRefs.current.get(pendingPinnedRailFocusSessionId);
+      if (target?.isConnected && !target.disabled) target.focus();
+      setPendingPinnedRailFocusSessionId(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingPinnedRailFocusSessionId]);
+
+  const handlePinnedRailUnpin = useCallback((sessionId: string) => {
+    setPendingPinnedRailFocusSessionId(sessionId);
+    toggleStoredPinnedSession(sessionId);
+  }, []);
 
   const selectView = (next: ChatSidebarView) => {
     setView(next);
@@ -645,7 +675,7 @@ export function WorkspaceSidebar({
                         onOpenInSplit={
                           onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                         }
-                        onTogglePin={() => togglePin(session.id)}
+                        onTogglePin={() => handlePinnedRailUnpin(session.id)}
                         onRequestDelete={() => setConfirmingDelete({ rowKey: `pinned:${session.id}`, sessionId: session.id })}
                         onCancelDelete={() => setConfirmingDelete(null)}
                         onConfirmDelete={() => void handleDeleteSession(session)}
@@ -685,6 +715,7 @@ export function WorkspaceSidebar({
                             indent="flat"
                             project={sessionProjectById.get(session.id) ?? null}
                             glyph={threadLeadingIcon(sessionRailTitle(session))}
+                            rowButtonRef={(el) => registerRowButton(session.id, el)}
                             onOpenUrl={onOpenUrl}
                             onOpen={() => onOpenSession(session)}
                             onOpenInSplit={
@@ -816,6 +847,7 @@ export function WorkspaceSidebar({
                                   deleting={deletingSessionId === session.id}
                                   indent="folder"
                                   glyph={glyph}
+                                  rowButtonRef={(el) => registerRowButton(session.id, el)}
                                   onOpenUrl={onOpenUrl}
                                   onOpen={() => onOpenSession(session)}
                                   onOpenInSplit={

@@ -41,7 +41,7 @@ const pinStart = sidebar.indexOf('aria-label="Pinned threads"');
 const pinEnd = sidebar.indexOf('view === "recent"', pinStart);
 assert.ok(pinStart !== -1 && pinEnd > pinStart, "pinned rail section exists before the recent view");
 const pinnedRail = sidebar.slice(pinStart, pinEnd);
-assert.match(pinnedRail, /<ThreadRow[\s\S]*rowInstanceKey=\{`pinned:\$\{session\.id\}`\}[\s\S]*pinned[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `pinned:\$\{session\.id\}`\}[\s\S]*onTogglePin=\{\(\) => togglePin\(session\.id\)\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `pinned:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "pinned rows render through ThreadRow with their own stable confirmation key");
+assert.match(pinnedRail, /<ThreadRow[\s\S]*rowInstanceKey=\{`pinned:\$\{session\.id\}`\}[\s\S]*pinned[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `pinned:\$\{session\.id\}`\}[\s\S]*onTogglePin=\{\(\) => handlePinnedRailUnpin\(session\.id\)\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `pinned:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "pinned rows render through ThreadRow with their own stable confirmation key and dedicated unpin focus handoff");
 assert.doesNotMatch(pinnedRail, /aria-label=\{`Unpin \$\{title\}`\}/, "pinned rows no longer render a dedicated bookmark button");
 
 // Project headers also share overflow + context actions from one definition.
@@ -52,6 +52,8 @@ assert.doesNotMatch(sidebar, /Register \$\{label\} as a project[\s\S]*className=
 assert.doesNotMatch(sidebar, /New chat in \$\{label\}[\s\S]*className="cnav__icon-btn/, "the separate hover-only new-chat button is removed");
 assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`recent:\$\{session\.id\}`\}[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `recent:\$\{session\.id\}`\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `recent:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "recent rows confirm only the invoking copy");
 assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`project:\$\{session\.id\}`\}[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `project:\$\{session\.id\}`\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `project:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "project rows confirm only the invoking copy");
+assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`recent:\$\{session\.id\}`\}[\s\S]*onTogglePin=\{\(\) => togglePin\(session\.id\)\}/, "recent rows keep the normal pin toggle path");
+assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`project:\$\{session\.id\}`\}[\s\S]*onTogglePin=\{\(\) => togglePin\(session\.id\)\}/, "project rows keep the normal pin toggle path");
 
 // Hover-only action markup and hover geometry hacks are retired.
 assert.doesNotMatch(sidebar, /cnav__row-actions|cnav__icon-btn/, "workspace sidebar markup no longer uses hover-only row-action wrappers");

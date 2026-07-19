@@ -168,6 +168,7 @@ export const SUITES = {
     "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-session-delete.test.ts",
     "src/components/workspace-sidebar-actions.test.ts",
+    "src/components/workspace-sidebar-focus.test.ts",
     "src/components/workspace-sidebar-pr-badge.test.ts",
     "src/components/workspace-rail.test.ts",
     "src/components/terminal-scope.test.ts",
