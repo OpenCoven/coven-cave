@@ -247,10 +247,10 @@ export async function proxy(req: NextRequest) {
   // allowlisted mobile endpoints.
   // Match PTY auth: constant-time compare so token checks stay consistent across
   // the REST proxy and server.ts upgrade path.
-  const sidecarTokenMatches = (supplied: string | null | undefined) =>
-    Boolean(sidecarToken) &&
-    Boolean(supplied) &&
-    timingSafeEqualString(supplied as string, sidecarToken as string);
+  const sidecarTokenMatches = (supplied: string | null | undefined) => {
+    if (!sidecarToken || !supplied) return false;
+    return timingSafeEqualString(supplied, sidecarToken);
+  };
   const headerCsrfTrusted =
     sidecarTokenMatches(req.headers.get(TOKEN_HEADER)) &&
     isHeaderCsrfTrustedApiPath(req.nextUrl.pathname);

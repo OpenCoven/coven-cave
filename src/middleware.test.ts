@@ -83,7 +83,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const sidecarTokenMatches = \(supplied: string \| null \| undefined\) =>\s*Boolean\(sidecarToken\) &&\s*Boolean\(supplied\) &&\s*timingSafeEqualString\(supplied as string, sidecarToken as string\)/,
+  /const sidecarTokenMatches = \(supplied: string \| null \| undefined\) => \{\s*if \(!sidecarToken \|\| !supplied\) return false;\s*return timingSafeEqualString\(supplied, sidecarToken\);\s*\}/,
   "sidecar auth must compare the supplied token with timingSafeEqualString",
 );
 assert.match(
