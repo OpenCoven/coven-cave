@@ -12,11 +12,11 @@ Coven Cave is a dark, dense, lavender-inked desktop app ("grimoire" aesthetic). 
 
 Every color must come from a token (the app ships 21 themes × 2 modes; literals break them):
 
-- Surfaces: `--background`, `--card`, `--popover`; semantic aliases `--bg-base`, `--bg-raised`, `--bg-elevated`, `--bg-hover`, `--bg-panel`
+- Surfaces: `--background`, `--card`, `--popover`; semantic aliases `--bg-base`, `--bg-raised`, `--bg-elevated`, `--bg-hover`, `--bg-panel`, `--bg-sunken` (recessed wells — sticky strips, confirm inputs)
 - Text: `--text-primary`, `--text-secondary`, `--text-muted`; `--foreground`
 - Borders: `--border-hairline` (decorative), `--border-strong` (interactive, ≥3:1), `--border`
 - Accent: `--accent-presence` (lavender presence — status dots, familiar marks; NOT a CTA color); `--primary` for primary actions
-- State: `--color-success` / `--color-warning` / `--color-danger` / `--color-info` (+ `-soft` fills)
+- State: `--color-success` / `--color-warning` / `--color-danger` / `--color-info` (+ `-soft` fills). For inline danger alerts, use the pre-mixed trio `--danger-bg` (fill), `--danger-border`, `--danger-text` — the tint recipe already applied, mode-aware: `border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-text)`
 - Radii: `--radius-control` (8px), `--radius-card` (12px), `--radius-panel` (16px), `--radius-pill` (999px — the signature shape for chips, avatars, badges)
 - Spacing `--space-1`…`--space-10` (4px grid); type scale `--text-2xs`…`--text-display` (13px body baseline — density is a feature); motion `--duration-fast/base/slow` + `--ease-standard/emphasized/decelerate`; focus `--ring-focus`
 - Tint recipe for state fills: `color-mix(in oklch, var(--color-danger) 14%, transparent)` fill with a 30–45% border of the same token — never a second hue.
