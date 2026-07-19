@@ -9004,8 +9004,8 @@ a.mobile-handoff__link:hover {
 
 .rituals-overview__events,
 .rituals-overview__lower {
-  width: min(920px, 100%);
-  margin-inline: auto;
+  width: 100%;
+  max-width: 100%;
 }
 
 .rituals-overview__section-toggle {
@@ -9087,8 +9087,9 @@ a.mobile-handoff__link:hover {
 
 .rituals-overview__needs {
   position: relative;
-  width: min(920px, 100%);
-  margin: var(--space-3) auto;
+  width: 100%;
+  max-width: 100%;
+  margin: var(--space-3) 0;
   padding: var(--space-3) var(--space-3) var(--space-2);
   border: 1px dashed color-mix(in oklch, var(--accent-presence) 54%, var(--border-hairline));
   border-radius: var(--radius-panel);
@@ -9319,8 +9320,9 @@ a.mobile-handoff__link:hover {
 }
 
 .rituals-overview__selection {
-  width: min(920px, 100%);
-  margin: var(--space-3) auto 0;
+  width: 100%;
+  max-width: 100%;
+  margin: var(--space-3) 0 0;
 }
 
 @container (max-width: 620px) {
