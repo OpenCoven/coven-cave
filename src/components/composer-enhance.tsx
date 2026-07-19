@@ -152,12 +152,12 @@ export function EnhanceStrip({
   if (state.phase === "idle") return null;
 
   const pillBtn =
-    "focus-ring rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "focus-ring rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-2.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
   return (
     <div
       role="status"
-      className="composer-enhance-strip flex items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-muted)]"
+      className="composer-enhance-strip flex items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
     >
       {state.phase === "loading" ? (
         <>

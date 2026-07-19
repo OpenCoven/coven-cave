@@ -10,7 +10,7 @@ export type SalemMood = "idle" | "thinking" | "happy" | "listening";
 const MOOD_RIM: Record<SalemMood, string> = {
   idle: "var(--accent-presence)",
   thinking: "oklch(0.78 0.16 70)", // amber — "working"
-  happy: "var(--color-success, #57c878)",
+  happy: "var(--color-success)",
   listening: "oklch(0.72 0.15 250)", // blue — "ears up"
 };
 

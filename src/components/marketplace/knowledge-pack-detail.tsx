@@ -109,7 +109,7 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
             <p className="craft-dossier__eyebrow">Knowledge pack · v{manifest?.version ?? plugin.version}</p>
             <h2>{manifest?.displayName ?? plugin.displayName}</h2>
             <p>{manifest?.description ?? plugin.description}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[10.5px] text-[var(--text-muted)]">
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
               <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5"><Icon name="ph:books" width={11} aria-hidden /> Knowledge pack</span>
               <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5"><Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}</span>
             </div>
@@ -140,8 +140,8 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
             <div className="craft-dossier__ledger">
               <DossierSection title="Folders">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-left text-[11px]">
-                    <thead className="text-[10px] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                  <table className="w-full min-w-[520px] text-left text-[length:var(--text-xs)]">
+                    <thead className="text-[length:var(--text-2xs)] uppercase tracking-[0.1em] text-[var(--text-muted)]">
                       <tr><th className="pb-2">Name</th><th className="pb-2">Entity</th><th className="pb-2">Fields</th><th className="pb-2">Templates</th></tr>
                     </thead>
                     <tbody className="align-top text-[var(--text-secondary)]">
@@ -161,7 +161,7 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
               <DossierSection title="Templates">
                 {manifest.folders.map((folder) => (
                   <div key={folder.id} className="mb-3 last:mb-0">
-                    <h4 className="mb-1 text-[11px] font-semibold text-[var(--text-primary)]">{folder.name}</h4>
+                    <h4 className="mb-1 text-[length:var(--text-xs)] font-semibold text-[var(--text-primary)]">{folder.name}</h4>
                     <TemplateList templates={templatesByFolder.get(folder.id) ?? []} />
                   </div>
                 ))}

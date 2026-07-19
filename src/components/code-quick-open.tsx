@@ -81,8 +81,7 @@ export function CodeQuickOpen({
     <div
       onClick={onClose}
       role="presentation"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)]!"
     >
       <div
         ref={dialogRef}
@@ -90,8 +89,7 @@ export function CodeQuickOpen({
         role="dialog"
         aria-modal="true"
         aria-label="Go to file"
-        className="mt-[12vh] w-[560px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
-        style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
+        className="mt-[12vh] w-[560px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
       >
         <input
           ref={inputRef}
@@ -138,21 +136,21 @@ export function CodeQuickOpen({
                     tabIndex={-1}
                     onMouseEnter={() => setActiveIdx(i)}
                     onClick={() => choose(rel)}
-                    className={`flex w-full items-baseline gap-2 border-l-2 px-4 py-1.5 text-left text-[13px] transition-colors ${
+                    className={`flex w-full items-baseline gap-2 border-l-2 px-4 py-1.5 text-left text-[length:var(--text-base)] transition-colors ${
                       active
                         ? "border-l-[var(--accent-presence)] bg-[var(--bg-hover)]"
                         : "border-l-transparent hover:bg-[var(--bg-hover)]"
                     }`}
                   >
                     <span className="shrink-0 truncate text-[var(--text-primary)]">{base}</span>
-                    <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)]">{dir}</span>
+                    <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">{dir}</span>
                   </button>
                 </li>
               );
             })
           )}
         </ul>
-        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           <span>↑↓ navigate · ⏎ open · esc close</span>
           {truncated ? <span>index capped at 5000 files</span> : null}
         </div>

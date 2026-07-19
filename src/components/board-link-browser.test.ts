@@ -32,7 +32,7 @@ assert.match(
 
 assert.match(
   boardInspector,
-  /type="button"[\s\S]*onClick=\{\(\) => onOpenUrl\?\.\(href\)\}[\s\S]*className="link-item-anchor"/,
+  /type="button"[\s\S]*onClick=\{\(\) => onOpenUrl\?\.\(href\)\}[\s\S]*className="link-item-anchor[^"]*"/,
   "Clicking a task link should open it through the in-app browser callback",
 );
 
@@ -44,13 +44,13 @@ assert.match(
 
 assert.match(
   boardInspector,
-  /className="board-github-attachment-open"[\s\S]*onClick=\{\(\) => onOpenUrl\?\.\(item\.url\)\}/,
+  /className="board-github-attachment-open[^"]*"[\s\S]*onClick=\{\(\) => onOpenUrl\?\.\(item\.url\)\}/,
   "Clicking an attached GitHub relation should open it through the in-app browser callback",
 );
 
 assert.doesNotMatch(
   boardInspector,
-  /className="link-item-anchor"[\s\S]{0,220}target="_blank"/,
+  /className="link-item-anchor[^"]*"[\s\S]{0,220}target="_blank"/,
   "Task link clicks should not bypass the app with a new external tab",
 );
 

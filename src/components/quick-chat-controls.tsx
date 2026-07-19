@@ -72,7 +72,7 @@ function initials(familiar: Familiar): string {
 }
 
 export function FamiliarMark({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" }) {
-  const sizeClass = size === "md" ? "h-6 w-6 text-[10px]" : "h-5 w-5 text-[9px]";
+  const sizeClass = size === "md" ? "h-6 w-6 text-[length:var(--text-2xs)]" : "h-5 w-5 text-[length:var(--text-2xs)]";
   return (
     <AuthedImage
       src={familiar.avatarUrl}

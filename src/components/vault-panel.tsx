@@ -114,9 +114,9 @@ function AddMappingForm({
             disabled={!!initial}
           />
         </label>
-        <div className="vault-add-label" style={{ flex: 2 }}>
+        <div className="vault-add-label [flex:2]!">
           Storage
-          <div style={{ display: "flex", gap: 6 }}>
+          <div className="[display:flex]! [gap:6px]!">
             <button
               type="button"
               className={`vault-btn${storage === "encrypted" ? " vault-btn--primary" : ""}`}
@@ -188,7 +188,7 @@ function AddMappingForm({
           Required
         </label>
         {err && <span className="vault-err">{err}</span>}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <div className="[margin-left:auto]! [display:flex]! [gap:6px]!">
           <button type="button" className="vault-btn" onClick={onCancel}>Cancel</button>
           <button type="submit" className="vault-btn vault-btn--primary" disabled={busy}>
             {busy ? "Saving…" : initial ? "Update" : "Add mapping"}
@@ -281,8 +281,7 @@ export function VaultPanel() {
         <span className="vault-header-sub">env vars → encrypted local secrets, 1Password, or Dashlane references</span>
         <button
           type="button"
-          className="vault-btn vault-btn--primary"
-          style={{ marginLeft: "auto" }}
+          className="vault-btn vault-btn--primary [margin-left:auto]!"
           onClick={() => { setAdding(true); setEditing(null); }}
           disabled={adding}
         >

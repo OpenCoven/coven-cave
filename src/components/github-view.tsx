@@ -297,7 +297,7 @@ function PatSetupModal({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Icon name="ph:github-logo" width={18} className="text-[var(--text-secondary)]" />
-            <h3 id="github-pat-modal-title" className="text-[15px] font-semibold">Connect GitHub</h3>
+            <h3 id="github-pat-modal-title" className="text-[length:var(--text-md)] font-semibold">Connect GitHub</h3>
           </div>
           <IconButton
             icon="ph:x"
@@ -307,10 +307,10 @@ function PatSetupModal({
           />
         </div>
 
-        <p className="text-[12px] text-[var(--text-muted)] mb-1">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)] mb-1">
           Enter your GitHub username to pull live public data (free, no auth needed).
         </p>
-        <p className="text-[12px] text-[var(--text-muted)] mb-4">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)] mb-4">
           Optionally add a Personal Access Token to unlock private repos and review requests.
           Your PAT is stored only on this machine — never synced, never shared.
         </p>
@@ -322,7 +322,7 @@ function PatSetupModal({
           }}
         >
           <div className="mb-3">
-            <label htmlFor="gh-pat-username" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+            <label htmlFor="gh-pat-username" className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] mb-1.5">
               GitHub username
             </label>
             <input
@@ -339,7 +339,7 @@ function PatSetupModal({
           </div>
 
           <div className="mb-2">
-            <label htmlFor="gh-pat-token" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+            <label htmlFor="gh-pat-token" className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] mb-1.5">
               Personal Access Token <span className="font-normal text-[var(--text-muted)]">(optional — for private repos)</span>
             </label>
             <input
@@ -355,7 +355,7 @@ function PatSetupModal({
           </div>
 
           {error && (
-            <p className="mb-3 text-[11px] text-[var(--color-danger)]">{error}</p>
+            <p className="mb-3 text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</p>
           )}
 
           <div className="flex items-center justify-between mt-4">
@@ -410,7 +410,7 @@ function PatSetupModal({
             >
               {removing ? "Removing…" : removeConfirm.armed ? "Really remove?" : "Remove stored token"}
             </Button>
-            <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+            <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               Drops back to public data for @{usernameInput.trim() || username || "…"}.
             </p>
           </div>
@@ -2266,7 +2266,7 @@ function GitHubItemGlassPanel({
               <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
           </div>
-          <div style={{ marginTop: 6 }}>
+          <div className="[margin-top:6px]!">
             <WatchRepoChip repo={item.repo} />
           </div>
           {(item.kind === "pr" || item.kind === "review_request") && (
@@ -3047,22 +3047,11 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
                       >
                         {col.key ? (
                           // A real <button> so the column is sortable by keyboard;
-                          // styled inline to avoid touching the shared board-table CSS.
+                          // locally utility-styled to avoid touching shared table CSS.
                           <button
                             type="button"
-                            className="focus-ring"
+                            className="focus-ring [display:inline-flex]! [align-items:center]! [gap:2px]! [background:none]! [border:none]! [padding:0]! [font:inherit]! [color:inherit]! [cursor:pointer]!"
                             onClick={() => handleSortClick(col.key!)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 2,
-                              background: "none",
-                              border: "none",
-                              padding: 0,
-                              font: "inherit",
-                              color: "inherit",
-                              cursor: "pointer",
-                            }}
                           >
                             {col.label}
                             <span className="board-table-sort-icon">
@@ -3207,10 +3196,10 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
                           </div>
                         )}
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td className="[text-align:right]!">
                         <RelativeTime iso={item.updatedAt} className="board-table-cell-time" />
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td className="[text-align:right]!">
                         {/* §8: per-row secondary actions reveal on row hover /
                             focus-within (touch: always visible); the selected
                             row and rows with an action error stay revealed
@@ -3285,7 +3274,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           low-rate warning lives beside the header rate chip context, and the
           auth state is already the header's gh-compact-auth chip. */}
       {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
-        <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] flex items-center justify-end">
+        <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[length:var(--text-2xs)] flex items-center justify-end">
           <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
             <Icon name="ph:warning-fill" width={12} aria-hidden />
             {activity.rateLimit.remaining} requests remaining

@@ -16,7 +16,7 @@ assert.match(
 );
 assert.match(
   src,
-  /<h3 id=\{headingId\} className="text-\[12px\] font-bold"/,
+  /<h3 id=\{headingId\} className="text-\[length:var\(--text-sm\)\] font-bold \[color:var\(--text-primary\)\]!"/,
   "the section title (Needs you / Active / Resolved) is a real heading, not a span",
 );
 assert.match(

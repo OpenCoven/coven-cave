@@ -259,11 +259,10 @@ export function SettingsShell() {
       {/* The band composes the shared .surface-compact-header metrics (40px,
           hairline, family gap/padding) with .settings-shell__header, which
           keeps the gradient background and the Tauri window drag-region. The
-          inline paddingTop preserves the mobile safe-area inset on top of the
-          band's 5px. */}
+          token-backed padding utility preserves the mobile safe-area inset on
+          top of the band's 5px. */}
       <header
-        className="settings-shell__header surface-compact-header shrink-0"
-        style={{ paddingTop: "calc(5px + var(--sai-top))" }}
+        className="settings-shell__header surface-compact-header shrink-0 [padding-top:calc(5px_+_var(--sai-top))]!"
         // Real window drag on the loopback webview (the CSS app-region hint is
         // inert on external URLs — see the titlebar notes in shell.tsx). The
         // Back button and other controls opt out automatically as clickables.
@@ -298,7 +297,7 @@ export function SettingsShell() {
           className="settings-shell__sidebar shrink-0 py-3 md:w-[200px] md:border-r md:border-[var(--border-hairline)]"
           style={showPicker ? { flex: "1 1 auto", width: "100%" } : undefined}
         >
-          <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+          <p className="mb-1 px-4 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
             Settings
           </p>
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
@@ -313,7 +312,7 @@ export function SettingsShell() {
           {query.trim() ? (
             <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`} role="list" aria-label="Settings search results">
               {results.length === 0 ? (
-                <p className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">No settings match “{query.trim()}”.</p>
+                <p className="px-2.5 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">No settings match “{query.trim()}”.</p>
               ) : results.map((e) => (
                 <div key={`${e.section}:${e.group ?? ""}`} role="listitem">
                   <button
@@ -321,8 +320,8 @@ export function SettingsShell() {
                     onClick={() => goToSetting(e)}
                     className="focus-ring flex w-full flex-col items-start rounded-[var(--radius-control)] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                   >
-                    <span className="text-[12px] font-medium">{e.group ?? settingsSectionLabel(e.section)}</span>
-                    <span className="text-[10px] text-[var(--text-muted)]">{settingsSectionLabel(e.section)}</span>
+                    <span className="text-[length:var(--text-sm)] font-medium">{e.group ?? settingsSectionLabel(e.section)}</span>
+                    <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{settingsSectionLabel(e.section)}</span>
                   </button>
                 </div>
               ))}
@@ -337,8 +336,8 @@ export function SettingsShell() {
                 aria-current={section === s.id && !showPicker ? "page" : undefined}
                 className={`settings-nav__item focus-ring flex w-full items-center rounded-[var(--radius-control)] px-2.5 text-left transition-colors ${
                   showPicker
-                    ? "min-h-[var(--touch-target)] gap-3 py-3 text-[14px]"
-                    : "gap-2 py-[6px] text-[12px]"
+                    ? "min-h-[var(--touch-target)] gap-3 py-3 text-[length:var(--text-md)]"
+                    : "gap-2 py-[6px] text-[length:var(--text-sm)]"
                 } ${
                   section === s.id && !showPicker
                     ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
@@ -363,8 +362,7 @@ export function SettingsShell() {
         {/* Content */}
         <main
           hidden={showPicker}
-          className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8"
-          style={{ paddingBottom: "calc(1.5rem + var(--sai-bottom))" }}
+          className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
@@ -380,7 +378,7 @@ export function SettingsShell() {
           {section === "about"    && <AboutSection />}
         </main>
       </div>
-      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-4 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
+      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-4 py-1.5 text-center text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections"}
       </footer>
     </div>
@@ -493,8 +491,13 @@ function StopPhraseField() {
         }}
         placeholder={DEFAULT_STOP_PHRASE}
         maxLength={STOP_PHRASE_MAX_LENGTH}
+<<<<<<< Updated upstream
         aria-label="Stop phrases"
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
+=======
+        aria-label="Stop phrase"
+        className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
+>>>>>>> Stashed changes
       />
     </SettingsRow>
   );
@@ -589,13 +592,13 @@ function BackupSettingsGroup() {
             onChange={(e) => setPassphrase(e.target.value)}
             placeholder="Backup passphrase"
             aria-label="Backup passphrase"
-            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] outline-none"
+            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={exportBackup} disabled={!canSubmit || busy !== null} leadingIcon="ph:arrow-down">
               {busy === "export" ? "Exporting…" : "Export backup"}
             </Button>
-            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
+            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
               Choose backup
               <input
                 type="file"
@@ -608,8 +611,8 @@ function BackupSettingsGroup() {
               {busy === "restore" ? "Restoring…" : "Restore"}
             </Button>
           </div>
-          {restoreFile ? <p className="text-[11px] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
-          {status ? <p className="text-[11px] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
+          {restoreFile ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
+          {status ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
         </div>
       </SettingsRow>
     </SettingsGroup>
@@ -633,7 +636,7 @@ function WorkspacePathField() {
       value={path}
       readOnly
       aria-label="Workspace path"
-      className="w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
+      className="w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
     />
   );
 }
@@ -848,6 +851,7 @@ function OmnigentSettingsGroup() {
         label="Enable fleet"
         hint="Master switch (off by default). Off keeps every Omnigent surface hidden — fleet host options, Fleet buttons, per-familiar fleet defaults — and Cave contacts no Omnigent server. Available because OMNIGENT_SERVER_URL is in your Cave Vault."
       >
+<<<<<<< Updated upstream
         <label className="flex items-center gap-2 text-[12px]">
           <input
             type="checkbox"
@@ -876,6 +880,16 @@ function OmnigentSettingsGroup() {
         >
           {activeBaseUrl || "—"}
         </span>
+=======
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          aria-label="Omnigent server URL"
+          placeholder="https://omnigent.example.ts.net"
+          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none"
+          spellCheck={false}
+        />
+>>>>>>> Stashed changes
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"
@@ -886,7 +900,7 @@ function OmnigentSettingsGroup() {
           onChange={(e) => setWorkspace(e.target.value)}
           aria-label="Default Omnigent workspace"
           placeholder="/home/you/project"
-          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
+          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none"
           spellCheck={false}
         />
       </SettingControlRow>
@@ -900,7 +914,7 @@ function OmnigentSettingsGroup() {
           aria-label="Omnigent host workspace map"
           placeholder={"Macbook-Pro-5.local=/Users/you/Developer/1_Projects/coven-cave\nAndrews-Mac-Studio.local=/Users/you/Developer/1_Projects/hydra\nubuntu-root=/root/work"}
           rows={4}
-          className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
+          className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none"
           spellCheck={false}
         />
       </SettingControlRow>
@@ -908,7 +922,7 @@ function OmnigentSettingsGroup() {
         label="Show fleet in Host chip"
         hint="When on — and OMNIGENT_TOKEN is set up in your Vault — Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session. Without the Vault env, no Fleet buttons appear anywhere."
       >
-        <label className="flex items-center gap-2 text-[12px]">
+        <label className="flex items-center gap-2 text-[length:var(--text-sm)]">
           <input
             type="checkbox"
             checked={exposeHosts}
@@ -918,9 +932,9 @@ function OmnigentSettingsGroup() {
         </label>
       </SettingControlRow>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2.5 pt-0.5">
-        <span className="text-[11px] text-[var(--text-muted)]">{statusLine || "—"}</span>
+        <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{statusLine || "—"}</span>
         <div className="flex items-center gap-2">
-          {error && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{error}</span>}
+          {error && <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</span>}
           <Button
             variant="secondary"
             size="xs"
@@ -1110,7 +1124,7 @@ function DaemonSection() {
             aria-label="Server hub URL"
             placeholder="http://server.tailnet:8787"
             disabled={mode !== "hub"}
-            className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+            className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
           />
         </SettingControlRow>
         <SettingControlRow label="Executor addresses" hint="Advanced, optional: addresses of extra machines that can run familiar sessions, one per line. Leave empty unless you run a multi-machine setup.">
@@ -1122,13 +1136,13 @@ function DaemonSection() {
             placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
             disabled={mode !== "hub"}
             rows={3}
-            className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+            className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
           />
         </SettingControlRow>
         {/* Save hugs the section's bottom-right corner at the short (xs)
             control height — same as the Status row's Refresh button. */}
         <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-2.5 pt-0.5">
-          {connectionError && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
+          {connectionError && <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{connectionError}</span>}
           <Button
             variant="secondary"
             size="xs"
@@ -1150,11 +1164,11 @@ function DaemonSection() {
             : status?.running ? "bg-[var(--color-success)]"
             : "bg-red-400"
           }`} />
-          <span className="text-[13px] font-medium">
+          <span className="text-[length:var(--text-base)] font-medium">
             {loading ? "Checking…" : status?.running ? "Running" : "Offline"}
           </span>
           {status?.running && status.daemon && (
-            <span className="ml-auto font-mono text-[11px] text-[var(--text-muted)]">
+            <span className="ml-auto font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
               pid {status.daemon.pid}
             </span>
           )}
@@ -1192,25 +1206,25 @@ function DaemonSection() {
             Refresh
           </Button>
           {status?.target?.mode === "hub" && (
-            <span className="font-mono text-[11px] text-[var(--text-muted)]">
+            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
               hub {status.target.url}
             </span>
           )}
-          {startError && <p className="basis-full text-[11px] text-[var(--color-danger)]">{startError}</p>}
+          {startError && <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">{startError}</p>}
           {!loading && !status?.running && mode === "hub" && status?.target?.mode === "hub" && (
-            <p className="basis-full text-[11px] text-[var(--color-danger)]">
+            <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">
               {status.target.url} is not reachable from this Cave.
             </p>
           )}
           {mode === "hub" && (status?.executors?.length ?? 0) > 0 && (
             <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-              <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-[var(--text-secondary)]">
+              <div className="mb-1 flex items-center gap-2 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                 <Icon name="ph:terminal-window" width={12} />
                 Executor nodes
               </div>
               <div className="space-y-1">
                 {status?.executors?.map((executor) => (
-                  <div key={executor.url} className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+                  <div key={executor.url} className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
                     <span className={`h-2 w-2 rounded-full ${executor.ok ? "bg-[var(--color-success)]" : "bg-red-400"}`} />
                     <span className="min-w-0 truncate font-mono text-[var(--text-primary)]">{executor.url}</span>
                     <span className={executor.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}>
@@ -1225,8 +1239,8 @@ function DaemonSection() {
             <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Icon name="ph:device-mobile" width={13} />
-                <span className="text-[11px] font-medium text-[var(--text-secondary)]">Travel mode</span>
-                <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Travel mode</span>
+                <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">
                   {status.travel.mode}
                 </span>
                 <Button
@@ -1240,7 +1254,7 @@ function DaemonSection() {
                   {status.travel.manualOffline ? "Return online" : "Manual offline"}
                 </Button>
               </div>
-              <div className="grid gap-2 text-[11px] text-[var(--text-muted)] sm:grid-cols-3">
+              <div className="grid gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)] sm:grid-cols-3">
                 <span>Reason: <strong className="font-medium text-[var(--text-primary)]">{status.travel.reason}</strong></span>
                 <span>Pending queue: <strong className="font-medium text-[var(--text-primary)]">{status?.travel?.pendingQueueCount ?? 0}</strong></span>
                 <span>Local bind: <strong className="font-mono font-medium text-[var(--text-primary)]">127.0.0.1</strong></span>
@@ -1248,7 +1262,7 @@ function DaemonSection() {
                 <span>Wake local: <strong className="font-medium text-[var(--text-primary)]">{status.travel.wakeLocalSubdaemon ? "requested" : "standby"}</strong></span>
                 <span>Handoff: <strong className="font-medium text-[var(--text-primary)]">{status.travel.handoffPending ? "pending sync" : "clear"}</strong></span>
               </div>
-              {travelError && <p className="mt-2 text-[11px] text-[var(--color-danger)]">{travelError}</p>}
+              {travelError && <p className="mt-2 text-[length:var(--text-xs)] text-[var(--color-danger)]">{travelError}</p>}
             </div>
           )}
         </div>
@@ -1381,7 +1395,7 @@ function FamiliarsSection({
     return (
       <div className="settings-familiars-panel">
         <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[13px] text-[var(--text-secondary)]">
+          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
             <Icon name="ph:warning-circle" width={13} aria-hidden className="mr-1.5 inline-block align-[-2px]" />
             The daemon is offline, so the familiar roster can&apos;t be read. Start it to manage
             familiars.
@@ -1398,7 +1412,7 @@ function FamiliarsSection({
               {starting ? "Starting..." : "Start daemon"}
             </Button>
             {startError ? (
-              <span role="alert" className="text-[11px] text-[var(--color-danger)]">
+              <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
                 {startError}
               </span>
             ) : null}
@@ -1412,7 +1426,7 @@ function FamiliarsSection({
     return (
       <div className="settings-familiars-panel">
         <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[13px] text-[var(--text-secondary)]">
+          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
             No familiars configured yet. The circle awaits your first summoning.
           </p>
           <Button
@@ -1734,8 +1748,8 @@ function ThemePresetCard({
       </div>
 
       <div className="min-w-0">
-        <p className="text-[13px] font-semibold text-[var(--text-primary)]">{preset.label}</p>
-        <p className="text-[11px] text-[var(--text-muted)] leading-snug">{preset.description}</p>
+        <p className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{preset.label}</p>
+        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)] leading-snug">{preset.description}</p>
       </div>
 
       {active && (
@@ -1904,9 +1918,9 @@ function TokenColorRow({
         className="focus-ring h-6 w-6 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] transition-transform hover:scale-110"
         style={{ background: value }}
       />
-      <span className="flex-1 text-[12px] text-[var(--text-primary)]">{label}</span>
-      <code className="font-mono text-[11px] text-[var(--text-muted)]">{token}</code>
-      <span className="w-[72px] shrink-0 text-right font-mono text-[11px] uppercase text-[var(--text-secondary)]" title={value}>
+      <span className="flex-1 text-[length:var(--text-sm)] text-[var(--text-primary)]">{label}</span>
+      <code className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">{token}</code>
+      <span className="w-[72px] shrink-0 text-right font-mono text-[length:var(--text-xs)] uppercase text-[var(--text-secondary)]" title={value}>
         {hex}
       </span>
       <Popover
@@ -2005,7 +2019,7 @@ function ThemeTokenOverrides({
 
   return (
     <div className="flex flex-col gap-2 px-4 py-3">
-      <p className="text-[11px] text-[var(--text-muted)]">
+      <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Override any of the theme&apos;s core tokens. Edits apply live to the
         selected theme, fork it into a custom theme, and sync immediately.
       </p>
@@ -2249,7 +2263,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
         {/* Custom theme chip */}
         {activeTheme === "custom" && customData && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-hairline)]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[11px] font-medium text-[var(--text-primary)]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]">
               <Icon name="ph:sparkle" width={11} className="text-[var(--accent-presence)]" />
               Custom: {customData.name}
               {resetCustomArmed ? (
@@ -2272,7 +2286,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
                 />
               )}
             </span>
-            <span className="text-[11px] text-[var(--text-muted)]">
+            <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {resetCustomArmed
                 ? "Click again to discard — re-importing needs the original URL."
                 : "Active — presets below will override."}
@@ -2316,7 +2330,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           >
             {syncing ? "Syncing…" : "Resync to phone"}
           </Button>
-          <span className="text-[11px] text-[var(--text-muted)]">
+          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {syncResult
               ? syncResult.ok
                 ? `Synced at ${syncResult.at}.`
@@ -2331,17 +2345,17 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       {tab === "theme" && (
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
-          <p className="text-[12px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             Use Browse to open tweakcn.com in the in-app browser, then paste a theme URL to apply it. Supports{" "}
-            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[length:var(--text-xs)]">
               /themes/&#123;id&#125;
             </code>
             ,{" "}
-            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[length:var(--text-xs)]">
               /r/themes/&#123;id&#125;
             </code>
             , and{" "}
-            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[length:var(--text-xs)]">
               /editor/theme?theme=&#123;name&#125;
             </code>
             .
@@ -2364,7 +2378,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
                 setImportError(null);
               }}
               placeholder="https://tweakcn.com/r/themes/amethyst-haze"
-              className="focus-ring flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] transition-colors"
+              className="focus-ring flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] transition-colors"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleImport();
               }}
@@ -2381,7 +2395,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
             </Button>
           </div>
           {importError && (
-            <p role="alert" className="flex items-start gap-1.5 text-[11px] text-[var(--color-danger)]">
+            <p role="alert" className="flex items-start gap-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]">
               <Icon name="ph:warning-circle" width={12} className="mt-px shrink-0" />
               {importError}
             </p>
@@ -2588,10 +2602,10 @@ function MobileModeToggle() {
             }`}
           />
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--text-primary)]">Mobile mode</p>
-            <p className="truncate text-[11px] text-[var(--text-muted)]">{statusLine}</p>
+            <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Mobile mode</p>
+            <p className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">{statusLine}</p>
             {handoff?.lastSeenAt ? (
-              <p className="truncate text-[11px] text-[var(--text-secondary)]">
+              <p className="truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                 Paired · last seen {relativeTime(new Date(handoff.lastSeenAt).toISOString())}
               </p>
             ) : null}
@@ -2603,7 +2617,7 @@ function MobileModeToggle() {
           aria-checked={mobileModeEnabled}
           onClick={() => void onMobileModeChange(!mobileModeEnabled)}
           disabled={busy}
-          className={`settings-mobile-switch rounded-[var(--radius-control)] border px-3 py-1.5 text-[12px] transition-colors ${
+          className={`settings-mobile-switch rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
             mobileModeEnabled
               ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
               : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
@@ -2619,7 +2633,7 @@ function MobileModeToggle() {
           {steps.map((step) => {
             const glyph = PAIRING_STEP_GLYPH[step.state];
             return (
-              <li key={step.id} className="flex items-start gap-2 text-[12px]">
+              <li key={step.id} className="flex items-start gap-2 text-[length:var(--text-sm)]">
                 <Icon name={glyph.icon} className={`mt-[1px] shrink-0 ${glyph.className}`} aria-hidden />
                 <span className="min-w-0">
                   <span className={step.state === "skipped" ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}>
@@ -2627,7 +2641,7 @@ function MobileModeToggle() {
                   </span>
                   <span className="sr-only"> — {glyph.announce}</span>
                   {step.detail && (step.state === "fail" || step.state === "pending") ? (
-                    <span className={`block text-[11px] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
+                    <span className={`block text-[length:var(--text-xs)] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
                       {step.detail}
                     </span>
                   ) : null}
@@ -2647,9 +2661,9 @@ function MobileModeToggle() {
                 Retry
               </Button>
               {error ? (
-                <details className="text-[11px] text-[var(--text-muted)]">
+                <details className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   <summary className="cursor-pointer">Technical details</summary>
-                  <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[10px]">{error}</code>
+                  <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[length:var(--text-2xs)]">{error}</code>
                 </details>
               ) : null}
             </li>
@@ -2664,8 +2678,8 @@ function MobileModeToggle() {
           role="status"
           className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--color-warning)_35%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3.5 py-3"
         >
-          <p className="text-[12px] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
-          <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">{friendly.hint}</p>
+          <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
+          <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">{friendly.hint}</p>
           <div className="flex items-center gap-2">
             <Button
               size="xs"
@@ -2677,9 +2691,9 @@ function MobileModeToggle() {
               Retry
             </Button>
           </div>
-          <details className="text-[11px] text-[var(--text-muted)]">
+          <details className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <summary className="cursor-pointer">Technical details</summary>
-            <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[10px]">{error}</code>
+            <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[length:var(--text-2xs)]">{error}</code>
           </details>
         </div>
       ) : null}
@@ -2693,10 +2707,10 @@ function MobileModeToggle() {
             aria-label="Pairing code for your iPhone camera"
             dangerouslySetInnerHTML={{ __html: handoff.qrSvg }}
           />
-          <p className="text-[12px] text-[var(--text-secondary)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
             Scan with your iPhone camera — Cave opens on your phone already paired.
           </p>
-          <p className="text-[10px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             Works in Safari or the Cave app · the code refreshes itself while this switch is on.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -2727,14 +2741,14 @@ function MobileModeToggle() {
       {/* Everything that used to be four loud steps lives here, folded away. */}
       {mobileModeEnabled ? (
         <details className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-2.5">
-          <summary className="cursor-pointer text-[12px] font-medium text-[var(--text-secondary)]">
+          <summary className="cursor-pointer text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
             Manual setup
           </summary>
-          <div className="mt-2 flex flex-col gap-2 text-[12px] text-[var(--text-secondary)]">
+          <div className="mt-2 flex flex-col gap-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
             {handoff?.nativeHost ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[var(--text-muted)]">Desktop address:</span>
-                <code className="rounded bg-[var(--bg-base)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-primary)]">
+                <code className="rounded bg-[var(--bg-base)] px-1.5 py-0.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
                   {handoff.nativeHost}
                 </code>
                 <Button
@@ -2772,7 +2786,7 @@ function MobileSection() {
       <SettingsGroup label="Why there’s no password">
         <div className="flex items-start gap-3 px-4 py-3">
           <Icon name="ph:lock-simple-bold" width={16} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
-          <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">
+          <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
             Being on your Tailscale network <em>is</em> the credential. The desktop only serves the mobile API over the
             tailnet — encrypted and private — so nothing is exposed to the public internet, and there’s no token to copy.
           </p>
@@ -2857,9 +2871,9 @@ function AboutDaemonStatusRow() {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <span className="text-[12px] text-[var(--text-secondary)]">Daemon</span>
+      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Daemon</span>
       <div className="flex min-w-0 items-center gap-2">
-        <span className={`truncate text-right text-[12px] ${tone}`} title={reason ?? checkedAt ?? undefined}>
+        <span className={`truncate text-right text-[length:var(--text-sm)] ${tone}`} title={reason ?? checkedAt ?? undefined}>
           {detail}{checkedAt ? ` · checked ${relativeTime(checkedAt)}` : ""}
         </span>
         <Button variant="secondary" size="xs" onClick={refresh} disabled={state.kind === "checking"}>
@@ -2867,7 +2881,7 @@ function AboutDaemonStatusRow() {
         </Button>
       </div>
       {reason ? (
-        <p className="basis-full text-right text-[11px] text-[var(--text-muted)]">
+        <p className="basis-full text-right text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {reason}
         </p>
       ) : null}
@@ -2901,7 +2915,7 @@ function AboutSection() {
               key={l.href}
               variant="secondary"
               size="xs"
-              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[11px]"
+              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[length:var(--text-xs)]"
               onClick={() => openExternalUrl(l.href)}
               leadingIcon={l.icon}
             >
@@ -2925,8 +2939,8 @@ function SettingsPage({ title, description, section, children }: { title: string
         <SettingsOverview section={section} />
       ) : (
         <div>
-          <p className="text-[18px] font-semibold text-[var(--text-primary)]">{title}</p>
-          {description && <p className="mt-1 text-[12px] text-[var(--text-muted)]">{description}</p>}
+          <p className="text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{title}</p>
+          {description && <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">{description}</p>}
         </div>
       )}
       {children}
@@ -2939,11 +2953,11 @@ function SettingsRow({ label, description, comingSoon, children }: { label: stri
   return (
     <div className={`flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`}>
       <div className="min-w-0">
-        <p className="text-[13px] text-[var(--text-primary)]">{label}</p>
-        {description && <p className="text-[11px] text-[var(--text-muted)]">{description}</p>}
+        <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{label}</p>
+        {description && <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>}
       </div>
       {comingSoon ? (
-        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">Soon</span>
+        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Soon</span>
       ) : children}
     </div>
   );
@@ -2952,8 +2966,8 @@ function SettingsRow({ label, description, comingSoon, children }: { label: stri
 function SettingsKV({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
-      <span className={`text-right text-[12px] text-[var(--text-muted)] ${mono ? "font-mono" : ""}`}>{value}</span>
+      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{label}</span>
+      <span className={`text-right text-[length:var(--text-sm)] text-[var(--text-muted)] ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   );
 }

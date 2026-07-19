@@ -33,18 +33,18 @@ export function SelectionToolbar({
         <button
           type="button"
           onClick={onToggleSelectAll}
-          className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+          className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
           {allSelected ? "Clear" : selectAllLabel}
         </button>
-        <span aria-live="polite" className="text-[11px] text-[var(--text-muted)]">{count} selected</span>
+        <span aria-live="polite" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{count} selected</span>
       </div>
       <div className="flex items-center gap-1">
         {children}
         <button
           type="button"
           onClick={onCancel}
-          className="focus-ring rounded px-1.5 py-0.5 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+          className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
         >
           Cancel
         </button>

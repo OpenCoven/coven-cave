@@ -105,7 +105,7 @@ function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; time
   if (!text) return null;
   const over = runningSince ? Date.now() - new Date(runningSince).getTime() > (timeoutMs ?? DEFAULT_TIMEOUT_MS) : false;
   return (
-    <span className={`rounded border px-1.5 py-px text-[10px] uppercase tracking-widest ${over ? "border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]" : "border-border bg-card text-muted-foreground"}`}>
+    <span className={`rounded border px-1.5 py-px text-[length:var(--text-2xs)] uppercase tracking-widest ${over ? "border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]" : "border-border bg-card text-muted-foreground"}`}>
       {text}
     </span>
   );
@@ -140,31 +140,29 @@ function InlinePATSetup({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <div style={{ padding: "10px 10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+    <div className="[padding:10px_10px_var(--space-2)]! [display:flex]! [flex-direction:column]! [gap:var(--space-2)]!">
+      <div className="[display:flex]! [align-items:center]! [gap:6px]! [margin-bottom:2px]!">
         <Icon name="ph:github-logo" width={14} className="text-[var(--text-muted)]" />
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Connect GitHub</span>
+        <span className="[font-size:var(--text-xs)]! [font-weight:600]! [color:var(--text-secondary)]!">Connect GitHub</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>GitHub username</label>
+      <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-1)]!">
+        <label className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [font-weight:500]!">GitHub username</label>
         <input type="text" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="your-username"
-          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
-            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+          className="[background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [border-radius:6px]! [padding:5px_var(--space-2)]! [font-size:var(--text-xs)]! [color:var(--text-primary)]! [outline:none]! [width:100%]! [box-sizing:border-box]!" />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>
-          Personal Access Token <span style={{ fontWeight: 400 }}>(optional)</span>
+      <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-1)]!">
+        <label className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [font-weight:500]!">
+          Personal Access Token <span className="[font-weight:400]!">(optional)</span>
         </label>
         <input type="password" value={pat} onChange={(e) => setPat(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="ghp_…"
-          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
-            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+          className="[background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [border-radius:6px]! [padding:5px_var(--space-2)]! [font-size:var(--text-xs)]! [color:var(--text-primary)]! [outline:none]! [width:100%]! [box-sizing:border-box]!" />
       </div>
-      {error && <p style={{ fontSize: 10, color: "var(--color-danger)", margin: 0 }}>{error}</p>}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+      {error && <p className="[font-size:var(--text-2xs)]! [color:var(--color-danger)]! [margin:0]!">{error}</p>}
+      <div className="[display:flex]! [align-items:center]! [justify-content:space-between]! [margin-top:2px]!">
         <button type="button" onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
-          style={{ background: "transparent", border: 0, padding: 0, fontSize: 10, color: "var(--accent-presence)", textDecoration: "none", cursor: "pointer" }}>
+          className="[background:transparent]! [border:0]! [padding:0]! [font-size:var(--text-2xs)]! [color:var(--accent-presence)]! [text-decoration:none]! [cursor:pointer]!">
           Generate PAT →
         </button>
         <button type="button" disabled={(!pat.trim() && !usernameInput.trim()) || saving} onClick={() => void save()}
@@ -284,17 +282,16 @@ function GitHubAttachSection({
 
   return (
     <div className="board-drawer-field">
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [justify-content:space-between]!">
+        <span className="[display:inline-flex]! [align-items:center]! [gap:5px]!">
           <Icon name="ph:github-logo" width={11} />
           GitHub
           {attachedItems.length > 0 && <span className="board-drawer-count-pill">{attachedItems.length}</span>}
         </span>
         <button
           type="button"
-          className="board-toolbar-btn"
+          className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]!"
           onClick={() => setOpen((v) => !v)}
-          style={{ fontSize: 10, padding: "2px 8px" }}
         >
           <Icon name={open ? "ph:caret-up" : "ph:github-logo"} width={11} />
           {open ? "Hide" : "Attach"}
@@ -302,41 +299,23 @@ function GitHubAttachSection({
       </div>
 
       {attachedItems.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+        <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-1)]! [margin-bottom:6px]!">
           {attachedItems.map((item) => (
-            <div key={item.id} style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: "var(--bg-elevated)", borderRadius: 6,
-              padding: "5px 8px", border: "1px solid var(--border-hairline)"
-            }}>
+            <div key={item.id} className="[display:flex]! [align-items:center]! [gap:6px]! [background:var(--bg-elevated)]! [border-radius:6px]! [padding:5px_var(--space-2)]! [border:1px_solid_var(--border-hairline)]!">
               <button
                 type="button"
-                className="board-github-attachment-open"
+                className="board-github-attachment-open [flex:1]! [min-width:0]! [display:inline-flex]! [align-items:center]! [gap:6px]! [border:0]! [padding:0]! [background:transparent]! [color:var(--text-primary)]! [text-align:left]! [cursor:pointer]!"
                 onClick={() => onOpenUrl?.(item.url)}
                 title="Open in app browser"
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  border: 0,
-                  padding: 0,
-                  background: "transparent",
-                  color: "var(--text-primary)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
               >
                 <Icon name={iconName(item.kind)} width={12} className={STATE_COLOR[item.state ?? ""] ?? "text-[var(--text-muted)]"} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span className="[flex:1]! [min-width:0]! [font-size:var(--text-xs)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                   {item.repo}{item.number != null ? " #" + item.number : ""} — {item.title}
                 </span>
               </button>
               <button
                 type="button"
-                className="board-toolbar-btn"
-                style={{ fontSize: 10, padding: "1px 6px" }}
+                className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:1px_6px]!"
                 onClick={() => detach(item.url)}
                 title="Detach"
               >
@@ -348,34 +327,34 @@ function GitHubAttachSection({
       )}
 
       {open && (
-        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
+        <div className="[border:1px_solid_var(--border-hairline)]! [border-radius:var(--radius-control)]! [overflow:hidden]! [background:var(--bg-raised)]!">
+          <div className="[display:flex]! [align-items:center]! [gap:6px]! [padding:7px_10px]! [border-bottom:1px_solid_var(--border-hairline)]!">
             <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
             <input
               autoFocus={!coarse}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search PRs, issues…"
-              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "var(--text-primary)" }}
+              className="[flex:1]! [background:transparent]! [border:none]! [outline:none]! [font-size:var(--text-sm)]! [color:var(--text-primary)]!"
             />
             {query && (
-              <button type="button" onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+              <button type="button" onClick={() => setQuery("")} className="[background:none]! [border:none]! [cursor:pointer]! [color:var(--text-muted)]! [display:flex]!">
                 <Icon name="ph:x" width={11} />
               </button>
             )}
           </div>
 
-          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+          <div className="[max-height:240px]! [overflow-y:auto]!">
             {loading && (
-              <div style={{ padding: "10px" }}><SkeletonRows count={4} /></div>
+              <div className="[padding:10px]!"><SkeletonRows count={4} /></div>
             )}
             {err && (
-              <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
+              <div className="[padding:10px]! [font-size:var(--text-xs)]! [color:var(--color-danger)]!">{err}</div>
             )}
             {!loading && !err && configured === false && (
               <>
                 {patRejected && (
-                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                  <div className="[padding:10px_10px_0]! [font-size:var(--text-xs)]! [color:var(--color-danger)]!">
                     GitHub rejected the stored token (revoked or expired) — reconnect below.
                   </div>
                 )}
@@ -383,12 +362,12 @@ function GitHubAttachSection({
               </>
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
                 No open issues, PRs, or review requests assigned to you.
               </div>
             )}
             {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>No matches.</div>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">No matches.</div>
             )}
             {filtered.map((item) => {
               const attached = attachedUrls.has(item.url);
@@ -406,20 +385,19 @@ function GitHubAttachSection({
                     width={13}
                     className={STATE_COLOR[item.state ?? ""] ?? "text-[var(--text-muted)]"}
                   />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className="[flex:1]! [min-width:0]!">
+                    <div className="[font-size:var(--text-xs)]! [font-weight:500]! [color:var(--text-primary)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                       {item.repo}{item.number != null ? " #" + item.number : ""}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div className="[font-size:var(--text-xs)]! [color:var(--text-muted)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                       {item.title}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <div className="[display:flex]! [gap:var(--space-1)]! [flex-shrink:0]!">
                     {fam && (
                       <button
                         type="button"
-                        className="board-toolbar-btn"
-                        style={{ fontSize: 10, padding: "2px 7px" }}
+                        className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_7px]!"
                         title={"Assign to " + fam.display_name}
                         onClick={() => assignAgent(item)}
                       >
@@ -540,17 +518,16 @@ function AsanaAttachSection({
 
   return (
     <div className="board-drawer-field">
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [justify-content:space-between]!">
+        <span className="[display:inline-flex]! [align-items:center]! [gap:5px]!">
           <Icon name="ph:check-circle" width={11} />
           Asana
           {attachedItems.length > 0 && <span className="board-drawer-count-pill">{attachedItems.length}</span>}
         </span>
         <button
           type="button"
-          className="board-toolbar-btn"
+          className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]!"
           onClick={() => setOpen((v) => !v)}
-          style={{ fontSize: 10, padding: "2px 8px" }}
         >
           <Icon name={open ? "ph:caret-up" : "ph:check-circle"} width={11} />
           {open ? "Hide" : "Attach"}
@@ -558,33 +535,23 @@ function AsanaAttachSection({
       </div>
 
       {attachedItems.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+        <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-1)]! [margin-bottom:6px]!">
           {attachedItems.map((item) => (
-            <div key={item.id} style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: "var(--bg-elevated)", borderRadius: 6,
-              padding: "5px 8px", border: "1px solid var(--border-hairline)"
-            }}>
+            <div key={item.id} className="[display:flex]! [align-items:center]! [gap:6px]! [background:var(--bg-elevated)]! [border-radius:6px]! [padding:5px_var(--space-2)]! [border:1px_solid_var(--border-hairline)]!">
               <button
                 type="button"
-                className="board-github-attachment-open"
+                className="board-github-attachment-open [flex:1]! [min-width:0]! [display:inline-flex]! [align-items:center]! [gap:6px]! [border:0]! [padding:0]! [background:transparent]! [color:var(--text-primary)]! [text-align:left]! [cursor:pointer]!"
                 onClick={() => onOpenUrl?.(item.url)}
                 title="Open in Asana"
-                style={{
-                  flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6,
-                  border: 0, padding: 0, background: "transparent", color: "var(--text-primary)",
-                  textAlign: "left", cursor: "pointer",
-                }}
               >
                 <Icon name="ph:check-circle" width={12} className={item.completed ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span className="[flex:1]! [min-width:0]! [font-size:var(--text-xs)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                   {item.title}{subtitle(item) ? ` — ${subtitle(item)}` : ""}
                 </span>
               </button>
               <button
                 type="button"
-                className="board-toolbar-btn"
-                style={{ fontSize: 10, padding: "1px 6px" }}
+                className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:1px_6px]!"
                 onClick={() => detach(item.url)}
                 title="Detach"
               >
@@ -596,34 +563,34 @@ function AsanaAttachSection({
       )}
 
       {open && (
-        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
+        <div className="[border:1px_solid_var(--border-hairline)]! [border-radius:var(--radius-control)]! [overflow:hidden]! [background:var(--bg-raised)]!">
+          <div className="[display:flex]! [align-items:center]! [gap:6px]! [padding:7px_10px]! [border-bottom:1px_solid_var(--border-hairline)]!">
             <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
             <input
               autoFocus={!coarse}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search tasks, projects…"
-              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "var(--text-primary)" }}
+              className="[flex:1]! [background:transparent]! [border:none]! [outline:none]! [font-size:var(--text-sm)]! [color:var(--text-primary)]!"
             />
             {query && (
-              <button type="button" onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+              <button type="button" onClick={() => setQuery("")} className="[background:none]! [border:none]! [cursor:pointer]! [color:var(--text-muted)]! [display:flex]!">
                 <Icon name="ph:x" width={11} />
               </button>
             )}
           </div>
 
-          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+          <div className="[max-height:240px]! [overflow-y:auto]!">
             {loading && (
-              <div style={{ padding: "10px" }}><SkeletonRows count={4} /></div>
+              <div className="[padding:10px]!"><SkeletonRows count={4} /></div>
             )}
             {err && (
-              <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
+              <div className="[padding:10px]! [font-size:var(--text-xs)]! [color:var(--color-danger)]!">{err}</div>
             )}
             {!loading && !err && configured === false && (
               <>
                 {patRejected && (
-                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                  <div className="[padding:10px_10px_0]! [font-size:var(--text-xs)]! [color:var(--color-danger)]!">
                     Asana rejected the stored token (revoked or expired) — reconnect below.
                   </div>
                 )}
@@ -631,12 +598,12 @@ function AsanaAttachSection({
               </>
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
                 No incomplete tasks assigned to you.
               </div>
             )}
             {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>No matches.</div>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">No matches.</div>
             )}
             {filtered.map((item) => {
               const attached = attachedUrls.has(item.url);
@@ -647,15 +614,15 @@ function AsanaAttachSection({
                   background: attached ? "color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised))" : undefined,
                 }}>
                   <Icon name="ph:check-circle" width={13} className="text-[var(--text-muted)]" />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className="[flex:1]! [min-width:0]!">
+                    <div className="[font-size:var(--text-xs)]! [font-weight:500]! [color:var(--text-primary)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                       {item.title}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div className="[font-size:var(--text-xs)]! [color:var(--text-muted)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                       {subtitle(item) || "Asana task"}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <div className="[display:flex]! [gap:var(--space-1)]! [flex-shrink:0]!">
                     <button
                       type="button"
                       className="board-toolbar-btn"
@@ -714,17 +681,11 @@ function LinksSection({
   return (
     <div className="board-drawer-field">
       {/* Header row */}
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [gap:6px]!">
         <Icon name="ph:link-simple" width={12} />
         Links
         {links.length > 0 && (
-          <span style={{
-            fontSize: 10,
-            color: "var(--text-muted)",
-            background: "var(--bg-elevated)",
-            borderRadius: 8,
-            padding: "1px 6px",
-          }}>
+          <span className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [background:var(--bg-elevated)]! [border-radius:var(--radius-control)]! [padding:1px_6px]!">
             {links.length}
           </span>
         )}
@@ -732,63 +693,33 @@ function LinksSection({
 
       {/* Link list */}
       {links.length > 0 && (
-        <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+        <ul className="[display:flex]! [flex-direction:column]! [gap:2px]! [margin-bottom:var(--space-2)]!">
           {links.map((link) => {
             const href = safeHref(link);
             return (
               <li
                 key={link}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "5px 8px",
-                  borderRadius: 6,
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-hairline)",
-                }}
+                className="[display:flex]! [align-items:center]! [gap:var(--space-2)]! [padding:5px_var(--space-2)]! [border-radius:6px]! [background:var(--bg-elevated)]! [border:1px_solid_var(--border-hairline)]!"
               >
                 <Icon name="ph:link-simple" width={10} className="shrink-0 text-[var(--text-muted)]" />
                 {href ? (
                   <button
                     type="button"
                     onClick={() => onOpenUrl?.(href)}
-                    style={{
-                      flex: 1,
-                      fontSize: 12,
-                      color: "var(--text-primary)",
-                      textDecoration: "none",
-                      textAlign: "left",
-                      border: 0,
-                      padding: 0,
-                      background: "transparent",
-                      cursor: "pointer",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
                     title="Open in app browser"
-                    className="link-item-anchor"
+                    className="link-item-anchor [flex:1]! [font-size:var(--text-sm)]! [color:var(--text-primary)]! [text-decoration:none]! [text-align:left]! [border:0]! [padding:0]! [background:transparent]! [cursor:pointer]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!"
                   >
                     {formatLinkLabel(link)}
                   </button>
                 ) : (
-                  <span style={{
-                    flex: 1,
-                    fontSize: 12,
-                    color: "var(--text-primary)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}>
+                  <span className="[flex:1]! [font-size:var(--text-sm)]! [color:var(--text-primary)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">
                     {link}
                   </span>
                 )}
-                <span style={{ display: "flex", alignItems: "center", gap: 2 }} className="step-actions">
+                <span className="step-actions [display:flex]! [align-items:center]! [gap:2px]!">
                   <button
                     type="button"
-                    className="board-toolbar-btn"
-                    style={{ padding: "1px 4px", color: "var(--color-danger)" }}
+                    className="board-toolbar-btn [padding:1px_var(--space-1)]! [color:var(--color-danger)]!"
                     onClick={() => deleteLink(link)}
                     title="Remove link"
                   >
@@ -802,30 +733,20 @@ function LinksSection({
       )}
 
       {/* Add link input */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div className="[display:flex]! [gap:6px]! [align-items:center]!">
         <input
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addLink(); } }}
           placeholder="Paste a URL…"
-          style={{
-            flex: 1,
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border-hairline)",
-            borderRadius: 6,
-            padding: "5px 9px",
-            fontSize: 12,
-            color: "var(--text-primary)",
-            outline: "none",
-          }}
+          className="[flex:1]! [background:var(--bg-elevated)]! [border:1px_solid_var(--border-hairline)]! [border-radius:6px]! [padding:5px_9px]! [font-size:var(--text-sm)]! [color:var(--text-primary)]! [outline:none]!"
         />
         <button
           type="button"
-          className="board-toolbar-btn"
+          className="board-toolbar-btn [padding:var(--space-1)_10px]! [font-size:var(--text-xs)]!"
           onClick={addLink}
           disabled={!draft.trim() || !isValidUrl(draft.trim())}
-          style={{ padding: "4px 10px", fontSize: 11 }}
         >
           <Icon name="ph:plus-bold" width={11} />
           Add
@@ -919,47 +840,32 @@ function AttachmentsSection({
         void addFiles(e.dataTransfer.files);
       }}
     >
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [gap:6px]!">
         <Icon name="ph:paperclip" width={12} />
         Attachments
         {attachments.length > 0 && (
-          <span style={{
-            fontSize: 10,
-            color: "var(--text-muted)",
-            background: "var(--bg-elevated)",
-            borderRadius: 8,
-            padding: "1px 6px",
-          }}>
+          <span className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [background:var(--bg-elevated)]! [border-radius:var(--radius-control)]! [padding:1px_6px]!">
             {attachments.length}
           </span>
         )}
       </div>
       {attachments.length > 0 && (
-        <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+        <ul className="[display:flex]! [flex-direction:column]! [gap:2px]! [margin-bottom:var(--space-2)]!">
           {attachments.map((att, i) => (
             <li
               key={`${att.name}-${i}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "5px 8px",
-                borderRadius: 6,
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-hairline)",
-              }}
+              className="[display:flex]! [align-items:center]! [gap:var(--space-2)]! [padding:5px_var(--space-2)]! [border-radius:6px]! [background:var(--bg-elevated)]! [border:1px_solid_var(--border-hairline)]!"
             >
               <Icon name={attachmentIcon(att)} width={11} className="shrink-0 text-[var(--text-muted)]" />
-              <span style={{ flex: 1, fontSize: 12, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={att.name}>
+              <span className="[flex:1]! [font-size:var(--text-sm)]! [color:var(--text-primary)]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!" title={att.name}>
                 {att.name}
               </span>
-              <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>
+              <span className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [flex-shrink:0]!">
                 {formatAttachmentSize(att.size)}
               </span>
               <button
                 type="button"
-                className="board-toolbar-btn"
-                style={{ padding: "1px 4px", color: "var(--color-danger)", flexShrink: 0 }}
+                className="board-toolbar-btn [padding:1px_var(--space-1)]! [color:var(--color-danger)]! [flex-shrink:0]!"
                 onClick={() => removeAt(i)}
                 title={`Remove ${att.name}`}
                 aria-label={`Remove ${att.name}`}
@@ -979,10 +885,9 @@ function AttachmentsSection({
       />
       <button
         type="button"
-        className="board-toolbar-btn"
+        className="board-toolbar-btn [padding:var(--space-1)_10px]! [font-size:var(--text-xs)]!"
         onClick={() => fileInputRef.current?.click()}
         disabled={busy || atCap}
-        style={{ padding: "4px 10px", fontSize: 11 }}
         title={atCap ? `Attachment limit reached (${MAX_CARD_ATTACHMENTS})` : "Attach files to this task — or drop them onto this section"}
       >
         <Icon name="ph:paperclip" width={11} />
@@ -1041,18 +946,12 @@ function StepsSection({
   return (
     <div className="board-drawer-field">
       {/* Header row */}
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [justify-content:space-between]! [gap:var(--space-2)]!">
+        <span className="[display:flex]! [align-items:center]! [gap:6px]!">
           <Icon name="ph:list-checks-bold" width={12} />
           Steps
           {total > 0 && (
-            <span style={{
-              fontSize: 10,
-              color: "var(--text-muted)",
-              background: "var(--bg-elevated)",
-              borderRadius: 8,
-              padding: "1px 6px",
-            }}>
+            <span className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [background:var(--bg-elevated)]! [border-radius:var(--radius-control)]! [padding:1px_6px]!">
               {doneCount}/{total}
             </span>
           )}
@@ -1066,13 +965,7 @@ function StepsSection({
 
       {/* Progress bar */}
       {total > 0 && (
-        <div style={{
-          height: 2,
-          borderRadius: 2,
-          background: "var(--border-hairline)",
-          marginBottom: 8,
-          overflow: "hidden",
-        }}>
+        <div className="[height:2px]! [border-radius:2px]! [background:var(--border-hairline)]! [margin-bottom:var(--space-2)]! [overflow:hidden]!">
           <div style={{
             height: "100%",
             width: pct + "%",
@@ -1084,7 +977,7 @@ function StepsSection({
 
       {/* Step list */}
       {steps.length > 0 && (
-        <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+        <ul className="[display:flex]! [flex-direction:column]! [gap:2px]! [margin-bottom:var(--space-2)]!">
           {steps.map((step, i) => (
             <li
               key={step.id}
@@ -1138,41 +1031,41 @@ function StepsSection({
               </span>
 
               {/* Actions */}
-              <span style={{ display: "flex", gap: 2, flexShrink: 0 }} className="step-actions">
+              <span className="step-actions [display:flex]! [gap:2px]! [flex-shrink:0]!">
                 {i > 0 && (
-                  <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px" }}
+                  <button type="button" className="board-toolbar-btn [padding:1px_var(--space-1)]!"
                     onClick={() => reorderStep(step.id, -1)} title="Move up">
                     <Icon name="ph:arrow-up-bold" width={9} />
                   </button>
                 )}
                 {i < steps.length - 1 && (
-                  <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px" }}
+                  <button type="button" className="board-toolbar-btn [padding:1px_var(--space-1)]!"
                     onClick={() => reorderStep(step.id, 1)} title="Move down">
                     <Icon name="ph:arrow-down-bold" width={9} />
                   </button>
                 )}
-                <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px", color: "var(--color-danger)" }}
+                <button type="button" className="board-toolbar-btn [padding:1px_var(--space-1)]! [color:var(--color-danger)]!"
                   onClick={() => deleteStep(step.id)} title="Delete step">
                   <Icon name="ph:x-bold" width={9} />
                 </button>
               </span>
 
               {/* Step schedule — places this step on the Gantt under "group by Task". */}
-              <div style={{ display: "flex", flexBasis: "100%", gap: 6, alignItems: "center", paddingLeft: 23 }}>
+              <div className="[display:flex]! [flex-basis:100%]! [gap:6px]! [align-items:center]! [padding-left:23px]!">
                 <input
                   type="date"
                   aria-label={`Start date for step: ${step.text}`}
                   value={step.startDate ?? ""}
                   onChange={(e) => setStepDate(step.id, "startDate", e.target.value)}
-                  style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }}
+                  className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!"
                 />
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }} aria-hidden>→</span>
+                <span className="[font-size:var(--text-xs)]! [color:var(--text-muted)]!" aria-hidden>→</span>
                 <input
                   type="date"
                   aria-label={`End date for step: ${step.text}`}
                   value={step.endDate ?? ""}
                   onChange={(e) => setStepDate(step.id, "endDate", e.target.value)}
-                  style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }}
+                  className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!"
                 />
               </div>
             </li>
@@ -1181,30 +1074,20 @@ function StepsSection({
       )}
 
       {/* Add step input */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div className="[display:flex]! [gap:6px]! [align-items:center]!">
         <input
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStep(); } }}
           placeholder="Add a step…"
-          style={{
-            flex: 1,
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border-hairline)",
-            borderRadius: 6,
-            padding: "5px 9px",
-            fontSize: 12,
-            color: "var(--text-primary)",
-            outline: "none",
-          }}
+          className="[flex:1]! [background:var(--bg-elevated)]! [border:1px_solid_var(--border-hairline)]! [border-radius:6px]! [padding:5px_9px]! [font-size:var(--text-sm)]! [color:var(--text-primary)]! [outline:none]!"
         />
         <button
           type="button"
-          className="board-toolbar-btn"
+          className="board-toolbar-btn [padding:var(--space-1)_10px]! [font-size:var(--text-xs)]!"
           onClick={addStep}
           disabled={!draft.trim()}
-          style={{ padding: "4px 10px", fontSize: 11 }}
         >
           <Icon name="ph:plus-bold" width={11} />
           Add
@@ -1224,10 +1107,10 @@ function StepsSection({
 
 function DebugKVRow({ k, v }: { k: string; v: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, padding: "2px 0", fontSize: 11 }}>
-      <span style={{ flexShrink: 0, color: "var(--text-muted)" }}>{k}</span>
+    <div className="[display:flex]! [align-items:baseline]! [justify-content:space-between]! [gap:10px]! [padding:2px_0]! [font-size:var(--text-xs)]!">
+      <span className="[flex-shrink:0]! [color:var(--text-muted)]!">{k}</span>
       <span
-        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "var(--text-secondary)" }}
+        className="[min-width:0]! [overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]! [font-family:ui-monospace,_monospace]! [font-size:var(--text-xs)]! [color:var(--text-secondary)]!"
         title={v}
       >
         {v}
@@ -1241,8 +1124,7 @@ function CopyJsonButton({ getText }: { getText: () => string }) {
   return (
     <button
       type="button"
-      className="board-toolbar-btn"
-      style={{ fontSize: 10, padding: "2px 8px" }}
+      className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]!"
       onClick={() => copy(getText())}
     >
       <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={10} />
@@ -1267,35 +1149,34 @@ function DebugSection({ card }: { card: Card }) {
   ];
   return (
     <div className="board-drawer-field">
-      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <div className="board-drawer-field-label [display:flex]! [align-items:center]! [justify-content:space-between]!">
+        <span className="[display:inline-flex]! [align-items:center]! [gap:5px]!">
           <Icon name="ph:bug-bold" width={11} />
           Debug
         </span>
         <button
           type="button"
-          className="board-toolbar-btn"
+          className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]!"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           title={open ? "Hide debug details" : "Show debug details"}
-          style={{ fontSize: 10, padding: "2px 8px" }}
         >
           <Icon name={open ? "ph:caret-up" : "ph:caret-down"} width={11} />
           {open ? "Hide" : "Show"}
         </button>
       </div>
       {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border-hairline)", background: "var(--bg-base)" }}>
+        <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-2)]!">
+          <div className="[padding:var(--space-2)_10px]! [border-radius:10px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]!">
             {rows.map(([k, v]) => (
               <DebugKVRow key={k} k={k} v={v} />
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Raw card</span>
+          <div className="[display:flex]! [align-items:center]! [justify-content:space-between]!">
+            <span className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]!">Raw card</span>
             <CopyJsonButton getText={() => JSON.stringify(card, null, 2)} />
           </div>
-          <pre style={{ maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, padding: 8, borderRadius: 8, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", fontFamily: "ui-monospace, monospace", fontSize: 10, lineHeight: 1.5, color: "var(--text-secondary)" }}>
+          <pre className="[max-height:260px]! [overflow:auto]! [white-space:pre-wrap]! [word-break:break-word]! [margin:0]! [padding:var(--space-2)]! [border-radius:var(--radius-control)]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [font-family:ui-monospace,_monospace]! [font-size:var(--text-2xs)]! [line-height:1.5]! [color:var(--text-secondary)]!">
             {JSON.stringify(card, null, 2)}
           </pre>
         </div>
@@ -1653,7 +1534,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
               {card.labels.length > 0 && <span className="board-drawer-count-pill">{card.labels.length}</span>}
             </div>
             {card.labels.length > 0 && (
-              <div className="board-label-chips" style={{ marginBottom: 8 }}>
+              <div className="board-label-chips [margin-bottom:var(--space-2)]!">
                 {card.labels.map((l) => (
                   <span key={l} className="board-label-chip">
                     {l}
@@ -1666,8 +1547,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 ))}
               </div>
             )}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input className="board-drawer-field-input" style={{ flex: 1 }} placeholder="Add label…"
+            <div className="[display:flex]! [gap:6px]!">
+              <input className="board-drawer-field-input [flex:1]!" placeholder="Add label…"
                 value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLabel(); } }} />
               <button type="button" className="board-toolbar-btn" onClick={addLabel} disabled={!newLabel.trim()}>
@@ -1677,17 +1558,16 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           </div>
 
           <div className="board-drawer-field">
-            <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <div className="board-drawer-field-label [display:flex]! [align-items:center]! [justify-content:space-between]!">
+              <span className="[display:inline-flex]! [align-items:center]! [gap:5px]!">
                 Lifecycle
               </span>
               <button
                 type="button"
-                className="board-toolbar-btn"
+                className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]!"
                 onClick={() => setLifecycleOpen((v) => !v)}
                 aria-expanded={lifecycleOpen}
                 title={lifecycleOpen ? "Hide lifecycle details" : "Show lifecycle details"}
-                style={{ fontSize: 10, padding: "2px 8px" }}
               >
                 <Icon name={lifecycleOpen ? "ph:caret-up" : "ph:caret-down"} width={11} />
                 {lifecycleOpen ? "Hide" : "Show"}
@@ -1707,7 +1587,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   </div>
                   {card.lifecycleReason ? (
                     <p style={{ margin: 0, fontSize: 10.5, overflowWrap: "anywhere", color: card.lifecycle === "failed" ? "var(--color-danger)" : "var(--text-muted)" }}>
-                      <span style={{ marginRight: 6, fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Reason</span>
+                      <span className="[margin-right:6px]! [font-size:var(--text-2xs)]! [text-transform:uppercase]! [letter-spacing:0.08em]! [color:var(--text-muted)]!">Reason</span>
                       {card.lifecycleReason}
                     </p>
                   ) : null}

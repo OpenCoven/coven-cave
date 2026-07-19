@@ -309,9 +309,9 @@ function DraftCraftDetail({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
-            <h2 className="truncate text-[18px] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-            <p className="text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
+            <p className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
+            <h2 className="truncate text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
+            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <Icon name="ph:x" width={16} />
@@ -364,12 +364,12 @@ function DraftCraftDetail({
           ariaLabel="Draft extraction ledger"
         />
 
-        <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[12px] text-[var(--text-muted)]">
+        <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Drafts are local and reversible. Review the extracted bundle before publishing or installing it as a versioned Craft.
         </div>
 
         {error ? (
-          <p role="alert" className="text-[12px] text-[var(--color-danger)]">
+          <p role="alert" className="text-[length:var(--text-sm)] text-[var(--color-danger)]">
             {error}
           </p>
         ) : null}
@@ -484,8 +484,8 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
               <Icon name={kindIcon(plugin.kind)} width={18} className="text-[var(--text-muted)]" />
             </span>
             <div className="min-w-0">
-              <h2 className="truncate text-[16px] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-              <p className="truncate text-[12px] text-[var(--text-muted)]">By {plugin.author} · {plugin.category}</p>
+              <h2 className="truncate text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
+              <p className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">By {plugin.author} · {plugin.category}</p>
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
@@ -493,7 +493,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
           </button>
         </div>
 
-        {plugin.description ? <p className="text-[13px] text-[var(--text-primary)]">{plugin.description}</p> : null}
+        {plugin.description ? <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{plugin.description}</p> : null}
 
         <div className="marketplace-detail__decision-grid" aria-label="Install decision summary">
           {decisionItems.map((item) => (
@@ -508,7 +508,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]">
+        <div className="flex flex-wrap gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
             <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
             {kindLabel(plugin.kind)}
@@ -530,7 +530,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
           <Section title="Capabilities">
             <div className="flex flex-wrap gap-1.5">
               {plugin.capabilities.map((c) => (
-                <span key={c} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{c}</span>
+                <span key={c} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">{c}</span>
               ))}
             </div>
           </Section>
@@ -539,7 +539,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
         {plugin.prompts?.length ? (
           <Section title="Prompt templates">
             <PackPromptPreviews pluginId={plugin.id} fallbackIds={plugin.prompts} onTry={handleTryPrompt} />
-            <p className="mt-1.5 text-[12px] text-[var(--text-muted)]">
+            <p className="mt-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Added templates appear in chat under /prompts and the Prompt snippets picker.
             </p>
           </Section>
@@ -547,7 +547,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
 
         {plugin.roleAffinity.length ? (
           <Section title="Role affinity">
-            <ul className="flex flex-col gap-1 text-[12px] text-[var(--text-muted)]">
+            <ul className="flex flex-col gap-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               {plugin.roleAffinity.map((ra) => (
                 <li key={ra.familiar}><span className="text-[var(--text-primary)]">{ra.familiar}</span> · {ra.roles.join(", ")}</li>
               ))}
@@ -557,7 +557,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
 
         {plugin.requiresSetup ? (
           <Section title="Required configuration">
-            <p className="text-[12px] text-[var(--text-muted)]">
+            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               This plugin needs credentials before it can run. Adding it now records your choice; credential setup is a later step.
             </p>
           </Section>
@@ -565,7 +565,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
 
         {plugin.remoteUrl ? (
           <Section title="Connection">
-            <p className="text-[11px] text-[var(--text-muted)]">
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
               Authenticates via OAuth when first used — no setup needed here.
             </p>
             <div className="flex items-center gap-2">
@@ -580,7 +580,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
               {conn.state === "reachable" || conn.state === "unreachable" ? (
                 <span
                   role="status"
-                  className={`inline-flex items-center gap-1 text-[11px] ${conn.state === "reachable" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}
+                  className={`inline-flex items-center gap-1 text-[length:var(--text-xs)] ${conn.state === "reachable" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}
                 >
                   <Icon name={conn.state === "reachable" ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
                   {conn.message}
@@ -592,7 +592,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
 
         {plugin.homepage || plugin.repository ? (
           <Section title="Links">
-            <div className="flex flex-col gap-1 text-[12px]">
+            <div className="flex flex-col gap-1 text-[length:var(--text-sm)]">
               {plugin.homepage ? (
                 <a
                   className="text-[var(--text-primary)] underline"
@@ -670,14 +670,14 @@ function PackPromptPreviews({
   }, [pluginId]);
 
   if (prompts === null && !failed) {
-    return <p className="text-[12px] text-[var(--text-muted)]">Loading previews…</p>;
+    return <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading previews…</p>;
   }
   // Fetch failed → the bare-id chips (previous behavior), never a blank slate.
   if (failed || !prompts?.length) {
     return (
       <div className="flex flex-wrap gap-1.5">
         {fallbackIds.map((p) => (
-          <span key={p} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{p}</span>
+          <span key={p} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">{p}</span>
         ))}
       </div>
     );
@@ -692,15 +692,15 @@ function PackPromptPreviews({
         >
           <Icon name={promptIconName(p.icon)} width={16} className="mt-0.5 shrink-0 text-[var(--text-muted)]" aria-hidden />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-medium text-[var(--text-primary)]">{p.name}</p>
+            <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{p.name}</p>
             {p.description ? (
-              <p className="text-[12px] text-[var(--text-muted)]">{p.description}</p>
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{p.description}</p>
             ) : null}
-            <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{p.body}</p>
+            <p className="mt-1 line-clamp-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">{p.body}</p>
             {p.tags?.length ? (
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {p.tags.map((tag) => (
-                  <span key={tag} className="rounded-full border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-muted)]">{tag}</span>
+                  <span key={tag} className="rounded-full border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{tag}</span>
                 ))}
               </div>
             ) : null}
@@ -723,7 +723,7 @@ function PackPromptPreviews({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">{title}</h3>
+      <h3 className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">{title}</h3>
       {children}
     </section>
   );

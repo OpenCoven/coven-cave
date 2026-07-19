@@ -505,7 +505,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       <header className="projects-toolbar shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
         <div className="projects-toolbar__row flex items-center justify-between gap-3">
           <div className="projects-toolbar__controls flex min-w-0 items-center gap-2.5">
-            <span className="shrink-0 text-[12px] text-[var(--text-muted)]">
+            <span className="shrink-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               {query.trim() && visibleProjects.length !== projects.length ? (
                 `${visibleProjects.length} of ${projects.length} projects`
               ) : statusFilter === "active" ? (
@@ -537,7 +537,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                     size="xs"
                     onClick={() => setStatusFilter(opt.value)}
                     aria-pressed={statusFilter === opt.value}
-                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
                       statusFilter === opt.value
                         ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
@@ -565,7 +565,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                     onClick={() => changeSortMode(opt.value)}
                     aria-pressed={sortMode === opt.value}
                     title={opt.help}
-                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
                       sortMode === opt.value
                         ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
@@ -584,7 +584,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               onClick={() => void reload()}
               disabled={loading}
               aria-label="Refresh projects"
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
             >
               <Icon name="ph:arrows-clockwise-bold" width={12} className={loading ? "animate-spin" : undefined} aria-hidden />
               Refresh
@@ -593,7 +593,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               variant="secondary"
               size="sm"
               onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
               leadingIcon="ph:plus-bold"
             >
               New project
@@ -621,12 +621,12 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               }}
               placeholder="Filter projects by name or path…"
               aria-label="Filter projects"
-              className="focus-ring h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             {!query && (
               <kbd
                 aria-hidden
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]"
               >
                 /
               </kbd>
@@ -649,7 +649,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
               placeholder="Project name"
-              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             <div className="flex items-center gap-2">
               <input
@@ -657,14 +657,14 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 value={rootDraft}
                 onChange={(event) => setRootDraft(event.target.value)}
                 placeholder="/absolute/path/to/project"
-                className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
               />
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => void handleBrowse()}
                 title="Browse for a project folder"
-                className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
                 leadingIcon="ph:folder-open"
               >
                 Browse
@@ -676,7 +676,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 variant="primary"
                 size="sm"
                 disabled={creating || !nameDraft.trim() || !rootDraft.trim()}
-                className="h-9 rounded-[var(--radius-control)] px-3 text-[12px] font-medium disabled:opacity-50"
+                className="h-9 rounded-[var(--radius-control)] px-3 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
               >
                 {creating ? "Creating" : "Create"}
               </Button>
@@ -684,7 +684,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowForm(false)}
-                className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               >
                 Cancel
               </Button>
@@ -707,14 +707,14 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           {error && projects.length > 0 ? (
             <div
               role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
             >
               <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
               <Button
                 variant="danger-ghost"
                 size="xs"
                 onClick={() => void reload()}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
               >
                 Retry
               </Button>
@@ -739,14 +739,14 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           {sessionError ? (
             <div
               role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
             >
               <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
               <Button
                 variant="danger-ghost"
                 size="xs"
                 onClick={() => setSessionError(null)}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
               >
                 Dismiss
               </Button>
@@ -766,7 +766,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 variant="secondary"
                 size="sm"
                 onClick={() => void reload()}
-                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               >
                 Retry
               </Button>
@@ -787,7 +787,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                   variant="secondary"
                   size="sm"
                   onClick={openCreateProjectForm}
-                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
                   New project
                 </Button>
@@ -799,7 +799,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                       window.dispatchEvent(new CustomEvent("cave:salem-open"));
                     }
                   }}
-                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                   leadingIcon="ph:sparkle"
                 >
                   Ask Salem
@@ -811,7 +811,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           <div className="projects-hub" data-pane={pane}>
             <div ref={listRef} className="projects-hub__list">
               {visibleProjects.length === 0 ? (
-                <p className="px-2 py-6 text-center text-[12px] text-[var(--text-muted)]">
+                <p className="px-2 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   {query.trim()
                     ? `No projects match “${query.trim()}”.`
                     : "No active projects right now."}

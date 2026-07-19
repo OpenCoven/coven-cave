@@ -37,17 +37,17 @@ assert.match(
 
 assert.match(
   source,
-  /const automationInputClass = `\$\{automationFieldBaseClass\} h-8 px-2 text-\[12px\]`/,
+  /const automationInputClass = `\$\{automationFieldBaseClass\} h-8 px-2 text-\[length:var\(--text-sm\)\]`/,
   "Automation detail should use one standard input primitive",
 );
 assert.match(
   source,
-  /const automationTextareaClass = `\$\{automationFieldBaseClass\} resize-y px-2 py-2 text-\[12px\] leading-relaxed`/,
+  /const automationTextareaClass = `\$\{automationFieldBaseClass\} resize-y px-2 py-2 text-\[length:var\(--text-sm\)\] leading-relaxed`/,
   "Automation detail should use one standard textarea primitive",
 );
 assert.match(
   source,
-  /const automationSelectClass = `\$\{automationFieldBaseClass\} h-8 px-2 text-\[12px\]`/,
+  /const automationSelectClass = `\$\{automationFieldBaseClass\} h-8 px-2 text-\[length:var\(--text-sm\)\]`/,
   "Automation detail should use one standard select primitive",
 );
 assert.doesNotMatch(

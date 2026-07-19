@@ -27,7 +27,7 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
 
   return (
     <div className="mb-5">
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+      <p className="mb-2 text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
         Recommended groups
       </p>
       {/* Container-query columns — track the marketplace pane, not the viewport. */}
@@ -43,7 +43,7 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
             >
               <span className="flex items-center gap-2">
                 <Icon name={collection.icon} width={15} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text-primary)]">
+                <span className="min-w-0 flex-1 truncate text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
                   {collection.title}
                 </span>
                 <Icon
@@ -53,10 +53,10 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
                   className="shrink-0 text-[var(--text-muted)] opacity-0 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100"
                 />
               </span>
-              <span className="line-clamp-2 text-[12px] leading-snug text-[var(--text-muted)]">
+              <span className="line-clamp-2 text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
                 {collection.description}
               </span>
-              <span className="text-[11px] text-[var(--text-muted)] opacity-80">
+              <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] opacity-80">
                 {members.length} {members.length === 1 ? "plugin" : "plugins"}
                 {added > 0 ? ` · ${added} added` : ""}
               </span>

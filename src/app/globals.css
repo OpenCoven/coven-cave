@@ -82,6 +82,7 @@
      file editor share it so the Code page's read↔edit toggle keeps one bg. */
   --code-surface: oklch(0.12 0.012 280 / 92%);
   --bg-panel: oklch(0.22 0.006 291);        /* deepest — app shell / sidebar floor */
+  --code-foreground: oklch(0.92 0.01 280);
   --bg-raised: var(--card);
   /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
      the raised surface so it tracks every theme — this token was referenced
@@ -204,6 +205,9 @@
   --danger-text: var(--color-danger);
   --danger-bg: color-mix(in oklch, var(--color-danger) 14%, transparent);
   --danger-border: color-mix(in oklch, var(--color-danger) 38%, transparent);
+  /* Fixed dark mixing endpoint for solid-state hover colors. Keeping the
+     endpoint tokenized makes render code theme-safe without changing values. */
+  --color-mix-dark: oklch(0 0 0);
 
   /* ---- Icon sizes ----
      Replaces ad-hoc width={N} props. Consumers default to --icon-sm

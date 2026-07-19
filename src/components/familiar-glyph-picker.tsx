@@ -66,7 +66,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
             <span className="truncate text-sm font-medium text-[var(--text-primary)]">
               {familiar.display_name}
             </span>
-            <span className="text-[11px] text-[var(--text-muted)]">
+            <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {hovered?.name ?? "Pick an icon"}
             </span>
           </div>
@@ -84,7 +84,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
         <FamiliarGlyphPickerPanel familiar={familiar} onHoverChange={setHovered} />
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[11px] text-[var(--text-muted)]">
+        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           <button
             onClick={() => clearGlyphOverride(familiar.id)}
             disabled={!overrides[familiar.id]}

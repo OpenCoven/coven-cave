@@ -92,7 +92,7 @@ function PromptSnippetsModalInner({ open, onClose, prompts, onPick }: PromptSnip
   };
 
   const tagPill = (selected: boolean) =>
-    `focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-0.5 text-[11px] transition-colors ${
+    `focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-0.5 text-[length:var(--text-xs)] transition-colors ${
       selected
         ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
         : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -164,7 +164,7 @@ function PromptSnippetsModalInner({ open, onClose, prompts, onPick }: PromptSnip
                     <span className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
                       <span className="truncate">{p.name}</span>
                       {origin ? (
-                        <span className="shrink-0 rounded-full border border-[var(--border-hairline)] px-1.5 text-[10px] font-normal text-[var(--text-muted)]">
+                        <span className="shrink-0 rounded-full border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] font-normal text-[var(--text-muted)]">
                           {origin}
                         </span>
                       ) : null}

@@ -78,8 +78,8 @@ export function SnoozeMenu({
   const btnCls =
     triggerClassName ??
     (size === "xs"
-      ? "rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-      : "rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]");
+      ? "rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+      : "rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]");
 
   const pick = (o: SnoozeOption) => {
     setOpen(false);
@@ -117,7 +117,7 @@ export function SnoozeMenu({
               onClick={() => pick(o)}
               className={
                 optionClassName ??
-                "block w-full px-2 py-1 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                "block w-full px-2 py-1 text-left text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
               }
             >
               {o.label}

@@ -55,7 +55,7 @@ function ToneIcon({ tone, icon, size = 15 }: { tone: Tone; icon: IconName; size?
 function StatusChip({ tone, icon, label }: { tone: Tone; icon: IconName; label: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[length:var(--text-xs)] font-medium"
       style={{ color: toneVar[tone], background: "color-mix(in oklab, currentColor 12%, transparent)" }}
     >
       <Icon name={icon} width={13} height={13} className="shrink-0" />
@@ -69,7 +69,7 @@ function MetaChip({ children, title }: { children: ReactNode; title?: string }) 
   return (
     <span
       title={title}
-      className="inline-flex items-center rounded-md border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]"
+      className="inline-flex items-center rounded-md border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]"
     >
       {children}
     </span>
@@ -280,14 +280,14 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
 
   return (
     <div className="space-y-4">
-      <p className="px-1 text-[12px] text-[var(--text-muted)]">
+      <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
         Choose which projects <span className="text-[var(--text-secondary)]">{familiar.display_name}</span>{" "}
         can see and work in. It only has visibility into the projects granted here — chats, sessions,
         file access, and the project picker all respect it. Changes apply immediately.
       </p>
 
       {error && (
-        <p role="alert" className="px-1 text-[12px] text-[var(--color-danger)]">
+        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
           {error}
         </p>
       )}
@@ -295,7 +295,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
       {/* ── Project access (the grant matrix, one familiar) ── */}
       {supreme ? (
         <SettingsGroup label="Project access" description="Supreme · all-access">
-          <p className="flex items-center gap-2 px-4 py-3 text-[12px] text-[var(--text-muted)]">
+          <p className="flex items-center gap-2 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
             <ToneIcon tone="positive" icon="ph:seal-check" size={15} />
             This familiar has access to every project — its grants are managed by the protocol, not
             toggled here.
@@ -323,7 +323,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                   onChange={(e) => setProjectQuery(e.target.value)}
                   placeholder="Filter projects…"
                   aria-label="Filter projects by name or path"
-                  className="w-full bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                  className="w-full bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
                 />
                 {projectQuery ? (
                   <IconButton
@@ -337,7 +337,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             </div>
           ) : null}
           {q && visibleProjects.length === 0 ? (
-            <p className="px-4 py-3 text-[12px] text-[var(--text-muted)]">
+            <p className="px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               No projects match “{projectQuery.trim()}”.
             </p>
           ) : null}
@@ -358,18 +358,18 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                     style={{ background: project.color || "var(--text-muted)" }}
                   />
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 truncate text-[13px] text-[var(--text-primary)]">
+                    <p className="flex items-center gap-2 truncate text-[length:var(--text-base)] text-[var(--text-primary)]">
                       {project.name}
                       {source && (
                         <span
                           title={source.title}
-                          className="rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                          className="rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
                         >
                           {source.label}
                         </span>
                       )}
                     </p>
-                    <p className="truncate text-[11px] text-[var(--text-muted)]" title={project.root}>
+                    <p className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]" title={project.root}>
                       {project.root}
                       {on && meta?.grantedAt && (
                         <>
@@ -386,7 +386,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                             <span
                               key={g.groupId}
                               title={`Granted through the “${g.groupName}” access group — ${levelMeta.title}. Manage it in Settings → Access groups.`}
-                              className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                              className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
                             >
                               <Icon name="ph:users-three" width={11} height={11} className="shrink-0" aria-hidden />
                               {g.groupName} · {levelMeta.label}
@@ -446,8 +446,8 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
               <div className="flex min-w-0 items-center gap-3">
                 <ToneIcon tone="neutral" icon="ph:users-three" size={15} />
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] text-[var(--text-primary)]">{group.name}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                  <p className="truncate text-[length:var(--text-base)] text-[var(--text-primary)]">{group.name}</p>
+                  <p className="mt-0.5 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     {group.projectGrants.length === 1
                       ? "1 project"
                       : `${group.projectGrants.length} projects`}
@@ -473,11 +473,11 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
               return (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-[13px] text-[var(--text-primary)]">
+                    <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">
                       Granting <span className="font-medium">{projectName(p.projectId)}</span> to
                       this familiar
                     </p>
-                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                    <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                       <FinalizeCountdown finalizesAt={p.finalizesAt} onElapsed={load} />
                     </p>
                   </div>
@@ -498,11 +498,11 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             return (
               <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-[var(--text-primary)]">
+                  <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">
                     Grant <span className="font-medium">{projectName(p.projectId)}</span> to this
                     familiar
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                  <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     proposed by the Supreme familiar · <RelativeTime iso={p.createdAt} />
                   </p>
                 </div>
@@ -537,10 +537,10 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             return (
               <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] text-[var(--text-secondary)]">
+                  <p className="truncate text-[length:var(--text-base)] text-[var(--text-secondary)]">
                     Grant {projectName(p.projectId)} to this familiar
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                  <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     <RelativeTime iso={p.createdAt} />
                   </p>
                 </div>
@@ -561,17 +561,17 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                 <div className="flex min-w-0 items-center gap-3">
                   <ToneIcon tone={meta.tone} icon={meta.icon} size={15} />
                   <div className="min-w-0">
-                    <p className="truncate text-[12px] text-[var(--text-primary)]">
+                    <p className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
                       {projectName(e.projectId)}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                    <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                       {meta.label} · {auditReasonLabel(e.reason)}
                     </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <MetaChip title="Permission surface">{surfaceLabel(e.surface)}</MetaChip>
-                  <RelativeTime iso={e.at} className="text-[11px] text-[var(--text-muted)]" />
+                  <RelativeTime iso={e.at} className="text-[length:var(--text-xs)] text-[var(--text-muted)]" />
                 </div>
               </div>
             );

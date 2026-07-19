@@ -63,14 +63,14 @@ export function CapabilitiesView({
   if (error) {
     return (
       <div className="rounded-lg border border-border bg-card px-4 py-6 sm:px-5">
-        <p className="mb-3 text-[13px] text-muted-foreground">
+        <p className="mb-3 text-[length:var(--text-base)] text-muted-foreground">
           {error === "daemon offline"
             ? "Coven daemon is offline — runtime capabilities require a running daemon."
             : `Could not load capabilities: ${error}`}
         </p>
         <button
           onClick={onRefresh}
-          className="focus-ring rounded-md border border-border bg-card px-3 py-1.5 text-[12px] text-foreground hover:bg-muted"
+          className="focus-ring rounded-md border border-border bg-card px-3 py-1.5 text-[length:var(--text-sm)] text-foreground hover:bg-muted"
         >
           Retry
         </button>
@@ -80,7 +80,7 @@ export function CapabilitiesView({
 
   if (items.length === 0) {
     return (
-      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+      <p className="rounded-lg border border-border px-4 py-6 text-center text-[length:var(--text-base)] text-muted-foreground">
         Nothing to show yet — this tab lists what each runtime on your machine can do (its global
         instructions, installed skills, and plugins). Start the daemon or add a local runtime and it
         fills in.
@@ -96,7 +96,7 @@ export function CapabilitiesView({
       <div className="flex items-center justify-end">
         <button
           onClick={onRefresh}
-          className="focus-ring flex items-center gap-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground"
+          className="focus-ring flex items-center gap-1.5 rounded text-[length:var(--text-xs)] text-muted-foreground hover:text-foreground"
         >
           <Icon name="ph:arrows-clockwise-bold" width="0.75rem" />
           <span>Refresh</span>
@@ -119,7 +119,7 @@ function GridSkeleton() {
             <span className="ui-skeleton block h-3 w-1/2" />
             <span className="ui-skeleton block h-2.5 w-3/4" />
           </span>
-          <span className="ui-skeleton ui-skeleton--avatar shrink-0" style={{ height: 20, width: 20 }} />
+          <span className="ui-skeleton ui-skeleton--avatar shrink-0 [height:var(--space-5)]! [width:var(--space-5)]!" />
         </div>
       ))}
     </div>
@@ -141,16 +141,16 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
   return (
     <div className="min-w-0 rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[13px] font-semibold text-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[length:var(--text-base)] font-semibold text-foreground">
           {initial}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-foreground">{label}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[length:var(--text-base)] font-medium text-foreground">{label}</p>
+          <p className="text-[length:var(--text-xs)] text-muted-foreground">
             {totalItems === 0 ? "No config found" : `${totalItems} item${totalItems === 1 ? "" : "s"} configured`}
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground sm:ml-auto">
+        <span className="text-[length:var(--text-2xs)] text-muted-foreground sm:ml-auto">
           {formatClock(manifest.scanned_at)}
         </span>
       </div>
@@ -160,19 +160,19 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
           <div className="flex items-start gap-3 px-4 py-3">
             <Icon name="ph:note-pencil" className="mt-0.5 shrink-0 text-muted-foreground" width="0.85rem" />
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] font-medium text-foreground">Global instructions</p>
-              <p className="break-all text-[11px] text-muted-foreground sm:truncate">
+              <p className="text-[length:var(--text-sm)] font-medium text-foreground">Global instructions</p>
+              <p className="break-all text-[length:var(--text-xs)] text-muted-foreground sm:truncate">
                 {manifest.global_instructions.path?.replace(/^\/Users\/[^/]+/, "~") ?? "—"}
               </p>
               {manifest.global_instructions.byte_count !== undefined && (
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[length:var(--text-2xs)] text-muted-foreground">
                   {(manifest.global_instructions.byte_count / 1024).toFixed(1)} KB
                 </p>
               )}
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3 px-4 py-3 text-[12px] text-muted-foreground">
+          <div className="flex items-center gap-3 px-4 py-3 text-[length:var(--text-sm)] text-muted-foreground">
             <Icon name="ph:note-pencil" className="shrink-0" width="0.85rem" />
             <span>No global instructions file found</span>
           </div>
@@ -181,7 +181,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
         {manifest.skills.length > 0 ? (
           <div className="px-4 py-3">
             <p
-              className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]"
+              className="mb-2 text-[length:var(--text-xs)] font-medium uppercase tracking-widest text-[var(--text-secondary)]"
               title="SKILL.md procedures this runtime has installed"
             >
               Skills · {manifest.skills.length}
@@ -191,9 +191,9 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
                 <li key={skill.id} className="flex items-start gap-2">
                   <Icon name="ph:sparkle" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
                   <div className="min-w-0">
-                    <p className="break-words text-[12px] text-foreground">{skill.name}</p>
+                    <p className="break-words text-[length:var(--text-sm)] text-foreground">{skill.name}</p>
                     {skill.description && (
-                      <p className="break-words text-[11px] text-muted-foreground">{skill.description}</p>
+                      <p className="break-words text-[length:var(--text-xs)] text-muted-foreground">{skill.description}</p>
                     )}
                   </div>
                 </li>
@@ -205,7 +205,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">
             {manifest.warnings.map((warning, i) => (
-              <p key={i} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+              <p key={i} className="flex items-start gap-1.5 text-[length:var(--text-xs)] text-muted-foreground">
                 <Icon name="ph:warning-fill" width={11} aria-hidden />
                 <span className="min-w-0 break-words">{warning.message}</span>
               </p>

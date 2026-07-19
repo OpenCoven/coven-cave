@@ -34,17 +34,17 @@ function DiffBlock({ strand }: { strand: StrandView }) {
   return (
     <div
       aria-label="Current vs expected"
-      className="mt-2 rounded border border-[var(--warn,#d9a53c)]/40 bg-[var(--bg-raised)] px-2 py-1.5"
+      className="mt-2 rounded border border-[var(--color-warning)]/40 bg-[var(--bg-raised)] px-2 py-1.5"
     >
-      <p className="mb-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--warn,#d9a53c)]">
+      <p className="mb-1 inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--color-warning)]">
         <Icon name="ph:warning" aria-hidden />
         current vs expected
       </p>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 font-mono text-[11px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 font-mono text-[length:var(--text-xs)]">
         <dt className="text-[var(--text-muted)]">expected</dt>
-        <dd className="break-all text-[var(--ok,#4dbd7a)]">{diff.expected || "(empty)"}</dd>
+        <dd className="break-all text-[var(--color-success)]">{diff.expected || "(empty)"}</dd>
         <dt className="text-[var(--text-muted)]">observed</dt>
-        <dd className={`break-all ${diff.observed === null ? "text-[var(--text-muted)]" : "text-[var(--danger,#d95a5a)]"}`}>
+        <dd className={`break-all ${diff.observed === null ? "text-[var(--text-muted)]" : "text-[var(--color-danger)]"}`}>
           {diff.observed === null
             ? "(could not observe — treated as blocked, not healthy)"
             : diff.observed || "(empty)"}
@@ -108,7 +108,7 @@ export function StrandInspector({
       ) : (
         <ul className="flex flex-col gap-2">
           {strandsState.data.length === 0 ? (
-            <li className="text-xs text-[var(--warn,#d9a53c)]">
+            <li className="text-xs text-[var(--color-warning)]">
               No strands — this thread carries no commitments, so required-strand checks fray it on
               every structured channel.
             </li>
@@ -120,20 +120,20 @@ export function StrandInspector({
                   key={strand.id}
                   className={`rounded border px-2 py-1.5 ${
                     isBlamed
-                      ? "border-[var(--warn,#d9a53c)]/60"
-                      : "border-[var(--border,#333)]"
+                      ? "border-[var(--color-warning)]/60"
+                      : "border-[var(--border-hairline)]"
                   }`}
                 >
                   <p className="flex items-center gap-2 text-xs font-medium text-[var(--text-primary)]">
                     {strand.kind}
                     {isBlamed ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--warn,#d9a53c)]/40 px-1.5 text-[10px] text-[var(--warn,#d9a53c)]">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-warning)]/40 px-1.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">
                         <Icon name="ph:warning" aria-hidden />
                         blamed by the fray
                       </span>
                     ) : null}
                   </p>
-                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px]">
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[length:var(--text-xs)]">
                     {strandDetailRows(strand).map((row) => (
                       <div key={row.label} className="contents">
                         <dt className="text-[var(--text-muted)]">{row.label}</dt>
@@ -168,10 +168,10 @@ export function StrandInspector({
         ) : (
           <ol className="mt-1 flex flex-col gap-1">
             {annotateLineage(auditState.data, knownProposalIds).map(({ entry, unresolvedProposalRef }) => (
-              <li key={entry.id} className="rounded border border-[var(--border,#333)] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)]">
+              <li key={entry.id} className="rounded border border-[var(--border-hairline)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
                 {lineageLine(entry)}
                 {entry.proposalId ? (
-                  <span className={`ml-1 ${unresolvedProposalRef ? "text-[var(--warn,#d9a53c)]" : "text-[var(--text-muted)]"}`}>
+                  <span className={`ml-1 ${unresolvedProposalRef ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
                     proposal {entry.proposalId}
                     {unresolvedProposalRef ? " (unresolved reference)" : ""}
                   </span>
@@ -182,7 +182,7 @@ export function StrandInspector({
           </ol>
         )}
         {auditState.kind === "ready" ? (
-          <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+          <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             cursor {auditState.meta.sourceCursor} · observed {auditState.meta.observedAt}
           </p>
         ) : null}

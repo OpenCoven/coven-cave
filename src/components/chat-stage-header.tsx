@@ -147,7 +147,7 @@ export function ChatStageHeader({
 
   return (
     <div
-      className="cave-stage-header flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-4 py-1 text-[11px] text-[var(--text-secondary)]"
+      className="cave-stage-header flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-4 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
       role="group"
       aria-label={`Work stage for ${snapshot.branch}`}
     >
@@ -184,7 +184,7 @@ export function ChatStageHeader({
         );
       })}
       {snapshot.lane ? (
-        <span className="ml-auto shrink-0 whitespace-nowrap pl-3 text-[10px] uppercase tracking-wide">
+        <span className="ml-auto shrink-0 whitespace-nowrap pl-3 text-[length:var(--text-2xs)] uppercase tracking-wide">
           {snapshot.lane === "merged" ? "merged" : snapshot.lane.replace(/-/g, " ")}
         </span>
       ) : null}

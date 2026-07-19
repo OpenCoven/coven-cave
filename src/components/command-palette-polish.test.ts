@@ -19,14 +19,14 @@ assert.match(
 for (const label of ["switch", "card", "memory", "file", "open", "run", "create", "ask"]) {
   assert.match(
     source,
-    new RegExp(`\\{active \\? <span className="text-\\[10px\\] text-\\[var\\(--text-muted\\)\\]">${label}</span> : null\\}`),
+    new RegExp(`\\{active \\? <span className="text-\\[length:var\\(--text-2xs\\)\\] text-\\[var\\(--text-muted\\)\\]">${label}</span> : null\\}`),
     `'${label}' affordance label renders only on the active row (Raycast idiom)`,
   );
 }
 // Data-bearing right edges (session age, match counts) must NOT be gated.
 assert.match(
   source,
-  /<span className="shrink-0 text-\[10px\] text-\[var\(--text-muted\)\]">\{sessionAgo \|\| "open"\}<\/span>/,
+  /<span className="shrink-0 text-\[length:var\(--text-2xs\)\] text-\[var\(--text-muted\)\]">\{sessionAgo \|\| "open"\}<\/span>/,
   "Session recency stays visible on every row — it's data, not affordance",
 );
 

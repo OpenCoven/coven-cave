@@ -19,7 +19,7 @@ type Props = {
 
 const chipClass = (active: boolean) =>
   [
-    "rounded-[var(--radius-control)] border px-2 py-1 text-[12px] transition-colors",
+    "rounded-[var(--radius-control)] border px-2 py-1 text-[length:var(--text-sm)] transition-colors",
     active
       ? "border-transparent bg-[var(--bg-raised)] text-[var(--text-primary)]"
       : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -68,7 +68,7 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
         );
       })}
       {familiars.length > 1 && (
-        <span className="ml-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <span className="ml-1 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
           ⌘-click to combine
         </span>
       )}

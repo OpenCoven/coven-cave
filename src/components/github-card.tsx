@@ -345,7 +345,7 @@ function CardActions({
   const needsBody = pending?.kind === "review" && pending.event === "REQUEST_CHANGES";
 
   const btn =
-    "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50";
+    "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50";
 
   return (
     <div className="mt-2">
@@ -399,15 +399,15 @@ function CardActions({
             </button>
           </>
         ) : null}
-        {phase === "sending" ? <span className="text-[10px] text-[var(--text-secondary)]" aria-live="polite">sending…</span> : null}
+        {phase === "sending" ? <span className="text-[length:var(--text-2xs)] text-[var(--text-secondary)]" aria-live="polite">sending…</span> : null}
         {phase === "error" && error ? (
-          <span className="text-[10px] text-[var(--color-warning)]" role="alert">{error}</span>
+          <span className="text-[length:var(--text-2xs)] text-[var(--color-warning)]" role="alert">{error}</span>
         ) : null}
       </div>
       {pending ? (
         // Tier-2 confirm strip (design §3): states exactly what will fire.
         <div className="mt-1.5 rounded border border-[var(--color-danger)] px-2 py-1.5" role="group" aria-label={tier2Summary}>
-          <div className="text-[11px] text-[var(--text-primary)]">{tier2Summary}</div>
+          <div className="text-[length:var(--text-xs)] text-[var(--text-primary)]">{tier2Summary}</div>
           {pending.kind === "review" ? (
             <textarea
               value={reviewBody}
@@ -415,7 +415,7 @@ function CardActions({
               rows={2}
               placeholder={needsBody ? "Why are changes needed? (required)" : "Optional review comment…"}
               aria-label="Review comment"
-              className="focus-ring mt-1 min-h-[2.5em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[12px] text-[var(--text-primary)]"
+              className="focus-ring mt-1 min-h-[2.5em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
             />
           ) : null}
           <div className="mt-1.5 flex items-center gap-1.5">
@@ -449,7 +449,7 @@ function CardActions({
             rows={2}
             placeholder={`Comment on ${descriptor.repo}#${descriptor.number}…`}
             aria-label={`Comment on ${descriptor.repo}#${descriptor.number}`}
-            className="focus-ring min-h-[3em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[12px] text-[var(--text-primary)]"
+            className="focus-ring min-h-[3em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
           />
           <button type="button" className={btn} onClick={sendComment} disabled={phase === "sending" || !draft.trim()}>
             Send
@@ -493,13 +493,13 @@ function checkRunGlyph(run: CheckRunDetail): { icon: IconName; color: string } {
 
 /** Expanded PR section: per-check rows linking to their logs. */
 function CheckRunList({ runs, onOpenUrl }: { runs: CheckRunDetail[]; onOpenUrl?: (url: string) => void }) {
-  if (!runs.length) return <div className="text-[11px] text-[var(--text-secondary)]">No check runs.</div>;
+  if (!runs.length) return <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">No check runs.</div>;
   return (
     <ul className="m-0 list-none space-y-1 p-0">
       {runs.map((run) => {
         const glyph = checkRunGlyph(run);
         return (
-          <li key={run.id} className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+          <li key={run.id} className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             <span aria-hidden className="inline-flex" style={{ color: glyph.color }}>
               <Icon name={glyph.icon} width={12} />
             </span>
@@ -563,11 +563,11 @@ function ReviewThreadBody({
   };
 
   if (state.phase === "loading")
-    return <div className="text-[11px] text-[var(--text-secondary)]" aria-live="polite">loading threads…</div>;
+    return <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]" aria-live="polite">loading threads…</div>;
   if (state.phase === "error")
-    return <div className="text-[11px] text-[var(--text-secondary)]">threads unavailable</div>;
+    return <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">threads unavailable</div>;
   if (!state.authed)
-    return <div className="text-[11px] text-[var(--text-secondary)]">connect GitHub to see review threads</div>;
+    return <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">connect GitHub to see review threads</div>;
   // descriptor.threadId is the numeric discussion id from #discussion_r<id> —
   // it identifies a COMMENT (databaseId), not the thread's GraphQL node id, so
   // match the thread containing that comment.
@@ -576,17 +576,17 @@ function ReviewThreadBody({
     : null;
   const shown = thread ? [thread] : state.threads.filter((t) => !t.isResolved).slice(0, 3);
   if (!shown.length)
-    return <div className="text-[11px] text-[var(--text-secondary)]">no unresolved review threads</div>;
+    return <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">no unresolved review threads</div>;
   return (
     <div className="space-y-2">
       {shown.map((t) => (
         <div key={t.id} className="rounded border border-[var(--border-hairline)] px-2 py-1.5">
-          <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
+          <div className="flex items-center gap-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
             {t.path ? <span className="min-w-0 truncate font-mono">{t.path}</span> : null}
             <span className="ml-auto shrink-0">{t.isResolved ? "resolved" : t.isOutdated ? "outdated" : "open"}</span>
             <button
               type="button"
-              className="focus-ring shrink-0 rounded border border-[var(--border-strong)] px-1.5 py-px text-[10px] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring shrink-0 rounded border border-[var(--border-strong)] px-1.5 py-px text-[length:var(--text-2xs)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
               onClick={() => toggleResolve(t.id, !t.isResolved)}
               disabled={busyThread != null}
               aria-label={t.isResolved ? "Unresolve this review thread" : "Resolve this review thread"}
@@ -595,7 +595,7 @@ function ReviewThreadBody({
             </button>
           </div>
           {t.comments[0] ? (
-            <div className="mt-1 line-clamp-3 text-[11px] text-[var(--text-primary)]">
+            <div className="mt-1 line-clamp-3 text-[length:var(--text-xs)] text-[var(--text-primary)]">
               {t.comments[0].author?.login ? (
                 <span className="text-[var(--text-secondary)]">{t.comments[0].author.login}: </span>
               ) : null}
@@ -604,10 +604,10 @@ function ReviewThreadBody({
           ) : null}
         </div>
       ))}
-      {actionError ? <div className="text-[10px] text-[var(--color-warning)]" role="alert">{actionError}</div> : null}
+      {actionError ? <div className="text-[length:var(--text-2xs)] text-[var(--color-warning)]" role="alert">{actionError}</div> : null}
       <button
         type="button"
-        className="focus-ring text-[11px] text-[var(--text-secondary)] hover:underline"
+        className="focus-ring text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:underline"
         onClick={() => {
           const url = descriptorUrl(descriptor);
           if (onOpenUrl) onOpenUrl(url);
@@ -677,14 +677,14 @@ export function GitHubCard({
           <button
             type="button"
             onClick={open}
-            className="focus-ring min-w-0 truncate text-left text-[13px] font-medium text-[var(--text-primary)] hover:underline"
+            className="focus-ring min-w-0 truncate text-left text-[length:var(--text-base)] font-medium text-[var(--text-primary)] hover:underline"
             aria-label={`${glyph.label}: ${title} — open on GitHub`}
             title={title}
           >
             {title}
           </button>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--text-secondary)]">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
           <span className="font-mono">{descriptor.repo} {refText}</span>
           {item?.draft ? <span>draft</span> : null}
           {item?.author?.login ? <span>by {item.author.login}</span> : null}
@@ -705,7 +705,7 @@ export function GitHubCard({
             {item.labels.slice(0, 6).map((l) => (
               <span
                 key={l.name}
-                className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-1.5 py-px text-[10px] text-[var(--text-secondary)]"
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-1.5 py-px text-[length:var(--text-2xs)] text-[var(--text-secondary)]"
               >
                 <span
                   aria-hidden

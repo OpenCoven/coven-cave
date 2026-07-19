@@ -1208,7 +1208,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <h1 className="text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
               Set up CovenCave, step by step.
             </h1>
-            <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--text-secondary)]">
+            <p className="mt-2 max-w-2xl text-[length:var(--text-base)] leading-6 text-[var(--text-secondary)]">
               Follow the numbered steps. Each one carries its own instructions,
               a one-click action where Cave can do the work for you, and the
               exact command if you&rsquo;d rather use a terminal. Finished
@@ -1220,7 +1220,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               onClick={() => void recheckNow()}
               disabled={rechecking}
               aria-busy={rechecking}
-              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
+              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
             >
               <Icon
                 name="ph:arrows-clockwise-bold"
@@ -1231,7 +1231,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <button
               onClick={() => void copyDiagnostics()}
               aria-live="polite"
-              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] hover:border-[var(--border-strong)] ${
+              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
                 diagCopy === "copied"
                   ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_12%,transparent)] text-[var(--color-success)]"
                   : diagCopy === "failed"
@@ -1254,7 +1254,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   ? "Copy failed"
                   : "Copy diagnostics"}
             </button>
-            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
               {ready}/{total} ready
             </div>
           </div>
@@ -1272,8 +1272,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <div className="flex items-start gap-3">
             <Icon name="ph:archive" width={18} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
             <div>
-              <div className="text-[13px] font-semibold text-[var(--text-primary)]">Restoring a previous Cave?</div>
-              <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+              <div className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">Restoring a previous Cave?</div>
+              <p className="mt-0.5 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
                 Use a .ccbackup file and its passphrase to restore chats, projects, memory, and vault-backed tokens before continuing setup.
               </p>
             </div>
@@ -1281,7 +1281,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <button
             type="button"
             onClick={() => { window.location.href = "/settings?group=Backup#general"; }}
-            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
           >
             <Icon name="ph:arrow-counter-clockwise" />
             Restore from backup
@@ -1304,10 +1304,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 className="mt-0.5 shrink-0 text-[var(--color-success)]"
               />
               <div>
-                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                <div className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
                   Setup complete — Cave is ready.
                 </div>
-                <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                <p className="mt-0.5 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
                   {hasFamiliars
                     ? "Your familiars are waiting on the roster."
                     : "One step left: summon your first familiar, then start chatting."}
@@ -1316,7 +1316,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             </div>
             <button
               onClick={finishOnboarding}
-              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
+              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,var(--color-mix-dark))] px-4 py-2 text-[length:var(--text-base)] font-semibold text-white shadow-sm hover:bg-[color-mix(in_oklch,var(--color-success)_82%,var(--color-mix-dark))]"
             >
               <Icon name="ph:rocket-launch-bold" />
               {hasFamiliars ? "Open Cave" : "Summon your familiar"}
@@ -1325,7 +1325,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         ) : null}
 
         {platformCopy.warning ? (
-          <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] p-4 text-[13px] text-[var(--color-warning)]">
+          <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] p-4 text-[length:var(--text-base)] text-[var(--color-warning)]">
             <div className="flex items-start gap-3">
               <Icon
                 name="ph:warning-fill"
@@ -1360,7 +1360,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         {statusFailures >= 3 ? (
           <section
             role="alert"
-            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-4 text-[13px] text-[var(--color-warning)]"
+            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-4 text-[length:var(--text-base)] text-[var(--color-warning)]"
           >
             <div>
               <div className="font-semibold">Setup status is unreachable.</div>
@@ -1371,7 +1371,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <button
               type="button"
               onClick={() => void refresh()}
-              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
             >
               Retry now
             </button>
@@ -1387,7 +1387,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // dismissible so a stale error doesn't outlive the retry.
           <section
             role="alert"
-            className="mt-5 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
+            className="mt-5 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[length:var(--text-base)] text-[var(--color-danger)]"
           >
             <div className="min-w-0 flex-1">
               <div className="whitespace-pre-wrap break-words font-medium">
@@ -1405,14 +1405,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 onClick={retrySetupAction}
                 disabled={setupRetryBusy}
                 aria-busy={setupRetryBusy}
-                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] disabled:opacity-50"
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] disabled:opacity-50"
               >
                 {setupRetryLabel(setupError.action)}
               </button>
               <button
                 type="button"
                 onClick={() => setSetupError(null)}
-                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
               >
                 Dismiss
               </button>
@@ -1462,7 +1462,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       className="focus-ring flex w-full items-center gap-3 p-3 text-left"
                     >
                       <span
-                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border font-mono text-[12px] ${
+                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border font-mono text-[length:var(--text-sm)] ${
                           step.ok
                             ? "border-[color-mix(in_oklch,var(--color-success)_60%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
                             : isActive
@@ -1473,19 +1473,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         {step.ok ? <Icon name="ph:check-bold" /> : index + 1}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
+                        <span className="flex items-center gap-2 text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
                           <Icon
                             name={step.icon}
                             className="text-[var(--text-muted)]"
                           />
                           {step.title}
                           {step.optional ? (
-                            <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] font-normal text-[var(--text-muted)]">
+                            <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-2xs)] font-normal text-[var(--text-muted)]">
                               optional
                             </span>
                           ) : null}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-[var(--text-muted)]">
+                        <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                           {step.detail}
                         </span>
                       </span>
@@ -1520,7 +1520,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           />
                         ) : step.key === "covenHome" ? (
                           <div className="flex flex-col gap-3">
-                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                            <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
                               Cave keeps everything it creates under{" "}
                               <code className="font-mono">~/.coven</code> —
                               familiars, adapters, conversations, and memory.
@@ -1572,11 +1572,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           <div className="flex flex-col gap-3">
                             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
                               <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span className="text-[12px] font-medium text-[var(--text-primary)]">Daemon connection</span>
+                                <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Daemon connection</span>
                                 <button
                                   type="button"
                                   onClick={() => setOnboardingMultiHostMode("local")}
-                                  className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
+                                  className={`focus-ring rounded-md border px-2 py-1 text-[length:var(--text-xs)] ${
                                     onboardingMultiHostMode === "local"
                                       ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                       : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -1587,7 +1587,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 <button
                                   type="button"
                                   onClick={() => setOnboardingMultiHostMode("hub")}
-                                  className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
+                                  className={`focus-ring rounded-md border px-2 py-1 text-[length:var(--text-xs)] ${
                                     onboardingMultiHostMode === "hub"
                                       ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                       : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -1596,17 +1596,17 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                   Server hub
                                 </button>
                               </div>
-                              <label className="grid gap-1 text-[11px] text-[var(--text-secondary)]">
+                              <label className="grid gap-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                                 Server hub URL
                                 <input
                                   value={onboardingHubUrl}
                                   onChange={(event) => setOnboardingHubUrl(event.target.value)}
                                   placeholder="http://server.tailnet:8787"
                                   disabled={onboardingMultiHostMode !== "hub"}
-                                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
                                 />
                               </label>
-                              <label className="mt-2 grid gap-1 text-[11px] text-[var(--text-secondary)]">
+                              <label className="mt-2 grid gap-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                                 Executor addresses
                                 <textarea
                                   value={onboardingExecutorText}
@@ -1614,20 +1614,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                   placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
                                   disabled={onboardingMultiHostMode !== "hub"}
                                   rows={2}
-                                  className="resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                                  className="resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
                                 />
                               </label>
                               <button
                                 type="button"
                                 onClick={() => void saveOnboardingConnection()}
                                 disabled={savingOnboardingConnection}
-                                className="focus-ring mt-2 inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+                                className="focus-ring mt-2 inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
                               >
                                 <Icon name="ph:floppy-disk-bold" width={12} />
                                 {savingOnboardingConnection ? "Saving…" : "Save connection"}
                               </button>
                             </div>
-                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                            <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
                               The coven daemon runs your familiars in the
                               background. Cave starts it for you. Run this local command:{" "}
                               <code className="font-mono">
@@ -1651,7 +1651,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 {startingDaemon ? "Starting…" : "Start local daemon"}
                               </Button>
                               {!status?.steps.covenCli.ok ? (
-                                <span className="text-[11px] text-[var(--text-muted)]">
+                                <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                                   Needs step 1 first — the daemon ships with the
                                   Coven CLI.
                                 </span>
@@ -1660,11 +1660,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           </div>
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
-                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                            <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
                               Chat works without Git, but the changes panel,
                               project file tree, and checkpoints all use it.
                             </p>
-                            <p className="text-[12px] leading-5 text-[var(--text-muted)]">
+                            <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                               {status?.steps.git?.hint ??
                                 status?.steps.git?.detail ??
                                 "Install Git from https://git-scm.com, then re-check."}
@@ -1680,7 +1680,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </ol>
 
           <details className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-            <summary className="cursor-pointer text-[12px] font-semibold text-[var(--text-secondary)]">
+            <summary className="cursor-pointer text-[length:var(--text-sm)] font-semibold text-[var(--text-secondary)]">
               Installing the CovenCave app itself ({platformCopy.label})
             </summary>
             <div className="mt-3">
@@ -1701,20 +1701,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               }
               onDismiss();
             }}
-            className="focus-ring rounded text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
             Skip for now
           </button>
           {setupComplete ? (
             <button
               onClick={finishOnboarding}
-              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
+              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,var(--color-mix-dark))] px-5 py-2.5 text-[length:var(--text-md)] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,var(--color-mix-dark))]"
             >
               <Icon name="ph:rocket-launch-bold" />
               {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
             </button>
           ) : (
-            <span className="text-[11px] text-[var(--text-muted)]">
+            <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
               Status refreshes automatically every 2 seconds.
             </span>
           )}
@@ -1762,7 +1762,7 @@ function JourneyStrip({
             ) : null}
             <span
               aria-current={isActive ? "step" : undefined}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[length:var(--text-xs)] ${
                 beat.done
                   ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                   : isActive
@@ -1807,7 +1807,7 @@ function InstallLiveTail({ tail }: { tail: string }) {
   const visible = lastLines(tail, 3);
   if (!visible) return null;
   return (
-    <pre className="max-h-16 overflow-hidden whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+    <pre className="max-h-16 overflow-hidden whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
       {visible}
     </pre>
   );
@@ -1824,7 +1824,7 @@ function anyNpmInstallRunning(
 function HermesSetupNext({ onCopy }: { onCopy: (text: string) => Promise<boolean> }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-[11px] font-medium text-[var(--text-secondary)]">
+      <p className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
         Next step — finish setup in a terminal:
       </p>
       <CommandRow command="hermes setup" onCopy={onCopy} />
@@ -1843,7 +1843,7 @@ function CommandRow({
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+      <code className="min-w-0 flex-1 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[length:var(--text-sm)] text-[var(--text-primary)]">
         {command}
       </code>
       <button
@@ -1854,7 +1854,7 @@ function CommandRow({
           }
         }}
         aria-live="polite"
-        className={`focus-ring shrink-0 rounded border px-2 py-1 text-[11px] ${
+        className={`focus-ring shrink-0 rounded border px-2 py-1 text-[length:var(--text-xs)] ${
           copied
             ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] text-[var(--color-success)]"
             : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -1875,19 +1875,19 @@ function NodeSetupNotice({
 }) {
   return (
     <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-3">
-      <div className="text-[12px] font-semibold text-[var(--color-warning)]">
+      <div className="text-[length:var(--text-sm)] font-semibold text-[var(--color-warning)]">
         Node.js is needed first
       </div>
-      <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+      <p className="mt-1 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         {hint}
       </p>
       <ol className="mt-2 space-y-1">
         {nodeSetup.map((item, index) => (
           <li
             key={item}
-            className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]"
+            className="flex gap-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]"
           >
-            <span className="font-mono text-[11px] text-[var(--text-muted)]">
+            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {index + 1}.
             </span>
             <span>{item}</span>
@@ -1903,7 +1903,7 @@ function InstallResultNote({ result }: { result?: InstallResult }) {
   return (
     <div className="flex flex-col gap-2">
       <p
-        className={`text-[11px] leading-4 ${
+        className={`text-[length:var(--text-xs)] leading-4 ${
           result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
         }`}
       >
@@ -1982,14 +1982,14 @@ function StepCovenCli({
   const installBusy = ownInstallBusy || npmBusy;
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+      <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
         Use the main action to install or update it — Cave runs npm installs
         one after another so they never collide — or copy the matching command
         to run it yourself.
       </p>
       {npmBusy && !ownInstallBusy ? (
-        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
         </p>
       ) : null}
@@ -2018,7 +2018,7 @@ function StepCovenCli({
           {updateChecking ? "Checking…" : "Check for updates"}
         </Button>
         {actionTargets.length > 0 ? (
-          <span className="text-[11px] text-[var(--text-muted)]">
+          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             or run it yourself:
           </span>
         ) : null}
@@ -2030,7 +2030,7 @@ function StepCovenCli({
       <InstallResultNote result={installResults["coven-cli"]} />
       {tools.length > 0 ? (
         <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          <div className="mb-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             Coven CLI
           </div>
           <div className="grid gap-2">
@@ -2053,13 +2053,13 @@ function StepCovenCli({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 truncate text-[12px] font-medium text-[var(--text-primary)]">
+                      <div className="flex items-center gap-1.5 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
                         {tool.label}
                       </div>
-                      <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
+                      <div className="mt-0.5 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
                         {openCovenToolVersionText(tool)}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                      <div className="mt-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         {tool.latestCheck
                           ? latestCheckText(tool, updateStale)
                           : updateChecking
@@ -2071,7 +2071,7 @@ function StepCovenCli({
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[length:var(--text-2xs)] ${
                           currentVerified
                             ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                             : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
@@ -2090,7 +2090,7 @@ function StepCovenCli({
                           onClick={() => onInstall(tool.id)}
                           disabled={toolBusy || toolBlockedByNpm}
                           aria-busy={toolBusy || toolBlockedByNpm}
-                          className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                          className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
                         >
                           {toolBusy ? (
                             <Icon name="ph:circle-notch-bold" className="animate-spin" />
@@ -2116,7 +2116,7 @@ function StepCovenCli({
           </div>
         </div>
       ) : null}
-      <p role="status" className="text-[10px] text-[var(--text-muted)]">
+      <p role="status" className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {updateChecking
           ? "Checking npm now…"
           : updateError
@@ -2129,7 +2129,7 @@ function StepCovenCli({
         <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
       ) : null}
       <details>
-        <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
+        <summary className="cursor-pointer text-[length:var(--text-sm)] text-[var(--text-secondary)]">
           Still not found after installing?
         </summary>
         <div className="mt-2">
@@ -2175,14 +2175,14 @@ function StepRuntimes({
   return (
     <div className="flex flex-col gap-3">
       {npmBusy ? (
-        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
         </p>
       ) : null}
       {harnessesStuck ? (
         <div
           role="alert"
-          className="flex items-start justify-between gap-3 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2.5 text-[12px] text-[var(--color-warning)]"
+          className="flex items-start justify-between gap-3 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2.5 text-[length:var(--text-sm)] text-[var(--color-warning)]"
         >
           <span className="leading-5">
             Couldn&rsquo;t load the runtime list — the local server didn&rsquo;t
@@ -2191,14 +2191,14 @@ function StepRuntimes({
           <button
             type="button"
             onClick={onRefresh}
-            className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+            className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
           >
             Retry
           </button>
         </div>
       ) : null}
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+        <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
           A runtime is the agent CLI your familiar speaks through.
           You only need{" "}
           <span className="font-medium text-[var(--text-primary)]">one</span> —
@@ -2207,14 +2207,14 @@ function StepRuntimes({
         </p>
         <button
           onClick={onRefresh}
-          className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+          className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
         >
           Refresh
         </button>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {chatHarnesses.length === 0 ? (
-          <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[11px] leading-5 text-[var(--text-secondary)] sm:col-span-2">
+          <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)] sm:col-span-2">
             <p className="font-medium text-[var(--text-primary)]">
               Couldn&rsquo;t load the runtime list.
             </p>
@@ -2249,11 +2249,11 @@ function StepRuntimes({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                  <span className="truncate text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
                     {adapter.label}
                   </span>
                   {openClaw ? (
-                    <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">
+                    <div className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                       Bridge existing OpenClaw agents into Cave.
                     </div>
                   ) : null}
@@ -2261,27 +2261,27 @@ function StepRuntimes({
                 {openClaw ? (
                   <div className="flex shrink-0 items-center gap-1.5">
                     {adapter.installed ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
+                      <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-success)]">
                         <Icon name="ph:check-bold" /> installed
                       </span>
                     ) : null}
-                    <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-presence)]">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[length:var(--text-2xs)] font-medium text-[var(--accent-presence)]">
                       <Icon name="ph:git-fork" /> bridge
                     </span>
                   </div>
                 ) : adapter.installed ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
+                  <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-success)]">
                     <Icon name="ph:check-bold" /> installed
                   </span>
                 ) : null}
               </div>
-              <div className="mt-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
+              <div className="mt-1 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {adapter.installed
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
               {openClaw ? (
-                <div className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 px-3 py-2 text-[11px] leading-4 text-[var(--text-secondary)]">
+                <div className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 px-3 py-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                   Agents are discovered from{" "}
                   <code className="font-mono text-[var(--text-primary)]">
                     {OPENCLAW_AGENT_ROOT}
@@ -2326,12 +2326,12 @@ function StepRuntimes({
                         onCopy={onCopy}
                       />
                       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
-                      <p className="text-[11px] leading-4 text-[var(--text-muted)]">
+                      <p className="text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
                         After install: {oneClick.afterInstall}.
                       </p>
                     </>
                   ) : (
-                    <p className="text-[11px] leading-4 text-[var(--text-muted)]">
+                    <p className="text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
                       {adapter.installHint}
                     </p>
                   )}
@@ -2341,10 +2341,10 @@ function StepRuntimes({
                   ) : null}
                   {result && !result.ok && job?.status === "done" && job.tail ? (
                     <details>
-                      <summary className="cursor-pointer text-[11px] text-[var(--text-muted)]">
+                      <summary className="cursor-pointer text-[length:var(--text-xs)] text-[var(--text-muted)]">
                         Show full output
                       </summary>
-                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
                         {job.tail}
                       </pre>
                     </details>
@@ -2369,7 +2369,7 @@ function StepRuntimes({
                     disabled={codexPortPreflightBusy}
                     aria-busy={codexPortPreflightBusy}
                     title="Frees Codex's OAuth callback port (1455) if a stuck process is holding it. Only kills processes clearly identified as codex."
-                    className="focus-ring inline-flex w-fit items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+                    className="focus-ring inline-flex w-fit items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
                   >
                     {codexPortPreflightBusy ? (
                       <Icon name="ph:circle-notch-bold" className="animate-spin" />
@@ -2382,7 +2382,7 @@ function StepRuntimes({
                   </button>
                   {codexPortPreflight ? (
                     <p
-                      className={`text-[11px] leading-4 ${
+                      className={`text-[length:var(--text-xs)] leading-4 ${
                         codexPortPreflight.ok
                           ? "text-[var(--color-success)]"
                           : "text-[var(--color-danger)]"
@@ -2399,7 +2399,7 @@ function StepRuntimes({
         )}
       </div>
       {nodeHint ? (
-        <p className="text-[11px] leading-4 text-[var(--color-warning)]">
+        <p className="text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]">
           npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
         </p>
       ) : null}
@@ -2411,7 +2411,7 @@ function InstructionList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
       {title ? (
-        <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+        <h3 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
           {title}
         </h3>
       ) : null}
@@ -2419,9 +2419,9 @@ function InstructionList({ title, items }: { title: string; items: string[] }) {
         {items.map((item, index) => (
           <li
             key={item}
-            className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]"
+            className="flex gap-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]"
           >
-            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-[var(--border-hairline)] text-[10px] text-[var(--text-muted)]">
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-[var(--border-hairline)] text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               {index + 1}
             </span>
             <span>{item}</span>
@@ -2445,7 +2445,7 @@ function MaintenancePanel({
     <div
       className={`rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4 ${className}`}
     >
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+      <div className="mb-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
         Maintenance
       </div>
       <div className="flex items-center justify-between gap-3">
@@ -2491,7 +2491,7 @@ function MaintenancePanel({
                   });
                 }
               }}
-              className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               Check
             </button>
@@ -2500,7 +2500,7 @@ function MaintenancePanel({
             <>
               <button
                 onClick={() => setPrune({ idle: true })}
-                className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               >
                 Cancel
               </button>
@@ -2531,12 +2531,12 @@ function MaintenancePanel({
                       });
                     }
                   }}
-                  className="focus-ring rounded bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] px-2.5 py-1 text-[11px] text-white hover:bg-[color-mix(in_oklch,var(--color-danger)_85%,#000)]"
+                  className="focus-ring rounded bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] px-2.5 py-1 text-[length:var(--text-xs)] text-white hover:bg-[color-mix(in_oklch,var(--color-danger)_85%,var(--color-mix-dark))]"
                 >
                   Delete {prune.count}
                 </button>
               ) : (
-                <span className="text-[11px] text-[var(--text-muted)]">
+                <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   Nothing to prune.
                 </span>
               )}

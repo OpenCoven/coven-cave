@@ -184,7 +184,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
   return (
     <div className="space-y-3">
       {error && (
-        <p role="alert" className="px-1 text-[12px] text-[var(--color-danger)]">
+        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
           {error}
         </p>
       )}
@@ -194,7 +194,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
         description="Give a set of familiars a shared base of projects — each at read or write. A familiar's effective access is the most permissive of its own grants and its groups'."
       >
         {groups.length === 0 && (
-          <p className="px-4 py-3 text-[12px] text-[var(--text-muted)]">
+          <p className="px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
             No access groups yet. Create one to grant a base set of projects to several familiars at
             once — e.g. “Researchers” with read access to your docs.
           </p>
@@ -214,8 +214,8 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                 <span className="flex min-w-0 items-center gap-3">
                   <Icon name="ph:users-three" width={15} height={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px] text-[var(--text-primary)]">{group.name}</span>
-                    <span className="mt-0.5 block truncate text-[11px] text-[var(--text-muted)]">
+                    <span className="block truncate text-[length:var(--text-base)] text-[var(--text-primary)]">{group.name}</span>
+                    <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                       {group.memberFamiliarIds.length === 1
                         ? "1 member"
                         : `${group.memberFamiliarIds.length} members`}
@@ -239,11 +239,11 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                 <div className="space-y-4 border-t border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-3">
                   {/* Members */}
                   <div>
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                    <p className="mb-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
                       Members
                     </p>
                     {memberCandidates.length === 0 ? (
-                      <p className="text-[12px] text-[var(--text-muted)]">No familiars to add.</p>
+                      <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">No familiars to add.</p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {memberCandidates.map((familiar) => {
@@ -256,7 +256,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                               aria-checked={member}
                               disabled={groupBusy}
                               onClick={() => toggleMember(group, familiar.id)}
-                              className={`focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 ${
+                              className={`focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors duration-150 ${
                                 member
                                   ? "border-transparent bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                   : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
@@ -272,7 +272,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                     {group.memberFamiliarIds.some(
                       (id) => !familiars.some((familiar) => familiar.id === id),
                     ) && (
-                      <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+                      <p className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                         Includes familiars no longer in the roster:{" "}
                         {group.memberFamiliarIds
                           .filter((id) => !familiars.some((familiar) => familiar.id === id))
@@ -284,11 +284,11 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
 
                   {/* Base projects */}
                   <div>
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                    <p className="mb-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
                       Base projects
                     </p>
                     {projects.length === 0 ? (
-                      <p className="text-[12px] text-[var(--text-muted)]">
+                      <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                         No projects registered yet.
                       </p>
                     ) : (
@@ -311,7 +311,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                                   className="size-2 shrink-0 rounded-full"
                                   style={{ background: project.color || "var(--text-muted)" }}
                                 />
-                                <span className="truncate text-[12px] text-[var(--text-primary)]" title={project.root}>
+                                <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)]" title={project.root}>
                                   {project.name}
                                 </span>
                               </span>
@@ -321,7 +321,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                                 title={meta ? meta.title : "Not granted — click to grant read access"}
                                 aria-label={`${project.name} access for ${group.name}: ${meta ? meta.label : "off"}. Click to change.`}
                                 onClick={() => cycleProjectGrant(group, project.id)}
-                                className={`focus-ring inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors duration-150 ${
+                                className={`focus-ring inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--text-2xs)] font-medium transition-colors duration-150 ${
                                   level
                                     ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                     : "border border-[var(--border-hairline)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
@@ -369,7 +369,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
             onChange={(event) => setNewName(event.target.value)}
             placeholder="New group name (e.g. Researchers)…"
             aria-label="New access group name"
-            className="w-full bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            className="w-full bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           />
           <IconButton
             icon="ph:plus-bold"

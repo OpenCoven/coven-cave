@@ -63,7 +63,7 @@ for (const [label, href] of [
 }
 assert.match(
   settings,
-  /\]\.map\(\(l\) => \([\s\S]{0,220}onClick=\{\(\) => openExternalUrl\(l\.href\)\}/,
+  /\]\.map\(\(l\) => \([\s\S]{0,300}onClick=\{\(\) => openExternalUrl\(l\.href\)\}/,
   "every Settings link routes through the acknowledged in-app Browser handoff",
 );
 assert.doesNotMatch(

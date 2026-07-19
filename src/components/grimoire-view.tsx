@@ -69,7 +69,7 @@ const GrimoireGraphView = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="grid h-full min-h-0 place-items-center text-[11px] text-[var(--text-muted)]">
+      <div className="grid h-full min-h-0 place-items-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Loading graph…
       </div>
     ),
@@ -473,10 +473,10 @@ function NavRow({
       }`}
     >
       <span className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">{title}</span>
         {badge}
       </span>
-      <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+      <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {subtitle ? <span className="min-w-0 truncate font-mono">{subtitle}</span> : null}
         {meta ? <span className="shrink-0">{meta}</span> : null}
       </span>
@@ -559,7 +559,7 @@ function RailSection({
           aria-expanded={!collapsed}
           title={description}
           onClick={onToggle}
-          className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+          className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 pb-1 pt-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
         >
           <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} aria-hidden />
           <Icon name={icon} width={11} aria-hidden />
@@ -696,7 +696,7 @@ function GrimoireDocLinks({
     if (!loaded || markdown.trim().length === 0) return null;
     return (
       <div className="grimoire-doc-links shrink-0 border-t border-[var(--border-hairline)] px-3 py-2">
-        <p className="text-[10px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           Tip: type <code className="rounded bg-[var(--bg-elevated)] px-1">[[a doc&apos;s title]]</code> anywhere in
           the text to link documents — links show up here and weave the graph.
         </p>
@@ -708,7 +708,7 @@ function GrimoireDocLinks({
     <div className="grimoire-doc-links shrink-0 space-y-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
       {links.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-medium uppercase tracking-wider text-[var(--text-muted)]">
             <Icon name="ph:link" width={11} aria-hidden />
             Links
           </span>
@@ -719,7 +719,7 @@ function GrimoireDocLinks({
                 key={i}
                 type="button"
                 onClick={() => onOpen(ref)}
-                className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
+                className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
               >
                 {display}
               </button>
@@ -734,7 +734,7 @@ function GrimoireDocLinks({
                   setUnresolvedHint((prev) => (prev === display ? null : display));
                   if (unresolvedHint !== display) announce(hint, "polite");
                 }}
-                className="focus-ring rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+                className="focus-ring rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
               >
                 {display}
               </button>
@@ -744,7 +744,7 @@ function GrimoireDocLinks({
       ) : null}
       {unresolvedHint ? (
         <div className="space-y-1" role="status">
-          <p className="text-[11px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             “{unresolvedHint}” has no matching doc yet — create a stitch with that title to
             link it.
           </p>
@@ -754,7 +754,7 @@ function GrimoireDocLinks({
                 key={collection?.id ?? "root"}
                 type="button"
                 onClick={() => void createStub(unresolvedHint, collection)}
-                className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
+                className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
               >
                 {collection ? `Create in ${collection.meta?.name ?? collection.id}` : "Create stitch"}
               </button>
@@ -764,7 +764,7 @@ function GrimoireDocLinks({
       ) : null}
       {backlinks.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-medium uppercase tracking-wider text-[var(--text-muted)]">
             <Icon name="ph:graph" width={11} aria-hidden />
             Mentions
           </span>
@@ -774,7 +774,7 @@ function GrimoireDocLinks({
               type="button"
               onClick={() => onOpen(b.ref)}
               title={b.type === "mention" ? "Mentions this doc (unlinked)" : "Links to this doc"}
-              className={`focus-ring rounded-full border px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)] ${
+              className={`focus-ring rounded-full border px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)] ${
                 b.type === "mention" ? "border-dashed border-[var(--border-hairline)]" : "border-[var(--border-hairline)]"
               }`}
             >
@@ -1304,7 +1304,7 @@ export function GrimoireView({
           <StitchProvenance pins={entry.pins} onOpenMemory={(path) => openDoc({ kind: "memory", path })} />
         ) : null}
         {flags.length > 0 ? (
-          <div className="shrink-0 border-y border-[color-mix(in_oklch,var(--color-warning)_34%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[11px] text-[var(--text-secondary)]">
+          <div className="shrink-0 border-y border-[color-mix(in_oklch,var(--color-warning)_34%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             <div className="mb-1 flex items-center gap-1 font-medium text-[var(--color-warning)]">
               <Icon name="ph:warning-circle" width={12} aria-hidden />
               Continuity flags — resolve by editing the <code className="font-mono">flags:</code> list in frontmatter
@@ -1362,7 +1362,7 @@ export function GrimoireView({
             return (
               <span
                 key={key}
-                className={`inline-flex max-w-52 shrink-0 items-center overflow-hidden rounded-md border text-[11px] transition-colors ${
+                className={`inline-flex max-w-52 shrink-0 items-center overflow-hidden rounded-md border text-[length:var(--text-xs)] transition-colors ${
                   active
                     ? "border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
                     : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
@@ -1472,6 +1472,7 @@ export function GrimoireView({
           </button>
         </div>
         <div className="surface-compact-actions">
+<<<<<<< Updated upstream
           {/* Doc search lives up here beside the tabs (it used to sit inside
               the navigator rail). Same query state — it still filters the
               rail's Stitches/Memory/Journal sections. Hidden on Relations,
@@ -1486,6 +1487,9 @@ export function GrimoireView({
               containerClassName="surface-compact-search"
             />
           ) : null}
+=======
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
           {view === "docs" ? (
             <>
               <button
@@ -1506,6 +1510,69 @@ export function GrimoireView({
               </button>
             </>
           ) : null}
+=======
+          <div
+            role="group"
+            aria-label="Memories view"
+            className="inline-flex h-[26px] items-center gap-0.5 rounded-md border border-[var(--border-hairline)] p-0.5"
+          >
+            <button
+              type="button"
+              aria-pressed={view === "docs"}
+              onClick={() => setView("docs")}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
+                view === "docs"
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:book-open" width={11} aria-hidden />
+              Docs
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "journal"}
+              onClick={() => setView("journal")}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
+                view === "journal"
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:calendar-blank" width={11} aria-hidden />
+              Journal
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "graph"}
+              onClick={() => setView("graph")}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[length:var(--text-xs)] transition-colors ${
+                view === "graph"
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:graph" width={11} aria-hidden />
+              Graph
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => openDoc({ kind: "stitch-new" })}
+            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 px-2 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--accent-presence)]/20"
+          >
+            <Icon name="ph:push-pin" width={11} aria-hidden />
+            New stitch
+          </button>
+          <button
+            type="button"
+            onClick={() => openDoc({ kind: "knowledge-new" })}
+            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:plus" width={11} aria-hidden />
+            Blank entry
+          </button>
+>>>>>>> Stashed changes
         </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -1518,8 +1585,26 @@ export function GrimoireView({
           selection || view !== "docs" ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
+<<<<<<< Updated upstream
         {/* Title, surface verbs, and the doc search all live in the compact
             band above — the rail is purely the grouped navigator now. */}
+=======
+        {/* Title + surface verbs moved to the compact band above; the rail
+            keeps only its list filter. */}
+        <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query) setQuery("");
+            }}
+            placeholder="Search documents…"
+            aria-label="Search grimoire documents"
+            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+        </div>
+>>>>>>> Stashed changes
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
@@ -1543,7 +1628,7 @@ export function GrimoireView({
                 onToggle={() => toggleSection("knowledge")}
               >
                 {visibleKnowledge.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
+                  <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     {q ? "No matches." : "No stitches yet — pin sources and sew your first entry."}
                   </p>
                 ) : (
@@ -1565,7 +1650,7 @@ export function GrimoireView({
                                 aria-label={`${flags.length} continuity flags`}
                               >
                                 <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                <span className="text-[9px]">{flags.length}</span>
+                                <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
                               </span>
                             ) : undefined
                           }
@@ -1583,7 +1668,7 @@ export function GrimoireView({
                             aria-expanded={!collapsed}
                             title={group.storyQuestion}
                             onClick={() => toggleStitchGroup(group.id)}
-                            className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                            className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                           >
                             <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} aria-hidden />
                             <span className="min-w-0 flex-1 truncate text-left">
@@ -1613,7 +1698,7 @@ export function GrimoireView({
                                           aria-label={`${flags.length} continuity flags`}
                                         >
                                           <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                          <span className="text-[9px]">{flags.length}</span>
+                                          <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
                                         </span>
                                       ) : undefined
                                     }
@@ -1639,7 +1724,7 @@ export function GrimoireView({
                 onToggle={() => toggleSection("memory")}
               >
                 {visibleMemory.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
+                  <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     {q ? "No matches." : "No memory yet — it fills in as your familiars work and remember."}
                   </p>
                 ) : (
@@ -1661,7 +1746,7 @@ export function GrimoireView({
                             data-rail-item
                             aria-expanded={!collapsed}
                             onClick={() => toggleMemoryGroup(group.label, defaultCollapsed)}
-                            className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                            className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                           >
                             <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} aria-hidden />
                             <span className="min-w-0 flex-1 truncate text-left">{group.label}</span>
@@ -1695,7 +1780,7 @@ export function GrimoireView({
                                 onClick={() =>
                                   setMemoryGroupLimits((prev) => ({ ...prev, [group.label]: limit + 200 }))
                                 }
-                                className="focus-ring-inset w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
+                                className="focus-ring-inset w-full rounded-md px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
                               >
                                 Show more ({group.entries.length - limit} remaining)
                               </button>
@@ -1717,7 +1802,7 @@ export function GrimoireView({
                 onToggle={() => toggleSection("journal")}
               >
                 {visibleJournal.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
+                  <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     {q ? "No matches." : "No journal entries yet — the Journal tab's Generate writes today's."}
                   </p>
                 ) : (
@@ -1763,7 +1848,7 @@ export function GrimoireView({
               >
                 <Icon name="ph:arrow-left" width={13} aria-hidden />
               </button>
-              <span className="text-[11px] text-[var(--text-secondary)]">Documents</span>
+              <span className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Documents</span>
             </div>
             <div className="min-h-0 flex-1">
               <GrimoireGraphView
@@ -1795,10 +1880,10 @@ export function GrimoireView({
               >
                 <Icon name="ph:arrow-left" width={13} aria-hidden />
               </button>
-              <span className="text-[11px] text-[var(--text-secondary)] @min-[880px]/grimoire:hidden">Documents</span>
+              <span className="text-[length:var(--text-xs)] text-[var(--text-secondary)] @min-[880px]/grimoire:hidden">Documents</span>
               <span className="min-w-0 flex-1" />
               {deleteError ? (
-                <span role="alert" className="min-w-0 truncate text-[10px] text-[var(--color-warning)]">
+                <span role="alert" className="min-w-0 truncate text-[length:var(--text-2xs)] text-[var(--color-warning)]">
                   {deleteError}
                 </span>
               ) : null}
@@ -1807,7 +1892,7 @@ export function GrimoireView({
                   type="button"
                   onClick={() => void deleteSelection()}
                   disabled={deleting}
-                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
+                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
                 >
                   <Icon name="ph:trash" width={11} aria-hidden />
                   {deleting

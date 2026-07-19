@@ -46,11 +46,11 @@ function CapSection({
   return (
     <section>
       <header className="mb-1.5 flex items-baseline justify-between">
-        <h3 className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+        <h3 className="text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
           {title}
         </h3>
         {scope ? (
-          <span className="text-[10px] text-[var(--text-muted)]">{scope}</span>
+          <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{scope}</span>
         ) : null}
       </header>
       {empty ? (
@@ -67,11 +67,11 @@ function CapSection({
 function CapRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <li className="flex items-baseline justify-between gap-2">
-      <span className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
+      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </span>
       <span
-        className={`truncate text-[var(--text-primary)] ${mono ? "font-mono text-[11px]" : ""}`}
+        className={`truncate text-[var(--text-primary)] ${mono ? "font-mono text-[length:var(--text-xs)]" : ""}`}
       >
         {value}
       </span>
@@ -83,7 +83,7 @@ function CapRow({ label, value, mono }: { label: string; value: string; mono?: b
  *  for every kind (the old per-kind color map was accent soup on every row). */
 function KindBadge({ kind }: { kind: string }) {
   return (
-    <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+    <span className="rounded bg-[var(--bg-raised)] px-1 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
       {kind || "—"}
     </span>
   );
@@ -104,7 +104,7 @@ function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="familiar-tab__cta focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+      className="familiar-tab__cta focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
     >
       {label}
     </button>
@@ -134,14 +134,14 @@ function SkillItem({
         <KindBadge kind={kind} />
       </div>
       {description ? (
-        <p className="mt-0.5 line-clamp-1 text-[11px] text-[var(--text-muted)]">{description}</p>
+        <p className="mt-0.5 line-clamp-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>
       ) : null}
       {tags && tags.length > 0 ? (
         <div className="mt-0.5 flex flex-wrap gap-1">
           {tags.map((t) => (
             <span
               key={t}
-              className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-muted)]"
+              className="rounded bg-[var(--bg-raised)] px-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]"
             >
               {t}
             </span>
@@ -178,11 +178,11 @@ function CollapsibleSection({
           width={10}
           className="shrink-0 text-[var(--text-muted)]"
         />
-        <span className="text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+        <span className="text-[length:var(--text-xs)] uppercase tracking-widest text-[var(--text-secondary)]">
           {title}
         </span>
         {badge ? (
-          <span className="ml-auto rounded bg-[var(--bg-raised)] px-1 py-px text-[10px] text-[var(--text-muted)]">
+          <span className="ml-auto rounded bg-[var(--bg-raised)] px-1 py-px text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {badge}
           </span>
         ) : null}
@@ -245,7 +245,7 @@ function FamiliarIdentityHero({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="familiar-tab__name">{resolved?.display_name ?? familiar.display_name}</h2>
-          <span className="familiar-tab__presence text-[11px] text-[var(--text-muted)]">
+          <span className="familiar-tab__presence text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <span
               aria-hidden="true"
               className={`inline-flex h-1.5 w-1.5 rounded-full ${
@@ -260,25 +260,25 @@ function FamiliarIdentityHero({
               </>
             ) : null}
             {activeSessions > 0 ? (
-              <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[10px] text-[var(--accent-presence)]">
+              <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence)]">
                 {activeSessions} active session{activeSessions === 1 ? "" : "s"}
               </span>
             ) : null}
           </span>
         </div>
         {roleLine ? (
-          <p className="mt-0.5 truncate text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+          <p className="mt-0.5 truncate text-[length:var(--text-xs)] uppercase tracking-widest text-[var(--text-secondary)]">
             {roleLine}
           </p>
         ) : null}
         {familiar.description ? (
-          <p className="mt-1.5 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text-secondary)]">
+          <p className="mt-1.5 max-w-[64ch] text-[length:var(--text-base)] leading-relaxed text-[var(--text-secondary)]">
             {familiar.description}
           </p>
         ) : null}
-        <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--text-xs)]">
           {runtimeLine ? (
-            <span className="font-mono text-[11px] text-[var(--text-muted)]" title="Harness · model">
+            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]" title="Harness · model">
               {runtimeLine}
             </span>
           ) : null}
@@ -288,7 +288,7 @@ function FamiliarIdentityHero({
               onClick={() => openFamiliarStudioSettingsTab("brain", familiar.id)}
               aria-label={`Voice settings for ${resolved?.display_name ?? familiar.display_name} — ${voiceLine}`}
               title="Speaking voice — manage in the Studio's Brain tab"
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] font-mono text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] font-mono text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               <Icon name="ph:waveform-bold" width={11} aria-hidden />
               {voiceLine}
@@ -298,14 +298,14 @@ function FamiliarIdentityHero({
             <Link
               href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
               aria-label={`Open profile card for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Profile →
             </Link>
             <Link
               href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
               aria-label={`Open analytics for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Analytics →
             </Link>
@@ -316,7 +316,7 @@ function FamiliarIdentityHero({
               type="button"
               onClick={() => openFamiliarStudioSettingsTab("memory", familiar.id)}
               aria-label={`Open memory for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Memory →
             </button>
@@ -324,7 +324,7 @@ function FamiliarIdentityHero({
               type="button"
               onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
               aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Edit in Studio →
             </button>
@@ -338,7 +338,7 @@ function FamiliarIdentityHero({
           <button
             type="button"
             onClick={() => onStartChat(familiar.id)}
-            className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90"
+            className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90"
           >
             <Icon name="ph:chat-circle-dots" width={13} aria-hidden />
             New chat
@@ -627,7 +627,7 @@ function FamiliarCapabilityPanel({
           <Icon name="ph:warning-circle" width={12} className="mt-px shrink-0 text-[var(--color-warning)]" aria-hidden />
           <div className="min-w-0">
             {errors.map((e, i) => (
-              <p key={i} className="text-[10px] text-[var(--color-warning)]">{e}</p>
+              <p key={i} className="text-[length:var(--text-2xs)] text-[var(--color-warning)]">{e}</p>
             ))}
           </div>
         </div>
@@ -656,17 +656,17 @@ function FamiliarCapabilityPanel({
                   <div className="flex items-center gap-1.5">
                     <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
                     <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
-                    <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+                    <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                       {role.familiar}
                     </span>
                     {role.skills.length > 0 ? (
-                      <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-muted)]">
+                      <span className="rounded bg-[var(--bg-raised)] px-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         {role.skills.length} skill{role.skills.length === 1 ? "" : "s"}
                       </span>
                     ) : null}
                   </div>
                   {role.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
+                    <p className="mt-0.5 line-clamp-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                       {role.description}
                     </p>
                   ) : null}
@@ -715,7 +715,7 @@ function FamiliarCapabilityPanel({
             onToggle={() => setSkillsFamiliarOpen((v) => !v)}
           >
             {familiarSkills.length === 0 ? (
-              <div className="px-1 pb-1 pt-1 text-[10px] text-[var(--text-muted)]">
+              <div className="px-1 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 <p>No skills installed for this familiar yet.</p>
                 <CapCta label="Browse Marketplace →" onClick={() => navigateMode("marketplace")} />
               </div>
@@ -743,7 +743,7 @@ function FamiliarCapabilityPanel({
             onToggle={() => setSkillsGlobalOpen((v) => !v)}
           >
             {globalSkills.length === 0 ? (
-              <p className="px-1 pb-1 pt-1 text-[10px] text-[var(--text-muted)]">
+              <p className="px-1 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 No global workspace skills.
               </p>
             ) : (
@@ -785,13 +785,13 @@ function FamiliarCapabilityPanel({
                     {/* Chip diet: enabled is the expected state — only the
                         exception (disabled) earns a marker. */}
                     {p.enabled ? null : (
-                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                      <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
                         disabled
                       </span>
                     )}
                   </div>
                   {p.command ? (
-                    <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]">{p.command}</p>
+                    <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{p.command}</p>
                   ) : null}
                 </li>
               ))}
@@ -835,13 +835,13 @@ function FamiliarCapabilityPanel({
                     <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
                     <KindBadge kind="mcp" />
                     {p.enabled ? null : (
-                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                      <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
                         disabled
                       </span>
                     )}
                   </div>
                   {p.command ? (
-                    <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={[p.command, ...(p.args ?? [])].join(" ")}>
+                    <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={[p.command, ...(p.args ?? [])].join(" ")}>
                       {[p.command, ...(p.args ?? [])].join(" ")}
                     </p>
                   ) : null}
@@ -864,7 +864,7 @@ function FamiliarCapabilityPanel({
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />
                 <div>
                   <span className="font-medium text-[var(--color-warning)]">{w.kind}</span>
-                  <p className="text-[10px] text-[var(--text-secondary)]">{w.message}</p>
+                  <p className="text-[length:var(--text-2xs)] text-[var(--text-secondary)]">{w.message}</p>
                 </div>
               </li>
             ))}
@@ -930,8 +930,20 @@ export function ChatFamiliarView({
         aria-label="Loading familiars"
         role="status"
       >
+<<<<<<< Updated upstream
         <span className="sr-only">Loading familiar roster</span>
         <SkeletonRows count={4} />
+=======
+        <span className="text-[var(--text-muted)]" aria-hidden>
+          <Icon name="ph:sparkle" width={20} />
+        </span>
+        <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
+          No familiar selected
+        </p>
+        <p className="max-w-[28ch] text-[length:var(--text-xs)] leading-snug text-[var(--text-muted)]">
+          Pick a familiar to see its roles, skills, and runtime capabilities.
+        </p>
+>>>>>>> Stashed changes
       </section>
     );
   }

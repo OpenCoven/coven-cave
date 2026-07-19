@@ -361,7 +361,7 @@ assert.doesNotMatch(
   const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
   assert.match(
     settingsShell,
-    /surface-compact-header shrink-0"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
     "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
   );
 }

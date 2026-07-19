@@ -264,7 +264,7 @@ export function NewCardModal({
           stays a short title/notes/pickers form. Open it when a caller
           prefilled links or labels so they aren't hidden. */}
       <details className="mb-4" open={Boolean(defaultLinks?.length || defaultLabels?.length)}>
-        <summary className="focus-ring mb-2 cursor-pointer select-none text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
+        <summary className="focus-ring mb-2 cursor-pointer select-none text-[length:var(--text-2xs)] uppercase tracking-widest text-muted-foreground hover:text-foreground">
           More options
         </summary>
 
@@ -333,7 +333,7 @@ export function NewCardModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
-      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-muted-foreground">{label}</div>
       {children}
     </label>
   );

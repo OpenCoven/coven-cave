@@ -310,9 +310,9 @@ export function OpenCovenSubmissionPanel() {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Icon name="ph:archive" width={14} className="text-muted-foreground" />
-            <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">OpenCoven submissions</h3>
+            <h3 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">OpenCoven submissions</h3>
           </div>
-          <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+          <p className="mt-1 max-w-3xl text-[length:var(--text-sm)] text-muted-foreground">
             Submit once to OpenCoven, validate against OpenCoven contracts, publish into the
             OpenCoven catalog, then route through OpenCoven execution services. A{" "}
             <strong className="font-medium text-[var(--text-secondary)]">harness</strong> is an agent
@@ -339,7 +339,7 @@ export function OpenCovenSubmissionPanel() {
 
       <div className="mt-3 grid gap-3 @min-[1100px]:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
-          <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-background px-3 py-2 text-[12px] text-muted-foreground hover:border-[var(--border-strong)]">
+          <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-background px-3 py-2 text-[length:var(--text-sm)] text-muted-foreground hover:border-[var(--border-strong)]">
             <span className="min-w-0 truncate">
               {fileName ?? "One package: manifest + artifacts + optional examples/tests as JSON"}
             </span>
@@ -359,11 +359,11 @@ export function OpenCovenSubmissionPanel() {
             }}
             spellCheck={false}
             aria-label="Submission package JSON"
-            className="mt-2 min-h-[220px] w-full resize-y rounded-[var(--radius-control)] border border-border bg-background p-3 font-mono text-[11px] leading-5 text-foreground outline-none focus:ring-1 focus:ring-ring"
+            className="mt-2 min-h-[220px] w-full resize-y rounded-[var(--radius-control)] border border-border bg-background p-3 font-mono text-[length:var(--text-xs)] leading-5 text-foreground outline-none focus:ring-1 focus:ring-ring"
           />
-          {parsed.error ? <p className="mt-1 text-[11px] text-red-600">{parsed.error}</p> : null}
+          {parsed.error ? <p className="mt-1 text-[length:var(--text-xs)] text-red-600">{parsed.error}</p> : null}
           {typeMismatch ? (
-            <p className="mt-1 text-[11px] text-amber-600">
+            <p className="mt-1 text-[length:var(--text-xs)] text-amber-600">
               Selected {submissionType}, but the manifest declares {String(manifestType)}.
             </p>
           ) : null}
@@ -387,34 +387,34 @@ export function OpenCovenSubmissionPanel() {
 
         <aside className="min-w-0 rounded-[var(--radius-control)] border border-border bg-background p-3">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Validation</h4>
+            <h4 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">Validation</h4>
             {result?.validation ? (
-              <span className={`rounded-[var(--radius-control)] border px-1.5 py-px text-[10px] ${statusClass(result.validation.status)}`}>
+              <span className={`rounded-[var(--radius-control)] border px-1.5 py-px text-[length:var(--text-2xs)] ${statusClass(result.validation.status)}`}>
                 {STATUS_LABEL[result.validation.status]}
               </span>
             ) : null}
           </div>
-          {result?.error ? <p className="mt-2 text-[12px] text-red-600">{result.error}</p> : null}
+          {result?.error ? <p className="mt-2 text-[length:var(--text-sm)] text-red-600">{result.error}</p> : null}
           {result?.validation ? (
             result.validation.issues.length > 0 ? (
               <ul className="mt-2 space-y-1.5">
                 {result.validation.issues.map((issue) => (
-                  <li key={`${issue.code}:${issue.path ?? ""}`} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-1.5 text-[11px]">
+                  <li key={`${issue.code}:${issue.path ?? ""}`} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-1.5 text-[length:var(--text-xs)]">
                     <span className="font-medium text-foreground">{issue.code}</span>
                     <span className="ml-2 text-muted-foreground">{issue.message}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-[12px] text-muted-foreground">No validation issues.</p>
+              <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">No validation issues.</p>
             )
           ) : (
-            <p className="mt-2 text-[12px] text-muted-foreground">
+            <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">
               Results appear as pass, warning, fail, or review-required.
             </p>
           )}
           {result?.published ? (
-            <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+            <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[length:var(--text-xs)] text-emerald-700 dark:text-emerald-300">
               Published into the OpenCoven catalog.
             </p>
           ) : null}
@@ -422,9 +422,9 @@ export function OpenCovenSubmissionPanel() {
           <CatalogDiscovery catalog={catalog} />
 
           <div className="mt-4">
-            <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Execution routing</h4>
+            <h4 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">Execution routing</h4>
             <div className="mt-2 grid gap-2">
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
+              <label className="grid gap-1 text-[length:var(--text-xs)] text-muted-foreground">
                 <span className="font-medium text-foreground">Harness</span>
                 <StandardSelect
                   label="Harness"
@@ -438,10 +438,10 @@ export function OpenCovenSubmissionPanel() {
                           label: `${entry.name} v${entry.latestCompatibleVersion}`,
                         }))
                   }
-                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[length:var(--text-sm)] text-foreground outline-none focus:ring-1 focus:ring-ring"
                 />
               </label>
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
+              <label className="grid gap-1 text-[length:var(--text-xs)] text-muted-foreground">
                 <span className="font-medium text-foreground">Runtime</span>
                 <StandardSelect
                   label="Runtime"
@@ -454,7 +454,7 @@ export function OpenCovenSubmissionPanel() {
                       label: `${entry.name} v${entry.latestCompatibleVersion}`,
                     })),
                   ]}
-                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[length:var(--text-sm)] text-foreground outline-none focus:ring-1 focus:ring-ring"
                 />
               </label>
               <div className="flex flex-wrap gap-2">
@@ -475,23 +475,23 @@ export function OpenCovenSubmissionPanel() {
               </div>
             </div>
             {route?.status === "ready" ? (
-              <p className="mt-2 text-[12px] text-muted-foreground">
+              <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">
                 {route.harnessId} resolves to {route.runtimeId} through {route.invocationAdapter}.
               </p>
             ) : route ? (
-              <p className="mt-2 text-[12px] text-muted-foreground">{route.reason}</p>
+              <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">{route.reason}</p>
             ) : (
-              <p className="mt-2 text-[12px] text-muted-foreground">
+              <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">
                 Harnesses stay disabled until a compatible runtime is available.
               </p>
             )}
             {executionPlan?.status === "ready" ? (
-              <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+              <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[length:var(--text-xs)] text-emerald-700 dark:text-emerald-300">
                 Execution plan ready for {executionPlan.executionService}: {executionPlan.dispatch.harnessId} -&gt;{" "}
                 {executionPlan.dispatch.runtimeId} via {executionPlan.dispatch.adapter}.
               </p>
             ) : executionPlan ? (
-              <p className="mt-2 rounded-[var(--radius-control)] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <p className="mt-2 rounded-[var(--radius-control)] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[length:var(--text-xs)] text-amber-700 dark:text-amber-300">
                 {executionPlan.reason}
               </p>
             ) : null}
@@ -505,21 +505,21 @@ export function OpenCovenSubmissionPanel() {
 function CatalogDiscovery({ catalog }: { catalog: CatalogEntry[] }) {
   return (
     <div className="mt-4">
-      <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Catalog discovery</h4>
+      <h4 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">Catalog discovery</h4>
       {catalog.length === 0 ? (
-        <p className="mt-2 text-[12px] text-muted-foreground">No catalog entries yet.</p>
+        <p className="mt-2 text-[length:var(--text-sm)] text-muted-foreground">No catalog entries yet.</p>
       ) : (
         <div className="mt-2 space-y-2">
           {catalog.map((entry) => (
-            <article key={entry.id} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-2 text-[11px]">
+            <article key={entry.id} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-2 text-[length:var(--text-xs)]">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <h5 className="truncate text-[12px] font-medium text-foreground">{entry.name}</h5>
+                  <h5 className="truncate text-[length:var(--text-sm)] font-medium text-foreground">{entry.name}</h5>
                   <p className="mt-0.5 text-muted-foreground">
                     {entry.type} · v{entry.latestCompatibleVersion}
                   </p>
                 </div>
-                <span className={`shrink-0 rounded-[var(--radius-control)] border px-1.5 py-px text-[10px] ${statusClass(entry.validationStatus)}`}>
+                <span className={`shrink-0 rounded-[var(--radius-control)] border px-1.5 py-px text-[length:var(--text-2xs)] ${statusClass(entry.validationStatus)}`}>
                   {entry.validationStatus}
                 </span>
               </div>

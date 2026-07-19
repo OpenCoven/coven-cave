@@ -114,10 +114,10 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-[14px] font-semibold text-[var(--text-primary)]">
+            <span className="block truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
               {plugin.displayName}
             </span>
-            <span className="block truncate text-[12px] text-[var(--text-muted)]">
+            <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
               {kindLabel(plugin.kind)} · {plugin.author}
             </span>
           </span>
@@ -186,7 +186,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
           </Button>
         )}
       </div>
-      <p className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
+      <p className="line-clamp-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
       <div
         className="marketplace-card__decision"
         aria-label={`Decision notes: ${setup.label}; ${capability.full}; ${roleFit.full}`}

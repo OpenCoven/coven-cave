@@ -50,13 +50,11 @@ type Props = {
 };
 
 const fieldBaseClass =
-  "w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const inputClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
-const selectClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
-const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
-const monoTextareaClass = `${textareaClass} font-mono text-[11px]`;
-
-const fieldStyle = { borderColor: "var(--border-hairline)" } as const;
+  "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+const inputClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
+const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
 export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, initialValues }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -178,7 +176,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   placeholder="Nightly code review"
                   onChange={(event) => setName(event.target.value)}
                   className={inputClass}
-                  style={fieldStyle}
                 />
               </label>
 
@@ -186,8 +183,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                 <span>Schedule</span>
                 <div className="automation-create-dialog__schedule-card">
                   <div
-                    className="automation-create-dialog__segment-control"
-                    style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+                    className="automation-create-dialog__segment-control [border-color:var(--border-hairline)]! [background:var(--bg-base)]!"
                   >
                     {(["weekly", "daily", "raw"] as const).map((mode) => (
                       <Button
@@ -195,7 +191,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                         variant="ghost"
                         size="xs"
                         onClick={() => setScheduleMode(mode)}
-                        className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize transition-colors"
+                        className="rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] capitalize transition-colors"
                         style={{
                           background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
                           color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
@@ -213,7 +209,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                       rows={3}
                       placeholder="RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
                       className={monoTextareaClass}
-                      style={fieldStyle}
                     />
                   ) : (
                     <div className="automation-create-dialog__schedule-body">
@@ -227,7 +222,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                                 variant="ghost"
                                 size="xs"
                                 onClick={() => toggleDay(day)}
-                                className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px] transition-colors"
+                                className="rounded-[var(--radius-control)] border px-2 py-1 text-[length:var(--text-xs)] transition-colors"
                                 style={{
                                   background: active ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
                                   borderColor: active ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
@@ -245,7 +240,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                         value={time}
                         onChange={(event) => setTime(event.target.value)}
                         className={inputClass}
-                        style={fieldStyle}
                       />
                     </div>
                   )}
@@ -274,7 +268,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   rows={4}
                   placeholder="What should this automation accomplish?"
                   className={`workflow-run-input-field ${textareaClass}`}
-                  style={fieldStyle}
                 />
               </label>
 
@@ -286,7 +279,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   rows={4}
                   placeholder="Expected outputs (optional)"
                   className={`workflow-run-input-field ${textareaClass}`}
-                  style={fieldStyle}
                 />
               </label>
             </div>
@@ -314,7 +306,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   onChange={(event) => setModel(event.target.value)}
                   placeholder="e.g. claude-sonnet-4-5 (leave blank for default)"
                   className={inputClass}
-                  style={fieldStyle}
                 />
               </label>
 
@@ -330,7 +321,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                     { value: "high", label: "high" },
                   ]}
                   className={selectClass}
-                  style={fieldStyle}
                 />
               </label>
 
@@ -345,7 +335,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                     { value: "repo", label: "repo" },
                   ]}
                   className={selectClass}
-                  style={fieldStyle}
                 />
               </label>
             </div>
@@ -363,7 +352,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   onChange={setCwds}
                   familiarId={[...selected][0] ?? ""}
                   textareaClass={monoTextareaClass}
-                  fieldStyle={fieldStyle}
                 />
               </label>
 
@@ -375,7 +363,6 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   onChange={(event) => setTagsText(event.target.value)}
                   placeholder="coven, nightly (comma-separated)"
                   className={inputClass}
-                  style={fieldStyle}
                 />
               </label>
 

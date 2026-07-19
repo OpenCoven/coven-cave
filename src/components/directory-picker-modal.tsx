@@ -212,12 +212,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       <div
         ref={dialogRef}
         tabIndex={-1}
+<<<<<<< Updated upstream
         className="flex h-[560px] w-[520px] max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none"
         style={{ background: "var(--bg-panel)" }}
+=======
+        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none [background:var(--bg-panel)]!"
+>>>>>>> Stashed changes
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-          <span className="text-[13px] font-semibold text-[var(--text-primary)]">Choose a project folder</span>
+          <span className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">Choose a project folder</span>
           <Button
             ref={closeButtonRef}
             variant="ghost"
@@ -240,7 +244,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             leadingIcon="ph:arrow-up"
           />
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text-secondary)]"
+            className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
             title={cwd ?? undefined}
           >
             {display}
@@ -317,11 +321,15 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {error ? (
+<<<<<<< Updated upstream
             <p role="alert" className="px-2 py-4 text-[12px] text-[var(--color-danger,#e5484d)]">{error}</p>
+=======
+            <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
+>>>>>>> Stashed changes
           ) : loading && entries.length === 0 ? (
-            <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">Loading…</p>
+            <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
           ) : entries.length === 0 ? (
-            <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">No subfolders here.</p>
+            <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">No subfolders here.</p>
           ) : (
             entries.map((e) => (
               <Button
@@ -329,8 +337,12 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 variant="ghost"
                 size="sm"
                 onClick={() => void load(e.path)}
+<<<<<<< Updated upstream
                 disabled={createBusy}
                 className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+=======
+                className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[length:var(--text-base)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+>>>>>>> Stashed changes
                 leadingIcon="ph:folder"
                 trailingIcon="ph:caret-right"
               >
@@ -341,7 +353,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]">
+          <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
             Select the folder you're browsing, or open a subfolder first.
           </span>
           <div className="flex shrink-0 items-center gap-2">
@@ -349,7 +361,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               variant="secondary"
               size="sm"
               onClick={onClose}
-              className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
             >
               Cancel
             </Button>
@@ -360,7 +372,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               onClick={() => {
                 if (cwd) onSelect(cwd);
               }}
-              className="rounded-[var(--radius-control)] px-3 py-1 text-[12px] font-medium disabled:opacity-50"
+              className="rounded-[var(--radius-control)] px-3 py-1 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
             >
               Select this folder
             </Button>

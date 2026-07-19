@@ -315,25 +315,25 @@ export function StitchIntake({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4" data-testid="stitch-intake">
       <div>
-        <h2 className="text-[13px] font-medium text-[var(--text-primary)]">New stitch</h2>
-        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+        <h2 className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">New stitch</h2>
+        <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           Pin sources onto a thread, then sew them into one durable entry.
         </p>
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-[11px] text-[var(--text-secondary)]">Working title / intent</span>
+        <span className="mb-1 block text-[length:var(--text-xs)] text-[var(--text-secondary)]">Working title / intent</span>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="What should this stitch capture?"
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
       </label>
 
       <div role="group" aria-label="Stitch pattern" className="flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-[11px] text-[var(--text-secondary)]">Shape</span>
+        <span className="mr-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">Shape</span>
         {STITCH_PATTERNS.map((p) => (
           <button
             key={p.id}
@@ -341,7 +341,7 @@ export function StitchIntake({
             aria-pressed={patternId === p.id}
             title={p.description}
             onClick={() => setPatternId((prev) => (prev === p.id ? null : p.id))}
-            className={`focus-ring inline-flex h-[24px] items-center rounded-md border px-2 text-[11px] transition-colors ${
+            className={`focus-ring inline-flex h-[var(--space-6)] items-center rounded-md border px-2 text-[length:var(--text-xs)] transition-colors ${
               patternId === p.id
                 ? "border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
                 : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
@@ -354,12 +354,12 @@ export function StitchIntake({
 
       {collections.length > 0 ? (
         <label className="block">
-          <span className="mb-1 block text-[11px] text-[var(--text-secondary)]">Sew into</span>
+          <span className="mb-1 block text-[length:var(--text-xs)] text-[var(--text-secondary)]">Sew into</span>
           <select
             value={collection}
             onChange={(e) => setCollection(e.target.value)}
             aria-label="Destination collection"
-            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)]"
           >
             <option value="">Vault root</option>
             {collections.map((c) => (
@@ -382,7 +382,7 @@ export function StitchIntake({
               setRef(defaultRefForKind(k));
               setError(null);
             }}
-            className={`focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
+            className={`focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border px-2 text-[length:var(--text-xs)] transition-colors ${
               kind === k
                 ? "border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
                 : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
@@ -401,12 +401,12 @@ export function StitchIntake({
           rows={5}
           placeholder="Paste the text to pin…"
           aria-label="Text to pin"
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
       ) : kind === "chat" ? (
         sessionsError ? (
           // A failed load is not "no chats" (cave-exbq) — say so and retry.
-          <div className="flex items-center gap-2 text-[12px] text-[var(--color-warning)]">
+          <div className="flex items-center gap-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
             <span>Couldn&apos;t load your chats.</span>
             <button
               type="button"
@@ -414,7 +414,7 @@ export function StitchIntake({
                 setSessionsError(false);
                 setSessionsRetryNonce((n) => n + 1);
               }}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
+              className="focus-ring rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
             >
               Retry
             </button>
@@ -424,7 +424,7 @@ export function StitchIntake({
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
             aria-label="Chat session to pin"
-            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)]"
           >
             <option value="">
               {sessions === null
@@ -450,7 +450,7 @@ export function StitchIntake({
           }}
           placeholder={KIND_PLACEHOLDER[kind]}
           aria-label={`${pinKindLabel(kind)} source`}
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
       )}
 
@@ -461,11 +461,11 @@ export function StitchIntake({
       </div>
 
       <div aria-live="off">
-        <h3 className="mb-1 text-[11px] font-medium text-[var(--text-secondary)]">
+        <h3 className="mb-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
           Thread — {pins.length} {pins.length === 1 ? "pin" : "pins"}
         </h3>
         {pins.length === 0 ? (
-          <p className="text-[11px] text-[var(--text-muted)]">No pins yet. A stitch needs at least one.</p>
+          <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No pins yet. A stitch needs at least one.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {pins.map((pin) => (
@@ -475,11 +475,11 @@ export function StitchIntake({
               >
                 <Icon name={KIND_ICON[pin.kind]} width={12} aria-hidden className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] text-[var(--text-primary)]" title={pin.title}>
+                  <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-primary)]" title={pin.title}>
                     {pin.title}
                   </span>
                   {pin.excerpt ? (
-                    <span className="block truncate text-[11px] text-[var(--text-muted)]">{pin.excerpt}</span>
+                    <span className="block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">{pin.excerpt}</span>
                   ) : null}
                 </span>
                 <button
@@ -500,7 +500,7 @@ export function StitchIntake({
                   }}
                   className={`focus-ring shrink-0 rounded p-1 ${
                     armedPinId === pin.id
-                      ? "px-1.5 text-[10px] font-semibold text-[var(--color-danger)]"
+                      ? "px-1.5 text-[length:var(--text-2xs)] font-semibold text-[var(--color-danger)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                   }`}
                 >
@@ -547,7 +547,7 @@ export function StitchIntake({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="text-[11px] text-[var(--color-danger)]">
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
           {error}
         </p>
       ) : null}
@@ -568,10 +568,10 @@ export function StitchProvenance({
       className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border-hairline)] px-3 py-2"
       aria-label="Sewn from pins"
     >
-      <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Sewn from</span>
+      <span className="text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">Sewn from</span>
       {pins.map((pin, index) => {
         const chipClass =
-          "focus-ring inline-flex max-w-64 items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]";
+          "focus-ring inline-flex max-w-64 items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]";
         if (pin.kind === "url" || pin.kind === "github") {
           return (
             <a key={index} href={pin.ref} target="_blank" rel="noreferrer noopener" className={chipClass} title={pin.ref}>
@@ -599,7 +599,7 @@ export function StitchProvenance({
         return (
           <span
             key={index}
-            className="inline-flex max-w-64 items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]"
+            className="inline-flex max-w-64 items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
             title={pin.ref}
           >
             <Icon name={KIND_ICON[pin.kind]} width={10} aria-hidden />

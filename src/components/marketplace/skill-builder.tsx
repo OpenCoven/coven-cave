@@ -48,7 +48,7 @@ const ROOT_HELP: Record<SkillBuildRootId, string> = {
 };
 
 const INPUT_CLASS =
-  "focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--border-strong)]";
+  "focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--border-strong)]";
 
 /** What the success panel needs to keep testing the skill after the save. */
 type SavedSkill = {
@@ -319,12 +319,12 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
             <Icon name="ph:check-circle" width={20} className="text-[var(--text-primary)]" aria-hidden />
           </span>
           <div>
-            <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Skill saved</h2>
-            <p className="mt-1 text-[12px] text-[var(--text-muted)]">
-              <code className="font-mono text-[11px] text-[var(--text-secondary)]">{saved.slug}</code> was written to
+            <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Skill saved</h2>
+            <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              <code className="font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]">{saved.slug}</code> was written to
             </p>
-            <p className="mt-0.5 break-all font-mono text-[11px] text-[var(--text-secondary)]">{saved.path}</p>
-            <p className="mt-2 text-[12px] text-[var(--text-muted)]">
+            <p className="mt-0.5 break-all font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]">{saved.path}</p>
+            <p className="mt-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Familiars that load this root pick it up on their next session; it is already listed in the Skills tab.
             </p>
           </div>
@@ -347,11 +347,11 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 @min-[640px]/marketplace:px-7">
       <section className="mb-5" aria-labelledby="skill-builder-heading">
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Skill authoring</p>
-        <h2 id="skill-builder-heading" className="mt-1 text-[16px] font-semibold text-[var(--text-primary)]">
+        <p className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Skill authoring</p>
+        <h2 id="skill-builder-heading" className="mt-1 text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">
           Build a skill
         </h2>
-        <p className="mt-1 max-w-2xl text-[12px] text-[var(--text-muted)]">
+        <p className="mt-1 max-w-2xl text-[length:var(--text-sm)] text-[var(--text-muted)]">
           A skill is a reusable SKILL.md procedure your familiars load while they work. Describe when to use it and
           how it works — the file is written straight into a local skill root and appears in the Skills tab.
         </p>
@@ -361,7 +361,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
         aria-label="Draft with AI"
         className="mb-5 flex max-w-2xl flex-col gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3"
       >
-        <label htmlFor="skill-draft-goal" className="text-[12px] font-medium text-[var(--text-primary)]">
+        <label htmlFor="skill-draft-goal" className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           Draft with AI <span className="font-normal text-[var(--text-muted)]">— describe the skill; a reviewable draft fills the form</span>
         </label>
         <textarea
@@ -373,7 +373,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           className={`${INPUT_CLASS} resize-y`}
         />
         {draftError ? (
-          <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+          <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
             {draftError}
           </p>
         ) : null}
@@ -398,14 +398,14 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           >
             Build in chat
           </Button>
-          <span className="text-[11px] text-[var(--text-muted)]">
+          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             Nothing is written until you review and save.
           </span>
         </div>
       </section>
 
       {error ? (
-        <p role="alert" className="mb-4 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+        <p role="alert" className="mb-4 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--danger-text)]">
           {error}
         </p>
       ) : null}
@@ -420,7 +420,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           }}
         >
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--text-primary)]">Name</span>
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Name</span>
             <input
               type="text"
               value={name}
@@ -432,7 +432,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--text-primary)]">Description</span>
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Description</span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -444,7 +444,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--text-primary)]">
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
               Tags <span className="font-normal text-[var(--text-muted)]">(optional, comma-separated)</span>
             </span>
             <input
@@ -457,23 +457,23 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--text-primary)]">Destination</span>
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Destination</span>
             <StandardSelect
               label="Destination skill root"
               value={root}
               onChange={(next) => setRoot(next as SkillBuildRootId)}
-              className="focus-ring w-full cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)]"
+              className="focus-ring w-full cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-base)] text-[var(--text-primary)]"
               options={SKILL_BUILD_ROOTS.map((entry) => ({
                 value: entry.id,
                 label: `${entry.label} (${entry.pathHint})`,
               }))}
             />
-            <span className="text-[11px] text-[var(--text-muted)]">{ROOT_HELP[root]}</span>
+            <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{ROOT_HELP[root]}</span>
           </label>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
-              <label htmlFor="skill-builder-instructions" className="text-[12px] font-medium text-[var(--text-primary)]">
+              <label htmlFor="skill-builder-instructions" className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
                 Instructions
               </label>
               <div className="flex items-center gap-1.5">
@@ -506,7 +506,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
               </div>
             </div>
             <div role="group" aria-label="Skill templates" className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-[11px] text-[var(--text-muted)]">Start from</span>
+              <span className="mr-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Start from</span>
               {templates.map((template) => (
                 <button
                   key={template.id}
@@ -514,7 +514,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
                   title={template.description}
                   disabled={instructions.trim().length > 0}
                   onClick={() => insertTemplate(template)}
-                  className="focus-ring inline-flex h-[24px] items-center rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="focus-ring inline-flex h-[var(--space-6)] items-center rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {template.name}
                 </button>
@@ -528,21 +528,21 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
               onKeyDown={(e) => handlePlaceholderTab(e, instructionsRef.current, setInstructions)}
               rows={12}
               placeholder="Markdown the familiar follows — when to use the skill, the steps, and how to verify the result."
-              className={`${INPUT_CLASS} resize-y font-mono text-[12px] leading-relaxed`}
+              className={`${INPUT_CLASS} resize-y font-mono text-[length:var(--text-sm)] leading-relaxed`}
             />
             {enhancer.state.phase === "error" ? (
-              <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+              <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
                 {enhancer.state.message}
               </p>
             ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] pt-4">
-            <p className="min-w-0 text-[11px] text-[var(--text-muted)]">
+            <p className="min-w-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
               Writes <span className="break-all font-mono text-[var(--text-secondary)]">{destination}</span>
             </p>
             {cavemanError ? (
-              <p role="alert" className="w-full text-[11px] text-[var(--danger-text)]">
+              <p role="alert" className="w-full text-[length:var(--text-xs)] text-[var(--danger-text)]">
                 {cavemanError}
               </p>
             ) : null}
@@ -597,10 +597,10 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
         </form>
 
         <section aria-label="SKILL.md preview" className="flex min-w-0 flex-col gap-2">
-          <p className="text-[12px] font-medium text-[var(--text-primary)]">
+          <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
             Preview <span className="font-normal text-[var(--text-muted)]">— the exact file that will be written</span>
           </p>
-          <pre className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3 font-mono text-[11.5px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
+          <pre className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
             {preview}
           </pre>
         </section>
@@ -673,7 +673,7 @@ export function SkillDryRunTester({
 
   return (
     <div className="flex w-full flex-col gap-2 border-t border-[var(--border-hairline)] pt-3" data-testid="skill-dry-run">
-      <p className="text-[12px] font-medium text-[var(--text-primary)]">
+      <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
         Test this skill{" "}
         <span className="font-normal text-[var(--text-muted)]">— would a familiar pick it up?</span>
       </p>
@@ -712,12 +712,12 @@ export function SkillDryRunTester({
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
           {error}
         </p>
       ) : null}
       {verdict?.mode === "trigger" ? (
-        <p className="text-[12px] text-[var(--text-secondary)]" aria-live="polite">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]" aria-live="polite">
           <strong className={verdict.fires ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}>
             {verdict.fires ? "Fires" : "Does not fire"}
           </strong>{" "}
@@ -725,7 +725,7 @@ export function SkillDryRunTester({
         </p>
       ) : null}
       {verdict?.mode === "walkthrough" ? (
-        <div className="text-[12px] text-[var(--text-secondary)]" aria-live="polite">
+        <div className="text-[length:var(--text-sm)] text-[var(--text-secondary)]" aria-live="polite">
           <p>
             <strong className="text-[var(--text-primary)]">
               {verdict.followed === "yes" ? "Followable" : verdict.followed === "partial" ? "Partially followable" : "Not followable"}

@@ -185,11 +185,11 @@ export function QuickLink({
       <span className="dr-quicklink__icon">
         <Icon name={icon} aria-hidden />
       </span>
-      <span style={{ minWidth: 0 }}>
-        <span className="dr-quicklink__label" style={{ display: "block" }}>
+      <span className="[min-width:0]!">
+        <span className="dr-quicklink__label [display:block]!">
           {label}
         </span>
-        {sub ? <span className="dr-quicklink__sub" style={{ display: "block" }}>{sub}</span> : null}
+        {sub ? <span className="dr-quicklink__sub [display:block]!">{sub}</span> : null}
       </span>
     </a>
   );

@@ -1093,7 +1093,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       )}
 
       {/* Content */}
-      <div ref={viewAreaRef} style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div ref={viewAreaRef} className="[flex:1]! [min-height:0]! [overflow:hidden]! [display:flex]! [flex-direction:column]!">
         {cardSelect.selectMode && (
           <div className="px-5 pt-3">
             <SelectionToolbar
@@ -1109,7 +1109,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(next) => { if (next) void bulkMove(next); }}
-                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
                   { value: "", label: "Move to...", disabled: true },
                   ...STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
@@ -1123,7 +1123,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(next) => { if (next) void bulkAssign(next); }}
-                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
                   { value: "", label: "Assign to...", disabled: true },
                   ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
@@ -1137,7 +1137,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(next) => { if (next) void bulkSetPriority(next); }}
-                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
                   { value: "", label: "Priority...", disabled: true },
                   ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
@@ -1155,7 +1155,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                   placeholder="Add label…"
                   aria-label="Add a label to selected tasks"
                   disabled={bulkBusy || cardSelect.selectedCount === 0}
-                  className="focus-ring h-6 box-border w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                  className="focus-ring h-6 box-border w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
                 />
                 <datalist id="board-bulk-label-options">
                   {bulkLabelOptions.map((l) => <option key={l} value={l} />)}
@@ -1164,7 +1164,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                   type="submit"
                   disabled={bulkBusy || cardSelect.selectedCount === 0 || !labelDraft.trim()}
                   title="Add this label to the selected tasks"
-                  className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                  className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
                   <Icon name="ph:tag-bold" width={11} aria-hidden />
                   Label
@@ -1174,7 +1174,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 type="button"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 onClick={() => void bulkDelete()}
-                className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
               >
                 <Icon name="ph:trash-bold" width={11} aria-hidden />
                 {bulkBusy ? "Working…" : `Delete${cardSelect.selectedCount ? ` ${cardSelect.selectedCount}` : ""}`}
@@ -1198,14 +1198,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               <span className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
                 <Icon name="ph:kanban" width={18} aria-hidden />
               </span>
-              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
-              <p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">
+              <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
+              <p className="mt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                 The board collects work in flight across your familiars. Add a task and assign it to whoever should pick it up &mdash; chat threads can link back to it later.
               </p>
               <button
                 type="button"
                 onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
-                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-85"
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-85"
               >
                 <Icon name="ph:plus-bold" width={12} />
                 New task

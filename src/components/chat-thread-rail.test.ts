@@ -50,17 +50,17 @@ assert.doesNotMatch(source, /s\.origin === "board"/, "Tasks filtering is gone fr
 // ── Taller rail rows for scannable threads ──────────────────────────────────
 assert.match(
   source,
-  /min-h-\[36px\][\s\S]{0,120}py-2[\s\S]{0,120}text-\[12px\]/,
+  /min-h-\[36px\][\s\S]{0,120}py-2[\s\S]{0,160}text-\[length:var\(--text-sm\)\]/,
   "Flat thread rows should be taller than the old compact 28px treatment",
 );
 assert.match(
   source,
-  /min-h-\[34px\][\s\S]{0,120}py-2[\s\S]{0,120}text-\[12px\]/,
+  /min-h-\[34px\][\s\S]{0,120}py-2[\s\S]{0,160}text-\[length:var\(--text-sm\)\]/,
   "Folder thread rows should be taller and readable inside expanded projects",
 );
 assert.match(
   source,
-  /min-h-\[38px\][\s\S]{0,140}py-2[\s\S]{0,140}text-\[12px\]/,
+  /min-h-\[38px\][\s\S]{0,140}py-2[\s\S]{0,180}text-\[length:var\(--text-sm\)\]/,
   "Project folder headers should grow with the taller rail rhythm",
 );
 assert.match(

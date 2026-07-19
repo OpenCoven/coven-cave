@@ -849,7 +849,7 @@ export function BottomTerminal({
 
   if (unavailable) {
     return (
-      <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-muted)]">
+      <div className="flex h-full items-center justify-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Terminal is not available on this device.
       </div>
     );
@@ -859,8 +859,7 @@ export function BottomTerminal({
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div
         ref={wrapRef}
-        className="min-h-0 w-full flex-1 overflow-hidden"
-        style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
+        className="min-h-0 w-full flex-1 overflow-hidden [background:oklch(0.11_0.022_293)]! [padding:6px_var(--space-2)]!"
         // xterm renders into an opaque <canvas>; label the region so AT can name
         // it (live output is exposed via the screen-reader mirror below). The
         // pane label keeps split panes distinguishable.
@@ -892,7 +891,7 @@ export function BottomTerminal({
             placeholder="Find in terminal…"
             aria-label="Find in terminal"
             aria-describedby={findCountId}
-            className="focus-ring-inset w-44 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="focus-ring-inset w-44 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           {/* Match counter is deliberately NOT a live region: the SR mirror
               region below is already aria-live=polite, and a second polite
@@ -901,7 +900,7 @@ export function BottomTerminal({
               discoverable to AT without competing announcements. */}
           <span
             id={findCountId}
-            className="min-w-[34px] text-right text-[10px] tabular-nums text-[var(--text-muted)]"
+            className="min-w-[34px] text-right text-[length:var(--text-2xs)] tabular-nums text-[var(--text-muted)]"
           >
             {findInfo.count > 0 ? `${findInfo.index}/${findInfo.count}` : findQuery ? "0/0" : ""}
           </span>
@@ -925,23 +924,21 @@ export function BottomTerminal({
           of spinning forever. */}
       {!ready && startError ? (
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-[11px] text-[var(--text-muted)]"
-          style={{ background: "oklch(0.11 0.022 293)" }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)] [background:oklch(0.11_0.022_293)]!"
           role="alert"
         >
           <span className="max-w-[42ch] text-[var(--text-secondary)]">{startError}</span>
           <button
             type="button"
             onClick={retryStart}
-            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
           >
             Retry
           </button>
         </div>
       ) : !ready ? (
         <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[11px] text-[var(--text-muted)]"
-          style={{ background: "oklch(0.11 0.022 293)" }}
+          className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)] [background:oklch(0.11_0.022_293)]!"
           role="status"
           aria-live="polite"
         >

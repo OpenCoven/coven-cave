@@ -39,7 +39,7 @@ export function ChatArchiveNudge({
       role="status"
       aria-live="polite"
       aria-label={`Ready to archive: ${title}`}
-      className="cave-chat-archive-nudge focus-ring relative mx-auto my-4 flex w-full max-w-[42rem] items-start gap-3 rounded-xl border border-[color-mix(in_oklch,var(--accent-presence)_38%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] px-4 py-3 text-[13px] text-[var(--text-primary)] shadow-[0_1px_0_color-mix(in_oklch,var(--accent-presence)_20%,transparent)]"
+      className="cave-chat-archive-nudge focus-ring relative mx-auto my-4 flex w-full max-w-[42rem] items-start gap-3 rounded-xl border border-[color-mix(in_oklch,var(--accent-presence)_38%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] px-4 py-3 text-[length:var(--text-base)] text-[var(--text-primary)] shadow-[0_1px_0_color-mix(in_oklch,var(--accent-presence)_20%,transparent)]"
       data-testid="chat-archive-nudge"
     >
       <Icon
@@ -52,7 +52,7 @@ export function ChatArchiveNudge({
         <div className="font-medium text-[var(--text-primary)]">
           Ready to archive
         </div>
-        <p className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
+        <p className="mt-0.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
           <span className="font-medium text-[var(--text-primary)]">{title}</span>
           {" is complete. Archive this chat to clear it from your active sessions."}
         </p>
@@ -61,7 +61,7 @@ export function ChatArchiveNudge({
             type="button"
             onClick={onArchive}
             disabled={archiving}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] px-2.5 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] disabled:opacity-50"
           >
             <Icon name="ph:archive" width={12} aria-hidden />
             {archiving ? "Archiving…" : "Archive chat"}
@@ -70,7 +70,7 @@ export function ChatArchiveNudge({
             type="button"
             onClick={onDismiss}
             disabled={archiving}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             Dismiss
           </button>

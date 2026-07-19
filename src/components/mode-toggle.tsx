@@ -39,7 +39,7 @@ export function ModeToggle({ value, onChange }: ModeToggleProps) {
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
             leadingIcon={opt.icon}
-            className={`mode-toggle__option gap-1.5 px-3 text-[12px] font-medium transition-colors ${
+            className={`mode-toggle__option gap-1.5 px-3 text-[length:var(--text-sm)] font-medium transition-colors ${
               active
                 ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

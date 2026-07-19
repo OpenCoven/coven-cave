@@ -362,7 +362,7 @@ export function ProjectDetail({
             }}
             disabled={busy === "name"}
             aria-label={`Rename ${project.name}`}
-            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[15px] font-semibold text-[var(--text-primary)]"
+            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
           />
         ) : (
           <Button
@@ -384,7 +384,7 @@ export function ProjectDetail({
               variant="primary"
               size="sm"
               onClick={() => onNewChat?.(project.root)}
-              className="h-8 rounded-[var(--radius-control)] px-2.5 text-[12px] font-medium"
+              className="h-8 rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] font-medium"
               leadingIcon="ph:chat-circle-dots-bold"
               aria-label={`New session in ${project.name}`}
             >
@@ -396,7 +396,7 @@ export function ProjectDetail({
               variant="secondary"
               size="sm"
               onClick={onOpenBoard}
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               leadingIcon="ph:kanban"
               title="Open the Tasks board"
             >
@@ -480,7 +480,7 @@ export function ProjectDetail({
             <div className="px-2 py-1.5">
       {/* Color: auto (root-hash tint) or a preset swatch. */}
             <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              <span className="shrink-0 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                 Color
               </span>
               <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
@@ -544,7 +544,7 @@ export function ProjectDetail({
             }}
             disabled={busy === "root"}
             aria-label={`Project folder for ${project.name}`}
-            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[11px] text-[var(--text-secondary)]"
+            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"
           />
         ) : (
           <Button
@@ -554,7 +554,7 @@ export function ProjectDetail({
               setRootDraft(project.root);
               setEditingRoot(true);
             }}
-            className="min-w-0 flex-1 justify-start truncate rounded-[var(--radius-control)] px-1 py-0.5 text-left font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="min-w-0 flex-1 justify-start truncate rounded-[var(--radius-control)] px-1 py-0.5 text-left font-mono text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title={project.root}
           >
             {shortRoot(project.root)}
@@ -607,7 +607,7 @@ export function ProjectDetail({
       </div>
 
       {imageStatus ? (
-        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {imageStatus}
         </p>
       ) : null}
@@ -616,7 +616,7 @@ export function ProjectDetail({
         <div
           role="alertdialog"
           aria-label={`Delete ${project.name}?`}
-          className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px]"
+          className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)]"
         >
           <span className="min-w-0 truncate text-[var(--color-danger)]">
             Delete {project.name}? Chats keep their history; only the project entry goes away.
@@ -626,7 +626,7 @@ export function ProjectDetail({
               variant="ghost"
               size="xs"
               onClick={() => setConfirmDelete(false)}
-              className="h-7 rounded-[var(--radius-control)] px-2 text-[11px] text-[var(--text-muted)]"
+              className="h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] text-[var(--text-muted)]"
             >
               Cancel
             </Button>
@@ -636,7 +636,7 @@ export function ProjectDetail({
               onClick={() => void deleteProject()}
               disabled={busy === "delete"}
               aria-label={`Delete ${project.name}`}
-              className="h-7 rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-2 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+              className="h-7 rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-2 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
             >
               Delete
             </Button>
@@ -658,18 +658,18 @@ export function ProjectDetail({
                     variant="ghost"
                     size="xs"
                     onClick={toggleSelectAllVisible}
-                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   >
                     {allVisibleSelected ? "Clear" : "Select all"}
                   </Button>
-                  <span className="text-[11px] font-normal normal-case tracking-normal text-[var(--text-muted)]">
+                  <span className="text-[length:var(--text-xs)] font-normal normal-case tracking-normal text-[var(--text-muted)]">
                     {selectedIds.size} selected
                   </span>
                   <Button
                     variant="ghost"
                     size="xs"
                     onClick={exitSelect}
-                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] normal-case tracking-normal text-[var(--text-muted)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] normal-case tracking-normal text-[var(--text-muted)]"
                   >
                     Cancel
                   </Button>
@@ -679,7 +679,7 @@ export function ProjectDetail({
                     disabled={bulkDeleting || selectedIds.size === 0}
                     onClick={() => void deleteSelected()}
                     leadingIcon="ph:trash-bold"
-                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] normal-case tracking-normal text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[length:var(--text-xs)] normal-case tracking-normal text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
                   >
                     {bulkDeleting ? "Deleting…" : `Delete${selectedIds.size ? ` ${selectedIds.size}` : ""}`}
                   </Button>
@@ -690,7 +690,7 @@ export function ProjectDetail({
                   size="xs"
                   onClick={() => setSelectMode(true)}
                   leadingIcon="ph:list-checks-bold"
-                  className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 >
                   Select
                 </Button>
@@ -722,7 +722,7 @@ export function ProjectDetail({
                 size="xs"
                 onClick={() => setShowAllChats((value) => !value)}
                 aria-expanded={showAllChats}
-                className="mt-1 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                className="mt-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               >
                 {showAllChats ? "Show less" : `Show all ${chats.length} sessions`}
               </Button>
@@ -736,7 +736,7 @@ export function ProjectDetail({
                 variant="ghost"
                 size="xs"
                 onClick={() => onNewChat?.(project.root)}
-                className="ml-2 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent-presence)]"
+                className="ml-2 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence)]"
               >
                 New chat
               </Button>

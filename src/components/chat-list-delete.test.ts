@@ -271,7 +271,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /text-\[10px\] font-medium uppercase tracking-\[0\.08em\] text-\[var\(--text-muted\)\]/,
+  /text-\[length:var\(--text-2xs\)\] font-medium uppercase tracking-\[0\.08em\] text-\[var\(--text-muted\)\]/,
   "Stat labels keep the uppercase/tracking hierarchy at the lifted 10px size",
 );
 

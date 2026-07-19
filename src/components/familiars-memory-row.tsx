@@ -47,12 +47,12 @@ export function MemoryRowItem({
         />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="block min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]" title={row.title}>
+            <span className="block min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]" title={row.title}>
               {row.title}
             </span>
-            <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age}</span>
+            <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{age}</span>
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+          <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="truncate">{row.sourceLabel}</span>
             {size ? <><span aria-hidden>·</span><span>{size}</span></> : null}
             {row.stale ? (

@@ -92,7 +92,7 @@ function StatusChip({ status }: { status: FileStatus }) {
     <span
       title={meta.label}
       aria-label={meta.label}
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[9px] font-semibold"
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[length:var(--text-2xs)] font-semibold"
       style={{
         color: meta.color,
         background: `color-mix(in oklch, ${meta.color} 14%, transparent)`,
@@ -109,11 +109,11 @@ function StatusChip({ status }: { status: FileStatus }) {
 function ChangesSkeleton() {
   return (
     <div className="session-changes-table-wrap overflow-hidden rounded-md border border-[var(--border-hairline)]" aria-hidden>
-      <table className="session-changes-table w-full table-fixed border-collapse text-[11px]">
+      <table className="session-changes-table w-full table-fixed border-collapse text-[length:var(--text-xs)]">
         <colgroup>
           <col />
           <col className="w-[70px]" />
-          <col className="w-[32px]" />
+          <col className="w-[var(--space-8)]" />
         </colgroup>
         <tbody className="divide-y divide-[var(--border-hairline)]">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -181,7 +181,7 @@ function FileRow({
         <td className="min-w-0 overflow-hidden px-2 py-1.5">
           <button
             type="button"
-            className="focus-ring flex w-full min-w-0 items-center gap-2 rounded text-left text-[11px]"
+            className="focus-ring flex w-full min-w-0 items-center gap-2 rounded text-left text-[length:var(--text-xs)]"
             onClick={onToggle}
             aria-expanded={expanded}
             title={file.renamedFrom ? `${file.renamedFrom} → ${file.path}` : file.path}
@@ -189,18 +189,18 @@ function FileRow({
             <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0" />
             <StatusChip status={file.status} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[11px] font-medium text-[var(--text-secondary)]">
+              <span className="block truncate font-mono text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                 {basename}
               </span>
               {dirname ? (
-                <span className="block truncate font-mono text-[9.5px] leading-tight text-[var(--text-muted)]">
+                <span className="block truncate font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]">
                   {dirname}
                 </span>
               ) : null}
             </span>
           </button>
         </td>
-        <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[10px] tabular-nums">{diffCounts}</td>
+        <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[length:var(--text-2xs)] tabular-nums">{diffCounts}</td>
         <td className="px-2 py-1.5 text-right">
           {confirmRevert ? null : (
             <IconButton
@@ -223,13 +223,13 @@ function FileRow({
               role="group"
               aria-label={untracked ? "Confirm untracked file deletion" : "Confirm file revert"}
             >
-              <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--color-danger)]">
+              <span className="min-w-0 flex-1 truncate text-[length:var(--text-2xs)] font-medium text-[var(--color-danger)]">
                 {untracked ? "Delete file?" : "Revert file?"}
               </span>
               <button
                 type="button"
                 onClick={() => setConfirmRevert(false)}
-                className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+                className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
               >
                 Cancel
               </button>
@@ -241,7 +241,7 @@ function FileRow({
                 }}
                 disabled={reverting}
                 aria-label={untracked ? `Confirm delete ${file.path}` : `Confirm revert ${file.path}`}
-                className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] disabled:opacity-40"
+                className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] disabled:opacity-40"
               >
                 <Icon name={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"} width={10} aria-hidden />
                 {reverting ? "…" : untracked ? "Delete" : "Revert"}
@@ -254,20 +254,20 @@ function FileRow({
         <tr>
           <td colSpan={3} className="border-t border-[var(--border-hairline)] p-2">
           {!diffState || diffState.loading ? (
-            <div className="py-1 text-[10px] text-[var(--text-muted)]">Loading diff…</div>
+            <div className="py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Loading diff…</div>
           ) : diffState.error ? (
-            <div className="py-1 text-[10px] text-[var(--color-danger)]">diff: {diffState.error}</div>
+            <div className="py-1 text-[length:var(--text-2xs)] text-[var(--color-danger)]">diff: {diffState.error}</div>
           ) : !diffState.diff ? (
-            <div className="py-1 text-[10px] text-[var(--text-muted)]">
+            <div className="py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               No textual diff (binary file or staged-only state).
             </div>
           ) : (
             <>
               <div className="max-h-80 overflow-auto">
-                <SyntaxBlock text={diffState.diff} lang="diff" className="text-[11px]" />
+                <SyntaxBlock text={diffState.diff} lang="diff" className="text-[length:var(--text-xs)]" />
               </div>
               {diffState.truncated ? (
-                <div className="pt-1 text-[10px] text-[var(--text-muted)]">
+                <div className="pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   Diff truncated at 200KB.
                 </div>
               ) : null}
@@ -302,17 +302,17 @@ function CheckpointRow({
   return (
     <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-2 py-1.5">
       <Icon name="ph:archive" width={11} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
-      <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-secondary)]" title={cp.name}>
+      <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]" title={cp.name}>
         {label}
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(cp.bytes)}</span>
+      <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{formatBytes(cp.bytes)}</span>
       {confirmRestore ? (
         <span className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Confirm checkpoint restore">
-          <span className="text-[10px] font-medium text-[var(--text-secondary)]">Restore?</span>
+          <span className="text-[length:var(--text-2xs)] font-medium text-[var(--text-secondary)]">Restore?</span>
           <button
             type="button"
             onClick={() => setConfirmRestore(false)}
-            className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
           >
             Cancel
           </button>
@@ -324,7 +324,7 @@ function CheckpointRow({
               onRestore();
             }}
             aria-label={`Confirm restore checkpoint ${label}`}
-            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
+            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
           >
             <Icon name="ph:arrow-counter-clockwise" width={10} aria-hidden />
             {busy ? "…" : "Restore"}
@@ -378,7 +378,7 @@ function CheckpointSection({
         type="button"
         onClick={onToggleOpen}
         aria-expanded={open}
-        className="focus-ring flex w-full items-center gap-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
+        className="focus-ring flex w-full items-center gap-1.5 text-left text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
       >
         <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden />
         Checkpoints
@@ -395,7 +395,7 @@ function CheckpointSection({
               onDelete={() => onDelete(cp.name)}
             />
           ))}
-          <p className="px-0.5 pt-0.5 text-[10px] text-[var(--text-muted)]">
+          <p className="px-0.5 pt-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             Restoring applies a saved snapshot over the working tree (3-way merge).
           </p>
         </div>
@@ -814,22 +814,22 @@ export function SessionChangesInner({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              <span className="shrink-0 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                 Worktree
               </span>
               {loaded && !notARepo && !error ? (
-                <span className="inline-flex h-4 shrink-0 items-center rounded border border-[var(--border-hairline)] px-1.5 font-mono text-[9.5px] text-[var(--text-muted)]">
+                <span className="inline-flex h-4 shrink-0 items-center rounded border border-[var(--border-hairline)] px-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   {files.length}
                 </span>
               ) : null}
               {loaded && !notARepo && !error && totalInsertions + totalDeletions > 0 ? (
-                <span className="min-w-0 truncate font-mono text-[10px]">
+                <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)]">
                   <span className="text-[var(--accent-presence)]">+{totalInsertions}</span>{" "}
                   <span className="text-[var(--color-danger)]">−{totalDeletions}</span>
                 </span>
               ) : null}
             </div>
-            <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]" title={repoRoot ?? projectRoot}>
+            <p className="mt-0.5 truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={repoRoot ?? projectRoot}>
               {notARepo
                 ? <>No git working tree at {repoRoot ?? projectRoot}.</>
                 : <>All uncommitted changes in {repoRoot ?? projectRoot} — not only this session&rsquo;s edits.</>}
@@ -877,7 +877,7 @@ export function SessionChangesInner({
         {error && (
           <div
             role="alert"
-            className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--color-danger)]"
+            className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
@@ -897,7 +897,7 @@ export function SessionChangesInner({
 
         {/* Transient action failures are dismissable */}
         {checkpointMessage && (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
             <span className="min-w-0 truncate" title={checkpointMessage}>{checkpointMessage}</span>
             <IconButton
               icon="ph:x-bold"
@@ -912,7 +912,7 @@ export function SessionChangesInner({
         {actionError && (
           <div
             role="alert"
-            className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--color-danger)]"
+            className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
@@ -933,7 +933,7 @@ export function SessionChangesInner({
         {!loaded && !error ? (
           <ChangesSkeleton />
         ) : notARepo ? (
-          <div className="px-2 py-6 text-center text-[11px] text-[var(--text-muted)]">
+          <div className="px-2 py-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <p className="font-medium text-[var(--text-secondary)]">Not a git repository.</p>
             <p className="mt-1">
               This session&rsquo;s project root isn&rsquo;t under git, so there&rsquo;s no working
@@ -941,19 +941,19 @@ export function SessionChangesInner({
             </p>
           </div>
         ) : loaded && !error && files.length === 0 ? (
-          <div className="px-2 py-6 text-center text-[11px] text-[var(--text-muted)]">
+          <div className="px-2 py-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <p className="font-medium text-[var(--text-secondary)]">No uncommitted changes.</p>
             <p className="mt-1">Edits the agent makes to this project will show up here.</p>
           </div>
         ) : (
           <div className="session-changes-table-wrap overflow-hidden rounded-md border border-[var(--border-hairline)]">
-            <table className="session-changes-table w-full table-fixed border-collapse text-[11px]">
+            <table className="session-changes-table w-full table-fixed border-collapse text-[length:var(--text-xs)]">
               <colgroup>
                 <col />
                 <col className="w-[70px]" />
-                <col className="w-[32px]" />
+                <col className="w-[var(--space-8)]" />
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-[var(--bg-base)] text-[9.5px] uppercase tracking-wider text-[var(--text-muted)]">
+              <thead className="sticky top-0 z-10 bg-[var(--bg-base)] text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
                 <tr className="border-b border-[var(--border-hairline)]">
                   <th scope="col" className="px-2 py-1.5 text-left font-medium">
                     File
@@ -1000,7 +1000,7 @@ export function SessionChangesInner({
       {loaded && !notARepo && !error ? (
         <div className="session-changes-panel__commit shrink-0 space-y-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
           {prUrl ? (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
+            <div className="flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
               <span className="flex min-w-0 items-center gap-1.5">
                 <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
                 <span className="min-w-0 truncate">Pull request opened.</span>
@@ -1016,7 +1016,7 @@ export function SessionChangesInner({
           ) : null}
 
           {postCommit ? (
-            <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
+            <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
@@ -1053,7 +1053,7 @@ export function SessionChangesInner({
                 onChange={(e) => setPrTitle(e.target.value)}
                 placeholder="Pull request title"
                 aria-label="Pull request title"
-                className="focus-ring w-full rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
+                className="focus-ring w-full rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)]"
               />
               <textarea
                 value={prBody}
@@ -1061,7 +1061,7 @@ export function SessionChangesInner({
                 placeholder="Description (optional)"
                 aria-label="Pull request description"
                 rows={3}
-                className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
+                className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)]"
               />
               <div className="flex items-center gap-1.5">
                 <Button
@@ -1095,7 +1095,7 @@ export function SessionChangesInner({
                 placeholder={canCommit ? "Commit message" : "No changes to commit"}
                 aria-label="Commit message"
                 disabled={!canCommit || committing}
-                className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)] disabled:opacity-40"
+                className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] disabled:opacity-40"
               />
               <Button
                 variant="primary"
@@ -1131,7 +1131,7 @@ export function SessionChangesPanel({
   const projectRoot = snapshot.session?.project_root ?? null;
   if (!projectRoot) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-[11px] text-[var(--text-muted)]">
+      <div className="flex h-full items-center justify-center p-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Open a chat session to review its working tree changes.
       </div>
     );

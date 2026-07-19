@@ -644,17 +644,17 @@ export function UpdateSettingsRow() {
   };
 
   const accentBtn =
-    "rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90";
+    "rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90";
   const secondaryBtn =
-    "rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
   let control: ReactNode;
   if (state.phase === "checking") {
-    control = <span className="text-[12px] text-[var(--text-muted)]">Checking…</span>;
+    control = <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Checking…</span>;
   } else if (state.phase === "preparing") {
     control = (
       <>
-        <span className="text-[12px] text-[var(--text-muted)]">
+        <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
           {state.stage === "verifying" ? "Verifying signature…" : `Downloading… ${state.pct}%`}
         </span>
         <Button
@@ -669,14 +669,14 @@ export function UpdateSettingsRow() {
     );
   } else if (state.phase === "cancelling") {
     control = (
-      <span className="text-[12px] text-[var(--text-muted)]">
+      <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
         Cancelling after verification…
       </span>
     );
   } else if (state.phase === "prepared") {
     control = (
       <>
-        <span className="text-[12px] font-medium text-[var(--text-primary)]">
+        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           v{state.version} verified
         </span>
         <Button
@@ -691,16 +691,20 @@ export function UpdateSettingsRow() {
       </>
     );
   } else if (state.phase === "installing") {
+<<<<<<< Updated upstream
     control = (
       <span className="text-[12px] font-medium text-[var(--text-primary)]">
         Updating daemon &amp; installing…
       </span>
     );
+=======
+    control = <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Installing…</span>;
+>>>>>>> Stashed changes
   } else if (state.phase === "available") {
     const r = state.r; // narrowed to native | fallback
     control = (
       <>
-        <span className="text-[12px] font-medium text-[var(--text-primary)]">v{r.version} available</span>
+        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">v{r.version} available</span>
         {r.kind === "native" ? (
           <Button variant="primary" size="xs" onClick={() => prepare(r.update, r.version)} className={accentBtn} leadingIcon="ph:arrow-down-bold">
             Download update
@@ -717,7 +721,7 @@ export function UpdateSettingsRow() {
     control = (
       <>
         <span
-          className="text-[12px] font-medium text-[var(--color-danger)]"
+          className="text-[length:var(--text-sm)] font-medium text-[var(--color-danger)]"
           title={r.message}
         >
           Native updater unavailable
@@ -742,7 +746,7 @@ export function UpdateSettingsRow() {
     control = (
       <>
         <span
-          className="text-[12px] font-medium text-[var(--color-danger)]"
+          className="text-[length:var(--text-sm)] font-medium text-[var(--color-danger)]"
           title={state.message}
         >
           Update failed
@@ -771,11 +775,11 @@ export function UpdateSettingsRow() {
     // verify anything, so don't claim currency (cave-lsk4).
     control = (
       <>
-        <span className="text-[12px] text-[var(--color-warning)]" title={state.message}>
+        <span className="text-[length:var(--text-sm)] text-[var(--color-warning)]" title={state.message}>
           Couldn&apos;t check — you may be offline
         </span>
         {state.stale ? (
-          <span className="text-[11px] text-[var(--text-muted)]">
+          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             Last known {state.stale.kind === "current" ? "current" : `v${state.stale.version} available`} · {relativeTime(state.stale.checkedAt)}
           </span>
         ) : null}
@@ -792,7 +796,7 @@ export function UpdateSettingsRow() {
   } else {
     control = (
       <>
-        <span className="text-[12px] text-[var(--text-muted)]" title={state.checkedAt}>
+        <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]" title={state.checkedAt}>
           Up to date · confirmed {relativeTime(state.checkedAt)}
         </span>
         <Button
@@ -809,7 +813,7 @@ export function UpdateSettingsRow() {
 
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-[12px] text-[var(--text-secondary)]">Updates</span>
+      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
       <div className="flex items-center gap-2">{control}</div>
     </div>
   );

@@ -499,15 +499,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           type="button"
           onClick={() => setShowUnscheduled((v) => !v)}
           aria-expanded={showUnscheduled}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "inherit", cursor: "pointer", font: "inherit" }}
+          className="[display:inline-flex]! [align-items:center]! [gap:6px]! [background:none]! [border:none]! [color:inherit]! [cursor:pointer]! [font:inherit]!"
         >
           <span aria-hidden>{showUnscheduled ? "▾" : "▸"}</span>
           {unscheduledCount} task{unscheduledCount === 1 ? "" : "s"} {groupMode === "task" ? "without scheduled steps" : "without dates"}
         </button>
         {showUnscheduled ? (
-          <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+          <ul className="[list-style:none]! [margin:6px_0_0]! [padding:0]! [display:flex]! [flex-direction:column]! [gap:var(--space-1)]!">
             {unscheduledCards.map((c) => (
-              <li key={c.id} data-card-id={c.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <li key={c.id} data-card-id={c.id} className="[display:flex]! [flex-wrap:wrap]! [align-items:center]! [gap:var(--space-2)]!">
                 <button
                   type="button"
                   draggable={!!onPatch}
@@ -517,14 +517,14 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   title={onPatch ? "Open task · drag onto the timeline to schedule" : "Open task"}
                   style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: onPatch ? "grab" : "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >{c.title}</button>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{ownerName(c.familiarId)}</span>
+                <span className="[font-size:var(--text-xs)]! [color:var(--text-muted)]!">{ownerName(c.familiarId)}</span>
                 {onPatch ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span className="[display:inline-flex]! [align-items:center]! [gap:6px]! [flex-wrap:wrap]!">
                     <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 0)} title="Schedule Mon–Sun this week">This week</button>
                     <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 1)} title="Schedule Mon–Sun next week">Next week</button>
-                    <input type="date" aria-label={`Start date for ${c.title}`} value={c.startDate ?? ""} onChange={(e) => onPatch(c.id, { startDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
-                    <span aria-hidden style={{ color: "var(--text-muted)" }}>→</span>
-                    <input type="date" aria-label={`End date for ${c.title}`} value={c.endDate ?? ""} onChange={(e) => onPatch(c.id, { endDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
+                    <input type="date" aria-label={`Start date for ${c.title}`} value={c.startDate ?? ""} onChange={(e) => onPatch(c.id, { startDate: e.target.value || null })} className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!" />
+                    <span aria-hidden className="[color:var(--text-muted)]!">→</span>
+                    <input type="date" aria-label={`End date for ${c.title}`} value={c.endDate ?? ""} onChange={(e) => onPatch(c.id, { endDate: e.target.value || null })} className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!" />
                   </span>
                 ) : null}
               </li>
@@ -639,7 +639,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
 
   return (
     <div className="board-gantt">
-      <div className="cg-controls" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", padding: "2px 8px 6px" }}>
+      <div className="cg-controls [display:flex]! [gap:var(--space-2)]! [align-items:center]! [justify-content:flex-end]! [flex-wrap:wrap]! [padding:2px_var(--space-2)_6px]!">
         <div className="cg-filter" role="group" aria-label="Filter by status">
           {CATEGORY_CHIPS.map(([cat, label, full]) => {
             const off = hiddenCats.has(cat);

@@ -151,7 +151,7 @@ export function Tabs<T extends string>({
             {t.icon ? <Icon name={t.icon} width={sm ? 12 : 13} aria-hidden /> : null}
             <span className="cv-tab-label truncate">{t.label}</span>
             {typeof t.count === "number" ? (
-              <span className="cv-tab-count text-[10px] tabular-nums opacity-70">
+              <span className="cv-tab-count text-[length:var(--text-2xs)] tabular-nums opacity-70">
                 {t.count}
               </span>
             ) : null}
@@ -165,7 +165,7 @@ export function Tabs<T extends string>({
 function horizontalTabClass(isActive: boolean, fill: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none",
-    sm ? "px-2.5 py-1.5 text-[11px]" : "px-3 py-2.5 text-[12px]",
+    sm ? "px-2.5 py-1.5 text-[length:var(--text-xs)]" : "px-3 py-2.5 text-[length:var(--text-sm)]",
     "font-medium transition-colors",
     fill ? "flex-1 justify-center min-w-0" : "",
     // 2px underline bar that sits flush on the tablist divider; faint preview
@@ -181,7 +181,7 @@ function horizontalTabClass(isActive: boolean, fill: boolean, sm: boolean): stri
 function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-2 text-left outline-none",
-    sm ? "px-2 py-1.5 text-[11px]" : "px-3 py-2 text-[12px]",
+    sm ? "px-2 py-1.5 text-[length:var(--text-xs)]" : "px-3 py-2 text-[length:var(--text-sm)]",
     "font-medium transition-colors border-l-2",
     isActive
       ? "text-[var(--text-primary)] border-[var(--cv-tab-accent,var(--accent-presence))]"
@@ -194,7 +194,7 @@ function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: 
 function segmentTabClass(isActive: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none rounded-md",
-    sm ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[12px]",
+    sm ? "px-2.5 py-1 text-[length:var(--text-xs)]" : "px-3 py-1.5 text-[length:var(--text-sm)]",
     // Every tab carries a transparent border so selecting one (which colours
     // the border) never shifts layout.
     "font-medium transition-colors border border-transparent",
