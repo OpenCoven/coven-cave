@@ -1141,6 +1141,30 @@ try {
     );
   }
 
+  // A transient failure while writing the owner record leaves the retained
+  // candidate directory behind. Retrying must reuse that directory rather
+  // than treating its next mkdir as external lock contention until timeout.
+  {
+    const { cave } = await home("candidate-owner-write-eperm");
+    await mkdir(cave, { recursive: true });
+    let ownerWriteAttempts = 0;
+    const candidates = new Set<string>();
+    const transientOwnerWrite = async (candidate: string, owner: unknown) => {
+      ownerWriteAttempts += 1;
+      candidates.add(candidate);
+      if (ownerWriteAttempts === 1) {
+        const error = new Error("injected Windows candidate owner write failure") as NodeJS.ErrnoException;
+        error.code = "EPERM";
+        throw error;
+      }
+      await writeFile(path.join(candidate, "owner.json"), JSON.stringify(owner));
+    };
+    const result = await migrateCaveHome({ lockCandidateOwnerWrite: transientOwnerWrite });
+    assert.deepEqual(result.errors, []);
+    assert.equal(ownerWriteAttempts, 2, "candidate owner write retries after transient EPERM");
+    assert.equal(candidates.size, 1, "candidate owner write reuses the retained directory");
+  }
+
   // Persistent Windows EPERM while publishing a candidate is retryable but
   // bounded. No lock is published and no candidate debris survives timeout.
   {

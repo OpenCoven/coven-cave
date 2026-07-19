@@ -116,6 +116,8 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only unlock rename override. */
   lockReleaseRename?: typeof rename;
+  /** Test-only candidate owner-record writer override. */
+  lockCandidateOwnerWrite?: (candidate: string, owner: { pid: number; token: string; startedAt: string }) => Promise<void>;
   /** Test-only candidate publication rename override. */
   lockCandidateRename?: typeof rename;
   /** Test-only stale-lock fencing rename override. */
@@ -536,8 +538,17 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
     }
     try {
       if (!candidatePrepared) {
-        await mkdir(candidate);
-        await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
+        try {
+          await mkdir(candidate);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        const owner = { pid: process.pid, token, startedAt: nowIso() };
+        if (options.lockCandidateOwnerWrite) {
+          await options.lockCandidateOwnerWrite(candidate, owner);
+        } else {
+          await writeJsonAtomic(path.join(candidate, "owner.json"), owner);
+        }
         candidatePrepared = true;
       }
       await renameLockCandidate(candidate, lock, options.lockCandidateRename);
