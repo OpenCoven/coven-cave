@@ -264,13 +264,15 @@ final class ChatThread: Identifiable, Hashable {
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0
         var sawDone = false
+        let coalescer = StreamCoalescer()
         do {
             for try await frame in client.sendStream(body) {
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
-                      sawDone: &sawDone, onChange: onChange)
+                      sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                 if let id = frame.id { cursor = id }
             }
+            flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.streaming = false }
         } catch {
             // Transport interruption (network handoff, backgrounding, desktop
@@ -279,9 +281,10 @@ final class ChatThread: Identifiable, Hashable {
             // (cave-h40l). Only when no resumable run exists (finished long
             // ago / server restarted) fall back to adopting the persisted
             // transcript.
+            flush(coalescer, into: messageId, onChange: onChange)
             let resumed = await resumeInterruptedStream(runId: runId, cursor: cursor,
                                                         into: messageId, familiarId: familiarId,
-                                                        sawDone: &sawDone,
+                                                        sawDone: &sawDone, coalescer: coalescer,
                                                         client: client, onChange: onChange)
             var recovered = resumed
             if !recovered {
@@ -313,18 +316,29 @@ final class ChatThread: Identifiable, Hashable {
     /// Apply one stream event to the thread — shared by the original send
     /// stream and the mid-turn resume stream so both render identically.
     private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
-                       sawDone: inout Bool, onChange: @escaping () -> Void) {
+                       sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
         switch event {
         case .session(let sid):
             if !sid.isEmpty { sessionIds[familiarId] = sid }
         case .assistantChunk(let chunk):
-            mutate(messageId) { $0.text += chunk }
-            onChange()
+            // Coalesce tokens: buffer chunk text and flush to the message on a
+            // short cadence instead of mutating the (observed) messages array +
+            // firing onChange() on EVERY token. A fast stream can emit tokens
+            // faster than a frame, and each mutate reassigns messages[idx] on an
+            // @Observable class — invalidating the whole list — so per-token
+            // updates caused a render/scroll storm. Coalescing flushes at most
+            // ~every 50ms while keeping streaming visibly live.
+            coalescer.append(chunk) { [weak self] in
+                guard let self else { return }
+                self.flush(coalescer, into: messageId, onChange: onChange)
+            }
         case .done(let isError, let sid):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
+            flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
             sawDone = true
         case .error(let message):
+            flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) {
                 if $0.text.isEmpty { $0.text = message }
                 $0.isError = true; $0.streaming = false
@@ -334,6 +348,16 @@ final class ChatThread: Identifiable, Hashable {
         }
     }
 
+    /// Drain any buffered stream text into the message and notify observers.
+    /// Idempotent: a no-op when the buffer is empty, so terminal paths can call
+    /// it unconditionally.
+    private func flush(_ coalescer: StreamCoalescer, into messageId: String,
+                       onChange: @escaping () -> Void) {
+        guard let pending = coalescer.drain() else { return }
+        mutate(messageId) { $0.text += pending }
+        onChange()
+    }
+
     /// Re-attach to the still-live run after a transport drop: replay past
     /// the cursor, then tail live until the turn ends. A few short-backoff
     /// attempts ride out the network still settling (Wi-Fi handoff, tunnel
@@ -341,6 +365,7 @@ final class ChatThread: Identifiable, Hashable {
     /// falls back to the post-hoc transcript resync.
     private func resumeInterruptedStream(runId: String, cursor: Int, into messageId: String,
                                          familiarId: String, sawDone: inout Bool,
+                                         coalescer: StreamCoalescer,
                                          client: CaveClient, onChange: @escaping () -> Void) async -> Bool {
         var nextCursor = cursor
         for attempt in 0..<3 {
@@ -350,9 +375,10 @@ final class ChatThread: Identifiable, Hashable {
             do {
                 for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
                     apply(frame.event, into: messageId, familiarId: familiarId,
-                          sawDone: &sawDone, onChange: onChange)
+                          sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                     if let id = frame.id { nextCursor = id }
                 }
+                flush(coalescer, into: messageId, onChange: onChange)
                 // The resume stream closes when the run finishes. Without a
                 // done event the run may still be live (our tail dropped
                 // again) — retry from the advanced cursor.
@@ -361,10 +387,12 @@ final class ChatThread: Identifiable, Hashable {
                     return true
                 }
             } catch is CaveClient.NoResumableRun {
+                flush(coalescer, into: messageId, onChange: onChange)
                 // Nothing buffered under that run — turn ended long ago or
                 // the server restarted. Post-hoc resync owns recovery.
                 return false
             } catch {
+                flush(coalescer, into: messageId, onChange: onChange)
                 // Transport still flaky — back off and retry from the cursor.
             }
         }
@@ -454,4 +482,47 @@ final class ChatThread: Identifiable, Hashable {
         body(&message)
         messages[idx] = message
     }
+}
+
+/// Buffers assistant stream chunks so the UI updates on a short cadence rather
+/// than once per token. Each `ChatThread` mutation of the observed `messages`
+/// array invalidates the whole message list, so flushing per token turned a
+/// fast stream into a render/scroll storm. This accumulates text and reports
+/// `shouldFlush()` at most ~every 50ms; terminal stream events drain it
+/// unconditionally so the final text is always complete.
+@MainActor
+final class StreamCoalescer {
+    private var buffer = ""
+    private var flushTask: Task<Void, Never>?
+    /// Max time text may sit buffered before the next flush. 50ms keeps the
+    /// stream visibly live (~20 updates/sec) while collapsing token bursts.
+    private let interval: Duration = .milliseconds(50)
+
+    /// Start one delayed flush for a burst. Scheduling rather than checking
+    /// elapsed time only when a new chunk arrives also drains the final chunk
+    /// when a stream pauses without immediately ending.
+    func append(_ chunk: String, onFlushDue: @escaping @MainActor () -> Void) {
+        buffer += chunk
+        guard flushTask == nil else { return }
+        flushTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: self.interval)
+            guard !Task.isCancelled else { return }
+            self.flushTask = nil
+            onFlushDue()
+        }
+    }
+
+    /// Returns and clears the buffered text (nil when empty), and resets the
+    /// flush clock.
+    func drain() -> String? {
+        flushTask?.cancel()
+        flushTask = nil
+        guard !buffer.isEmpty else { return nil }
+        let pending = buffer
+        buffer = ""
+        return pending
+    }
+
+    deinit { flushTask?.cancel() }
 }
