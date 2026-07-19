@@ -87,10 +87,10 @@ jobs:
       # twice, merge deadlocked; cave-mq1f). Keep polling until the analysis
       # actually lands, and fail LOUDLY otherwise so a job re-run can heal it.
       - name: Require SARIF processing to complete
-        if: steps.analyze.outputs.sarif-id != ''
+        if: ${{ steps.analyze.outputs['sarif-id'] != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
+          SARIF_ID: ${{ steps.analyze.outputs['sarif-id'] }}
         run: |
           set -euo pipefail
           for i in $(seq 1 32); do
