@@ -4,16 +4,44 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./api-security.ts", import.meta.url), "utf8");
 
-assert.match(source, /MOBILE_ACCESS_HEADER/, "shared local guard should know about mobile proxy marker");
+// The desktop-only policy (mobile marker, sidecar token, loopback Host) lives
+// in the shared isLocalOrigin gate (see local-origin.ts, behaviorally covered
+// by local-origin.test.ts). api-security must DELEGATE to that gate rather than
+// re-implement the checks, so the security policy can't drift across two files.
 assert.match(
   source,
-  /req\.headers\.get\(MOBILE_ACCESS_HEADER\) === "1"[\s\S]*?status:\s*403/,
-  "mobile-authenticated requests must be rejected even with loopback-looking Host headers",
+  /import \{ isLocalOrigin \} from "\.\/local-origin"/,
+  "rejectNonLocalRequest should delegate the desktop-only policy to the shared isLocalOrigin gate",
 );
-assert.match(source, /COVEN_CAVE_AUTH_TOKEN/, "packaged sidecar auth token should be enforced when configured");
-assert.match(source, /timingSafeEqualString/, "sidecar token comparison should use timing-safe equality");
-assert.match(source, /TOKEN_HEADER/, "sidecar token should be read from the first-party token header");
-assert.match(source, /const host = req\.headers\.get\("host"\)/, "loopback Host check is still preserved");
-assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "loopback Origin check is still preserved");
+assert.match(
+  source,
+  /if \(!isLocalOrigin\(req\)\) \{[\s\S]*?status:\s*403/,
+  "a request that fails the shared local-origin gate must be rejected with 403",
+);
+
+// The duplicated sidecar-token machinery must NOT be re-implemented here.
+assert.doesNotMatch(
+  source,
+  /timingSafeEqualString/,
+  "api-security must not re-implement the timing-safe sidecar-token comparison",
+);
+assert.doesNotMatch(
+  source,
+  /COVEN_CAVE_AUTH_TOKEN/,
+  "api-security must not read the sidecar token directly (single source of truth in local-origin)",
+);
+assert.doesNotMatch(
+  source,
+  /MOBILE_ACCESS_HEADER/,
+  "api-security must not re-check the mobile proxy marker (delegated to isLocalOrigin)",
+);
+
+// This route family still layers its stricter cross-origin Origin-header check
+// on top of the shared gate.
+assert.match(
+  source,
+  /const origin = req\.headers\.get\("origin"\)/,
+  "cross-origin Origin check is preserved on top of the shared gate",
+);
 
 console.log("api-security.test.ts: ok");

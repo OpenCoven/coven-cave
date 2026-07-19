@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { MOBILE_ACCESS_HEADER, TOKEN_HEADER, timingSafeEqualString } from "../../proxy-helpers.ts";
+import { isLocalOrigin } from "./local-origin";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
@@ -19,20 +19,11 @@ function isLocalHost(value: string | null): boolean {
 }
 
 export function rejectNonLocalRequest(req: Request): NextResponse | null {
-  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  }
-
-  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
-  if (
-    sidecarToken &&
-    !timingSafeEqualString(req.headers.get(TOKEN_HEADER) ?? "", sidecarToken)
-  ) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  }
-
-  const host = req.headers.get("host");
-  if (!isLocalHost(host)) {
+  // Delegate the mobile-proxy marker, packaged sidecar-token, and loopback-Host
+  // checks to the shared isLocalOrigin gate so the desktop-only security policy
+  // lives in exactly one place (see local-origin.ts). We then layer this
+  // route family's stricter Origin-header parsing on top.
+  if (!isLocalOrigin(req)) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
