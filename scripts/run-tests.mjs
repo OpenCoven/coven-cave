@@ -874,6 +874,7 @@ export const SUITES = {
     "src/lib/harness-adapters.test.ts",
     "src/lib/copilot-stream.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
+    "src/app/api/board/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/chat/send/harness-routing.test.ts",
