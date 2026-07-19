@@ -9,8 +9,6 @@ import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/p
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = rejectNonLocalRequest(req);
-  if (denied) return denied;
   await seedDefaultProjectsIfEmpty();
   const projects = await loadProjects();
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || null;

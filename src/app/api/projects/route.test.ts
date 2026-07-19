@@ -22,11 +22,15 @@ assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects s
 assert.match(listRoute, /root must be inside an allowed workspace/, "POST /api/projects should reject unsafe roots");
 assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should require existing directory roots before persisting them");
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
-assert.match(listRoute, /rejectNonLocalRequest\(req\)/, "projects route must reject non-loopback requests before touching project state");
 assert.match(
   listRoute,
-  /rejectNonLocalRequest[\s\S]*export async function POST/,
-  "POST /api/projects must enforce loopback before registering $HOME-scoped roots",
+  /export async function POST\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest\(req\);/,
+  "POST /api/projects must enforce loopback before registering \$HOME-scoped roots",
+);
+assert.doesNotMatch(
+  listRoute,
+  /export async function GET\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest/,
+  "GET /api/projects stays reachable over the tailnet like its read-only siblings (familiars/board/sessions)",
 );
 
 assert.match(itemRoute, /export async function PUT/, "project item route should expose PUT");
