@@ -77,13 +77,8 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /Project actions for \$\{label\}/,
-  "ChatSidebar project actions should be labeled for assistive tech",
-);
-assert.match(
-  workspaceSidebar,
-  /label: "Register project"/,
-  "ChatSidebar should keep the register-project action for unregistered roots",
+  /Register \$\{label\} as a project/,
+  "ChatSidebar register affordance should be labeled for assistive tech",
 );
 
 // ── Easy add-project on failure: a 403 project-access denial surfaces a
