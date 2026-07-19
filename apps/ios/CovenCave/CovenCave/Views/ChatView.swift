@@ -278,6 +278,7 @@ struct ChatView: View {
                                       onReply: { beginReply($0) },
                                       operatorName: app.operatorDisplayName,
                                       operatorAvatarURL: app.operatorAvatarURL)
+                        .equatable()
                         .id(message.id)
                         // New bubbles settle in with a soft rise-and-fade
                         // (native Messages behaviour) instead of popping;

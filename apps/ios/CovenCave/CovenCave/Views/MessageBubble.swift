@@ -458,3 +458,29 @@ struct SuggestionPills: View {
         .padding(.top, 6)
     }
 }
+
+// Skip re-rendering a bubble when its render-affecting inputs are unchanged.
+// ChatView's composer keeps `draft` in the same view body as the message list,
+// so every keystroke invalidates ChatView.body and would otherwise re-diff
+// every bubble (each hosts a WKWebView) — the cause of slow typing on long
+// threads. Closures are excluded (they capture fresh state each render but
+// don't change what's drawn); optional-action closures are compared by presence
+// since that toggles which buttons appear. Environment values and the complete
+// familiar model are included because they directly control colours, markdown
+// styling, and the familiar attribution row.
+extension MessageBubble: Equatable {
+    static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message
+            && lhs.isGroup == rhs.isGroup
+            && lhs.familiar == rhs.familiar
+            && lhs.isLast == rhs.isLast
+            && lhs.operatorName == rhs.operatorName
+            && lhs.operatorAvatarURL == rhs.operatorAvatarURL
+            && lhs.colorScheme == rhs.colorScheme
+            && lhs.chrome == rhs.chrome
+            && (lhs.onRetry == nil) == (rhs.onRetry == nil)
+            && (lhs.onReply == nil) == (rhs.onReply == nil)
+            && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
+            && (lhs.onForward == nil) == (rhs.onForward == nil)
+    }
+}
