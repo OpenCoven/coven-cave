@@ -1147,8 +1147,10 @@ try {
     const { cave } = await home("candidate-eperm-timeout");
     await mkdir(cave, { recursive: true });
     let renameAttempts = 0;
-    const epermRename = async () => {
+    const candidates = new Set<string>();
+    const epermRename = async (candidate: string) => {
       renameAttempts += 1;
+      candidates.add(candidate);
       const error = new Error("injected Windows candidate failure") as NodeJS.ErrnoException;
       error.code = "EPERM";
       throw error;
@@ -1158,6 +1160,7 @@ try {
       (error) => error?.code === "ETIMEDOUT",
     );
     assert.ok(renameAttempts >= 2, "candidate publication retries until the deadline");
+    assert.equal(candidates.size, 1, "candidate publication reuses one directory for every retry");
     assert.equal(
       (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
       false,

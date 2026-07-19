@@ -4,7 +4,8 @@ export type DaemonAvailability =
   | "unreachable"
   | "unhealthy"
   | "unauthorized"
-  | "misconfigured";
+  | "misconfigured"
+  | "status-unavailable";
 
 export type DaemonTargetMode = "local" | "hub" | "unconfigured-hub";
 
@@ -15,6 +16,7 @@ const AVAILABILITY_VALUES = new Set<DaemonAvailability>([
   "unhealthy",
   "unauthorized",
   "misconfigured",
+  "status-unavailable",
 ]);
 
 export function classifyDaemonFailureAvailability(input: {
