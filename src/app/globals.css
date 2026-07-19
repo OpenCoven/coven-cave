@@ -82,6 +82,10 @@
      by several components while undefined, which computed to transparent
      (cave-fdt5). */
   --bg-subtle: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  /* Recessed wells (sticky strips, modal inputs) — one visible step below
+     base. Referenced while undefined (cave-309m); derived from --bg-base so
+     every theme tracks. Light mode overrides below. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
   --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */
   --bg-hover: oklch(0.24 0.030 293);        /* hover state */
   --border-hairline: var(--border);
@@ -185,6 +189,15 @@
   --color-danger: oklch(0.74 0.18 24);
   --color-danger-soft: oklch(0.82 0.08 24);
   --color-info: var(--accent-presence);
+  /* Inline danger-alert vocabulary (craft dossier, marketplace, skill
+     builder) — the design-language tint recipe applied to one solid token:
+     14% fill, 38% border, solid text. Referenced while undefined
+     (cave-309m), which computed to transparent fills and inherited text;
+     mixes derive from --color-danger so the light-mode override and all
+     themes track automatically. */
+  --danger-text: var(--color-danger);
+  --danger-bg: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  --danger-border: color-mix(in oklch, var(--color-danger) 38%, transparent);
 
   /* ---- Icon sizes ----
      Replaces ad-hoc width={N} props. Consumers default to --icon-sm
@@ -301,6 +314,9 @@
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.93 0.016 293);
   --bg-hover: oklch(0.89 0.020 293);
+  /* Lighter mix step than dark mode — light surfaces need less push to
+     read as recessed. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 96%, black);
 
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
