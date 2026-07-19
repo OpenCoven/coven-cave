@@ -878,8 +878,7 @@ export function CommandPalette({
       // press to the control underneath (click-through) — see its definition.
       onPointerDown={onScrimPointerDown}
       role="presentation"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)]!"
     >
       <div
         ref={dialogRef}
@@ -890,8 +889,7 @@ export function CommandPalette({
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
-        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl"
-        style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
+        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
       >
         <div className="flex items-center border-b border-[var(--border-hairline)]">
           <input
@@ -936,7 +934,7 @@ export function CommandPalette({
               <button
                 key={recent}
                 type="button"
-                className="focus-ring shrink-0 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                className="focus-ring shrink-0 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 onClick={() => {
                   updateQuery(recent);
                   setActiveIdx(0);
@@ -948,7 +946,7 @@ export function CommandPalette({
             ))}
             <button
               type="button"
-              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               aria-label="Clear recent searches"
               onClick={() => {
                 clearRecentSearches(window.localStorage);
@@ -1026,7 +1024,7 @@ export function CommandPalette({
               key={option}
               type="button"
               aria-pressed={category === option}
-              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[length:var(--text-2xs)] font-medium transition-colors ${
                 category === option
                   ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,var(--border-strong))] bg-[var(--accent-presence-soft)] text-[var(--text-primary)]"
                   : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -1086,7 +1084,7 @@ export function CommandPalette({
                 {showHeader ? (
                   <li
                     role="presentation"
-                    className="px-4 pb-1 pt-3 text-[10px] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
+                    className="px-4 pb-1 pt-3 text-[length:var(--text-2xs)] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
                   >
                     {group}
                   </li>
@@ -1111,11 +1109,11 @@ export function CommandPalette({
                     <>
                       <span className="flex flex-1 flex-col">
                         <span className="text-[var(--text-primary)]">{row.familiar.display_name}</span>
-                        <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+                        <span className="text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
                           {row.familiar.role}
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">switch</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">switch</span> : null}
                     </>
                   ) : null}
                   {row.kind === "session" ? (
@@ -1134,47 +1132,47 @@ export function CommandPalette({
                             {row.session.title || "(untitled chat)"}
                           </span>
                         </span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.familiar?.display_name ?? row.session.familiarId} ·{" "}
                           {row.session.harness}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{sessionAgo || "open"}</span>
+                      <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{sessionAgo || "open"}</span>
                     </>
                   ) : null}
                   {row.kind === "card" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.card.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.card.status} · {row.card.priority}
                           {row.familiar ? ` · ${row.familiar.display_name}` : ""}
                           {row.card.labels.length ? ` · ${row.card.labels.join(", ")}` : ""}
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">card</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">card</span> : null}
                     </>
                   ) : null}
                   {row.kind === "coven-memory" ? (                    <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.entry.familiar_id} · {row.entry.updated_at}
                           {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">memory</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">memory</span> : null}
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.relPath}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.entry.rootLabel}
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">file</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">file</span> : null}
                     </>
                   ) : null}
                   {row.kind === "setting" ? (
@@ -1185,18 +1183,18 @@ export function CommandPalette({
                           {settingsSectionLabel(row.entry.section)}
                           {row.entry.group ? ` › ${row.entry.group}` : ""}
                         </span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">open</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">open</span> : null}
                     </>
                   ) : null}
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
                       <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">run</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">run</span> : null}
                     </>
                   ) : null}
                   {row.kind === "shortcut" ? (
@@ -1210,11 +1208,11 @@ export function CommandPalette({
                       <Icon name="ph:plus-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Create task: {row.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           New task in Tasks, scoped to the active familiar
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">create</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">create</span> : null}
                     </>
                   ) : null}
                   {row.kind === "conversation-hit" ? (
@@ -1224,11 +1222,11 @@ export function CommandPalette({
                         <span className="truncate text-[var(--text-primary)]">
                           {row.hit.title || "(untitled chat)"}
                         </span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.hit.snippet}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                      <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         {row.hit.matchCount} match{row.hit.matchCount !== 1 ? "es" : ""}
                       </span>
                     </>
@@ -1238,11 +1236,11 @@ export function CommandPalette({
                       <Icon name="ph:sparkle-bold" className="text-[var(--accent-presence)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           Salem is the docs familiar — answers from the OpenCoven docs
                         </span>
                       </span>
-                      {active ? <span className="text-[10px] text-[var(--text-muted)]">ask</span> : null}
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">ask</span> : null}
                     </>
                   ) : null}
                 </button>
@@ -1251,7 +1249,7 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
               devices where there is no ⌘/esc to press (cave-4gg0). */}
           <span className="touch-hidden flex items-center gap-1">

@@ -49,7 +49,7 @@ function TabFavicon({ url, title, size = 20 }: { url: string; title: string; siz
   if (!src || failed) {
     return (
       <span
-        className="flex shrink-0 items-center justify-center rounded-[5px] text-[10px] font-semibold text-white"
+        className="flex shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[length:var(--text-2xs)] font-semibold text-white"
         style={{ width: size, height: size, background: color }}
       >
         {initial}
@@ -62,8 +62,7 @@ function TabFavicon({ url, title, size = 20 }: { url: string; title: string; siz
       alt=""
       width={size}
       height={size}
-      className="rounded-[5px] object-contain"
-      style={{ imageRendering: "auto" }}
+      className="rounded-[var(--radius-control)] object-contain [image-rendering:auto]!"
       onError={() => setFailed(true)}
     />
   );
@@ -891,7 +890,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   }, [toolbarOpen]);
 
   return (
-    <div ref={paneRef} onClick={handleChromeClick} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
+    <div ref={paneRef} onClick={handleChromeClick} className="browser-pane flex h-full flex-row [background:var(--bg-base)]!">
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
       {/* Collapsed by default to a 6px edge handle so the page gets the
          full viewport width; expands to 48px on hover or keyboard focus.
@@ -989,7 +988,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
               </span>
               {/* Label — only when rail is expanded; favicon-only when collapsed */}
               {railExpanded ? (
-                <span className="w-[44px] truncate text-center text-[10px] leading-tight">{title}</span>
+                <span className="w-[44px] truncate text-center text-[length:var(--text-2xs)] leading-tight">{title}</span>
               ) : null}
               {/* Close on hover */}
               {tabs.length > 1 && (
@@ -1022,7 +1021,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       {/* ── Main area (toolbar + viewport) ──────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* ── Viewport (full-pane webview target) + collapsible toolbar ── */}
-        <div className="relative min-h-0 flex-1 overflow-hidden" style={{ background: "var(--bg-base)" }}>
+        <div className="relative min-h-0 flex-1 overflow-hidden [background:var(--bg-base)]!">
           {/* Toolbar — absolute overlay that slides down when open. The page
               webview is hidden while it's open (see the bounds sync), so the
               DOM toolbar and the native overlay never fight for the same space. */}
@@ -1082,7 +1081,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
               onFocus={(e) => e.currentTarget.select()}
               aria-label="Address bar"
               placeholder="Search or enter address"
-              className="browser-address-input focus-ring-inset flex-1 rounded bg-transparent text-[12px] text-[var(--fg-base)]"
+              className="browser-address-input focus-ring-inset flex-1 rounded bg-transparent text-[length:var(--text-sm)] text-[var(--fg-base)]"
             />
           </form>
           {/* Home */}
@@ -1118,8 +1117,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         {loading && toolbarOpen && (
           <div className="absolute inset-x-0 top-10 z-30 h-0.5 overflow-hidden bg-[var(--bg-raised)]">
             <div
-              className="h-full animate-[browser-progress_1.4s_ease-in-out_infinite] bg-[var(--accent-presence)]"
-              style={{ width: "60%" }}
+              className="h-full animate-[browser-progress_1.4s_ease-in-out_infinite] bg-[var(--accent-presence)] [width:60%]!"
             />
           </div>
         )}
@@ -1144,7 +1142,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         )}
       </div>
       <footer
-        className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]"
+        className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[length:var(--text-2xs)] text-[var(--text-muted)]"
       >
         ⌘L address · ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload · [ pin rail
       </footer>

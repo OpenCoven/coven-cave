@@ -247,7 +247,7 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
                 type="button"
                 onClick={() => disconnectConfirm.trigger(() => void disconnect())}
                 disabled={disconnecting}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:text-[var(--color-danger)]"
+                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--color-danger)]"
               >
                 {disconnecting ? "Disconnecting…" : disconnectConfirm.armed ? "Really disconnect?" : "Disconnect Asana"}
               </button>

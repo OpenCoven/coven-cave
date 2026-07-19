@@ -260,7 +260,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<button[\s\S]{0,250}?onClick=\{\(\) => handleSortClick\(col\.key!\)\}/,
+  /<button[\s\S]{0,600}?onClick=\{\(\) => handleSortClick\(col\.key!\)\}/,
   "the sort control is a real keyboard-operable button",
 );
 

@@ -36,22 +36,21 @@ export function InlineAsanaPATSetup({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <div style={{ padding: "10px 10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+    <div className="[padding:10px_10px_var(--space-2)]! [display:flex]! [flex-direction:column]! [gap:var(--space-2)]!">
+      <div className="[display:flex]! [align-items:center]! [gap:6px]! [margin-bottom:2px]!">
         <Icon name="ph:check-circle" width={14} className="text-[var(--text-muted)]" />
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Connect Asana</span>
+        <span className="[font-size:var(--text-xs)]! [font-weight:600]! [color:var(--text-secondary)]!">Connect Asana</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>Personal Access Token</label>
+      <div className="[display:flex]! [flex-direction:column]! [gap:var(--space-1)]!">
+        <label className="[font-size:var(--text-2xs)]! [color:var(--text-muted)]! [font-weight:500]!">Personal Access Token</label>
         <input type="password" value={pat} onChange={(e) => setPat(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="1/1234…:abcd…"
-          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
-            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+          className="[background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [border-radius:6px]! [padding:5px_var(--space-2)]! [font-size:var(--text-xs)]! [color:var(--text-primary)]! [outline:none]! [width:100%]! [box-sizing:border-box]!" />
       </div>
-      {error && <p style={{ fontSize: 10, color: "var(--color-danger)", margin: 0 }}>{error}</p>}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+      {error && <p className="[font-size:var(--text-2xs)]! [color:var(--color-danger)]! [margin:0]!">{error}</p>}
+      <div className="[display:flex]! [align-items:center]! [justify-content:space-between]! [margin-top:2px]!">
         <button type="button" onClick={() => void openExternalUrl(ASANA_PAT_URL)}
-          style={{ background: "transparent", border: 0, padding: 0, fontSize: 10, color: "var(--accent-presence)", textDecoration: "none", cursor: "pointer" }}>
+          className="[background:transparent]! [border:0]! [padding:0]! [font-size:var(--text-2xs)]! [color:var(--accent-presence)]! [text-decoration:none]! [cursor:pointer]!">
           Generate token →
         </button>
         <button type="button" disabled={!pat.trim() || saving} onClick={() => void save()}

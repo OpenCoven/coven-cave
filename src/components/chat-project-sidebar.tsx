@@ -142,11 +142,11 @@ function RailSection({ label, count, action }: { label: string; count?: number; 
   return (
     <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
+        <span className="truncate text-[length:var(--text-xs)] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
           {label}
         </span>
         {typeof count === "number" ? (
-          <span className="font-mono text-[11px] text-[var(--text-secondary)] opacity-80">{count}</span>
+          <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] opacity-80">{count}</span>
         ) : null}
       </span>
       {action}
@@ -209,7 +209,7 @@ function ThreadRow({
         {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
-          "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-1.5 py-2 pl-2 pr-1.5 text-left text-[12px] transition-colors",
+          "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-1.5 py-2 pl-2 pr-1.5 text-left text-[length:var(--text-sm)] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
@@ -237,7 +237,7 @@ function ThreadRow({
           </button>
         </span>
         <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
-        <span className="chat-thread-age shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/row:hidden">
+        <span className="chat-thread-age shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)] group-hover/row:hidden">
           {shortAge(session.updated_at)}
         </span>
         <button
@@ -327,7 +327,7 @@ function FolderChatRow({
         {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
-          "relative flex min-h-[34px] w-full items-center gap-1.5 py-2 pl-2 pr-2 text-left text-[12px] transition-colors",
+          "relative flex min-h-[34px] w-full items-center gap-1.5 py-2 pl-2 pr-2 text-left text-[length:var(--text-sm)] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
@@ -521,7 +521,7 @@ export function ChatProjectSidebar({
         className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-2"
         aria-label="Chat projects header"
       >
-        <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+        <span className="min-w-0 flex-1 truncate text-[length:var(--text-2xs)] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
           Projects
         </span>
         <button
@@ -529,7 +529,7 @@ export function ChatProjectSidebar({
           onClick={() => onSelect("all")}
           aria-current={selection === "all" ? "true" : undefined}
           className={[
-            "shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors",
+            "shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] transition-colors",
             selection === "all"
               ? "text-[var(--accent-presence)]"
               : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -568,7 +568,7 @@ export function ChatProjectSidebar({
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search sessions…"
             aria-label="Search sessions"
-            className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
+            className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
           />
           {search && (
             <button
@@ -587,7 +587,7 @@ export function ChatProjectSidebar({
         {/* ── Flat results appear only while searching; projects stay primary. ── */}
         {hasSearch ? (
           display.length === 0 ? (
-            <p className="px-3 pb-3 pt-1 text-center text-[11px] text-[var(--text-muted)]">
+            <p className="px-3 pb-3 pt-1 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
               No sessions match your search
             </p>
           ) : (
@@ -677,7 +677,7 @@ export function ChatProjectSidebar({
                       aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
                       aria-current={isSelected ? "true" : undefined}
                       className={[
-                        "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[12px] transition-colors",
+                        "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[length:var(--text-sm)] transition-colors",
                         isSelected
                           ? "text-[var(--text-primary)]"
                           : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
@@ -698,7 +698,7 @@ export function ChatProjectSidebar({
                       >
                         {label}
                       </span>
-                      <span className="shrink-0 font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
+                      <span className="shrink-0 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] opacity-80">
                         {group.sessions.length}
                       </span>
                     </button>
@@ -749,7 +749,7 @@ export function ChatProjectSidebar({
             onClick={() => window.dispatchEvent(new CustomEvent(op.event))}
             title={op.title}
             aria-label={op.title}
-            className="focus-ring flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1 py-1 text-[10px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-secondary)]"
+            className="focus-ring flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1 py-1 text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-secondary)]"
           >
             <Icon name={op.icon} width={12} aria-hidden />
             <span className="truncate">{op.label}</span>

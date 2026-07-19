@@ -277,7 +277,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         {moveError ? (
           <div
             role="alert"
-            className="mx-1 mb-1 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-danger,#b91c1c)]/12 px-2 py-1 text-[11px] text-[var(--color-danger,#b91c1c)]"
+            className="mx-1 mb-1 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-danger)]/12 px-2 py-1 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <Icon name="ph:warning" width={12} className="shrink-0" />
             <span className="truncate">{moveError}</span>
@@ -285,7 +285,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         ) : null}
         <div
           role="tree"
-          className={`select-none rounded-[var(--radius-control)] text-[12px] leading-none ${
+          className={`select-none rounded-[var(--radius-control)] text-[length:var(--text-sm)] leading-none ${
             rootDrop ? "outline-dashed outline-1 outline-[var(--accent-presence)]" : ""
           }`}
           tabIndex={0}
@@ -535,7 +535,7 @@ function TreeRow({
       >
         {/* Disclosure triangle — rotates via CSS */}
         <span
-          className="flex h-[18px] w-[16px] shrink-0 items-center justify-center"
+          className="flex h-[18px] w-[var(--space-4)] shrink-0 items-center justify-center"
           aria-hidden="true"
         >
           {entry.isDir && (
@@ -562,7 +562,7 @@ function TreeRow({
 
         {/* Icon */}
         <span
-          className={`flex h-[18px] w-[16px] shrink-0 items-center justify-center ${
+          className={`flex h-[18px] w-[var(--space-4)] shrink-0 items-center justify-center ${
             isSelected ? "text-[var(--accent-presence-foreground)] opacity-80" : "text-[var(--text-muted)]"
           }`}
           aria-hidden="true"
@@ -599,7 +599,7 @@ function TreeRow({
                 onDirSelect(entry.path);
               }
             }}
-            className={`ml-auto mr-1 shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
+            className={`ml-auto mr-1 shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium transition-opacity ${
               added
                 ? "text-[var(--accent-presence)]"
                 : "touch-always-visible text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100 group-focus-within:opacity-100"
@@ -639,7 +639,7 @@ function TreeRow({
           size="xs"
           leadingIcon="ph:arrow-clockwise"
           onClick={(e) => { e.stopPropagation(); void loadChildren(); }}
-          className="py-[3px] text-[11px] text-[var(--color-danger,#b91c1c)] hover:underline"
+          className="py-[3px] text-[length:var(--text-xs)] text-[var(--color-danger)] hover:underline"
           style={{ paddingLeft: 4 + (depth + 1) * 16 + 16 }}
         >
           Couldn&apos;t load — retry

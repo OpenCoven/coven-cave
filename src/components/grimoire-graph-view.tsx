@@ -775,7 +775,7 @@ export function GrimoireGraphView({
   ) => (
     <label
       title={help}
-      className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+      className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
     >
       <input
         type="checkbox"
@@ -787,7 +787,7 @@ export function GrimoireGraphView({
         <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: `var(${dotToken})` }} />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count !== undefined ? <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{count}</span> : null}
+      {count !== undefined ? <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{count}</span> : null}
     </label>
   );
 
@@ -819,7 +819,7 @@ export function GrimoireGraphView({
       >
         <div className="flex items-center gap-1.5 px-2.5 py-1.5">
           <Icon name="ph:sliders-horizontal" width={12} aria-hidden className="text-[var(--text-muted)]" />
-          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">Graph</span>
+          <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]">Graph</span>
           <button
             type="button"
             aria-expanded={prefs.panelOpen}
@@ -844,10 +844,10 @@ export function GrimoireGraphView({
               }}
               placeholder="Highlight nodes…"
               aria-label="Highlight graph nodes"
-              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             <div>
-              <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              <p className="pb-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Groups
               </p>
               {checkboxRow(
@@ -884,7 +884,7 @@ export function GrimoireGraphView({
               )}
             </div>
             <div>
-              <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              <p className="pb-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Connections
               </p>
               {checkboxRow(
@@ -921,10 +921,10 @@ export function GrimoireGraphView({
               )}
             </div>
             <div>
-              <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              <p className="pb-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Forces
               </p>
-              <label className="block py-0.5 text-[11px] text-[var(--text-secondary)]">
+              <label className="block py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                 Repel
                 <input
                   type="range"
@@ -937,7 +937,7 @@ export function GrimoireGraphView({
                   className="focus-ring mt-0.5 w-full accent-[var(--accent-presence)]"
                 />
               </label>
-              <label className="block py-0.5 text-[11px] text-[var(--text-secondary)]">
+              <label className="block py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                 Link distance
                 <input
                   type="range"
@@ -952,12 +952,12 @@ export function GrimoireGraphView({
               </label>
             </div>
             {memoryTruncated && meta ? (
-              <p className="text-[10px] leading-snug text-[var(--text-muted)]">
+              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--text-muted)]">
                 Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files.
               </p>
             ) : null}
             {scanError ? (
-              <p className="text-[10px] leading-snug text-[var(--color-warning)]">
+              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--color-warning)]">
                 Full scan unavailable — showing knowledge-vault connections only.
               </p>
             ) : null}
@@ -988,7 +988,7 @@ export function GrimoireGraphView({
       </div>
 
       {/* Status line. */}
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[10px] text-[var(--text-muted)] backdrop-blur">
+      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] backdrop-blur">
         {summary}
         {scanning ? " · scanning…" : ""}
       </div>

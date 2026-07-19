@@ -108,14 +108,14 @@ export function SkillCard({
 
       {/* Name + meta + description */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]" title={skill.name}>
+        <span className="block truncate text-[length:var(--text-base)] font-medium text-[var(--text-primary)]" title={skill.name}>
           {skill.name}
         </span>
-        <span className="block truncate text-[12px] text-[var(--text-muted)]" title={meta}>
+        <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-muted)]" title={meta}>
           {meta}
         </span>
         {skill.description && (
-          <span className="mt-0.5 block line-clamp-1 text-[11px] text-[var(--text-muted)]/70">
+          <span className="mt-0.5 block line-clamp-1 text-[length:var(--text-xs)] text-[var(--text-muted)]/70">
             {skill.description}
           </span>
         )}
@@ -124,7 +124,7 @@ export function SkillCard({
       {/* Version + arrow */}
       <span className="flex shrink-0 items-center gap-2">
         {skill.version && (
-          <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+          <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {skill.version}
           </span>
         )}

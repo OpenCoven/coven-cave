@@ -23,7 +23,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<span className="block truncate text-\[12px\] font-medium text-\[var\(--text-primary\)\]" title=\{entry\.relPath\}>\{base\}<\/span>/,
+  /<span className="block truncate text-\[length:var\(--text-sm\)\] font-medium text-\[var\(--text-primary\)\]" title=\{entry\.relPath\}>\{base\}<\/span>/,
   "Row title must show the basename (full relPath on hover)",
 );
 

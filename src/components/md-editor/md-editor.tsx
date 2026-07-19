@@ -284,7 +284,7 @@ export function MdEditor({
       }}
     >
       <div className="md-editor__topbar flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5">
-        <div className="inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] font-mono text-[10px] uppercase tracking-wide">
+        <div className="inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] font-mono text-[length:var(--text-2xs)] uppercase tracking-wide">
           {(["visual", "markdown"] as const).map((m) => (
             <button
               key={m}
@@ -306,7 +306,7 @@ export function MdEditor({
             <button
               type="button"
               onClick={onCancel}
-              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               Cancel
             </button>
@@ -316,7 +316,7 @@ export function MdEditor({
               type="button"
               onClick={() => void save()}
               disabled={!dirty || saving}
-              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-elevated)] enabled:hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-elevated)] enabled:hover:text-[var(--text-primary)] disabled:opacity-50"
             >
               <Icon name="ph:floppy-disk-bold" width={12} aria-hidden />
               {saving ? "Saving…" : "Save"}
@@ -328,7 +328,7 @@ export function MdEditor({
       {showHeader && mode === "visual" ? (
         <div className="md-editor__header shrink-0 space-y-1.5 border-b border-[var(--border-hairline)] px-4 py-2.5">
           <div className="flex items-baseline gap-3">
-            <span className="w-8 shrink-0 text-[10px] text-[var(--text-muted)]">title</span>
+            <span className="w-8 shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">title</span>
             <input
               type="text"
               value={doc.title ?? ""}
@@ -336,16 +336,16 @@ export function MdEditor({
               placeholder="Untitled"
               aria-label="Document title"
               onChange={(e) => applyHeader({ title: e.target.value })}
-              className="focus-ring min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-md)] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
           </div>
           <div className="flex items-center gap-3">
-            <span className="w-8 shrink-0 text-[10px] text-[var(--text-muted)]">tags</span>
+            <span className="w-8 shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">tags</span>
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
               {doc.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-0.5 rounded-full bg-[var(--accent-presence)]/12 px-2 py-0.5 text-[10px] text-[var(--accent-presence-soft)]"
+                  className="inline-flex items-center gap-0.5 rounded-full bg-[var(--accent-presence)]/12 px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence-soft)]"
                 >
                   #{tag}
                   {!readOnly ? (
@@ -374,7 +374,7 @@ export function MdEditor({
                       addTagsFromDraft();
                     }
                   }}
-                  className="focus-ring w-20 rounded-sm bg-transparent text-[11px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                  className="focus-ring w-20 rounded-sm bg-transparent text-[length:var(--text-xs)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
                 />
               ) : null}
             </div>
@@ -413,7 +413,7 @@ export function MdEditor({
         )}
       </div>
 
-      <div className="md-editor__footer flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+      <div className="md-editor__footer flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         <div className="flex min-w-0 items-center gap-1.5">
           {sourceLabel ? (
             <span className="truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{sourceLabel}</span>
@@ -515,11 +515,11 @@ function MdEditorConflictPanel({
       className="md-editor__conflict flex h-full min-h-0 flex-col"
     >
       <div className="shrink-0 space-y-1 border-b border-[var(--border-hairline)] px-4 py-3">
-        <p role="alert" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--color-warning)]">
+        <p role="alert" className="inline-flex items-center gap-1.5 text-[length:var(--text-sm)] font-semibold text-[var(--color-warning)]">
           <Icon name="ph:warning-circle" width={13} aria-hidden />
           This document changed on disk while you were editing
         </p>
-        <p className="text-[11px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {identical
             ? "The disk version now matches your draft — you can safely take either."
             : "Review the difference, then keep your draft, take the disk version, or merge the two."}
@@ -530,7 +530,7 @@ function MdEditorConflictPanel({
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
-        <div className="md-editor__conflict-diff font-mono text-[11px] leading-5" role="table" aria-label="Draft vs disk diff">
+        <div className="md-editor__conflict-diff font-mono text-[length:var(--text-xs)] leading-5" role="table" aria-label="Draft vs disk diff">
           {rows.map((row, i) =>
             row.kind === "skip" ? (
               <div key={i} className="md-editor__conflict-line md-editor__conflict-line--skip" role="row">
@@ -555,7 +555,7 @@ function MdEditorConflictPanel({
         <button
           type="button"
           onClick={onKeepMine}
-          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--color-warning)]/40 px-2 text-[11px] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10"
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--color-warning)]/40 px-2 text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10"
         >
           <Icon name="ph:floppy-disk-bold" width={11} aria-hidden />
           Keep my draft
@@ -563,7 +563,7 @@ function MdEditorConflictPanel({
         <button
           type="button"
           onClick={onTakeTheirs}
-          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
           Take disk version
@@ -571,7 +571,7 @@ function MdEditorConflictPanel({
         <button
           type="button"
           onClick={onMerge}
-          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:git-merge" width={11} aria-hidden />
           Merge both
@@ -580,7 +580,7 @@ function MdEditorConflictPanel({
         <button
           type="button"
           onClick={onDismiss}
-          className="focus-ring inline-flex h-7 items-center rounded-md px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          className="focus-ring inline-flex h-7 items-center rounded-md px-2 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
           Back to editing
         </button>

@@ -42,7 +42,7 @@ function FeedbackBanner({
 }) {
   return (
     <div
-      className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] ${
+      className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[length:var(--text-xs)] ${
         status === "success"
           ? "bg-[color-mix(in_oklch,var(--color-success)_60%,transparent)] text-[var(--color-success)]"
           : "bg-[color-mix(in_oklch,var(--color-danger)_60%,transparent)] text-[var(--color-danger)]"
@@ -123,7 +123,7 @@ function BoardMode({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[11px] text-[var(--text-muted)]">
+      <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Add to existing card or create new
       </p>
 
@@ -136,7 +136,7 @@ function BoardMode({
         type="button"
         onClick={() => void createNew()}
         disabled={busy}
-        className="flex items-center gap-2 rounded-md border border-dashed border-[var(--border-hairline)] px-2.5 py-1.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 rounded-md border border-dashed border-[var(--border-hairline)] px-2.5 py-1.5 text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
       >
         <Icon name="ph:plus" width={12} />
         Create new card
@@ -152,7 +152,7 @@ function BoardMode({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search open cards…"
             aria-label="Search open cards"
-            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
           />
           <ul className="max-h-40 overflow-y-auto space-y-0.5">
             {filtered.slice(0, 12).map((card) => (
@@ -161,14 +161,14 @@ function BoardMode({
                   type="button"
                   onClick={() => void attachToCard(card.id)}
                   disabled={busy}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+                  className="w-full rounded-md px-2.5 py-1.5 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
                 >
                   {card.title}
                 </button>
               </li>
             ))}
             {filtered.length === 0 && (
-              <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
+              <li className="px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {cardsFailed && cards.length === 0
                   ? "Couldn't load your tasks — close and reopen to retry."
                   : "No cards match."}
@@ -252,7 +252,7 @@ function FamiliarPicker({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[11px] text-[var(--text-muted)]">
+      <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
         {mode === "chat" ? "Start a chat with…" : "Assign to…"}
       </p>
 
@@ -269,13 +269,13 @@ function FamiliarPicker({
                 type="button"
                 onClick={() => setSelected(f.id)}
                 className={[
-                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors",
+                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--text-sm)] transition-colors",
                   isSelected
                     ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
                 ].join(" ")}
               >
-                <span className="shrink-0 w-4 text-center text-[14px] leading-none">
+                <span className="shrink-0 w-4 text-center text-[length:var(--text-md)] leading-none">
                   <FamiliarAvatar familiar={f} size="sm" />
                 </span>
                 <span className="truncate">{f.display_name}</span>
@@ -291,7 +291,7 @@ function FamiliarPicker({
           );
         })}
         {resolved.length === 0 && (
-          <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
+          <li className="px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {familiarsFailed
               ? "Couldn't load familiars — close and reopen to retry."
               : "No familiars available."}
@@ -303,7 +303,7 @@ function FamiliarPicker({
         type="button"
         onClick={() => void handleSubmit()}
         disabled={!selected || busy}
-        className="mt-1 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="mt-1 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         {busy
           ? "Working…"
@@ -382,7 +382,7 @@ export function GitHubActionPopover({
             width={13}
             className="text-[var(--accent-presence)]"
           />
-          <span className="text-[12px] font-semibold text-[var(--text-primary)]">
+          <span className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
             {TITLES[mode]}
           </span>
         </div>
@@ -398,11 +398,11 @@ export function GitHubActionPopover({
 
       {/* Item title preview */}
       <div className="mb-2.5 rounded-md bg-[var(--bg-raised)] px-2.5 py-1.5">
-        <p className="truncate text-[11px] text-[var(--text-muted)]">
+        <p className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {item.repo}
           {item.number != null ? ` #${item.number}` : ""}
         </p>
-        <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+        <p className="truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           {item.title}
         </p>
       </div>

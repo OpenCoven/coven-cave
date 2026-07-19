@@ -147,7 +147,7 @@ assert.equal(
 );
 assert.match(
   source,
-  /inline-flex h-7 items-center px-2\.5 text-\[11px\][\s\S]{0,200}viewMode === id/,
+  /inline-flex h-7 items-center px-2\.5 text-\[length:var\(--text-xs\)\][\s\S]{0,200}viewMode === id/,
   "View-mode tabs are h-7 — same height as the toolbar controls",
 );
 assert.match(
@@ -189,11 +189,11 @@ assert.match(
 // Calendar event buttons show a visible keyboard focus ring. The time-grid
 // events are arrow-navigable via roving tabindex, so focus must be visible.
 assert.ok(
-  source.includes("focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px]"),
+  source.includes("focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[length:var(--text-2xs)]"),
   "time-grid event buttons have a focus ring",
 );
 assert.ok(
-  source.includes("focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px]"),
+  source.includes("focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)]"),
   "all-day event buttons have a focus ring",
 );
 

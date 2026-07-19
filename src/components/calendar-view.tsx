@@ -560,7 +560,7 @@ function AllDayStrip({
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       {/* Label */}
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+        <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
           All
           <br />
           day
@@ -581,7 +581,7 @@ function AllDayStrip({
                 key={item.id}
                 onClick={() => onOpenItem?.(item)}
                 title={item.title}
-                className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
+                className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
               >
                 <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
                 <span className="truncate text-[var(--text-primary)]">{item.title}</span>
@@ -590,7 +590,7 @@ function AllDayStrip({
             {col.items.length > cap && (
               <button
                 onClick={() => onMore?.(col.date)}
-                className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
+                className="focus-ring-inset text-[length:var(--text-2xs)] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
                 title={`${col.items.length - cap} more — click to open the day`}
               >
                 +{col.items.length - cap} more
@@ -636,7 +636,7 @@ function DeadlineChip({
       aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
       title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
-      className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
+      className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[length:var(--text-2xs)]" : "text-[length:var(--text-2xs)]"}`}
     >
       <Icon name="ph:clock-countdown" width={size === "xs" ? 9 : 11} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
       <span className={`truncate text-[var(--text-primary)] ${done ? "line-through opacity-70" : ""}`}>{deadline.title}</span>
@@ -661,7 +661,7 @@ function DeadlineStrip({
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
         <span
-          className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
+          className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
           title="Task due dates from Tasks — separate from your scheduled reminders below"
         >
           Due
@@ -682,7 +682,7 @@ function DeadlineStrip({
               {col.deadlines.length > cap && (
                 <button
                   onClick={() => onMore?.(col.date)}
-                  className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--color-warning)] transition-colors text-left w-full"
+                  className="focus-ring-inset text-[length:var(--text-2xs)] text-[var(--text-muted)] px-1 hover:text-[var(--color-warning)] transition-colors text-left w-full"
                   title={`${col.deadlines.length - cap} more deadlines`}
                 >
                   +{col.deadlines.length - cap} more
@@ -787,7 +787,7 @@ function TimeGrid({
         {HOURS.map((h) => (
           <div
             key={h}
-            className="absolute right-2 text-[9px] text-[var(--text-muted)] pt-0.5"
+            className="absolute right-2 text-[length:var(--text-2xs)] text-[var(--text-muted)] pt-0.5"
             style={{ top: h * HOUR_HEIGHT }}
           >
             {fmtHourLabel(h)}
@@ -919,7 +919,7 @@ function TimeGrid({
                   }
                   aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
                   title={`${familiarName ? `${ev.item.title} — ${familiarName}` : ev.item.title}${onReschedule ? " — drag, or Alt+↑/↓, to reschedule" : ""}`}
-                  className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
+                  className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[length:var(--text-2xs)] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
                       : "border-[var(--accent-presence)]/30 bg-[var(--accent-presence)]/15 hover:bg-[var(--accent-presence)]/25"
@@ -962,7 +962,7 @@ function TimeGrid({
                     overflowAnchorRef.current = e.currentTarget;
                     setOverflowOpen(open ? null : { colIdx: ci, overflow: ov });
                   }}
-                  className="focus-ring-inset absolute flex items-center justify-center rounded border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  className="focus-ring-inset absolute flex items-center justify-center rounded border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 text-[length:var(--text-2xs)] font-semibold tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   style={{
                     top: (ov.start / 60) * HOUR_HEIGHT + 1,
                     height,
@@ -1202,7 +1202,7 @@ function WeekView({
                   <Icon name="ph:plus" width={10} aria-hidden />
                 </button>
               )}
-              <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
+              <div className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)]">
                 {WEEKDAYS[col.date.getDay()]}
               </div>
               <div
@@ -1319,7 +1319,7 @@ function MonthView({
               <div
                 key={wd}
                 role="columnheader"
-                className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)]"
+                className="py-1 text-center text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 {wd}
               </div>
@@ -1384,7 +1384,7 @@ function MonthView({
                     tabIndex={-1}
                     onClick={(e) => { e.stopPropagation(); onDayClick?.(day); }}
                     aria-label={`Open ${fmtDateHeading(day)}`}
-                    className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
+                    className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[length:var(--text-xs)] font-medium ${
                       isToday
                         ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                         : isCurrentMonth
@@ -1405,7 +1405,7 @@ function MonthView({
                           e.stopPropagation();
                           onDayClick?.(day);
                         }}
-                        className="focus-ring w-full rounded px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--color-warning)]"
+                        className="focus-ring w-full rounded px-1 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--color-warning)]"
                         title={`${dayDeadlines.length - 2} more deadlines — click to see all`}
                       >
                         +{dayDeadlines.length - 2} due
@@ -1424,7 +1424,7 @@ function MonthView({
                         }}
                         title={familiarName ? `${item.title} — ${familiarName}` : item.title}
                         style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
-                        className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
+                        className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[length:var(--text-2xs)] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
                         {done
                           ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
@@ -1441,7 +1441,7 @@ function MonthView({
                           e.stopPropagation();
                           onDayClick?.(day);
                         }}
-                        className="focus-ring w-full rounded px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                        className="focus-ring w-full rounded px-1 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
                         title={`${dayItems.length - 3} more items — click to see all`}
                       >
                         +{dayItems.length - 3} more
@@ -1505,7 +1505,7 @@ function MiniMonthPopover({
           size="sm"
           onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
         />
-        <span className="text-[12px] font-medium text-[var(--text-primary)]">
+        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           {MONTHS[view.getMonth()]} {view.getFullYear()}
         </span>
         <IconButton
@@ -1515,7 +1515,7 @@ function MiniMonthPopover({
           onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
         />
       </div>
-      <div className="mb-1 grid grid-cols-7 gap-px text-[9px] uppercase tracking-widest text-[var(--text-muted)]">
+      <div className="mb-1 grid grid-cols-7 gap-px text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
         {WEEKDAYS.map((wd) => <div key={wd} className="text-center">{wd.slice(0, 1)}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-px">
@@ -1530,7 +1530,7 @@ function MiniMonthPopover({
               onClick={() => onPick(day)}
               aria-label={`${fmtDateHeading(day)}${isAnchor ? ", selected" : ""}`}
               aria-current={isToday ? "date" : undefined}
-              className={`focus-ring h-7 w-full rounded text-[11px] transition-colors ${
+              className={`focus-ring h-7 w-full rounded text-[length:var(--text-xs)] transition-colors ${
                 isAnchor
                   ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : isToday
@@ -1620,8 +1620,8 @@ function ItemDetailPanel({
       >
         <div className="cave-cal-detail-header">
           <div className="flex items-center gap-2 min-w-0">
-            <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
-            <span id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[length:var(--text-md)]" />
+            <span id={titleId} className="truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
               {item.title}
             </span>
           </div>
@@ -1634,10 +1634,10 @@ function ItemDetailPanel({
           />
         </div>
 
-        <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+        <div className="flex flex-col gap-3 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] overflow-y-auto flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
-            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success,#34d399)]"><Icon name="ph:check" width={9} />Done</span> : null}
+            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success)]"><Icon name="ph:check" width={9} />Done</span> : null}
           </div>
           {meta?.urgency && meta.urgency !== "normal" && (
             <div className="flex items-center gap-1.5">
@@ -1992,7 +1992,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             {headingLabel()}
           </button>
           {pendingCount > 0 && (
-            <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] font-medium tabular-nums">
+            <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] font-medium tabular-nums">
               {pendingCount} pending
             </span>
           )}
@@ -2013,7 +2013,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
               key={id}
               onClick={() => setViewMode(id)}
               aria-pressed={viewMode === id}
-              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[11px] transition-colors sm:px-3 ${
+              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[length:var(--text-xs)] transition-colors sm:px-3 ${
                 viewMode === id
                   ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -2041,7 +2041,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           so a single-familiar scope shows no noise. */}
       {legendFamiliars.length >= 2 && (
         <div
-          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6"
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:px-6"
           aria-label="Familiar colour legend"
         >
           {legendFamiliars.map((f) => (

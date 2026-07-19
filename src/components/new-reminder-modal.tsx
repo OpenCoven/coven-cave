@@ -313,7 +313,7 @@ export function NewReminderModal({
             <h2 id="new-reminder-title" className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? "Edit reminder" : "New reminder"}
             </h2>
-            <p className="text-[12px] text-[var(--text-muted)]">
+            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Type a natural phrase like “in 30m” or “every tuesday 4pm” — the plan below shows exactly what will fire.
             </p>
           </div>
@@ -352,7 +352,7 @@ export function NewReminderModal({
           />
           <div
             aria-live="polite"
-            className="mt-1.5 text-[10px] text-[var(--text-muted)]"
+            className="mt-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]"
           >
             {whenText && !parsed ? (
               <span>Couldn't parse — try “in 30m”, “tomorrow at 9am”, “every tuesday 4pm”, or use the picker below.</span>
@@ -362,7 +362,7 @@ export function NewReminderModal({
                   <span className="font-semibold uppercase tracking-widest text-[var(--accent-presence)]">
                     {planCadence ? "Repeats" : "Once"}
                   </span>
-                  <span className="text-[11px] text-[var(--text-primary)]">
+                  <span className="text-[length:var(--text-xs)] text-[var(--text-primary)]">
                     {planCadence ?? previewLabel}
                   </span>
                 </div>
@@ -450,7 +450,7 @@ export function NewReminderModal({
                   : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
               }`}
             />
-            <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+            <div className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               {cronExpr && !cronFields
                 ? "Invalid cron expression."
                 : cronNextFire
@@ -509,7 +509,7 @@ export function NewReminderModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
-      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+      <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
         {label}
       </div>
       {children}

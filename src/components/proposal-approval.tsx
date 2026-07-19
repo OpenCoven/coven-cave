@@ -34,14 +34,14 @@ async function fetchProposals(): Promise<SurfaceState<ProposalView[]>> {
 function OutcomeNote({ outcome }: { outcome: DecisionOutcome }) {
   if (outcome.kind === "applied") {
     return (
-      <p role="status" className="mt-1 flex items-center gap-1 text-xs text-[var(--ok,#4dbd7a)]">
+      <p role="status" className="mt-1 flex items-center gap-1 text-xs text-[var(--color-success)]">
         <Icon name="ph:check-circle" aria-hidden />
         Decision carried by the daemon ({outcome.decision}) — it re-validated before applying.
       </p>
     );
   }
   return (
-    <p role="status" className="mt-1 flex items-center gap-1 text-xs text-[var(--danger,#d95a5a)]">
+    <p role="status" className="mt-1 flex items-center gap-1 text-xs text-[var(--color-danger)]">
       <Icon name="ph:shield-slash" aria-hidden />
       {outcome.message}
     </p>
@@ -90,12 +90,12 @@ function ProposalCard({
   if (proposal.parse === "corrupt" || !payload) {
     // R6: corrupt staged file — listed, inspectable, never actionable.
     return (
-      <li className="rounded border border-[var(--danger,#d95a5a)]/40 px-3 py-2">
+      <li className="rounded border border-[var(--color-danger)]/40 px-3 py-2">
         <p className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
           <Icon name="ph:shield-slash" aria-hidden />
           Corrupt staged file
         </p>
-        <p className="mt-0.5 font-mono text-[11px] text-[var(--text-muted)]">{proposal.file}</p>
+        <p className="mt-0.5 font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">{proposal.file}</p>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
           This file in ~/.coven/pending/ does not parse as a proposal. It cannot be approved or
           rejected from here — inspect it on disk before anything else touches it.
@@ -105,30 +105,30 @@ function ProposalCard({
   }
 
   return (
-    <li className="rounded border border-[var(--border,#333)] px-3 py-2">
+    <li className="rounded border border-[var(--border-hairline)] px-3 py-2">
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium text-[var(--text-primary)]">
             {payload.writer} proposes {payload.edits.length} edit{payload.edits.length === 1 ? "" : "s"}
             {payload.channel ? ` via ${payload.channel}` : ""}
           </p>
-          <p className="font-mono text-[11px] text-[var(--text-muted)]">
+          <p className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
             proposal {payload.id} · thread {payload.threadId}
             {payload.stagedAt ? ` · staged ${payload.stagedAt}` : ""}
           </p>
         </div>
       </header>
 
-      <p className="mt-1 text-xs text-[var(--warn,#d9a53c)]">{fraySummary(proposal)}</p>
+      <p className="mt-1 text-xs text-[var(--color-warning)]">{fraySummary(proposal)}</p>
 
       <div className="mt-2 flex flex-col gap-2">
         {editPreviews(proposal).map((edit) => (
-          <div key={edit.surface} className="rounded border border-[var(--border,#333)] bg-[var(--bg-raised)]">
-            <p className="border-b border-[var(--border,#333)] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)]">
+          <div key={edit.surface} className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]">
+            <p className="border-b border-[var(--border-hairline)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
               {edit.surface}
               <span className="ml-2 text-[var(--text-muted)]">full desired contents ({edit.encoding})</span>
             </p>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-2 py-1.5 text-[11px] text-[var(--text-primary)]">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)]">
               {edit.preview}
               {edit.truncated ? "\n… (truncated preview — the staged file holds the rest)" : ""}
             </pre>
@@ -144,13 +144,13 @@ function ProposalCard({
             onChange={(e) => setNote(e.target.value)}
             placeholder="optional note for the audit log"
             aria-label="Decision note"
-            className="focus-ring min-w-48 flex-1 rounded border border-[var(--border,#333)] bg-[var(--bg-raised)] px-2 py-1 text-xs"
+            className="focus-ring min-w-48 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-xs"
           />
           <button
             type="button"
             disabled={submitting !== null}
             onClick={() => void decide("approve")}
-            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--ok,#4dbd7a)]/50 px-2 py-1 text-xs font-medium text-[var(--ok,#4dbd7a)] hover:bg-[var(--ok,#4dbd7a)]/10 disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-success)]/50 px-2 py-1 text-xs font-medium text-[var(--color-success)] hover:bg-[var(--color-success)]/10 disabled:opacity-50"
           >
             <Icon name="ph:check-circle" aria-hidden />
             {submitting === "approve" ? "Forwarding…" : "Approve"}
@@ -159,7 +159,7 @@ function ProposalCard({
             type="button"
             disabled={submitting !== null}
             onClick={() => void decide("reject")}
-            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--danger,#d95a5a)]/50 px-2 py-1 text-xs font-medium text-[var(--danger,#d95a5a)] hover:bg-[var(--danger,#d95a5a)]/10 disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 px-2 py-1 text-xs font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
           >
             <Icon name="ph:x-circle" aria-hidden />
             {submitting === "reject" ? "Forwarding…" : "Reject"}
@@ -192,7 +192,7 @@ export function ProposalApproval() {
   }
   if (state.kind === "blocked") {
     return (
-      <div role="status" className="rounded border border-[var(--border-strong,#555)] bg-[var(--bg-raised)] px-3 py-4">
+      <div role="status" className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-4">
         <p className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
           <Icon name="ph:shield-slash" aria-hidden />
           Blocked — cannot verify staged proposals
@@ -210,7 +210,7 @@ export function ProposalApproval() {
         <p
           key={banner.kind}
           role="status"
-          className="flex items-center gap-2 rounded border border-dashed border-[var(--border-strong,#555)] bg-[var(--bg-raised)] px-2 py-1 text-xs text-[var(--text-muted)]"
+          className="flex items-center gap-2 rounded border border-dashed border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 py-1 text-xs text-[var(--text-muted)]"
         >
           <Icon name={banner.kind === "stale" ? "ph:clock-countdown" : "ph:flask"} aria-hidden />
           {banner.message}
@@ -241,7 +241,7 @@ export function ProposalApproval() {
           ))}
         </ul>
       )}
-      <p className="text-[10px] text-[var(--text-muted)]">
+      <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         observed {state.meta.observedAt} · cursor {state.meta.sourceCursor} · adapter {state.meta.adapter}
       </p>
     </div>

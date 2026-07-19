@@ -597,7 +597,7 @@ function fmtDuration(ms?: number): string | null {
 
 function DurationText({ durationMs }: { durationMs?: number }) {
   const duration = fmtDuration(durationMs);
-  return duration ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{duration}</span> : null;
+  return duration ? <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{duration}</span> : null;
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: "running" | "ok" | "error"; durationMs?: number };
@@ -698,9 +698,9 @@ function ChatErrorStrip({
   );
 
   const btn =
-    "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
+    "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
   const pre =
-    "mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--bg-base)]/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]";
+    "mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--bg-base)]/40 px-2 py-1 font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]";
 
   return (
     <div
@@ -711,7 +711,7 @@ function ChatErrorStrip({
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
         <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
         {code ? (
-          <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[10px]">
+          <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
         ) : null}
@@ -735,7 +735,7 @@ function ChatErrorStrip({
               type="button"
               onClick={onAddProject}
               disabled={addingProject}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40"
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40"
             >
               <Icon name={addingProject ? "ph:arrows-clockwise" : "ph:folders-bold"} width={11} className={addingProject ? "animate-spin" : undefined} aria-hidden />
               {addingProject ? "Adding…" : (addProjectLabel ?? "Add project")}
@@ -745,7 +745,7 @@ function ChatErrorStrip({
             <button
               type="button"
               onClick={onOpenProjects}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)]"
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)]"
             >
               <Icon name="ph:folders-bold" width={11} aria-hidden />
               Open projects
@@ -775,7 +775,7 @@ function ChatErrorStrip({
         <AuthFixRow failure={authFailure} buttonClassName={btn} />
       ) : null}
       {!harnessFailure && !authFailure && covenMissing ? (
-        <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
           <span className="min-w-0">
             The Coven CLI isn&apos;t resolvable from this app&apos;s environment. Open Setup to install
             or repair it, then retry — your message is kept.
@@ -790,7 +790,7 @@ function ChatErrorStrip({
         <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
           {erroredTools.map((t) => (
             <div key={t.id} className="mb-2 last:mb-0">
-              <div className="text-[11px] font-semibold text-[var(--color-warning)]">
+              <div className="text-[length:var(--text-xs)] font-semibold text-[var(--color-warning)]">
                 tool: {t.name} ✗ error{t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
               </div>
               {t.input ? <pre className={pre}>{t.input}</pre> : null}
@@ -799,12 +799,12 @@ function ChatErrorStrip({
           ))}
           {erroredSteps.map((p) => (
             <div key={p.id} className="mb-2 last:mb-0">
-              <div className="text-[11px] font-semibold text-[var(--color-warning)]">step: {p.label} ✗ error</div>
+              <div className="text-[length:var(--text-xs)] font-semibold text-[var(--color-warning)]">step: {p.label} ✗ error</div>
               {p.detail ? <pre className={pre}>{p.detail}</pre> : null}
             </div>
           ))}
           {erroredTools.length === 0 && erroredSteps.length === 0 ? (
-            <div className="text-[11px] text-[var(--text-secondary)]">
+            <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
               No tool output captured for this turn. Open Debug for the full session events.
             </div>
           ) : null}
@@ -827,13 +827,13 @@ function AuthFixRow({
   const { copied, copy } = useCopy();
   const runtime = failure.harnessLabel ?? "The runtime";
   return (
-    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
       <span className="min-w-0">
         {runtime} isn&apos;t signed in.
         {failure.loginCommand ? (
           <>
             {" "}Run{" "}
-            <code className="rounded bg-[var(--bg-base)]/40 px-1 py-0.5 font-mono text-[10px]">
+            <code className="rounded bg-[var(--bg-base)]/40 px-1 py-0.5 font-mono text-[length:var(--text-2xs)]">
               {failure.loginCommand}
             </code>{" "}
             in a terminal, then retry.
@@ -860,7 +860,7 @@ function UsageText({ usage, costUsd }: { usage?: TurnUsage; costUsd?: number }) 
   if (!summary) return null;
   return (
     <span
-      className="font-mono text-[10px] text-[var(--text-muted)]"
+      className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
       title={usageBreakdown(usage, costUsd) ?? undefined}
     >
       {summary}
@@ -1263,8 +1263,8 @@ function ChatHistoryNotice({
   return (
     <div className="mx-auto flex max-w-sm flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-6 py-7 text-center">
       <Icon name="ph:chats" width={20} className="mb-3 text-[var(--text-muted)]" />
-      <p className="text-[13px] font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="mt-1.5 max-w-[28ch] text-[12px] leading-[1.55] text-[var(--text-muted)]">{body}</p>
+      <p className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{title}</p>
+      <p className="mt-1.5 max-w-[28ch] text-[length:var(--text-sm)] leading-[1.55] text-[var(--text-muted)]">{body}</p>
       {(onRetry || onBack) && (
         <div className="mt-4 flex gap-2">
           {onBack && (
@@ -1305,8 +1305,8 @@ function FlowSessionTranscriptFallback({
       <div className="flex items-start gap-3">
         <Icon name="ph:flow-arrow" width={20} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-[var(--text-primary)]">Flow session output</p>
-          <p className="mt-1 max-w-[68ch] text-[12px] leading-[1.5] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">Flow session output</p>
+          <p className="mt-1 max-w-[68ch] text-[length:var(--text-sm)] leading-[1.5] text-[var(--text-muted)]">
             This flow session has no saved chat transcript yet, so CovenCave is showing the flow output instead.
           </p>
         </div>
@@ -1333,7 +1333,7 @@ function FlowSessionTranscriptFallback({
           </div>
         )}
       </div>
-      <pre className="mt-4 max-h-[min(58vh,640px)] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-4 font-mono text-[12px] leading-relaxed text-[var(--text-primary)]">{transcript}</pre>
+      <pre className="mt-4 max-h-[min(58vh,640px)] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-4 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-primary)]">{transcript}</pre>
     </div>
   );
 }
@@ -1409,15 +1409,15 @@ function ChatTitleEditable({
   };
 
   const inputClassName = headline
-    ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
-    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-medium leading-tight text-[var(--text-primary)] outline-none";
+    ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
+    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] outline-none";
 
   // No flex-1 on the title button itself — the wrapper carries the stretch so
   // the pencil sits flush against the title text instead of drifting to the
   // far edge of the free space.
   const buttonClassName = headline
-    ? "min-w-0 flex-1 truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
-    : "min-w-0 truncate text-left text-[14px] font-medium leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
+    ? "min-w-0 flex-1 truncate text-left text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
+    : "min-w-0 truncate text-left text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
   if (editing) {
     return (
@@ -1764,9 +1764,9 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
   if (!meter) return null;
   const fill =
     meter.level === "high"
-      ? "var(--text-danger, #e5484d)"
+      ? "var(--color-danger)"
       : meter.level === "warn"
-        ? "var(--text-warning, #d9920a)"
+        ? "var(--color-warning)"
         : "var(--accent-presence)";
   const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
   return (
@@ -5458,8 +5458,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <div className="cave-mobile-header-familiar">
                   <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
-              <div className="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
-              <div className="truncate font-mono text-[10px] leading-tight text-[var(--text-muted)]">
+              <div className="truncate text-[length:var(--text-base)] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
+              <div className="truncate font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]">
                 {familiar.harness ?? "cave"}
                 {visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)
                   ? ` · ${visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)}`
@@ -5697,7 +5697,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
             <Icon name="ph:caret-down-bold" width={12} />
-            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
+            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
           </button>
         )}
       </div>
@@ -5798,19 +5798,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeMentionOptionRef : null}
                         onMouseEnter={() => setMentionIdx(i)}
                         onClick={() => selectMention(file)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <Icon name="ph:file-code" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                         <span className="font-mono font-medium text-[var(--text-primary)]">{base}</span>
-                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">{file}</span>
+                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">{file}</span>
                       </button>
                     </li>
                   );
                 })}
               </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} insert · Tab insert · esc cancel
               </div>
             </div>
@@ -5833,18 +5833,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput("");
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <span className="font-medium text-[var(--text-primary)]">{m.label}</span>
-                        <span className="flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">{m.id}</span>
+                        <span className="flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{m.id}</span>
                       </button>
                     </li>
                   );
                 })}
               </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
               </div>
             </div>
@@ -5862,17 +5862,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
                         <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
+                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (
-                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                             {s.argumentHint}
                           </span>
                         ) : null}
@@ -5883,7 +5883,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </ul>
               <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
               </div>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
@@ -5900,13 +5900,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => insertPrompt(p)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <Icon name={promptIconName(p.icon)} width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                         <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
+                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                           {p.description || p.id}
                         </span>
                       </button>
@@ -5914,7 +5914,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
               </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} insert · Tab complete · esc cancel
               </div>
             </div>
@@ -5922,7 +5922,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
               <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
                 {slashSuggestions.length > 0 ? (
-                  <li role="presentation" className="px-3 pb-1 pt-1.5 text-[12px] font-medium text-[var(--text-muted)]">
+                  <li role="presentation" className="px-3 pb-1 pt-1.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
                     Commands
                   </li>
                 ) : null}
@@ -5944,17 +5944,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <Icon name="ph:terminal-window" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                         <span className="font-mono font-medium text-[var(--text-primary)]">{cmd.name}</span>
-                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
+                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                           {cmd.description}
                         </span>
                         {cmd.argPlaceholder ? (
-                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                             {cmd.argPlaceholder}
                           </span>
                         ) : null}
@@ -5963,7 +5963,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
                 {skillCommandRows.length > 0 ? (
-                  <li role="presentation" className="px-3 pb-1 pt-2.5 text-[12px] font-medium text-[var(--text-muted)]">
+                  <li role="presentation" className="px-3 pb-1 pt-2.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
                     Skills
                   </li>
                 ) : null}
@@ -5978,17 +5978,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(idx)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
                           active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
                         <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
                         <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
+                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (
-                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                             {s.argumentHint}
                           </span>
                         ) : null}
@@ -5997,7 +5997,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
               </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
@@ -6024,7 +6024,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {attachments.map((attachment) => (
                   <span
                     key={attachment.id}
-                    className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+                    className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
                   >
                     <Icon name={attachmentIcon(attachment)} width={12} />
                     <span className="truncate">{attachment.name}</span>
@@ -6045,7 +6045,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             {replyTarget ? (
               <div className="cave-composer-reply flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
                 <Icon name="ph:arrow-bend-up-left" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[11px]">
+                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[length:var(--text-xs)]">
                   <span className="shrink-0 font-medium text-[var(--text-secondary)]">Replying to {replyTarget.author}</span>
                   <span className="truncate text-[var(--text-muted)]">{replyTarget.snippet}</span>
                 </span>
@@ -6860,7 +6860,7 @@ function TurnRowImpl({
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
     >
-      <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
+      <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
         <div className={`cave-linear-turn-avatar${expanded ? " is-selected" : ""}`} ref={avatarWrapRef}>
           <button
@@ -7019,12 +7019,12 @@ function TurnRowImpl({
                     <div className="cave-edit-cards mt-3 space-y-2">
                       {editedFiles.length > 1 ? (
                         <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                          <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                          <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                             {editedFiles.length} files changed
                           </span>
                           <button
                             type="button"
-                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                             aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
                             onClick={() =>
                               window.dispatchEvent(
@@ -7106,13 +7106,13 @@ function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; duration
           <Icon name="ph:brain" width={12} aria-hidden />
           Thinking
         </span>
-        <span className="ml-auto font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+        <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {typeof durationMs === "number" && durationMs > 0
             ? `Worked for ${fmtDuration(durationMs)}`
             : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
         </span>
       </summary>
-      <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+      <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         <RichText text={reasoning} />
       </div>
     </details>
@@ -7152,7 +7152,7 @@ function ProgressGroup({
             {current.label}
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
@@ -7204,7 +7204,7 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
         <DurationText durationMs={event.durationMs} />
       </div>
       {open && event.detail ? (
-        <div className="mt-1 ml-5 whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[10px] leading-relaxed text-[var(--text-secondary)]">
+        <div className="mt-1 ml-5 whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[length:var(--text-2xs)] leading-relaxed text-[var(--text-secondary)]">
           {event.detail}
         </div>
       ) : null}
@@ -7244,7 +7244,7 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
             <code className="cave-work-line__cmd">{lastCommand}</code>
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
         </span>
@@ -7430,7 +7430,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             </span>
           </span>
           <span className={[
-            "rounded px-1.5 py-0.5 font-mono text-[10px]",
+            "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
             tool.status === "error"
               ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
               : tool.status === "running"
@@ -7457,7 +7457,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
+      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
@@ -7476,7 +7476,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           )
         ) : null}
         <span className={[
-          "rounded px-1.5 py-0.5 font-mono text-[10px]",
+          "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
           tool.status === "error"
             ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
             : tool.status === "running"
@@ -7625,10 +7625,10 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
           <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{attachment.name}</span>
-          <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
+          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]">{attachment.name}</span>
+          <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
           {attachment.truncated ? (
-            <span className="shrink-0 rounded bg-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-1.5 py-0.5 text-[10px] text-[var(--color-warning)]">truncated</span>
+            <span className="shrink-0 rounded bg-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">truncated</span>
           ) : null}
           <button
             type="button"
@@ -7645,18 +7645,17 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
             <img
               src={attachment.dataUrl}
               alt={attachment.name}
-              style={{ maxHeight: "75vh", maxWidth: "min(85vw, 100%)", width: "auto", height: "auto" }}
-              className="rounded-lg object-contain block"
+              className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!"
             />
           </div>
         ) : attachment.text ? (
-          <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
+          <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
             {attachment.text}
           </pre>
         ) : (
           <div className="flex flex-col items-center gap-3 px-8 py-10 text-[var(--text-muted)]">
             <Icon name="ph:file-code" width={32} />
-            <span className="text-[13px]">No preview available</span>
+            <span className="text-[length:var(--text-base)]">No preview available</span>
           </div>
         )}
       </div>
@@ -7717,7 +7716,7 @@ function RunActivityStrip({
   }
 
   return (
-    <div className="cave-run-activity shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px]">
+    <div className="cave-run-activity shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[length:var(--text-xs)]">
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -7734,7 +7733,7 @@ function RunActivityStrip({
             aria-hidden
           />
           <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
-          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-[var(--text-muted)]">
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
             {done ? <span className="cave-tool-count">{done} done</span> : null}
@@ -7775,7 +7774,7 @@ function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
           <button
             type="button"
             key={`${attachment.name}-${index}`}
-            className="inline-flex max-w-72 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-presence)]/40 hover:bg-[var(--bg-raised)]/70"
+            className="inline-flex max-w-72 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-presence)]/40 hover:bg-[var(--bg-raised)]/70"
             title={`View ${attachment.name}`}
             onClick={() => setSelected(attachment)}
           >

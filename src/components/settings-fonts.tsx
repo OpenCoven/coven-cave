@@ -128,12 +128,12 @@ const segWrap =
 // groups so a row with a dropdown lines up with a row of segment buttons. The
 // border uses the strong token so the selection control reads clearly.
 const selectTrigger =
-  "h-7 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+  "h-7 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2.5 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
 function segBtn(active: boolean, extra = ""): string {
   // The selected option gets a visible border on top of the accent fill (the
   // .ui-btn base already carries a 1px transparent border, so no layout shift).
-  return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+  return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[length:var(--text-xs)] font-medium transition-colors ${
     active
       ? "border-[color-mix(in_oklch,var(--accent-presence)_65%,var(--accent-presence-foreground))] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
@@ -179,8 +179,8 @@ function ReadingRow({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2.5">
       <div className="min-w-0">
-        <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
-        {hint ? <div className="text-[11px] text-[var(--text-muted)]">{hint}</div> : null}
+        <div className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">{label}</div>
+        {hint ? <div className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{hint}</div> : null}
       </div>
       {children}
     </div>
@@ -203,13 +203,13 @@ function FontSpecimen({
   return (
     <div className="px-3.5 py-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        <span className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {label}
         </span>
-        <span className="truncate text-[11px] text-[var(--text-muted)]">· {opt?.label}</span>
+        <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">· {opt?.label}</span>
       </div>
       <p
-        className="mt-1 truncate text-[16px] leading-snug text-[var(--text-primary)]"
+        className="mt-1 truncate text-[length:var(--text-lg)] leading-snug text-[var(--text-primary)]"
         style={{ fontFamily: opt ? fontStack(opt) : undefined }}
       >
         {PREVIEW[slot]}
@@ -332,8 +332,7 @@ export function FontSettings() {
         <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
           <StandardSelect
             label="Typography pair"
-            className={selectTrigger}
-            style={{ width: "min(100%, 300px)", maxWidth: "100%" }}
+            className={[selectTrigger, "[width:min(100%,_300px)]! [max-width:100%]!"].filter(Boolean).join(" ")}
             value={pairId}
             onChange={selectPair}
             options={FONT_PAIRS.map((pair) => ({ value: pair.id, label: pair.label }))}
@@ -522,7 +521,7 @@ export function FontSettings() {
           size="sm"
           onClick={reset}
           disabled={isDefault}
-          className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Reset to default
         </Button>

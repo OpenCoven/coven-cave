@@ -593,7 +593,7 @@ export function MarketplaceViewSurface({
         </div>
       </header>
       {activeError ? (
-        <p role="alert" className="mx-4 mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+        <p role="alert" className="mx-4 mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--danger-text)]">
           {activeError}
         </p>
       ) : null}
@@ -612,7 +612,7 @@ export function MarketplaceViewSurface({
             className="hidden w-60 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 @min-[840px]/marketplace:block"
             aria-label="Browse by category"
           >
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+            <p className="px-2 pb-2 text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
               Categories
             </p>
             <nav className="flex flex-col gap-0.5">
@@ -625,7 +625,7 @@ export function MarketplaceViewSurface({
                     type="button"
                     onClick={() => selectCategory(cat)}
                     aria-current={active ? "true" : undefined}
-                    className={`focus-ring flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+                    className={`focus-ring flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--text-base)] transition-colors ${
                       active
                         ? "bg-[var(--bg-raised)] font-medium text-[var(--text-primary)]"
                         : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
@@ -633,7 +633,7 @@ export function MarketplaceViewSurface({
                   >
                     <span className="truncate">{cat}</span>
                     <span
-                      className={`shrink-0 text-[11px] tabular-nums ${
+                      className={`shrink-0 text-[length:var(--text-xs)] tabular-nums ${
                         active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"
                       }`}
                     >
@@ -643,7 +643,7 @@ export function MarketplaceViewSurface({
                 );
               })}
             </nav>
-            <p className="px-2 pb-2 pt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+            <p className="px-2 pb-2 pt-5 text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
               Your setup
             </p>
             <nav className="flex flex-col gap-0.5" aria-label="Your setup">
@@ -675,14 +675,14 @@ export function MarketplaceViewSurface({
                   key={cat}
                   type="button"
                   onClick={() => selectCategory(cat)}
-                  className={`focus-ring shrink-0 rounded-md px-3 py-1.5 text-[12px] transition-colors ${
+                  className={`focus-ring shrink-0 rounded-md px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
                     !activeCollection && category === cat
                       ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
                       : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   {cat}
-                  <span className="ml-2 text-[11px] opacity-70">
+                  <span className="ml-2 text-[length:var(--text-xs)] opacity-70">
                     {cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0}
                   </span>
                 </button>
@@ -708,14 +708,14 @@ export function MarketplaceViewSurface({
                     <Icon name={activeCollection.icon} width={18} className="text-[var(--text-primary)]" />
                   </span>
                   <div>
-                    <p className="text-[14px] font-semibold text-[var(--text-primary)]">{activeCollection.title}</p>
-                    <p className="text-[12px] text-[var(--text-muted)]">{activeCollection.description}</p>
+                    <p className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">{activeCollection.title}</p>
+                    <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{activeCollection.description}</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setCollectionId(null)}
-                  className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
                   <Icon name="ph:arrow-left" width={12} aria-hidden /> All plugins
                 </button>
@@ -725,7 +725,7 @@ export function MarketplaceViewSurface({
             {/* Browse toolbar — result context on the left, kind filter + sort
                 on the right (moved out of the header so it stays one row). */}
             <div className="marketplace-browse-summary mb-4">
-              <p className="min-w-0 self-center truncate text-[12px] text-[var(--text-muted)]">
+              <p className="min-w-0 self-center truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 {!loaded ? (
                   // One loading language per surface: the grid below already
                   // shows skeleton rows, so the count line shimmers too instead
@@ -753,14 +753,14 @@ export function MarketplaceViewSurface({
                   bordered={false}
                   ariaLabel="Filter plugins by type"
                 />
-                <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
+                <label className="flex items-center gap-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   <span className="sr-only">Sort plugins</span>
                   <Icon name="ph:sort-ascending" width={14} aria-hidden />
                   <StandardSelect
                     label="Sort plugins"
                     value={sort}
                     onChange={(next) => setSort(next as SortKey)}
-                    className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
+                    className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
                     options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
                   />
                 </label>
@@ -857,7 +857,7 @@ export function MarketplaceViewSurface({
               label="Sort Crafts"
               value={sort}
               onChange={(next) => setSort(next as SortKey)}
-              className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
+              className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
               options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
             />
           </div>
@@ -1048,14 +1048,14 @@ function SetupRailLink({
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+      className="focus-ring flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--text-base)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
     >
       <span className="flex min-w-0 items-center gap-2">
         <Icon name={icon} width={13} aria-hidden />
         <span className="truncate">{label}</span>
       </span>
       {detail ? (
-        <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">{detail}</span>
+        <span className="shrink-0 text-[length:var(--text-xs)] tabular-nums text-[var(--text-muted)]">{detail}</span>
       ) : null}
     </button>
   );

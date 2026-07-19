@@ -55,8 +55,8 @@ assert.match(
 // ───────── Task 2: Tab label legibility ─────────
 assert.match(
   pane,
-  /\{railExpanded \? \(\s*<span className="w-\[44px\] truncate text-center text-\[10px\] leading-tight">\{title\}<\/span>\s*\) : null\}/,
-  "Tab label gated on railExpanded + text-[10px]",
+  /\{railExpanded \? \(\s*<span className="w-\[44px\] truncate text-center text-\[length:var\(--text-2xs\)\] leading-tight">\{title\}<\/span>\s*\) : null\}/,
+  "Tab label gated on railExpanded + the 10px type token",
 );
 assert.doesNotMatch(
   pane,

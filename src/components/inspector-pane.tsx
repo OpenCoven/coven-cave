@@ -58,9 +58,9 @@ function InspectorEmpty({
       <span className="text-[var(--text-muted)]" aria-hidden>
         <Icon name={icon} width={20} />
       </span>
-      <p className="text-[12px] font-medium text-[var(--text-secondary)]">{title}</p>
+      <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">{title}</p>
       {hint ? (
-        <p className="max-w-[28ch] text-[11px] leading-snug text-[var(--text-muted)]">
+        <p className="max-w-[28ch] text-[length:var(--text-xs)] leading-snug text-[var(--text-muted)]">
           {hint}
         </p>
       ) : null}
@@ -68,7 +68,7 @@ function InspectorEmpty({
         <button
           type="button"
           onClick={action.onClick}
-          className="mt-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]"
+          className="mt-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]"
         >
           {action.label}
         </button>
@@ -151,7 +151,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
   );
 
   const toolbar = (
-    <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-[11px]">
+    <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-[length:var(--text-xs)]">
       <div>
         {totalRedactions > 0 ? (
           <span className="text-[var(--color-warning)]">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
@@ -161,7 +161,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
       </div>
       <button
         onClick={onRevealToggle}
-        className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
+        className={`rounded px-2 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-widest transition-colors ${
           reveal
             ? "bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] text-white hover:bg-[var(--color-danger)]"
             : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -176,7 +176,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
   const body = isMarkdown ? (
     <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-4 py-4" />
   ) : (
-    <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]" />
+    <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[length:var(--text-xs)]" />
   );
 
   const inlineView = (
@@ -194,8 +194,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
       {inlineView}
       {createPortal(
         <div
-          className="fixed inset-0 z-[100] flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
-          style={{ fontFamily: "inherit" }}
+          className="fixed inset-0 z-[100] flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)] [font-family:inherit]!"
         >
           <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5 text-xs">
             <button
@@ -204,14 +203,14 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
             >
               ← back
             </button>
-            <div className="flex-1 truncate font-mono text-[13px] text-[var(--text-secondary)]">{filename}</div>
+            <div className="flex-1 truncate font-mono text-[length:var(--text-base)] text-[var(--text-secondary)]">{filename}</div>
             <div className="flex items-center gap-2">
               {totalRedactions > 0 && (
-                <span className="text-[11px] text-[var(--color-warning)]">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
+                <span className="text-[length:var(--text-xs)] text-[var(--color-warning)]">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
               )}
               <button
                 onClick={onRevealToggle}
-                className={`rounded px-2.5 py-1 text-[10px] uppercase tracking-widest transition-colors ${
+                className={`rounded px-2.5 py-1 text-[length:var(--text-2xs)] uppercase tracking-widest transition-colors ${
                   reveal
                     ? "bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] text-white hover:bg-[var(--color-danger)]"
                     : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -231,7 +230,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
           {isMarkdown ? (
             <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-8 py-6 max-w-4xl mx-auto w-full" />
           ) : (
-            <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[12px]" />
+            <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[length:var(--text-sm)]" />
           )}
         </div>,
         document.body,
@@ -259,7 +258,7 @@ type CovenMemoryEntry = {
  *  than the active familiar — so "Files" never silently mixes scopes. */
 function OwnershipTag() {
   return (
-    <span className="rounded bg-[var(--bg-raised)] px-1 py-px text-[9px] normal-case tracking-normal text-[var(--text-muted)]">
+    <span className="rounded bg-[var(--bg-raised)] px-1 py-px text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
       shared
     </span>
   );
@@ -440,7 +439,7 @@ function MemoryTab({
             { id: "files", label: "Files" },
           ]}
         />
-        <span className="ml-auto pb-1.5 text-[10px] text-[var(--text-muted)]">
+        <span className="ml-auto pb-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           {mode === "coven" ? covenFiltered.length : filtered.length}
         </span>
       </div>
@@ -483,17 +482,17 @@ function MemoryTab({
             <li key={e.id} className="mb-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 truncate">
-                  <span className="rounded bg-[var(--bg-raised)] px-1 py-px text-[10px] text-[var(--text-secondary)]">
+                  <span className="rounded bg-[var(--bg-raised)] px-1 py-px text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
                     {e.familiar_id}
                   </span>
                   <span className="truncate text-[var(--text-primary)]">{e.title}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   {e.updated_at}
                 </span>
               </div>
               {e.excerpt ? (
-                <p className="mt-1 line-clamp-3 text-[10px] leading-snug text-[var(--text-secondary)]">
+                <p className="mt-1 line-clamp-3 text-[length:var(--text-2xs)] leading-snug text-[var(--text-secondary)]">
                   {e.excerpt}
                 </p>
               ) : null}
@@ -507,7 +506,7 @@ function MemoryTab({
                     // developer's ~/.coven path and broke on every other machine).
                     setOpenPath(e.fullPath!);
                   }}
-                  className="mt-1 text-[10px] text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+                  className="mt-1 text-[length:var(--text-2xs)] text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
                 >
                   open file →
                 </button>
@@ -530,22 +529,22 @@ function MemoryTab({
             >
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-[var(--text-primary)]">{e.relPath}</span>
-                <span className="flex items-center gap-1 truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                <span className="flex items-center gap-1 truncate text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
                   {e.ownership === "shared" ? <OwnershipTag /> : null}
                   <span className="truncate">{e.rootLabel}</span>
                 </span>
               </span>
-              <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]" title={e.modified ? formatTimestamp(e.modified, readDateTimePrefs()) : undefined}>{age(e.modified)}</span>
+              <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={e.modified ? formatTimestamp(e.modified, readDateTimePrefs()) : undefined}>{age(e.modified)}</span>
             </button>
           </li>
         ))}
         {filtered.length > 200 ? (
-          <li className="px-2 py-2 text-center text-[10px] text-[var(--text-muted)]">
+          <li className="px-2 py-2 text-center text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             +{filtered.length - 200} more — filter to narrow
           </li>
         ) : null}
         {familiar && filesScope.hiddenForeignCount > 0 ? (
-          <li className="px-2 py-2 text-center text-[10px] text-[var(--text-muted)]">
+          <li className="px-2 py-2 text-center text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {filesScope.hiddenForeignCount} other familiar
             {filesScope.hiddenForeignCount === 1 ? "’s" : "s’"} memory hidden — scoped to {familiar.display_name}
           </li>

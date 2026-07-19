@@ -113,21 +113,21 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon name="ph:bell-ringing" width={18} className="text-[var(--text-secondary)]" />
-            <h3 id="github-subs-modal-title" className="text-[15px] font-semibold">
+            <h3 id="github-subs-modal-title" className="text-[length:var(--text-md)] font-semibold">
               Event subscriptions
             </h3>
           </div>
           <IconButton icon="ph:x" size="sm" aria-label="Close" onClick={onClose} />
         </div>
 
-        <p className="mb-4 text-[12px] text-[var(--text-muted)]">
+        <p className="mb-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Get a Cave notification when things happen in repos you watch — new PRs
           opened, CI runs finishing. Checked every minute, delivered to the bell.
         </p>
 
         {!hasPat ? (
           <div className="mb-4 flex flex-col gap-2">
-            <p className="text-[12px] text-[var(--text-secondary)]">
+            <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
               Watching repos needs a GitHub PAT — polling spends API quota the
               public rate limit can’t cover.
             </p>
@@ -136,10 +136,10 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
             </Button>
           </div>
         ) : !prefs ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
         ) : (
           <>
-            <label className="mb-3 flex items-center gap-2 text-[13px]">
+            <label className="mb-3 flex items-center gap-2 text-[length:var(--text-base)]">
               <input
                 type="checkbox"
                 checked={prefs.enabled}
@@ -149,7 +149,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
             </label>
 
             <div className="mb-4 flex flex-col gap-1.5 pl-1">
-              <label className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+              <label className="flex items-center gap-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
                 <input
                   type="checkbox"
                   disabled={!prefs.enabled}
@@ -158,7 +158,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
                 />
                 <span>PRs opened</span>
               </label>
-              <label className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+              <label className="flex items-center gap-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
                 <input
                   type="checkbox"
                   disabled={!prefs.enabled}
@@ -169,7 +169,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
               </label>
             </div>
 
-            <div className="mb-2 text-[11px] font-medium text-[var(--text-secondary)]">
+            <div className="mb-2 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
               Watched repos
             </div>
             <form
@@ -193,7 +193,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
             </form>
 
             {prefs.repos.length === 0 ? (
-              <p className="text-[12px] text-[var(--text-muted)]">
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 No repos watched yet — add one above.
               </p>
             ) : (
@@ -201,7 +201,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
                 {prefs.repos.map((repo) => (
                   <li
                     key={repo}
-                    className="flex items-center justify-between gap-2 text-[12px]"
+                    className="flex items-center justify-between gap-2 text-[length:var(--text-sm)]"
                   >
                     <span className="truncate font-mono">{repo}</span>
                     <IconButton
@@ -219,7 +219,7 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
         )}
 
         {error && (
-          <p role="alert" className="mt-3 text-[12px] text-[var(--danger,#e5484d)]">
+          <p role="alert" className="mt-3 text-[length:var(--text-sm)] text-[var(--color-danger)]">
             {error}
           </p>
         )}

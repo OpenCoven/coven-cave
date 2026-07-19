@@ -28,7 +28,7 @@ assert.match(src, /Reset/, "exposes a reset control");
 assert.match(src, /Typography pair/, "renders a single pair selector");
 assert.match(
   src,
-  /label="Typography pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
+  /label="Typography pair"[\s\S]{0,180}\[width:min\(100%,_300px\)\]! \[max-width:100%\]!/,
   "typography pair selector uses a responsive width that fits curated pair labels",
 );
 // Row controls share one standard 28px height: the select trigger pins h-7
@@ -46,7 +46,7 @@ assert.match(
 );
 assert.match(
   src,
-  /className=\{selectTrigger\}/,
+  /className=\{\[selectTrigger,/,
   "typography pair selector uses the shared standard-height trigger styling",
 );
 assert.match(src, /Display/, "renders a display (serif) preview specimen");

@@ -428,19 +428,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               <div>
                 <div className="flex items-center gap-2">
                   <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
+                  <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
                 </div>
-                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   Focused recall for one familiar at a time, with local memory files kept in the list surface.
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
                 {lastLoadedAt ? (
-                  <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${formatTimestamp(lastLoadedAt, readDateTimePrefs())}`}>
+                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={`Last refreshed ${formatTimestamp(lastLoadedAt, readDateTimePrefs())}`}>
                     Updated {age(lastLoadedAt)}
                   </span>
                 ) : null}
-                <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+                <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
                   <Icon name="ph:arrows-clockwise" width={12} />
                   Refresh
                 </button>
@@ -449,11 +449,11 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
             <div
               data-testid="memory-stats-inline"
-              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
+              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
             >
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
-              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
+              <span className="mr-0.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
               <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} help="Files written by this Cave's own familiars and conversations" />
               <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} help="Memory kept by other agent tools on this machine (e.g. Claude Code, Codex)" />
               <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} help="Working files a runtime writes for itself while it runs" />
@@ -461,7 +461,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                 <button
                   type="button"
                   onClick={() => setSourceFilter("all")}
-                  className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
                   <Icon name="ph:x-bold" width={9} />
                   Clear filter
@@ -481,7 +481,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }}
               placeholder={lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory...` : "Search memory..."}
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query ? (
               <button
@@ -499,7 +499,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               label="Filter memory by familiar"
               value={familiarFilter}
               onChange={setFamiliarFilter}
-              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
+              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[length:var(--text-sm)] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
               options={familiarOptions.map((familiar) => ({
                 value: familiar.id,
                 label: familiar.display_name,
@@ -544,7 +544,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               type="button"
               aria-pressed={staleOnly}
               onClick={() => setStaleOnly((s) => !s)}
-              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
+              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[length:var(--text-xs)] transition-colors ${
                 staleOnly ? "border-[var(--color-warning)] bg-[var(--color-warning)]/12 text-[var(--text-primary)]" : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               }`}
             >
@@ -555,7 +555,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         {error ? (
           <div
             role="alert"
-            className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)]"
+            className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
             <span className="min-w-0 flex-1">{error}</span>
@@ -582,19 +582,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             {/* LIST PANE */}
             <section className={`min-h-0 flex-col ${selectedRowId ? "hidden @min-[1024px]/memview:flex" : "flex"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
+                <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
                 <div className="flex items-center gap-2">
                   {staleOnly && bulkDeletable.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
-                      className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--color-warning)] hover:bg-[var(--bg-raised)]"
+                      className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[var(--bg-raised)]"
                     >
                       <Icon name="ph:trash" width={11} />
                       Delete {bulkDeletable.length} cleanable
                     </button>
                   ) : null}
-                  <span className="text-[10px] text-[var(--text-muted)]">
+                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                     {unifiedRows.length > fileLimit ? `${fileLimit} of ${unifiedRows.length}` : `${unifiedRows.length} shown`}
                   </span>
                 </div>
@@ -604,7 +604,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   !loaded ? (
                     <SkeletonRows count={6} className="p-3" />
                   ) : error ? (
-                    <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+                    <div className="px-3 py-8 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
                       Couldn't load memories. See the error above and try again.
                     </div>
                   ) : (
@@ -618,7 +618,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   <div>
                     {groupMemoryRows(pagedRows, groupMode).map((group) => (
                       <div key={group.key}>
-                        <h4 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] backdrop-blur">
+                        <h4 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)] backdrop-blur">
                           {group.label}
                           <span className="font-normal text-[var(--text-muted)]">({group.rows.length})</span>
                         </h4>
@@ -633,7 +633,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   <button
                     type="button"
                     onClick={() => setFileLimit((n) => n + FILE_PAGE)}
-                    className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                    className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                   >
                     <Icon name="ph:caret-down" width={11} />
                     Show more · {fileLimit} of {unifiedRows.length}
@@ -659,14 +659,14 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         {compact ? (
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
-            <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
+            <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
+            <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
           </div>
           {visibleCoven.length === 0 ? (
             !loaded ? (
               <SkeletonRows count={4} className="p-2" />
             ) : error ? (
-              <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
+              <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 Couldn’t load familiar memories. See the error above and try again.
               </div>
             ) : (
@@ -683,24 +683,24 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+                        <div className="flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
                             {familiar?.display_name ?? entry.familiar_id}
                           </span>
                           <RelativeTime iso={entry.updated_at} />
                         </div>
-                        <h4 className="mt-2 line-clamp-2 text-[13px] font-medium text-[var(--text-primary)]">{entry.title}</h4>
+                        <h4 className="mt-2 line-clamp-2 text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{entry.title}</h4>
                       </div>
                       <Icon name="ph:brain" width={14} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                     </div>
                     {entry.excerpt ? (
-                      <p className="mt-2 line-clamp-4 text-[11px] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p>
+                      <p className="mt-2 line-clamp-4 text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenMemoryFile?.(entry.path); }}
-                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                       >
                         <Icon name="ph:file-text" width={12} />
                         Open memory
@@ -717,9 +717,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
+            <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
+              <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
             </div>
           </div>
           <MemoryFilesList
@@ -811,7 +811,7 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
           <Icon name="ph:book-open" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={path}>
+          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]" title={path}>
             {heading}
           </span>
           <button
@@ -826,9 +826,9 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
         <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
           <div className="mx-auto w-full max-w-[820px]">
             {error ? (
-              <p className="text-[12px] text-[var(--color-warning)]">{error}</p>
+              <p className="text-[length:var(--text-sm)] text-[var(--color-warning)]">{error}</p>
             ) : text === null ? (
-              <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading memory…</p>
             ) : (
               <MarkdownBlock text={text} className="cave-md--expanded" />
             )}
@@ -860,7 +860,7 @@ function ExpandMemoryButton({
         className={
           compact
             ? "focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            : "focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            : "focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         }
       >
         <Icon name="ph:arrows-out-simple" width={compact ? 12 : 11} />
@@ -893,7 +893,7 @@ function SourceFilterChip({
       onClick={onClick}
       aria-pressed={active}
       title={help}
-      className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors ${
+      className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[length:var(--text-xs)] transition-colors ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
           : "border-transparent text-[var(--text-secondary)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]/50"
@@ -933,7 +933,7 @@ export function MemoryFilesList({
         !loaded ? (
           <SkeletonRows count={5} className="p-3" />
         ) : error ? (
-          <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+          <div className="px-3 py-8 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
             Couldn't load memory files. See the error above and try again.
           </div>
         ) : (
@@ -957,14 +957,14 @@ export function MemoryFilesList({
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]" title={entry.relPath}>{base}</span>
-                  <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
+                  <span className="block truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]" title={entry.relPath}>{base}</span>
+                  <span className="mt-0.5 block truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                     {entry.sourceKindLabel}
                     {dir ? <> · {dir}</> : null}
                     {size ? <> · {size}</> : null}
                   </span>
                   {(entry.harnessId || entry.runtimeId || entry.origin || (entry.familiarId && entry.familiarId !== activeFamiliarId)) ? (
-                    <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
+                    <span className="mt-1 flex flex-wrap gap-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                       {entry.origin ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">origin:{entry.origin}</span> : null}
                       {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.harnessId}</span> : null}
                       {entry.runtimeId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.runtimeId}</span> : null}
@@ -972,7 +972,7 @@ export function MemoryFilesList({
                     </span>
                   ) : null}
                 </span>
-                <RelativeTime iso={entry.modified} className="shrink-0 text-[10px] text-[var(--text-muted)]" />
+                <RelativeTime iso={entry.modified} className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]" />
               </button>
               <div className="flex items-center gap-1 pr-2">
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
@@ -996,7 +996,7 @@ export function MemoryFilesList({
         <button
           type="button"
           onClick={onShowMore}
-          className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:caret-down" width={11} />
           Show {Math.min(hidden, 80)} more · {sliced.length} of {entries.length}

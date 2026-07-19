@@ -224,20 +224,20 @@ export function ProfileSection() {
 
       <Link
         href="/profile"
-        className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[length:var(--text-sm)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
         aria-label="Open your profile card"
       >
         View profile card →
       </Link>
 
       {disabled ? (
-        <p className="rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-muted)]">
+        <p className="rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Daemon offline — profile unavailable.
         </p>
       ) : null}
 
       {error ? (
-        <p className="rounded-xl border border-[var(--color-danger)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-4 py-3 text-[12px] text-[var(--color-danger)]">
+        <p className="rounded-xl border border-[var(--color-danger)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-4 py-3 text-[length:var(--text-sm)] text-[var(--color-danger)]">
           {error}
         </p>
       ) : null}
@@ -252,7 +252,7 @@ export function ProfileSection() {
               disabled={disabled}
               onChange={(event) => setName(event.target.value)}
               onBlur={() => void saveTextField("name", name)}
-              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
             />
           </ProfileField>
 
@@ -264,7 +264,7 @@ export function ProfileSection() {
               disabled={disabled}
               onChange={(event) => setPronouns(event.target.value)}
               onBlur={() => void saveTextField("pronouns", pronouns)}
-              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
             />
           </ProfileField>
         </div>
@@ -272,7 +272,7 @@ export function ProfileSection() {
 
       <SettingsGroup label="Image" description="The profile image that appears beside your operator profile.">
         <div className="flex flex-wrap items-center gap-4 px-4 py-4">
-          <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[28px] font-semibold text-[var(--text-secondary)]">
+          <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[length:var(--text-display)] font-semibold text-[var(--text-secondary)]">
             {avatarSrc ? (
               <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
             ) : avatarInitial(snapshot) ? (
@@ -312,9 +312,9 @@ export function ProfileSection() {
                 </Button>
               ) : null}
             </div>
-            <p className="text-[11px] text-[var(--text-muted)]">PNG, JPEG, or WebP. Large files are downsized before upload.</p>
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">PNG, JPEG, or WebP. Large files are downsized before upload.</p>
             {legacySvgAvatar ? (
-              <p className="text-[11px] text-[var(--text-muted)]">
+              <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 Your previous avatar was an SVG, which can no longer be used — re-upload it as PNG, JPEG, or WebP.
               </p>
             ) : null}
@@ -330,7 +330,7 @@ export function ProfileSection() {
               value={timezone}
               disabled={disabled}
               onChange={(event) => void saveTimezone(event.target.value)}
-              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
             >
               <option value="">System ({systemTz})</option>
               {timezoneOptions.map((tz) => (
@@ -352,7 +352,7 @@ export function ProfileSection() {
               rows={5}
               onChange={(event) => setBio(event.target.value)}
               onBlur={() => void saveTextField("bio", bio)}
-              className="focus-ring min-h-28 w-full resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+              className="focus-ring min-h-28 w-full resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
             />
           </ProfileField>
         </div>
@@ -361,7 +361,7 @@ export function ProfileSection() {
       <SettingsGroup label="Links" description="Socials, portfolios, and references familiars can cite.">
         <div className="grid gap-3 px-4 py-4">
           {links.length === 0 ? (
-            <p className="text-[12px] text-[var(--text-muted)]">No links yet.</p>
+            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">No links yet.</p>
           ) : null}
           {links.map((link, index) => {
             const labelId = `${baseId}-link-${index}-label`;
@@ -382,7 +382,7 @@ export function ProfileSection() {
                     maxLength={PROFILE_LIMITS.linkLabel}
                     disabled={disabled}
                     onChange={(event) => updateLink(index, { label: event.target.value })}
-                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
                   />
                 </ProfileField>
                 <ProfileField label="URL" htmlFor={urlId}>
@@ -393,7 +393,7 @@ export function ProfileSection() {
                     disabled={disabled}
                     inputMode="url"
                     onChange={(event) => updateLink(index, { url: event.target.value })}
-                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[13px] text-[var(--text-primary)] disabled:opacity-50"
+                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-50"
                   />
                 </ProfileField>
                 <div className="flex items-end">
@@ -414,12 +414,12 @@ export function ProfileSection() {
                   </Button>
                 </div>
                 {rowIncomplete ? (
-                  <p className="text-[11px] text-[var(--color-danger)] md:col-span-3">Add both fields to save this link.</p>
+                  <p className="text-[length:var(--text-xs)] text-[var(--color-danger)] md:col-span-3">Add both fields to save this link.</p>
                 ) : null}
               </div>
             );
           })}
-          {linkHint ? <p className="text-[11px] text-[var(--color-danger)]">{linkHint}</p> : null}
+          {linkHint ? <p className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{linkHint}</p> : null}
           <div>
             <Button
               variant="secondary"
@@ -429,7 +429,7 @@ export function ProfileSection() {
             >
               Add link
             </Button>
-            {saving === "links" ? <span className="ml-3 text-[11px] text-[var(--text-muted)]">Saving…</span> : null}
+            {saving === "links" ? <span className="ml-3 text-[length:var(--text-xs)] text-[var(--text-muted)]">Saving…</span> : null}
           </div>
         </div>
       </SettingsGroup>
@@ -451,10 +451,10 @@ function ProfileField({
   return (
     <div className="grid gap-1.5">
       <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor={htmlFor} className="text-[12px] font-medium text-[var(--text-secondary)]">
+        <label htmlFor={htmlFor} className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
           {label}
         </label>
-        {hint ? <span className="text-[11px] text-[var(--text-muted)]">{hint}</span> : null}
+        {hint ? <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{hint}</span> : null}
       </div>
       {children}
     </div>

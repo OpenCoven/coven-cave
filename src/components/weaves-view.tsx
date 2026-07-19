@@ -53,7 +53,7 @@ function Banners({ state }: { state: SurfaceState<unknown> }) {
         <p
           key={banner.kind}
           role="status"
-          className="flex items-center gap-2 rounded border border-dashed border-[var(--border-strong,#555)] bg-[var(--bg-raised)] px-2 py-1 text-xs text-[var(--text-muted)]"
+          className="flex items-center gap-2 rounded border border-dashed border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 py-1 text-xs text-[var(--text-muted)]"
         >
           <Icon name={banner.kind === "stale" ? "ph:clock-countdown" : "ph:flask"} aria-hidden />
           {banner.message}
@@ -67,7 +67,7 @@ function BlockedSurface({ state }: { state: Extract<SurfaceState<unknown>, { kin
   return (
     <div
       role="status"
-      className="flex flex-col items-start gap-2 rounded border border-[var(--border-strong,#555)] bg-[var(--bg-raised)] px-3 py-4"
+      className="flex flex-col items-start gap-2 rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-4"
     >
       <span className="inline-flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
         <Icon name="ph:shield-slash" aria-hidden />
@@ -75,7 +75,7 @@ function BlockedSurface({ state }: { state: Extract<SurfaceState<unknown>, { kin
       </span>
       <p className="text-xs text-[var(--text-muted)]">{state.message}</p>
       {state.meta ? (
-        <p className="text-[10px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           last attempt {state.meta.observedAt} · adapter {state.meta.adapter}
         </p>
       ) : null}
@@ -87,7 +87,7 @@ function TraceDrawer({ trace, onClose }: { trace: StatusTrace; onClose: () => vo
   return (
     <aside
       aria-label="Trace to source"
-      className="rounded border border-[var(--border,#333)] bg-[var(--bg-raised)] px-3 py-2"
+      className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2"
     >
       <header className="flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--text-primary)]">
@@ -103,12 +103,12 @@ function TraceDrawer({ trace, onClose }: { trace: StatusTrace; onClose: () => vo
           <Icon name="ph:x" aria-hidden />
         </button>
       </header>
-      <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[11px] text-[var(--text-primary)]">
+      <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
         {trace.evidence.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
-      <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+      <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         cursor {trace.source.cursor} · observed {trace.source.observedAt} · adapter {trace.source.adapter}
       </p>
     </aside>

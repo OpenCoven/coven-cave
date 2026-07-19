@@ -94,7 +94,7 @@ export function MemoryReaderPane({
             </button>
           ) : null}
           <h3
-            className="min-w-0 flex-1 truncate text-[14px] font-semibold text-[var(--text-primary)]"
+            className="min-w-0 flex-1 truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
             title={row.title}
           >
             {row.title}
@@ -112,7 +112,7 @@ export function MemoryReaderPane({
                 aria-pressed={editing}
                 aria-label={editing ? "Stop editing" : "Edit memory file"}
                 title={editing ? "Stop editing" : "Edit"}
-                className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] transition-colors ${
+                className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
                   editing
                     ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
@@ -124,7 +124,7 @@ export function MemoryReaderPane({
             ) : null}
             {!editing ? (
             <>
-            <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[10px]">
+            <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
               {(["rendered", "raw"] as const).map((m) => (
                 <button
                   key={m}
@@ -154,7 +154,7 @@ export function MemoryReaderPane({
             ) : null}
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
             {row.kind === "agent" ? "Familiar memory" : "File"}
           </span>
@@ -171,7 +171,7 @@ export function MemoryReaderPane({
         </div>
         <div className="mt-2 flex items-center gap-1">
           <code
-            className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]"
+            className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
             title={row.path}
           >
             {compactPath(row.path)}
@@ -180,7 +180,7 @@ export function MemoryReaderPane({
             type="button"
             onClick={copyPath}
             aria-label="Copy path"
-            className="focus-ring inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded px-1.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:copy" width={11} aria-hidden />
             {copied ? "Copied" : "Copy"}
@@ -188,7 +188,7 @@ export function MemoryReaderPane({
           <button
             type="button"
             onClick={() => onOpenFile(row.path)}
-            className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:file-text" width={11} aria-hidden />
             Open file
@@ -198,7 +198,7 @@ export function MemoryReaderPane({
               type="button"
               onClick={() => openGrimoireDoc("memory", row.contentPath!)}
               title="Open in the Memories editor"
-              className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:book-open" width={11} aria-hidden />
               Memories
@@ -232,11 +232,11 @@ export function MemoryReaderPane({
             ))}
           </div>
         ) : content.trim() === "" ? (
-          <p className="text-[12px] text-[var(--text-muted)]">{emptyMsg}</p>
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{emptyMsg}</p>
         ) : mode === "rendered" ? (
           <MarkdownBlock text={content} />
         ) : (
-          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-[var(--text-secondary)]">
+          <pre className="whitespace-pre-wrap break-words font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
             {content}
           </pre>
         )}

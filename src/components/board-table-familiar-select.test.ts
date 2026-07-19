@@ -29,7 +29,7 @@ assert.match(
 // ── Title cell shows a paperclip count when the card carries attachments ─────
 assert.match(
   boardTable,
-  /className="board-table-attach-count"[\s\S]*?ph:paperclip[\s\S]*?card\.attachments!\.length/,
+  /className="board-table-attach-count[^"]*"[\s\S]*?ph:paperclip[\s\S]*?card\.attachments!\.length/,
   "the table's title cell surfaces a paperclip + attachment count (kanban parity)",
 );
 

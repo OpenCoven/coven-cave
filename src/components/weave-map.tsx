@@ -183,13 +183,13 @@ export function WeaveMapCanvas({ threads, audit, proposals, selectedThreadId, on
     <section aria-label="Weave map" className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]">
       <header className="flex items-baseline justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
         <h3 className="text-xs font-medium text-[var(--text-primary)]">Weave map</h3>
-        <p className="text-[10px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           solid = authority · weighted = audited touches · dashed = staged
         </p>
       </header>
       <canvas ref={canvasRef} role="img" aria-label={`Weave map: ${threads.length} threads, ${touchedCount} audited touch edges, ${pendingCount} staged`} />
       <footer className="border-t border-[var(--border-hairline)] px-3 py-1.5">
-        <p className="text-[10px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           Memory reads aren&rsquo;t audited yet — the map shows verified writes and contracts only.
         </p>
       </footer>

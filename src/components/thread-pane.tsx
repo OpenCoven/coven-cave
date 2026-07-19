@@ -34,7 +34,7 @@ function ChannelChips({ thread }: { thread: ThreadView }) {
                 ? `Holding under ${channelLabel(channel)} requires: ${required.join(", ")}`
                 : `${channelLabel(channel)} has no structural strand floor`
             }
-            className="inline-flex items-center gap-1 rounded border border-[var(--border,#333)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+            className="inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]"
           >
             <Icon name="ph:waveform" aria-hidden />
             {channelLabel(channel)}
@@ -78,9 +78,9 @@ export function ThreadPane({
       {weave.patternDescriptor ? (
         <aside
           aria-label="Pattern descriptor (derived)"
-          className="rounded border border-dashed border-[var(--border,#333)] px-2 py-1.5 text-xs text-[var(--text-muted)]"
+          className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-1.5 text-xs text-[var(--text-muted)]"
         >
-          <span className="mr-1 inline-flex items-center gap-1 rounded bg-[var(--bg-raised)] px-1 py-0.5 text-[10px] uppercase tracking-wide">
+          <span className="mr-1 inline-flex items-center gap-1 rounded bg-[var(--bg-raised)] px-1 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide">
             <Icon name="ph:info" aria-hidden />
             derived
           </span>
@@ -127,14 +127,14 @@ export function ThreadPane({
                 <ChannelChips thread={thread} />
               </div>
               {thread.tension.state === "frayed" ? (
-                <p className="mt-1 text-xs text-[var(--warn,#d9a53c)]">
+                <p className="mt-1 text-xs text-[var(--color-warning)]">
                   Frayed at {thread.tension.strand ?? "a missing required strand"} on{" "}
                   {thread.tension.channel ?? "an unrecognized channel"} ({thread.tension.reason.kind}) —
                   repairable; inspect the strand for the current-vs-expected diff.
                 </p>
               ) : null}
               {thread.tension.state === "snapped" ? (
-                <p className="mt-1 text-xs text-[var(--danger,#d95a5a)]">
+                <p className="mt-1 text-xs text-[var(--color-danger)]">
                   Snapped ({thread.tension.reason.kind}) — read-only until a fresh authority ceremony.
                 </p>
               ) : null}
@@ -142,7 +142,7 @@ export function ThreadPane({
           );
         })}
       </ul>
-      <footer className="text-[10px] text-[var(--text-muted)]">
+      <footer className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         observed {meta.observedAt} · cursor {meta.sourceCursor}
       </footer>
     </section>

@@ -76,7 +76,7 @@ export function ProjectChatRow({
           }
         }}
         data-selected={selectMode && selected ? "true" : undefined}
-        className="focus-ring projects-session-row flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)]"
+        className="focus-ring projects-session-row flex w-full items-center gap-2 px-4 py-1 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)]"
       >
         {selectMode ? (
           <span
@@ -104,7 +104,7 @@ export function ProjectChatRow({
         </span>
         <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
         {selectMode ? null : (
-          <span className="flex shrink-0 items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          <span className="flex shrink-0 items-center gap-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {session.model ? (
               <span
                 className="hidden items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px font-medium sm:inline-flex"
@@ -138,7 +138,7 @@ export function ProjectChatRow({
                 e.stopPropagation();
                 setConfirmDelete(false);
               }}
-              className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+              className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
             >
               Cancel
             </Button>
@@ -153,7 +153,7 @@ export function ProjectChatRow({
                 setDeleting(false);
                 setConfirmDelete(false);
               }}
-              className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+              className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
             >
               Delete
             </Button>

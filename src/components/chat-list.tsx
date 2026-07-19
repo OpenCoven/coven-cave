@@ -155,7 +155,7 @@ function HighlightedSnippet({ snippet, query }: { snippet: string; query: string
   return (
     <>
       {snippet.slice(0, idx)}
-      <mark className="rounded-[2px] bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] px-0.5 text-[var(--text-primary)]">
+      <mark className="rounded-[var(--radius-control)] bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] px-0.5 text-[var(--text-primary)]">
         {snippet.slice(idx, idx + query.length)}
       </mark>
       {snippet.slice(idx + query.length)}
@@ -216,11 +216,11 @@ function ChatListSection({
           aria-hidden
         />
       ) : null}
-      <span className="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
+      <span className="truncate text-[length:var(--text-sm)] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
         {label}
       </span>
       {typeof count === "number" ? (
-        <span className="font-mono text-[12px] text-[var(--text-secondary)] opacity-80">{count}</span>
+        <span className="font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] opacity-80">{count}</span>
       ) : null}
     </>
   );
@@ -820,11 +820,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {/* Name + subtitle */}
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex min-w-0 items-center gap-2">
-                <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+                <h2 className="min-w-0 truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
                   {panelTitle}
                 </h2>
               </div>
-              <p className="mt-0 truncate text-[11px] leading-snug text-[var(--text-muted)]">
+              <p className="mt-0 truncate text-[length:var(--text-xs)] leading-snug text-[var(--text-muted)]">
                 {panelRole ? (
                   <>
                     <span className="text-[var(--text-secondary)]">{panelRole}</span>
@@ -841,7 +841,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Session
@@ -880,12 +880,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 }
               }}
               placeholder="Search sessions…"
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
             {!search && (
               <kbd
                 aria-hidden
-                className="pointer-events-none shrink-0 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+                className="pointer-events-none shrink-0 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]"
               >
                 /
               </kbd>
@@ -957,7 +957,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Session
@@ -993,7 +993,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <div aria-hidden className="space-y-px px-4 py-3">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="flex gap-3 px-0 py-3.5">
-                <span className="ui-skeleton ui-skeleton--avatar mt-1" style={{ height: 8, width: 8 }} />
+                <span className="ui-skeleton ui-skeleton--avatar mt-1 [height:var(--space-2)]! [width:var(--space-2)]!" />
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <span className="ui-skeleton h-2.5 w-1/4" />
                   <span className="ui-skeleton h-3 w-1/2" />
@@ -1031,12 +1031,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   </span>
                   <span className="mt-4 block divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
                     <span className="flex items-center justify-between gap-3 py-2">
-                      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Runtime</span>
-                      <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</span>
+                      <span className="text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Runtime</span>
+                      <span className="min-w-0 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]">{panelRuntime}</span>
                     </span>
                     <span className="flex items-center justify-between gap-3 py-2">
-                      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</span>
-                      <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</span>
+                      <span className="text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</span>
+                      <span className="min-w-0 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</span>
                     </span>
                   </span>
                 </>
@@ -1053,7 +1053,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 </Button>
               }
             />
-            <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-2 text-[11px] leading-5 text-[var(--text-muted)]">
+            <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]">
               <span className="font-medium text-[var(--text-secondary)]">Tip:</span> use {keys.mod}F
               to jump back to chat search after this list has history.
             </div>
@@ -1067,7 +1067,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <button
               type="button"
               onClick={() => { setSearch(""); setUnreadsOnly(false); setSelection("all"); }}
-              className="text-[12px] text-[var(--accent-presence)] hover:underline"
+              className="text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
             >
               Clear filters
             </button>
@@ -1080,18 +1080,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <button
                   type="button"
                   onClick={toggleSelectAllVisible}
-                  className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                  className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
                 >
                   {allVisibleSelected ? "Clear" : "Select all"}
                 </button>
-                <span className="text-[11px] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
+                <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
               </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={bulkBusy || selectedVisibleCount === 0}
                   onClick={() => void bulkArchive(!showArchived)}
-                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
                   <Icon name={showArchived ? "ph:tray" : "ph:archive"} width={11} aria-hidden />
                   {showArchived ? "Unarchive" : "Archive"}
@@ -1100,7 +1100,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   type="button"
                   disabled={bulkBusy || selectedVisibleCount === 0}
                   onClick={() => void bulkDelete()}
-                  className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-2 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] disabled:opacity-50"
+                  className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] disabled:opacity-50"
                 >
                   <Icon name="ph:trash" width={11} aria-hidden />
                   {bulkBusy ? "…" : `Delete${selectedVisibleCount ? ` ${selectedVisibleCount}` : ""}`}
@@ -1108,7 +1108,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <button
                   type="button"
                   onClick={exitSelect}
-                  className="focus-ring rounded px-1.5 py-0.5 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                  className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
                 >
                   Cancel
                 </button>
@@ -1141,10 +1141,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 {projectRoot !== null && effectiveSelection === "all" && (
                   <div className="group relative flex items-center gap-1.5 px-4 py-2 bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] border-b border-[var(--border-hairline)]">
                     <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-secondary)]" />
-                    <span className="truncate text-[12px] font-bold text-[var(--text-primary)] uppercase tracking-wide">
+                    <span className="truncate text-[length:var(--text-sm)] font-bold text-[var(--text-primary)] uppercase tracking-wide">
                       {repoName(projectRoot)}
                     </span>
-                    <span className="font-mono text-[12px] text-[var(--text-secondary)] opacity-80">{rows.length}</span>
+                    <span className="font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] opacity-80">{rows.length}</span>
                     <button
                       className="chat-list-group-new touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                       onClick={(e) => {
@@ -1288,14 +1288,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             {/* Row 1: familiar/project name + timestamp */}
                             <span className="chat-list-row-meta flex items-baseline justify-between gap-2">
                               <span className="chat-list-row-tags flex items-center gap-1.5 min-w-0">
-                                <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
+                                <span className="truncate text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
                                   {project || rowFamiliarName}
                                 </span>
                                 {s.origin ? <OriginChip origin={s.origin} /> : null}
                                 <SessionInitiatorChip initiator={s.initiator} />
                                 {s.model ? (
                                   <span
-                                    className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[4px] bg-[var(--bg-raised)]/70 px-1 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                                    className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
                                     title={`Model: ${s.model}`}
                                   >
                                     <Icon name={modelIcon(s.model)} width={10} aria-hidden />
@@ -1303,7 +1303,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                   </span>
                                 ) : null}
                               </span>
-                              <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
+                              <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                                 <span>{chatDate(s.updated_at, dtPrefs)}</span>
                                 {isRelativePhrase(rel) ? (
                                   <>
@@ -1327,7 +1327,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 />
                               )}
                               <span className={[
-                                "truncate text-[13px] font-semibold",
+                                "truncate text-[length:var(--text-base)] font-semibold",
                                 s.status === "running"
                                   ? "text-white"
                                   : "text-[var(--text-primary)]",
@@ -1337,7 +1337,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
 
                             {/* Row 3: status preview */}
-                            <span className={`chat-list-row-preview truncate text-[12px] ${st.preview}`}>
+                            <span className={`chat-list-row-preview truncate text-[length:var(--text-sm)] ${st.preview}`}>
                               {s.keep ? <span className="text-[var(--accent-presence)]">Keep · </span> : null}
                               {!s.keep && s.archive_extended_until ? (
                                 <span
@@ -1371,11 +1371,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               role="group"
                               aria-label="Confirm chat deletion"
                             >
-                              <span className="text-[11px] font-medium text-[var(--color-danger)]">Delete chat?</span>
+                              <span className="text-[length:var(--text-xs)] font-medium text-[var(--color-danger)]">Delete chat?</span>
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+                                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
                               >
                                 Cancel
                               </button>
@@ -1384,7 +1384,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 onClick={(e) => void deleteSession(e, s.id)}
                                 disabled={deletingId === s.id}
                                 aria-label="Confirm delete chat"
-                                className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] disabled:opacity-40"
+                                className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] px-2 py-0.5 text-[length:var(--text-2xs)] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] disabled:opacity-40"
                               >
                                 <Icon name="ph:trash" width={10} aria-hidden />
                                 {deletingId === s.id ? "…" : "Delete"}
@@ -1540,7 +1540,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <section aria-label="Matches in conversation content">
               <div className="flex items-center gap-1.5 border-y border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">
                 <Icon name="ph:chats" width={12} className="shrink-0 text-[var(--text-secondary)]" />
-                <span className="truncate text-[12px] font-bold uppercase tracking-wide text-[var(--text-primary)]">
+                <span className="truncate text-[length:var(--text-sm)] font-bold uppercase tracking-wide text-[var(--text-primary)]">
                   In conversations
                 </span>
               </div>
@@ -1567,14 +1567,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                         className="focus-ring-inset group flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-[var(--bg-raised)]/50"
                       >
                         <span className="flex items-baseline justify-between gap-2">
-                          <span className="min-w-0 truncate text-[13px] font-semibold text-[var(--text-primary)]">
+                          <span className="min-w-0 truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
                             {stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
                           </span>
-                          <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                          <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                             {hit.matchCount === 1 ? "1 match" : `${hit.matchCount} matches`}
                           </span>
                         </span>
-                        <span className="truncate text-[12px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                           <HighlightedSnippet snippet={hit.snippet} query={search.trim()} />
                         </span>
                       </div>
@@ -1589,7 +1589,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       </div>
 
       {/* ── Footer ── */}
-      <footer className="chat-list-footer border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+      <footer className="chat-list-footer border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
       </section>

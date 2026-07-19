@@ -169,33 +169,33 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
     >
       <div className="flex flex-col gap-4">
         {!loaded || fields.length > 0 ? (
-          <p className="text-[12px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             {displayName} needs the following before its tools can run. Secrets are saved in the
             encrypted local vault or stored as 1Password references.
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--danger-text)]">
             {error}
           </p>
         ) : null}
         {!loaded ? (
           <SkeletonRows count={3} />
         ) : fields.length === 0 && !error ? (
-          <p className="text-[12px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             Nothing to set up — {displayName} has no required values. You can close this dialog.
           </p>
         ) : (
           fields.map((f) => (
             <div key={f.key} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-hairline)] p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-medium text-[var(--text-primary)]">{f.title}</span>
-                <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--color-warning)]"}`}>
+                <span className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{f.title}</span>
+                <span className={`inline-flex items-center gap-1 text-[length:var(--text-xs)] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--color-warning)]"}`}>
                   <Icon name={f.satisfied ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
                   {f.satisfied ? `Set${f.source === "encrypted" ? " · encrypted" : f.source === "vault" ? " · 1Password" : ""}` : "Not set"}
                 </span>
               </div>
-              {f.description ? <p className="text-[11px] text-[var(--text-muted)]">{f.description}</p> : null}
+              {f.description ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{f.description}</p> : null}
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -203,8 +203,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                   onChange={(e) => setDrafts((d) => ({ ...d, [f.key]: e.target.value }))}
                   placeholder={f.sensitive ? "Paste a secret or op://Vault/Item/field" : f.default ? `e.g. ${f.default}` : "Enter a value (e.g. a directory path)"}
                   aria-label={`${f.title} value`}
-                  className="min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                  style={{ height: 32 }}
+                  className="min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)] [height:var(--space-8)]!"
                 />
                 <Button
                   variant="primary"
@@ -226,13 +225,13 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 ) : null}
               </div>
               {results[f.key] && results[f.key].state !== "idle" && results[f.key].state !== "testing" ? (
-                <p className={`inline-flex items-center gap-1 text-[11px] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}>
+                <p className={`inline-flex items-center gap-1 text-[length:var(--text-xs)] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}>
                   <Icon name={results[f.key].state === "valid" ? "ph:check-circle" : "ph:warning"} width={11} aria-hidden />
                   {results[f.key].message}
                 </p>
               ) : null}
               {f.sensitive ? (
-                <p className="text-[10px] text-[var(--text-muted)]">
+                <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   Raw values are saved encrypted on this machine. op:// refs still use 1Password.
                 </p>
               ) : null}
@@ -240,7 +239,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
           ))
         )}
         {allSatisfied ? (
-          <p className="inline-flex items-center gap-1 text-[12px] text-[var(--text-primary)]">
+          <p className="inline-flex items-center gap-1 text-[length:var(--text-sm)] text-[var(--text-primary)]">
             <Icon name="ph:check-circle" width={14} aria-hidden /> Configured — all required values are set.
           </p>
         ) : null}

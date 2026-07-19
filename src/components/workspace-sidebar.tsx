@@ -671,8 +671,7 @@ export function WorkspaceSidebar({
                           <button
                             type="button"
                             onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                            className="cnav__more focus-ring"
-                            style={{ paddingLeft: "13px" }}
+                            className="cnav__more focus-ring [padding-left:13px]!"
                           >
                             Show {bucket.sessions.length - THREADS_PREVIEW} more
                           </button>

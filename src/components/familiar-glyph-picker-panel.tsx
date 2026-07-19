@@ -163,7 +163,7 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
       {/* Recent */}
       {recentEntries.length > 0 && !query.trim() ? (
         <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+          <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
             Recent
           </div>
           <div className="flex flex-wrap gap-1">
@@ -187,7 +187,7 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
       ) : null}
 
       {/* Results count */}
-      <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-4 py-1.5 text-[10px] text-[var(--text-muted)]">
+      <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-4 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {query.trim() ? (
           <>
             <span>
@@ -360,7 +360,7 @@ function CategorizedGrid({
         .filter((c) => byCategory.has(c))
         .map((c) => (
           <section key={c}>
-            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
               {c}
             </div>
             <GlyphGrid

@@ -57,13 +57,9 @@ export function CronPromptBar({
   return (
     <div className={className}>
       <div
-        className="flex items-center gap-2 rounded-[var(--radius-control)] border px-2 py-1.5"
-        style={{
-          borderColor: "color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline))",
-          background: "color-mix(in oklch, var(--accent-presence) 6%, var(--bg-base))",
-        }}
+        className="flex items-center gap-2 rounded-[var(--radius-control)] border px-2 py-1.5 [border-color:color-mix(in_oklch,_var(--accent-presence)_35%,_var(--border-hairline))]! [background:color-mix(in_oklch,_var(--accent-presence)_6%,_var(--bg-base))]!"
       >
-        <span aria-hidden style={{ color: "var(--accent-presence)", lineHeight: 0 }}>
+        <span aria-hidden className="[color:var(--accent-presence)]! [line-height:0]!">
           <Icon name="ph:sparkle" width={13} />
         </span>
         <input
@@ -81,22 +77,20 @@ export function CronPromptBar({
           disabled={disabled}
           placeholder={placeholder}
           aria-label={ariaLabel}
-          className="min-w-0 flex-1 bg-transparent text-[12px] outline-none"
-          style={{ color: "var(--text-primary)" }}
+          className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] outline-none [color:var(--text-primary)]!"
         />
         <Button
           variant="ghost"
           size="xs"
           disabled={disabled || text.trim().length === 0}
           onClick={apply}
-          className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium"
-          style={{ color: "var(--accent-presence)" }}
+          className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium [color:var(--accent-presence)]!"
         >
           Apply
         </Button>
       </div>
       {/* role=status: applied/miss feedback is announced without stealing focus. */}
-      <p role="status" className="mt-1 min-h-0 text-[11px]" style={{ color: feedback?.tone === "miss" ? "var(--color-warning)" : "var(--text-muted)" }}>
+      <p role="status" className="mt-1 min-h-0 text-[length:var(--text-xs)]" style={{ color: feedback?.tone === "miss" ? "var(--color-warning)" : "var(--text-muted)" }}>
         {feedback?.message ?? ""}
       </p>
     </div>

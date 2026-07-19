@@ -143,8 +143,7 @@ function relTime(iso: string | undefined | null): string {
 
 function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
-      style={{ color: "var(--text-muted)" }}>
+    <label htmlFor={htmlFor} className="mb-1 block text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">
       {children}
     </label>
   );
@@ -152,11 +151,10 @@ function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNo
 
 function CronDetailSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
   return (
-    <section className={`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`}
-      style={{ borderColor: "var(--border-hairline)", background: "color-mix(in oklch, var(--bg-base) 72%, transparent)" }}>
+    <section className={[(`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`), "[border-color:var(--border-hairline)]! [background:color-mix(in_oklch,_var(--bg-base)_72%,_transparent)]!"].filter(Boolean).join(" ")}>
       <div>
-        <h3 className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
-        {description ? <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>{description}</p> : null}
+        <h3 className="text-[length:var(--text-sm)] font-semibold [color:var(--text-primary)]!">{title}</h3>
+        {description ? <p className="mt-0.5 text-[length:var(--text-xs)] [color:var(--text-muted)]!">{description}</p> : null}
       </div>
       {children}
     </section>
@@ -181,24 +179,19 @@ function CronSummaryTile({ label, value, tone = "default" }: { label: string; va
           ? "var(--text-muted)"
           : "var(--text-primary)";
   return (
-    <div className="rounded-[var(--radius-control)] border px-3 py-2"
-      style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
-      <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{label}</p>
-      <div className="mt-1 min-w-0 truncate text-[12px] font-medium" style={{ color: valueColor }}>{value}</div>
+    <div className="rounded-[var(--radius-control)] border px-3 py-2 [border-color:var(--border-hairline)]! [background:var(--bg-base)]!">
+      <p className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">{label}</p>
+      <div className="mt-1 min-w-0 truncate text-[length:var(--text-sm)] font-medium" style={{ color: valueColor }}>{value}</div>
     </div>
   );
 }
 
 const automationFieldBaseClass =
-  "w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
-const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
-const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
-const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[11px]`;
-
-const fieldStyle = {
-  borderColor: "var(--border-hairline)",
-} as const;
+  "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
+const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[length:var(--text-xs)]`;
 
 // ── Status icon ──────────────────────────────────────────────────────────────
 function StatusIcon({ item }: { item: InboxItem }) {
@@ -212,8 +205,7 @@ function StatusIcon({ item }: { item: InboxItem }) {
   if (paused) {
     // Pause icon — two vertical bars inside circle
     return (
-      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-        style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
+      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.18)]! [color:rgba(255,255,255,0.35)]!">
         <Icon name="ph:minus" width={8} />
       </span>
     );
@@ -221,14 +213,12 @@ function StatusIcon({ item }: { item: InboxItem }) {
   if (active && hasRun) {
     // Filled purple circle — has fired before
     return (
-      <span role="img" aria-label="Active, has fired" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
-        style={{ background: "var(--accent-presence)" }} />
+      <span role="img" aria-label="Active, has fired" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full [background:var(--accent-presence)]!" />
     );
   }
   // Hollow circle — active, never fired yet
   return (
-    <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-      style={{ borderColor: "rgba(255,255,255,0.28)" }} />
+    <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.28)]!" />
   );
 }
 
@@ -257,7 +247,7 @@ function tagStyle(kind: "outline" | "neutral" | "accent"): { background: string;
 function DetailTag({ children, tone = "outline" }: { children: ReactNode; tone?: "outline" | "neutral" | "accent" }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+      className="inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide"
       style={tagStyle(tone)}
     >
       {children}
@@ -337,7 +327,7 @@ function DetailPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-5 py-3">
         <div className="flex items-center gap-2 min-w-0">
-          <h2 id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+          <h2 id={titleId} className="truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
             {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
           </h2>
           {unread && (
@@ -358,18 +348,18 @@ function DetailPanel({
       {/* Snoozed / done banners — state the panel is currently in, mirroring
           the header pills the row itself would show. */}
       {isSnoozed && (
-        <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-5 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
           <span>Snoozed — until {formatTimestamp(item.snoozeUntil!, readDateTimePrefs())}</span>
           {onCancelSnooze && (
             <Button variant="ghost" size="xs" onClick={() => onCancelSnooze(item)} disabled={busy}
-              className="shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-primary)] underline-offset-2 hover:underline disabled:opacity-40">
+              className="shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)] underline-offset-2 hover:underline disabled:opacity-40">
               Cancel
             </Button>
           )}
         </div>
       )}
       {isDone && (
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
           <Icon name="ph:check-circle-fill" width={13} className="text-[var(--accent-presence)]" aria-hidden />
           <span>Marked done — it won&apos;t fire again</span>
         </div>
@@ -383,16 +373,16 @@ function DetailPanel({
         </div>
 
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Name</p>
-          <p className="text-[14px] font-medium text-[var(--text-primary)]">
+          <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Name</p>
+          <p className="text-[length:var(--text-md)] font-medium text-[var(--text-primary)]">
             {item.title}
           </p>
         </div>
 
         {item.body && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Description</p>
-            <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Description</p>
+            <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
               {item.body}
             </p>
           </div>
@@ -402,7 +392,7 @@ function DetailPanel({
           {isReminder && !oneTimeNotification && (
             <div>
               <FieldLabel>Schedule</FieldLabel>
-              <p className="text-[12px] text-[var(--text-primary)]">
+              <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">
                 {humanSchedule(item.recurrence)}
               </p>
             </div>
@@ -411,19 +401,19 @@ function DetailPanel({
             <div>
               <FieldLabel>Scheduled</FieldLabel>
               <p
-                className="text-[12px] text-[var(--text-primary)]"
+                className="text-[length:var(--text-sm)] text-[var(--text-primary)]"
                 title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
               >
                 {item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : "—"}
               </p>
               {item.firedAt && (
-                <p className="text-[11px] text-[var(--text-muted)]">fired {relTime(item.firedAt)}</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">fired {relTime(item.firedAt)}</p>
               )}
             </div>
           )}
           <div>
             <FieldLabel>Status</FieldLabel>
-            <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
+            <p className="text-[length:var(--text-sm)] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
               {paused ? "Paused" : isSnoozed ? "Snoozed" : item.status}
             </p>
           </div>
@@ -431,7 +421,7 @@ function DetailPanel({
             <div>
               <FieldLabel>Next run</FieldLabel>
               <p
-                className="text-[12px] text-[var(--text-primary)]"
+                className="text-[length:var(--text-sm)] text-[var(--text-primary)]"
                 title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
               >
                 {relTime(item.fireAt)}
@@ -442,7 +432,7 @@ function DetailPanel({
             <div>
               <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
               <p
-                className="text-[12px]"
+                className="text-[length:var(--text-sm)]"
                 style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
                 title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
               >
@@ -460,8 +450,8 @@ function DetailPanel({
           <div className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[12px] text-[var(--text-primary)]">Delivery</p>
-                <p className="text-[11px] text-[var(--text-muted)]">
+                <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">Delivery</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   {item.muted ? "Muted — no toast, sound, or system alert" : "Toast, sound, and system alert on fire"}
                 </p>
               </div>
@@ -473,7 +463,7 @@ function DetailPanel({
                   onClick={() => onToggleMute(item)}
                   aria-pressed={!!item.muted}
                   leadingIcon={item.muted ? "ph:bell-slash-fill" : "ph:bell-slash"}
-                  className={`shrink-0 rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] disabled:opacity-40${item.muted ? "" : " border border-[var(--border-hairline)] text-[var(--text-secondary)]"}`}
+                  className={`shrink-0 rounded-[var(--radius-control)] px-2.5 py-1 text-[length:var(--text-xs)] disabled:opacity-40${item.muted ? "" : " border border-[var(--border-hairline)] text-[var(--text-secondary)]"}`}
                 >
                   {item.muted ? "Muted" : "Mute"}
                 </Button>
@@ -482,8 +472,8 @@ function DetailPanel({
             <div className="h-px bg-[var(--border-hairline)]" />
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[12px] text-[var(--text-primary)]">Read state</p>
-                <p className="text-[11px] text-[var(--text-muted)]">Reading quiets the badge; the item stays listed</p>
+                <p className="text-[length:var(--text-sm)] text-[var(--text-primary)]">Read state</p>
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Reading quiets the badge; the item stays listed</p>
               </div>
               {onToggleRead && (
                 <Button
@@ -491,7 +481,7 @@ function DetailPanel({
                   size="xs"
                   disabled={busy || item.status !== "fired"}
                   onClick={() => onToggleRead(item)}
-                  className="shrink-0 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] disabled:opacity-40"
+                  className="shrink-0 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-40"
                 >
                   {item.readAt ? "Mark unread" : "Mark read"}
                 </Button>
@@ -502,8 +492,8 @@ function DetailPanel({
 
         {familiarLabel(item.familiarId) && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar</p>
+            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
               {familiarLabel(item.familiarId)}
             </span>
           </div>
@@ -511,13 +501,13 @@ function DetailPanel({
 
         {item.link && (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Link</p>
+            <p className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Link</p>
             <Button
               variant="ghost"
               size="xs"
               leadingIcon="ph:link"
               onClick={() => item.link && onOpenLink?.(item.link)}
-              className="max-w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+              className="max-w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
             >
               <span className="truncate">{linkLabel(item.link)}</span>
             </Button>
@@ -535,7 +525,7 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => (isDone ? onReopen?.(item) : onDone?.(item))}
-                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+                className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
               >
                 {isDone ? "Reopen" : "Done"}
               </Button>
@@ -545,7 +535,7 @@ function DetailPanel({
                 disabled={busy || isDone}
                 onClick={() => setSnoozeOpen((v) => !v)}
                 aria-expanded={snoozeOpen}
-                className="rounded-[var(--radius-control)] border-[var(--border-hairline)] py-2 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
+                className="rounded-[var(--radius-control)] border-[var(--border-hairline)] py-2 text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
               >
                 Snooze…
               </Button>
@@ -553,15 +543,15 @@ function DetailPanel({
             {snoozeOpen && !isDone && (
               <div className="flex flex-wrap justify-center gap-1.5 py-0.5">
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze10?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   10 min
                 </Button>
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnooze60?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   1 hour
                 </Button>
                 <Button variant="ghost" size="xs" disabled={busy} onClick={() => { onSnoozeTomorrow?.(item); setSnoozeOpen(false); }}
-                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[11px] disabled:opacity-40">
+                  className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] disabled:opacity-40">
                   Tomorrow, 9 AM
                 </Button>
               </div>
@@ -569,12 +559,12 @@ function DetailPanel({
             <div className="flex justify-center gap-4 pt-0.5">
               {onEdit && (
                 <Button variant="ghost" size="xs" onClick={() => onEdit(item)} disabled={busy}
-                  className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[var(--text-muted)] transition-colors disabled:opacity-40 hover:underline">
+                  className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors disabled:opacity-40 hover:underline">
                   Edit
                 </Button>
               )}
               <Button variant="ghost" size="xs" onClick={() => removeItem(item.id)} disabled={busy}
-                className="rounded-[var(--radius-control)] p-0.5 text-[11px] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
+                className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
                 Delete
               </Button>
             </div>
@@ -587,8 +577,7 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => onEdit(item)}
-                className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                className="justify-center rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
                 leadingIcon="ph:pencil-simple"
               >
                 Edit
@@ -601,7 +590,7 @@ function DetailPanel({
                   fullWidth
                   disabled={busy || paused}
                   onClick={() => runNow(item.id)}
-                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+                  className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
                 >
                   Run now
                 </Button>
@@ -610,8 +599,7 @@ function DetailPanel({
                   fullWidth
                   disabled={busy}
                   onClick={() => togglePaused(item)}
-                  className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                  style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                  className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
                 >
                   {paused ? "Resume" : "Pause"}
                 </Button>
@@ -623,8 +611,7 @@ function DetailPanel({
                 fullWidth
                 disabled={busy}
                 onClick={() => stopRecurrence(item.id)}
-                className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-                style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+                className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40 [border-color:var(--border-hairline)]! [color:var(--text-secondary)]!"
               >
                 Stop repeating
               </Button>
@@ -634,8 +621,7 @@ function DetailPanel({
               fullWidth
               disabled={busy}
               onClick={() => removeItem(item.id)}
-              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
-              style={{ color: "oklch(0.65 0.18 20)" }}
+              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40 [color:oklch(0.65_0.18_20)]!"
             >
               Delete
             </Button>
@@ -668,8 +654,7 @@ function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconN
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
-      style={{ color: "var(--text-secondary)" }}
+      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] [color:var(--text-secondary)]!"
       leadingIcon={icon}
     >
       {/* Icon-only when the hosting pane runs narrow (e.g. the md split while a
@@ -851,7 +836,6 @@ function CodexDetailPanel({
           value={name}
           onChange={(event) => setName(event.target.value)}
           className={automationInputClass}
-          style={fieldStyle}
         />
       </div>
       <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
@@ -862,7 +846,6 @@ function CodexDetailPanel({
             value={tagsText}
             onChange={(event) => setTagsText(event.target.value)}
             className={automationInputClass}
-            style={fieldStyle}
           />
         </div>
         <div>
@@ -882,7 +865,6 @@ function CodexDetailPanel({
           onChange={(event) => setGoals(event.target.value)}
           rows={5}
           className={automationTextareaClass}
-          style={fieldStyle}
         />
       </div>
       <div>
@@ -893,15 +875,13 @@ function CodexDetailPanel({
           onChange={(event) => setDeliverables(event.target.value)}
           rows={4}
           className={automationTextareaClass}
-          style={fieldStyle}
         />
       </div>
     </CronDetailSection>
   );
   const scheduleSection = (
     <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
-      <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
-        style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+      <div className="inline-flex rounded-[var(--radius-control)] border p-0.5 [border-color:var(--border-hairline)]! [background:var(--bg-base)]!"
         role="group"
         aria-label="Schedule mode"
       >
@@ -912,7 +892,7 @@ function CodexDetailPanel({
             size="xs"
             onClick={() => setScheduleMode(mode)}
             aria-pressed={scheduleMode === mode}
-            className="rounded-[var(--radius-control)] px-2 py-1 text-[11px]"
+            className="rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)]"
             style={{
               background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
               color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
@@ -930,7 +910,6 @@ function CodexDetailPanel({
           onChange={(event) => setRawRrule(event.target.value)}
           rows={3}
           className={automationMonoTextareaClass}
-          style={fieldStyle}
         />
       ) : (
         <div className="space-y-3">
@@ -945,7 +924,7 @@ function CodexDetailPanel({
                     size="xs"
                     onClick={() => toggleDay(day)}
                     aria-pressed={selected}
-                    className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
+                    className="rounded-[var(--radius-control)] border px-2 py-1 text-[length:var(--text-xs)]"
                     style={{
                       background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
                       borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
@@ -964,7 +943,6 @@ function CodexDetailPanel({
             value={scheduleTime}
             onChange={(event) => setScheduleTime(event.target.value)}
             className={automationInputClass}
-            style={fieldStyle}
           />
         </div>
       )}
@@ -972,13 +950,13 @@ function CodexDetailPanel({
           cryptic RRULE line only surfaces in Advanced mode or when the
           schedule is invalid — beginners never have to read iCalendar. */}
       {scheduleMode !== "raw" && !invalidSchedule ? (
-        <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <p className="mt-2 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
           {scheduleMode === "daily"
             ? `Runs every day at ${scheduleTime}`
             : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
         </p>
       ) : (
-        <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+        <p className="mt-2 break-all font-mono text-[length:var(--text-2xs)]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
           {nextRrule || "RRULE required"}
         </p>
       )}
@@ -994,7 +972,6 @@ function CodexDetailPanel({
             value={model}
             onChange={(event) => setModel(event.target.value)}
             className={automationInputClass}
-            style={fieldStyle}
           />
         </div>
         <div>
@@ -1004,7 +981,6 @@ function CodexDetailPanel({
             value={reasoningEffort}
             onChange={setReasoningEffort}
             className={automationSelectClass}
-            style={fieldStyle}
             options={[
               ...(!["low", "medium", "high"].includes(reasoningEffort)
                 ? [{ value: reasoningEffort, label: reasoningEffort }]
@@ -1022,7 +998,6 @@ function CodexDetailPanel({
             value={executionEnvironment}
             onChange={setExecutionEnvironment}
             className={automationSelectClass}
-            style={fieldStyle}
             options={[
               ...(!["worktree", "repo"].includes(executionEnvironment)
                 ? [{ value: executionEnvironment, label: executionEnvironment }]
@@ -1040,7 +1015,6 @@ function CodexDetailPanel({
           onChange={setCwdsText}
           familiarId={auto.familiars[0] ?? ""}
           textareaClass={automationMonoTextareaClass}
-          fieldStyle={fieldStyle}
         />
       </div>
     </CronDetailSection>
@@ -1057,7 +1031,7 @@ function CodexDetailPanel({
               aria-expanded={openRunId === r.id}
               aria-controls={`automation-run-log-${r.id}`}
               aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-              className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+              className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[length:var(--text-sm)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
             >
               {/* Shape + color (WCAG 1.4.1): the icon form carries the
                   status for color-blind users; AT reads it from the
@@ -1065,17 +1039,16 @@ function CodexDetailPanel({
               <span aria-hidden className="shrink-0" style={{ color: runStatusColor(r.status), lineHeight: 0 }}>
                 <Icon name={runStatusIcon(r.status)} width={12} />
               </span>
-              <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
-              {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
-              <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
+              <span className="[color:var(--text-secondary)]!" title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
+              {r.summary && <span className="truncate [color:var(--text-muted)]!">{r.summary}</span>}
+              <span aria-hidden className="ml-auto shrink-0 [color:var(--text-muted)]! [line-height:0]!">
                 <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
               </span>
             </Button>
             {openRunId === r.id && (
               <pre
                 id={`automation-run-log-${r.id}`}
-                className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
-                style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[length:var(--text-2xs)] leading-snug [color:var(--text-muted)]! [white-space:pre-wrap]! [word-break:break-word]!"
               >
                 {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
               </pre>
@@ -1088,22 +1061,20 @@ function CodexDetailPanel({
 
   return (
     <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
-      className="flex h-full flex-col focus:outline-none"
-      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
-      <div className="border-b px-5 py-4"
-        style={{ borderColor: "var(--border-hairline)" }}>
+      className="flex h-full flex-col focus:outline-none [background:var(--bg-raised)]! [border-left:1px_solid_var(--border-hairline)]!">
+      <div className="border-b px-5 py-4 [border-color:var(--border-hairline)]!">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+            <p className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">
               Cron details
             </p>
-            <h2 id={titleId} className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            <h2 id={titleId} className="mt-1 truncate text-[length:var(--text-md)] font-semibold [color:var(--text-primary)]!">
               {name.trim() || auto.name}
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2 py-1 text-[11px] font-medium"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2 py-1 text-[length:var(--text-xs)] font-medium"
               style={{
                 borderColor: isActive ? "color-mix(in oklch, var(--accent-presence) 45%, transparent)" : "var(--border-hairline)",
                 background: isActive ? "color-mix(in oklch, var(--accent-presence) 14%, transparent)" : "var(--bg-base)",
@@ -1170,11 +1141,10 @@ function CodexDetailPanel({
         </div>
       </div>
 
-      <div className="cron-detail-actions border-t px-5 py-4"
-        style={{ borderColor: "var(--border-hairline)" }}>
+      <div className="cron-detail-actions border-t px-5 py-4 [border-color:var(--border-hairline)]!">
         <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
-          <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
+          <p className="text-[length:var(--text-xs)] [color:oklch(0.7_0.16_35)]!" role="alert">
             {saveBlockedReason}
           </p>
         ) : null}
@@ -1183,7 +1153,7 @@ function CodexDetailPanel({
           fullWidth
           disabled={!canSave}
           onClick={save}
-          className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+          className="justify-center rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
           leadingIcon="ph:floppy-disk-bold"
         >
           {busy ? "Saving..." : "Save changes"}
@@ -1193,7 +1163,7 @@ function CodexDetailPanel({
             variant="secondary"
             disabled={busy}
             onClick={() => onRun(auto)}
-            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            className="justify-center rounded-[var(--radius-control)] text-[length:var(--text-sm)] font-medium"
             leadingIcon="ph:play"
           >
             Run now
@@ -1202,18 +1172,18 @@ function CodexDetailPanel({
             variant={isActive ? "danger" : "secondary"}
             disabled={busy}
             onClick={() => onToggle(auto)}
-            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            className="justify-center rounded-[var(--radius-control)] text-[length:var(--text-sm)] font-medium"
             leadingIcon={isActive ? "ph:pause" : "ph:play"}
           >
             {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
           </Button>
         </div>
-        <div className="border-t pt-3" style={{ borderColor: "var(--border-hairline)" }}>
+        <div className="border-t pt-3 [border-color:var(--border-hairline)]!">
           <Button
             variant="danger-ghost"
             disabled={busy}
             onClick={() => onDelete(auto)}
-            className="rounded-[var(--radius-control)] text-[12px] font-medium"
+            className="rounded-[var(--radius-control)] text-[length:var(--text-sm)] font-medium"
             leadingIcon="ph:trash"
           >
             Delete
@@ -1250,20 +1220,18 @@ function AutomationScheduleRow({
       >
         {/* Status dot */}
         {isActive ? (
-          <span role="img" aria-label="Active" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
-            style={{ background: "var(--accent-presence)" }} />
+          <span role="img" aria-label="Active" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full [background:var(--accent-presence)]!" />
         ) : (
-          <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-            style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
+          <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.18)]! [color:rgba(255,255,255,0.35)]!">
             <Icon name="ph:minus" width={8} />
           </span>
         )}
         <span className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+          <span className="text-[length:var(--text-base)] truncate [color:var(--text-primary)]!">
             {auto.name}
           </span>
           {auto.tags.includes("coven") && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>coven</span>
+            <span className="shrink-0 text-[length:var(--text-xs)] [color:var(--text-muted)]!">coven</span>
           )}
         </span>
         {auto.familiars.length > 0 && (
@@ -1275,14 +1243,14 @@ function AutomationScheduleRow({
               ) : null;
             })}
             {auto.familiars.length > 3 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--bg-raised)] text-[9px] text-[var(--text-muted)] ring-1 ring-[var(--bg-base)]">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--bg-raised)] text-[length:var(--text-2xs)] text-[var(--text-muted)] ring-1 ring-[var(--bg-base)]">
                 +{auto.familiars.length - 3}
               </span>
             )}
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px] @max-[600px]:hidden" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
+          <span className="shrink-0 text-[length:var(--text-xs)] @max-[600px]:hidden" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
@@ -1325,13 +1293,11 @@ function AutomationScheduleSection({
   const headingId = `cron-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
     <section aria-labelledby={headingId} className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5 [background:color-mix(in_oklch,_var(--bg-base)_86%,_var(--foreground)_14%)]! [border-bottom:1px_solid_var(--border-hairline)]!">
+        <h3 id={headingId} className="text-[length:var(--text-sm)] font-bold [color:var(--text-primary)]!">
           {title}
         </h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded"
-          style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
+        <span className="text-[length:var(--text-2xs)] px-1.5 py-0.5 rounded [background:var(--bg-raised)]! [color:var(--text-muted)]!">
           Codex
         </span>
       </div>
@@ -1386,8 +1352,7 @@ function AutomationsPanel({
 function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
   return (
     <span
-      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-      style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-muted)" }}
+      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide [background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [color:var(--text-muted)]!"
     >
       {inboxKindLabel(kind)}
     </span>
@@ -1460,17 +1425,17 @@ function InboxFeedRow({
           <StatusIcon item={item} />
         )}
         <span className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+          <span className="text-[length:var(--text-base)] truncate [color:var(--text-primary)]!">
             {item.title}
           </span>
           <InboxKindBadge kind={item.kind} />
           {workspace && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <span className="shrink-0 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
               {workspace}
             </span>
           )}
         </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <span className="shrink-0 text-[length:var(--text-sm)] tabular-nums [color:var(--text-muted)]!">
           {when}
         </span>
       </button>
@@ -1532,8 +1497,7 @@ function InboxFeedSection({
   if (group.items.length === 0) return null;
   return (
     <section className="mb-6" aria-labelledby={headingId}>
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5 [background:color-mix(in_oklch,_var(--bg-base)_86%,_var(--foreground)_14%)]! [border-bottom:1px_solid_var(--border-hairline)]!">
         {/* Select a whole group at once — the header grows a checkbox in
             select mode so a tier/kind/familiar bucket is one click to act on. */}
         {selectMode ? (
@@ -1544,7 +1508,7 @@ function InboxFeedSection({
             aria-label={`Select every item in ${group.title}`}
             title={`Select all ${group.items.length} in ${group.title}`}
             onClick={() => onToggleGroup(group)}
-            className="focus-ring flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-[4px] border transition-colors"
+            className="focus-ring flex h-[var(--space-4)] w-[var(--space-4)] shrink-0 items-center justify-center rounded-[4px] border transition-colors"
             style={{
               borderColor: groupChecked ? "var(--accent-presence)" : "var(--border-strong)",
               background: groupChecked ? "var(--accent-presence)" : "transparent",
@@ -1553,11 +1517,11 @@ function InboxFeedSection({
             {groupChecked && <Icon name="ph:check-bold" width={11} className="text-[var(--accent-presence-foreground)]" aria-hidden />}
           </button>
         ) : null}
-        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+        <h3 id={headingId} className="text-[length:var(--text-sm)] font-bold [color:var(--text-primary)]!">
           {group.title}
         </h3>
         <span
-          className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+          className="rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] font-semibold"
           style={
             group.accent
               ? { background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }
@@ -1673,8 +1637,8 @@ function NewMenuItem({
         <Icon name={icon as IconName} width={13} />
       </span>
       <span className="min-w-0">
-        <span className="block text-[12.5px] font-medium" style={{ color: "var(--text-primary)" }}>{label}</span>
-        <span className="block text-[11px]" style={{ color: "var(--text-muted)" }}>{blurb}</span>
+        <span className="block text-[length:var(--text-base)] font-medium [color:var(--text-primary)]!">{label}</span>
+        <span className="block text-[length:var(--text-xs)] [color:var(--text-muted)]!">{blurb}</span>
       </span>
     </button>
   );
@@ -1685,7 +1649,7 @@ function AutomationTypeChip({ type }: { type: AutomationType }) {
   const meta = AUTOMATION_TYPE_META[type];
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+      className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium"
       style={{ background: `color-mix(in oklch, ${meta.accent} 16%, transparent)`, color: meta.accent }}
     >
       <Icon name={meta.icon as IconName} width={10} aria-hidden />
@@ -1699,7 +1663,7 @@ function StateDot({ state }: { state: AutomationEntry["state"] }) {
     state === "active" ? "var(--color-success)" : state === "draft" ? "var(--color-warning)" : "var(--text-muted)";
   const label = state === "active" ? "Active" : state === "draft" ? "Draft" : "Paused";
   return (
-    <span className="inline-flex items-center gap-1 text-[10.5px]" style={{ color: "var(--text-muted)" }}>
+    <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} aria-hidden />
       {label}
     </span>
@@ -1736,8 +1700,7 @@ function AutomationEntryRow({
   const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
   return (
     <div
-      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-      style={{ border: "1px solid var(--border-hairline)" }}
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] [border:1px_solid_var(--border-hairline)]!"
     >
       <AutomationTypeChip type={entry.type} />
       <span className="min-w-0 flex-1">
@@ -1746,16 +1709,16 @@ function AutomationEntryRow({
           onClick={() => onOpen(entry)}
           className="focus-ring-inset block w-full rounded-md text-left"
         >
-          <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
+          <span className="block truncate text-[length:var(--text-base)] font-medium [color:var(--text-primary)]!">
             {entry.name}
           </span>
-          <span className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <span className="mt-0.5 flex items-center gap-2 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
             <span className="inline-flex shrink-0 items-center gap-1">
               <Icon name={entry.scheduled ? "ph:clock" : "ph:play"} width={11} aria-hidden />
               {entry.trigger}
             </span>
             {nextFire && (
-              <span className="shrink-0 whitespace-nowrap" style={{ color: "var(--text-secondary)" }} title={`Next fire: ${entry.nextFireAt}`}>
+              <span className="shrink-0 whitespace-nowrap [color:var(--text-secondary)]!" title={`Next fire: ${entry.nextFireAt}`}>
                 · {nextFire}
               </span>
             )}
@@ -1842,13 +1805,12 @@ function ManagedAutomationRow({
 }) {
   return (
     <div
-      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-      style={{ border: "1px solid var(--border-hairline)" }}
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] [border:1px_solid_var(--border-hairline)]!"
     >
       <AutomationTypeChip type={type} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
-        <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{meta}</span>
+        <span className="block truncate text-[length:var(--text-base)] font-medium [color:var(--text-primary)]!">{name}</span>
+        <span className="mt-0.5 block truncate text-[length:var(--text-xs)] [color:var(--text-muted)]!">{meta}</span>
         <span className="mt-1.5 flex items-center gap-1">
           <RowActionButton
             icon="ph:play"
@@ -1960,7 +1922,7 @@ function TemplatesPanel({
       ) : (
         byCategory.map(({ cat, templates }) => (
           <section key={cat} className="mb-6">
-            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+            <h2 className="mb-3 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">
               {cat}
             </h2>
             <div className="automation-templates-grid">
@@ -2845,7 +2807,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         togglePauseAutomation: toggleCodex,
       }}
     >
-    <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
+    <section className="flex h-full [background:var(--bg-base)]!">
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
         <div className="surface-compact-header rituals-overview__header">
@@ -2858,7 +2820,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
             <p className="surface-compact-summary">
               <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full [background:var(--accent-presence)]!" />
                 {summary.active} active
               </span>
               {summary.paused > 0 && <span>· {summary.paused} paused</span>}
@@ -3008,7 +2970,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         {error && (
           <div
             role="alert"
-            className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
+            className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{error}</span>
@@ -3036,8 +2998,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={index}
-                  className="ui-skeleton ui-skeleton--row"
-                  style={{ height: 56 }}
+                  className="ui-skeleton ui-skeleton--row [height:56px]!"
                 />
               ))}
             </div>
@@ -3235,7 +3196,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
               />
               {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
-                <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                <p className="mt-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
                   No crons match this familiar filter.
                 </p>
               )}
@@ -3247,12 +3208,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
       {detailOpen && (
         <div
-          className={
-            cronDetailExpanded
+          className={[(cronDetailExpanded
               ? "w-full min-w-0 flex-1 overflow-hidden"
-              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"
-          }
-          style={{ borderLeft: "1px solid var(--border-hairline)" }}
+              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"), "[border-left:1px_solid_var(--border-hairline)]!"].filter(Boolean).join(" ")}
         >
           {selectedItem && (
             <DetailPanel

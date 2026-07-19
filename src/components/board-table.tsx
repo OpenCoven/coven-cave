@@ -443,7 +443,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                       switch (col.key) {
                         case "title":
                           content = (
-                            <span className="board-table-title-cell" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span className="board-table-title-cell [display:flex]! [align-items:center]! [gap:var(--space-2)]!">
                               {selectMode && (
                                 <span
                                   aria-hidden
@@ -460,9 +460,8 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                               <span className="board-table-title" title={card.title}>{card.title}</span>
                               {(card.attachments?.length ?? 0) > 0 && (
                                 <span
-                                  className="board-table-attach-count"
+                                  className="board-table-attach-count [display:inline-flex]! [align-items:center]! [gap:2px]! [flex-shrink:0]! [font-size:var(--text-2xs)]! [color:var(--text-muted)]!"
                                   title={`${card.attachments!.length} attachment${card.attachments!.length === 1 ? "" : "s"}`}
-                                  style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0, fontSize: 10, color: "var(--text-muted)" }}
                                 >
                                   <Icon name="ph:paperclip" width={10} />
                                   {card.attachments!.length}

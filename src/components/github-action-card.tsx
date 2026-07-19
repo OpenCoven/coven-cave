@@ -133,14 +133,14 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
 
   if (phase === "dismissed") {
     return (
-      <div className="cave-gh-action text-[11px] text-[var(--text-secondary)]" data-gh-action-phase="dismissed">
+      <div className="cave-gh-action text-[length:var(--text-xs)] text-[var(--text-secondary)]" data-gh-action-phase="dismissed">
         Proposal dismissed: {summary}
       </div>
     );
   }
 
   const btn =
-    "focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50";
+    "focus-ring rounded border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors disabled:opacity-50";
 
   return (
     <div
@@ -152,18 +152,18 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
         <Icon name="ph:github-logo" width={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[12px] font-medium text-[var(--text-primary)]">
+        <div className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           {phase === "done" ? "Done: " : "Proposed: "}
           {summary}
         </div>
-        {action.note ? <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{action.note}</div> : null}
+        {action.note ? <div className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">{action.note}</div> : null}
         {action.body && (action.kind === "comment" || action.kind === "reply" || action.kind === "review") ? (
-          <div className="mt-1 line-clamp-3 rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">
+          <div className="mt-1 line-clamp-3 rounded border border-[var(--border-hairline)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             {action.body}
           </div>
         ) : null}
         {phase === "error" && error ? (
-          <div className="mt-1 text-[11px] text-[var(--color-warning)]" role="alert">
+          <div className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]" role="alert">
             {error}
           </div>
         ) : null}
@@ -190,7 +190,7 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
             >
               Dismiss
             </button>
-            <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+            <span className="text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-secondary)]">
               agent proposal
             </span>
           </div>

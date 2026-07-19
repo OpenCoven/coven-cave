@@ -193,14 +193,14 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
                       >
                         {tab.title || tabHint(tab)}
                       </span>
-                      <span className="block truncate text-[11px] text-[var(--text-muted)]">
+                      <span className="block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                         {tabHint(tab)}
                       </span>
                     </span>
 
                     {/* Active indicator */}
                     {isActive && (
-                      <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                      <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         current
                       </span>
                     )}
@@ -218,9 +218,9 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
 
         {/* Footer hint */}
         <div className="flex items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[var(--text-muted)]">
-          <span className="text-[10px]">↑↓ navigate</span>
-          <span className="text-[10px]">↵ open</span>
-          <span className="text-[10px]">esc close</span>
+          <span className="text-[length:var(--text-2xs)]">↑↓ navigate</span>
+          <span className="text-[length:var(--text-2xs)]">↵ open</span>
+          <span className="text-[length:var(--text-2xs)]">esc close</span>
         </div>
       </div>
     </div>

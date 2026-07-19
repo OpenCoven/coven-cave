@@ -120,10 +120,10 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
             >
               <Icon name={t.iconName ?? "ph:alarm-fill"} />
             </span>
-            <span className="flex-1 break-words pt-0.5 text-[13px] font-semibold leading-snug text-[var(--text-primary)]">
+            <span className="flex-1 break-words pt-0.5 text-[length:var(--text-base)] font-semibold leading-snug text-[var(--text-primary)]">
               {title}
               {g.count > 1 ? (
-                <span className="ml-1.5 inline-block rounded-full bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--toast-accent)]">
+                <span className="ml-1.5 inline-block rounded-full bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] px-1.5 text-[length:var(--text-2xs)] font-semibold tabular-nums text-[var(--toast-accent)]">
                   {/* aria-label on a generic span is unreliably announced —
                       expose the name as visually-hidden text instead. */}
                   <span aria-hidden>×{g.count}</span>
@@ -147,17 +147,17 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
             />
           ) : null}
           {t.body ? (
-            <p className="mb-2.5 line-clamp-3 break-words pl-[34px] text-[11px] leading-relaxed text-[var(--text-secondary)]">{t.body}</p>
+            <p className="mb-2.5 line-clamp-3 break-words pl-[34px] text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]">{t.body}</p>
           ) : null}
           <div className="flex items-center justify-end gap-1.5">
             <SnoozeMenu
               onSnooze={(untilIso) => onSnooze(t, untilIso)}
-              triggerClassName="focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              triggerClassName="focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             />
             {onOpen ? (
               <button
                 onClick={() => onOpen(t)}
-                className="focus-ring rounded-full border border-[color-mix(in_oklch,var(--toast-accent)_35%,transparent)] bg-[color-mix(in_oklch,var(--toast-accent)_12%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--toast-accent)] transition-colors hover:bg-[color-mix(in_oklch,var(--toast-accent)_18%,transparent)]"
+                className="focus-ring rounded-full border border-[color-mix(in_oklch,var(--toast-accent)_35%,transparent)] bg-[color-mix(in_oklch,var(--toast-accent)_12%,transparent)] px-2.5 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--toast-accent)] transition-colors hover:bg-[color-mix(in_oklch,var(--toast-accent)_18%,transparent)]"
               >
                 Open
               </button>
@@ -170,7 +170,7 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
         <div
           role="status"
           aria-live="polite"
-          className="glass-overlay pointer-events-auto self-end rounded-full border border-[var(--border-hairline)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow-lg"
+          className="glass-overlay pointer-events-auto self-end rounded-full border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] shadow-lg"
         >
           +{overflow} more in the bell
         </div>

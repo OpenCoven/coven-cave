@@ -175,36 +175,36 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
     >
       <div className="flex flex-col gap-5" aria-live="polite">
         <section className="flex flex-col gap-2">
-          <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">1. Choose where the pack should seed</h3>
+          <h3 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">1. Choose where the pack should seed</h3>
           <div className="grid gap-2 @min-[620px]:grid-cols-2">
             <label className="focus-within:ring-2 focus-within:ring-[var(--focus-ring)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
               <input className="focus-ring mr-2" type="radio" name="knowledge-pack-target" checked={target === "vault"} onChange={() => setTarget("vault")} />
-              <span className="text-[13px] font-medium text-[var(--text-primary)]">Knowledge vault</span>
-              <p className="mt-1 text-[12px] text-[var(--text-muted)]">Collections appear in the Grimoire; entries start disabled for prompt injection — agents look them up on demand.</p>
+              <span className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Knowledge vault</span>
+              <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">Collections appear in the Grimoire; entries start disabled for prompt injection — agents look them up on demand.</p>
             </label>
             <label className="focus-within:ring-2 focus-within:ring-[var(--focus-ring)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
               <input className="focus-ring mr-2" type="radio" name="knowledge-pack-target" checked={target === "project"} onChange={() => setTarget("project")} />
-              <span className="text-[13px] font-medium text-[var(--text-primary)]">Project folder</span>
-              <p className="mt-1 text-[12px] text-[var(--text-muted)]">Seed folders into a project tree, like <code>ok seed</code>.</p>
+              <span className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Project folder</span>
+              <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">Seed folders into a project tree, like <code>ok seed</code>.</p>
             </label>
           </div>
 
           {target === "project" ? (
             <div className="mt-2 flex flex-col gap-3 rounded-lg border border-[var(--border-hairline)] p-3">
               <div>
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">Project</span>
-                {projectsLoading ? <p className="text-[12px] text-[var(--text-muted)]">Loading projects…</p> : null}
-                {projectsError ? <p role="alert" className="text-[12px] text-[var(--danger-text)]">{projectsError}</p> : null}
+                <span className="mb-1 block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">Project</span>
+                {projectsLoading ? <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading projects…</p> : null}
+                {projectsError ? <p role="alert" className="text-[length:var(--text-sm)] text-[var(--danger-text)]">{projectsError}</p> : null}
                 {!projectsLoading && !projectsError && projects.length === 0 ? (
-                  <p role="alert" className="text-[12px] text-[var(--danger-text)]">No registered projects are available.</p>
+                  <p role="alert" className="text-[length:var(--text-sm)] text-[var(--danger-text)]">No registered projects are available.</p>
                 ) : (
                   <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} ariaLabel="Choose project for knowledge pack seed" disabled={busy || projectsLoading} />
                 )}
               </div>
-              <label className="flex flex-col gap-1 text-[12px] text-[var(--text-muted)]">
+              <label className="flex flex-col gap-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 <span className="font-medium text-[var(--text-secondary)]">Subfolder</span>
                 <input
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
+                  className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-[length:var(--text-base)] text-[var(--text-primary)]"
                   value={subfolder}
                   onChange={(event) => setSubfolder(event.target.value)}
                   placeholder="project root"
@@ -220,10 +220,10 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
 
         {manifest.skills.length ? (
           <section className="flex flex-col gap-2">
-            <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">2. Install bundled skills</h3>
+            <h3 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">2. Install bundled skills</h3>
             <div className="flex flex-col gap-2">
               {manifest.skills.map((skillId) => (
-                <label key={skillId} className="inline-flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-2 text-[12px] text-[var(--text-muted)]">
+                <label key={skillId} className="inline-flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   <input className="focus-ring mt-0.5" type="checkbox" checked={selectedSkills.has(skillId)} onChange={(event) => toggleSkill(skillId, event.target.checked)} />
                   <span><span className="font-medium text-[var(--text-primary)]">Install the {skillId} skill</span> for local agents.</span>
                 </label>
@@ -233,20 +233,20 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
         ) : null}
 
         {stepError ? (
-          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] p-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] p-2 text-[length:var(--text-sm)] text-[var(--danger-text)]">
             <strong>{stepError.step} failed:</strong> {stepError.message}
           </p>
         ) : null}
 
         {seedResult ? (
           <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3" aria-live="polite">
-            <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Seed complete</h3>
-            <p className="mt-1 text-[12px] text-[var(--text-muted)]">{summarizeSeedResult(seedResult)}</p>
+            <h3 className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">Seed complete</h3>
+            <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">{summarizeSeedResult(seedResult)}</p>
             {seedResult.target === "vault" ? (
-              <a href="#grimoire" className="mt-2 inline-block text-[12px] text-[var(--text-primary)] underline underline-offset-2">Open the Grimoire to browse your new collections</a>
+              <a href="#grimoire" className="mt-2 inline-block text-[length:var(--text-sm)] text-[var(--text-primary)] underline underline-offset-2">Open the Grimoire to browse your new collections</a>
             ) : null}
             {skillResults.length ? (
-              <ul className="mt-3 flex flex-col gap-1 text-[11px] text-[var(--text-muted)]">
+              <ul className="mt-3 flex flex-col gap-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {skillResults.map((result) => (
                   <li key={result.skillId}>
                     <span className="text-[var(--text-secondary)]">{result.skillId}</span>: {result.alreadyInstalled ? "already installed" : (result.installedTo.length ? result.installedTo.join(", ") : "installed")}

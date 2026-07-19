@@ -164,8 +164,8 @@ function useObjectUrl(file: File | null): string | null {
 }
 
 const inputClass =
-  "focus-ring h-9 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]";
-const labelClass = "mb-1 block text-[11px] font-medium text-[var(--text-secondary)]";
+  "focus-ring h-9 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 text-[length:var(--text-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]";
+const labelClass = "mb-1 block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]";
 
 type Props = {
   open: boolean;
@@ -884,19 +884,19 @@ function StageVessel({
         <div>
           <span className={labelClass}>Runtime</span>
           {harnesses === null ? (
-            <p className="text-[11px] text-[var(--text-muted)]">Looking for installed runtimes…</p>
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Looking for installed runtimes…</p>
           ) : installedHarnesses.length === 0 ? (
             // Runtime installs live in the SETUP WIZARD, not Settings — the old
             // copy pointed at a Settings section that doesn't exist, looping
             // users between the circle and Settings (cave-tpji).
             <div className="flex flex-col items-start gap-1.5">
-              <p className="text-[11px] text-[var(--color-warning)]">
+              <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
                 No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.
               </p>
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
               >
                 Run setup
               </button>
@@ -977,7 +977,7 @@ function StageVessel({
               </span>
             ) : null}
           </div>
-          <p className="text-[11px] leading-4 text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
             Cave connects with your existing SSH config and never stores passwords or key material.
           </p>
         </div>
@@ -986,10 +986,10 @@ function StageVessel({
       {vessel === "openclaw" ? (
         <div className="summoning-subcard">
           {agents === null ? (
-            <p className="text-[11px] text-[var(--text-muted)]" role="status">Looking for OpenClaw agents…</p>
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">Looking for OpenClaw agents…</p>
           ) : agents.length === 0 ? (
             <div className="flex flex-col gap-2">
-              <p className="text-[11px] text-[var(--text-secondary)]">
+              <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
                 {agentsError ?? "No OpenClaw agents found under ~/.openclaw/agents."}
               </p>
               <Button variant="secondary" size="xs" leadingIcon="ph:arrows-clockwise" onClick={onRefreshAgents}>
@@ -1009,8 +1009,8 @@ function StageVessel({
                 >
                   <Icon name="ph:robot" width={14} />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    <span className="block truncate text-[12px] text-[var(--text-primary)]">{agent.displayName}</span>
-                    <span className="block truncate text-[10px] text-[var(--text-muted)]">
+                    <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">{agent.displayName}</span>
+                    <span className="block truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                       {agent.role || agent.id}
                     </span>
                   </span>
@@ -1070,7 +1070,7 @@ function StageName({
             Suggest
           </Button>
         </div>
-        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+        <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {idLocked ? (
             <>id follows the OpenClaw agent: {derivedId || "—"}</>
           ) : derivedId ? (
@@ -1119,7 +1119,7 @@ function StageName({
             );
           })}
         </div>
-        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+        <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           Fills the role and description below — edit anything after, or click again to deselect.
         </p>
       </div>
@@ -1195,7 +1195,7 @@ function StageForm({
           }}
         />
         {avatarFile ? (
-          <p className="mb-1 text-[11px] text-[var(--text-muted)]">
+          <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             Photo attached · {avatarFile.name} — it becomes the portrait; the sigil stays as fallback.
           </p>
         ) : null}
@@ -1214,7 +1214,7 @@ function StageForm({
             </button>
           ))}
         </div>
-        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+        <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           The full catalog lives in the Studio’s Look tab — refine any time.
         </p>
       </div>
@@ -1308,7 +1308,7 @@ function StageSummon({
         ))}
       </dl>
       {idTaken ? (
-        <p className="text-[11px] text-[var(--color-warning)]">
+        <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
           id “{derivedId}” is already taken — go back to The name, or fine-tune the id below.
         </p>
       ) : null}
@@ -1323,7 +1323,7 @@ function StageSummon({
         size="xs"
         onClick={() => setFineTune((v) => !v)}
         aria-expanded={fineTune}
-        className="w-fit text-[11px]"
+        className="w-fit text-[length:var(--text-xs)]"
         leadingIcon={fineTune ? "ph:caret-down" : "ph:caret-right"}
       >
         Fine-tune (optional)
@@ -1685,7 +1685,7 @@ function EnhancementRite({
                       placeholder="Default for this runtime"
                       className={inputClass}
                     />
-                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                    <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                       Leave blank to follow the runtime’s default. Deeper changes — voice, harness, wards — live in the Studio.
                     </p>
                   </div>

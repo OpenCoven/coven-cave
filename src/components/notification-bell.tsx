@@ -46,7 +46,7 @@ const MUTABLE_KIND_LABELS: Record<MutableKind, string> = {
 function BellItemTime({ iso, waiting }: { iso: string | null | undefined; waiting: boolean }) {
   useMinuteTick();
   return (
-    <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+    <div className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
       {waiting ? "Waiting on you" : <RelativeTime iso={iso} fallback="—" />}
     </div>
   );
@@ -325,7 +325,7 @@ export function NotificationBell({
         {displayBadgeCount > 0 ? (
           <span
             aria-hidden
-            className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[9px] font-bold leading-none text-[var(--text-primary)]"
+            className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[length:var(--text-2xs)] font-bold leading-none text-[var(--text-primary)]"
           >
             {displayBadgeCount > 9 ? "9+" : displayBadgeCount}
           </span>
@@ -341,7 +341,7 @@ export function NotificationBell({
           className="notification-bell__popover glass-overlay group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] shadow-2xl"
         >
           <div className="notification-bell__header flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-            <span className="text-[11px] font-medium text-[var(--text-primary)]">
+            <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]">
               Notifications
             </span>
             <div className="notification-bell__header-actions flex items-center gap-1.5">
@@ -356,7 +356,7 @@ export function NotificationBell({
               {unreadIds.length > 0 ? (
                 <button
                   onClick={() => void markAllRead()}
-                  className="notification-bell__mark-all-read focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                  className="notification-bell__mark-all-read focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                   title={`Mark all ${unreadIds.length} unread notification${unreadIds.length !== 1 ? "s" : ""} as read`}
                 >
                   Mark read
@@ -365,7 +365,7 @@ export function NotificationBell({
               {dismissableIds.length > 0 ? (
                 <button
                   onClick={() => void dismissAll()}
-                  className="notification-bell__clear-all focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                  className="notification-bell__clear-all focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                   title={`Dismiss all ${dismissableIds.length} notification${dismissableIds.length !== 1 ? "s" : ""}`}
                 >
                   Clear all
@@ -376,7 +376,7 @@ export function NotificationBell({
                   setOpen(false);
                   onOpenInbox();
                 }}
-                className="notification-bell__open-inbox focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                className="notification-bell__open-inbox focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
               >
                 Open Rituals →
               </button>
@@ -384,8 +384,8 @@ export function NotificationBell({
           </div>
 
           {settingsOpen ? (
-            <div className="border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-3 text-[11px]">
-              <div className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+            <div className="border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-3 text-[length:var(--text-xs)]">
+              <div className="mb-2 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
                 Sound
               </div>
               <div className="mb-3 flex flex-wrap gap-1">
@@ -409,7 +409,7 @@ export function NotificationBell({
                         setSound(opt.mode, "name" in opt ? opt.name : undefined)
                       }
                       aria-pressed={active}
-                      className={`focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
+                      className={`focus-ring rounded border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
                         active
                           ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] text-[var(--text-primary)]"
                           : "border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
@@ -421,7 +421,7 @@ export function NotificationBell({
                 })}
               </div>
 
-              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+              <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
                 Quiet kinds
               </div>
               <div className="mb-3 flex flex-wrap gap-1">
@@ -437,7 +437,7 @@ export function NotificationBell({
                           ? `${MUTABLE_KIND_LABELS[kind]} are quiet — no toast or sound. Click to unmute.`
                           : `Quiet ${MUTABLE_KIND_LABELS[kind].toLowerCase()} — they still land in the inbox, without toast or sound.`
                       }
-                      className={`focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
+                      className={`focus-ring rounded border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
                         muted
                           ? "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
                           : "border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
@@ -449,12 +449,12 @@ export function NotificationBell({
                 })}
               </div>
 
-              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+              <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
                 Muted familiars
               </div>
               <ul className="max-h-32 space-y-0.5 overflow-y-auto">
                 {familiars.length === 0 ? (
-                  <li className="text-[10px] text-[var(--text-muted)]">No familiars yet.</li>
+                  <li className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">No familiars yet.</li>
                 ) : null}
                 {familiars.map((f) => {
                   const muted = prefs.mutedFamiliars.includes(f.id);
@@ -465,7 +465,7 @@ export function NotificationBell({
                         onClick={() => toggleMute(f.id)}
                         aria-pressed={muted}
                         aria-label={`${muted ? "Unmute" : "Mute"} ${f.display_name}`}
-                        className={`focus-ring rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
+                        className={`focus-ring rounded border px-1.5 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
                           muted
                             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
                             : "border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
@@ -496,7 +496,7 @@ export function NotificationBell({
                     key={kind}
                     onClick={() => setKindFilter(kind)}
                     aria-pressed={active}
-                    className={`focus-ring rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                    className={`focus-ring rounded-full border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
                       active
                         ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] text-[var(--text-primary)]"
                         : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -513,7 +513,7 @@ export function NotificationBell({
                   onClick={() => setKindFilter("past-due")}
                   aria-pressed={kindFilter === "past-due"}
                   title="Only reminders whose time has passed and are still waiting on you"
-                  className={`notification-bell__past-due-chip focus-ring rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                  className={`notification-bell__past-due-chip focus-ring rounded-full border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
                     kindFilter === "past-due"
                       ? "border-[color-mix(in_oklch,var(--color-warning)_55%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--text-primary)]"
                       : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)]"
@@ -526,7 +526,7 @@ export function NotificationBell({
           ) : null}
           <ul className="notification-bell__list max-h-[420px] overflow-y-auto p-2 text-xs">
             {recent.length === 0 ? (
-              <li className="px-2 py-6 text-center text-[11px] text-[var(--text-muted)]">
+              <li className="px-2 py-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {kindFilter === "all" ? "No notifications." : "Nothing in this filter."}
               </li>
             ) : null}
@@ -575,10 +575,10 @@ export function NotificationBell({
                             <span className="sr-only">Unread:</span>
                           </>
                         ) : null}
-                        <div className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={normalizeInboxTitle(it.title)}>{normalizeInboxTitle(it.title)}</div>
+                        <div className="truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]" title={normalizeInboxTitle(it.title)}>{normalizeInboxTitle(it.title)}</div>
                         {seriesCount > 1 ? (
                           <span
-                            className="notification-bell__series-count shrink-0 rounded-full border border-[var(--border-strong)] bg-[var(--bg-raised)] px-1.5 text-[9px] font-semibold leading-4 text-[var(--text-secondary)]"
+                            className="notification-bell__series-count shrink-0 rounded-full border border-[var(--border-strong)] bg-[var(--bg-raised)] px-1.5 text-[length:var(--text-2xs)] font-semibold leading-4 text-[var(--text-secondary)]"
                             title={`${seriesCount} notifications from this repeating schedule, grouped`}
                           >
                             ×{seriesCount}
@@ -586,13 +586,13 @@ export function NotificationBell({
                           </span>
                         ) : null}
                         {pastDue ? (
-                          <span className="notification-bell__past-due-tag shrink-0 rounded-full border border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] px-1.5 text-[9px] font-semibold leading-4 text-[var(--color-warning)]">
+                          <span className="notification-bell__past-due-tag shrink-0 rounded-full border border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] px-1.5 text-[length:var(--text-2xs)] font-semibold leading-4 text-[var(--color-warning)]">
                             Past due
                           </span>
                         ) : null}
                       </div>
                       {it.body ? (
-                        <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
+                        <div className="mt-0.5 line-clamp-2 text-[length:var(--text-xs)] leading-snug text-[var(--text-muted)]">
                           {it.body}
                         </div>
                       ) : null}
@@ -691,7 +691,7 @@ function BellBtn({
     <button
       onClick={onClick}
       title={title}
-      className={`notification-bell__action focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
+      className={`notification-bell__action focus-ring rounded border px-2 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
         primary
           ? "border-[var(--border-strong)] bg-[var(--bg-raised)] text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
           : "border-[var(--border-hairline)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

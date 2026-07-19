@@ -198,13 +198,13 @@ export function FirstProjectGate({
           <div className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-xl">
             <div aria-hidden={pickerOpen || undefined} inert={pickerOpen || undefined}>
               <div className="border-b border-[var(--border-hairline)] px-6 py-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                <p className="text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
                   Project required
                 </p>
-                <h2 id={titleId} className="mt-2 text-[26px] font-semibold leading-tight text-[var(--text-primary)]">
+                <h2 id={titleId} className="mt-2 text-[length:var(--text-display)] font-semibold leading-tight text-[var(--text-primary)]">
                   Create your first project
                 </h2>
-                <p id={copyId} className="mt-2 max-w-2xl text-[14px] leading-6 text-[var(--text-secondary)]">
+                <p id={copyId} className="mt-2 max-w-2xl text-[length:var(--text-md)] leading-6 text-[var(--text-secondary)]">
                   {registeredProject ? (
                     <>
                       Project <span className="font-medium text-[var(--text-primary)]">{registeredProject.name}</span> was
@@ -224,7 +224,7 @@ export function FirstProjectGate({
                 {projectsError ? (
                   <div
                     role="alert"
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
                   >
                     <span className="min-w-0 flex-1">
                       Couldn&apos;t verify your existing projects: {projectsError}. Retry before creating a project so chat doesn&apos;t duplicate a project that may already be registered.
@@ -233,7 +233,7 @@ export function FirstProjectGate({
                       variant="danger-ghost"
                       size="xs"
                       onClick={reloadProjects}
-                      className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                      className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
                     >
                       Retry
                     </Button>
@@ -243,14 +243,14 @@ export function FirstProjectGate({
                 {submitError ? (
                   <div
                     role="alert"
-                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
                   >
                     {submitError}
                   </div>
                 ) : null}
 
                 {loadingProjects ? (
-                  <p className="text-[12px] text-[var(--text-muted)]">
+                  <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                     Checking your project registry before creation…
                   </p>
                 ) : null}
@@ -258,7 +258,7 @@ export function FirstProjectGate({
                 <div className="space-y-2">
                   <label
                     htmlFor="first-project-gate-name"
-                    className="block text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
+                    className="block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
                   >
                     Project name
                   </label>
@@ -272,14 +272,14 @@ export function FirstProjectGate({
                     }}
                     placeholder="Project name"
                     disabled={Boolean(registeredProject) || submitting}
-                    className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                    className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <label
                     htmlFor="first-project-gate-root"
-                    className="block text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
+                    className="block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
                   >
                     Absolute root
                   </label>
@@ -295,20 +295,20 @@ export function FirstProjectGate({
                       aria-describedby={rootHintId}
                       aria-invalid={rootDraft.trim() ? !isAbsolutePath(rootDraft) : undefined}
                       disabled={Boolean(registeredProject) || submitting}
-                      className="focus-ring h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[13px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                      className="focus-ring h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-base)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
                     />
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => void handleBrowse()}
                       disabled={Boolean(registeredProject) || submitting}
-                      className="h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                      className="h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                       leadingIcon="ph:folder-open"
                     >
                       Browse
                     </Button>
                   </div>
-                  <p id={rootHintId} className="text-[12px] text-[var(--text-muted)]">
+                  <p id={rootHintId} className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                     Pick the repository root you want chat to run inside.
                   </p>
                 </div>
@@ -321,7 +321,7 @@ export function FirstProjectGate({
                     size="sm"
                     loading={submitting}
                     disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
-                    className="h-10 rounded-[var(--radius-control)] px-4 text-[12px] font-medium disabled:opacity-50"
+                    className="h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
                   >
                     {registeredProject ? "Retry access" : "Create"}
                   </Button>

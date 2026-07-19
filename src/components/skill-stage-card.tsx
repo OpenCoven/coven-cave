@@ -40,7 +40,7 @@ export function SkillStageCard({
   const v = stageVisual(stage);
   return (
     <div
-      className="cave-skill-card flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5 text-[11px]"
+      className="cave-skill-card flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5 text-[length:var(--text-xs)]"
       data-skill-stage={stage}
       role="status"
       aria-label={`Skill ${name}: ${v.label}${note ? ` — ${note}` : ""}`}

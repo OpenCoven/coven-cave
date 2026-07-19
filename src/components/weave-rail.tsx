@@ -12,11 +12,11 @@ import {
 import type { DegradedFamiliarView, ThreadsMeta, WeaveSummary } from "@/lib/threads-read";
 
 const PILL_CLASSES: Record<TensionPill["tone"], string> = {
-  holds: "bg-[var(--ok-soft,rgba(80,180,120,0.15))] text-[var(--ok,#4dbd7a)] border-[var(--ok,#4dbd7a)]/40",
-  frayed: "bg-[var(--warn-soft,rgba(220,170,60,0.15))] text-[var(--warn,#d9a53c)] border-[var(--warn,#d9a53c)]/40",
-  snapped: "bg-[var(--danger-soft,rgba(220,90,90,0.15))] text-[var(--danger,#d95a5a)] border-[var(--danger,#d95a5a)]/40",
-  blocked: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-[var(--border-strong,#555)]",
-  stale: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-dashed border-[var(--border-strong,#555)]",
+  holds: "bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)] border-[var(--color-success)]/40",
+  frayed: "bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)] text-[var(--color-warning)] border-[var(--color-warning)]/40",
+  snapped: "bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] text-[var(--color-danger)] border-[var(--color-danger)]/40",
+  blocked: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-[var(--border-strong)]",
+  stale: "bg-[var(--bg-raised)] text-[var(--text-muted)] border-dashed border-[var(--border-strong)]",
 };
 
 const DEGRADED_FAMILIAR_PILL: TensionPill = {
@@ -93,7 +93,7 @@ export function WeaveRail({
           <select
             value={familiarFilter ?? ""}
             onChange={(e) => onFilter(e.target.value === "" ? null : e.target.value)}
-            className="focus-ring rounded border border-[var(--border,#333)] bg-[var(--bg-raised)] px-1 py-0.5 text-xs"
+            className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 py-0.5 text-xs"
           >
             <option value="">all</option>
             {familiars.map((f) => (
@@ -145,7 +145,7 @@ export function WeaveRail({
                   </div>
                 </div>
                 {weave.degradedSurfaces.length > 0 ? (
-                  <p className="mt-1 text-xs text-[var(--warn,#d9a53c)]">
+                  <p className="mt-1 text-xs text-[var(--color-warning)]">
                     read-only until repair: {weave.degradedSurfaces.join(", ")}
                   </p>
                 ) : null}
@@ -155,7 +155,7 @@ export function WeaveRail({
           {visibleDegraded.map((entry) => (
             <li
               key={`degraded:${entry.familiarId}:${entry.reason}`}
-              className="rounded border-l-2 border-[var(--border-strong,#555)] bg-[var(--bg-raised)]/40 px-2 py-2"
+              className="rounded border-l-2 border-[var(--border-strong)] bg-[var(--bg-raised)]/40 px-2 py-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
@@ -176,7 +176,7 @@ export function WeaveRail({
           ))}
         </ul>
       )}
-      <footer className="px-2 text-[10px] text-[var(--text-muted)]">
+      <footer className="px-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         observed {meta.observedAt} · cursor {meta.sourceCursor} · adapter {meta.adapter}
       </footer>
     </section>

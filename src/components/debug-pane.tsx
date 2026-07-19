@@ -51,7 +51,7 @@ function CopyButton({ getText, label }: { getText: () => string; label?: string 
   return (
     <button
       type="button"
-      className="focus-ring inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+      className="focus-ring inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
       title={label ?? "Copy"}
       aria-label={label ?? "Copy"}
       onClick={() => copy(getText())}
@@ -81,7 +81,7 @@ function Section({
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <button
           type="button"
-          className="focus-ring flex items-center gap-1.5 rounded text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
+          className="focus-ring flex items-center gap-1.5 rounded text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
         >
@@ -100,7 +100,7 @@ function Section({
 
 function KVRow({ k, title, children }: { k: string; title?: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5 text-[11px]">
+    <div className="flex items-baseline justify-between gap-3 py-0.5 text-[length:var(--text-xs)]">
       <span className="shrink-0 text-[var(--text-muted)]">{k}</span>
       <span className="min-w-0 truncate text-right font-mono text-[var(--text-secondary)]" title={title}>
         {children}
@@ -111,7 +111,7 @@ function KVRow({ k, title, children }: { k: string; title?: string; children: Re
 
 function JsonBlock({ text }: { text: string }) {
   return (
-    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-2 font-mono text-[10px] leading-relaxed text-[var(--text-secondary)]">
+    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-2 font-mono text-[length:var(--text-2xs)] leading-relaxed text-[var(--text-secondary)]">
       {text}
     </pre>
   );
@@ -128,7 +128,7 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
     <div className="rounded-md border border-[var(--border-hairline)]">
       <button
         type="button"
-        className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[10px]"
+        className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--text-2xs)]"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
@@ -154,7 +154,7 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]">
+            <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               {usageBreakdown(turn.usage, turn.costUsd) ?? ""}
             </span>
             {/* Preview-stripped: a pasted screenshot's base64 must not land in
@@ -174,7 +174,7 @@ function EventRow({ event }: { event: CovenEvent }) {
     <div className="rounded-md border border-[var(--border-hairline)]">
       <button
         type="button"
-        className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[10px]"
+        className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--text-2xs)]"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
@@ -382,7 +382,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
 
         <Section title="Turns" count={turns.length}>
           {turns.length === 0 ? (
-            <div className="py-2 text-[10px] text-[var(--text-muted)]">No turns yet.</div>
+            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">No turns yet.</div>
           ) : (
             <div className="flex flex-col gap-1">
               {turns.map((turn, i) => (
@@ -394,7 +394,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
 
         <Section title="Events" count={events.length} defaultOpen>
           {eventsError ? (
-            <div className="mb-1 flex items-center justify-between gap-2 rounded-md border border-red-400/40 bg-red-400/10 px-2 py-1 text-[10px] text-red-300">
+            <div className="mb-1 flex items-center justify-between gap-2 rounded-md border border-red-400/40 bg-red-400/10 px-2 py-1 text-[length:var(--text-2xs)] text-red-300">
               <span className="min-w-0 truncate" title={eventsError}>
                 events: {eventsError}
               </span>
@@ -415,19 +415,19 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
                 onChange={(e) => setEventQuery(e.target.value)}
                 placeholder="Filter events (kind or payload)"
                 aria-label="Filter events by kind or payload text"
-                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               />
               {eventQuery.trim() ? (
-                <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                   {visibleEvents.length}/{events.length}
                 </span>
               ) : null}
             </div>
           ) : null}
           {events.length === 0 && !eventsError ? (
-            <div className="py-2 text-[10px] text-[var(--text-muted)]">No events yet.</div>
+            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">No events yet.</div>
           ) : visibleEvents.length === 0 ? (
-            <div className="py-2 text-[10px] text-[var(--text-muted)]">
+            <div className="py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               No events match “{eventQuery.trim()}”.
             </div>
           ) : (
@@ -438,7 +438,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
             </div>
           )}
           {tailCapped ? (
-            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-muted)]">
+            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               <span>Long event tail — showing the first {events.length} events.</span>
               <button
                 type="button"
@@ -455,7 +455,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
       {!follow && events.length > 0 ? (
         <button
           type="button"
-          className="focus-ring absolute bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)] shadow-sm transition-colors hover:text-[var(--text-primary)]"
+          className="focus-ring absolute bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-secondary)] shadow-sm transition-colors hover:text-[var(--text-primary)]"
           onClick={resumeFollow}
         >
           ↓ Follow
@@ -466,7 +466,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
         <CopyButton getText={bundleJson} label="Copy all" />
         <button
           type="button"
-          className="focus-ring inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          className="focus-ring inline-flex items-center gap-1 rounded px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
           onClick={downloadBundle}
         >
           <Icon name="ph:arrow-down-bold" width={11} aria-hidden />
@@ -484,7 +484,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
 export function DebugPane(snapshot: ChatDebugSnapshot) {
   if (!snapshot.sessionId) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-[11px] text-[var(--text-muted)]">
+      <div className="flex h-full items-center justify-center p-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Open a chat session to inspect its debug info.
       </div>
     );

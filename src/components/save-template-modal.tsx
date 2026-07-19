@@ -179,13 +179,13 @@ export function SaveTemplateModal({
         <label className="flex flex-col gap-1 text-xs text-[var(--text-muted)]">
           Template
           <textarea
-            className={`${inputClass} min-h-32 resize-y font-mono text-[13px] leading-5`}
+            className={`${inputClass} min-h-32 resize-y font-mono text-[length:var(--text-base)] leading-5`}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={"Draft release notes since {{last release|the last tag}}…"}
           />
         </label>
-        <p className="text-[11px] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           Wrap the parts to fill in as{" "}
           <code className="rounded bg-[var(--bg-raised)] px-1">{"{{placeholder}}"}</code> or{" "}
           <code className="rounded bg-[var(--bg-raised)] px-1">{"{{name|default}}"}</code> — Tab

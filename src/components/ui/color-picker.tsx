@@ -65,17 +65,17 @@ export function ColorPicker({
     <div className="cave-color-picker flex w-[220px] flex-col gap-2.5 p-2">
       <HexColorPicker color={pickerValue} onChange={onChange} />
       <div className="flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-[var(--text-muted)]">#</span>
+        <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">#</span>
         <HexColorInput
           color={pickerValue}
           onChange={onChange}
           aria-label="Hex color value"
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[11px] uppercase text-[var(--text-secondary)] outline-none"
+          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[length:var(--text-xs)] uppercase text-[var(--text-secondary)] outline-none"
         />
       </div>
       {themeSwatches.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Themes</p>
+          <p className="text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">Themes</p>
           <div className="flex flex-wrap gap-1.5">
             {themeSwatches.map((s) => (
               <SwatchButton key={`t-${s.hex}`} hex={s.hex} label={s.label} selected={sameHex(s.hex, value)} onPick={onChange} />
@@ -85,7 +85,7 @@ export function ColorPicker({
       ) : null}
       {recents.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Recent</p>
+          <p className="text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">Recent</p>
           <div className="flex flex-wrap gap-1.5">
             {recents.map((hex) => (
               <SwatchButton key={`r-${hex}`} hex={hex} label={hex} selected={sameHex(hex, value)} onPick={onChange} />

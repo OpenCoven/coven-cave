@@ -32,8 +32,8 @@ function PolicyRow({
   return (
     <div className={`flex items-center justify-between gap-4 px-4 py-3 ${dimmed ? "opacity-50" : ""}`}>
       <div className="min-w-0">
-        <p className="text-[13px] text-[var(--text-primary)]">{label}</p>
-        {description && <p className="text-[11px] text-[var(--text-muted)]">{description}</p>}
+        <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{label}</p>
+        {description && <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>}
       </div>
       {children}
     </div>
@@ -87,7 +87,7 @@ function PolicyDays({
     if (days !== value) onCommit(days);
   };
   return (
-    <label className="flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+    <label className="flex shrink-0 items-center gap-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
       <input
         type="number"
         min={0}
@@ -100,7 +100,7 @@ function PolicyDays({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
-        className="w-16 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-right text-[12px] text-[var(--text-primary)] focus-ring"
+        className="w-16 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-right text-[length:var(--text-sm)] text-[var(--text-primary)] focus-ring"
       />
       days
     </label>
@@ -158,19 +158,19 @@ export function ChatSettingsView() {
     <div className="chat-settings-view min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
         <header>
-          <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Chat settings</h2>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">
+          <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Chat settings</h2>
+          <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
             Applies to every chat on this device. Per-familiar behavior (like auto
             self-report) lives with each familiar under Familiars → Brain.
           </p>
         </header>
 
         {loadError ? (
-          <p role="alert" className="text-[12px] text-[var(--accent-danger,#e5484d)]">
+          <p role="alert" className="text-[length:var(--text-sm)] text-[var(--color-danger)]">
             {loadError}
           </p>
         ) : !policy ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
         ) : (
           <>
             <SettingsGroup
@@ -248,7 +248,7 @@ export function ChatSettingsView() {
                 />
               </PolicyRow>
             </SettingsGroup>
-            <p aria-live="polite" className="text-[11px] text-[var(--text-muted)]">
+            <p aria-live="polite" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {saveState === "error"
                 ? "Saving failed — change reverted. Try again."
                 : saveState === "saving"

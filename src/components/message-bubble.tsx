@@ -352,7 +352,7 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
 
   if (!html) {
     return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
         {text}
       </pre>
     );
@@ -361,7 +361,7 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
   return (
     <div
       ref={containerRef}
-      className={`cave-syntax-block text-[12px] ${className ?? ""}`}
+      className={`cave-syntax-block text-[length:var(--text-sm)] ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
@@ -388,7 +388,7 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
 
   if (!html) {
     return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
         {text}
       </pre>
     );
@@ -1149,7 +1149,7 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
 
   if (!html) {
     return (
-      <span className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
+      <span className="whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed">
         {text}
         {pending && text ? (
           <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
@@ -1539,11 +1539,11 @@ function MarkdownExpandModal({
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
           <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[13px] font-medium text-[var(--text-secondary)]">{label}</span>
+          <span className="flex-1 truncate text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">{label}</span>
           <button
             type="button"
             onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
             {copied ? "Copied" : "Copy"}

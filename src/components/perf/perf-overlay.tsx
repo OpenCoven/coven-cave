@@ -11,10 +11,10 @@ import { getPerfMeasures, type PerfMeasure } from "@/lib/perf/marks";
 import type { CaveVital } from "@/components/perf/web-vitals-reporter";
 
 const RATING_COLOR: Record<WebVitalRating, string> = {
-  good: "#34d399",
-  "needs-improvement": "#fbbf24",
-  poor: "#f87171",
-  unknown: "#9ca3af",
+  good: "var(--color-success)",
+  "needs-improvement": "var(--color-warning)",
+  poor: "var(--color-danger)",
+  unknown: "var(--text-muted)",
 };
 
 function enabledFromEnv(): boolean {
@@ -59,38 +59,24 @@ export function PerfOverlay() {
   return (
     <div
       aria-hidden
-      style={{
-        position: "fixed",
-        right: 8,
-        bottom: 8,
-        zIndex: 2147483647,
-        pointerEvents: "none",
-        font: "11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace",
-        color: "#e5e7eb",
-        background: "rgba(17,17,19,0.82)",
-        border: "1px solid rgba(255,255,255,0.12)",
-        borderRadius: 8,
-        padding: "8px 10px",
-        maxWidth: 240,
-        backdropFilter: "blur(6px)",
-      }}
+      className="[position:fixed]! [right:8px]! [bottom:8px]! [z-index:2147483647]! [pointer-events:none]! [font:11px/1.5_ui-monospace,_SFMono-Regular,_Menlo,_monospace]! [color:var(--code-foreground)]! [background:rgba(17,17,19,0.82)]! [border:1px_solid_rgba(255,255,255,0.12)]! [border-radius:var(--radius-control)]! [padding:var(--space-2)_10px]! [max-width:240px]! [backdrop-filter:blur(6px)]!"
     >
-      <div style={{ opacity: 0.6, marginBottom: 4, letterSpacing: 0.4 }}>PERF</div>
+      <div className="[opacity:0.6]! [margin-bottom:var(--space-1)]! [letter-spacing:0.4px]!">PERF</div>
       {vitalRows.length === 0 ? (
-        <div style={{ opacity: 0.5 }}>waiting for vitals…</div>
+        <div className="[opacity:0.5]!">waiting for vitals…</div>
       ) : (
         vitalRows.map((v) => (
-          <div key={v.name} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div key={v.name} className="[display:flex]! [justify-content:space-between]! [gap:var(--space-3)]!">
             <span style={{ color: RATING_COLOR[v.rating] }}>{v.name}</span>
             <span>{formatWebVital(v.name, v.value)}</span>
           </div>
         ))
       )}
       {measures.length > 0 && (
-        <div style={{ marginTop: 6, borderTop: "1px solid rgba(255,255,255,0.12)", paddingTop: 4 }}>
+        <div className="[margin-top:6px]! [border-top:1px_solid_rgba(255,255,255,0.12)]! [padding-top:var(--space-1)]!">
           {measures.slice(-4).map((m, i) => (
-            <div key={`${m.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, opacity: 0.85 }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+            <div key={`${m.name}-${i}`} className="[display:flex]! [justify-content:space-between]! [gap:var(--space-3)]! [opacity:0.85]!">
+              <span className="[overflow:hidden]! [text-overflow:ellipsis]! [white-space:nowrap]!">{m.name}</span>
               <span>{Math.round(m.duration)} ms</span>
             </div>
           ))}

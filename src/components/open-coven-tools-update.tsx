@@ -568,7 +568,7 @@ export function OpenCovenToolsUpdate() {
   };
 
   const toolActionBtn =
-    "settings-tool-action gap-1.5 rounded-[var(--radius-control)] text-[11px]";
+    "settings-tool-action gap-1.5 rounded-[var(--radius-control)] text-[length:var(--text-xs)]";
   const accentBtn =
     `${toolActionBtn} settings-tool-action--primary bg-[var(--accent-presence)] px-3 font-semibold text-[var(--accent-presence-foreground)] disabled:opacity-50`;
   const ghostBtn =
@@ -593,7 +593,7 @@ export function OpenCovenToolsUpdate() {
       {npmLane ? (
         <p
           role="status"
-          className="px-4 pt-3 text-[11px] text-[var(--text-secondary)]"
+          className="px-4 pt-3 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
         >
           {npmLane.label} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
         </p>
@@ -617,30 +617,30 @@ export function OpenCovenToolsUpdate() {
             className="flex items-center justify-between gap-4 px-4 py-3"
           >
             <div className="min-w-0">
-              <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
-              <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+              <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{tool.label}</p>
+              <p className="truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {presentation.versionText}
               </p>
-              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {stateStatusText}
               </p>
               {toolCompatibilityText(tool) ? (
-                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                <p className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
                   {toolCompatibilityText(tool)}
                 </p>
               ) : null}
-              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {latestCheckText(tool, stale)}
               </p>
               {stale && lastSuccessfulCheckedAt ? (
-                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                <p className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
                   Last known · {relativeTime(lastSuccessfulCheckedAt)}
                 </p>
               ) : null}
               {result ? (
                 <p
                   aria-live="polite"
-                  className={`mt-1 text-[11px] ${
+                  className={`mt-1 text-[length:var(--text-xs)] ${
                     result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
                   }`}
                 >
@@ -649,7 +649,7 @@ export function OpenCovenToolsUpdate() {
               ) : null}
               {daemon ? (
                 <p
-                  className={`mt-1 text-[11px] ${
+                  className={`mt-1 text-[length:var(--text-xs)] ${
                     daemon.health === "running"
                       ? "text-[var(--color-success)]"
                       : daemon.phase === "recovery-failed" || daemon.phase === "stop-failed"
@@ -661,14 +661,14 @@ export function OpenCovenToolsUpdate() {
                 </p>
               ) : null}
               {(busy && job?.tail) || (!busy && !result?.ok && result?.tail) ? (
-                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
                   {busy ? job?.tail : result?.tail}
                 </pre>
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {busy ? (
-                <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+                <span className="inline-flex items-center gap-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
                   {job.action === "install"
                     ? "Installing"
@@ -678,7 +678,7 @@ export function OpenCovenToolsUpdate() {
                   {daemon ? `; ${daemonLifecycleText(daemon)}` : ""}... {formatElapsed(job.elapsedMs)}
                 </span>
               ) : updatingElsewhere ? (
-                <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+                <span className="inline-flex items-center gap-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
                   Updating in another Cave window
                 </span>
@@ -721,8 +721,8 @@ export function OpenCovenToolsUpdate() {
       })}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[12px] text-[var(--text-secondary)]">{footerStatusText}</p>
-          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{footerStatusText}</p>
+          <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             Diagnostics include tool/check summaries; paths, raw output, URL queries, and secrets are omitted or redacted.
           </p>
         </div>

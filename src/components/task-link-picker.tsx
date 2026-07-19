@@ -133,11 +133,11 @@ export function TaskLinkPicker({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Link a task…"
           aria-label="Search tasks to link"
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
       </div>
       {error ? (
-        <div className="px-2.5 py-1.5 text-[11px] text-[var(--color-danger,#ef4444)]">{error}</div>
+        <div className="px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</div>
       ) : null}
       <div className="max-h-[16rem] overflow-y-auto py-1">
         {handoff ? (
@@ -150,7 +150,7 @@ export function TaskLinkPicker({
                 ? `Create a new task "${query.trim()}" from this chat`
                 : "Create a new task from this chat"
             }
-            className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-2.5 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-2.5 py-1.5 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             <Icon name="ph:plus" width={12} className="shrink-0 text-[var(--accent-presence)]" />
             <span className="min-w-0 flex-1 truncate">
@@ -162,9 +162,9 @@ export function TaskLinkPicker({
           </button>
         ) : null}
         {cards === null ? (
-          <div className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">Loading tasks…</div>
+          <div className="px-2.5 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading tasks…</div>
         ) : results.length === 0 ? (
-          <div className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">
+          <div className="px-2.5 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {query ? "No matches." : "No other tasks to link."}
           </div>
         ) : (
@@ -174,7 +174,7 @@ export function TaskLinkPicker({
               type="button"
               disabled={busyId !== null}
               onClick={() => void assign(card)}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
             >
               <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
               <span className="min-w-0 flex-1 truncate">{card.title}</span>

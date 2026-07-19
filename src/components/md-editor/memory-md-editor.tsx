@@ -166,7 +166,7 @@ export function MemoryMdEditor({
       {diskChanged ? (
         <div
           role="status"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-1.5 text-[11px] text-[var(--text-primary)]"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
         >
           <Icon name="ph:warning-circle" width={12} aria-hidden />
           <span className="min-w-0 flex-1">
@@ -175,7 +175,7 @@ export function MemoryMdEditor({
           <button
             type="button"
             onClick={reloadFromDisk}
-            className="focus-ring inline-flex h-6 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-counter-clockwise" width={10} aria-hidden />
             Reload from disk
@@ -184,7 +184,7 @@ export function MemoryMdEditor({
             type="button"
             onClick={() => setDiskChanged(false)}
             aria-label="Dismiss and keep editing"
-            className="focus-ring inline-flex h-6 items-center rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="focus-ring inline-flex h-6 items-center rounded-md px-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             Keep editing
           </button>

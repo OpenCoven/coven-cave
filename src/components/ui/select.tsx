@@ -85,7 +85,7 @@ export function StandardSelect<T extends string>({
         ref={triggerRef}
         className={[
             "standard-select-trigger focus-ring inline-flex min-w-0 items-center justify-between gap-1 text-left leading-none disabled:pointer-events-none disabled:opacity-50",
-            className ? "" : "h-8 rounded-md border border-border bg-background px-3 py-1.5 text-[12px] text-foreground transition-colors hover:bg-muted",
+            className ? "" : "h-8 rounded-md border border-border bg-background px-3 py-1.5 text-[length:var(--text-sm)] text-foreground transition-colors hover:bg-muted",
             className ?? "",
           ]
           .filter(Boolean)
@@ -146,7 +146,7 @@ export function StandardSelect<T extends string>({
                       <span className="flex min-w-0 flex-col">
                         <span className="truncate">{option.label}</span>
                         {option.detail ? (
-                          <span className="truncate text-[10px] text-[var(--text-muted)]">{option.detail}</span>
+                          <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">{option.detail}</span>
                         ) : null}
                       </span>
                     </PopoverItem>
@@ -171,7 +171,7 @@ export function StandardSelect<T extends string>({
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">{entry.label}</span>
                   {entry.detail ? (
-                    <span className="truncate text-[10px] text-[var(--text-muted)]">{entry.detail}</span>
+                    <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">{entry.detail}</span>
                   ) : null}
                 </span>
               </PopoverItem>

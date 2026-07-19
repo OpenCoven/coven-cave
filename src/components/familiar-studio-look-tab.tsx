@@ -376,7 +376,7 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="flex items-center justify-between gap-3 text-[12px] text-[var(--text-secondary)]">
+      <label className="flex items-center justify-between gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
         <span>Show backdrop while this familiar is active</span>
         <button
           type="button"
@@ -384,7 +384,7 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
           aria-checked={enabled}
           aria-label="Show backdrop while this familiar is active"
           onClick={() => setFamiliarBackdropEnabled(familiarId, !enabled)}
-          className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[12px] transition-colors ${
+          className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
             enabled
               ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
               : "border-[var(--border-hairline)] text-[var(--text-secondary)]"

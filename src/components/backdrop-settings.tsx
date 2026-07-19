@@ -96,7 +96,7 @@ export function BackdropSettings() {
           onClick={() => fileRef.current?.click()}
           disabled={busy}
           aria-label={previewUrl ? "Replace backdrop image" : "Choose backdrop image"}
-          className="focus-ring grid h-20 w-32 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] bg-[var(--bg-base)]/40 text-[11px] text-[var(--text-muted)] hover:border-[var(--accent-presence)]/60"
+          className="focus-ring grid h-20 w-32 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] bg-[var(--bg-base)]/40 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:border-[var(--accent-presence)]/60"
         >
           {previewUrl ? (
             <img src={previewUrl} alt="" className="h-full w-full object-cover" />
@@ -116,8 +116,8 @@ export function BackdropSettings() {
           }}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-[var(--text-primary)]">Backdrop</p>
-          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Backdrop</p>
+          <p className="text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
             Shows behind Home and Chat. The accent tints to the image’s dominant color, kept
             readable against your theme.
           </p>
@@ -139,7 +139,7 @@ export function BackdropSettings() {
 
       {prefs.enabled ? (
         <div className="flex flex-col gap-3 border-l border-[var(--border-hairline)] pl-3">
-          <label className="flex items-center gap-3 text-[12px] text-[var(--text-secondary)]">
+          <label className="flex items-center gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
             <span className="w-16 shrink-0">Intensity</span>
             <input
               type="range"
@@ -150,18 +150,18 @@ export function BackdropSettings() {
               className="cave-backdrop-intensity min-w-0 flex-1"
               aria-label="Backdrop intensity"
             />
-            <span className="w-8 text-right font-mono text-[11px] text-[var(--text-muted)]">
+            <span className="w-8 text-right font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {prefs.intensity}
             </span>
           </label>
-          <label className="flex items-center justify-between gap-3 text-[12px] text-[var(--text-secondary)]">
+          <label className="flex items-center justify-between gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
             <span>Match accent to the image</span>
             <button
               type="button"
               role="switch"
               aria-checked={prefs.matchAccent}
               onClick={() => writeBackdropPrefs({ matchAccent: !prefs.matchAccent })}
-              className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[12px] transition-colors ${
+              className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
                 prefs.matchAccent
                   ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
                   : "border-[var(--border-hairline)] text-[var(--text-secondary)]"

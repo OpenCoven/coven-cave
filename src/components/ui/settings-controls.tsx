@@ -23,8 +23,8 @@ export function SettingControlRow({
       className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 ${className}`}
     >
       <div className="min-w-0">
-        <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
-        {hint ? <div className="text-[11px] text-[var(--text-muted)]">{hint}</div> : null}
+        <div className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">{label}</div>
+        {hint ? <div className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{hint}</div> : null}
       </div>
       {children}
     </div>
@@ -68,7 +68,7 @@ export function Segmented<T extends string>({
             aria-pressed={active}
             aria-label={`${ariaLabel}: ${getLabel(option)}`}
             onClick={() => onChange(option)}
-            className={`focus-ring rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+            className={`focus-ring rounded-[var(--radius-control)] px-2.5 py-1.5 text-[length:var(--text-xs)] font-medium transition-colors ${
               equalWidth ? "min-w-12 text-center" : ""
             } ${
               active

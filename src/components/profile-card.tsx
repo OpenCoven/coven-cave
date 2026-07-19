@@ -32,7 +32,7 @@ import { userDisplayName } from "@/lib/user-profile-shared";
 import type { Familiar } from "@/lib/types";
 import "@/styles/profile-card.css";
 
-const SPARK_COLOR = "#e8e8ec";
+const SPARK_COLOR = "var(--text-primary)";
 
 export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; familiarId?: string }) {
   const [data, setData] = useState<ProfileCardData | null>(null);

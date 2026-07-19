@@ -24,14 +24,14 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
       <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
         {SHORTCUT_GROUPS.map((group) => (
           <section key={group.id} aria-label={group.label}>
-            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+            <h3 className="mb-2 text-[length:var(--text-xs)] font-medium uppercase tracking-wide text-[var(--text-muted)]">
               {group.label}
             </h3>
             <ul className="flex flex-col gap-1.5">
               {group.entries.map((entry) => (
                 <li
                   key={`${entry.keys} ${entry.description}`}
-                  className="flex items-center justify-between gap-3 text-[13px]"
+                  className="flex items-center justify-between gap-3 text-[length:var(--text-base)]"
                 >
                   <span className="text-[var(--text-secondary)]">{entry.description}</span>
                   <kbd className="shell-kbd whitespace-nowrap">

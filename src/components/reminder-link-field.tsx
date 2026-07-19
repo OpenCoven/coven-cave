@@ -111,7 +111,7 @@ export function ReminderLinkField({
 
   const controlClass =
     "w-full appearance-none rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-presence)]";
-  const hintClass = "mt-1 text-[10px] text-[var(--text-muted)]";
+  const hintClass = "mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]";
   const cardOptions = [
     { value: "", label: "Select a card…" },
     ...(cards ?? []).map((card) => ({ value: card.id, label: card.title })),

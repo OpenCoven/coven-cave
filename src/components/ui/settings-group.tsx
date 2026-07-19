@@ -24,13 +24,13 @@ export function SettingsGroup({
   return (
     <div id={settingsGroupId(label)} data-settings-group className="scroll-mt-4 settings-group">
       <p
-        className={`text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] ${
+        className={`text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)] ${
           description ? "mb-1" : "mb-2"
         }`}
       >
         {label}
       </p>
-      {description ? <p className="mb-2 text-[11px] text-[var(--text-muted)]">{description}</p> : null}
+      {description ? <p className="mb-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p> : null}
       <div className="divide-y divide-[var(--border-hairline)] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] overflow-hidden">
         {children}
       </div>

@@ -161,30 +161,30 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           >
             <Icon name="ph:caret-right" width={13} />
           </button>
-          <h3 className="ml-1 text-[13px] font-semibold text-[var(--text-primary)]">{dayLabel}</h3>
+          <h3 className="ml-1 text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{dayLabel}</h3>
           {date === today ? (
-            <span className="rounded-full bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--accent-presence)]">
+            <span className="rounded-full bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--accent-presence)]">
               Today
             </span>
           ) : (
             <button
               type="button"
               onClick={() => selectDate(today)}
-              className="focus-ring rounded-md px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+              className="focus-ring rounded-md px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
             >
               Today
             </button>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text-muted)]">
+          <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {saving ? "Saving…" : savedAt ? `Saved ${relativeTime(savedAt)}` : "Not saved yet"}
           </span>
           <button
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80 disabled:opacity-50"
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80 disabled:opacity-50"
           >
             <Icon name="ph:floppy-disk-bold" width={12} />
             Save
@@ -195,7 +195,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
       {/* Editor */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {error ? (
-          <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[11px] text-[var(--danger-text)]">
+          <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--danger-text)]">
             {error}
           </div>
         ) : null}
@@ -203,7 +203,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
         <section className="flex flex-col">
           <label
             htmlFor="daily-notes-body"
-            className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]"
+            className="mb-1.5 flex items-center gap-1.5 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]"
           >
             <Icon name="ph:note-pencil" width={13} />
             {DAILY_NOTE_SECTIONS.notes}
@@ -218,19 +218,19 @@ export function FamiliarDailyNotes({ familiar }: Props) {
             }}
             onBlur={handleBlurSave}
             placeholder={`What did ${familiar.display_name} work on today?`}
-            className="focus-ring min-h-[140px] flex-1 resize-y rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3 text-[13px] leading-relaxed text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="focus-ring min-h-[140px] flex-1 resize-y rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3 text-[length:var(--text-base)] leading-relaxed text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
         </section>
 
         <section className="flex flex-col">
           <label
             htmlFor="daily-notes-reflection"
-            className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]"
+            className="mb-1.5 flex items-center gap-1.5 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]"
           >
             <Icon name="ph:sparkle" width={13} />
             {DAILY_NOTE_SECTIONS.reflection}
           </label>
-          <p className="mb-1.5 text-[10px] text-[var(--text-muted)]">
+          <p className="mb-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             What went well, what was hard, and what to try differently next time.
           </p>
           <textarea
@@ -243,14 +243,14 @@ export function FamiliarDailyNotes({ familiar }: Props) {
             }}
             onBlur={handleBlurSave}
             placeholder="Reflect on the day…"
-            className="focus-ring min-h-[120px] flex-1 resize-y rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3 text-[13px] leading-relaxed text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="focus-ring min-h-[120px] flex-1 resize-y rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3 text-[length:var(--text-base)] leading-relaxed text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
         </section>
 
         {/* Past entries */}
         {dates.length > 0 ? (
           <section className="flex flex-col">
-            <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+            <h4 className="mb-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
               Past entries
             </h4>
             <ul className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
@@ -266,9 +266,9 @@ export function FamiliarDailyNotes({ familiar }: Props) {
                   >
                     <Icon name="ph:calendar-blank" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.date}</span>
+                      <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">{entry.date}</span>
                       {entry.preview ? (
-                        <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="mt-0.5 block truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {entry.preview}
                         </span>
                       ) : null}

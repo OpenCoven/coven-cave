@@ -608,10 +608,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       return (
         <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
           <div>
-            <p className="text-[15px] font-medium text-[var(--text-secondary)]">
+            <p className="text-[length:var(--text-md)] font-medium text-[var(--text-secondary)]">
               Can&apos;t reach your familiars
             </p>
-            <p className="mt-1 text-[12px]">
+            <p className="mt-1 text-[length:var(--text-sm)]">
               {daemonRunning === false
                 ? "The daemon is offline, so the roster can't be read. Your familiars are safe."
                 : "The roster didn't load. Your familiars are safe — retrying automatically."}
@@ -620,7 +620,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           {onRetryFamiliars ? (
             <button
               onClick={onRetryFamiliars}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
             >
               Retry
             </button>
@@ -638,24 +638,24 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     return (
       <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
         <div>
-          <p className="text-[15px] font-medium text-[var(--text-secondary)]">
+          <p className="text-[length:var(--text-md)] font-medium text-[var(--text-secondary)]">
             Summon your first familiar
           </p>
-          <p className="mt-1 text-[12px]">
+          <p className="mt-1 text-[length:var(--text-sm)]">
             {subline}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => requestSummonFamiliar()}
-            className="rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--bg-base)] hover:opacity-90"
+            className="rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--bg-base)] hover:opacity-90"
           >
             Summon a familiar
           </button>
           {onOpenOnboarding ? (
             <button
               onClick={onOpenOnboarding}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
             >
               Open setup
             </button>
