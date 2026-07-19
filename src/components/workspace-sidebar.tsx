@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
@@ -165,6 +165,7 @@ function ThreadPrBadge({
 }
 
 type ThreadRowProps = {
+  rowInstanceKey: string;
   session: SessionRow;
   active: boolean;
   pinned: boolean;
@@ -189,6 +190,7 @@ type ThreadRowProps = {
 };
 
 function ThreadRow({
+  rowInstanceKey,
   session,
   active,
   pinned,
@@ -207,10 +209,17 @@ function ThreadRow({
 }: ThreadRowProps) {
   const title = sessionRailTitle(session);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
   // Real PR context beats the title-heuristic glyph — when the thread's work
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = sessionPrStatus(session.pullRequest);
+  useEffect(() => {
+    if (confirming) setContextMenu(null);
+  }, [confirming]);
+  useLayoutEffect(() => {
+    if (confirming) confirmCancelRef.current?.focus();
+  }, [confirming]);
   const actions = compactActions([
     onOpenInSplit
       ? {
@@ -233,12 +242,14 @@ function ThreadRow({
       danger: true,
       disabled: deleting,
       onSelect: () => {
+        setContextMenu(null);
         queueMicrotask(onRequestDelete);
       },
     },
   ]);
   return (
     <div
+      data-row-instance={rowInstanceKey}
       className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}`}
       onContextMenu={(e) => {
         if (confirming) return;
@@ -298,7 +309,7 @@ function ThreadRow({
       </button>
       {confirming ? (
         <span className="cnav__confirm">
-          <button type="button" onClick={onCancelDelete} className="cnav__confirm-cancel focus-ring">
+          <button type="button" ref={confirmCancelRef} onClick={onCancelDelete} className="cnav__confirm-cancel focus-ring">
             Cancel
           </button>
           <button type="button" disabled={deleting} onClick={onConfirmDelete} className="cnav__confirm-del focus-ring">
@@ -309,7 +320,7 @@ function ThreadRow({
         <SidebarOverflowMenu ariaLabel={`Chat actions for ${title}`} actions={actions} />
       )}
       <SidebarContextMenu
-        state={contextMenu}
+        state={confirming ? null : contextMenu}
         onClose={() => setContextMenu(null)}
         ariaLabel={`Chat actions for ${title}`}
         actions={actions}
@@ -344,7 +355,7 @@ export function WorkspaceSidebar({
   // Pins come from the shared cross-surface store (chat list + thread rail +
   // this sidebar all read and write the same subscribable list).
   const pinnedIds = usePinnedSessions();
-  const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<{ rowKey: string; sessionId: string } | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -456,7 +467,7 @@ export function WorkspaceSidebar({
     setDeleteError(null);
     try {
       await onDeleteSession(session);
-      setConfirmingSessionId(null);
+      setConfirmingDelete((current) => (current?.sessionId === session.id ? null : current));
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -621,10 +632,11 @@ export function WorkspaceSidebar({
                   return (
                     <li key={`pin-${session.id}`}>
                       <ThreadRow
+                        rowInstanceKey={`pinned:${session.id}`}
                         session={session}
                         active={activeSessionId === session.id}
                         pinned
-                        confirming={confirmingSessionId === session.id}
+                        confirming={confirmingDelete?.rowKey === `pinned:${session.id}`}
                         deleting={deletingSessionId === session.id}
                         indent="flat"
                         project={sessionProjectById.get(session.id) ?? null}
@@ -635,8 +647,8 @@ export function WorkspaceSidebar({
                           onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                         }
                         onTogglePin={() => togglePin(session.id)}
-                        onRequestDelete={() => setConfirmingSessionId(session.id)}
-                        onCancelDelete={() => setConfirmingSessionId(null)}
+                        onRequestDelete={() => setConfirmingDelete({ rowKey: `pinned:${session.id}`, sessionId: session.id })}
+                        onCancelDelete={() => setConfirmingDelete(null)}
                         onConfirmDelete={() => void handleDeleteSession(session)}
                       />
                     </li>
@@ -665,10 +677,11 @@ export function WorkspaceSidebar({
                       {rows.map((session) => (
                         <li key={session.id}>
                           <ThreadRow
+                            rowInstanceKey={`recent:${session.id}`}
                             session={session}
                             active={activeSessionId === session.id}
                             pinned={isSessionPinned(pinnedIds, session.id)}
-                            confirming={confirmingSessionId === session.id}
+                            confirming={confirmingDelete?.rowKey === `recent:${session.id}`}
                             deleting={deletingSessionId === session.id}
                             indent="flat"
                             project={sessionProjectById.get(session.id) ?? null}
@@ -679,8 +692,8 @@ export function WorkspaceSidebar({
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                             }
                             onTogglePin={() => togglePin(session.id)}
-                            onRequestDelete={() => setConfirmingSessionId(session.id)}
-                            onCancelDelete={() => setConfirmingSessionId(null)}
+                            onRequestDelete={() => setConfirmingDelete({ rowKey: `recent:${session.id}`, sessionId: session.id })}
+                            onCancelDelete={() => setConfirmingDelete(null)}
                             onConfirmDelete={() => void handleDeleteSession(session)}
                           />
                         </li>
@@ -796,10 +809,11 @@ export function WorkspaceSidebar({
                             return (
                               <li key={session.id}>
                                 <ThreadRow
+                                  rowInstanceKey={`project:${session.id}`}
                                   session={session}
                                   active={activeSessionId === session.id}
                                   pinned={isSessionPinned(pinnedIds, session.id)}
-                                  confirming={confirmingSessionId === session.id}
+                                  confirming={confirmingDelete?.rowKey === `project:${session.id}`}
                                   deleting={deletingSessionId === session.id}
                                   indent="folder"
                                   glyph={glyph}
@@ -811,8 +825,8 @@ export function WorkspaceSidebar({
                                       : undefined
                                   }
                                   onTogglePin={() => togglePin(session.id)}
-                                  onRequestDelete={() => setConfirmingSessionId(session.id)}
-                                  onCancelDelete={() => setConfirmingSessionId(null)}
+                                  onRequestDelete={() => setConfirmingDelete({ rowKey: `project:${session.id}`, sessionId: session.id })}
+                                  onCancelDelete={() => setConfirmingDelete(null)}
                                   onConfirmDelete={() => void handleDeleteSession(session)}
                                 />
                               </li>

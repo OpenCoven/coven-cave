@@ -17,14 +17,22 @@ assert.match(actionMenu, /onActionSelect=\{\(action\) => \{[\s\S]*onClose\(\);[\
 
 // Thread rows: one action contract powers the persistent overflow and the
 // right-click path, while the row's primary click / alt-open / drag behavior stays.
+assert.match(sidebar, /rowInstanceKey: string;/, "thread rows require a stable row-instance key");
 assert.match(sidebar, /const \[contextMenu, setContextMenu\] = useState<ContextMenuState>\(null\);/, "thread rows keep focused local ContextMenuState");
 assert.match(sidebar, /onContextMenu=\{\(e\) => \{[\s\S]*openContextMenuAt\(setContextMenu\)\(e\);[\s\S]*\}\}/, "thread rows open the shared context menu from the stable row");
 assert.match(sidebar, /const actions = compactActions\(\[[\s\S]*onOpenInSplit[\s\S]*\? \{[\s\S]*label: "Open in split"[\s\S]*: null,[\s\S]*label: pinned \? "Unpin" : "Pin"[\s\S]*label: "Delete"/, "thread rows define one typed action array with split, pin, and delete");
+assert.match(sidebar, /onSelect: \(\) => \{[\s\S]*setContextMenu\(null\);[\s\S]*queueMicrotask\(onRequestDelete\);[\s\S]*\}/, "delete action clears any open context menu before starting confirmation");
+assert.match(sidebar, /useEffect\(\(\) => \{[\s\S]*if \(confirming\) setContextMenu\(null\);[\s\S]*\}, \[confirming\]\)/, "thread rows force-close the context menu while confirming");
+assert.match(sidebar, /state=\{confirming \? null : contextMenu\}/, "confirming rows hide the context menu entirely");
+assert.match(sidebar, /const confirmCancelRef = useRef<HTMLButtonElement \| null>\(null\);/, "thread rows keep a stable inline confirmation focus target");
+assert.match(sidebar, /useLayoutEffect\(\(\) => \{[\s\S]*if \(confirming\) confirmCancelRef\.current\?\.focus\(\);[\s\S]*\}, \[confirming\]\)/, "delete confirmation moves focus onto the inline cancel button");
+assert.match(sidebar, /<button type="button" ref=\{confirmCancelRef\} onClick=\{onCancelDelete\} className="cnav__confirm-cancel focus-ring">/, "Cancel is the stable inline confirmation control");
 assert.match(sidebar, /<SidebarOverflowMenu ariaLabel=\{`Chat actions for \$\{title\}`\} actions=\{actions\} \/>/, "thread rows expose a persistent title-specific overflow trigger");
-assert.match(sidebar, /<SidebarContextMenu[\s\S]*state=\{contextMenu\}[\s\S]*onClose=\{\(\) => setContextMenu\(null\)\}[\s\S]*ariaLabel=\{`Chat actions for \$\{title\}`\}[\s\S]*actions=\{actions\}/, "thread rows reuse the same actions for the right-click context path");
+assert.match(sidebar, /<SidebarContextMenu[\s\S]*state=\{confirming \? null : contextMenu\}[\s\S]*onClose=\{\(\) => setContextMenu\(null\)\}[\s\S]*ariaLabel=\{`Chat actions for \$\{title\}`\}[\s\S]*actions=\{actions\}/, "thread rows reuse the same actions for the right-click context path when not confirming");
 assert.match(sidebar, /if \(e\.altKey && onOpenInSplit\) \{[\s\S]*onOpenInSplit\(\);/, "alt-click split behavior stays intact");
 assert.match(sidebar, /if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\) \{/, "alt-enter split behavior stays intact");
 assert.match(sidebar, /draggable=\{Boolean\(onOpenInSplit\)\}/, "whole-row drag-to-split stays intact");
+assert.match(sidebar, /const \[confirmingDelete, setConfirmingDelete\] = useState<\{ rowKey: string; sessionId: string \} \| null>\(null\);/, "workspace sidebar tracks the invoking row instance and the session being deleted");
 
 // Pinned rows render through the same ThreadRow contract rather than their own
 // always-visible bookmark button.
@@ -32,7 +40,7 @@ const pinStart = sidebar.indexOf('aria-label="Pinned threads"');
 const pinEnd = sidebar.indexOf('view === "recent"', pinStart);
 assert.ok(pinStart !== -1 && pinEnd > pinStart, "pinned rail section exists before the recent view");
 const pinnedRail = sidebar.slice(pinStart, pinEnd);
-assert.match(pinnedRail, /<ThreadRow[\s\S]*pinned[\s\S]*onTogglePin=\{\(\) => togglePin\(session\.id\)\}/, "pinned rows render through ThreadRow with the shared menu contract");
+assert.match(pinnedRail, /<ThreadRow[\s\S]*rowInstanceKey=\{`pinned:\$\{session\.id\}`\}[\s\S]*pinned[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `pinned:\$\{session\.id\}`\}[\s\S]*onTogglePin=\{\(\) => togglePin\(session\.id\)\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `pinned:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "pinned rows render through ThreadRow with their own stable confirmation key");
 assert.doesNotMatch(pinnedRail, /aria-label=\{`Unpin \$\{title\}`\}/, "pinned rows no longer render a dedicated bookmark button");
 
 // Project headers also share overflow + context actions from one definition.
@@ -41,6 +49,8 @@ assert.match(sidebar, /<SidebarOverflowMenu[\s\S]*ariaLabel=\{`Project actions f
 assert.match(sidebar, /<SidebarContextMenu[\s\S]*state=\{projectContextKey === key \? projectContextMenu : null\}[\s\S]*ariaLabel=\{`Project actions for \$\{label\}`\}[\s\S]*actions=\{projectHeaderActions\}/, "project headers reuse the same actions for right-click context");
 assert.doesNotMatch(sidebar, /Register \$\{label\} as a project[\s\S]*className="cnav__icon-btn/, "the separate hover-only register button is removed");
 assert.doesNotMatch(sidebar, /New chat in \$\{label\}[\s\S]*className="cnav__icon-btn/, "the separate hover-only new-chat button is removed");
+assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`recent:\$\{session\.id\}`\}[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `recent:\$\{session\.id\}`\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `recent:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "recent rows confirm only the invoking copy");
+assert.match(sidebar, /<ThreadRow[\s\S]*rowInstanceKey=\{`project:\$\{session\.id\}`\}[\s\S]*confirming=\{confirmingDelete\?\.rowKey === `project:\$\{session\.id\}`\}[\s\S]*onRequestDelete=\{\(\) => setConfirmingDelete\(\{ rowKey: `project:\$\{session\.id\}`, sessionId: session\.id \}\)\}/, "project rows confirm only the invoking copy");
 
 // Hover-only action markup and hover geometry hacks are retired.
 assert.doesNotMatch(sidebar, /cnav__row-actions|cnav__icon-btn/, "workspace sidebar markup no longer uses hover-only row-action wrappers");

@@ -117,4 +117,19 @@ assert.match(
   "focus moving back to the anchor doesn't close the popover",
 );
 
+// Menu bodies get shared keyboard navigation: ArrowUp/Down wrap through enabled
+// menuitem/menuitemradio descendants, Home/End jump to the ends, and text-entry
+// controls inside a popover are left alone.
+assert.match(src, /role === "menu"/, "keyboard navigation only attaches to menu popovers");
+assert.match(src, /e\.key === "ArrowDown"/, "menu navigation handles ArrowDown");
+assert.match(src, /e\.key === "ArrowUp"/, "menu navigation handles ArrowUp");
+assert.match(src, /e\.key === "Home"/, "menu navigation handles Home");
+assert.match(src, /e\.key === "End"/, "menu navigation handles End");
+assert.match(src, /\[role="menuitem"\], \[role="menuitemradio"\]/, "menu navigation targets shared menu items");
+assert.match(src, /!item\.hasAttribute\("disabled"\)/, "menu navigation skips disabled items");
+assert.match(src, /item\.getAttribute\("aria-disabled"\) !== "true"/, "menu navigation also skips aria-disabled items");
+assert.match(src, /target\.closest\('input, textarea, select, \[contenteditable\]'\)/, "menu navigation does not hijack embedded text-entry controls");
+assert.match(src, /\(currentIndex \+ 1\) % items\.length/, "ArrowDown wraps to the first enabled item");
+assert.match(src, /\(currentIndex - 1 \+ items\.length\) % items\.length/, "ArrowUp wraps to the last enabled item");
+
 console.log("popover.test.ts: ok");
