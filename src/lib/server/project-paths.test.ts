@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 const originalEnv = {
