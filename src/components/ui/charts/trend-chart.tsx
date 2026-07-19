@@ -32,7 +32,7 @@ export function TrendChart({
 }) {
   return (
     <div className="cave-chart cave-chart--trend" style={{ height }}>
-      <ParentSize>
+      <ParentSize debounceTime={0}>
         {({ width }) => (
           <TrendInner width={width} height={height} series={series} threshold={threshold} fill={fill} ariaLabel={ariaLabel} />
         )}

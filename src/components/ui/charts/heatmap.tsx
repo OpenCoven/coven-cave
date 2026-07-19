@@ -34,7 +34,7 @@ export function Heatmap({
 }) {
   return (
     <div className="cave-chart cave-chart--heatmap" style={{ height }}>
-      <ParentSize>
+      <ParentSize debounceTime={0}>
         {({ width }) => (
           <HeatInner width={width} height={height} rows={rows} cols={cols} cells={cells} colorFor={colorFor} ariaLabel={ariaLabel} cellTitle={cellTitle} />
         )}
