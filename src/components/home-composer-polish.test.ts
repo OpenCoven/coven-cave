@@ -40,31 +40,32 @@ assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS i
 
 // ───────── Task 3: chat-parity Send button ─────────
 // The bespoke home send pill is gone — the button reuses the chat composer's
-// accent-filled icon button, keeping an aria-label for screen readers.
+// circular accent-outline send (chat revamp 1d), keeping an aria-label for
+// screen readers.
 assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
 assert.doesNotMatch(css, /\.hc-send-btn\s*\{/, "bespoke .hc-send-btn CSS removed (chat composer button styles apply)");
 assert.match(
   source,
-  /bg-\[var\(--accent-presence\)\][\s\S]{0,400}?aria-label="Send"/,
-  "send button uses the chat composer's accent-filled icon-button chrome",
+  /cave-composer-send[\s\S]{0,400}?aria-label="Send"/,
+  "send button uses the chat composer's circular accent-outline send chrome",
 );
 
 // ───────── Command-bar hierarchy ─────────
-// Reference layout: the + attach trigger and Chat/Task pills sit bottom-left
-// INSIDE the card; voice, enhance, and send hug the right; the darker footer
-// band beneath carries project + runtime/model chip (left) and the Options
-// menu (right). The familiar is chosen in the side panel, not here.
+// Chat revamp 1d: one "+" menu (attach · dictation · call · enhance · Model &
+// tuning) and one context pill (Project · Model) lead the utility row, then
+// the Chat/Task pills; the circular send hugs the right. The footer band is
+// gone — its pickers collapsed into the pill and the "+" popover.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?ph:plus[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
-  "the utility row leads with + attach, then the Chat/Task pill toggle",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?<ComposerContextPill[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
+  "the utility row leads with the + menu and context pill, then the Chat/Task pill toggle",
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"/,
-  "the submit cluster runs enhance · send (voice is hidden until it works)",
+  /cave-composer-submit-row[\s\S]*?aria-label="Send"/,
+  "the submit cluster is the circular send alone (enhance moved into the + menu)",
 );
 assert.doesNotMatch(
   source,
@@ -73,18 +74,18 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
-  "the footer band hosts the project picker + runtime/model chip left and the Options menu right",
+  /<ComposerOptionsMenu\s*\n\s*open=\{optionsOpen\}\s*\n\s*onOpenChange=\{setOptionsOpen\}\s*\n\s*anchorRef=\{plusAnchorRef\}/,
+  "the Options panel (Model & tuning) chains off the + anchor, caller-owned",
+);
+assert.doesNotMatch(
+  source,
+  /hc-footer-band/,
+  "the footer band is retired — its pickers live in the context pill + Options panel",
 );
 assert.doesNotMatch(
   source,
   /HomeSelect|Choose chat agent/,
   "the home familiar selector is removed (selection lives in the side panel)",
-);
-assert.match(
-  source,
-  /className=\{`home-composer-card cave-composer-panel[\s\S]*?className="hc-footer-band"/,
-  "the footer band renders inside the card so the panel chrome clips its corners",
 );
 assert.doesNotMatch(
   source,
@@ -108,23 +109,22 @@ assert.doesNotMatch(
   /\.hc-familiar-selector|\.hc-home-select/,
   "the familiar-selector / home-select CSS is removed with the selector",
 );
-assert.match(
+assert.doesNotMatch(
   css,
-  /\.cave-project-picker__trigger\.hc-project-selector\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\)/,
-  "the footer project picker keeps the shared control radius token",
+  /hc-project-selector/,
+  "the footer project chip CSS retired with the band (project opens from the context pill)",
 );
 assert.match(
   css,
   /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*inherit/,
   "drop overlay inherits the panel radius",
 );
-// Enhance is the shared control + strip (cave-b6c2) — the icon-button/focus
-// treatment and the role="status" revert strip are pinned once in
-// composer-enhance.test.ts; here we hold that home mounts both.
+// Enhance is the shared hook + strip (cave-b6c2) — its control face moved
+// into the "+" menu (chat revamp 1d); here we hold that home wires both.
 assert.match(
   source,
-  /<EnhanceControl[\s\S]{0,200}?state=\{promptEnhance\.state\}/,
-  "enhance is the shared sparkle control (chat parity by construction)",
+  /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/,
+  "enhance runs through the + menu's Enhance-prompt item (chat parity by construction)",
 );
 assert.match(
   source,

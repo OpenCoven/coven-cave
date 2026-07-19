@@ -115,8 +115,10 @@ test.describe("prompt templates", () => {
     const draft = await openHomeDraft(page);
     await draft.fill("Summarize {{topic}} for {{audience|the team}}.");
 
-    // Options → Save draft as template…
-    await page.getByRole("button", { name: "Composer options" }).click();
+    // "+" → Model & tuning… → Save draft as template… (chat revamp 1d: the
+    // Options panel chains off the composer "+" menu).
+    await page.getByRole("button", { name: "Composer actions" }).click();
+    await page.getByRole("menuitem", { name: "Model & tuning…" }).click();
     await page.getByRole("button", { name: "Save draft as template…" }).click();
 
     // Fill the form and save.

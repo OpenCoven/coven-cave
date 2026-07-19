@@ -143,7 +143,7 @@ import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
-import { ProjectPicker, ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
+import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
@@ -155,8 +155,8 @@ import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-sta
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
-import { ComposerGitChip } from "@/components/composer-git-chip";
+import { ComposerPlusMenu } from "@/components/composer-plus-menu";
+import { ComposerContextPill } from "@/components/composer-context-pill";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
@@ -168,7 +168,7 @@ import {
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
+import { EnhanceStrip } from "@/components/composer-enhance";
 
 type ToolEvent = {
   id: string;
@@ -3304,6 +3304,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
+  // Composer "+" (chat revamp 1d): one resting utility button; the options
+  // panel ("Model & tuning…") chains off the same anchor, caller-owned.
+  const composerPlusRef = useRef<HTMLButtonElement | null>(null);
+  const [composerOptionsOpen, setComposerOptionsOpen] = useState(false);
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete above, which is null outside `/model <arg>` position).
   const composerModelOptions = useMemo(
@@ -5091,6 +5095,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      if (!busy && attachments.length < 10) fileInputRef.current?.click();
+      return;
+    }
     if (mentionOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -5926,6 +5936,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </button>
               </div>
             ) : null}
+            <div className="cave-composer-input-wrap">
             <textarea
               ref={inputRef}
               value={input}
@@ -5959,6 +5970,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
+            {/* Typing hint (chat revamp 1d): appears with the first character,
+                inside the input area — not persistent chrome. Hidden on
+                phone widths (CSS). */}
+            {input.trim() && !busy ? (
+              <span className="cave-composer-typing-hint" aria-hidden>
+                ↵ send · ⇧↵ newline
+              </span>
+            ) : null}
+            </div>
             {/* Enhance status strip (shared): streaming preview, apply/dismiss
                 for late arrivals, one-tap revert after an in-place apply. */}
             <EnhanceStrip
@@ -5991,54 +6011,70 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <div className="cave-composer-control-row">
                 <div className="cave-composer-utility-row">
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                    title="Attach images, videos, or files"
-                    aria-label="Attach images, videos, or files"
-                    disabled={busy || attachments.length >= 10}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Icon name="ph:paperclip" width={14} aria-hidden />
-                  </button>
-                  {/* Voice call — pre-session it creates the conversation
-                      first (voice new-chat), so the button renders from turn
-                      zero. Mic = dictation, phone = call, on every surface.
-                      Disabled while a mint is in flight so rapid clicks can't
-                      fire multiple startVoiceConversation calls, and — only
-                      pre-session, since mid-session stays available — while
-                      busy, so a streaming first send can't be forked by
-                      minting a second, unrelated session underneath it. */}
-                  {dictation.available ? (
-                    <button
-                      type="button"
-                      className={`cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40${dictation.listening ? " hc-mic-live" : ""}`}
-                      title={dictation.listening ? "Stop dictation" : "Dictate your message"}
-                      aria-label={dictation.listening ? "Stop dictation" : "Dictate your message"}
-                      aria-pressed={dictation.listening}
-                      disabled={busy && !dictation.listening}
-                      onClick={dictation.toggle}
-                    >
-                      <Icon name="ph:microphone" width={15} aria-hidden />
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                    title="Voice call"
-                    aria-label="Voice call"
-                    disabled={voiceCallPending || (busy && !sessionId)}
-                    onClick={() => {
-                      void openVoiceCall();
+                  {/* One resting utility button (chat revamp 1d): attach,
+                      dictation, voice call, prompt snippets, enhance, and the
+                      Model & tuning panel all fold behind the "+". Item gates
+                      are unchanged from the standalone buttons they replace —
+                      the voice-call mint guard (voiceCallPending, and busy
+                      only pre-session) still applies, dictation still hides
+                      without an ears engine. */}
+                  <ComposerPlusMenu
+                    triggerRef={composerPlusRef}
+                    attach={{
+                      onSelect: () => fileInputRef.current?.click(),
+                      disabled: busy || attachments.length >= 10,
+                      hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
                     }}
-                  >
-                    <Icon name="ph:phone" width={15} aria-hidden />
-                  </button>
+                    dictation={
+                      dictation.available
+                        ? {
+                            listening: dictation.listening,
+                            toggle: dictation.toggle,
+                            disabled: busy && !dictation.listening,
+                          }
+                        : undefined
+                    }
+                    call={{
+                      onSelect: () => {
+                        void openVoiceCall();
+                      },
+                      disabled: voiceCallPending || (busy && !sessionId),
+                    }}
+                    promptSnippets={{ onSelect: () => setPromptSnippetsOpen(true) }}
+                    enhance={{
+                      onEnhance: promptEnhance.enhance,
+                      disabled: busy || !input.trim(),
+                      loading: promptEnhance.state.phase === "loading",
+                    }}
+                    onOpenModelTuning={() => setComposerOptionsOpen(true)}
+                  />
+                  {/* One quiet context pill — Project · Model · branch —
+                      replacing the footer band's picker row; every picker
+                      opens from it. */}
+                  <ComposerContextPill
+                    projects={projects}
+                    projectValue={resolvedProjectId}
+                    onProjectChange={setProjectIdDraft}
+                    allowNoProject
+                    familiarId={familiar.id ?? null}
+                    createProject={createProject}
+                    runtime={modelHarness}
+                    modelValue={composerModelValue}
+                    modelOptions={composerModelOptions}
+                    onPickRuntime={handleSelectRuntime}
+                    onPickModel={handleSelectModel}
+                    modelDisabled={busy}
+                    projectRoot={activeProjectRoot}
+                    onOpenUrl={onOpenUrl}
+                    ariaLabel="Chat context: project, model, and branch"
+                  />
                   <ComposerOptionsMenu
+                    open={composerOptionsOpen}
+                    onOpenChange={setComposerOptionsOpen}
+                    anchorRef={composerPlusRef}
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}
                     disabled={busy}
-                    onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
                     onSaveAsTemplate={() => setSaveTemplateSeed(input)}
                     saveAsTemplateDisabled={!input.trim()}
                     indicator={
@@ -6081,17 +6117,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   />
                 </div>
                 <div className="cave-composer-submit-row">
-                  <EnhanceControl
-                    state={promptEnhance.state}
-                    onEnhance={promptEnhance.enhance}
-                    onCancel={promptEnhance.cancel}
-                    disabled={busy || !input.trim()}
-                  />
+                  {/* Circular 32px send (chat revamp 1d): accent outline at
+                      rest, ~18% accent tint while the draft is non-empty;
+                      busy keeps the cancel behavior in the same circle. */}
                   {busy ? (
                     <button
                       type="button"
                       onClick={cancelSend}
-                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                      className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
                       title="Cancel (esc)"
                       aria-label="Cancel response"
                     >
@@ -6102,7 +6135,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      data-typing={input.trim() ? "true" : undefined}
+                      className="cave-composer-send focus-ring transition-colors"
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
@@ -6112,35 +6146,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               </div>
             </div>
-            {/* Footer band — the darker strip attached to the panel's underside
-                (home-composer parity): where the message runs (project ·
-                runtime/model · git) plus the work it's tied to (linked tasks).
-                Session metadata lives here, OUT of the input's control row, so
-                the box above stays a minimal write surface. */}
+            {/* Footer band — the darker strip attached to the panel's
+                underside now carries only the linked-work strip (tasks ·
+                GitHub · link/create). The project · runtime/model · git
+                pickers it used to host collapsed into the context pill in
+                the control row above (chat revamp 1d). */}
             <div className="cave-composer-footer-band">
-              <div className="cave-composer-footer-band__context">
-                <ProjectPicker
-                  projects={projects}
-                  value={resolvedProjectId}
-                  onChange={setProjectIdDraft}
-                  allowNoProject
-                  familiarId={familiar.id ?? null}
-                  createProject={createProject}
-                  ariaLabel="Project for this chat"
-                  className="cave-chat-project-selector"
-                />
-                <ComposerRuntimeChip
-                  runtime={modelHarness}
-                  modelValue={composerModelValue}
-                  modelOptions={composerModelOptions}
-                  onPickRuntime={handleSelectRuntime}
-                  onPickModel={handleSelectModel}
-                  disabled={busy}
-                />
-                {/* Git context — branch · dirty count · worktree · PR — for
-                    chats rooted in a git repo (hidden otherwise). */}
-                <ComposerGitChip projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
-              </div>
               {linkedContextRow}
             </div>
           </div>

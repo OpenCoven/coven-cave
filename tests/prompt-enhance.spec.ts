@@ -1,10 +1,11 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-// The ultimate Enhance (cave-b6c2): the composer's sparkle control streams a
-// real rewrite from the familiar via /api/chat/send (SSE), applies it in place
-// when the draft is untouched, downgrades to a suggestion strip when the user
-// typed mid-flight (the old copies' race bug), falls back to the local rule
-// engine on stream failure, and exposes intent variants behind a menu.
+// The ultimate Enhance (cave-b6c2): the composer's Enhance action (now an
+// item in the "+" menu, chat revamp 1d) streams a real rewrite from the
+// familiar via /api/chat/send (SSE), applies it in place when the draft is
+// untouched, downgrades to a suggestion strip when the user typed mid-flight
+// (the old copies' race bug), falls back to the local rule engine on stream
+// failure, and exposes intent variants behind the Enhance-options view.
 //
 // Daemon-less: /api/chat/send is mocked with SSE frames; the home surface is
 // driven through the standard familiar/session mocks. Desktop-only — the
@@ -60,6 +61,12 @@ async function openHome(page: Page) {
   return draft;
 }
 
+/** Smart enhance is one item deep in the composer "+" menu (chat revamp 1d). */
+async function clickEnhance(page: Page) {
+  await page.getByRole("button", { name: "Composer actions" }).click();
+  await page.getByRole("menuitem", { name: "Enhance prompt" }).click();
+}
+
 test.describe("prompt enhance", () => {
   test("one click streams a rewrite, applies in place, and reverts in one tap", async ({ page }) => {
     await seed(page);
@@ -72,7 +79,7 @@ test.describe("prompt enhance", () => {
 
     const draft = await openHome(page);
     await draft.fill("fix login bug");
-    await page.getByRole("button", { name: "Enhance prompt" }).click();
+    await clickEnhance(page);
 
     // The rewrite lands in the textarea; the strip flips to applied + Revert.
     await expect(draft).toHaveValue(ENHANCED, { timeout: 15_000 });
@@ -103,7 +110,7 @@ test.describe("prompt enhance", () => {
 
     const draft = await openHome(page);
     await draft.fill("fix login bug");
-    await page.getByRole("button", { name: "Enhance prompt" }).click();
+    await clickEnhance(page);
     await expect(page.getByText("Enhancing…")).toBeVisible();
 
     // Keep typing while the stream is in flight, then let it complete.
@@ -121,7 +128,7 @@ test.describe("prompt enhance", () => {
     await expect(draft).toHaveValue("fix login bug on safari");
   });
 
-  test("the intent menu changes the instruction (keyboard: ArrowDown opens it)", async ({ page }) => {
+  test("the intent view changes the instruction (Enhance options in the + menu)", async ({ page }) => {
     await seed(page);
     const sends: Array<Record<string, unknown>> = [];
     await page.route("**/api/chat/send", (route) => {
@@ -133,10 +140,10 @@ test.describe("prompt enhance", () => {
     const draft = await openHome(page);
     await draft.fill("please make this whole thing quite a bit shorter somehow");
 
-    await page.getByRole("button", { name: "Enhance prompt" }).focus();
-    await page.keyboard.press("ArrowDown");
-    const menu = page.getByRole("menu", { name: "Enhance options" });
+    await page.getByRole("button", { name: "Composer actions" }).click();
+    const menu = page.getByRole("menu", { name: "Composer actions" });
     await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Enhance options…" }).click();
     for (const label of ["Smart enhance", "Clarify", "Expand", "Make specific", "Shorten", "Add acceptance criteria"]) {
       await expect(menu.getByText(label, { exact: true })).toBeVisible();
     }
@@ -152,7 +159,7 @@ test.describe("prompt enhance", () => {
 
     const draft = await openHome(page);
     await draft.fill("explain docker networking");
-    await page.getByRole("button", { name: "Enhance prompt" }).click();
+    await clickEnhance(page);
 
     // The rule engine's chat shape applies in place, and the strip says so.
     await expect(page.getByText("Prompt improved (offline).")).toBeVisible({ timeout: 15_000 });

@@ -16,11 +16,13 @@ const homeModelState = readFileSync(new URL("./home/use-home-model-state.ts", im
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-runtime-chip.css", import.meta.url), "utf8");
 
-// ── Parity: the home composer carries the same chip (cave-v25g) ─────────────
+// ── Parity: the home composer carries the same picker (cave-v25g) ───────────
+// The runtime/model picker now opens from the composer context pill (chat
+// revamp 1d) — same ComposerRuntimePopover, same live model state.
 assert.match(
   homeComposer,
-  /<ComposerRuntimeChip\s*\n\s*runtime=\{selectedRuntime\}\s*\n\s*modelValue=\{selectedModelId\}\s*\n\s*modelOptions=\{runtimeModelOptions\}\s*\n\s*onPickRuntime=\{handleSelectRuntime\}\s*\n\s*onPickModel=\{handleSelectModel\}/,
-  "the home composer renders the same runtime chip from its own model state",
+  /<ComposerContextPill[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "the home composer's context pill hosts the runtime picker from its own model state",
 );
 
 // ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────
@@ -42,16 +44,16 @@ assert.match(
   "a home runtime switch fires the roster refresh (only on a successful PATCH)",
 );
 
-// ── The chip is always in the composer control row, wired to live state ─────
+// ── The picker is always in the composer control row, wired to live state ───
 assert.match(
   chatView,
-  /<ComposerRuntimeChip\s*\n\s*runtime=\{modelHarness\}\s*\n\s*modelValue=\{composerModelValue\}\s*\n\s*modelOptions=\{composerModelOptions\}\s*\n\s*onPickRuntime=\{handleSelectRuntime\}\s*\n\s*onPickModel=\{handleSelectModel\}/,
-  "the chat composer renders the runtime chip from the live model state (runtime + effective model)",
+  /<ComposerContextPill[\s\S]*?runtime=\{modelHarness\}[\s\S]*?modelValue=\{composerModelValue\}[\s\S]*?modelOptions=\{composerModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "the chat composer's context pill hosts the runtime picker from the live model state (runtime + effective model)",
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band__context"[\s\S]{0,700}?<ComposerRuntimeChip/,
-  "the chip sits in the composer footer band's context cluster — always visible, session or not",
+  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerContextPill/,
+  "the pill sits in the composer utility row — always visible, session or not",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──

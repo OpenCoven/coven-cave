@@ -1,15 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the composer runtime chip (cave-yq5l / cave-v25g / cave-bfwk): the
-// chat composer always shows the active runtime's mark + effective model,
-// clicking it opens a Runtime/Model picker with radio semantics, and picking a
-// runtime rebinds the familiar through /api/config — flipping the chip,
-// re-listing the Model group in the still-open menu (the pick isn't complete
-// until a model is chosen), refetching the familiar roster
-// (cave:familiars-refresh), and catching the empty-state identity line up
-// without a reload. A model pick then closes the menu.
+// Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
+// relocated behind the context pill by chat revamp 1d): the chat composer's
+// context pill always shows the effective model, its Model section opens the
+// Runtime/Model picker with radio semantics, and picking a runtime rebinds
+// the familiar through /api/config — flipping the pill, re-listing the Model
+// group in the still-open menu (the pick isn't complete until a model is
+// chosen), refetching the familiar roster (cave:familiars-refresh), and
+// catching the empty-state identity line up without a reload. A model pick
+// then closes the menu.
 //
-// Desktop only (the chip lives in the chat composer). All APIs are mocked;
+// Desktop only (the pill lives in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
 // the app sees — exactly the loop the feature exists to close.
 
@@ -89,16 +90,18 @@ async function seed(page: Page): Promise<Mutable> {
   return state;
 }
 
-test.describe("composer runtime chip", () => {
+test.describe("composer runtime picker (context pill)", () => {
   test("always visible with the runtime + model, popover carries radio groups", async ({ page }) => {
     await seed(page);
     await page.goto("/?mode=chat");
-    const chip = page.getByRole("button", { name: /Runtime: /, exact: false });
-    await expect(chip).toBeVisible({ timeout: 45_000 });
-    // toHaveAttribute retries — the label settles once model-state hydrates.
-    await expect(chip).toHaveAttribute("aria-label", /Runtime: Codex · Model: GPT-5\.5/, { timeout: 15_000 });
+    const pill = page.getByRole("button", { name: "Chat context: project, model, and branch" });
+    await expect(pill).toBeVisible({ timeout: 45_000 });
+    // toContainText retries — the pill settles once model-state hydrates.
+    await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
 
-    await chip.click();
+    await pill.click();
+    // Hub popover → Model section row opens the Runtime/Model picker.
+    await page.getByRole("menuitem", { name: /Codex · GPT-5\.5/ }).click();
     const menu = page.getByRole("menu", { name: "Runtime and model" });
     await expect(menu).toBeVisible();
     // Runtime group: all four runtimes, the active one checked.
@@ -113,15 +116,16 @@ test.describe("composer runtime chip", () => {
   test("picking a runtime rebinds via /api/config, flips the chip, and refreshes the roster", async ({ page }) => {
     const state = await seed(page);
     await page.goto("/?mode=chat");
-    const chip = page.getByRole("button", { name: /Runtime: /, exact: false });
-    await expect(chip).toBeVisible({ timeout: 45_000 });
-    await expect(chip).toHaveAttribute("aria-label", /Runtime: Codex/, { timeout: 15_000 });
+    const pill = page.getByRole("button", { name: "Chat context: project, model, and branch" });
+    await expect(pill).toBeVisible({ timeout: 45_000 });
+    await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
     // The empty-state identity line reads the roster's familiar.harness.
     await expect(page.locator(".cave-chat-empty-meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
     const modelStateGetsBefore = state.modelStateServed;
 
-    await chip.click();
+    await pill.click();
+    await page.getByRole("menuitem", { name: /Codex · GPT-5\.5/ }).click();
     const menu = page.getByRole("menu", { name: "Runtime and model" });
     await menu.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
 
@@ -140,8 +144,8 @@ test.describe("composer runtime chip", () => {
       expect(fam?.nova?.model ?? "").toMatch(/^anthropic\//);
     }).toPass({ timeout: 10_000 });
 
-    // Chip flips (optimistic, then reconciled by the model-state refetch).
-    await expect(chip).toHaveAttribute("aria-label", /Runtime: Claude Code · Model: Claude Opus/, { timeout: 10_000 });
+    // Pill flips (optimistic, then reconciled by the model-state refetch).
+    await expect(pill).toContainText("Claude Opus", { timeout: 10_000 });
 
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });
@@ -155,6 +159,6 @@ test.describe("composer runtime chip", () => {
     // Picking a model completes the runtime→model switch and closes the menu.
     await menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true }).click();
     await expect(menu).not.toBeVisible();
-    await expect(chip).toHaveAttribute("aria-label", /Runtime: Claude Code · Model: Claude Sonnet 5/, { timeout: 10_000 });
+    await expect(pill).toContainText("Claude Sonnet 5", { timeout: 10_000 });
   });
 });

@@ -225,39 +225,8 @@
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
 }
 
-/* ── Footer band ────────────────────────────────────────────────────────────
- * The darker strip attached to the card's underside (reference layout):
- * context pickers (project · agent) on the left, run settings on the right.
- * Last child of the card, so the panel's overflow clips it to the rounded
- * bottom corners — it reads as part of the card, one tone deeper. */
-.hc-footer-band {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: 6px 10px;
-  border-top: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
-}
-
-.hc-footer-band-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-/* Phone width: the band's pickers wrap instead of crushing each other. */
-@container (max-width: 620px) {
-  .hc-footer-band {
-    flex-wrap: wrap;
-  }
-  .hc-footer-band-left {
-    flex-wrap: wrap;
-  }
-}
+/* Footer band retired (chat revamp 1d): its pickers collapsed into the
+ * composer context pill and the "+" menu's Model & tuning panel. */
 
 /* ── Textarea ──────────────────────────────────────────────────────────────
  *   Sizing and chrome come from the shared .cave-composer-input class plus the
@@ -364,29 +333,8 @@
 }
 .hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* The picker's caret is INLINE, so no phantom right padding — the chip hugs
- * its name + caret and only ever truncates on long names. Pill radius, 30px
- * height, and 11px type match the runtime/model chip beside it so the footer
- * band reads as one control family. */
-.home-composer-card .cave-project-picker__trigger.hc-project-selector {
-  height: 30px;
-  min-height: 30px;
-  max-width: 200px;
-  padding: 0 11px 0 var(--space-2);
-  font-size: var(--text-xs);
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-}
-
-.home-composer-card .cave-project-picker__trigger.hc-project-selector:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
-  max-width: 132px;
-}
+/* The standalone footer project chip retired with the band (chat revamp 1d);
+ * project selection opens from the composer context pill. */
 
 /* Destination pills — a segmented toggle for Chat vs Task. */
 .hc-dest-pills {
@@ -673,16 +621,14 @@
 .home-feed__tab,
 .home-feed__row,
 .home-feed__refresh,
-.home-feed__retry,
-.home-composer-card .cave-project-picker__trigger.hc-project-selector {
+.home-feed__retry {
   outline: none;
 }
 .hc-dest-pill:focus-visible,
 .home-feed__tab:focus-visible,
 .home-feed__row:focus-visible,
 .home-feed__refresh:focus-visible,
-.home-feed__retry:focus-visible,
-.home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {
+.home-feed__retry:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }

@@ -124,7 +124,10 @@ assert.match(
   "strip actions use the pill token + hairline language (tracks the corner radius setting)",
 );
 
-// ── All three composers mount the shared pair ────────────────────────────────
+// ── All three composers mount the shared enhance ─────────────────────────────
+// Home and chat drive enhance through the "+" menu's Enhance-prompt item
+// (chat revamp 1d — same hook, relocated face); quick-chat keeps the inline
+// split control.
 for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick-chat-controls", quick]]) {
   assert.match(
     src,
@@ -133,8 +136,10 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
   );
   assert.match(
     src,
-    /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/,
-    `${name} renders the shared sparkle control`,
+    name === "quick-chat-controls"
+      ? /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/
+      : /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/,
+    `${name} wires the shared enhance action`,
   );
   assert.match(
     src,
@@ -147,6 +152,13 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
     `${name} carries no bespoke enhance state — the hook owns the lifecycle`,
   );
 }
+// The "+" menu preserves the intent list the split control offered.
+const plusMenu = await readFile(new URL("./composer-plus-menu.tsx", import.meta.url), "utf8");
+assert.match(
+  plusMenu,
+  /ENHANCE_INTENTS\.map\(\(intent\) =>[\s\S]*?enhance\?\.onEnhance\(intent\.id\)/,
+  "the + menu's enhance view lists every enhance intent",
+);
 
 // Surface-specific mode + context wiring.
 assert.match(

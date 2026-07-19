@@ -340,21 +340,21 @@ assert.match(
 );
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerOptionsMenu/,
-  "composer utility row keeps attach + voice call, then the collapsed Options menu",
+  /<div className="cave-composer-utility-row">[\s\S]*<ComposerPlusMenu[\s\S]*<ComposerContextPill[\s\S]*<ComposerOptionsMenu/,
+  "composer utility row is the + menu and context pill; the Options panel chains off the + anchor",
 );
-// Composer core (cave-xsq.4): the dedicated Prompt-snippets button is folded
-// into the Options overflow, so the resting utility row is just attach · voice ·
-// overflow. Snippets are still reachable — the menu opens with the action.
+// Composer core (chat revamp 1d): the dedicated Prompt-snippets button is
+// folded into the "+" menu, so the resting row is just + · context pill.
+// Snippets are still reachable — the + menu opens them.
 assert.doesNotMatch(
   source,
   /aria-label="Prompt snippets"/,
-  "the standalone Prompt-snippets utility button is gone (folded into the Options menu)",
+  "the standalone Prompt-snippets utility button is gone (folded into the + menu)",
 );
 assert.match(
   source,
-  /<ComposerOptionsMenu[\s\S]*onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/,
-  "the Options menu opens Prompt snippets as an action (nothing lost)",
+  /promptSnippets=\{\{ onSelect: \(\) => setPromptSnippetsOpen\(true\) \}\}/,
+  "the + menu opens Prompt snippets as an action (nothing lost)",
 );
 assert.match(
   source,
@@ -368,8 +368,13 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /<div className="cave-composer-submit-row">[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
-  "Enhance should be the shared sparkle control immediately next to Send",
+  /<div className="cave-composer-submit-row">[\s\S]*aria-label="Send message"/,
+  "the circular Send owns the submit row (enhance moved into the + menu)",
+);
+assert.match(
+  source,
+  /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/,
+  "enhance rides the + menu's Enhance-prompt item",
 );
 assert.doesNotMatch(
   source,
