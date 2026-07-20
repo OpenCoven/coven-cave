@@ -238,7 +238,7 @@ assert.doesNotMatch(
 
 // ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
 {
-  const librs = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
   assert.match(
     shell,
     /const navPeekVisible = navPeekEnabled && navPeeking;/,
@@ -278,17 +278,17 @@ assert.doesNotMatch(
     "hiding the lights releases the 78px title-bar inset",
   );
   assert.match(
-    librs,
+    tauriSetup,
     /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
     "the Rust command exists",
   );
   assert.match(
-    librs,
+    tauriSetup,
     /standardWindowButton: kind/,
     "the command toggles NSWindow's standard buttons",
   );
   assert.match(
-    librs,
+    tauriSetup,
     /shell_pick_directory,\s*set_traffic_lights_visible,/,
     "the command is registered with the invoke handler",
   );
