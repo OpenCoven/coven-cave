@@ -155,6 +155,8 @@ export async function mergeCanvasPositions(
 export async function upsertCanvasArtifact(
   artifact: CanvasArtifact,
 ): Promise<{ file: CanvasFile; savedId: string | null }> {
+  const annotationsProvided = Object.prototype.hasOwnProperty.call(artifact, "annotations");
+  const rawAnnotations = (artifact as { annotations?: unknown }).annotations;
   const [clean] = sanitizeArtifacts([artifact]);
   if (!clean) {
     // Nothing usable in the payload — return the current file unchanged.
@@ -170,9 +172,26 @@ export async function upsertCanvasArtifact(
     const twin = incumbent
       ? undefined
       : without.find((a) => a.kind === clean.kind && a.code === clean.code);
-    const settled = twin
-      ? { ...twin, title: clean.title, prompt: clean.prompt, updatedAt: clean.updatedAt }
-      : clean;
+    let settled = twin
+      ? {
+          ...twin,
+          title: clean.title,
+          prompt: clean.prompt,
+          updatedAt: clean.updatedAt,
+        }
+      : incumbent && !annotationsProvided && incumbent.annotations
+        ? { ...clean, annotations: incumbent.annotations }
+        : clean;
+    const existing = incumbent ?? twin;
+    const preserveAnnotations = !annotationsProvided
+      || !Array.isArray(rawAnnotations)
+      || (rawAnnotations.length > 0 && !clean.annotations);
+    if (existing?.annotations && preserveAnnotations) {
+      settled.annotations = existing.annotations;
+    } else if (twin && annotationsProvided) {
+      if (clean.annotations) settled.annotations = clean.annotations;
+      else delete settled.annotations;
+    }
     const rest = twin ? without.filter((a) => a.id !== twin.id) : without;
     const next: CanvasFile = { ...current, artifacts: [...rest, settled] };
     await saveCanvas(next);

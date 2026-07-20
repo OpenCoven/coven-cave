@@ -11,6 +11,7 @@ import {
   extractHtmlArtifact,
   isFullDocument,
   MAX_ARTIFACT_CODE_CHARS,
+  sanitizeAnnotations,
   sanitizeArtifacts,
   STARTER_ARTIFACT_HTML,
   STARTER_ARTIFACT_REACT,
@@ -100,6 +101,116 @@ assert.equal(
   "build a thing",
   "a missing title is derived from the prompt",
 );
+
+// ── annotations: bounded component targets persisted with an artifact ──────
+
+{
+  const [artifact] = sanitizeArtifacts([{
+    id: "annotated",
+    prompt: "p",
+    annotations: [{
+      id: " comment-1 ",
+      target: {
+        selector: " main > button ",
+        label: " Primary action ",
+        excerpt: " Save changes ",
+      },
+      note: " Make this more prominent ",
+      createdAt: "2026-07-20T01:00:00Z",
+      updatedAt: "2026-07-20T02:00:00Z",
+    }],
+  }]);
+  assert.deepEqual(
+    artifact.annotations,
+    [{
+      id: "comment-1",
+      target: {
+        selector: "main > button",
+        label: "Primary action",
+        excerpt: "Save changes",
+      },
+      note: "Make this more prominent",
+      createdAt: "2026-07-20T01:00:00Z",
+      updatedAt: "2026-07-20T02:00:00Z",
+    }],
+    "valid annotations survive with every string trimmed",
+  );
+
+  const [bounded] = sanitizeAnnotations([{
+    id: ` ${"i".repeat(200)} `,
+    target: {
+      selector: ` ${"s".repeat(600)} `,
+      label: ` ${"l".repeat(300)} `,
+      excerpt: ` ${"e".repeat(1_100)} `,
+    },
+    note: ` ${"n".repeat(4_100)} `,
+    createdAt: "2026-07-20T01:00:00Z",
+    updatedAt: "2026-07-20T02:00:00Z",
+  }]);
+  assert.equal(bounded.id.length, 200, "annotation ids allow the bounded maximum");
+  assert.equal(bounded.target.selector.length, 500, "selectors are clamped");
+  assert.equal(bounded.target.label.length, 200, "labels are clamped");
+  assert.equal(bounded.target.excerpt.length, 1_000, "excerpts are clamped");
+  assert.equal(bounded.note.length, 4_000, "notes are clamped");
+
+  assert.deepEqual(
+    sanitizeAnnotations([
+      null,
+      { id: "", target: { selector: "button", label: "", excerpt: "" }, note: "" },
+      { id: "x", target: { selector: "", label: "", excerpt: "" }, note: "" },
+      { id: "x", target: null, note: "" },
+      { id: "x", target: { selector: "button", label: 1, excerpt: "" }, note: "" },
+      { id: "x", target: { selector: "button", label: "", excerpt: "" } },
+      { id: "i".repeat(201), target: { selector: "button", label: "", excerpt: "" }, note: "" },
+    ]),
+    [],
+    "malformed annotations are dropped instead of partially persisted",
+  );
+
+  const capped = sanitizeAnnotations(Array.from({ length: 105 }, (_, index) => ({
+    id: `annotation-${index}`,
+    target: { selector: `#item-${index}`, label: "", excerpt: "" },
+    note: "",
+    createdAt: "",
+    updatedAt: "",
+  })));
+  assert.equal(capped.length, 100, "only the first 100 valid annotations survive");
+  assert.equal(capped[99].id, "annotation-99", "the count cap is deterministic");
+
+  const [normalized] = sanitizeAnnotations([{
+    id: "dates",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "not-a-date",
+    updatedAt: "also-not-a-date",
+  }]);
+  assert.equal(normalized.createdAt, "", "invalid annotation createdAt is coerced to empty");
+  assert.equal(normalized.updatedAt, "", "invalid annotation updatedAt falls back to createdAt");
+
+  const [fallbackDate] = sanitizeAnnotations([{
+    id: "fallback-date",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "2026-07-20T01:00:00Z",
+    updatedAt: "not-a-date",
+  }]);
+  assert.equal(
+    fallbackDate.updatedAt,
+    "2026-07-20T01:00:00Z",
+    "invalid annotation updatedAt falls back to a valid createdAt",
+  );
+
+  const [absent] = sanitizeArtifacts([{ id: "absent", prompt: "p" }]);
+  const [empty] = sanitizeArtifacts([{ id: "empty", prompt: "p", annotations: [] }]);
+  const [allInvalid] = sanitizeArtifacts([{
+    id: "invalid",
+    prompt: "p",
+    annotations: [{ id: "", target: { selector: "" } }],
+  }]);
+  assert.equal("annotations" in absent, false, "legacy artifacts stay annotation-free");
+  assert.equal("annotations" in empty, false, "empty annotation arrays are omitted");
+  assert.equal("annotations" in allInvalid, false, "artifacts omit annotations when none survive");
+}
 
 // ── sanitizeArtifact hardening (cave-byr5) ──────────────────────────────────
 

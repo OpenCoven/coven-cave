@@ -9,6 +9,20 @@
 // (pre-React) have no `kind` and are treated as "html".
 export type ArtifactKind = "html" | "react";
 
+export type CanvasComponentTarget = {
+  selector: string;
+  label: string;
+  excerpt: string;
+};
+
+export type CanvasAnnotation = {
+  id: string;
+  target: CanvasComponentTarget;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CanvasArtifact = {
   id: string;
   /** Short human label, derived from the prompt (editable later). */
@@ -19,6 +33,7 @@ export type CanvasArtifact = {
   code: string;
   /** How `code` should be previewed. Absent ⇒ "html" (back-compat). */
   kind?: ArtifactKind;
+  annotations?: CanvasAnnotation[];
   createdAt: string;
   updatedAt: string;
 };
@@ -33,6 +48,12 @@ export const MAX_ARTIFACT_PROMPT_CHARS = 4_000;
 // Ids are client-minted (`art-<uuid>`, ghreview slugs); anything this long is
 // garbage and would pollute the positions map keyed by it.
 const MAX_ARTIFACT_ID_CHARS = 200;
+const MAX_ANNOTATIONS = 100;
+const MAX_ANNOTATION_ID_CHARS = 200;
+const MAX_ANNOTATION_SELECTOR_CHARS = 500;
+const MAX_ANNOTATION_LABEL_CHARS = 200;
+const MAX_ANNOTATION_EXCERPT_CHARS = 1_000;
+const MAX_ANNOTATION_NOTE_CHARS = 4_000;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -287,6 +308,57 @@ export const STARTER_ARTIFACT_REACT = [
   "}",
 ].join("\n");
 
+/** Validate and bound one persisted component annotation. */
+export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (!v.target || typeof v.target !== "object" || Array.isArray(v.target)) return null;
+  const target = v.target as Record<string, unknown>;
+  if (
+    typeof v.id !== "string"
+    || typeof target.selector !== "string"
+    || typeof target.label !== "string"
+    || typeof target.excerpt !== "string"
+    || typeof v.note !== "string"
+  ) {
+    return null;
+  }
+
+  const id = v.id.trim();
+  const selector = target.selector.trim();
+  if (!id || id.length > MAX_ANNOTATION_ID_CHARS || !selector) return null;
+
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
+    ? v.createdAt
+    : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt))
+    ? v.updatedAt
+    : createdAt;
+  return {
+    id,
+    target: {
+      selector: selector.slice(0, MAX_ANNOTATION_SELECTOR_CHARS),
+      label: target.label.trim().slice(0, MAX_ANNOTATION_LABEL_CHARS),
+      excerpt: target.excerpt.trim().slice(0, MAX_ANNOTATION_EXCERPT_CHARS),
+    },
+    note: v.note.trim().slice(0, MAX_ANNOTATION_NOTE_CHARS),
+    createdAt,
+    updatedAt,
+  };
+}
+
+/** Sanitize an annotation list, preserving the first 100 usable records. */
+export function sanitizeAnnotations(raw: unknown): CanvasAnnotation[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CanvasAnnotation[] = [];
+  for (const entry of raw) {
+    const annotation = sanitizeAnnotation(entry);
+    if (annotation) out.push(annotation);
+    if (out.length === MAX_ANNOTATIONS) break;
+  }
+  return out;
+}
+
 /** Validate/normalize a raw artifact record from disk or a request body. */
 export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   if (!value || typeof value !== "object") return null;
@@ -302,7 +374,17 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   // unparseable values to "" (renders dateless, sorts last).
   const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
   const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
-  return { id, title, prompt, code, kind, createdAt, updatedAt };
+  const annotations = sanitizeAnnotations(v.annotations);
+  return {
+    id,
+    title,
+    prompt,
+    code,
+    kind,
+    ...(annotations.length > 0 ? { annotations } : {}),
+    createdAt,
+    updatedAt,
+  };
 }
 
 /** Sanitize an array of artifact records, dropping any that are unusable. */
