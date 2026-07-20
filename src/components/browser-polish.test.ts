@@ -8,7 +8,20 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
 const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
-const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
+const rustBrowser = (
+  await Promise.all(
+    [
+      "browser.rs",
+      "browser_bounds.rs",
+      "browser_commands.rs",
+      "browser_events.rs",
+      "browser_lifecycle_tests.rs",
+      "browser_native.rs",
+      "browser_reconciliation.rs",
+      "browser_state.rs",
+    ].map((file) => readFile(new URL(`../../src-tauri/src/${file}`, import.meta.url), "utf8")),
+  )
+).join("\n");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
 assert.match(
