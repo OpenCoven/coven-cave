@@ -94,6 +94,46 @@ assert.match(
   /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
   "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
 );
+assert.match(
+  workspace,
+  /const \[autoFinishOnboarding, setAutoFinishOnboarding\] = useState\(false\);/,
+  "Workspace tracks whether startup-opened onboarding should auto-finish on completion",
+);
+assert.match(
+  workspace,
+  /const manualOnboardingOpenedRef = useRef\(false\);/,
+  "Workspace tracks whether onboarding was opened manually before the startup probe resolves",
+);
+assert.match(
+  workspace,
+  /const openOnboarding = useCallback\(\(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
+  "shared openOnboarding marks manual intent before it clears auto-finish and opens the overlay",
+);
+assert.match(
+  workspace,
+  /const openCreate = \(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
+  "the cave:onboarding-open bridge clears auto-finish before opening the overlay",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*shouldApplyStartupOnboardingStatus[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "Workspace imports the shared startup-status helper from onboarding-gate",
+);
+assert.match(
+  workspace,
+  /shouldApplyStartupOnboardingStatus\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
+  "a delayed startup response delegates the manual/cancelled/status gate to the shared helper",
+);
+assert.match(
+  workspace,
+  /onDismiss=\{\(\) => \{\s*setAutoFinishOnboarding\(false\);[\s\S]*closeOnboarding\(\);/s,
+  "overlay dismissal clears auto-finish before closing onboarding",
+);
+assert.match(
+  workspace,
+  /<OnboardingOverlay[\s\S]*autoFinishWhenComplete=\{autoFinishOnboarding\}/,
+  "Workspace forwards the auto-finish flag into OnboardingOverlay",
+);
 
 // The right companion rail was removed in favour of drag-to-split, so the
 // workspace no longer computes rail visibility (showCompanionRail), a rail Chat

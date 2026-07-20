@@ -53,11 +53,18 @@ export async function addChatProject(args: {
   let projectId = args.existingProjectId ?? null;
   let createdProject = false;
   if (!projectId) {
-    const name = (args.name ?? "").trim() || projectNameForRoot(root);
-    const project = await args.createProject(name, root, { emitMutation: false });
-    if (!project) return { ok: false, error: "could not register project" };
-    projectId = project.id;
-    createdProject = true;
+    try {
+      const name = (args.name ?? "").trim() || projectNameForRoot(root);
+      const project = await args.createProject(name, root, { emitMutation: false });
+      if (!project) return { ok: false, error: "could not register project" };
+      projectId = project.id;
+      createdProject = true;
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "could not register project",
+      };
+    }
   }
 
   // Grant the active familiar access. A no-familiar context (operator/Supreme
@@ -70,21 +77,21 @@ export async function addChatProject(args: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetFamiliarId: args.familiarId, projectId }),
       });
+      if (!res.ok) {
+        // Creation still succeeded, so publish that partial registry mutation
+        // even though the bundled grant did not complete.
+        if (createdProject || args.projectJustCreated) emitProjectRegistryMutation();
+        const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+        return {
+          ok: false,
+          error: typeof data.error === "string" ? data.error : `grant failed (${res.status})`,
+        };
+      }
     } catch (error) {
       if (createdProject || args.projectJustCreated) emitProjectRegistryMutation();
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "grant request failed",
-      };
-    }
-    if (!res.ok) {
-      // Creation still succeeded, so publish that partial registry mutation
-      // even though the bundled grant did not complete.
-      if (createdProject || args.projectJustCreated) emitProjectRegistryMutation();
-      const data = (await res.json().catch(() => ({}))) as { error?: unknown };
-      return {
-        ok: false,
-        error: typeof data.error === "string" ? data.error : `grant failed (${res.status})`,
+        error: error instanceof Error ? error.message : "grant failed",
       };
     }
   }

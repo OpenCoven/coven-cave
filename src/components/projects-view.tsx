@@ -47,6 +47,7 @@ import { ProjectDetail } from "./projects/project-detail";
 import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { isTauri } from "@/lib/tauri-platform";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 
 /** Last path segment of an absolute path (handles both / and \ separators). */
 function pathBasename(p: string): string {
@@ -112,6 +113,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
   // Bulk delete is deferred + undoable: the rows hide immediately, the actual
@@ -370,6 +372,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
 
   function openCreateProjectForm() {
     setShowForm(true);
+    setCreateError(null);
     window.setTimeout(() => rootInputRef.current?.focus(), 0);
   }
 
@@ -380,6 +383,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     if (!name || !root) return;
     setCreating(true);
     setProjectError(null);
+    setCreateError(null);
     try {
       const project = await createProject(name, root, { emitMutation: !activeFamiliarId });
       if (project && activeFamiliarId) {
@@ -392,7 +396,11 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           existingProjectId: project.id,
           projectJustCreated: true,
         });
-        if (!granted.ok) setProjectError(`Project created, but grant failed: ${granted.error}`);
+        if (!granted.ok) {
+          const message = `Project created, but grant failed: ${granted.error}`;
+          setSessionError(message);
+          setProjectError(message);
+        }
       }
       if (!project) return;
       setNameDraft("");
@@ -404,7 +412,9 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       selectProject(project.id);
       announce(`Created project ${name}.`);
     } catch (error) {
-      setProjectError(error instanceof Error ? error.message : "Could not create that project.");
+      const message = error instanceof Error ? error.message : "Could not create that project.";
+      setCreateError(message);
+      setProjectError(message);
     } finally {
       setCreating(false);
     }
@@ -416,6 +426,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     const trimmed = dir.trim();
     if (!trimmed) return;
     setRootDraft(trimmed);
+    setCreateError(null);
     setNameDraft((current) => (current.trim() ? current : pathBasename(trimmed)));
     setProjectError(null);
     rootInputRef.current?.focus();
@@ -444,12 +455,12 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
       const json = await res.json().catch(() => ({ ok: false }));
       if (!res.ok || !json.ok) {
-        setSessionError(json.error ?? "delete failed");
+        setSessionError(`Couldn't delete chat: ${json.error ?? "delete failed"}`);
         return false;
       }
       return true;
     } catch (err) {
-      setSessionError(err instanceof Error ? err.message : "delete failed");
+      setSessionError(`Couldn't delete chat: ${err instanceof Error ? err.message : "delete failed"}`);
       return false;
     }
   };
@@ -651,24 +662,40 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               placeholder="Project name"
               className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
-            <div className="flex items-center gap-2">
-              <input
-                ref={rootInputRef}
-                value={rootDraft}
-                onChange={(event) => setRootDraft(event.target.value)}
-                placeholder="/absolute/path/to/project"
-                className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void handleBrowse()}
-                title="Browse for a project folder"
-                className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
-                leadingIcon="ph:folder-open"
-              >
-                Browse
-              </Button>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  ref={rootInputRef}
+                  value={rootDraft}
+                  onChange={(event) => {
+                    setRootDraft(event.target.value);
+                    setCreateError(null);
+                    setProjectError(null);
+                  }}
+                  placeholder="/absolute/path/to/project"
+                  aria-invalid={Boolean(createError)}
+                  aria-describedby="project-root-help project-root-error"
+                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleBrowse()}
+                  title="Browse for a project folder"
+                  className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                  leadingIcon="ph:folder-open"
+                >
+                  Browse
+                </Button>
+              </div>
+              <p id="project-root-help" className="text-[11px] text-[var(--text-muted)]">
+                {PROJECT_ROOT_WORKSPACE_HELP}
+              </p>
+              {createError ? (
+                <p id="project-root-error" role="alert" className="text-[11px] text-[var(--color-danger,#e5484d)]">
+                  {createError}
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -741,7 +768,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               role="alert"
               className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
             >
-              <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
+              <span className="min-w-0 truncate">{sessionError}</span>
               <Button
                 variant="danger-ghost"
                 size="xs"

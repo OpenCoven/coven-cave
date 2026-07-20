@@ -96,6 +96,22 @@ assert.equal(projectNameForRoot(""), "");
   assert.equal(granted, false);
 }
 
+// createProject throws a workspace guidance error → surface it, and do not grant.
+{
+  let granted = false;
+  const message = "Choose a folder inside a configured Cave workspace.";
+  const createProject = async () => {
+    throw new Error(message);
+  };
+  const fetchImpl = async () => {
+    granted = true;
+    return { ok: true, json: async () => ({}) };
+  };
+  const result = await addChatProject({ root: "/x", familiarId: "sage", createProject, fetchImpl });
+  assert.deepEqual(result, { ok: false, error: message });
+  assert.equal(granted, false);
+}
+
 // Grant fails → surface the server error.
 {
   resetProjectRegistryListenersForTests();
@@ -164,6 +180,17 @@ assert.equal(projectNameForRoot(""), "");
   assert.equal(result.ok, false);
   assert.equal(notifications, 1, "failed scoped grants still fan out one generic registry refresh for the newly created project");
   unsubscribe();
+}
+
+// Create can succeed even when the grant fetch rejects later → surface the
+// grant failure as a normal result so callers can keep the created project.
+{
+  const createProject = async (name, root) => ({ id: "p4", name, root });
+  const fetchImpl = async () => {
+    throw new Error("network down");
+  };
+  const result = await addChatProject({ root: "/z", familiarId: "sage", createProject, fetchImpl });
+  assert.deepEqual(result, { ok: false, error: "network down" });
 }
 
 // Blank root → guarded before any I/O.

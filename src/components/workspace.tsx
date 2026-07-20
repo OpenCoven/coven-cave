@@ -26,7 +26,7 @@ import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  shouldAutoOpenOnboarding,
+  shouldApplyStartupOnboardingStatus,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
@@ -531,12 +531,14 @@ export function Workspace() {
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
+  const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Its refs and job polling intentionally survive close/reopen cycles so an
   // in-flight install is not forgotten and daemon auto-start stays one-shot.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
+  const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -804,7 +806,11 @@ export function Workspace() {
   // also offers a lighter in-app "New familiar" dialog (POST /api/familiars)
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
-    const openCreate = () => setOnboardingOpen(true);
+    const openCreate = () => {
+      manualOnboardingOpenedRef.current = true;
+      setAutoFinishOnboarding(false);
+      setOnboardingOpen(true);
+    };
     window.addEventListener("cave:onboarding-open", openCreate);
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
@@ -1399,7 +1405,11 @@ export function Workspace() {
     })();
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
-  const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
+  const openOnboarding = useCallback(() => {
+    manualOnboardingOpenedRef.current = true;
+    setAutoFinishOnboarding(false);
+    setOnboardingOpen(true);
+  }, []);
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
     void loadFamiliars();
@@ -1449,7 +1459,16 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
+        if (
+          shouldApplyStartupOnboardingStatus({
+            status: json,
+            cancelled,
+            manuallyOpened: manualOnboardingOpenedRef.current,
+          })
+        ) {
+          setAutoFinishOnboarding(true);
+          setOnboardingOpen(true);
+        }
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       } finally {
@@ -3130,8 +3149,10 @@ export function Workspace() {
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
+          autoFinishWhenComplete={autoFinishOnboarding}
           open={onboardingOpen}
           onDismiss={() => {
+            setAutoFinishOnboarding(false);
             setOnboardingMounted(true);
             closeOnboarding();
           }}
