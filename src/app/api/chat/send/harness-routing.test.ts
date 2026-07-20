@@ -27,6 +27,10 @@ const capabilityProbes = await readFile(
   new URL("./chat-send-capabilities.ts", import.meta.url),
   "utf8",
 );
+const modelHelpers = await readFile(
+  new URL("./chat-send-models.ts", import.meta.url),
+  "utf8",
+);
 const streamEvents = await readFile(
   new URL("../../../../lib/stream-events.ts", import.meta.url),
   "utf8",
@@ -301,7 +305,7 @@ assert.match(
   "Response metadata should expose unsupported/saved state instead of claiming application",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
   "Session-scoped model overrides should feed the response model state, not only desiredModel",
 );
@@ -367,14 +371,14 @@ assert.match(
   "The send route should carry composer responseSpeed through offline queue payloads",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /function buildPromptWithResponseControls/,
-  "Send route should turn composer controls into harness-visible instructions",
+  "Chat send model helpers should turn composer controls into harness-visible instructions",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
-  "Chat send route should continue accepting responseSpeed from all composer send bodies",
+  "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
 );
 assert.match(
   chatRoute,

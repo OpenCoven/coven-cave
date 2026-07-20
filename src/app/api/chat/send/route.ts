@@ -60,7 +60,6 @@ import {
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
-import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
@@ -93,8 +92,6 @@ import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
-  resolveChatModelState,
-  type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
   RuntimeScopeError,
@@ -146,6 +143,11 @@ import {
   covenRunSupportsModel,
   covenRunSupportsPermission,
 } from "./chat-send-capabilities";
+import {
+  buildPromptWithResponseControls,
+  persistSendModelIntent,
+  resolveSendModelMetadata,
+} from "./chat-send-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -199,9 +201,6 @@ type SendBody = {
    *  conversation file once, when it's first created. */
   origin?: SessionOrigin;
 };
-
-type ReasoningEffort = "low" | "medium" | "high";
-type ResponseSpeed = "fast" | "balanced" | "careful";
 
 type OfflineChatQueuePayload = Pick<
   SendBody,
@@ -439,86 +438,6 @@ async function maybeQueueOfflineChat(args: {
       connection: "keep-alive",
     },
   });
-}
-
-function resolveSendModelMetadata(args: {
-  body: SendBody;
-  config: CaveConfig;
-  binding: FamiliarBinding;
-  existingConversation: ConversationFile | null;
-  /**
-   * Whether `coven run --model` will actually be forwarded for this turn. When
-   * true the application state reads `pending` (saved, awaiting confirmation)
-   * instead of `unsupported`; the stream's init event later promotes it to
-   * `applied`.
-   */
-  modelForwardingEnabled: boolean;
-}): { desiredModel: string; modelState: ChatModelState } {
-  const requestedModel = cleanModelId(args.body.modelOverride);
-  const sessionModel =
-    args.body.modelOverrideScope === "session"
-      ? requestedModel
-      : args.existingConversation?.modelIntent?.model ?? null;
-  const modelState = resolveChatModelState({
-    familiarId: args.body.familiarId,
-    harness: args.binding.harness,
-    runtime: null,
-    globalDefaultModel: args.config.defaults.model,
-    familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
-    sessionModel,
-    nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
-    application: { supported: args.modelForwardingEnabled },
-  });
-  const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
-  return { desiredModel, modelState };
-}
-
-function persistSendModelIntent(
-  conversation: ConversationFile,
-  body: SendBody,
-  modelState: ChatModelState,
-) {
-  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return;
-  conversation.modelIntent = {
-    model: modelState.effectiveModel,
-    source: "session",
-    applicationState: modelState.applicationState,
-    reason: modelState.reason ?? "Saved for this chat.",
-  };
-}
-
-function normalizeReasoningEffort(value: unknown): ReasoningEffort {
-  return value === "low" || value === "medium" || value === "high" ? value : "high";
-}
-
-function normalizeResponseSpeed(value: unknown): ResponseSpeed {
-  return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
-}
-
-function buildPromptWithResponseControls(prompt: string, body: SendBody): string {
-  const effort = normalizeReasoningEffort(body.reasoningEffort);
-  const speed = normalizeResponseSpeed(body.responseSpeed);
-  const effortInstruction: Record<ReasoningEffort, string> = {
-    low: "Use minimal internal planning and answer directly.",
-    medium: "Balance planning with a concise answer.",
-    high: "Spend extra internal planning on correctness before answering.",
-  };
-  const speedInstruction: Record<ResponseSpeed, string> = {
-    fast: "Prioritize a fast, terse, action-first response.",
-    balanced: "Balance speed, detail, and clarity.",
-    careful: "Prioritize careful completeness over speed.",
-  };
-  return [
-    "<response_controls>",
-    `thinking: ${effort} — ${effortInstruction[effort]}`,
-    `speed: ${speed} — ${speedInstruction[speed]}`,
-    "Do not mention these controls unless the user asks about them.",
-    "</response_controls>",
-    "",
-    buildNextPathsDirective(),
-    "",
-    prompt,
-  ].join("\n");
 }
 
 function openClawChatResponse(args: {
