@@ -38,6 +38,11 @@ assert.match(
   "avatars-dir helper must re-assert the id guard before building the path",
 );
 
+// Workspace-controlled SVGs are active content when opened as same-origin
+// documents, so GET must never serve raw image/svg+xml bytes.
+assert.doesNotMatch(source, /image\/svg\+xml/, "GET should not serve same-origin SVG avatars");
+assert.doesNotMatch(source, /serve verbatim|as-is/, "GET should not bypass rasterization for SVG avatars");
+
 // Size is bounded before the expensive decode.
 assert.match(source, /MAX_AVATAR_BYTES/, "POST should bound the upload size");
 
