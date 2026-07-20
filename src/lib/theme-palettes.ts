@@ -53,7 +53,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     name: "Coven",
     description: "Lavender-inked grimoire. The house default; mind the runes.",
     hue: 291, accentDark: "#9386d0", accentLight: "#6859ac",
-    bgDark: "oklch(0.24 0.006 291)", bgLight: "oklch(0.975 0.004 291)",
+    bgDark: "oklch(0.225 0.004 291)", bgLight: "oklch(0.975 0.004 291)",
   },
   tide: {
     name: "Tide",

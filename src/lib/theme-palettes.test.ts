@@ -90,6 +90,7 @@ assert.equal(THEME_META.contrast.accentDark, "#ffd60a");
 assert.equal(THEME_META.contrast.accentLight, "#0f62fe");
 assert.equal(THEME_META.beacon.name, "Beacon");
 assert.equal(THEME_META.solstice.name, "Solstice");
+assert.equal(THEME_META.coven.bgDark, "oklch(0.225 0.004 291)");
 
 // Storage keys are stable strings.
 assert.equal(COVEN_THEME_KEY, "coven-theme");

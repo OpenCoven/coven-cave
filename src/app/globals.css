@@ -37,11 +37,11 @@
      whisper) with the violet reserved for the brand accent — reads as
      ink-and-graphite, not a tinted gray, matching the reference "New
      automation" mock (cave: default-theme-repaint). */
-  --background: oklch(0.24 0.006 291);
+  --background: oklch(0.225 0.004 291);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.26 0.007 291);
+  --card: oklch(0.245 0.005 291);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.26 0.007 291);
+  --popover: oklch(0.245 0.005 291);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.92 0.004 291);
   /* Dark ink, not tied to --card — --primary-foreground also paints text on
@@ -49,11 +49,11 @@
      dark ink for 4.5:1, not whatever lightness the raised surface happens
      to be (theme-contrast-audit.test.ts). */
   --primary-foreground: oklch(0.16 0.008 291);
-  --secondary: oklch(0.29 0.008 291);
+  --secondary: oklch(0.275 0.006 291);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.29 0.008 291);
+  --muted: oklch(0.275 0.006 291);
   --muted-foreground: oklch(0.66 0.010 291);
-  --accent: oklch(0.29 0.008 291);
+  --accent: oklch(0.275 0.006 291);
   --accent-foreground: oklch(0.985 0 0);
   --border: color-mix(in oklch, var(--foreground) 12%, transparent);
   /* WCAG 1.4.11: --border-strong marks interactive boundaries (inputs,
@@ -81,7 +81,7 @@
   /* Fixed near-opaque dark "ink" for code surfaces — read code blocks AND the
      file editor share it so the Code page's read↔edit toggle keeps one bg. */
   --code-surface: oklch(0.12 0.012 280 / 92%);
-  --bg-panel: oklch(0.22 0.006 291);        /* deepest — app shell / sidebar floor */
+  --bg-panel: oklch(0.205 0.004 291);        /* deepest — app shell / sidebar floor */
   --code-foreground: oklch(0.92 0.01 280);
   --bg-raised: var(--card);
   /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
@@ -93,8 +93,8 @@
      base. Referenced while undefined (cave-309m); derived from --bg-base so
      every theme tracks. Light mode overrides below. */
   --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
-  --bg-elevated: oklch(0.29 0.008 291);     /* dropdowns / popovers */
-  --bg-hover: oklch(0.32 0.009 291);        /* hover state */
+  --bg-elevated: oklch(0.275 0.006 291);     /* dropdowns / popovers */
+  --bg-hover: oklch(0.305 0.007 291);        /* hover state */
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);
