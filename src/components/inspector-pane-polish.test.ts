@@ -31,7 +31,7 @@ test("InspectorEmpty helper is defined and used for the memory error state", () 
   assert.match(src, /icon="ph:warning"\s+title="Memory unavailable"/, "memory error state");
   // The familiar lifecycle states live with the familiar surface now; a null
   // active familiar is no longer treated as a no-selection state.
-  const familiarView = readFileSync(resolve(here, "./chat-familiar-view.tsx"), "utf8");
+  const familiarView = readFileSync(resolve(here, "./chat-familiar-capabilities.tsx"), "utf8");
   assert.match(familiarView, /deriveFamiliarTabState/, "familiar state contract lives with the tab");
   assert.doesNotMatch(familiarView, /No familiar selected/, "all and multi scopes cannot regress to the singular empty state");
 });
