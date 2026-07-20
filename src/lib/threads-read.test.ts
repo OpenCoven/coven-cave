@@ -685,6 +685,162 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
+  it("accepts only the closed serde FrayReason and SnapReason variants", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const cases = [
+      ["Frayed", "ContentHashMismatch", true],
+      ["Frayed", "SignatureInvalid", true],
+      ["Frayed", "ManifestEntryMismatch", true],
+      ["Frayed", "AuditTrailUnverifiable", true],
+      ["Frayed", "SerializationMarkerMismatch", true],
+      ["Frayed", { Other: "custom-fray" }, true],
+      ["Frayed", { RequiredStrandMissing: { kind: "ContentHash" } }, true],
+      ["Frayed", { RequiredStrandMissing: { kind: "FutureStrand" } }, false],
+      ["Frayed", "FutureFrayReason", false],
+      ["Frayed", "", false],
+      ["Frayed", { Other: " " }, true],
+      ["Snapped", "Revoked", true],
+      ["Snapped", "MultipleStrandFray", true],
+      ["Snapped", "PatternBroken", true],
+      ["Snapped", { Other: "custom-snap" }, true],
+      ["Snapped", "FutureSnapReason", false],
+      ["Snapped", "", false],
+      ["Snapped", { Other: " " }, true],
+    ] as const;
+
+    for (const [variant, reason, accepted] of cases) {
+      const fray =
+        variant === "Frayed"
+          ? { Frayed: { strand: null, channel: "Mutation", reason } }
+          : { Snapped: { channel: "Mutation", reason } };
+      const candidate = {
+        ...staged,
+        pending: { ...staged.pending, fray },
+      };
+      const summary = {
+        ...daemon,
+        proposalRevision: canonicalProposalRevision(candidate),
+      };
+      assert.equal(
+        normalizeProposalAuthority(candidate, summary).state,
+        accepted ? "verified" : "blocked",
+        `${variant} reason ${JSON.stringify(reason)}`,
+      );
+    }
+  });
+
+  it("requires UUID newtypes and the four exact Channel variants in staged envelopes", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const invalid = [
+      {
+        label: "proposal id",
+        envelope: {
+          ...staged,
+          pending: { ...staged.pending, id: "not-a-uuid" },
+          classification: { ...staged.classification, proposal_id: "not-a-uuid" },
+        },
+        summary: { ...daemon, proposalId: "not-a-uuid" },
+      },
+      {
+        label: "thread id",
+        envelope: {
+          ...staged,
+          pending: { ...staged.pending, thread_id: "not-a-uuid" },
+        },
+        summary: daemon,
+      },
+      {
+        label: "strand id",
+        envelope: {
+          ...staged,
+          pending: {
+            ...staged.pending,
+            fray: {
+              Frayed: {
+                ...staged.pending.fray.Frayed,
+                strand: "not-a-uuid",
+              },
+            },
+          },
+        },
+        summary: daemon,
+      },
+      {
+        label: "channel",
+        envelope: {
+          ...staged,
+          pending: {
+            ...staged.pending,
+            channel: "Telepathy",
+            fray: { Frayed: { ...staged.pending.fray.Frayed, channel: "Telepathy" } },
+          },
+          classification: { ...staged.classification, channel: "Telepathy" },
+        },
+        summary: daemon,
+      },
+    ];
+
+    for (const { label, envelope, summary } of invalid) {
+      assert.deepEqual(
+        normalizeProposalAuthority(envelope, {
+          ...summary,
+          proposalRevision: canonicalProposalRevision(envelope),
+        }),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted invalid ${label}`,
+      );
+    }
+  });
+
+  it("accepts opaque staged string newtypes and freeform diagnostic strings", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const blankSurface = {
+      ...staged,
+      pending: {
+        ...staged.pending,
+        edits: [{ ...staged.pending.edits[0], surface: "" }],
+      },
+      classification: { ...staged.classification, affected_surfaces: [""] },
+      materialized_diff: {
+        surfaces: [{ ...staged.materialized_diff.surfaces[0], surface: "" }],
+      },
+      region_evidence: [{ ...staged.region_evidence[0], affected_surfaces: [""] }],
+    };
+    const blankRegion = {
+      ...staged,
+      classification: { ...staged.classification, affected_regions: [""] },
+      region_evidence: [{ ...staged.region_evidence[0], region_id: "" }],
+    };
+    const blankRationale = {
+      ...staged,
+      region_evidence: [{ ...staged.region_evidence[0], rationale: " " }],
+    };
+
+    const cases = [
+      {
+        label: "surface id",
+        envelope: blankSurface,
+        summary: {
+          ...daemon,
+          targets: [""],
+          approvalPath: { ...daemon.approvalPath, affected_surfaces: [""] },
+        },
+      },
+      { label: "region id", envelope: blankRegion, summary: daemon },
+      { label: "region rationale", envelope: blankRationale, summary: daemon },
+    ];
+    for (const { label, envelope, summary } of cases) {
+      assert.equal(
+        normalizeProposalAuthority(envelope, {
+          ...summary,
+          proposalRevision: canonicalProposalRevision(envelope),
+        }).state,
+        "verified",
+        `rejected serde-valid ${label}`,
+      );
+    }
+  });
+
   it("rejects Phase 5 classification identity fields that disagree with the staged proposal", () => {
     const { staged, daemon } = daemonContractFixture();
     const inconsistentClassifications = [
@@ -712,53 +868,245 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
-  it("binds both daemon surface sets to the normalized pending edits, not classification metadata", () => {
+  it("requires pending edits, classification, materialized diff, and region evidence to agree", () => {
     const { staged, daemon } = daemonContractFixture();
-    const distinctMetadata = {
+    const inconsistent = [
+      {
+        label: "pending edit surface differs",
+        envelope: {
+          ...staged,
+          pending: {
+            ...staged.pending,
+            edits: [{ surface: "EDIT-SURFACE.md", contents: { encoding: "utf8", data: "proposed" } }],
+          },
+        },
+        daemonSurfaces: ["EDIT-SURFACE.md"],
+      },
+      {
+        label: "pending edit contents differ",
+        envelope: {
+          ...staged,
+          pending: {
+            ...staged.pending,
+            edits: [{ surface: "MEMORY.md", contents: { encoding: "utf8", data: "different" } }],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "pending edits contain a duplicate surface",
+        envelope: {
+          ...staged,
+          pending: {
+            ...staged.pending,
+            edits: [...staged.pending.edits, structuredClone(staged.pending.edits[0])],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "classification surface differs",
+        envelope: {
+          ...staged,
+          classification: { ...staged.classification, affected_surfaces: ["CLASSIFIED.md"] },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "classification contains duplicate surfaces",
+        envelope: {
+          ...staged,
+          classification: { ...staged.classification, affected_surfaces: ["MEMORY.md", "MEMORY.md"] },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "materialized surface differs",
+        envelope: {
+          ...staged,
+          materialized_diff: {
+            surfaces: [{ ...staged.materialized_diff.surfaces[0], surface: "MATERIALIZED.md" }],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "materialized after-image differs",
+        envelope: {
+          ...staged,
+          materialized_diff: {
+            surfaces: [
+              {
+                ...staged.materialized_diff.surfaces[0],
+                after: Array.from(Buffer.from("different")),
+              },
+            ],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "materialized diff contains a duplicate surface",
+        envelope: {
+          ...staged,
+          materialized_diff: {
+            surfaces: [
+              ...staged.materialized_diff.surfaces,
+              structuredClone(staged.materialized_diff.surfaces[0]),
+            ],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "classification region differs",
+        envelope: {
+          ...staged,
+          classification: { ...staged.classification, affected_regions: ["other_region"] },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "classification contains duplicate regions",
+        envelope: {
+          ...staged,
+          classification: {
+            ...staged.classification,
+            affected_regions: ["memory_conventions", "memory_conventions"],
+          },
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "region evidence id differs",
+        envelope: {
+          ...staged,
+          region_evidence: [{ ...staged.region_evidence[0], region_id: "other_region" }],
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "region evidence references a surface outside the diff",
+        envelope: {
+          ...staged,
+          region_evidence: [{ ...staged.region_evidence[0], affected_surfaces: ["OUTSIDE.md"] }],
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+      {
+        label: "region evidence contains a duplicate region",
+        envelope: {
+          ...staged,
+          region_evidence: [...staged.region_evidence, structuredClone(staged.region_evidence[0])],
+        },
+        daemonSurfaces: ["MEMORY.md"],
+      },
+    ];
+
+    for (const { label, envelope, daemonSurfaces } of inconsistent) {
+      const summary = {
+        ...daemon,
+        targets: daemonSurfaces,
+        approvalPath: { ...daemon.approvalPath, affected_surfaces: daemonSurfaces },
+        proposalRevision: canonicalProposalRevision(envelope),
+      };
+      assert.deepEqual(
+        normalizeProposalAuthority(envelope, summary),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted ${label}`,
+      );
+    }
+  });
+
+  it("does not infer scheduler policy from path_tier_floor or region evidence", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const daemonAccepted = {
+      ...staged,
+      classification: { ...staged.classification, path_tier_floor: 2 },
+    };
+    assert.equal(
+      normalizeProposalAuthority(daemonAccepted, {
+        ...daemon,
+        proposalRevision: canonicalProposalRevision(daemonAccepted),
+      }).state,
+      "verified",
+    );
+  });
+
+  it("binds both daemon surface sets to the pending edit target set", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const surface = "EDIT-SURFACE.md";
+    const retargeted = {
       ...staged,
       pending: {
         ...staged.pending,
-        edits: [{ surface: "EDIT-SURFACE.md", contents: { encoding: "utf8", data: "proposed" } }],
+        edits: [{ surface, contents: { encoding: "utf8", data: "proposed" } }],
+      },
+      classification: { ...staged.classification, affected_surfaces: [surface] },
+      materialized_diff: {
+        surfaces: [{ ...staged.materialized_diff.surfaces[0], surface }],
+      },
+      region_evidence: [{ ...staged.region_evidence[0], affected_surfaces: [surface] }],
+    };
+    const summary = {
+      ...daemon,
+      targets: [surface],
+      approvalPath: { ...daemon.approvalPath, affected_surfaces: [surface] },
+      proposalRevision: canonicalProposalRevision(retargeted),
+    };
+
+    const authority = normalizeProposalAuthority(retargeted, summary);
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.deepEqual(authority.approvalPath.affectedSurfaces, [surface]);
+
+    assert.deepEqual(normalizeProposalAuthority(retargeted, { ...summary, targets: ["MEMORY.md"] }), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+    assert.deepEqual(
+      normalizeProposalAuthority(retargeted, {
+        ...summary,
+        approvalPath: { ...summary.approvalPath, affected_surfaces: ["MEMORY.md"] },
+      }),
+      { state: "blocked", why: "daemon-mismatch" },
+    );
+  });
+
+  it("compares base64 staged contents to materialized after-image bytes", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const binary = [0, 255, 16, 32];
+    const encoded = Buffer.from(binary).toString("base64");
+    const binaryEnvelope = {
+      ...staged,
+      pending: {
+        ...staged.pending,
+        edits: [{ surface: "MEMORY.md", contents: { encoding: "base64", data: encoded } }],
+      },
+      materialized_diff: {
+        surfaces: [{ ...staged.materialized_diff.surfaces[0], after: binary }],
       },
     };
     const summary = {
       ...daemon,
-      affectedRegions: ["display-only-region"],
-      proposalRevision: canonicalProposalRevision(distinctMetadata),
+      proposalRevision: canonicalProposalRevision(binaryEnvelope),
     };
-    const mismatchedView = normalizeProposal("classification-targets.json", distinctMetadata, summary);
-    assert.deepEqual(mismatchedView.payload?.edits, [
-      { surface: "EDIT-SURFACE.md", contents: { encoding: "utf8", data: "proposed" } },
-    ]);
-    assert.deepEqual(mismatchedView.authority, {
-      state: "blocked",
-      why: "daemon-mismatch",
-    });
 
-    const displayedEditsSummary = {
-      ...summary,
-      targets: ["EDIT-SURFACE.md"],
-      approvalPath: { ...summary.approvalPath, affected_surfaces: ["EDIT-SURFACE.md"] },
+    assert.equal(normalizeProposalAuthority(binaryEnvelope, summary).state, "verified");
+    const noncanonical = {
+      ...binaryEnvelope,
+      pending: {
+        ...binaryEnvelope.pending,
+        edits: [{ surface: "MEMORY.md", contents: { encoding: "base64", data: `${encoded}\n=` } }],
+      },
     };
-    const authority = normalizeProposal("displayed-targets.json", distinctMetadata, displayedEditsSummary).authority;
-    assert.equal(authority.state, "verified");
-    if (authority.state !== "verified") return;
-    assert.deepEqual(authority.approvalPath.affectedSurfaces, ["EDIT-SURFACE.md"]);
-
-    const wrongTargets = { ...displayedEditsSummary, targets: ["MEMORY.md"] };
-    assert.deepEqual(normalizeProposalAuthority(distinctMetadata, wrongTargets), {
-      state: "blocked",
-      why: "daemon-mismatch",
-    });
-
-    const wrongApprovalSurfaces = {
-      ...displayedEditsSummary,
-      approvalPath: { ...displayedEditsSummary.approvalPath, affected_surfaces: ["MEMORY.md"] },
-    };
-    assert.deepEqual(normalizeProposalAuthority(distinctMetadata, wrongApprovalSurfaces), {
-      state: "blocked",
-      why: "daemon-mismatch",
-    });
+    assert.deepEqual(
+      normalizeProposalAuthority(noncanonical, {
+        ...summary,
+        proposalRevision: canonicalProposalRevision(noncanonical),
+      }),
+      { state: "blocked", why: "daemon-mismatch" },
+    );
   });
 
   it("matches daemon stagedAt independently to the scheduled envelope timestamp", () => {
@@ -1075,35 +1423,53 @@ describe("normalizeProposal (§2.6)", () => {
     assert.deepEqual(view.authority.affectedRegions, ["display-only-region"]);
   });
 
-  it("blocks lifecycle and ApprovalPath combinations outside the contract mapping", () => {
+  it("treats daemon approval labels and deadline metadata as authoritative", () => {
     const { staged, daemon } = daemonContractFixture();
-    const invalid = [
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const accepted = [
       {
-        ...daemon,
-        approvalPath: {
-          variant: "auto_regression",
-          label: "auto",
-          veto_deadline: null,
-          affected_surfaces: ["MEMORY.md"],
+        staged,
+        summary: {
+          ...daemon,
+          approvalPath: { ...daemon.approvalPath, label: "Review with your own words" },
         },
+        label: "Review with your own words",
       },
       {
-        ...daemon,
-        approvalPath: {
-          variant: "familiar_coherence",
-          label: "familiar_review",
-          veto_deadline: null,
-          affected_surfaces: ["MEMORY.md"],
+        staged,
+        summary: {
+          ...daemon,
+          approvalPath: { ...daemon.approvalPath, label: "human_required" },
         },
-        lifecycle: "veto_window_open",
+        label: "human_required",
+      },
+      {
+        staged,
+        summary: {
+          ...daemon,
+          approvalPath: {
+            ...daemon.approvalPath,
+            veto_deadline: "2026-07-15T09:30:02Z",
+          },
+        },
+        label: "human_review",
+      },
+      {
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          approvalPath: { ...vetoDaemon.approvalPath, veto_deadline: null },
+          lifecycle: "ready_for_replay",
+        },
+        label: "familiar_review",
       },
     ];
 
-    for (const [index, summary] of invalid.entries()) {
-      assert.deepEqual(normalizeProposal(`phase5-invalid-${index}.json`, staged, summary).authority, {
-        state: "blocked",
-        why: "unknown-lifecycle",
-      });
+    for (const [index, { staged: candidate, summary, label }] of accepted.entries()) {
+      const authority = normalizeProposal(`phase5-authoritative-${index}.json`, candidate, summary).authority;
+      assert.equal(authority.state, "verified");
+      if (authority.state !== "verified") continue;
+      assert.equal(authority.approvalPath.label, label);
     }
   });
 
@@ -1136,22 +1502,123 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
-  it("preserves custom approval labels and the rationale-bearing path variant", () => {
+  it("preserves arbitrary daemon approval labels verbatim", () => {
     const { staged, daemon } = daemonContractFixture();
-    const authority = normalizeProposalAuthority(staged, {
-      ...daemon,
-      approvalPath: {
-        ...daemon.approvalPath,
-        variant: "human_approval_with_rationale",
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const autoStaged = {
+      ...staged,
+      classification: {
+        ...staged.classification,
+        approval_path: { kind: "auto_regression", veto: null },
+      },
+      lifecycle: { state: "ready_for_replay" },
+    };
+    const rationaleStaged = {
+      ...staged,
+      classification: {
+        ...staged.classification,
+        approval_path: { kind: "human_approval_with_rationale" },
+      },
+    };
+    const cases = [
+      {
+        staged: autoStaged,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(autoStaged),
+          approvalPath: {
+            ...daemon.approvalPath,
+            variant: "auto_regression",
+            label: "Automatic after checks",
+          },
+          lifecycle: "ready_for_replay",
+        },
+        label: "Automatic after checks",
+      },
+      {
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          approvalPath: { ...vetoDaemon.approvalPath, label: "Sage may veto" },
+        },
+        label: "Sage may veto",
+      },
+      {
+        staged,
+        summary: {
+          ...daemon,
+          approvalPath: { ...daemon.approvalPath, label: "Principal review" },
+        },
+        label: "Principal review",
+      },
+      {
+        staged: rationaleStaged,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(rationaleStaged),
+          approvalPath: {
+            ...daemon.approvalPath,
+            variant: "human_approval_with_rationale",
+            label: "Review with your own words",
+          },
+        },
         label: "Review with your own words",
       },
-    });
+    ];
 
-    assert.equal(authority.state, "verified");
-    if (authority.state !== "verified") return;
-    assert.equal(authority.approvalPath.label, "Review with your own words");
-    assert.equal(authority.approvalPath.variant, "human-approval-with-rationale");
-    assert.deepEqual(authority.availableDecisions, ["approve", "reject"]);
+    for (const testCase of cases) {
+      const authority = normalizeProposalAuthority(testCase.staged, testCase.summary);
+      assert.equal(authority.state, "verified", testCase.label);
+      if (authority.state !== "verified") continue;
+      assert.equal(authority.approvalPath.label, testCase.label);
+    }
+  });
+
+  it("does not derive daemon approval or lifecycle metadata from the staged envelope", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const authoritative = [
+      {
+        staged,
+        summary: {
+          ...daemon,
+          approvalPath: {
+            ...daemon.approvalPath,
+            variant: "human_approval_with_rationale",
+            label: "Review with your own words",
+          },
+        },
+        decisions: ["approve", "reject"],
+      },
+      {
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          approvalPath: {
+            ...vetoDaemon.approvalPath,
+            variant: "auto_regression",
+            label: "Automatic after veto",
+            veto_deadline: "2026-07-15T09:30:03Z",
+          },
+        },
+        decisions: ["reject"],
+      },
+      {
+        staged,
+        summary: {
+          ...daemon,
+          lifecycle: "ready_for_replay",
+        },
+        decisions: [],
+      },
+    ];
+
+    for (const { staged: candidate, summary, decisions } of authoritative) {
+      const authority = normalizeProposalAuthority(candidate, summary);
+      assert.equal(authority.state, "verified");
+      if (authority.state !== "verified") continue;
+      assert.deepEqual(authority.availableDecisions, decisions);
+    }
   });
 
   it("accepts a nullable blocked reason and exposes no blocked actions", () => {
@@ -1168,16 +1635,33 @@ describe("normalizeProposal (§2.6)", () => {
     assert.deepEqual(authority.availableDecisions, []);
   });
 
-  it("accepts ready-for-replay after a veto-bearing path", () => {
+  it("rejects blank or non-string daemon blockedReason and preserves unknown nonblank strings", () => {
     const { staged, daemon } = daemonContractFixture();
+    for (const blockedReason of ["", " ", 42, { reason: "nested" }]) {
+      assert.deepEqual(
+        normalizeProposalAuthority(staged, {
+          ...daemon,
+          lifecycle: "blocked",
+          blockedReason,
+        }),
+        { state: "blocked", why: "daemon-unparseable" },
+      );
+    }
+
     const authority = normalizeProposalAuthority(staged, {
       ...daemon,
-      approvalPath: {
-        ...daemon.approvalPath,
-        variant: "familiar_coherence",
-        label: "Custom coherence review",
-        veto_deadline: "2026-07-15T09:30:00Z",
-      },
+      lifecycle: "blocked",
+      blockedReason: "future-daemon-block",
+    });
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.equal(authority.blockedReason, "future-daemon-block");
+  });
+
+  it("accepts ready-for-replay after a veto-bearing path", () => {
+    const { staged, daemon } = vetoContractFixture();
+    const authority = normalizeProposalAuthority(staged, {
+      ...daemon,
       lifecycle: "ready_for_replay",
     });
 
@@ -1195,12 +1679,6 @@ describe("normalizeProposal (§2.6)", () => {
       },
       {
         ...daemon,
-        approvalPath: {
-          ...daemon.approvalPath,
-          variant: "auto_regression",
-          veto_deadline: "2026-07-15T09:30:00Z",
-        },
-        lifecycle: "veto_window_open",
         earliestClose: null,
       },
     ];
@@ -1214,36 +1692,55 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
-  it("maps every recognized veto path carrying a deadline to reject only", () => {
-    const { staged, daemon } = daemonContractFixture();
-    const variants = [
-      "auto_regression",
-      "familiar_coherence",
-      "human_approval",
-      "human_approval_with_rationale",
-    ] as const;
-
-    for (const variant of variants) {
-      const authority = normalizeProposalAuthority(staged, {
-        ...daemon,
-        approvalPath: {
-          ...daemon.approvalPath,
-          variant,
-          label: `Custom ${variant}`,
-          veto_deadline: "2026-07-15T09:30:00Z",
+  it("maps veto-bearing auto and familiar paths to reject only", () => {
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const autoStaged = {
+      ...vetoStaged,
+      classification: {
+        ...vetoStaged.classification,
+        approval_path: {
+          kind: "auto_regression",
+          veto: vetoStaged.classification.approval_path.veto,
         },
-        lifecycle: "veto_window_open",
-      });
-      assert.equal(authority.state, "verified", variant);
+      },
+    };
+    const cases = [
+      { staged: vetoStaged, summary: vetoDaemon, variant: "familiar_coherence" },
+      {
+        staged: autoStaged,
+        summary: {
+          ...vetoDaemon,
+          proposalRevision: canonicalProposalRevision(autoStaged),
+          approvalPath: {
+            ...vetoDaemon.approvalPath,
+            variant: "auto_regression",
+            label: "auto",
+          },
+        },
+        variant: "auto_regression",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const authority = normalizeProposalAuthority(testCase.staged, testCase.summary);
+      assert.equal(authority.state, "verified", testCase.variant);
       if (authority.state !== "verified") continue;
-      assert.deepEqual(authority.availableDecisions, ["reject"], variant);
+      assert.deepEqual(authority.availableDecisions, ["reject"], testCase.variant);
     }
   });
 
   it("normalizes a Phase 5 raw envelope into verified authority with exact lifecycle mapping", () => {
-    const { staged, daemon } = daemonContractFixture();
+    const { staged: baseStaged, daemon } = daemonContractFixture();
+    const staged = {
+      ...baseStaged,
+      classification: {
+        ...baseStaged.classification,
+        approval_path: { kind: "human_approval_with_rationale" },
+      },
+    };
     const summary = {
       ...daemon,
+      proposalRevision: canonicalProposalRevision(staged),
       approvalPath: {
         variant: "human_approval_with_rationale",
         label: "human_required",
@@ -1278,20 +1775,8 @@ describe("normalizeProposal (§2.6)", () => {
   });
 
   it("maps veto-window-open proposals to reject only", () => {
-    const { staged, daemon } = daemonContractFixture();
-    const summary = {
-      ...daemon,
-      approvalPath: {
-        variant: "familiar_coherence",
-        label: "familiar_review",
-        veto_deadline: "2026-07-15T09:35:00Z",
-        affected_surfaces: ["MEMORY.md"],
-      },
-      lifecycle: "veto_window_open",
-      earliestClose: "2026-07-15T09:05:00Z",
-    };
-
-    const view = normalizeProposal("phase5-veto.json", staged, summary);
+    const { staged, daemon } = vetoContractFixture();
+    const view = normalizeProposal("phase5-veto.json", staged, daemon);
     assert.equal(view.authority.state, "verified");
     assert.deepEqual(view.authority.availableDecisions, ["reject"]);
     assert.equal(view.authority.approvalPath.label, "familiar_review");

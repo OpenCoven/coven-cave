@@ -74,6 +74,22 @@ const APPROVAL_PATH_VARIANTS = new Map<string, ProposalApprovalPathVariantView>(
   ["human_approval", "human-approval"],
   ["human_approval_with_rationale", "human-approval-with-rationale"],
 ]);
+const CHANNEL_VALUES = new Set(["Deliberate", "Forced", "Serialization", "Mutation"]);
+const FRAY_REASON_VALUES = new Set([
+  "ContentHashMismatch",
+  "SignatureInvalid",
+  "ManifestEntryMismatch",
+  "AuditTrailUnverifiable",
+  "SerializationMarkerMismatch",
+]);
+const SNAP_REASON_VALUES = new Set(["Revoked", "MultipleStrandFray", "PatternBroken"]);
+const STRAND_KIND_VALUES = new Set([
+  "ContentHash",
+  "Signature",
+  "ManifestEntry",
+  "AuditTrail",
+  "SerializationMarker",
+]);
 
 const LIFECYCLE_VALUES = new Map<string, ProposalLifecycleView>([
   ["awaiting_human_approval", "awaiting-human-approval"],
@@ -169,6 +185,10 @@ function isRecord(value: unknown): value is RawRecord {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
 }
 
 function hasOnlyKeys(source: RawRecord, allowed: Set<string>): boolean {
@@ -366,20 +386,38 @@ function isApprovalPathShape(value: unknown): boolean {
   }
 }
 
+function isStagedTensionReason(value: unknown, variant: "Frayed" | "Snapped"): boolean {
+  if (typeof value === "string") {
+    return (variant === "Frayed" ? FRAY_REASON_VALUES : SNAP_REASON_VALUES).has(value);
+  }
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  if ("Other" in value) return typeof value.Other === "string";
+  if (variant !== "Frayed" || !isRecord(value.RequiredStrandMissing)) return false;
+  return (
+    hasExactKeys(value.RequiredStrandMissing, ["kind"]) &&
+    STRAND_KIND_VALUES.has(String(value.RequiredStrandMissing.kind))
+  );
+}
+
 function isFrayShape(value: unknown): boolean {
   if (!isRecord(value) || Object.keys(value).length !== 1) return false;
   if (isRecord(value.NotCovered)) {
-    return hasExactKeys(value.NotCovered, ["channel"]) && typeof value.NotCovered.channel === "string";
+    return hasExactKeys(value.NotCovered, ["channel"]) && CHANNEL_VALUES.has(String(value.NotCovered.channel));
   }
   if (isRecord(value.Frayed)) {
     return (
       hasExactKeys(value.Frayed, ["strand", "channel", "reason"]) &&
-      (value.Frayed.strand === null || typeof value.Frayed.strand === "string") &&
-      typeof value.Frayed.channel === "string"
+      (value.Frayed.strand === null || normalizeCanonicalUuid(value.Frayed.strand) !== null) &&
+      CHANNEL_VALUES.has(String(value.Frayed.channel)) &&
+      isStagedTensionReason(value.Frayed.reason, "Frayed")
     );
   }
   if (isRecord(value.Snapped)) {
-    return hasExactKeys(value.Snapped, ["channel", "reason"]) && typeof value.Snapped.channel === "string";
+    return (
+      hasExactKeys(value.Snapped, ["channel", "reason"]) &&
+      CHANNEL_VALUES.has(String(value.Snapped.channel)) &&
+      isStagedTensionReason(value.Snapped.reason, "Snapped")
+    );
   }
   return false;
 }
@@ -396,11 +434,11 @@ function isStagedContentsShape(value: unknown): boolean {
 function isPendingShape(value: unknown): boolean {
   if (!isRecord(value) || !hasExactKeys(value, PENDING_FIELDS) || !Array.isArray(value.edits)) return false;
   if (
-    typeof value.id !== "string" ||
-    typeof value.familiar_id !== "string" ||
+    normalizeCanonicalUuid(value.id) === null ||
+    normalizeCanonicalUuid(value.familiar_id) === null ||
     typeof value.writer !== "string" ||
-    typeof value.channel !== "string" ||
-    typeof value.thread_id !== "string" ||
+    !CHANNEL_VALUES.has(String(value.channel)) ||
+    normalizeCanonicalUuid(value.thread_id) === null ||
     !isFrayShape(value.fray) ||
     canonicalStagedInstant(value.staged_at) === null
   ) {
@@ -418,9 +456,9 @@ function isPendingShape(value: unknown): boolean {
 function isClassificationShape(value: unknown): boolean {
   if (!isRecord(value) || !hasExactKeys(value, CLASSIFICATION_FIELDS)) return false;
   return (
-    typeof value.proposal_id === "string" &&
-    typeof value.familiar_id === "string" &&
-    typeof value.channel === "string" &&
+    normalizeCanonicalUuid(value.proposal_id) !== null &&
+    normalizeCanonicalUuid(value.familiar_id) !== null &&
+    CHANNEL_VALUES.has(String(value.channel)) &&
     isStringArray(value.affected_surfaces) &&
     isStringArray(value.affected_regions) &&
     Number.isInteger(value.path_tier_floor) &&
@@ -480,19 +518,108 @@ function isLifecycleShape(value: unknown): boolean {
   }
 }
 
+function decodeStagedContents(value: unknown): number[] | null {
+  if (!isRecord(value) || !hasExactKeys(value, STAGED_CONTENTS_FIELDS) || typeof value.data !== "string") {
+    return null;
+  }
+  if (value.encoding === "utf8") return Array.from(Buffer.from(value.data, "utf8"));
+  if (value.encoding !== "base64") return null;
+
+  const encoded = value.data.replaceAll("\n", "");
+  if (
+    encoded.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+  ) {
+    return null;
+  }
+  const decoded = Buffer.from(encoded, "base64");
+  return decoded.toString("base64") === encoded ? Array.from(decoded) : null;
+}
+
+function sameBytes(left: number[], right: number[]): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function uniqueStringSet(values: unknown): Set<string> | null {
+  if (!isStringArray(values)) return null;
+  const set = new Set(values);
+  return set.size === values.length ? set : null;
+}
+
+function sameSet(left: Set<string>, right: Set<string>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
 function hasConsistentScheduledEnvelopeBindings(raw: RawRecord): boolean {
-  if (!isRecord(raw.pending) || !isRecord(raw.classification)) return false;
+  if (
+    !isRecord(raw.pending) ||
+    !isRecord(raw.classification) ||
+    !isRecord(raw.materialized_diff) ||
+    !Array.isArray(raw.pending.edits) ||
+    !Array.isArray(raw.materialized_diff.surfaces) ||
+    !Array.isArray(raw.region_evidence)
+  ) {
+    return false;
+  }
   const pendingStagedAt = canonicalStagedInstant(raw.pending.staged_at);
   const classifiedAt = canonicalStagedInstant(raw.classification.classified_at);
   const envelopeStagedAt = canonicalStagedInstant(raw.staged_at);
-  return (
-    raw.classification.proposal_id === raw.pending.id &&
-    raw.classification.familiar_id === raw.pending.familiar_id &&
-    raw.classification.channel === raw.pending.channel &&
-    classifiedAt !== null &&
-    classifiedAt === pendingStagedAt &&
-    classifiedAt === envelopeStagedAt
-  );
+  if (
+    raw.classification.proposal_id !== raw.pending.id ||
+    raw.classification.familiar_id !== raw.pending.familiar_id ||
+    raw.classification.channel !== raw.pending.channel ||
+    classifiedAt === null ||
+    classifiedAt !== pendingStagedAt ||
+    classifiedAt !== envelopeStagedAt
+  ) {
+    return false;
+  }
+
+  const pendingAfter = new Map<string, number[]>();
+  for (const edit of raw.pending.edits) {
+    if (!isRecord(edit) || typeof edit.surface !== "string") return false;
+    const after = decodeStagedContents(edit.contents);
+    if (after === null || pendingAfter.has(edit.surface)) return false;
+    pendingAfter.set(edit.surface, after);
+  }
+
+  const materializedAfter = new Map<string, number[]>();
+  for (const surface of raw.materialized_diff.surfaces) {
+    if (!isRecord(surface) || typeof surface.surface !== "string" || !isByteArray(surface.after)) return false;
+    if (materializedAfter.has(surface.surface)) return false;
+    materializedAfter.set(surface.surface, surface.after);
+  }
+  if (
+    pendingAfter.size !== materializedAfter.size ||
+    [...pendingAfter].some(([surface, after]) => {
+      const materialized = materializedAfter.get(surface);
+      return materialized === undefined || !sameBytes(after, materialized);
+    })
+  ) {
+    return false;
+  }
+
+  const classifiedSurfaces = uniqueStringSet(raw.classification.affected_surfaces);
+  const materializedSurfaces = new Set(materializedAfter.keys());
+  if (!classifiedSurfaces || !sameSet(classifiedSurfaces, materializedSurfaces)) return false;
+
+  const classifiedRegions = uniqueStringSet(raw.classification.affected_regions);
+  if (!classifiedRegions) return false;
+  const evidencedRegions = new Set<string>();
+  for (const evidence of raw.region_evidence) {
+    if (
+      !isRecord(evidence) ||
+      typeof evidence.region_id !== "string" ||
+      evidencedRegions.has(evidence.region_id) ||
+      !isStringArray(evidence.affected_surfaces) ||
+      evidence.affected_surfaces.some((surface) => !materializedSurfaces.has(surface)) ||
+      !Number.isInteger(evidence.min_path_tier)
+    ) {
+      return false;
+    }
+    evidencedRegions.add(evidence.region_id);
+  }
+  return sameSet(classifiedRegions, evidencedRegions);
 }
 
 function isCompleteScheduledEnvelope(raw: RawRecord): boolean {
@@ -603,7 +730,8 @@ function normalizeApprovalPath(source: RawRecord): ProposalAuthorityVerifiedView
   ) {
     return null;
   }
-  const variant = APPROVAL_PATH_VARIANTS.get(source.variant);
+  const variantKey = source.variant;
+  const variant = APPROVAL_PATH_VARIANTS.get(variantKey);
   if (!variant) return null;
   const vetoDeadline = daemonNullableIso(source.veto_deadline);
   if (!vetoDeadline.valid) return null;
@@ -639,7 +767,7 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
   if (!familiarUuid || !stagedAt || !approvalPath || !lifecycle || !earliestClose.valid) return null;
 
   const blockedReason = raw.blockedReason;
-  if (blockedReason !== undefined && blockedReason !== null && typeof blockedReason !== "string") return null;
+  if (blockedReason !== undefined && blockedReason !== null && !isNonblankString(blockedReason)) return null;
 
   return {
     proposalId: raw.proposalId,
@@ -676,8 +804,20 @@ function normalizeAvailableDecisions(
   }
 }
 
-function stagedTargetSet(payload: ProposalPayloadLike): string[] {
-  return payload.edits.map((edit) => edit.surface);
+function canonicalScheduledTargetSet(stagedEnvelope: RawRecord): string[] | null {
+  if (
+    !hasConsistentScheduledEnvelopeBindings(stagedEnvelope) ||
+    !isRecord(stagedEnvelope.pending) ||
+    !Array.isArray(stagedEnvelope.pending.edits)
+  ) {
+    return null;
+  }
+  const targets: string[] = [];
+  for (const edit of stagedEnvelope.pending.edits) {
+    if (!isRecord(edit) || typeof edit.surface !== "string") return null;
+    targets.push(edit.surface);
+  }
+  return canonicalStringSet(targets);
 }
 
 function normalizeVerifiedAuthority(
@@ -701,7 +841,8 @@ function normalizeVerifiedAuthority(
     return null;
   }
 
-  const targets = stagedTargetSet(payload);
+  const targets = canonicalScheduledTargetSet(stagedEnvelope);
+  if (!targets) return null;
   if (!sameStringSet(targets, daemonSummary.targets)) return null;
   if (!sameStringSet(targets, daemonSummary.approvalPath.affectedSurfaces)) return null;
   if (canonicalProposalRevision(stagedEnvelope) !== daemonSummary.proposalRevision) return null;
