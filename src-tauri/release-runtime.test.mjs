@@ -116,12 +116,18 @@ function assertWindowsNativeRustStep(job, expected) {
   );
 }
 
+async function readNativeHost(...modules) {
+  return (await Promise.all(
+    modules.map((module) => readFile(new URL(`./src/${module}`, import.meta.url), "utf8")),
+  )).join("\n");
+}
+
 test("release bundle includes and prefers a bundled Node runtime", async () => {
   const [tauriConfig, windowsConfig, bundleScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
-    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
   ]);
 
   assert.match(
@@ -198,7 +204,7 @@ test("clean release runners have resource glob placeholders", async () => {
 });
 
 test("native updater cleanup stops the sidecar before Windows exits", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("sidecar_lifecycle.rs", "tauri_setup.rs");
 
   assert.match(
     launcher,
@@ -228,7 +234,7 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
 });
 
 test("Windows native close remains authoritative when the WebView is unresponsive", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("tauri_setup.rs", "platform_lifecycle.rs");
 
   assert.match(
     launcher,
@@ -262,7 +268,7 @@ test("Windows native close remains authoritative when the WebView is unresponsiv
 });
 
 test("Windows native Browser children fail closed before WebView2 registration", async () => {
-  const browser = await readFile(new URL("./src/browser.rs", import.meta.url), "utf8");
+  const browser = await readNativeHost("browser_reconciliation.rs");
 
   assert.match(
     browser,
@@ -283,7 +289,7 @@ test("Windows native Browser children fail closed before WebView2 registration",
 
 test("Windows owned process trees use bounded kernel Job Object cleanup", async () => {
   const [launcher, jobs, pty] = await Promise.all([
-    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readNativeHost("tauri_setup.rs", "sidecar_startup.rs", "sidecar_lifecycle.rs", "app_lifecycle_tests.rs"),
     readFile(new URL("./src/windows_process_job.rs", import.meta.url), "utf8"),
     readFile(new URL("./src/pty.rs", import.meta.url), "utf8"),
   ]);
@@ -467,7 +473,7 @@ test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async ()
 });
 
 test("packaged app does not override Coven workspace with OpenClaw workspace", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("sidecar_startup.rs");
 
   assert.doesNotMatch(
     launcher,
@@ -477,7 +483,7 @@ test("packaged app does not override Coven workspace with OpenClaw workspace", a
 });
 
 test("packaged sidecar bootstraps mobile handoff tokens", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("sidecar_startup.rs");
 
   assert.match(
     launcher,
@@ -492,7 +498,7 @@ test("packaged sidecar bootstraps mobile handoff tokens", async () => {
 });
 
 test("macOS tray exposes quick chat as a separate floating window", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("window_geometry.rs", "tauri_setup.rs");
 
   assert.match(
     launcher,
@@ -542,7 +548,7 @@ test("macOS tray exposes quick chat as a separate floating window", async () => 
 });
 
 test("Windows packaged sidecar starts without a console window", async () => {
-  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+  const launcher = await readNativeHost("lib.rs", "sidecar_startup.rs");
 
   assert.match(
     launcher,
@@ -558,7 +564,7 @@ test("Windows packaged sidecar starts without a console window", async () => {
 
 test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
   const [launcher, startupPage] = await Promise.all([
-    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readNativeHost("tauri_setup.rs", "sidecar_startup.rs"),
     readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
     access(new URL("./frontend-stub/cave-icon.png", import.meta.url)),
   ]);
