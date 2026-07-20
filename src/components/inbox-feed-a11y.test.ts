@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 
 // The Inbox view (mode "inbox") is AutomationsView's Inbox tab, whose feed is
 // InboxFeedSection / InboxFeedRow. These pin the feed's accessibility structure.
-const src = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const src = [
+  readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // ── Sections are labelled regions with real headings ─────────────────────────
 // Was: a styled <span> title inside a <div> with a bare <ul> — no heading
@@ -29,7 +32,7 @@ assert.match(src, /const headingId = useId\(\);/, "each section gets a stable he
 // ── Selected inbox row announces itself ──────────────────────────────────────
 assert.match(
   src,
-  /aria-current=\{selected \? "true" : undefined\}/,
+  /aria-current=\{!selectMode && selected \? "true" : undefined\}/,
   "the open inbox row is aria-current, not just a background tint",
 );
 

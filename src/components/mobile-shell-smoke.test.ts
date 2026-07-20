@@ -9,7 +9,12 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
-const automationsView = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const automationsView = [
+  await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./automations/automation-lists.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
+].join("\n");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(

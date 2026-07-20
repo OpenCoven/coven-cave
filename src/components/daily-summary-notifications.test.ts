@@ -6,6 +6,7 @@ const inbox = await readFile(new URL("../lib/cave-inbox.ts", import.meta.url), "
 const toast = await readFile(new URL("./inbox-toast.tsx", import.meta.url), "utf8");
 const bell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const automations = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const inboxFeedList = await readFile(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
@@ -71,7 +72,7 @@ assert.match(
   "the inbox feed groups every item kind — daily summaries included",
 );
 assert.match(
-  automations,
+  inboxFeedList,
   /<InboxKindBadge kind=\{item\.kind\} \/>/,
   "feed rows badge their kind so summaries stay distinguishable",
 );
