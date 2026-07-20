@@ -2,27 +2,26 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Facelift cave-8pk2: with a scene backdrop on, the Home hero copy and the
-// chat landing cluster sat straight on the photo — only the layer's global
-// 18→42% gradient behind them. These pin the content-cluster grounds that
-// keep copy legible at any backdrop intensity without dulling the scene.
+// Facelift cave-hct3: the full-area radial ground behind Home read as a
+// blurry oval. Keep the scene visible around one uniform, theme-derived
+// readability surface on the existing hearth card instead.
 const css = readFileSync(new URL("../styles/backdrop.css", import.meta.url), "utf8");
 
-// ── Home hero ground ─────────────────────────────────────────────────────────
+// ── Home hearth glass ─────────────────────────────────────────────────────────
 assert.match(
   css,
-  /html\[data-backdrop-on\] \.home-composer-root::before \{[^}]*radial-gradient\(/s,
-  "the Home column gets a radial ground behind the hero + composer",
+  /html\[data-backdrop-on\] \.home-hearth-card \{\s*background: color-mix\(in oklch, var\(--bg-base\) 72%, transparent\);\s*\}/,
+  "Home uses one uniform theme-derived hearth surface while a backdrop is active",
 );
-assert.match(
+assert.doesNotMatch(
   css,
-  /\.home-composer-root::before \{[^}]*pointer-events: none/s,
-  "the ground never intercepts clicks",
+  /html\[data-backdrop-on\] \.home-composer-root::before/,
+  "Home no longer paints a full-area pseudo-element behind the hearth",
 );
-assert.match(
+assert.doesNotMatch(
   css,
-  /color-mix\(in oklch, var\(--bg-base\) 52%, transparent\)/,
-  "the ground derives from --bg-base (theme-correct in dark and light)",
+  /html\[data-backdrop-on\][^{]*home[^{]*\{[^}]*radial-gradient\(/s,
+  "the backdrop-only Home treatment contains no radial gradient",
 );
 
 // ── Chat landing glass ───────────────────────────────────────────────────────
@@ -59,8 +58,8 @@ assert.match(
 );
 assert.match(
   css,
-  /prefers-reduced-transparency: reduce[\s\S]*\.home-composer-root::before \{\s*display: none/,
-  "reduced transparency hides the image, so the ground goes too",
+  /prefers-reduced-transparency: reduce[\s\S]*html\[data-backdrop-on\] \.home-hearth-card \{\s*background: color-mix\(in oklch, var\(--bg-panel\) 55%, transparent\);/,
+  "reduced transparency restores the normal Home card fill",
 );
 assert.match(
   css,
