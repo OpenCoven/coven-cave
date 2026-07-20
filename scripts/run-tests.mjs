@@ -71,6 +71,7 @@ export const SUITES = {
     "src/lib/about-diagnostics.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
     "src/components/browser-tab-state.test.ts",
+    "src/lib/browser-native-overlay.test.ts",
     "src/lib/open-external.test.ts",
     "src/lib/agents-new-chat.test.ts",
     "src/lib/coven-version.test.ts",

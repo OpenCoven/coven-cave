@@ -10,6 +10,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
 const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
 const nativeBridge = await readFile(new URL("../lib/browser-native-bridge.ts", import.meta.url), "utf8");
+const nativeOverlay = await readFile(new URL("../lib/browser-native-overlay.ts", import.meta.url), "utf8");
 const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
@@ -112,27 +113,27 @@ assert.match(
 // the pane must hide it whenever an overlay renders (onboarding covered by a
 // stuck white webview was the reported bug).
 assert.match(
-  pane,
-  /function surfaceIsCovered\(surface: HTMLElement, rect: DOMRect\): boolean/,
+  nativeOverlay,
+  /function surfaceIsCovered\(surface: HTMLElement, rect: DOMRect, documentRef: Document = document\): boolean/,
   "pane has an occlusion detector for the native overlay",
 );
 assert.match(
-  pane,
+  nativeOverlay,
   /NATIVE_WEBVIEW_COVER_SELECTOR\s*=\s*[\s\S]{0,180}\[role="dialog"\][\s\S]{0,180}\[role="menu"\][\s\S]{0,180}\[role="listbox"\]/,
   "visible dialogs, menus, and listboxes count as native-webview covers",
 );
 assert.match(
-  pane,
+  nativeOverlay,
   /overlay\.getClientRects\(\)\.length > 0/,
   "hidden-but-mounted overlays must not count as cover",
 );
 assert.match(
-  pane,
-  /document\.elementFromPoint\(x, y\)/,
+  nativeOverlay,
+  /documentRef\.elementFromPoint\(x, y\)/,
   "the pane rect is point-sampled for non-dialog overlays",
 );
 assert.match(
-  pane,
+  nativeOverlay,
   /closest\('\[role="status"\], \[role="alert"\], \[aria-live\]'\)/,
   "transient live regions (toasts) don't blank the page",
 );
@@ -146,8 +147,8 @@ assert.match(
 // must therefore target the offscreen position or the webview reappears over
 // the overlay and never re-hides (the onboarding screenshot bug).
 assert.match(
-  pane,
-  /const WEBVIEW_OFFSCREEN = -10000;/,
+  nativeOverlay,
+  /export const WEBVIEW_OFFSCREEN = -10000;/,
   "offscreen constant mirrors OFFSCREEN_X/Y in src-tauri/src/browser.rs",
 );
 assert.match(
@@ -339,14 +340,14 @@ assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, 
 assert.doesNotMatch(pane, /requestAnimationFrame\(tick\)/, "stable browser idle has no perpetual display-rate callback");
 assert.doesNotMatch(pane, /subtree:\s*true/, "BrowserPane does not observe unrelated mutations across the React tree");
 assert.match(pane, /if \(raf \|\| document\.visibilityState !== "visible"\) return;/, "urgent bounds changes coalesce into one animation frame");
-assert.match(pane, /BROWSER_RECONCILE_INTERVAL_MS = 100/, "active CSS motion samples at the intended 10 Hz rate");
-assert.match(pane, /BROWSER_MOTION_WINDOW_MS = 400/, "motion sampling stops after a bounded stability window");
+assert.match(nativeOverlay, /BROWSER_RECONCILE_INTERVAL_MS = 100/, "active CSS motion samples at the intended 10 Hz rate");
+assert.match(nativeOverlay, /BROWSER_MOTION_WINDOW_MS = 400/, "motion sampling stops after a bounded stability window");
 assert.match(pane, /animationstart listener is attached[\s\S]{0,160}startMotionWindow\(\);/, "initial pane animation opens a bounded reconcile window even when animationstart fires before effect setup");
 assert.match(pane, /new ResizeObserver\(scheduleImmediateReconcile\)/, "resizes schedule a coalesced native bounds reconcile");
 assert.match(pane, /portalObserver\.observe\(document\.body, \{\s*childList: true,\s*\}\)/, "only direct body portal mounts are mutation-observed");
 assert.match(pane, /animationstart[\s\S]{0,600}transitionend/, "CSS motion opens and closes a bounded reconcile window");
 assert.match(shell, /dispatchEvent\(new Event\("cave:native-webview-layout"\)\)[\s\S]{0,80}\[banners\]/, "shell banner layout changes explicitly schedule native bounds reconciliation");
-assert.match(pane, /__CAVE_BROWSER_RECONCILE_METRICS__/, "reconciliation count and duration are exposed for native profiling");
+assert.match(nativeOverlay, /__CAVE_BROWSER_RECONCILE_METRICS__/, "reconciliation count and duration are exposed for native profiling");
 assert.match(pane, /visibilitychange[\s\S]{0,300}hideAll\(\)/, "backgrounding immediately hides native webviews");
 
 // ───────── a11y: tab strip is a real tablist ─────────
