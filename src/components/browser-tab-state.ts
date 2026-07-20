@@ -5,6 +5,32 @@ const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
 
 export type BrowserTab = { id: string; url: string; title: string; pinned: boolean; kind: "pinned" };
 
+/**
+ * Restored registry state is only valid when its tab still exists in the
+ * pinned-tab model. A removed tab must not apply its old address to whichever
+ * tab happens to be first.
+ */
+export function resolveRestoredBrowserNavigation(
+  tabs: BrowserTab[],
+  storedActiveTabId: string,
+  storedAddress: string,
+): { activeTabId: string; address: string; restoredTabExists: boolean } {
+  const restoredTab = tabs.find((tab) => tab.id === storedActiveTabId);
+  if (restoredTab) {
+    return {
+      activeTabId: restoredTab.id,
+      address: storedAddress || restoredTab.url,
+      restoredTabExists: true,
+    };
+  }
+  const fallback = tabs[0];
+  return {
+    activeTabId: fallback?.id ?? "home",
+    address: fallback?.url ?? HOME_URL,
+    restoredTabExists: false,
+  };
+}
+
 export function normalizeBrowserUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return HOME_URL;

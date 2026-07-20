@@ -45,6 +45,7 @@ import {
   sortPlugins,
   countByKind,
   groupPluginsByCategory,
+  normalizeMarketplaceScope,
   resolveCollection,
   COLLECTIONS,
   type KindFilter,
@@ -314,6 +315,15 @@ export function MarketplaceViewSurface({
     () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
     [collectionId],
   );
+  // Catalog categories are data-driven, so a choice can disappear between
+  // visits. Keep durable filters truthful by dropping only the invalid scope
+  // after the first catalog response has established the available options.
+  useEffect(() => {
+    if (!loaded) return;
+    const normalized = normalizeMarketplaceScope(categories, category, collectionId);
+    if (normalized.category !== category) setCategory(normalized.category);
+    if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
+  }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
   const collectionIds = useMemo(
     () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
     [plugins, activeCollection],

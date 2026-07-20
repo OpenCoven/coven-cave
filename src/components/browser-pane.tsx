@@ -32,6 +32,7 @@ import {
   loadPinnedTabs,
   loadRailPinned,
   normalizeBrowserUrl,
+  resolveRestoredBrowserNavigation,
   savePinnedTabs,
   saveRailPinned,
   type BrowserTab,
@@ -117,14 +118,15 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     // hydrating. It is an explicit one-visit destination, so never replace it
     // with the saved return tab/address on that first hydrated render.
     if (transientNavigationUrlRef.current) return;
-    const restored = tabs.find((tab) => tab.id === storedActiveTabId) ?? tabs[0];
-    if (!restored) return;
-    setActiveTabId(restored.id);
-    if (storedAddress) {
-      setTabs((current) => current.map((tab) => tab.id === restored.id ? { ...tab, url: storedAddress } : tab));
-      setAddressBar(storedAddress);
-    } else {
-      setAddressBar(restored.url);
+    const restored = resolveRestoredBrowserNavigation(tabs, storedActiveTabId, storedAddress);
+    setActiveTabId(restored.activeTabId);
+    if (restored.restoredTabExists && storedAddress) {
+      setTabs((current) => current.map((tab) => tab.id === restored.activeTabId ? { ...tab, url: storedAddress } : tab));
+    }
+    setAddressBar(restored.address);
+    if (!restored.restoredTabExists) {
+      setStoredActiveTabId(restored.activeTabId);
+      setStoredAddress(restored.address);
     }
   // Restore once after hydration; later tab changes are deliberate user actions.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -615,7 +617,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     }
 
     const updatedActiveTab = nextTabs.find((t) => t.id === activeTabId);
-    if (updatedActiveTab) {
+    if (persist && updatedActiveTab) {
       savePinnedTabs(nextTabs);
     }
     // Reveal the page again now that the user has committed a destination.
