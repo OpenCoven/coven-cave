@@ -1,29 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import {
-  buildArtifactRepairPrompt,
   buildPreviewSrcDoc,
   buildRefinePrompt,
   buildSketchPrompt,
+  titleFromPrompt,
   type CanvasArtifact,
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
-import { generateArtifactCode } from "@/lib/canvas-generate";
 import {
   INITIAL_ADD_TILE_STATE,
   addTileReducer,
   buildAddArtifact,
-  buildArtifactRevision,
   derivePastedTitle,
   detectPastedKind,
   focusTargetForState,
   generationStatusText,
-  type ArtifactIdentity,
   type AddTileMode,
 } from "@/lib/canvas-add";
+import {
+  consumeCanvasGeneration,
+  getCanvasGenerationSnapshot,
+  startCanvasGeneration,
+  stopCanvasGeneration,
+  subscribeCanvasGeneration,
+  type CanvasGenerationSnapshot,
+} from "@/lib/canvas-generation-registry";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
@@ -51,7 +56,6 @@ export function CanvasAddTile({
   const [state, dispatch] = useReducer(addTileReducer, INITIAL_ADD_TILE_STATE);
   const [chosenFamiliar, setChosenFamiliar] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const [streamChars, setStreamChars] = useState(0);
   const [refineText, setRefineText] = useState("");
   const [resultTab, setResultTab] = useState<ResultTab>("canvas");
   const [codeMenuOpen, setCodeMenuOpen] = useState(false);
@@ -59,30 +63,27 @@ export function CanvasAddTile({
   const [codeSaveError, setCodeSaveError] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
+  const [hiddenRunId, setHiddenRunId] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
-  const abortRef = useRef<AbortController | null>(null);
-  const currentRunRef = useRef<string | null>(null);
-  const mountedRef = useRef(true);
+  const generation = useSyncExternalStore(
+    subscribeCanvasGeneration,
+    getCanvasGenerationSnapshot,
+    getCanvasGenerationSnapshot,
+  );
+  const ownedRunsRef = useRef(new Map<string, number>());
   const ghostRef = useRef<HTMLButtonElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const stopRef = useRef<HTMLButtonElement | null>(null);
   const refineInputRef = useRef<HTMLTextAreaElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const codeMenuRef = useRef<HTMLButtonElement | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const activeFamiliar = chosenFamiliar ?? familiarId;
-  const expanded = state.phase !== "collapsed";
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      abortRef.current?.abort();
-    };
-  }, []);
+  const generationVisible = generation.runId !== null && generation.runId !== hiddenRunId;
+  const expanded = state.phase !== "collapsed" || generationVisible;
 
   // The artifact being actively created is rendered by this tile. Hide its
   // gallery card until the flow closes so autosave never creates a duplicate.
@@ -116,7 +117,7 @@ export function CanvasAddTile({
     if (target === "prompt") promptRef.current?.focus();
     if (target === "editor") editorRef.current?.focus();
     if (target === "ghost") ghostRef.current?.focus();
-    if (target === "cancel") cancelRef.current?.focus();
+    if (target === "cancel") stopRef.current?.focus();
     if (target === "refine") refineInputRef.current?.focus();
     if (target === "retry") retryRef.current?.focus();
   }, [state.phase, state.mode]);
@@ -145,106 +146,44 @@ export function CanvasAddTile({
     return () => window.removeEventListener("message", onMessage);
   }, [previewSrc]);
 
-  const persistArtifact = useCallback(async (artifact: CanvasArtifact, revision: number) => {
-    dispatch({ type: "save-started", revision });
-    try {
-      const response = await fetch("/api/canvas", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artifact }),
-      });
-      if (!response.ok) throw new Error(String(response.status));
-      const data = (await response.json()) as { artifacts?: CanvasArtifact[]; savedId?: string | null };
-      if (!mountedRef.current) return;
-      const savedId = data.savedId ?? artifact.id;
-      const savedCreatedAt = data.artifacts?.find((entry) => entry.id === savedId)?.createdAt;
-      dispatch({ type: "save-succeeded", revision, savedId, savedCreatedAt });
-      // Content dedupe may settle an unchanged sketch into an incumbent record.
-      // Adopt that id so refine/discard continue operating on the saved record.
-      onArtifactsChanged(data.artifacts ?? [], savedId);
-      announce(`Saved '${artifact.title}' to Canvas.`);
-    } catch {
-      if (!mountedRef.current) return;
-      dispatch({ type: "save-failed", revision });
-      announce("Preview not saved. Retry is available.", "assertive");
-    }
-  }, [announce, onArtifactsChanged]);
-
-  const runGeneration = useCallback(async (opts: {
-    runId: string;
-    identity: ArtifactIdentity;
-    revision: number;
-    prompt: string;
-    originalIntent: string;
-    expectedKind?: "html" | "react";
-    sessionId?: string | null;
-    purpose: "create" | "refine";
-  }) => {
-    if (!activeFamiliar) return;
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    currentRunRef.current = opts.runId;
-    setStreamChars(0);
-
-    const current = () => currentRunRef.current === opts.runId && !ctrl.signal.aborted;
-    let result = await generateArtifactCode({
-      prompt: opts.prompt,
-      familiarId: activeFamiliar,
-      sessionId: opts.sessionId,
-      signal: ctrl.signal,
-      onText: (text) => { if (current()) setStreamChars(text.length); },
-    });
-
-    if (current() && result.failure === "format") {
-      dispatch({ type: "begin-repair", runId: opts.runId });
-      announce("The preview needs a quick repair. Still working.");
-      result = await generateArtifactCode({
-        prompt: buildArtifactRepairPrompt(opts.originalIntent, opts.expectedKind),
-        familiarId: activeFamiliar,
-        sessionId: result.sessionId,
-        signal: ctrl.signal,
-        onText: (text) => { if (current()) setStreamChars(text.length); },
-      });
-    }
-
-    if (!current()) return;
-    if (!result.code || !result.kind || result.failure) {
-      const format = result.failure === "format";
-      const message = format
-        ? "We couldn’t turn that response into a preview."
-        : opts.purpose === "refine"
-          ? "We couldn’t apply that change. Your last preview is still here."
-          : "We couldn’t create that preview. Try again.";
+  const handledTerminalRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      generation.phase !== "complete" ||
+      !generation.runId ||
+      !generation.artifact ||
+      !generation.artifacts ||
+      !generation.savedId ||
+      handledTerminalRunRef.current === generation.runId
+    ) return;
+    handledTerminalRunRef.current = generation.runId;
+    onArtifactsChanged([...generation.artifacts], generation.savedId);
+    const revision = ownedRunsRef.current.get(generation.runId);
+    if (revision !== undefined) {
       dispatch({
-        type: "generation-failed",
-        runId: opts.runId,
-        message,
-        kind: format ? "format" : "generation",
+        type: "generated",
+        runId: generation.runId,
+        code: generation.artifact.code,
+        kind: generation.artifact.kind ?? "html",
+        sessionId: generation.sessionId,
+        revision,
       });
-      announce(message, "assertive");
-      return;
+      const savedCreatedAt = generation.artifacts.find((entry) => entry.id === generation.savedId)?.createdAt;
+      dispatch({
+        type: "save-succeeded",
+        revision,
+        savedId: generation.savedId,
+        savedCreatedAt,
+      });
+      setResultTab("canvas");
+      setRefineText("");
+      ownedRunsRef.current.delete(generation.runId);
+    } else {
+      dispatch({ type: "collapse" });
     }
-
-    const artifact = buildArtifactRevision({
-      identity: opts.identity,
-      prompt: state.prompt,
-      code: result.code,
-      kind: result.kind,
-      updatedAt: new Date().toISOString(),
-    });
-    dispatch({
-      type: "generated",
-      runId: opts.runId,
-      code: artifact.code,
-      kind: result.kind,
-      sessionId: result.sessionId,
-      revision: opts.revision,
-    });
-    setResultTab("canvas");
-    setRefineText("");
-    announce(opts.purpose === "refine" ? "Preview updated. Saving." : "Preview ready. Saving to Canvas.");
-    void persistArtifact(artifact, opts.revision);
-  }, [activeFamiliar, announce, persistArtifact, state.prompt]);
+    announce(`Saved '${generation.artifact.title}' to Canvas.`);
+    consumeCanvasGeneration(generation.runId);
+  }, [announce, generation, onArtifactsChanged]);
 
   const createPreview = useCallback(() => {
     if (!state.prompt.trim() || !activeFamiliar) return;
@@ -254,62 +193,103 @@ export function CanvasAddTile({
       createdAt: new Date().toISOString(),
     };
     const revision = state.revision + 1;
-    dispatch({ type: "begin-generation", runId, identity });
-    void runGeneration({
+    const started = startCanvasGeneration({
       runId,
       identity,
-      revision,
-      prompt: buildSketchPrompt(state.prompt),
-      originalIntent: state.prompt,
+      familiarId: activeFamiliar,
       purpose: "create",
+      prompt: state.prompt,
+      title: titleFromPrompt(state.prompt),
+      generationPrompt: buildSketchPrompt(state.prompt),
+      originalIntent: state.prompt,
     });
-  }, [activeFamiliar, runGeneration, state.identity, state.prompt, state.revision]);
+    if (started.runId !== runId) return;
+    ownedRunsRef.current.set(runId, revision);
+    setHiddenRunId(null);
+    dispatch({ type: "begin-generation", runId, identity });
+  }, [activeFamiliar, state.identity, state.prompt, state.revision]);
 
   const refine = useCallback(() => {
     const ask = refineText.trim();
     if (!ask || !activeFamiliar || !state.result || !state.identity || state.phase !== "result") return;
     const runId = crypto.randomUUID();
     const revision = state.revision + 1;
-    dispatch({ type: "begin-refine", runId });
-    void runGeneration({
+    const started = startCanvasGeneration({
       runId,
       identity: state.identity,
-      revision,
-      prompt: buildRefinePrompt(state.result.code, ask, state.result.kind),
+      familiarId: activeFamiliar,
+      purpose: "refine",
+      prompt: state.prompt,
+      title: titleFromPrompt(state.prompt),
+      generationPrompt: buildRefinePrompt(state.result.code, ask, state.result.kind),
       originalIntent: ask,
       expectedKind: state.result.kind,
       sessionId: state.result.sessionId,
-      purpose: "refine",
     });
-  }, [activeFamiliar, refineText, runGeneration, state.identity, state.phase, state.result, state.revision]);
+    if (started.runId !== runId) return;
+    ownedRunsRef.current.set(runId, revision);
+    setHiddenRunId(null);
+    dispatch({ type: "begin-refine", runId });
+  }, [activeFamiliar, refineText, state.identity, state.phase, state.prompt, state.result, state.revision]);
 
-  const cancel = useCallback(() => {
-    currentRunRef.current = null;
-    abortRef.current?.abort();
-    setStreamChars(0);
+  const stop = useCallback(() => {
+    if (!generation.runId || !stopCanvasGeneration(generation.runId)) return;
+    ownedRunsRef.current.delete(generation.runId);
     announce("Preview creation cancelled.");
-    dispatch({ type: "collapse" });
-  }, [announce]);
+  }, [announce, generation.runId]);
 
   const collapse = useCallback(() => {
-    currentRunRef.current = null;
-    abortRef.current?.abort();
-    setStreamChars(0);
+    if (generation.runId) setHiddenRunId(generation.runId);
     setCodeMenuOpen(false);
     dispatch({ type: "collapse" });
-  }, []);
+  }, [generation.runId]);
 
-  const retrySave = useCallback(() => {
-    if (!state.identity || !state.result) return;
-    const artifact = buildArtifactRevision({
-      identity: state.identity,
-      prompt: state.prompt,
-      code: state.result.code,
-      kind: state.result.kind,
-      updatedAt: new Date().toISOString(),
+  const retryGeneration = useCallback((failed: CanvasGenerationSnapshot) => {
+    if (!failed.runId || !failed.identity || !failed.familiarId) return;
+    const previousRunId = failed.runId;
+    dispatch({
+      type: "generation-failed",
+      runId: previousRunId,
+      message: failed.error ?? "Preview creation cancelled.",
+      kind: "generation",
     });
-    void persistArtifact(artifact, state.revision);
-  }, [persistArtifact, state.identity, state.prompt, state.result, state.revision]);
+    if (!consumeCanvasGeneration(previousRunId)) return;
+    const runId = crypto.randomUUID();
+    const revision = state.revision + 1;
+    const started = startCanvasGeneration({
+      runId,
+      identity: { ...failed.identity },
+      familiarId: failed.familiarId,
+      purpose: failed.purpose ?? "create",
+      prompt: failed.prompt,
+      title: failed.title,
+      generationPrompt: failed.generationPrompt,
+      originalIntent: failed.originalIntent,
+      expectedKind: failed.expectedKind ?? undefined,
+      sessionId: failed.sessionId,
+    });
+    if (started.runId !== runId) return;
+    setHiddenRunId(null);
+    if (failed.purpose === "refine" && state.result && state.identity) {
+      ownedRunsRef.current.set(runId, revision);
+      dispatch({ type: "begin-refine", runId });
+    } else if (state.prompt.trim()) {
+      ownedRunsRef.current.set(runId, revision);
+      dispatch({ type: "begin-generation", runId, identity: { ...failed.identity } });
+    }
+  }, [state.identity, state.prompt, state.result, state.revision]);
+
+  const dismissGeneration = useCallback(() => {
+    if (!generation.runId) return;
+    dispatch({
+      type: "generation-failed",
+      runId: generation.runId,
+      message: generation.error ?? "Preview creation cancelled.",
+      kind: "generation",
+    });
+    consumeCanvasGeneration(generation.runId);
+    dispatch({ type: "collapse" });
+  }, [generation.error, generation.runId]);
 
   const discard = useCallback(async () => {
     if (!state.identity || !state.result) return;
@@ -383,7 +363,10 @@ export function CanvasAddTile({
           type="button"
           className={`chat-canvas-add chat-canvas-add--ghost focus-ring${hero ? " chat-canvas-add--hero" : ""}`}
           aria-expanded={false}
-          onClick={() => dispatch({ type: "expand" })}
+          onClick={() => {
+            if (generation.runId) setHiddenRunId(null);
+            else dispatch({ type: "expand" });
+          }}
         >
           <Icon name="ph:plus-bold" aria-hidden />
           New sketch
@@ -396,7 +379,16 @@ export function CanvasAddTile({
   const refineSuggestions = state.result
     ? [...DEFAULT_REFINE_SUGGESTIONS.slice(0, 2), ...generateRefineSuggestions(state.result.code, state.result.kind, 2)]
     : [];
-  const busy = state.phase === "generating" || state.phase === "repairing";
+  const busy = generationVisible && (
+    generation.phase === "generating" ||
+    generation.phase === "repairing" ||
+    generation.phase === "saving"
+  );
+  const canStopGeneration = generation.phase === "generating" || generation.phase === "repairing";
+  const generationFailed = generationVisible && (
+    generation.phase === "error" ||
+    generation.phase === "cancelled"
+  );
 
   return (
     <div role="listitem" className="chat-canvas-add__li">
@@ -406,14 +398,14 @@ export function CanvasAddTile({
         onKeyDown={(event) => {
           if (event.key === "Escape" && !codeMenuOpen) {
             event.preventDefault();
-            busy ? cancel() : collapse();
+            collapse();
           }
         }}
       >
         <div className="chat-canvas-add__head">
           <div>
             <h2 className="chat-canvas-add__heading">
-              {state.phase === "result" ? "Your preview" : "What would you like to create?"}
+              {state.phase === "result" && !generationVisible ? "Your preview" : "What would you like to create?"}
             </h2>
             {state.phase === "composing" && state.mode === "describe" ? (
               <p className="chat-canvas-add__subheading">Describe a screen, component, or interaction.</p>
@@ -431,16 +423,45 @@ export function CanvasAddTile({
             <div className="chat-canvas-add__status">
               <Icon name="ph:sparkle" aria-hidden />
               <span role="status">
-                {generationStatusText(
-                  state.phase === "repairing" ? "repairing" : "generating",
-                  familiars.find((f) => f.id === activeFamiliar)?.display_name ?? "Familiar",
-                )}
+                {generation.phase === "saving"
+                  ? "Saving your preview to Canvas…"
+                  : generationStatusText(
+                      generation.phase === "repairing" ? "repairing" : "generating",
+                      familiars.find((f) => f.id === generation.familiarId)?.display_name ?? "Familiar",
+                    )}
               </span>
-              <span aria-hidden>{streamChars > 0 ? ` ${(streamChars / 1000).toFixed(1)}k chars` : ""}</span>
+              <span aria-hidden>{generation.streamChars > 0 ? ` ${(generation.streamChars / 1000).toFixed(1)}k chars` : ""}</span>
             </div>
             <div className="chat-canvas-add__row">
               <span className="chat-canvas-add__spacer" />
-              <button ref={cancelRef} type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={cancel}>Cancel</button>
+              {canStopGeneration ? (
+                <button ref={stopRef} type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={stop}>Stop</button>
+              ) : null}
+            </div>
+          </>
+        ) : generationFailed ? (
+          <>
+            <div className="chat-canvas-add__error" role="alert">
+              {generation.phase === "cancelled"
+                ? "Preview creation stopped."
+                : generation.error ?? "We couldn’t create that preview. Try again."}
+            </div>
+            {generation.originalIntent ? (
+              <p className="chat-canvas-add__subheading">Request: {generation.originalIntent}</p>
+            ) : null}
+            <div className="chat-canvas-add__row">
+              <button type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={dismissGeneration}>
+                Dismiss
+              </button>
+              <span className="chat-canvas-add__spacer" />
+              <button
+                ref={retryRef}
+                type="button"
+                className="chat-canvas-add__go focus-ring"
+                onClick={() => retryGeneration(generation)}
+              >
+                Try again
+              </button>
             </div>
           </>
         ) : state.phase === "error" ? (
@@ -473,9 +494,6 @@ export function CanvasAddTile({
               <span className={`chat-canvas-add__save-state chat-canvas-add__save-state--${state.saveState}`} aria-live="polite">
                 {state.saveState === "saving" ? "Saving…" : state.saveState === "saved" ? "Saved" : "Not saved"}
               </span>
-              {state.saveState === "error" ? (
-                <button type="button" className="chat-canvas-add__retry-save focus-ring" onClick={retrySave}>Retry save</button>
-              ) : null}
             </div>
             {resultTab === "canvas" ? (
               <div className="chat-canvas-add__preview">

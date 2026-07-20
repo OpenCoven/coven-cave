@@ -671,8 +671,8 @@ assert.match(routeSource, /status === "not_found"[\s\S]*status: 404/, "unknown a
 const addTileSource = readFileSync(new URL("../components/canvas-add-tile.tsx", import.meta.url), "utf8");
 assert.match(
   addTileSource,
-  /onArtifactsChanged\(data\.artifacts \?\? \[\], savedId\)/,
-  "the add tile highlights the settled tile, not the client-minted id a dedupe discarded",
+  /onArtifactsChanged\(\[\.\.\.generation\.artifacts\], generation\.savedId\)/,
+  "the add tile adopts the registry's settled server id and artifact list",
 );
 
 console.log("cave-canvas upsert dedupe tests ✓");

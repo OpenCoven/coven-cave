@@ -18,3 +18,15 @@ export function formatArtifactWhen(iso: string): string {
     return "";
   }
 }
+
+export function isCanvasGalleryLoadCurrent(
+  startedArtifactVersion: number,
+  requestToken: number,
+  currentArtifactVersion: number,
+  latestRequestToken: number,
+): boolean {
+  return (
+    startedArtifactVersion === currentArtifactVersion &&
+    requestToken === latestRequestToken
+  );
+}

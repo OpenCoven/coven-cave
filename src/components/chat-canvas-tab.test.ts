@@ -7,7 +7,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { formatArtifactWhen, sortArtifactsForGallery } from "../lib/canvas-gallery.ts";
+import * as canvasGallery from "../lib/canvas-gallery.ts";
+
+const { formatArtifactWhen, sortArtifactsForGallery } = canvasGallery;
 
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./chat-canvas-view.tsx", import.meta.url), "utf8");
@@ -70,6 +72,36 @@ assert.doesNotMatch(
   view,
   /handleArtifactUpdated[\s\S]{0,200}?setOpenId/,
   "background annotation flushes never reopen or replace the active modal",
+);
+assert.match(
+  view,
+  /const artifactVersionRef = useRef\(0\);\s*const loadRequestTokenRef = useRef\(0\)/,
+  "gallery tracks accepted artifact mutations separately from GET request order",
+);
+assert.match(
+  view,
+  /const acceptArtifacts = useCallback\([\s\S]{0,300}?artifactVersionRef\.current \+= 1;[\s\S]{0,200}?setArtifacts\(sortArtifactsForGallery\(next\)\)/,
+  "every accepted server mutation advances the artifact version before replacing gallery state",
+);
+assert.match(
+  view,
+  /const requestToken = \+\+loadRequestTokenRef\.current;\s*const startedArtifactVersion = artifactVersionRef\.current;[\s\S]{0,500}?isCanvasGalleryLoadCurrent\([\s\S]{0,200}?artifactVersionRef\.current,[\s\S]{0,100}?loadRequestTokenRef\.current[\s\S]{0,120}?\) return;[\s\S]{0,150}?setArtifacts/,
+  "GET responses apply only when both their artifact version and latest-request token are current",
+);
+assert.match(
+  view,
+  /if \(\(err as Error\)\?\.name === "AbortError"\) return;[\s\S]{0,250}?isCanvasGalleryLoadCurrent/,
+  "aborts remain quiet and stale GET failures cannot replace newer local state with an error",
+);
+assert.match(
+  view,
+  /handleSaved[\s\S]{0,180}?acceptArtifacts\(next\)[\s\S]{0,300}?handleArtifactUpdated[\s\S]{0,180}?acceptArtifacts\(next\)/,
+  "terminal generation adoption and viewer mutations invalidate older GET loads",
+);
+assert.match(
+  view,
+  /method: "DELETE"[\s\S]{0,350}?acceptArtifacts\(data\.artifacts \?\? \[\]\)/,
+  "accepted deletes invalidate older GET loads",
 );
 
 // ── Persisted component comments ─────────────────────────────────────────────
@@ -290,11 +322,52 @@ assert.deepEqual(sorted.map((a) => a.id), ["b", "a", "c"], "gallery sorts newest
 
 assert.equal(formatArtifactWhen("not-a-date"), "", "unparseable timestamps render as empty, not 'Invalid Date'");
 assert.notEqual(formatArtifactWhen("2026-07-12T00:00:00Z"), "", "real timestamps produce a short date");
+assert.equal(
+  typeof canvasGallery.isCanvasGalleryLoadCurrent,
+  "function",
+  "gallery exposes the request/version freshness guard used by GET loads",
+);
+
+const isLoadCurrent = canvasGallery.isCanvasGalleryLoadCurrent!;
+let artifactVersion = 0;
+let latestRequestToken = 1;
+let visibleArtifactIds = ["initial"];
+const staleLoad = { artifactVersion, requestToken: latestRequestToken };
+artifactVersion += 1;
+visibleArtifactIds = ["terminal-adoption"];
+if (isLoadCurrent(staleLoad.artifactVersion, staleLoad.requestToken, artifactVersion, latestRequestToken)) {
+  visibleArtifactIds = ["stale-get"];
+}
+assert.deepEqual(
+  visibleArtifactIds,
+  ["terminal-adoption"],
+  "a GET started before terminal adoption cannot replace the committed artifact",
+);
+
+const retryLoad = { artifactVersion, requestToken: ++latestRequestToken };
+if (isLoadCurrent(retryLoad.artifactVersion, retryLoad.requestToken, artifactVersion, latestRequestToken)) {
+  visibleArtifactIds = ["retry-result"];
+}
+assert.deepEqual(visibleArtifactIds, ["retry-result"], "a retry begun at the current artifact version still applies");
+
+const supersededLoad = { artifactVersion, requestToken: ++latestRequestToken };
+const latestLoad = { artifactVersion, requestToken: ++latestRequestToken };
+assert.equal(
+  isLoadCurrent(supersededLoad.artifactVersion, supersededLoad.requestToken, artifactVersion, latestRequestToken),
+  false,
+  "an older overlapping GET cannot apply after a newer request begins",
+);
+assert.equal(
+  isLoadCurrent(latestLoad.artifactVersion, latestLoad.requestToken, artifactVersion, latestRequestToken),
+  true,
+  "the latest overlapping GET can apply when artifacts have not changed",
+);
 
 // ── Add tile (cave-fema): in-grid sketch creation ────────────────────────────
 // The gallery owns its add affordance: a ghost tile leads the grid (and IS
 // the empty state), expanding in-place into the describe-first composer.
 const addTile = readFileSync(new URL("./canvas-add-tile.tsx", import.meta.url), "utf8");
+const generationRegistry = readFileSync(new URL("../lib/canvas-generation-registry.ts", import.meta.url), "utf8");
 
 assert.match(
   view,
@@ -306,14 +379,55 @@ assert.doesNotMatch(view, /No saved sketches yet/, "the old leave-for-chat empty
 assert.match(view, /chat-canvas-card--new/, "a kept sketch settles in with a one-shot highlight");
 
 assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
-assert.match(addTile, /generateArtifactCode\(\{/, "describe streams through the existing chat bridge");
+assert.match(addTile, /startCanvasGeneration\(\{/, "describe starts the navigation-safe Canvas generation owner");
 assert.match(addTile, /What would you like to create\?/, "default path asks for intent, not an implementation mode");
 assert.match(addTile, /Create preview/, "primary action creates a preview");
 assert.match(addTile, /buildSketchPrompt\(state\.prompt\)/, "prompts are wrapped with the shared sketch contract");
 assert.match(addTile, /buildRefinePrompt\(state\.result\.code, ask, state\.result\.kind\)/, "refine reuses the shared refine contract");
-assert.match(addTile, /buildArtifactRepairPrompt/, "format recovery uses the bounded repair prompt");
-assert.match(addTile, /sessionId: result\.sessionId/, "repair resumes the same hidden Canvas session");
-assert.match(addTile, /abortRef\.current\?\.abort\(\)/, "collapse/unmount aborts an in-flight generation");
+assert.match(generationRegistry, /buildArtifactRepairPrompt/, "format recovery uses the bounded repair prompt");
+assert.match(generationRegistry, /sessionId: result\.sessionId/, "repair resumes the same hidden Canvas session");
+assert.match(addTile, /useSyncExternalStore\(/, "the tile adopts module-scope generation progress after remount");
+assert.doesNotMatch(
+  addTile,
+  /return\s*\(\)\s*=>\s*\{[\s\S]{0,160}?abort\(/,
+  "component cleanup never aborts Canvas generation",
+);
+assert.doesNotMatch(
+  addTile,
+  /const collapse[\s\S]{0,220}?abort\(/,
+  "collapse only hides the tile and never cancels generation",
+);
+assert.match(
+  addTile,
+  /const stop = useCallback\([\s\S]{0,220}?stopCanvasGeneration\(generation\.runId\)/,
+  "the dedicated Stop handler is the explicit cancellation path",
+);
+assert.match(
+  addTile,
+  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,120}?collapse\(\);/,
+  "Escape collapses the tile even while generation is active",
+);
+assert.doesNotMatch(
+  addTile,
+  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,160}?(?:stopCanvasGeneration|stop\(\)|cancel\(\))/,
+  "Escape never reaches the registry cancellation path",
+);
+assert.match(
+  addTile,
+  /const canStopGeneration = generation\.phase === "generating" \|\| generation\.phase === "repairing"/,
+  "only generating and repairing phases expose cancellation",
+);
+assert.match(
+  addTile,
+  /\{canStopGeneration \? \([\s\S]{0,500}?onClick=\{stop\}>Stop<\/button>[\s\S]{0,100}?\) : null\}/,
+  "saving presents its status without an enabled Stop action",
+);
+const terminalAdoption = addTile.indexOf("onArtifactsChanged([...generation.artifacts], generation.savedId)");
+const terminalConsume = addTile.indexOf("consumeCanvasGeneration(generation.runId)", terminalAdoption);
+assert.ok(
+  terminalAdoption >= 0 && terminalConsume > terminalAdoption,
+  "a later mount adopts terminal server artifacts before consuming the run",
+);
 assert.match(addTile, /sandbox="allow-scripts"/, "the in-tile preview keeps the opaque-origin sandbox");
 assert.doesNotMatch(addTile, /allow-same-origin/, "preview remains opaque-origin");
 assert.match(addTile, /detectPastedKind\(state\.pastedCode\)/, "pasted code kind is detected, not asked");
@@ -323,9 +437,14 @@ assert.match(addTile, /Blank HTML/, "explicit blank HTML remains available");
 assert.match(addTile, /Blank React component/, "explicit blank React remains available");
 assert.doesNotMatch(addTile, /const MODES/, "equal-weight implementation mode switcher is removed");
 assert.match(
-  addTile,
+  generationRegistry,
   /method: "POST",[\s\S]{0,200}?body: JSON\.stringify\(\{ artifact \}\)/,
-  "autosave posts one artifact to the existing canvas store route",
+  "the registry-owned executor autosaves to the existing canvas store route",
+);
+assert.match(
+  generationRegistry,
+  /const savedArtifact = data\.artifacts\?\.find\(\(entry\) => entry\.id === savedId\) \?\? artifact/,
+  "terminal replay carries the server-settled artifact when dedupe adopts another id",
 );
 assert.doesNotMatch(addTile, />\s*Keep\s*</, "generated previews no longer require an ambiguous Keep action");
 assert.match(view, /artifact\.id !== activeComposerId/, "the active autosaved artifact is hidden from gallery cards to prevent duplicates");

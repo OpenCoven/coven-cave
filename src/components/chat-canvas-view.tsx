@@ -3,7 +3,7 @@
 import "@/styles/chat-artifact.css";
 import "@/styles/chat-canvas.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,7 +14,11 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
-import { formatArtifactWhen, sortArtifactsForGallery } from "@/lib/canvas-gallery";
+import {
+  formatArtifactWhen,
+  isCanvasGalleryLoadCurrent,
+  sortArtifactsForGallery,
+} from "@/lib/canvas-gallery";
 
 // The Canvas tab: the gallery for sketches saved from chat ("Save to Canvas"
 // in the inline artifact viewer persists to ~/.coven/cave/canvas.json via
@@ -32,31 +36,51 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
   const confirm = useConfirm();
+  const artifactVersionRef = useRef(0);
+  const loadRequestTokenRef = useRef(0);
 
   // The id a just-kept sketch settles in with — drives a one-shot highlight.
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
-  const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
+  const acceptArtifacts = useCallback((next: CanvasArtifact[]) => {
+    artifactVersionRef.current += 1;
     setArtifacts(sortArtifactsForGallery(next));
     setState("ready");
+  }, []);
+  const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
+    acceptArtifacts(next);
     setJustSavedId(savedId);
     // One-shot: clear after the highlight animation finishes. A stale clear
     // after unmount is harmless.
     setTimeout(() => setJustSavedId((cur) => (cur === savedId ? null : cur)), 2000);
-  }, []);
+  }, [acceptArtifacts]);
   const handleArtifactUpdated = useCallback((_updated: CanvasArtifact, next: CanvasArtifact[]) => {
-    setArtifacts(sortArtifactsForGallery(next));
-  }, []);
+    acceptArtifacts(next);
+  }, [acceptArtifacts]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const requestToken = ++loadRequestTokenRef.current;
+    const startedArtifactVersion = artifactVersionRef.current;
     setState("loading");
     try {
       const res = await fetch("/api/canvas", { signal });
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
+      if (!isCanvasGalleryLoadCurrent(
+        startedArtifactVersion,
+        requestToken,
+        artifactVersionRef.current,
+        loadRequestTokenRef.current,
+      )) return;
       setArtifacts(sortArtifactsForGallery(data.artifacts ?? []));
       setState("ready");
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
+      if (!isCanvasGalleryLoadCurrent(
+        startedArtifactVersion,
+        requestToken,
+        artifactVersionRef.current,
+        loadRequestTokenRef.current,
+      )) return;
       setState("error");
     }
   }, []);
@@ -85,7 +109,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
-        setArtifacts(sortArtifactsForGallery(data.artifacts ?? []));
+        acceptArtifacts(data.artifacts ?? []);
         setOpenId((current) => (current === artifact.id ? null : current));
       } catch {
         // Keep the card; a transient failure shouldn't silently drop it from
@@ -94,7 +118,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         setDeletingId(null);
       }
     },
-    [confirm],
+    [acceptArtifacts, confirm],
   );
 
   const opened = useMemo(
