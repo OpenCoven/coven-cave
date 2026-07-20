@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8");
+const source = [
+  readFileSync(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // Refresh-failure tracking
 assert.match(
