@@ -23,6 +23,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
+import cssContract from "../../scripts/css-source-contract.cjs";
+
 import {
   tokenizeCss,
   cssFilesInScope,
@@ -94,7 +96,7 @@ const BASELINES = {
 // ── pin: codemod tables mirror the live globals.css token definitions ──────
 
 {
-  const globals = readFileSync("src/app/globals.css", "utf8");
+  const globals = cssContract.readEffectiveCssSync("src/app/globals.css", "utf8") as string;
   const defined = new Map<string, string>();
   for (const m of globals.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/gim)) {
     if (!defined.has(m[1])) defined.set(m[1], m[2].trim()); // first (=:root dark) wins

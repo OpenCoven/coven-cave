@@ -1,0 +1,214 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COPY BUTTON
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-2xs);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0.2em 0.6em;
+  border-radius: var(--radius-sm);
+  /* Fixed chrome border + surface: --border-strong flips to dark ink in
+     light mode and disappeared on this dark chip (CHAT-D13-01). */
+  border: 1px solid var(--code-chrome-border);
+  background: var(--code-chrome-surface-control);
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, background 0.1s;
+  white-space: nowrap;
+  line-height: 1.4;
+  backdrop-filter: blur(4px);
+}
+
+.cave-copy-btn--confirmed {
+  opacity: 1 !important;
+  color: var(--code-chrome-success);
+}
+
+.cave-copy-btn:hover {
+  color: var(--code-chrome-ink);
+  background: var(--code-chrome-surface-control-hover);
+}
+.cave-copy-btn:focus-visible { opacity: 1; }
+
+/* push copy btn to right inside header */
+.cave-code-header .cave-copy-btn {
+  order: 3;
+  margin-left: auto;
+}
+
+/* bubble-level copy — top-right corner */
+.cave-copy-btn-bubble {
+  position: absolute;
+  top: 0.35em;
+  right: 0.45em;
+}
+
+/* Icon-only copy/expand button variant — tighter padding */
+.cave-copy-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   EXPAND FOOTER (CHAT-D7-03) — emitted only on blocks tall enough to clamp;
+   sticks to the bottom of the wrap's scroll viewport like the header sticks
+   to its top. Fixed dark chrome inks (CHAT-D13-01), no theme ink.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-expand {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0.25em 0.75em;
+  background: var(--code-chrome-surface-raised);
+  border-top: 1px solid var(--code-chrome-border);
+  backdrop-filter: blur(4px);
+}
+
+.cave-code-expand-btn {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.8em;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  transition: color 0.1s;
+  line-height: 1.4;
+}
+
+.cave-code-expand-btn:hover,
+.cave-code-expand-btn:focus-visible {
+  color: var(--code-chrome-ink);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SYNTAX BLOCK (tool I/O, file preview, inspector pane)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-syntax-block .cave-code-wrap {
+  border-radius: 6px;
+  margin: 0;
+}
+.cave-syntax-block .cave-code-header { padding: 3px 10px; min-height: 24px; }
+.cave-syntax-block pre { font-size: inherit; }
+
+/* Frosted-glass fallbacks for the table lightbox — split from the shared
+   glass blocks in cave-chat.css (#3264) so md-only surfaces keep an opaque,
+   readable panel without backdrop-filter support. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .cave-table-lightbox__panel { background: var(--bg-panel); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cave-table-lightbox__panel {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Second-pass moves from cave-chat.css (#3264): markdown-pipeline output
+   (file links, GFM task lists, mermaid SVG theming, code-copy reveal) that
+   state/vendor-inner classes had kept in the chat sheet. */
+
+
+/* Inline file references linkified by wireFilePathLinks — clickable, with an
+   underline-on-hover affordance so they read as actionable. */
+.cave-md code.cave-file-link {
+  cursor: pointer;
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+.cave-md code.cave-file-link:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cave-md code.cave-file-link:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+
+/* Task list */
+.cave-md li.task-list-item {
+  list-style: none;
+  margin-left: -1em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+.cave-md li.task-list-item input[type="checkbox"] {
+  accent-color: var(--accent-presence);
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  cursor: default;
+}
+/* Token-theme the diagram itself. Mermaid bakes its palette into an inline
+   <style> per SVG (and initialize()-level theming has proven unreliable
+   through the preview plugin), so the surface's own tokens win here — which
+   also keeps diagrams correct across every theme, live. Scoped to the two
+   places a diagram can live: the transcript card and the fullscreen viewer. */
+.cave-md .cm-mermaid-diagram svg .node rect,
+.cave-md .cm-mermaid-diagram svg .node circle,
+.cave-md .cm-mermaid-diagram svg .node ellipse,
+.cave-md .cm-mermaid-diagram svg .node polygon,
+.cave-md .cm-mermaid-diagram svg .node path,
+.cm-mermaid-viewer__canvas svg .node rect,
+.cm-mermaid-viewer__canvas svg .node circle,
+.cm-mermaid-viewer__canvas svg .node ellipse,
+.cm-mermaid-viewer__canvas svg .node polygon,
+.cm-mermaid-viewer__canvas svg .node path {
+  fill: var(--bg-raised) !important;
+  stroke: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline)) !important;
+}
+.cave-md .cm-mermaid-diagram svg .nodeLabel,
+.cave-md .cm-mermaid-diagram svg .edgeLabel,
+.cave-md .cm-mermaid-diagram svg .label,
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .edgeLabel,
+.cm-mermaid-viewer__canvas svg .label {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgePath path,
+.cave-md .cm-mermaid-diagram svg path.flowchart-link,
+.cm-mermaid-viewer__canvas svg .edgePath path,
+.cm-mermaid-viewer__canvas svg path.flowchart-link {
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .marker,
+.cm-mermaid-viewer__canvas svg .marker {
+  fill: var(--text-muted) !important;
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgeLabel rect,
+.cave-md .cm-mermaid-diagram svg .labelBkg,
+.cm-mermaid-viewer__canvas svg .edgeLabel rect,
+.cm-mermaid-viewer__canvas svg .labelBkg {
+  fill: var(--bg-panel) !important;
+  background-color: var(--bg-panel) !important;
+}
+.cave-md .cm-mermaid-diagram svg .cluster rect,
+.cm-mermaid-viewer__canvas svg .cluster rect {
+  fill: color-mix(in oklch, var(--bg-panel) 60%, transparent) !important;
+  stroke: var(--border-hairline) !important;
+}
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .label,
+.cm-mermaid-viewer__canvas svg .edgeLabel {
+  overflow: visible;
+}
+
+.cave-code-wrap:hover .cave-copy-btn,
+.group:hover .cave-copy-btn { opacity: 1; }
+
+/* Keyboard reach (CHAT-D6-04): the buttons are always in the DOM; tabbing
+ * into them must reveal them even without a pointer. */
+.cave-code-wrap:focus-within .cave-copy-btn,
+.group:focus-within .cave-copy-btn { opacity: 1; }

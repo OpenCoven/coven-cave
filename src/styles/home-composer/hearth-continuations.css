@@ -1,0 +1,320 @@
+/* ── Hearth card sections (chat revamp 1a) ────────────────────────────────────
+ *   Everything below the composer inside .home-hearth-card: the demoted
+ *   suggestion pills / From-task row, the Continue resume cards, and the
+ *   Open work + Prompt snippets disclosures. */
+
+/* Shared 10px uppercase section label (Continue). */
+.home-section-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Suggestion pills — demoted below the composer; the grid is keyed off
+   data-count so rows stay UNIFORM (1, 2, or 3 per row; 4 = 2×2 — never a
+   3+1 orphan; #2672 rule). */
+.home-suggest-pills {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.home-suggest-pills[data-count="2"],
+.home-suggest-pills[data-count="4"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.home-suggest-pills[data-count="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 640px) {
+  .home-suggest-pills,
+  .home-suggest-pills[data-count="2"],
+  .home-suggest-pills[data-count="3"],
+  .home-suggest-pills[data-count="4"] {
+    grid-template-columns: 1fr;
+  }
+}
+.home-suggest-pill {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.home-suggest-pill:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+  color: var(--text-primary);
+}
+.home-suggest-pill__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* From-task row — replaces the pill row when home opened from a task. */
+.home-from-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.home-from-task__icon,
+.home-from-task__label {
+  flex: none;
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
+}
+.home-from-task__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.home-from-task__chips {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex: none;
+}
+.home-from-task__chip {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.home-from-task__chip:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  color: var(--text-primary);
+}
+
+/* Continue — two side-by-side resume cards. */
+.home-continue {
+  margin-top: var(--space-4);
+}
+.home-continue__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.home-continue__cards[data-count="1"] {
+  grid-template-columns: 1fr;
+}
+@media (max-width: 640px) {
+  .home-continue__cards {
+    grid-template-columns: 1fr;
+  }
+}
+.home-continue__card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.home-continue__card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+.home-continue__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+.home-continue__dot.is-running {
+  background: var(--accent-presence);
+}
+.home-continue__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.home-continue__title {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-continue__meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-continue__go {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 120ms var(--ease-standard);
+}
+.home-continue__card:hover .home-continue__go {
+  transform: translateX(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-continue__card:hover .home-continue__go {
+    transform: none;
+  }
+}
+
+/* Disclosures (Open work · Prompt snippets) — header row over a fade-ended
+   hairline: the divider is a gradient that ramps in 48px from each end. */
+.home-disclosure {
+  margin-top: var(--space-2);
+  background:
+    linear-gradient(
+      to right,
+      transparent,
+      var(--border-hairline) 48px,
+      var(--border-hairline) calc(100% - 48px),
+      transparent
+    )
+    no-repeat top / 100% 1px;
+}
+.home-disclosure__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.home-disclosure__head:hover {
+  color: var(--text-primary);
+}
+.home-disclosure__title {
+  flex: none;
+}
+.home-disclosure__count {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.home-disclosure__rows {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 var(--space-1);
+}
+
+/* One ledger row: icon · title · meta · chevron. 13px, hover tint. */
+.home-work-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.home-work-row:hover {
+  background: color-mix(in oklch, var(--text-primary) 5%, transparent);
+}
+.home-work-row--static {
+  cursor: default;
+}
+.home-work-row--static:hover {
+  background: transparent;
+}
+.home-work-row--more {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.home-work-row__icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+.home-work-row__icon--accent {
+  color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-primary));
+}
+.home-work-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-work-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.home-work-row__meta--pr {
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
+}
+.home-work-row__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+.home-work-row__chev {
+  flex: none;
+  color: var(--text-muted);
+}
+
+/* Keyboard focus rings for the new hearth-card controls. */
+.home-suggest-pill,
+.home-from-task__chip,
+.home-continue__card,
+.home-disclosure__head,
+.home-work-row {
+  outline: none;
+}
+.home-suggest-pill:focus-visible,
+.home-from-task__chip:focus-visible,
+.home-continue__card:focus-visible,
+.home-disclosure__head:focus-visible,
+.home-work-row:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}

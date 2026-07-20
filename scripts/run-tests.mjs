@@ -475,6 +475,7 @@ export const SUITES = {
     "src/components/familiars-memory-view-sources.test.ts",
     "src/components/familiars-memory-view-scroll-collapse.test.ts",
     "src/app/globals.css.test.ts",
+    "src/app/css-module-order.test.ts",
     "src/app/accent-token-usage.test.ts",
     "src/app/globals-reveal-on-hover.test.ts",
     "src/components/board-reward-flare.test.ts",
@@ -1253,9 +1254,18 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/elevenlabs.test.ts",
 ]);
 
+// This gate measures the physical CSS tree, where facade imports are part of
+// the source structure. Every other source contract reads the effective
+// cascade through the hook below.
+const RAW_CSS_SCANNER_TESTS = new Set([
+  "src/lib/design-token-drift.test.ts",
+]);
+
 /** Build the `node` argv (flags + file) for a single test path. */
 export function nodeArgsFor(file) {
-  const args = [];
+  const args = RAW_CSS_SCANNER_TESTS.has(file)
+    ? []
+    : ["--require", "./scripts/css-source-contract-hook.cjs"];
   if (file.endsWith(".ts") || STRIP_TYPES_MJS.has(file)) {
     args.push("--experimental-strip-types");
   }

@@ -1,0 +1,197 @@
+/* cave-md.css — the shared Markdown/Shiki reading surface (.cave-md,
+ * code blocks, tables, diffs, mermaid). Split out of cave-chat.css
+ * (#3264) so non-chat surfaces (memory, skills, docs) can style
+ * rendered markdown without paying for the whole chat sheet.
+ * Import from every component that renders `cave-md` markup. */
+
+/* cave-chat.css — Markdown + Shiki styles for Cave chat bubbles.
+ * Scoped to .cave-md so styles don't bleed into app chrome.
+ * Tokens reference globals.css custom properties except the fixed code-chrome
+ * inks below, which intentionally mirror the dark palette in both themes.
+ */
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DARK-CHROME FIXED INKS (CHAT-D13-01)
+   Code blocks and system turns keep a deliberate dark-terminal surface in
+   BOTH theme modes (the Shiki theme is mood-c-dark either way). Their
+   foregrounds therefore must NOT follow --text-* — in light mode those
+   tokens flip to dark ink, which is unreadable on the still-dark chrome.
+   Values mirror the globals.css DARK palette so dark mode is unchanged.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root {
+  --code-chrome-ink: oklch(0.985 0 0);                /* dark-mode --text-primary */
+  --code-chrome-ink-muted: oklch(0.66 0.018 293);     /* dark-mode --text-secondary */
+  /* Mirrors dark-mode --text-muted, raised 40% → 72% (CHAT-D13-02): 9-11px
+     chrome labels must clear AA 4.5:1 on the code surface — 40% composited
+     to ~3.7:1. Pinned by theme-contrast-audit.test.ts (chrome section). */
+  --code-chrome-ink-faint: oklch(0.985 0 0 / 72%);    /* dark-mode --text-muted */
+  --code-chrome-accent: #9386d0;                      /* dark-mode --accent-presence */
+  /* Fixed chrome surfaces. The body surface is the shared --code-surface
+     (globals.css); these are its raised header/footer and control steps.
+     Theme borders flip to dark ink in light mode and vanish on this chrome,
+     so borders INSIDE the chrome use the fixed hairline below — only the
+     outer wrap border (which delimits against the themed page) stays on
+     --border-hairline. */
+  --code-chrome-surface-raised: oklch(0.16 0.015 280 / 92%);
+  --code-chrome-surface-control: oklch(0.2 0.012 280 / 92%);
+  --code-chrome-surface-control-hover: oklch(0.25 0.015 280 / 92%);
+  --code-chrome-border: oklch(0.985 0 0 / 14%);
+  /* Fixed-chrome state inks (diff gutters, copy-confirmed). The themed
+     --color-success/--color-danger retune darker for light surfaces and
+     would fall below AA on the always-dark chrome. */
+  --code-chrome-success: oklch(0.65 0.15 170);
+  --code-chrome-danger: oklch(0.7 0.17 20);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BASE PROSE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md {
+  font-size: var(--text-md);
+  /* Reading line-spacing + letter-spacing + alignment knobs (Settings →
+     Appearance → Typography). Default to 1.7 / 0 / left when vars are unset. */
+  line-height: var(--cave-reading-leading, 1.7);
+  letter-spacing: var(--cave-reading-tracking, 0);
+  text-align: var(--cave-reading-align, left);
+  /* Max reading-width cap (Settings → Appearance → Typography). `none` when
+     --cave-reading-width is unset, so prose fills its container by default. */
+  max-width: var(--cave-reading-width, none);
+  /* Base reading font-weight (Settings → Appearance → Typography). Bold and
+     headings keep their own weights. Defaults to 400 when var is unset. */
+  font-weight: var(--cave-reading-weight, 400);
+  /* Hyphenation (Settings → Appearance → Typography). `manual` (no auto
+     hyphenation) when unset; needs <html lang> + the -webkit- prefix for the
+     WebKit webview. */
+  -webkit-hyphens: var(--cave-reading-hyphens, manual);
+  hyphens: var(--cave-reading-hyphens, manual);
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cave-md > * + * { margin-top: 0.8em; }
+.cave-md > *:first-child { margin-top: 0; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   READER SCALE — the full-screen Expand view. The transcript's 14px density
+   is right in the stream; a dedicated reading surface earns a book measure
+   (72ch cap set by the modal) and a calmer, larger scale.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md--reader {
+  font-size: 15.5px;
+  line-height: var(--cave-reading-leading, 1.75);
+}
+.cave-md--reader > * + * { margin-top: 0.95em; }
+.cave-md--reader h1 { font-size: 1.45em; }
+.cave-md--reader h2 { font-size: 1.22em; }
+.cave-md--reader h3 { font-size: 1.05em; }
+.cave-md--reader table { font-size: 13.5px; }
+.cave-md--reader .cave-code-wrap pre code { font-size: 13px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HEADINGS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md h1,
+.cave-md h2,
+.cave-md h3,
+.cave-md h4 {
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-top: 1.1em;
+}
+
+.cave-md h1 {
+  font-size: 1.22em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.cave-md h2 {
+  font-size: 1.08em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+.cave-md h3 { font-size: 0.97em; }
+.cave-md h4 { font-size: 0.9em; color: var(--text-secondary); font-weight: 600; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PARAGRAPHS & INLINE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md p { margin: 0; }
+.cave-md strong { font-weight: 650; color: var(--text-primary); }
+.cave-md em     { font-style: italic; color: var(--text-secondary); }
+.cave-md del    { text-decoration: line-through; color: var(--text-muted); opacity: 0.7; }
+
+.cave-md a {
+  color: var(--accent-presence-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  transition: color 0.12s, text-decoration-color 0.12s;
+}
+.cave-md a:hover {
+  color: var(--accent-presence);
+  text-decoration-color: var(--accent-presence);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   INLINE CODE — quiet neutral chip. Responses are dense with identifiers, and
+   the old accent-lavender pill turned every one into decoration; accent is
+   presence, not punctuation (design language). Neutral chips read as text.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md :not(pre) > code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  padding: 0.14em 0.42em;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
+  /* Wrap long inline code gracefully instead of overflowing the bubble.
+     break-word keeps short snippets intact but lets oversized tokens break. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BLOCKQUOTE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md blockquote {
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  margin-left: 0;
+  padding: 0.25em 0 0.25em 0.9em;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
+  border-radius: 0 5px 5px 0;
+}
+.cave-md blockquote p { color: inherit; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LISTS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md ul,
+.cave-md ol {
+  padding-left: 1.4em;
+  margin: 0;
+}
+.cave-md ul { list-style-type: disc; }
+.cave-md ol { list-style-type: decimal; }
+
+.cave-md li { margin-top: 0.28em; }
+.cave-md li:first-child { margin-top: 0; }
+.cave-md li > p { margin: 0; }
+
+.cave-md li > ul,
+.cave-md li > ol { margin-top: 0.2em; }
+
+.cave-md ul > li::marker {
+  color: color-mix(in oklch, var(--accent-presence) 55%, var(--text-muted));
+}
+.cave-md ol > li::marker {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}

@@ -1,0 +1,1783 @@
+/* ============================================================
+   Component library — Mood C v1.1 (issue #22)
+   ============================================================
+   Modals, dock chat, property pills, gradient AI toggle, etc.
+   Each primitive owns its own class prefix so a downstream
+   refactor can swap implementation without colliding with
+   shell-* (issue #14) names. */
+
+/* ---- Modal -------------------------------------------------- */
+.ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop-scrim);
+  /* Soft depth cue: the app recedes behind the scrim instead of just dimming. */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: var(--space-4);
+  animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
+}
+
+@keyframes browser-progress {
+  0%   { transform: translateX(-100%); width: 60%; }
+  50%  { transform: translateX(80%);  width: 60%; }
+  100% { transform: translateX(200%); width: 60%; }
+}
+@keyframes ui-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ui-modal-enter {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ui-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 2 * var(--space-4));
+  /* Glassmorphic sheet — the dimmed app blurs through the dialog body. */
+  background: var(--glass-raised);
+  backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px oklch(0 0 0 / 50%);
+  animation: ui-modal-enter var(--duration-base) var(--ease-decelerate);
+}
+
+.ui-modal--wide { max-width: 720px; }
+
+.ui-modal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: var(--text-base);
+  color: var(--muted-foreground);
+}
+
+.ui-modal-header-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-modal-header-breadcrumb > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-modal-header-breadcrumb-sep {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ui-modal-header-breadcrumb strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.ui-modal-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ui-modal-close:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-modal-body {
+  padding: var(--space-5);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+/* In-app confirm dialog (ConfirmProvider) — title + supporting detail. */
+.ui-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-base, var(--foreground));
+}
+.ui-confirm-body {
+  margin-top: var(--space-2);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ui-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+
+.ui-modal-footer-pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ui-modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---- Flow "Required inputs" dialog -------------------------- */
+.required-inputs-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.required-inputs-copy {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.required-inputs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.required-inputs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.required-inputs-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.required-inputs-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.required-inputs-node {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 55%;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.required-inputs-control {
+  width: 100%;
+  padding: var(--space-2) 10px;
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--foreground);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.required-inputs-control::placeholder {
+  color: var(--text-muted);
+}
+
+.required-inputs-control:hover {
+  border-color: color-mix(in oklch, var(--border) 60%, var(--text-muted));
+}
+
+.required-inputs-control:focus,
+.required-inputs-control:focus-visible {
+  outline: none;
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}
+
+textarea.required-inputs-control {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.5;
+}
+
+.required-inputs-select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.required-inputs-help {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* ---- Property pill ----------------------------------------- */
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.ui-pill:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-pill--filled {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+
+.ui-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Origin chip (provenance for a session/card) ----------- */
+/* Origin + initiator pills share one chrome so adjacent pills read as
+   siblings; only the semantic accent/tint (call/human/familiar) varies. */
+.ui-origin-chip,
+.ui-initiator-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 18px;
+  max-width: 160px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--text-secondary) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ui-origin-chip[data-origin="call"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+
+.ui-origin-chip[data-origin="cron"],
+.ui-origin-chip[data-origin="heartbeat"] {
+  color: var(--text-secondary);
+}
+
+.ui-origin-chip-label {
+  text-transform: lowercase;
+}
+
+.ui-origin-chip-suffix {
+  color: var(--text-muted);
+}
+
+/* ---- Initiator chip (who started a session) ---------------- */
+.ui-initiator-chip[data-initiator="human"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
+}
+
+.ui-initiator-chip[data-initiator="familiar"] {
+  color: var(--text-secondary);
+  border-color: color-mix(in oklch, var(--text-secondary) 26%, var(--border-hairline));
+}
+
+.ui-initiator-chip-label,
+.ui-origin-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Lifecycle badge (card state machine) ------------------ */
+.ui-lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+}
+
+.ui-lifecycle-badge[data-lifecycle="running"] {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.ui-lifecycle-badge[data-lifecycle="completed"] {
+  color: var(--text-muted);
+}
+.ui-lifecycle-badge[data-lifecycle="failed"] {
+  color: var(--color-danger-soft);
+  border-color: color-mix(in oklch, var(--color-danger-soft) 30%, var(--border-hairline));
+}
+.ui-lifecycle-badge[data-lifecycle="cancelled"] {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.ui-lifecycle-badge[data-lifecycle="review"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, var(--border-hairline));
+}
+
+.ui-lifecycle-badge[data-needs-human="true"] {
+  color: var(--color-danger-soft);
+  border-color: color-mix(in oklch, var(--color-danger-soft) 40%, var(--border-hairline));
+}
+
+.ui-lifecycle-needs-human {
+  padding: 0 var(--space-1);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--color-danger-soft) 18%, transparent);
+  color: var(--color-danger-soft);
+  font-size: 9px;
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+/* Light-mode: --color-danger-soft (L≈0.70) fails AA contrast on near-white.
+   Swap to --color-danger (L≈0.52) for foreground text only; backgrounds and
+   borders may keep the soft variant since they don't carry text. */
+:root[data-mode="light"] .ui-lifecycle-badge[data-lifecycle="failed"],
+:root[data-mode="light"] .ui-lifecycle-badge[data-needs-human="true"],
+:root[data-mode="light"] .ui-lifecycle-needs-human,
+:root[data-mode="light"] .ui-btn--danger-ghost,
+:root[data-mode="light"] .ui-popover-item--danger,
+:root[data-mode="light"] .cave-project-picker__error {
+  color: var(--color-danger);
+}
+
+/* ---- Template card grid ------------------------------------ */
+.ui-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (min-width: 900px) {
+  .ui-template-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.ui-template-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.ui-template-card:hover {
+  background: var(--muted);
+  border-color: var(--border-strong);
+}
+
+.ui-template-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-template-card-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ui-template-card-subtitle {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+/* ---- Floating dock chat ------------------------------------ */
+.ui-dock-chat {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: 440px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 16px 48px oklch(0 0 0 / 50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.18s ease, height 0.18s ease;
+}
+
+.ui-dock-chat--collapsed {
+  height: 44px;
+}
+
+.ui-dock-chat--expanded {
+  position: fixed;
+  inset: var(--space-4);
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+
+.ui-dock-chat-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  height: 44px;
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: var(--text-base);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.ui-dock-chat-title {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--foreground);
+}
+
+.ui-dock-chat-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ui-dock-chat-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ui-dock-chat-icon-btn:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-dock-chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5);
+  text-align: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--text-base);
+}
+
+.ui-dock-chat-body-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ui-dock-chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+
+.ui-dock-chat-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--text-base);
+}
+
+.ui-dock-chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ---- AI toggle (Manual ↔ Agent) ---------------------------- */
+.ui-ai-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  transition: color 0.12s ease;
+}
+
+.ui-ai-toggle:hover {
+  color: var(--foreground);
+}
+
+.ui-ai-toggle:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+
+/* When in Agent mode, replace the hairline border with a lavender
+   gradient stroke. Implemented as a doubled background so the inner
+   tile keeps the bg colour while the outer pseudo carries the
+   gradient. */
+.ui-ai-toggle--agent {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg-base), var(--bg-base)) padding-box,
+    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
+  color: var(--foreground);
+}
+
+.ui-ai-toggle--agent:hover {
+  background:
+    linear-gradient(var(--muted), var(--muted)) padding-box,
+    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
+}
+
+/* ============================================================
+   Worldclass primitives — Button, IconButton, EmptyState,
+   Skeleton, ViewHeader, SearchInput, Popover, Tooltip,
+   ListRowCard, SeparatorHandle, ThinkingIndicator.
+   Class prefix `.ui-` continues the issue-#22 convention.
+   ============================================================ */
+
+/* ---- Field family ------------------------------------------- */
+.ui-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-field__label-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-field__label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.ui-field__optional {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.ui-field__description,
+.ui-field__error {
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.ui-field__description {
+  color: var(--text-muted);
+}
+
+.ui-field__error {
+  color: var(--color-danger);
+}
+
+.ui-field[data-invalid="true"] .ui-field__label {
+  color: var(--color-danger);
+}
+
+.ui-text-input,
+.ui-text-area {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ui-text-input {
+  min-height: var(--space-8);
+  padding: 0 var(--space-3);
+}
+
+.ui-text-area {
+  min-height: calc(var(--space-10) * 2);
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+  line-height: var(--leading-normal);
+}
+
+.ui-text-input::placeholder,
+.ui-text-area::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.ui-text-input:hover:not(:disabled),
+.ui-text-area:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--foreground) 36%, transparent);
+}
+
+.ui-text-input:focus-visible,
+.ui-text-area:focus-visible {
+  border-color: var(--ring-focus);
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+
+.ui-text-input[aria-invalid="true"],
+.ui-text-area[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.ui-text-input[aria-invalid="true"]:focus-visible,
+.ui-text-area[aria-invalid="true"]:focus-visible {
+  outline-color: var(--color-danger);
+}
+
+.ui-text-input:disabled,
+.ui-text-area:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+.ui-text-input:read-only:not(:disabled),
+.ui-text-area:read-only:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .ui-text-input,
+  .ui-text-area {
+    min-height: var(--touch-target);
+    font-size: 16px;
+  }
+}
+
+/* ---- Button ------------------------------------------------- */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  outline: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.ui-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+.ui-btn:disabled,
+.ui-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+.ui-btn--xs { height: 22px; padding: 0 var(--space-2); font-size: var(--text-xs); gap: 4px; }
+.ui-btn--sm { height: 26px; padding: 0 10px; font-size: var(--text-xs); }
+.ui-btn--lg { height: 38px; padding: 0 var(--space-4); font-size: var(--text-md); }
+.ui-btn--full { width: 100%; }
+
+.ui-btn--primary {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+  color: var(--text-primary);
+}
+.ui-btn--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
+  border-color: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
+}
+.ui-btn--secondary {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.ui-btn--secondary:hover {
+  background: var(--bg-elevated);
+}
+.ui-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.ui-btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Settings segmented options (Text size, Reading text, Date & time rows).
+   Same cascade problem + cure as .mode-toggle__option below: these render
+   through Button/ghost, whose unlayered transparent background beats the
+   Tailwind accent utilities the rows pass in — so the selected segment showed
+   no selection (cave-q42g). Unlayered + !important wins the state back;
+   parity with the shared Segmented control (Corner radius). */
+.settings-segment[aria-pressed="true"] {
+  background: var(--accent-presence) !important;
+  color: var(--accent-presence-foreground) !important;
+}
+.settings-segment[aria-pressed="true"]:hover {
+  background: var(--accent-presence) !important;
+  color: var(--accent-presence-foreground) !important;
+}
+
+.mode-toggle__option[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-raised)) !important;
+  border-color: color-mix(in oklch, var(--accent-presence) 44%, var(--border-strong)) !important;
+  color: var(--text-primary) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 22%, transparent) inset,
+    0 8px 18px color-mix(in oklch, var(--accent-presence) 12%, transparent) !important;
+}
+
+.mode-toggle__option[aria-pressed="true"] .ui-btn-icon-slot {
+  color: var(--accent-presence) !important;
+}
+
+.mode-toggle__option[aria-pressed="true"]:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, var(--bg-raised)) !important;
+}
+.ui-btn--danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--text-primary);
+}
+.ui-btn--danger:hover {
+  background: color-mix(in oklch, var(--color-danger) 86%, white 14%);
+}
+.ui-btn--danger-ghost {
+  background: transparent;
+  color: var(--color-danger-soft);
+}
+.ui-btn--danger-ghost:hover {
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+}
+
+.ui-btn-spinner {
+  display: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in oklch, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: ui-btn-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.ui-btn-spinner.is-visible {
+  display: inline-block;
+}
+.ui-btn-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ui-btn-icon-slot.is-hidden {
+  display: none;
+}
+@keyframes ui-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Chat deep-link takeover: `#chat-<id>` holds until the sessions fetch
+   settles — show intent instead of flashing Home for that beat. */
+.workspace-deeplink-pending {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+.workspace-deeplink-pending__spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: ui-btn-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-deeplink-pending__spinner { animation: none; }
+}
+
+/* ---- IconButton --------------------------------------------- */
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  outline: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.ui-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ui-icon-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+.ui-icon-btn:disabled,
+.ui-icon-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+.ui-icon-btn--xs { width: 22px; height: 22px; border-radius: var(--radius-control); }
+.ui-icon-btn--sm { width: 24px; height: 24px; }
+.ui-icon-btn--lg { width: 32px; height: 32px; border-radius: var(--radius-control); }
+.ui-icon-btn--active {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+.ui-icon-btn--active:hover {
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+}
+.ui-icon-btn--danger:hover {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+}
+
+/* ---- EmptyState --------------------------------------------- */
+.ui-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-5);
+  color: var(--text-secondary);
+  max-width: 420px;
+  margin: 0 auto;
+}
+.ui-empty-state--compact { padding: var(--space-5) var(--space-4); gap: var(--space-2); }
+.ui-empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--accent-presence);
+  margin-bottom: var(--space-1);
+}
+.ui-empty-state-headline {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+.ui-empty-state-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
+}
+.ui-empty-state-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* Foundations PR — ErrorState primitive (mirrors .ui-empty-state layout
+   with a danger accent). role="alert" announces via assistive tech. */
+.ui-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  color: var(--text-secondary);
+}
+.ui-error-state--compact {
+  padding: var(--space-4) var(--space-3);
+  gap: var(--space-1);
+}
+.ui-error-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.ui-error-state-headline {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.ui-error-state-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  max-width: 36ch;
+}
+.ui-error-state-actions {
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---- Skeleton ----------------------------------------------- */
+@keyframes ui-skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.ui-skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(
+      90deg,
+      var(--bg-raised) 0%,
+      color-mix(in oklch, var(--bg-raised) 70%, var(--bg-elevated) 30%) 50%,
+      var(--bg-raised) 100%
+    );
+  background-size: 200% 100%;
+  animation: ui-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.ui-skeleton--text { height: 12px; width: 100%; }
+.ui-skeleton--text-sm { height: 10px; width: 60%; }
+.ui-skeleton--row { height: 44px; width: 100%; border-radius: var(--radius-control); }
+.ui-skeleton--card {
+  height: 96px;
+  width: 100%;
+  border-radius: var(--radius-card);
+}
+.ui-skeleton--avatar {
+  height: 28px;
+  width: 28px;
+  border-radius: var(--radius-pill);
+}
+.ui-skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ui-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-skeleton { animation: none; opacity: 0.65; }
+}
+
+/* ---- ViewHeader --------------------------------------------- */
+.ui-view-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  flex-shrink: 0;
+  min-height: 48px;
+  min-width: 0;
+  container: view-header / inline-size;
+}
+.ui-view-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+  min-width: 0;
+}
+.ui-view-header-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-view-header-eyebrow {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.ui-view-header-search {
+  flex: 1;
+  min-width: min(100%, 180px);
+  max-width: 420px;
+  display: flex;
+  justify-content: center;
+}
+.ui-view-header-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-shrink: 0;
+}
+.ui-view-header-filter > * {
+  min-width: 0;
+}
+.ui-view-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.ui-view-header-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@container view-header (max-width: 420px) {
+  .ui-view-header {
+    align-items: stretch;
+    padding: var(--space-3);
+  }
+  .ui-view-header-meta,
+  .ui-view-header-search,
+  .ui-view-header-filter,
+  .ui-view-header-actions {
+    flex: 1 1 100%;
+    max-width: none;
+    width: 100%;
+  }
+  .ui-view-header-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ui-view-header-filter > *,
+  .ui-view-header-actions > * {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ---- SearchInput -------------------------------------------- */
+.ui-search-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.ui-search-input:hover {
+  border-color: var(--border-strong);
+}
+.ui-search-input:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+  background: var(--bg-elevated);
+}
+.ui-search-input-leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ui-search-input-field {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 0 var(--space-1);
+}
+.ui-search-input-field::placeholder {
+  color: var(--text-muted);
+}
+/* type="search" draws a native clear glyph that doubles up with our own
+   .ui-search-input-clear button — suppress it so there's a single clear. */
+.ui-search-input-field::-webkit-search-cancel-button,
+.ui-search-input-field::-webkit-search-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+@media (max-width: 767px) {
+  .ui-search-input-field {
+    min-height: var(--touch-target);
+  }
+
+  .command-palette-row,
+  .notification-bell__action,
+  .mode-toggle__option {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .notification-bell__mute {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    opacity: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.ui-search-input-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.ui-search-input-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ui-search-input-clear:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+.ui-search-input-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 6px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.ui-search-input-hint code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  background: var(--bg-raised);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  font-size: var(--text-2xs);
+}
+
+/* ---- Popover ------------------------------------------------ */
+.ui-popover-portal {
+  position: fixed;
+  inset: 0;
+  /* Popovers are the topmost transient layer: they must paint above every
+     dialog/drawer they can be opened from — including the board task drawer
+     (.board-drawer, z 300/301) — or the drawer's backdrop swallows the click
+     and closes the drawer instead. Kept below drag ghosts (1000) and
+     tooltips (9000). */
+  z-index: 400;
+  pointer-events: none;
+}
+.ui-popover {
+  position: absolute;
+  /* Glassmorphic overlay: translucent theme surface over blurred content.
+     Opaque fallbacks live in the @supports / reduced-transparency blocks. */
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 16px 40px oklch(0 0 0 / 45%);
+  min-width: 180px;
+  max-width: min(420px, calc(100vw - var(--space-4) * 2));
+  pointer-events: auto;
+  animation: ui-popover-enter var(--duration-fast) var(--ease-decelerate);
+  overflow: hidden;
+}
+@keyframes ui-popover-enter {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Glass overlay utility ────────────────────────────────────────────────────
+ * For overlay surfaces that carry their chrome as component classes (command
+ * palette, notification bell popover, …) instead of the ui-popover/ui-modal
+ * primitives: the same translucent-fill + backdrop-blur pairing, from the
+ * same tokens. */
+.glass-overlay {
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Contrast floor while a scene backdrop is frontmost: 74% glass over a busy
+   custom image lets the scene bleed through the command surface — raise the
+   fill so results stay legible over any scene (cave-4gg0). */
+html[data-backdrop-on] .glass-overlay {
+  background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+}
+
+/* Glass is only legible while the backdrop actually blurs: with no
+ * backdrop-filter support, a translucent fill over scrolling content is
+ * unreadable soup — restore the opaque theme surfaces. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ui-popover,
+  .glass-overlay,
+  .ui-tooltip,
+  .ui-undo-toast,
+  .familiar-switcher__popover {
+    background: var(--bg-elevated);
+  }
+  .ui-modal,
+  .ui-dock-chat,
+  .shell-nav-panel > .shell-nav--peek,
+  .cave-cal-detail-panel,
+  .familiar-studio__drawer {
+    background: var(--bg-raised);
+  }
+  .quick-chat-overlay,
+  .quick-chat-overlay__caret {
+    background: var(--bg-panel);
+  }
+}
+
+/* Native accessibility setting wins: users who asked the OS for less
+ * transparency get the opaque surfaces (and their compositor back). */
+@media (prefers-reduced-transparency: reduce) {
+  .ui-popover,
+  .glass-overlay,
+  .ui-tooltip,
+  .ui-undo-toast,
+  .familiar-switcher__popover {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .ui-modal,
+  .ui-dock-chat,
+  .shell-nav-panel > .shell-nav--peek,
+  .cave-cal-detail-panel,
+  .familiar-studio__drawer {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .quick-chat-overlay,
+  .quick-chat-overlay__caret {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .ui-modal-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Projects tab: a project's session list slides+fades in when expanded.
+   Enter-only (collapse stays instant) so the section can stay conditionally
+   rendered — keeping collapsed rows out of the DOM for the keyboard rove set. */
+@keyframes projects-expand-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.projects-expand-enter {
+  animation: projects-expand-enter var(--duration-fast, 150ms) var(--ease-decelerate, ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .projects-expand-enter { animation: none; }
+}
+
+/* Projects tab: render-virtualize off-screen session rows (same content-visibility
+   strategy as chat turns and dense data rows). The row IS the focusable element
+   and its only fixed/portaled descendant — the right-click context menu — is a
+   SIBLING, not a child, so layout/paint containment is safe here. The auto
+   intrinsic-size caches each row's real height after first paint (works across
+   comfortable/compact densities), so scroll never jumps. Keeping rows in the DOM
+   (vs JS windowing) preserves keyboard roving, dnd-kit sorting, and find-in-page. */
+.projects-session-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
+.ui-popover-body {
+  padding: 6px;
+}
+.ui-popover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  outline: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.ui-popover-item:hover,
+.ui-popover-item[data-active="true"] {
+  background: var(--bg-hover);
+}
+.ui-popover-item:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.ui-popover-item--danger {
+  color: var(--color-danger-soft);
+}
+.ui-popover-item--danger:hover {
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.ui-popover-separator {
+  height: 1px;
+  background: var(--border-hairline);
+  margin: var(--space-1) 0;
+}
+.ui-popover-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--text-muted);
+  padding: 6px 10px 2px;
+}
+
+/* ---- Tooltip ------------------------------------------------ */
+.ui-tooltip {
+  position: fixed;
+  z-index: 70;
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  color: var(--text-primary);
+  font-size: var(--text-2xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 16px oklch(0 0 0 / 50%);
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 240px;
+  animation: ui-tooltip-enter var(--duration-fast) var(--ease-decelerate);
+}
+@keyframes ui-tooltip-enter {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- ListRowCard ------------------------------------------- */
+.ui-row-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  width: 100%;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+  outline: none;
+}
+.ui-row-card:hover {
+  background: var(--bg-hover);
+}
+.ui-row-card:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.ui-row-card--selected {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
+}
+.ui-row-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.ui-row-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ui-row-card-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-row-card-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ui-row-card-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+}
+.ui-row-card-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row-card-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.ui-row-card-arrow {
+  opacity: 0;
+  transform: translateX(-2px);
+  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+.ui-row-card:hover .ui-row-card-arrow,
+.ui-row-card:focus-visible .ui-row-card-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ---- SeparatorHandle (resize) ------------------------------- */
+.ui-sep-handle {
+  position: relative;
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.ui-sep-handle--col {
+  width: 1px;
+  /* Fill the separator's height so the handle is actually clickable — a block
+     child otherwise collapses to 0 height, leaving the drag handler (and its
+     hover affordance / hit area) unreachable. */
+  height: 100%;
+  cursor: col-resize;
+}
+.ui-sep-handle--row {
+  height: 1px;
+  width: 100%;
+  cursor: row-resize;
+}
+.ui-sep-handle::before {
+  content: "";
+  position: absolute;
+  background: var(--border-hairline);
+}
+.ui-sep-handle--col::before { top: 0; bottom: 0; left: 0; right: 0; }
+.ui-sep-handle--row::before { left: 0; right: 0; top: 0; bottom: 0; }
+.ui-sep-handle::after {
+  content: "";
+  position: absolute;
+}
+.ui-sep-handle--col::after { top: 0; bottom: 0; left: -3px; right: -3px; }
+.ui-sep-handle--row::after { left: 0; right: 0; top: -3px; bottom: -3px; }
+.ui-sep-handle:hover,
+.ui-sep-handle--dragging {
+  background: color-mix(in oklch, var(--accent-presence) 65%, transparent);
+}
+/* Rendered-markdown previews read as docs, not chat bubbles. */
+.comux-md {
+  font-size: var(--text-base);
+  line-height: 1.65;
+}
+/* Shared project identity tile (ProjectAvatar): uploaded image or a tinted
+   monogram, serving every surface. Size comes from --pa-size, hue from
+   --tile (projectTint / project.color). */
+.project-avatar {
+  width: var(--pa-size, 20px);
+  height: var(--pa-size, 20px);
+  min-width: var(--pa-size, 20px);
+  max-width: var(--pa-size, 20px);
+  flex: 0 0 var(--pa-size, 20px);
+  box-sizing: border-box;
+  border-radius: calc(var(--pa-size, 20px) * 0.29);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: color-mix(in oklch, var(--tile, var(--accent-presence)) 65%, var(--text-primary));
+  background: color-mix(in oklch, var(--tile, var(--accent-presence)) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--tile, var(--accent-presence)) 24%, transparent);
+}
+.project-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.project-avatar__monogram {
+  font-size: calc(var(--pa-size, 20px) * 0.375);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- ThinkingIndicator ------------------------------------- */
+.ui-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.ui-thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.ui-thinking-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-presence);
+  animation: ui-thinking-bounce 1.2s ease-in-out infinite;
+}
+.ui-thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+.ui-thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ui-thinking-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-thinking-dot { animation: none; opacity: 0.8; }
+}
+.ui-thinking-timer {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── UX-004: Mode transition crossfade ──────────────────────────────────── */
+@keyframes cave-mode-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* fill-mode MUST stay `backwards` (cave-cco): `both` retained the final
+   keyframe's transform forever, and any transform — even identity — makes
+   this wrapper the containing block for every position:fixed descendant.
+   Fixed overlays inside surfaces then resolved against the mode area
+   instead of the viewport, which forced portal-to-body workarounds (#537,
+   #1984, the github-view card, cave-nv3). During the 120ms entrance the
+   wrapper is still a containing block; after it, fixed descendants get the
+   true viewport. */
+.cave-mode-fade {
+  animation: cave-mode-in 120ms ease-out backwards;
+}
+
+/* Left nav collapsed strip -- mirrors the agent tab on the right */
+/* Left-rail toggle tab — full-height strip, exact mirror of .shell-familiar-tab */
+.shell-nav-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: var(--space-3);
+  width: 36px;
+  flex-shrink: 0;
+  height: 100%;
+  border-right: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  -webkit-app-region: no-drag;
+  user-select: none;
+  border: none;
+  border-right: 1px solid var(--border-hairline);
+}
+.shell-nav-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.shell-nav-tab:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.shell-nav-tab--open {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  border-right-color: var(--border-strong);
+  opacity: 1;
+}
+.shell-nav-tab--open:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

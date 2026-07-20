@@ -1,0 +1,436 @@
+/* sidebar-minimal.css — minimal sidebar redesign styles.
+ * Appended to globals via @import in globals.css.
+ * Uses only existing CSS custom properties.
+ */
+/* ── Sidebar shell ────────────────────────────────────────────────────────── */
+.sidebar-minimal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 10px 6px 10px;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  gap: 10px;
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 55%, transparent), transparent 42%),
+    var(--bg-base);
+  transition: transform 200ms ease;
+}
+
+.shell-nav-panel--open .sidebar-minimal {
+  transform: translateX(0);
+}
+
+/* ── Panel toggle (Dia-style) ────────────────────────────────────────────── */
+/* The whole header row is the collapse toggle — full-width button reset. */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 2px var(--space-1) 2px 7px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.sidebar-header:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hairline);
+}
+
+.sidebar-header:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+/* Static wordmark variant — the header is no longer a collapse button (the
+   shell's floating top-left toggle owns that now), so drop the pressable
+   affordances. Left clearance for the float lives in globals.css, scoped to
+   the desktop shell (.shell-body--floats). */
+.sidebar-header--static {
+  cursor: default;
+}
+
+.sidebar-header--static:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Header familiar switcher (cave-vtk9) — the scope selector on every page.
+   Zero horizontal padding so the trigger's edges line up exactly with the
+   New-chat CTA below it (.sidebar-actions is also flush). */
+.sidebar-familiar-switch {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 0;
+}
+.sidebar-familiar-switch .familiar-quickswitch {
+  min-width: 0;
+  flex: 1;
+}
+/* The trigger wears the New-chat CTA's exact chrome (outlined accent, 34px,
+   control radius) as a full-width multiselector dropdown — the two stacked
+   full-width controls read as one family; the caret marks the selector. */
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  gap: 10px;
+  padding: 0 var(--space-2);
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 2px solid var(--accent-presence);
+  background: transparent;
+}
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+.sidebar-familiar-switch .familiar-switcher__trigger-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.sidebar-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Passive icon affordance; hover/colour follows the row button above. */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--text-secondary);
+  transition: color 120ms ease;
+}
+
+.sidebar-header:hover .sidebar-toggle {
+  color: var(--text-primary);
+}
+
+/* ── Header CTA ──────────────────────────────────────────────────────────── */
+.sidebar-actions {
+  padding: 0 0 6px;
+  flex-shrink: 0;
+}
+
+.sidebar-action-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 0 var(--space-2);
+  min-height: 34px;
+  border-radius: var(--radius-control);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.sidebar-action-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-action-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-primary);
+}
+
+/* "New chat" is the top CTA — an outlined accent button: the accent reads on
+   the border + label rather than a solid fill, so it stays prominent without
+   dominating the panel. A faint accent wash on hover gives press feedback. */
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
+  background: transparent;
+  color: var(--accent-presence);
+  border: 2px solid var(--accent-presence);
+  font-weight: 600;
+}
+
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {
+  opacity: 1;
+}
+
+.sidebar-action-icon {
+  flex-shrink: 0;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+.sidebar-action-row:hover .sidebar-action-icon,
+.sidebar-action-row--active .sidebar-action-icon {
+  opacity: 1;
+}
+
+.sidebar-action-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+}
+
+.sidebar-action-kbd {
+  font-size: var(--text-2xs);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.7;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+
+.sidebar-action-trailing {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.sidebar-familiar-filter {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sidebar-familiar-filter__label {
+  padding: 0 2px;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sidebar-familiar-filter__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.sidebar-familiar-filter__control:hover,
+.sidebar-familiar-filter__control:focus-within {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.sidebar-familiar-filter__icon {
+  position: absolute;
+  left: 9px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.sidebar-familiar-filter__select {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  appearance: none;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  padding: 0 28px 0 var(--space-8);
+  font: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.sidebar-familiar-filter__chevron {
+  position: absolute;
+  right: 9px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Stack the top-level scope selector + New chat action tightly */
+.sidebar-action-stack {
+  display: grid;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+/* Middle nav region scrolls if the user has lots of sections */
+.sidebar-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+  /* Sections are separated by whitespace alone (no rules) for a calmer,
+     Codex-style nav. */
+  gap: var(--space-1);
+  padding: 2px 0 2px;
+}
+
+/* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
+.sidebar-foot {
+  flex-shrink: 0;
+  padding: var(--space-2) 6px 0;
+  /* Softer than a full hairline — the footer should read as a calm boundary,
+     not a hard rule competing with the nav. */
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
+  /* Compact icon row: Dashboard · Notifications · Settings share one line as
+     equal-width icon buttons (labels are tooltips). Reclaims the vertical space
+     three stacked labeled rows used to take. The rail + mobile drawer restore a
+     vertical stack below. */
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-1);
+}
+
+.sidebar-foot-bell,
+.sidebar-foot-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* Compact row: each button is an equal-width, centered icon target. */
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+  min-height: 34px;
+}
+
+.sidebar-foot-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+/* Bottommost element: the app version. One minimal-height line — small,
+   muted, unselectable; the footer above keeps its calm hairline boundary. */
+.sidebar-version {
+  flex-shrink: 0;
+  padding: 3px 6px var(--space-1);
+  font-size: 10.5px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.sidebar-foot-bell:hover,
+.sidebar-foot-btn:hover,
+.sidebar-foot-icon-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-foot-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.12s ease;
+}
+
+.sidebar-foot-btn:hover .sidebar-foot-icon,
+.sidebar-foot-icon-btn:hover .sidebar-foot-icon {
+  opacity: 1;
+}
+
+.sidebar-foot-label {
+  /* Tooltip-only in the compact icon row; the rail/mobile drawer re-show it. */
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  min-width: 0;
+  color: inherit;
+}
+
+/* Unread notification count pill. In the compact icon row it floats at the
+   top-right corner of the bell button (no label to sit beside). */
+.sidebar-foot-badge {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: var(--text-primary);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* NotificationBell renders an absolutely-positioned popover anchored at the
+ * top-right of its trigger. In the sidebar foot that pushes the popover off
+ * the bottom of the viewport, so flip it to open upward to the right. */
+.sidebar-foot-bell > div > div[class*="z-50"] {
+  top: auto !important;
+  bottom: calc(100% + 6px) !important;
+  right: auto !important;
+  left: 4px !important;
+}

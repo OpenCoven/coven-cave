@@ -1,0 +1,1146 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ASSISTANT TURN LAYOUT — wide readable response column
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cave-turn-assistant {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.cave-turn-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-top: 3px;
+}
+
+.cave-turn-ordinal {
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
+
+.cave-turn-node {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+.cave-turn-rail-line {
+  width: 1px;
+  min-height: 18px;
+  flex: 1;
+  background: linear-gradient(to bottom, var(--border-hairline), transparent);
+}
+
+.cave-turn-avatar {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.cave-turn-avatar-ring {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+
+.cave-turn-content {
+  min-width: 0;
+  /* Full-width chat (2026-06-12): responses span the pane (was 920px). */
+  width: 100%;
+}
+
+.cave-turn-card {
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+  box-shadow:
+    0 10px 30px oklch(0 0 0 / 12%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+.cave-turn-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: 44px;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 48%, transparent);
+  padding: 10px 13px;
+}
+
+.cave-turn-card-body {
+  padding: 13px;
+}
+
+.cave-turn-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.cave-turn-status--complete {
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+.cave-turn-status--queued,
+.cave-turn-status--connecting,
+.cave-turn-status--streaming,
+.cave-turn-status--running {
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.cave-turn-status--tooling {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  color: var(--accent-presence);
+}
+
+.cave-turn-status--cancelled {
+  background: color-mix(in oklch, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+}
+
+.cave-turn-status--failed,
+.cave-turn-status--error {
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+/* CHAT-D12-03: always-visible retry pill beside a failed turn's status chip.
+   Deliberately NOT hover-revealed — a stuck user must see it immediately. */
+.cave-turn-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 35%, transparent);
+  background: transparent;
+  padding: 1px 6px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.cave-turn-retry:hover {
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
+}
+
+/* CHAT-D13-01: "N tools" chip on settled assistant turns — tool activity is
+   hidden by default once a response has fully generated, and this chip is the
+   only way back to it, so like the retry pill it is NOT hover-revealed. */
+.cave-turn-tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  padding: 1px 6px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.cave-turn-tools-toggle:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.cave-turn-tools-toggle.is-active {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+
+.cave-reasoning-block,
+.cave-progress-group,
+.cave-tool-group {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
+  padding: 10px var(--space-3);
+}
+
+.cave-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cave-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* chevron via pseudo */
+.cave-tool-summary::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  opacity: 0.5;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  transition: transform 0.15s ease;
+}
+
+details[open] > .cave-tool-summary::before {
+  transform: rotate(90deg);
+}
+
+.cave-run-activity-context {
+  max-height: min(28vh, 180px);
+  overflow: auto;
+  margin: 7px 0 2px 21px;
+  border: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
+  padding: 7px var(--space-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+
+.cave-run-activity-context__tool {
+  color: var(--text-muted);
+}
+
+.cave-tool-count {
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+  padding: 2px 5px;
+  color: var(--text-secondary);
+}
+
+.cave-tool-count--running {
+  border-color: color-mix(in oklch, var(--color-warning) 26%, transparent);
+  color: var(--color-warning);
+}
+
+.cave-tool-count--error {
+  border-color: color-mix(in oklch, var(--color-danger) 28%, transparent);
+  color: var(--color-danger);
+}
+
+.cave-progress-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  padding-top: var(--space-2);
+}
+
+.cave-progress-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 22px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.cave-progress-row--running {
+  color: var(--color-warning);
+}
+
+.cave-progress-row--running svg {
+  animation: cave-progress-spin 1s linear infinite;
+}
+
+.cave-progress-row--done {
+  color: var(--text-muted);
+}
+
+.cave-progress-row--error {
+  color: var(--color-danger);
+}
+
+@keyframes cave-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-progress-row--running svg {
+    animation: none;
+  }
+}
+
+.cave-tool-block {
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bg-base) 58%, transparent);
+  padding: 9px;
+  /* Color-coded by tool category (data-tool-category) for quick visual
+     inspection — each category drives --tool-accent below. */
+  --tool-accent: var(--text-muted);
+  border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
+}
+.cave-tool-icon { color: var(--tool-accent); }
+.cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
+
+.cave-tool-block[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
+.cave-tool-block[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
+.cave-tool-block[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
+.cave-tool-block[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
+.cave-tool-block[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
+.cave-tool-block[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
+.cave-tool-block[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
+.cave-tool-block[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
+.cave-tool-block[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
+
+/* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
+   prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits
+   between that and the system bubble's 320px. SyntaxBlock renders through
+   .cave-code-wrap, which already owns overflow-y: auto; only the cap changes.
+   :not() leaves the "Show more" toggle able to lift the clamp. */
+.cave-tool-block .cave-code-wrap:not(.cave-code-wrap--expanded) {
+  max-height: min(48vh, 360px);
+}
+
+/* ── Readable tool I/O ─────────────────────────────────────────────────────
+   Tool input renders as a labelled field list (File / Find / Limit …) instead
+   of a raw JSON blob; the raw payload stays one toggle away. */
+.cave-tool-io {
+  min-width: 0;
+}
+
+.cave-tool-io-label {
+  margin-bottom: 5px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cave-tool-input {
+  min-width: 0;
+}
+
+.cave-tool-fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* Inline field: label gutter + value on one row. Multiline fields stack the
+   value beneath the label so code/JSON gets full width. */
+.cave-tool-field {
+  display: grid;
+  grid-template-columns: minmax(56px, 132px) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-1) 10px;
+  min-width: 0;
+}
+
+.cave-tool-field[data-multiline="true"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.cave-tool-field-label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cave-tool-field-value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.cave-tool-field-inline {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Path / command / url inline values pick up a subtle accent so the eye lands
+   on the operative argument. */
+.cave-tool-field[data-kind="path"] .cave-tool-field-inline,
+.cave-tool-field[data-kind="url"] .cave-tool-field-inline {
+  color: color-mix(in oklch, var(--accent-presence) 70%, var(--text-primary));
+}
+
+.cave-tool-field[data-kind="command"] .cave-tool-field-inline {
+  color: var(--text-primary);
+}
+
+.cave-tool-raw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 7px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.cave-tool-raw-toggle:hover {
+  border-color: color-mix(in oklch, var(--border-strong) 70%, transparent);
+  color: var(--text-secondary);
+}
+
+.cave-tool-raw-toggle[aria-pressed="true"] {
+  color: var(--text-secondary);
+}
+
+/* Reasoning body gets a touch more breathing room when expanded by the global
+   Show-thinking toggle. */
+.cave-reasoning-body {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The linked-task cluster hugs the trailing edge; its own overflow-x keeps a
+   long chip run scrolling internally instead of widening the band. */
+.cave-composer-footer-band > .cave-chat-linked-context {
+  flex: 0 1 auto;
+}
+
+/* Project chip — same 30px pill family as the runtime chip beside it (the
+   home band's treatment, scoped to the chat selector class). */
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector {
+  height: 30px;
+  min-height: 30px;
+  max-width: 200px;
+  padding: 0 11px 0 var(--space-2);
+  font-size: var(--text-xs);
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
+}
+
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
+}
+
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector .cave-project-picker__trigger-label {
+  max-width: 132px;
+}
+
+/* Dense linear session view */
+.cave-chat-linear {
+  position: relative; /* anchors .cave-drop-overlay */
+  /* Centered reading column (cave-xsq.1): the conversation + composer share one
+     comfortable measure and sit in a centered column — the ChatGPT reading
+     model — instead of spanning the full pane (reverses the 2026-06-18
+     full-width choice below). Chat-revamp 1b re-narrows cave-973a's 64rem to
+     the design's 760px (47.5rem): the avatar-row grammar reads best on a
+     tight column, and the suggestion row + composer share the same measure.
+     The header stays a full-bleed bar (its divider spans the pane); only the
+     reading/writing column is capped + centered. */
+  --cave-chat-measure: 47.5rem;
+  background:
+    linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
+    var(--bg-base);
+}
+
+.cave-chat-linear-header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  /* Chat-revamp 1b: a calm 52px identity band — avatar · title · quiet meta ·
+     actions — over the pane background (no raised fill), closed by the
+     fade-ended divider below instead of a full-width hard border. */
+  min-height: 52px;
+  padding: var(--space-1) var(--space-4);
+}
+
+/* Fade-ended bottom divider (chat-revamp 1b): the hairline dissolves to
+   transparent over the outer 48px on each side, so the header reads as part
+   of the canvas rather than a boxed bar. An ::after (not border/background)
+   survives the mobile rules' own background fill. */
+.cave-chat-linear-header::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--border-hairline) 48px,
+    var(--border-hairline) calc(100% - 48px),
+    transparent
+  );
+}
+
+/* ── Meta line (single-row title + status banner) ─────────────────────── */
+.cave-chat-meta-line {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  font-size: var(--text-sm);
+}
+
+/* Chat-revamp 1b: the session's familiar leads the header — a 24px circle
+   before the title. Photo avatars fill it; glyph avatars center on the quiet
+   accent tint. */
+.cave-chat-header-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+.cave-chat-header-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.cave-chat-meta-line .cave-chat-title-input {
+  /* Chat-revamp 1b: the title hugs its text (meta rides directly after it,
+     the spacer lives before the actions) and reads 14px/500. */
+  flex: 0 1 auto;
+  max-width: min(44vw, 560px);
+  font-size: var(--text-md);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+/* Display-mode title (button + pencil wrapper): hug the text so the identity
+   meta rides directly after the title instead of at the far edge. */
+.cave-chat-meta-line .cave-chat-title {
+  flex: 0 1 auto;
+  max-width: min(44vw, 560px);
+}
+
+.cave-chat-meta-line__meta {
+  flex: 0 2 auto;
+  max-width: min(38vw, 560px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  /* Quiet UI-sans secondary text (Codex/ChatGPT vocabulary) rather than a
+     monospace "code" string — the title is the hero, this is the demoted
+     context line, so it reads a notch smaller and in the chrome font. */
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+/* Always-visible identity line on settled headers (chat-revamp 1b):
+   "· <familiar> · <model> · <branch>". The branch renders as one token —
+   glyph + name — like the meta line's cwd segment. */
+.cave-chat-meta-line__identity {
+  display: inline;
+}
+
+.cave-chat-meta-line__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: bottom;
+}
+
+.cave-chat-meta-line__branch svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+/* Slim header (cave-xsq.3): the settled turn's static provenance
+   (model · runtime · dir · duration · usage · meters) rides inside __meta as a
+   reveal-on-hover cluster (header is the reveal-scope), so a resting header
+   reads as just the conversation title. Inline so it flows + truncates with the
+   meta line; the reveal-on-hover utility owns the opacity + touch/keyboard
+   parity. Only added on the complete state (see MetaLine), so live streaming
+   meta stays visible. */
+.cave-chat-meta-line__provenance {
+  display: inline;
+}
+
+/* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits
+   keep the line from jittering as the counter advances each second. */
+.cave-chat-meta-line__elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The runtime renders as a working directory: a folder glyph + the cwd
+   (home-relative, left-truncated in JS so the repo name survives). The glyph
+   sits flush with its baseline so the segment reads as one token. */
+.cave-chat-meta-line__dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: bottom;
+}
+.cave-chat-meta-line__dir svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.cave-chat-meta-line__dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.cave-chat-back-button {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+.cave-chat-meta-line--streaming {
+  color: var(--color-warning);
+}
+.cave-chat-meta-line--streaming .cave-chat-meta-line__meta {
+  color: var(--color-warning);
+}
+.cave-chat-meta-line--streaming .cave-chat-meta-line__dot {
+  animation: cave-chat-meta-blip 1.2s ease-in-out infinite;
+}
+
+.cave-chat-meta-line--failed,
+.cave-chat-meta-line--offline {
+  color: var(--color-danger);
+}
+.cave-chat-meta-line--failed .cave-chat-meta-line__meta,
+.cave-chat-meta-line--offline .cave-chat-meta-line__meta {
+  color: var(--color-danger);
+}
+
+/* Inline remedy inside the offline meta line — a real button (keyboard
+   focusable) styled as a quiet text action so the notice stays one line. */
+.cave-chat-meta-line__action {
+  margin-left: 6px;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cave-chat-meta-line__action:hover {
+  color: var(--accent-presence);
+}
+.cave-chat-meta-line__action:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+.cave-chat-session-actions {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  /* Chat-revamp 1b: the actions cluster owns the header's spacer — title +
+     meta sit left, Archive/find/kebab sit right. */
+  margin-left: auto;
+}
+
+.cave-chat-session-actions:empty {
+  display: none;
+}
+
+/* Chat-revamp 1b: the header's ghost session-lifecycle action (the design's
+   "Mark done" slot — this app's honest verb is Archive). Text button, always
+   visible (exempt from the hover-quiet collapse below). */
+.cave-chat-session-actions > .cave-chat-archive-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-session-actions > .cave-chat-archive-btn:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-chat-session-actions > .cave-chat-archive-btn:disabled {
+  opacity: 0.6;
+}
+
+.cave-chat-session-actions > .focus-ring:not(.cave-chat-find):not(.cave-chat-archive-btn) {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-session-actions > .focus-ring:not(.cave-chat-find):not(.cave-chat-archive-btn):hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-chat-session-actions .voice-call-button:disabled {
+  opacity: 0.45;
+}
+
+/* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
+ * find affordance show — they reveal on header hover or keyboard focus,
+ * keeping their layout slots (no reflow on reveal). The composer footer
+ * band's lone "link a task" chip follows the same rhythm against the band.
+ * Touch devices — which have no hover — skip this and show everything. The
+ * kebab holds every secondary action, so nothing becomes hover-only. */
+@media (hover: hover) and (pointer: fine) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+    opacity: 0;
+    transform: translateX(4px);
+    pointer-events: none;
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
+  .cave-chat-session-actions:focus-within > .focus-ring,
+  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
+  .cave-composer-footer-band:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
+  .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+    transition: none;
+    transform: none;
+  }
+}
+
+.voice-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in oklch, var(--bg-base) 68%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.voice-call-overlay__dialog {
+  width: min(360px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  color: var(--text-primary);
+  box-shadow: 0 24px 80px color-mix(in oklch, var(--bg-base) 76%, transparent);
+}
+
+.voice-call-overlay__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  padding: 14px var(--space-4);
+}
+
+.voice-call-overlay__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.voice-call-overlay__heading strong {
+  overflow: hidden;
+  font-size: var(--text-md);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-call-overlay__state,
+.voice-call-overlay__duration {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+
+.voice-call-overlay__duration {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 3px var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-call-overlay__body {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: var(--space-5) var(--space-4);
+}
+
+/* How the call hears (cave-vpe1): honest engine label on live calls. */
+.voice-call-overlay__ears {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  letter-spacing: 0.02em;
+}
+
+.voice-call-overlay__error {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: var(--color-danger);
+  font-size: var(--text-base);
+  text-align: center;
+}
+
+.voice-call-overlay__hint {
+  max-width: 280px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.voice-call-overlay__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-3) var(--space-4);
+}
+
+.voice-call-overlay__control,
+.voice-call-overlay__retry,
+.voice-call-overlay__end {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  line-height: 1;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.voice-call-overlay__control {
+  width: 34px;
+  background: color-mix(in oklch, var(--bg-base) 54%, transparent);
+  color: var(--text-secondary);
+}
+
+.voice-call-overlay__control:hover:not(:disabled),
+.voice-call-overlay__retry:hover {
+  border-color: color-mix(in oklch, var(--border-strong) 70%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
+  color: var(--text-primary);
+}
+
+.voice-call-overlay__control:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.voice-call-overlay__retry {
+  padding: 0 var(--space-3);
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.voice-call-overlay__end {
+  min-width: 96px;
+  border-color: color-mix(in oklch, var(--color-danger) 70%, transparent);
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
+.voice-call-overlay__end:hover {
+  border-color: color-mix(in oklch, var(--color-danger) 80%, #000);
+  background: color-mix(in oklch, var(--color-danger) 86%, #000);
+}
+
+@keyframes cave-chat-meta-blip {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* ── In-transcript find bar (CHAT-D9-04) ────────────────────────────────── */
+/* Expanded state extends the meta line: a hairline pill housing the query
+   input, the `n / m` matching-turn count, and prev/next/close controls. */
+.cave-chat-find {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 60%, transparent);
+  padding: 1px 6px;
+}
+
+.cave-chat-find:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
+}
+
+.cave-chat-find__input {
+  width: 10rem;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  line-height: 20px;
+}
+
+.cave-chat-find__input::placeholder {
+  color: var(--text-muted);
+}
+
+.cave-chat-find__count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cave-chat-find__nav {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-find__nav:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.cave-chat-find__nav:disabled {
+  opacity: 0.4;
+}
+
+/* Temporary flash on the turn a find jump landed on. One-shot 1.5s fade —
+   the global reduced-motion kill switch (globals.css) clamps the keyframe's
+   duration, and the explicit block below swaps the flash for a static tint
+   so the landing turn stays findable without motion. */
+.cave-turn-found {
+  animation: cave-turn-found-fade 1.5s ease-out 1;
+}
+
+@keyframes cave-turn-found-fade {
+  0%   { background: color-mix(in oklch, var(--accent-presence) 18%, transparent); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-turn-found {
+    animation: none;
+    background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  }
+}
+
+/* Linked context row (chips for task / GitHub items) */
+.cave-chat-linked-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.cave-chat-linked-chip {
+  min-height: 20px;
+  max-width: min(30vw, 300px);
+  gap: var(--space-1);
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.cave-chat-linked-chip--task {
+  max-width: min(32vw, 320px);
+}
+
+.cave-chat-linked-chip--link-task {
+  width: 20px;
+  min-width: 20px;
+  padding: 0;
+}
+
+.cave-chat-linked-chip--github {
+  max-width: min(18vw, 180px);
+}
+
+.cave-chat-linked-context::-webkit-scrollbar {
+  display: none;
+}
+
+.cave-agent-marker {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 28%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
+  color: var(--accent-presence);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.cave-agent-marker--xs {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.cave-chat-linear .cave-chat-transcript {
+  padding: 22px clamp(16px, 3vw, 34px) 22px;
+}
+
+.cave-chat-linear .cave-chat-thread {
+  /* Chat-revamp 1b: turns separate by whitespace (26px), not hairlines. */
+  gap: 26px;
+  /* Centered reading column (cave-xsq.1): cap the transcript to a comfortable
+     measure and center it, so long responses read like ChatGPT instead of
+     running edge-to-edge on a wide pane. The composer shares the same measure
+     (below) so the input lines up under the conversation. */
+  width: 100%;
+  max-width: var(--cave-chat-measure);
+  margin-block: 0;
+  margin-inline: auto;
+}

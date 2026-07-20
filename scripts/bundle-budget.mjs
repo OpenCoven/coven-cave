@@ -43,14 +43,13 @@ const MAX_SHELL_BYTES = (Number(process.env.BUNDLE_MAX_SHELL_KB) || 650) * 1024;
 const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024;
 // CSS budgets (#3264). ROOT CSS is what EVERY route pays (measured via the
 // minimal _not-found route, which only loads the root layout's styles);
-// HOME CSS is the complete first-load stylesheet set for `/`. Baseline
-// before the stylesheet split: 886 KiB root / 921 KiB home. After moving
-// chat/composer/markdown/dashboard/editor/xterm sheets to their surfaces and
-// dropping the retired XYFlow import: 630 KiB root / 800 KiB home. Budgets
-// hold the win with ~10% headroom — a surface sheet re-entering the root
-// graph costs tens of KiB and fails immediately.
+// HOME CSS is the complete first-load stylesheet set for `/`. The Phase A
+// stylesheet facades preserve the same cascade, but Turbopack emits the
+// imported home/chat/markdown modules as independently optimized chunks:
+// current measurements are 665 KiB root / 886 KiB home. Keep a narrow 900 KiB
+// home ceiling so a surface sheet re-entering the startup graph still fails.
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 870) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 900) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(

@@ -1,0 +1,466 @@
+/* home-composer.css — sleek universal intent surface.
+ * One composer card with integrated action bar.
+ * No external chip rows. No uppercase labels in the UI.
+ */
+
+/* ── Root ────────────────────────────────────────────────────────────────── */
+.home-composer-root {
+  display: flex;
+  flex-direction: column;
+  /* `safe` keeps the cross-axis / main-axis centering from clipping
+     the top of the content when the viewport is shorter than the
+     composer + hero + suggestions stack (common on phones and on
+     narrow desktop windows). When everything fits, content is
+     centered as before; when it overflows, alignment falls back to
+     `flex-start` so the user can scroll to see the top. */
+  align-items: safe center;
+  justify-content: safe center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--space-10) var(--space-8) 56px;
+  gap: var(--space-4);
+  overflow-y: auto;
+  box-sizing: border-box;
+  /* Radial presence wash behind the hearth card (chat revamp 1a) — the base
+     surface carries two soft accent pools instead of a flat panel color. */
+  background:
+    radial-gradient(
+      640px 420px at 84% 14%,
+      color-mix(in oklch, var(--accent-presence) 10%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      560px 520px at 8% 92%,
+      color-mix(in oklch, var(--accent-presence) 5%, transparent),
+      transparent 70%
+    );
+  /* The composer fills the width of the area it resides in (the detail panel),
+   * centered within it. No viewport-centering translate: shifting toward the
+   * viewport center always pushed content toward the wider side panel, and when
+   * that panel holds the native browser webview (which paints on top of web
+   * content) the overflow got covered and the composer read as clipped. */
+  transition: none;
+}
+
+.shell-frame[data-settled] .home-composer-root {
+  transition: transform 120ms ease-out;
+}
+
+/* ── Viewport centering ──────────────────────────────────────────────────── */
+.home-composer-root {
+  --hc-max-shift: max(0px, calc((100% - 1200px) / 2));
+  --hc-ideal-shift: var(--shell-home-center-shift-px, 0px);
+  transform: translateX(
+    clamp(
+      calc(-1 * var(--hc-max-shift)),
+      var(--hc-ideal-shift),
+      var(--hc-max-shift)
+    )
+  );
+}
+
+@media (max-width: 520px) {
+  .home-composer-root {
+    padding: var(--space-5) var(--space-4) 28px;
+    gap: var(--space-3);
+  }
+}
+
+/* ── Hearth card (chat revamp 1a) ─────────────────────────────────────────────
+ *   One centered panel on the washed base holding the greeting, the composer,
+ *   and the Continue / Open work / Prompt snippets sections. Translucent panel
+ *   fill so the radial wash reads through; the root scrolls when the card
+ *   outgrows a short viewport. */
+.home-hearth-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(930px, 100%);
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-6) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+}
+
+@media (max-width: 520px) {
+  .home-hearth-card {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+.home-composer-hero {
+  text-align: left;
+  margin-bottom: var(--space-4);
+}
+
+/* Presence kicker — the cave greets you before asking for intent. It samples
+   the client clock after mount, so it fades in via .is-ready (the reserved
+   min-height keeps the headline from shifting). Accent-tinted per the hearth
+   card spec (10px uppercase, wide tracking). */
+.home-composer-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 var(--space-2);
+  min-height: 15px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
+  opacity: 0;
+  transition: opacity 400ms var(--ease-standard);
+}
+
+.home-composer-eyebrow.is-ready {
+  opacity: 1;
+}
+
+/* Presence dot — the brand accent means "something is alive here". */
+.home-composer-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-composer-eyebrow-dot {
+    animation: home-dot-pulse 4.5s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes home-dot-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 50%, transparent); }
+  50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
+}
+
+/* Cave home headline — Classic Coven identity moment.
+   Uses the canonical display face (EB Garamond) per OpenCoven DESIGN.md §4.
+   The serif is intentional: the home surface is where Val + her familiars
+   *arrive* every session, and the type should feel like a coven's field
+   manual, not a Vercel dashboard. */
+.home-composer-headline {
+  font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
+  font-weight: 500;
+  font-size: clamp(23px, 2.4vw, 27px);
+  line-height: 1.15;
+  color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-1);
+}
+
+/* Live-context subtitle: familiar · role · model. */
+.home-composer-sub {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wrap around the composer card so the slash menu can render above without
+ * being clipped by the card's `overflow: hidden`. */
+.home-composer-card-wrap {
+  position: relative;
+  width: 100%;
+  max-width: min(1200px, 100%);
+  margin-inline: auto;
+  container-type: inline-size;
+}
+
+/* ── Hearth glow — the page's signature ──────────────────────────────────────
+ *   A soft lavender halo behind the composer: the accent-is-presence rule made
+ *   ambient. It breathes slowly, brightens while the composer holds focus, and
+ *   holds still under prefers-reduced-motion. Kept inside the page padding so
+ *   it never trips horizontal overflow on the scrollable root. */
+.home-halo {
+  position: absolute;
+  inset: -110px -20px -70px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    46% 68% at 50% 44%,
+    color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    transparent 72%
+  );
+  opacity: 0.75;
+  transition: opacity 600ms var(--ease-standard);
+}
+
+.home-composer-card-wrap:focus-within .home-halo {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-halo {
+    animation: home-halo-breathe 9s var(--ease-standard) infinite alternate;
+  }
+}
+
+@keyframes home-halo-breathe {
+  from { transform: scale(0.97); }
+  to { transform: scale(1.04); }
+}
+
+/* Light mode: the halo tints rather than glows — damp it. */
+[data-mode="light"] .home-halo {
+  opacity: 0.5;
+}
+[data-mode="light"] .home-composer-card-wrap:focus-within .home-halo {
+  opacity: 0.75;
+}
+
+/* ── Composer card ─────────────────────────────────────────────────────────
+ *   Chrome comes from the shared .cave-composer-panel class (cave-chat.css) so
+ *   the home input stays visually identical to the chat composer. This rule
+ *   only keeps the home layout constraints. */
+.home-composer-card {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* While a file drag hovers the card, tint the panel border toward the accent
+   so the drop target reads before the overlay fades in. */
+.home-composer-card.is-drop-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+}
+
+/* Drag-and-drop overlay — covers the card while a file drag hovers it. */
+.hc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base) 88%);
+  border: 2px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  pointer-events: none;
+}
+.hc-drop-overlay-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.home-composer-card:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
+}
+
+/* Footer band retired (chat revamp 1d): its pickers collapsed into the
+ * composer context pill and the "+" menu's Model & tuning panel. */
+
+/* ── Textarea ──────────────────────────────────────────────────────────────
+ *   Sizing and chrome come from the shared .cave-composer-input class plus the
+ *   same utility classes the chat composer uses; .hc-textarea stays as a
+ *   stable hook (tests, e2e) with home-only bits. */
+.hc-textarea:disabled {
+  opacity: 0.5;
+}
+
+/* Hidden native file input driven by the paperclip button. */
+.hc-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Attachment chips — chat-style strip above the textarea ──────────────── */
+.hc-attachments-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+.hc-attachments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.hc-attachments-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hc-attachments-clear {
+  border: none;
+  background: transparent;
+  padding: 2px var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hc-attachments-clear:hover:not(:disabled) { background: var(--bg-base); color: var(--text-secondary); }
+.hc-attachments-clear:disabled { opacity: 0.5; cursor: default; }
+.hc-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hc-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 6px 3px var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.hc-attachment-icon { color: var(--text-muted); flex-shrink: 0; }
+/* Image attachments show a small preview thumbnail in place of the icon. */
+.hc-attachment-thumb {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
+.hc-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hc-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* The standalone footer project chip retired with the band (chat revamp 1d);
+ * project selection opens from the composer context pill. */
+
+/* Destination pills — a segmented toggle for Chat vs Task. */
+.hc-dest-pills {
+  display: inline-flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 3px;
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+}
+
+/* Inline placement (reference layout): the pills sit inside the card's
+ * control row next to the + attach button — compact, no outer margin. */
+.hc-dest-pills--inline {
+  position: relative;
+  padding: 2px;
+}
+
+.hc-dest-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  box-sizing: border-box;
+  font-size: var(--text-sm);
+  /* Inactive tabs recede: lighter weight + faded label so the solid-accent
+   * active tab is unmistakably the selected one. Hover/active brighten. */
+  font-weight: 450;
+  padding: var(--space-1) 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(in oklch, var(--text-muted) 68%, transparent);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+/* The inactive icon fades further than its label so the tab reads as dormant. */
+.hc-dest-pill svg {
+  opacity: 0.55;
+}
+
+.hc-dest-pill:hover {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.hc-dest-pill:hover svg {
+  opacity: 0.9;
+}
+
+.hc-dest-pill.active {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  font-weight: 600;
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+
+/* Label and icon sit on the solid accent fill, so both take the on-accent
+ * foreground colour at full strength for legibility. */
+.hc-dest-pill.active svg {
+  color: var(--accent-presence-foreground);
+  opacity: 1;
+}
+
+/* ── Phone-width composer (container query on the card wrap) ─────────────────
+ * The shared cave-composer footer rules (cave-chat.css) already adapt the icon
+ * buttons on small screens; the home-only destination pills also need
+ * thumb-sized touch targets. */
+@container (max-width: 620px) {
+  .hc-dest-pill {
+    min-height: var(--touch-target);
+    justify-content: center;
+    border-color: var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  }
+}
+
+/* Spinner — shown inside the send button while a submit is in flight. */
+.hc-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in oklch, var(--foreground) 30%, transparent);
+  border-top-color: var(--foreground);
+  border-radius: 50%;
+  animation: hc-spin 0.6s linear infinite;
+}
+
+@keyframes hc-spin {
+  to { transform: rotate(360deg); }
+}
