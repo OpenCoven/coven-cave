@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./proxy.ts", import.meta.url), "utf8");
-const tauriSource = await readFile(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const tauriSource = (
+  await Promise.all(
+    ["sidecar_auth.rs", "sidecar_startup.rs"].map((file) =>
+      readFile(new URL(`../src-tauri/src/${file}`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 const sidecarBridgeSource = await readFile(new URL("./components/security/sidecar-auth-bridge.tsx", import.meta.url), "utf8");
 const sidecarMonitorSource = await readFile(new URL("./components/security/sidecar-auth-monitor.tsx", import.meta.url), "utf8");
 const layoutSource = await readFile(new URL("./app/layout.tsx", import.meta.url), "utf8");

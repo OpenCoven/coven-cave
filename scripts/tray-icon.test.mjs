@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const lib = await readFile(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const lib = (
+  await Promise.all(
+    ["tauri_setup.rs", "window_geometry.rs", "platform_lifecycle.rs"].map((file) =>
+      readFile(new URL(`../src-tauri/src/${file}`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 assert.match(
   lib,

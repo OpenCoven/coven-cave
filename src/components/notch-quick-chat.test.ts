@@ -6,7 +6,9 @@ const component = readFileSync(new URL("./notch-quick-chat.tsx", import.meta.url
 const page = readFileSync(new URL("../app/quick-chat/page.tsx", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/notch-quick-chat.css", import.meta.url), "utf8");
-const shell = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const shell = ["tauri_setup.rs", "window_geometry.rs"]
+  .map((file) => readFileSync(new URL(`../../src-tauri/src/${file}`, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
   page,
@@ -119,7 +121,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /fn notch_url_with_config\(mut url: Url, config: &NotchConfig, strip_height: Option<f64>\)/,
+  /fn notch_url_with_config\(\s*mut url: Url,\s*config: &NotchConfig,\s*strip_height: Option<f64>,?\s*\)/,
   "the shell seeds the page's presentation state through the URL",
 );
 assert.match(
@@ -186,7 +188,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /if load_notch_mode\(app\.handle\(\)\) \{\s*\n\s*show_notch_from_main\(app\.handle\(\)\);\s*\n\s*if app\.handle\(\)\.get_webview_window\(NOTCH_WINDOW_LABEL\)\.is_some\(\) \{\s*\n\s*set_tray_visible\(app\.handle\(\), false\);/,
+  /if load_notch_mode\(app\.handle\(\)\) \{\s*\n\s*show_notch_from_main\(app\.handle\(\)\);\s*\n\s*if app\s*\.handle\(\)\s*\.get_webview_window\(NOTCH_WINDOW_LABEL\)\s*\.is_some\(\)\s*\{\s*\n\s*set_tray_visible\(app\.handle\(\), false\);/,
   "launch restores the notch presentation and hides the tray only when the window is confirmed open",
 );
 assert.match(
