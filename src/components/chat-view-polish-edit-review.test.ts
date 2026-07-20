@@ -109,4 +109,3 @@ assert.match(
   /if \(e\.key === "Escape" && menuOpen\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSlashDismissed\(true\);\s*\n\s*return true;\s*\n\s*\}/,
   "the slash, model, skill and prompt pickers all dismiss on Escape (setSlashDismissed behind menuOpen)",
 );
-

@@ -574,4 +574,3 @@ assert.match(
   "Board step enrichment should enforce the same trusted Coven harness gate",
 );
 
-

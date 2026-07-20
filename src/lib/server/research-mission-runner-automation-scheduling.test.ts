@@ -417,4 +417,3 @@ test("terminal actions pause Automation truth even when mission metadata is stal
   assert.deepEqual(updates, ["automation-1:PAUSED"]);
 });
 
-

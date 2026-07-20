@@ -168,4 +168,3 @@ const smallPng = `data:image/png;base64,${Buffer.from("png-payload-bytes").toStr
   );
   assert.doesNotMatch(undelivered, /\(content unavailable\)/);
 }
-

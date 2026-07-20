@@ -275,4 +275,3 @@ test("withinStartupGrace bounds the dead-session verdict", () => {
   assert.equal(withinStartupGrace(undefined, now), false);
   assert.equal(withinStartupGrace("not-a-date", now), false);
 });
-

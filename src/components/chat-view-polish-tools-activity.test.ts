@@ -179,4 +179,3 @@ assert.match(
   "Assistant turns should render only filtered visible content",
 );
 
-

@@ -393,4 +393,3 @@ test("artifact rejection preserves the file reference and refine starts once", a
   assert.equal(refined.iterations.length, 2);
 });
 
-

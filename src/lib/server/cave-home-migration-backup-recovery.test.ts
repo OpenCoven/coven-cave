@@ -267,4 +267,3 @@ try {
 } finally {
   for (const root of roots) await rm(root, { recursive: true, force: true });
 }
-

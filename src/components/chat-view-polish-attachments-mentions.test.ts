@@ -327,4 +327,3 @@ assert.match(
   /cave-next-path--recommended/,
   "the first follow-up is marked as the recommended next step",
 );
-

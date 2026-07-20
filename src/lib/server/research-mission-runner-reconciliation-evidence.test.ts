@@ -317,4 +317,3 @@ test("malformed sources checkpoint the mission instead of publishing", async () 
   assert.match(result.lastError ?? "", /sources\.json is malformed/);
 });
 
-
