@@ -32,6 +32,7 @@ import {
   type SettingsIndexEntry,
 } from "@/components/settings-sections";
 import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
+import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);
@@ -123,18 +124,6 @@ type Row =
   | { id: string; kind: "setting"; entry: SettingsIndexEntry }
   | { id: string; kind: "salem-answer"; query: string };
 
-type SalemSearchContextItem = {
-  type: string;
-  title: string;
-  detail?: string;
-};
-
-type SalemSearchContext = {
-  source: "top-search";
-  query: string;
-  matches: SalemSearchContextItem[];
-};
-
 const RESULT_LIMITS = {
   familiar: 6,
   session: 6,
@@ -145,59 +134,6 @@ const RESULT_LIMITS = {
   conversation: 6,
   setting: 8,
 };
-
-const SALEM_CONTEXT_LIMIT = 8;
-
-function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext {
-  const matches = rows
-    .filter((row) =>
-      row.kind === "familiar" ||
-      row.kind === "session" ||
-      row.kind === "card" ||
-      row.kind === "coven-memory" ||
-      row.kind === "fs-memory",
-    )
-    .slice(0, SALEM_CONTEXT_LIMIT)
-    .map((row): SalemSearchContextItem => {
-      if (row.kind === "familiar") {
-        return {
-          type: "familiar",
-          title: row.familiar.display_name,
-          detail: row.familiar.role,
-        };
-      }
-      if (row.kind === "session") {
-        return {
-          type: "chat",
-          title: row.session.title || "(untitled chat)",
-          detail: `${row.familiar?.display_name ?? row.session.familiarId ?? "Unknown familiar"} · ${row.session.harness}`,
-        };
-      }
-      if (row.kind === "card") {
-        return {
-          type: "task",
-          title: row.card.title,
-          detail: [row.card.status, row.card.priority, row.familiar?.display_name, ...row.card.labels]
-            .filter(Boolean)
-            .join(" · "),
-        };
-      }
-      if (row.kind === "coven-memory") {
-        return {
-          type: "memory",
-          title: row.entry.title,
-          detail: [row.familiar?.display_name ?? row.entry.familiar_id, row.entry.path].filter(Boolean).join(" · "),
-        };
-      }
-      return {
-        type: "memory-file",
-        title: row.entry.relPath,
-        detail: row.entry.rootLabel,
-      };
-    });
-
-  return { source: "top-search", query, matches };
-}
 
 // ── @familiar query parsing ────────────────────────────────────────────────
 // Users can scope the palette to a single familiar by typing `@<name>` anywhere
@@ -706,7 +642,10 @@ export function CommandPalette({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: query.trim(),
-          context: buildSalemSearchContext(rows, query.trim()),
+          context: buildSalemSearchContext(
+            rows.filter(isSalemContextRow),
+            query.trim(),
+          ),
           familiarId: localFamiliarId,
           model: localModel,
         }),
