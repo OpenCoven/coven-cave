@@ -793,8 +793,8 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
   };
 }
 
-function normalizeLegacyReviewKind(raw: unknown): ProposalLegacyReviewKindView | null {
-  if (!isRecord(raw) || raw.reviewKind === undefined) return "authority";
+function readLegacyReviewKind(raw: unknown): ProposalLegacyReviewKindView | null | undefined {
+  if (!isRecord(raw) || raw.reviewKind === undefined) return undefined;
   return LEGACY_REVIEW_KIND_VALUES.has(raw.reviewKind as ProposalLegacyReviewKindView)
     ? (raw.reviewKind as ProposalLegacyReviewKindView)
     : null;
@@ -896,8 +896,21 @@ export function normalizeProposalAuthority(
 
   const scheduled = hasScheduledEnvelopeMarkers(stagedRaw);
   if (!scheduled) {
-    const reviewKind = normalizeLegacyReviewKind(daemonRaw);
-    return reviewKind ? { state: "legacy", reviewKind } : blocked("daemon-unparseable");
+    const stagedReviewKind = readLegacyReviewKind(stagedRaw);
+    if (stagedReviewKind === null) return blocked("daemon-unparseable");
+
+    const daemonReviewKind = readLegacyReviewKind(daemonRaw);
+    if (daemonReviewKind === null) return blocked("daemon-unparseable");
+
+    if (
+      stagedReviewKind !== undefined &&
+      daemonReviewKind !== undefined &&
+      stagedReviewKind !== daemonReviewKind
+    ) {
+      return blocked("daemon-mismatch");
+    }
+
+    return { state: "legacy", reviewKind: daemonReviewKind ?? stagedReviewKind ?? "authority" };
   }
   if (!isCompleteScheduledEnvelope(stagedRaw)) return blocked("daemon-mismatch");
 

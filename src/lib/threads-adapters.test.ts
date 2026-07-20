@@ -412,7 +412,7 @@ VALUES
 });
 
 describe("daemon adapter — proposals and decisions", () => {
-  function homeWithPending(): { home: string; pending: string } {
+  function homeWithPending(reviewKind?: "authority" | "coherence"): { home: string; pending: string } {
     const home = tempDir("phase4-decide-home-");
     const pending = path.join(home, "pending");
     mkdirSync(pending);
@@ -424,6 +424,7 @@ describe("daemon adapter — proposals and decisions", () => {
         writer: "familiar:echo",
         channel: "Mutation",
         thread_id: THREAD_FRAYED,
+        ...(reviewKind === undefined ? {} : { reviewKind }),
         fray: { Frayed: { strand: null, channel: "Mutation", reason: "ContentHashMismatch" } },
         edits: [{ surface: "MEMORY.md", contents: { encoding: "utf8", data: "proposed" } }],
         staged_at: [2026, 196, 9, 0, 2, 0, 0, 0, 0],
@@ -512,6 +513,17 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.deepEqual(res.data?.[0]?.authority, { state: "legacy", reviewKind: "coherence" });
   });
 
+  it("preserves a staged-only legacy coherence reviewKind when the daemon is unavailable", async () => {
+    const { home } = homeWithPending("coherence");
+    const adapter = new DaemonThreadsAdapter({
+      call: async () => ({ ok: false, status: 0, data: null, error: "connect ENOENT" }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "legacy", reviewKind: "coherence" });
+  });
+
   it("preserves scheduled staged details but blocks authority when the daemon is unavailable", async () => {
     const { home } = homeWithScheduled("awaiting-human-approval");
     const adapter = new DaemonThreadsAdapter({
@@ -525,6 +537,29 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(res.data?.[0]?.parse, "ok");
     assert.equal(res.data?.[0]?.payload?.id, "cccccccc-0000-4000-8000-000000000501");
     assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-unavailable" });
+  });
+
+  it("fails closed when staged and daemon legacy reviewKind values disagree", async () => {
+    const { home } = homeWithPending("authority");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() =>
+        ({
+          ok: true,
+          status: 200,
+          data: {
+            proposals: [
+              {
+                proposalId: PROPOSAL_OK,
+                reviewKind: "coherence",
+              },
+            ],
+          } as T,
+        }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-mismatch" });
   });
 
   it("blocks a scheduled proposal when its daemon join is missing", async () => {
