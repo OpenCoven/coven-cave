@@ -1347,14 +1347,14 @@ describe("normalizeProposal (§2.6)", () => {
       writer,
       stagedAt: "2026-07-15T09:00:02Z",
       targets: ["MEMORY.md"],
-      reviewKind: "authority",
+      reviewKind: "coherence",
       familiarUuid,
       proposalRevision: "a".repeat(64),
     };
 
     assert.deepEqual(normalizeProposalAuthority(staged, legacySummary), {
       state: "legacy",
-      reviewKind: "authority",
+      reviewKind: "coherence",
     });
   });
 
@@ -1660,14 +1660,22 @@ describe("normalizeProposal (§2.6)", () => {
     assert.deepEqual(authority.availableDecisions, []);
   });
 
-  it("requires daemon summaries to contain an explicit blockedReason key", () => {
+  it("accepts non-blocked daemon summaries without blockedReason but still requires it for blocked lifecycle", () => {
     const { staged, daemon } = daemonContractFixture();
     const { blockedReason: _blockedReason, ...missingBlockedReason } = daemon;
 
-    assert.deepEqual(normalizeProposalAuthority(staged, missingBlockedReason), {
-      state: "blocked",
-      why: "daemon-unparseable",
-    });
+    const authority = normalizeProposalAuthority(staged, missingBlockedReason);
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.equal(authority.blockedReason, null);
+
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...missingBlockedReason,
+        lifecycle: "blocked",
+      }),
+      { state: "blocked", why: "daemon-unparseable" },
+    );
   });
 
   it("rejects blank or non-string daemon blockedReason and preserves unknown nonblank strings", () => {

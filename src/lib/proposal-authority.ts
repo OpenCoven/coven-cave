@@ -9,6 +9,7 @@ export type ProposalApprovalPathVariantView =
   | "human-approval-with-rationale";
 
 export type ProposalLifecycleView = "awaiting-human-approval" | "veto-window-open" | "ready-for-replay" | "blocked";
+export type ProposalLegacyReviewKindView = "authority" | "coherence";
 
 export type ProposalAuthorityBlockedWhy =
   | "daemon-unavailable"
@@ -36,7 +37,7 @@ export type ProposalAuthorityVerifiedView = {
 
 export type ProposalAuthorityLegacyView = {
   state: "legacy";
-  reviewKind: "authority";
+  reviewKind: ProposalLegacyReviewKindView;
 };
 
 export type ProposalAuthorityBlockedView = {
@@ -97,6 +98,7 @@ const LIFECYCLE_VALUES = new Map<string, ProposalLifecycleView>([
   ["ready_for_replay", "ready-for-replay"],
   ["blocked", "blocked"],
 ]);
+const LEGACY_REVIEW_KIND_VALUES = new Set<ProposalLegacyReviewKindView>(["authority", "coherence"]);
 
 const DAEMON_SUMMARY_FIELDS = new Set([
   "proposalId",
@@ -761,7 +763,6 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
     !isStringArray(raw.affectedRegions) ||
     !isRecord(raw.approvalPath) ||
     typeof raw.lifecycle !== "string" ||
-    !("blockedReason" in raw) ||
     !("earliestClose" in raw)
   ) {
     return null;
@@ -774,6 +775,7 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
   if (!familiarUuid || !stagedAt || !approvalPath || !lifecycle || !earliestClose.valid) return null;
 
   const blockedReason = raw.blockedReason;
+  if (lifecycle === "blocked" && !("blockedReason" in raw)) return null;
   if (blockedReason !== undefined && blockedReason !== null && !isNonblankString(blockedReason)) return null;
 
   return {
@@ -789,6 +791,13 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
     earliestClose: earliestClose.value,
     affectedRegions: raw.affectedRegions,
   };
+}
+
+function normalizeLegacyReviewKind(raw: unknown): ProposalLegacyReviewKindView | null {
+  if (!isRecord(raw) || raw.reviewKind === undefined) return "authority";
+  return LEGACY_REVIEW_KIND_VALUES.has(raw.reviewKind as ProposalLegacyReviewKindView)
+    ? (raw.reviewKind as ProposalLegacyReviewKindView)
+    : null;
 }
 
 function normalizeAvailableDecisions(
@@ -886,7 +895,10 @@ export function normalizeProposalAuthority(
   if (!payload) return blocked("daemon-unparseable");
 
   const scheduled = hasScheduledEnvelopeMarkers(stagedRaw);
-  if (!scheduled) return { state: "legacy", reviewKind: "authority" };
+  if (!scheduled) {
+    const reviewKind = normalizeLegacyReviewKind(daemonRaw);
+    return reviewKind ? { state: "legacy", reviewKind } : blocked("daemon-unparseable");
+  }
   if (!isCompleteScheduledEnvelope(stagedRaw)) return blocked("daemon-mismatch");
 
   if (daemonRaw === undefined) return blocked("daemon-proposal-missing");

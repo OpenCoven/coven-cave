@@ -466,6 +466,52 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(proposal.authority.approvalPath.label, "human_review");
   });
 
+  it("accepts the real daemon non-blocked summary shape that omits blockedReason", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const { blockedReason: _blockedReason, ...realDaemonSummary } = summary as Record<string, unknown>;
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [realDaemonSummary] } as T }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    const proposal = res.data?.[0];
+    assert.ok(proposal);
+    const authority = proposal.authority;
+    assert.ok(authority);
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.equal(authority.lifecycle, "awaiting-human-approval");
+    assert.equal(authority.blockedReason, null);
+  });
+
+  it("preserves legacy coherence reviewKind from real daemon summaries", async () => {
+    const { home } = homeWithPending();
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() =>
+        ({
+          ok: true,
+          status: 200,
+          data: {
+            proposals: [
+              {
+                proposalId: PROPOSAL_OK,
+                familiarId: "echo",
+                writer: "familiar:echo",
+                stagedAt: "2026-07-15T09:00:02Z",
+                targets: ["MEMORY.md"],
+                reviewKind: "coherence",
+              },
+            ],
+          } as T,
+        }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "legacy", reviewKind: "coherence" });
+  });
+
   it("preserves scheduled staged details but blocks authority when the daemon is unavailable", async () => {
     const { home } = homeWithScheduled("awaiting-human-approval");
     const adapter = new DaemonThreadsAdapter({
