@@ -1,0 +1,1895 @@
+/* ────────────────────────────────────────────────
+   Edge-rail chip — the pressable chip the collapsed chat-projects
+   strip uses for its reopen tab. (The familiar trigger rails that
+   used to share it were replaced by the shell's floating panel
+   toggles.)
+   ──────────────────────────────────────────────── */
+.edge-rail-chip {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 44px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in oklch, var(--text-muted) 38%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 90%, var(--bg-elevated));
+  color: inherit;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--text-primary) 12%, transparent),
+    0 8px 16px color-mix(in oklch, black 20%, transparent);
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
+}
+
+button:hover > .edge-rail-chip,
+button:focus-visible > .edge-rail-chip {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--text-muted) 45%, transparent);
+}
+
+button:active > .edge-rail-chip {
+  transform: scale(0.94);
+}
+
+/* ────────────────────────────────────────────────
+   Top-bar panel toggles
+   The side-panel triggers live in the desktop top menu bar: the nav toggle
+   anchors the bar's left edge, the side-panel + expand toggles its right edge.
+   They share the bar's height/background so they read as one continuous strip.
+   Desktop-only — they're rendered only when !isMobile (≥1024px), matching the
+   `.menu-bar` breakpoint; below that the mobile `.top-bar` carries its own.
+   ──────────────────────────────────────────────── */
+.shell-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  /* Slim band (cave-p78p): hugs the 28px controls — and on the desktop shell,
+     the Tauri titlebar override below keeps the band slim next to the macOS
+     traffic lights. */
+  min-height: 34px;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  /* Seamless title bar: the strip shares the app canvas — no band color, no
+     border seam. Structure below it reads as one continuous surface. */
+  background: var(--bg-base);
+  border-bottom: 0;
+  /* Was overflow: hidden — the desktop notification-bell popover now hangs
+     from the menu bar, and clipping ancestors would truncate it to the slim
+     band. The centered search's width caps keep the bar from overflowing. */
+  overflow: visible;
+}
+
+.shell-titlebar-drag-lane {
+  display: none;
+}
+
+.shell-top__bar {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* overflow must stay visible for the bell popover (see .shell-top). */
+  overflow: visible;
+}
+
+.shell-top .menu-bar {
+  width: 100%;
+  min-height: 34px;
+  padding-inline: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+/* ────────────────────────────────────────────────
+   Seamless macOS title bar (Tauri desktop)
+   The native title bar is set to `Overlay` (see src-tauri/src/lib.rs), so the
+   webview fills to the very top and the traffic-light buttons float over this
+   bar — there's no separate native title strip and no seam. We:
+     1. reserve room on the left so the toggle doesn't sit under the lights,
+     2. give the bar a touch more height to comfortably frame the lights.
+   The actual window drag is NOT these `app-region` hints: WebKit ignores them
+   on external-URL webviews (the app loads from http://127.0.0.1), so dragging
+   is driven by the `data-tauri-drag-region="deep"` attributes in shell.tsx +
+   the ACL grant in src-tauri/capabilities/loopback-window-drag.json. The
+   app-region rules stay only as a progressive-enhancement fallback for any
+   bundled-scheme build.
+   `[data-tauri-titlebar]` is set on <html> only in the macOS desktop shell
+   (see tauri-titlebar-marker.tsx, mounted in the root layout), so
+   browser/Windows/Linux are untouched.
+   ──────────────────────────────────────────────── */
+
+/* Shared traffic-light reserve — ~78px clears the three lights + their left
+   inset at standard macOS metrics. */
+:root[data-tauri-titlebar] {
+  --titlebar-lights-inset: 78px;
+}
+
+/* Fit at EVERY window width: the lights float over the webview no matter how
+   narrow the window is, so the reserve can't be desktop-media-gated — in a
+   sub-1024 window the mobile top-bar's controls sat underneath the buttons. */
+:root[data-tauri-titlebar] .shell-top {
+  padding-left: var(--titlebar-lights-inset);
+}
+
+/* Dia-style: with the side panel closed the shell hides the traffic lights
+   (set_traffic_lights_visible in lib.rs, driven by shell.tsx — the attribute
+   flips to "hidden" only AFTER the native hide is confirmed), so the bar
+   releases the room reserved for them and slides back to the window edge. */
+:root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-top {
+  padding-left: var(--space-3);
+}
+
+/* Subtle titlebar glass (native shell only — the browser tab keeps the fully
+   seamless canvas): a whisper of translucent fill + blur so the band reads
+   as window chrome floating over the backdrop, macOS-native, not a painted
+   strip. Falls back to the seamless transparent band where glass can't
+   render legibly. */
+:root[data-tauri-titlebar] .shell-top {
+  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-tauri-titlebar] .shell-top { background: transparent; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-tauri-titlebar] .shell-top {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Full-window route bands: Settings, Dashboard/Reports, and the analytics
+   page render in the same overlay-titlebar window once the app navigates
+   away from the workspace shell — their leading controls (Back, breadcrumbs)
+   need the same reserve. The shell restores the native lights on unmount, so
+   these never need a hidden-state variant. */
+:root[data-tauri-titlebar] .settings-shell__header {
+  padding-left: var(--titlebar-lights-inset);
+}
+:root[data-tauri-titlebar] .dr-topbar {
+  padding-left: max(var(--titlebar-lights-inset), clamp(20px, 5vw, 64px));
+}
+:root[data-tauri-titlebar] .fa-topbar {
+  padding-left: var(--titlebar-lights-inset);
+}
+/* …but NOT when the analytics view is embedded inside the workspace shell
+   (the inspector tab) — there the band sits mid-window, under shell chrome. */
+:root[data-tauri-titlebar] .shell-frame .fa-topbar {
+  padding-left: var(--space-6);
+}
+
+@media (min-width: 1024px) {
+  :root[data-tauri-titlebar] .shell-top {
+    /* The slim 29px band hugs the 28px controls so the bar doesn't tower
+       over the lights (was 36px — user asked for ~20% shorter). */
+    min-height: 29px;
+  }
+
+  /* The inner menu-bar would otherwise prop the band back open at 34px. */
+  :root[data-tauri-titlebar] .shell-top .menu-bar {
+    min-height: 28px;
+  }
+
+  :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: block;
+    pointer-events: none;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  :root[data-tauri-titlebar] :is(
+    .shell-top,
+    .shell-top__bar,
+    .shell-top .menu-bar,
+    .shell-top .top-bar,
+    .shell-top .menu-bar__group,
+    .shell-top .top-bar__lead,
+    .shell-top .top-bar__actions
+  ) {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  :root[data-tauri-titlebar] .shell-top :is(
+    button, a, input, select, textarea, kbd, label,
+    [role="button"], [role="textbox"], [contenteditable], .menu-bar__search
+  ),
+  :root[data-tauri-titlebar] .shell-top :is(
+    button, a, input, select, textarea, kbd, label,
+    [role="button"], [role="textbox"], [contenteditable], .menu-bar__search
+  ) *,
+  :root[data-tauri-titlebar] .shell-top :is(
+    .top-bar__search,
+    .top-bar__account
+  ),
+  :root[data-tauri-titlebar] .shell-top :is(
+    .top-bar__search,
+    .top-bar__account
+  ) * {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
+.shell-top-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* Match the height of the adjacent top-bar controls (the familiar switcher
+     and search box sit at 28px) so the sidepanel toggles line up with the rest
+     of the bar rather than towering over it. Boxed like every other header
+     control: hairline square, transparent at rest (cave-e3ui follow-up). */
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.shell-top-toggle:hover,
+.shell-top-toggle:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+}
+
+.shell-top-toggle:active {
+  transform: scale(0.94);
+}
+
+/* History Back/Forward — quiet chevrons right of the nav toggle (Codex-style).
+   They reuse the shell-top-toggle chrome; the tight gap groups them as a pair. */
+.shell-top-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* Open state: accent-tinted to match the panel it controls. */
+.shell-top-toggle--active {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+}
+
+/* ────────────────────────────────────────────────
+   Rail-pane empty + memory styles
+   (Phase 2, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.rail-empty {
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-empty__title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.rail-empty__sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* .rail-memory / .rail-memory__scroll removed with the dead RailMemoryList
+   (cave-kdkg). __open-full survives: inspector-pane's memory tab uses it. */
+.rail-memory__open-full {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-memory__open-full:hover {
+  background: var(--bg-hover);
+}
+
+.inbox-view__tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.inbox-view__tab {
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.inbox-view__tab--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}
+
+/* ────────────────────────────────────────────────
+   Shell banner strip — system state surface
+   (Phase 4, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.shell-banner-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner--error {
+  background: color-mix(in oklch, var(--color-danger) 12%, var(--bg-base));
+  color: var(--color-danger);
+}
+
+.shell-banner--warning {
+  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
+  color: var(--color-warning);
+}
+
+.shell-banner--info {
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base));
+  color: var(--text-primary);
+}
+
+.shell-banner__title {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  /* Wrap on narrow widths instead of truncating mid-sentence — the
+   * second half of these messages often carries the operative info
+   * (e.g. "…but new tasks may not start"). */
+}
+
+.shell-banner__cta {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: currentColor;
+  border-radius: var(--radius-control);
+  padding: 3px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.shell-banner__cta:hover {
+  background: color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.shell-banner__cta:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.shell-banner__dismiss {
+  background: transparent;
+  border: 0;
+  color: currentColor;
+  opacity: 0.6;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.shell-banner__dismiss:hover {
+  opacity: 1;
+}
+
+.shell-banner__dismiss:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.cave-migration-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in oklch, black 54%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.cave-migration-review {
+  width: min(760px, 100%);
+  max-height: min(780px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.cave-migration-review__header,
+.cave-migration-review__footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 18px var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.cave-migration-review__header h2 {
+  margin: 0 0 6px;
+  font-size: var(--text-lg);
+}
+
+.cave-migration-review__header p,
+.cave-migration-file p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.cave-migration-file__diff {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.cave-migration-review button {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.cave-migration-review button:hover:not(:disabled) {
+  border-color: var(--accent-presence);
+}
+
+.cave-migration-review button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.cave-migration-review__files {
+  overflow: auto;
+  padding: var(--space-3) var(--space-5) var(--space-5);
+}
+
+.cave-migration-file {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.cave-migration-file__heading,
+.cave-migration-file__actions,
+.cave-migration-review__footer > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cave-migration-file__heading {
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.cave-migration-file__heading span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cave-migration-file dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.cave-migration-file dl > div {
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+.cave-migration-file dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cave-migration-file dd {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+}
+
+.cave-migration-file__backup {
+  overflow-wrap: anywhere;
+  margin-bottom: 10px !important;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs) !important;
+}
+
+.cave-migration-review__footer {
+  align-items: center;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 0;
+}
+
+.cave-migration-review__footer > span {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 767px) {
+  .shell-banner {
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  }
+
+  .shell-banner__cta {
+    min-height: var(--touch-target);
+    border-radius: 10px;
+    padding-inline: 14px;
+    font-size: var(--text-base);
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .shell-banner__dismiss {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    border-radius: 10px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-migration-review-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .cave-migration-review {
+    max-height: 92vh;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+
+  .cave-migration-file dl {
+    grid-template-columns: 1fr;
+  }
+
+  .cave-migration-review__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* ────────────────────────────────────────────────
+   Mobile top bar — drawer controls plus compact search/account actions.
+   Desktop keeps the app chrome headerless; sidebar carries navigation and
+   keyboard shortcuts keep search available.
+   ──────────────────────────────────────────────── */
+
+/* Desktop top menu bar — quick chat with familiars (left) + view tasks
+   (right). Hidden below 1024px, where the mobile `.top-bar` takes over (the
+   two are mutually exclusive so they never both render). Lives in the Shell's
+   `topBar` slot above `.shell-body`. */
+.menu-bar {
+  display: none;
+  /* Search is absolutely centered in the bar (Codex-style); the task chrome
+     anchors the right edge. position: relative hosts the centered search. */
+  position: relative;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+  width: 100%;
+  padding: 5px var(--space-3);
+  /* min-height (not a fixed height) so the bar grows with scaled-up content
+     under screen magnification instead of clipping the search row. */
+  min-height: 36px;
+  background: var(--bg-base);
+  border-bottom: 0;
+  font-size: var(--text-sm);
+  user-select: none;
+  /* overflow stays visible so the notification-bell popover (now hosted in
+     this bar's right cluster) can hang below the slim band. */
+  overflow: visible;
+}
+
+@media (min-width: 1024px) {
+  .menu-bar {
+    display: flex;
+  }
+}
+
+.menu-bar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.menu-bar__group--tasks {
+  flex: 0 0 auto;
+}
+
+.menu-bar__search {
+  /* Centered in the title bar (Codex-style), with the pill border always
+     visible so search reads as a landmark rather than a ghost. */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Stay geometrically centered, but reserve equal room on both sides for the
+     action cluster (task verbs + running pill + bell) plus breathing room.
+     Basing the third cap on this bar's own width makes compact native windows
+     shrink gracefully. Phase-D command bar: 557px max per the revamp design. */
+  width: min(557px, 42vw, calc(100% - 560px));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  /* Phase-D command bar: the field sits on the panel surface so it reads as a
+     landmark against the seamless base-canvas band. */
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* Enrichment progress is intentionally visible text, so its action grows
+   beyond the icon-only baseline. Contract the centered search only while that
+   live label exists; wide windows still keep the 557px search cap. */
+.menu-bar:has(.menu-bar__task-label--live) .menu-bar__search {
+  width: min(557px, 42vw, calc(100% - 692px));
+}
+
+.menu-bar__search:hover,
+.menu-bar__search:focus-within {
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.menu-bar__search:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.menu-bar__search-icon {
+  flex-shrink: 0;
+  /* Compact top-chrome standard (var(--icon-sm), 14px) — shared with the
+     menu-bar action icons and the sidepanel toggle glyph. */
+  align-self: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.menu-bar__search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  line-height: 1.4;
+}
+
+.menu-bar__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.menu-bar__search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.menu-bar__search kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  /* Always-visible keycap (phase-D command bar) — the ⌘K affordance is part
+     of the field's resting look, not hover-only chrome. */
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+}
+
+.menu-bar__search:hover kbd,
+.menu-bar__search:focus-within kbd {
+  border-color: var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.menu-bar__new,
+.menu-bar__task {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  /* Same square family as the shell toggles and the mobile top-bar action row:
+     hairline-bordered 28px squares, transparent at rest (cave-e3ui follow-up).
+     Count badges float over the corner so the boxes stay uniform. */
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* Live enrich progress is visible text (information, not chrome) — let that
+   one box widen around it while the rest of the row stays square. */
+.menu-bar__task:has(.menu-bar__task-label--live) {
+  width: auto;
+  padding: 0 var(--space-2);
+}
+
+/* Ultra-minimal: the bar shows icons only. Labels stay in the DOM for the
+   markup (aria-labels already name every button); the one exception is the
+   enrich label while a run is live — that's progress, not chrome. */
+.menu-bar__task-label {
+  display: none;
+}
+
+.menu-bar__task-label--live {
+  display: inline;
+}
+
+/* One compact standard across the top chrome (var(--icon-sm), 14px): the
+   Enhance/Tasks/Inbox glyphs, the search glyph, and the sidepanel toggle all
+   share this size, rather than scaling with their own label. */
+.menu-bar__task > svg {
+  flex-shrink: 0;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.menu-bar__new {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.menu-bar__new:hover {
+  background: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+
+.menu-bar__task:hover {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* The count badge overlaps its button's corner (like the mobile top-bar's
+   tasks badge) so the 28px square never stretches around it. The bg-base ring
+   separates it from the icon underneath. */
+.menu-bar__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-presence-foreground);
+  /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
+     composited over the dark app background dropped the count to ~1:1 (WCAG). */
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 2px var(--bg-base);
+  pointer-events: none;
+}
+
+/* ── Right status cluster (chat-revamp phase D) ──────────────────────────────
+ * "N running" pill (accent presence dot + live daemon-session count) and the
+ * notification bell, anchoring the bar's right edge. */
+.menu-bar__group--status {
+  flex: 0 0 auto;
+}
+
+.menu-bar__running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.menu-bar__running-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+/* The bell popover hangs from the slim title band; keep it clear of the
+   band's bottom edge (the bar itself no longer clips — see .shell-top). */
+.menu-bar .notification-bell__popover {
+  margin-top: var(--space-1);
+}
+
+/* New-chat quick-compose dropdown (anchored to the "New chat" button). The
+   popover container carries `.ui-popover .menu-bar__compose`. */
+.menu-bar__compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px;
+}
+
+.menu-bar__compose-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.menu-bar__compose-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.menu-bar__compose-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+
+.menu-bar__compose-input {
+  width: 100%;
+  max-height: 160px;
+  resize: none;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.menu-bar__compose-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.menu-bar__compose-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.menu-bar__compose-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.menu-bar__compose-send:hover {
+  background: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+
+.menu-bar__compose-kbd {
+  font-size: var(--text-xs);
+  opacity: 0.7;
+}
+
+.top-bar {
+  display: none;
+  width: 100%;
+  grid-template-columns: 1fr minmax(auto, 560px) 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 14px;
+  height: 40px;
+  /* Seamless like the desktop .shell-top — no band, no border seam. */
+  background: var(--bg-base);
+  border-bottom: 0;
+  font-size: var(--text-sm);
+  user-select: none;
+}
+
+.top-bar__lead {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.top-bar__search {
+  justify-self: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 560px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-3);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__search:hover,
+.top-bar__search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.top-bar__search:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.top-bar__search-icon {
+  flex-shrink: 0;
+}
+
+.top-bar__search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+}
+
+.top-bar__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.top-bar__search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.top-bar__search kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.top-bar__actions {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* ── Familiar profile switcher ──────────────────────────────────────────────
+   The single familiar control in the top bar: an account-style profile button
+   (the active familiar's avatar or all-scope glyph, plus a reply dot) that opens a menu to
+   switch scope, edit a profile, create, manage, or reorder. */
+.familiar-switcher__trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__trigger--labeled {
+  justify-content: flex-start;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 var(--space-2) 0 5px;
+}
+
+.familiar-switcher__trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Dropdown affordance on labeled triggers — space-between layout: avatar +
+   name lead, the caret hugs the right edge. */
+.familiar-switcher__trigger-caret {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* Row checkbox — the multiselect zone. Clicking it toggles the familiar in
+   the scope (menu stays open); a plain row click still solo-switches. */
+/* The checkbox is the multi-select click zone, but rows should read as a clean
+   dropdown by default — the empty box only fades in on hover/focus, when the
+   row is checked, or while a ≥2 multiselect scope is live (data-multi on the
+   list). Its 14px slot is always reserved so rows never shift. */
+.familiar-switcher__checkbox {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  /* Checkmark sits on an --accent-presence fill when checked, so it takes the
+     paired on-accent foreground (not shadcn's --accent-foreground, which is
+     near-black in light mode on the dark presence fill). */
+  color: var(--accent-presence-foreground);
+  background: transparent;
+  opacity: 0;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+.familiar-switcher__checkbox.is-checked,
+.familiar-switcher__option:hover .familiar-switcher__checkbox,
+.familiar-switcher__option:focus-visible .familiar-switcher__checkbox,
+.familiar-switcher__list[data-multi] .familiar-switcher__checkbox {
+  opacity: 1;
+}
+.familiar-switcher__checkbox.is-checked {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+.familiar-switcher__option:hover .familiar-switcher__checkbox {
+  border-color: var(--accent-presence);
+}
+
+/* Avatar image fills the trigger square edge-to-edge. FamiliarAvatar renders a
+   fixed 16px img, which sits centered in the 28px button and leaves a dark gap;
+   stretch it to the button's inner box instead. The glyph fallback is a vector
+   icon — intentionally NOT targeted here, so it stays centered at its own size. */
+.familiar-switcher__trigger img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--radius-control) - 1px);
+}
+
+.familiar-switcher__trigger--labeled img {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.familiar-switcher__trigger:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
+}
+
+.sidebar-familiar-slot { flex: 1; }
+.sidebar-familiar-slot > * { flex: 1; }
+
+/* Reply-needed dot on the collapsed trigger. */
+.familiar-switcher__unread {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning);
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.familiar-switcher__popover {
+  padding: 0;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-hairline);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
+  overflow: hidden;
+}
+
+.familiar-switcher {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header: current scope + Edit profile. */
+.familiar-switcher__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 10px 9px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
+}
+
+.familiar-switcher__header-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.familiar-switcher__header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.familiar-switcher__header-name {
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-switcher__header-role {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-switcher__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 7px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__edit:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.familiar-switcher__search {
+  margin: 6px 6px 0;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.familiar-switcher__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.familiar-switcher__empty {
+  padding: 10px var(--space-3);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.familiar-switcher__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.familiar-switcher__option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px var(--space-2);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.familiar-switcher__option.is-active {
+  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.familiar-switcher__option:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+
+.familiar-switcher__all-glyph {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+}
+
+.familiar-switcher__avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Presence dot (background color comes from the presence utility class). */
+.familiar-switcher__presence {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.familiar-switcher__option-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.familiar-switcher__option-meta {
+  flex-shrink: 0;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.familiar-switcher__option-unread {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning);
+}
+
+/* Per-row gear → Studio. Hidden until row hover/focus to keep rows clean. */
+.familiar-switcher__gear {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__row:hover .familiar-switcher__gear,
+.familiar-switcher__row:focus-within .familiar-switcher__gear,
+.familiar-switcher__gear:focus-visible {
+  opacity: 1;
+}
+
+.familiar-switcher__gear:hover {
+  color: var(--text-primary);
+}
+
+/* Per-row pin toggle → adds/removes the familiar from the top-bar quick-switch
+   strip. Sits just left of the gear. Hidden until row hover/focus, EXCEPT when
+   pinned — a pinned row keeps a filled pin visible so the state is legible. */
+.familiar-switcher__pin {
+  position: absolute;
+  right: 32px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__row:hover .familiar-switcher__pin,
+.familiar-switcher__row:focus-within .familiar-switcher__pin,
+.familiar-switcher__pin:focus-visible,
+.familiar-switcher__pin.is-pinned {
+  opacity: 1;
+}
+
+.familiar-switcher__pin:hover {
+  color: var(--text-primary);
+}
+
+.familiar-switcher__pin.is-pinned {
+  color: var(--accent-presence);
+  background: transparent;
+}
+
+.familiar-switcher__grip {
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+/* ── Quick-switch wrapper ───────────────────────────────────────────────────
+   Familiar selection is dropdown-only (the one-tap avatar strip is retired);
+   this wrapper hosts the FamiliarSwitcher on its remaining top-bar call site. */
+.familiar-quickswitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* ── Settings: pinned-familiar order ───────────────────────────────────────── */
+.familiar-pin-order {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.familiar-pin-order__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.familiar-pin-order__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.familiar-pin-order__row[data-dragging] {
+  opacity: 0.6;
+}
+
+.familiar-pin-order__handle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: grab;
+  text-align: left;
+}
+
+.familiar-pin-order__handle:active {
+  cursor: grabbing;
+}
+
+.familiar-pin-order__grip {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.familiar-pin-order__name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.familiar-pin-order__role {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__unpin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--accent-presence);
+  cursor: pointer;
+}
+
+.familiar-pin-order__unpin:hover {
+  background: var(--bg-hover);
+}
+
+.familiar-pin-order__add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.familiar-pin-order__add-label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.familiar-pin-order__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-1) var(--space-2) var(--space-1) 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-pin-order__chip:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
+}
+
+.familiar-pin-order__chip-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-switcher__sortable[data-dragging] {
+  opacity: 0.6;
+}
+
+/* Footer actions. */
+.familiar-switcher__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 6px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* Summoning is the invitation here — dashed border per the design language,
+   tinted with presence, full width so it cannot be missed. */
+.familiar-switcher__summon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-control);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+  color: var(--accent-presence);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.familiar-switcher__summon:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
+
+.familiar-switcher__foot-row {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.familiar-switcher__foot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  flex: 1;
+  padding: 6px 6px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__foot-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.familiar-switcher__foot-btn--pri {
+  color: var(--accent-presence);
+}
+
+/* In the sidebar header the switcher is the primary (desktop) home for the
+   control; give the trigger a touch of inset to match the action rows below. */
+.sidebar-familiar-slot {
+  display: flex;
+  padding: 2px 2px var(--space-1);
+}
+
+/* One box family for the whole action row: every header control is the same
+   28px hairline-bordered square (radius-control), transparent at rest, tinted
+   on hover. Badges and icon tints carry the signals; the boxes stay uniform. */
+.top-bar__account {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__account:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.top-bar__account:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.top-bar__icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Task quick actions live in the overflow menu now (§8 chrome budget); the
+   wrapper keeps the open-task count badge floating over the "⋯" trigger so
+   the live signal survives the relocation. */
+.top-bar__tasks {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The "⋯" trigger joins the same square-box family as its neighbors —
+   ui-icon-btn is borderless with --radius-sm by default, which left it
+   the one boxless control in the row. */
+.top-bar__actions .top-bar__tasks > .ui-icon-btn {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+
+/* The familiar-switcher trigger sits in the same row; drop its raised fill
+   so it rests transparent like every other box in the family. */
+.top-bar__actions .familiar-switcher__trigger {
+  background: transparent;
+}
+
+.top-bar__tasks-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-control);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-presence-foreground);
+  background: color-mix(in oklch, var(--accent-presence) 65%, transparent);
+  pointer-events: none;
+}
+
+/* Mobile drawer toggles. Hidden on desktop; CSS @media block below
+   reveals them and gives them a 44px hit area. The TopBar omits them
+   from JSX when the surface has no relevant pane (e.g. two-pane modes
+   skip the list toggle); on desktop they're still rendered but display
+   collapses to none. */
+.top-bar__mobile-toggle {
+  display: none;
+}
+
+.top-bar__icon-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.mobile-handoff {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.mobile-handoff-qr {
+  width: 272px;
+  aspect-ratio: 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.mobile-handoff-qr__svg {
+  width: 256px;
+  height: 256px;
+  color: #111;
+}
+
+.mobile-handoff-qr__svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mobile-handoff-qr__placeholder {
+  width: 256px;
+  height: 256px;
+  display: grid;
+  place-items: center;
+  color: #444;
+  font-size: var(--text-sm);
+}
+
+.mobile-handoff__body {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.mobile-handoff__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.mobile-handoff__meta,
+.mobile-handoff__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.mobile-handoff__url {
+  margin: 0;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.mobile-handoff__copy {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+a.mobile-handoff__link {
+  display: block;
+  text-decoration: none;
+  user-select: all;
+  transition: border-color 120ms ease;
+}
+
+a.mobile-handoff__link:hover {
+  border-color: var(--border-strong, var(--text-secondary));
+  text-decoration: underline;
+}
+
+.mobile-handoff__error {
+  margin: 0;
+  padding: var(--space-2) 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* Non-fatal note: the link/QR are usable but Tailscale Serve couldn't be
+   (re)started. Caution treatment so it reads as advisory, not a hard failure. */
+.mobile-handoff__warning {
+  margin: 0;
+  padding: var(--space-2) 10px;
+  border: 1px solid color-mix(in srgb, var(--warning, #d9a441) 45%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--warning, #d9a441) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}

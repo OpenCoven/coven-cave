@@ -1,0 +1,566 @@
+/* ============================================================
+   Coven aesthetic tokens (Mood C — foundation, issue #14)
+   ============================================================
+   Promoted from the /mockup clean-room theme so the entire app
+   inherits the same palette/radii/spacing. The mockup's
+   `.multica-theme` class still works — it now just inherits these
+   :root values.
+
+   Two vocabularies are exposed on the same palette:
+     - Mockup names: --background, --card, --muted, --border, --primary, --brand…
+     - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
+   Both resolve to the same colours so they stay in sync.
+
+   Brand: OpenCoven lavender (#9386D0) lives at --accent-presence.
+   Reserved for familiar presence dots and the health strip — not
+   for primary CTAs.
+
+   Palette v1.2 — Coven (default) tuned for editor density at both
+   modes. Dark uses near-black panels with low chroma on surfaces;
+   light mirrors the structure with a near-white panel ladder. Brand
+   hue 293 is preserved in accents so the accent-presence dot still
+   feels OpenCoven without bleeding into every surface. */
+
+:root {
+  /* ---- Palette (oklch — same colour science as shadcn) ----
+     Coven dark v1.3: charcoal-graphite surfaces (chroma pared back to a
+     whisper) with the violet reserved for the brand accent — reads as
+     ink-and-graphite, not a tinted gray, matching the reference "New
+     automation" mock (cave: default-theme-repaint). */
+  --background: oklch(0.225 0.004 291);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.245 0.005 291);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.245 0.005 291);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.92 0.004 291);
+  /* Dark ink, not tied to --card — --primary-foreground also paints text on
+     --brand/--accent-presence (a mid-tone violet), which needs a genuinely
+     dark ink for 4.5:1, not whatever lightness the raised surface happens
+     to be (theme-contrast-audit.test.ts). */
+  --primary-foreground: oklch(0.16 0.008 291);
+  --secondary: oklch(0.275 0.006 291);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.275 0.006 291);
+  --muted-foreground: oklch(0.66 0.010 291);
+  --accent: oklch(0.275 0.006 291);
+  --accent-foreground: oklch(0.985 0 0);
+  --border: color-mix(in oklch, var(--foreground) 12%, transparent);
+  /* WCAG 1.4.11: --border-strong marks interactive boundaries (inputs,
+     emphasized dividers) and must read at ≥3:1 against the base surface —
+     22% composited under 2:1 on every theme. Hairline stays decorative. */
+  --border-strong: color-mix(in oklch, var(--foreground) 48%, transparent);
+  --input: color-mix(in oklch, var(--foreground) 18%, transparent);
+  --ring: oklch(0.55 0.075 291);
+
+  /* ---- Coven brand ----
+     Lavender presence accent. Use sparingly — familiar dots,
+     status strip, the gradient AI toggle in #22. */
+  --accent-presence: #9386d0;
+  --accent-presence-foreground: var(--primary-foreground);
+  --accent-presence-soft: oklch(0.70 0.10 293);
+  --brand: var(--accent-presence);
+  /* Follows the per-theme ink choice — hardcoded white failed AA on every
+     palette whose accent is light (22 of 32 theme×mode combos). */
+  --brand-foreground: var(--accent-presence-foreground);
+
+  /* ---- Issue #14 named aliases ----
+     Semantic names called out in the spec. Resolve to the same
+     palette as above so either vocabulary works. */
+  --bg-base: var(--background);
+  /* Fixed near-opaque dark "ink" for code surfaces — read code blocks AND the
+     file editor share it so the Code page's read↔edit toggle keeps one bg. */
+  --code-surface: oklch(0.12 0.012 280 / 92%);
+  --bg-panel: oklch(0.205 0.004 291);        /* deepest — app shell / sidebar floor */
+  --code-foreground: oklch(0.92 0.01 280);
+  --bg-raised: var(--card);
+  /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
+     the raised surface so it tracks every theme — this token was referenced
+     by several components while undefined, which computed to transparent
+     (cave-fdt5). */
+  --bg-subtle: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  /* Recessed wells (sticky strips, modal inputs) — one visible step below
+     base. Referenced while undefined (cave-309m); derived from --bg-base so
+     every theme tracks. Light mode overrides below. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
+  --bg-elevated: oklch(0.275 0.006 291);     /* dropdowns / popovers */
+  --bg-hover: oklch(0.305 0.007 291);        /* hover state */
+  --border-hairline: var(--border);
+  --fg-base: var(--text-primary);
+  --fg-muted: var(--text-secondary);
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  /* CHAT-D13-02 → a11y audit 2026-07: the 9-11px labels consuming this token
+     need full AA (4.5:1) on every premade palette, not just Coven's. 72%
+     keeps it visibly quieter than --text-secondary while clearing 4.5:1 on
+     the whole panel ladder across themes (theme-contrast-audit.test.ts). */
+  --text-muted: color-mix(in oklch, var(--foreground) 72%, transparent);
+
+  /* ---- Radii ---- */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  /* Issue #14 named aliases */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  /* Signature pill (composer icon buttons + chips). Scales with the corner
+     radius appearance setting: `sharp` overrides it to a squared value. */
+  --radius-pill: 999px;
+
+  /* ---- Terminal-numeral glow (cave-uw7c) ----
+     The profile share card's glowing-stat treatment, generalized for themed
+     surfaces (roster stat tiles, dashboards). currentColor-based so it works
+     on any ink; light mode zeroes it — bloom on paper reads as blur. */
+  --glow-numeral: 0 0 12px color-mix(in srgb, currentColor 38%, transparent);
+
+  /* ---- Spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ---- Shell pane widths ----
+     Mirrors of the nav/list Panel px props in components/shell.tsx (the
+     authoritative values — React props can't read CSS vars). Kept in sync
+     by shell-left-panels-fit.test.ts. */
+  --shell-nav-width: 240px;
+  --shell-list-width: 260px;
+
+  /* ---- Mobile foundations ----
+     Safe-area-inset shorthands, set once on :root so consumers can
+     `padding-bottom: var(--sai-bottom)` without restating env(). Falls
+     back to 0 on browsers without notches.
+     --touch-target is the minimum hit-area for touch surfaces (WCAG
+     2.5.5 + iOS HIG). Apply via min-height / min-width on tap-only
+     controls; keyboard-focus paths can remain denser. */
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+  --touch-target: 44px;
+
+  /* ---- Motion ----
+     Standard durations and easings. Components should consume these
+     rather than hardcoding ms values. Honored by the
+     prefers-reduced-motion override below. */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ---- Type scale ----
+     Desktop-app density. Body baseline is --text-base (13px); chat
+     and long prose can promote to --text-md (14px). */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-display: 28px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.04em;
+  --tracking-eyebrow: 0.08em;
+
+  /* ---- Semantic state colors ----
+     Tuned for the dark Mood C palette. Soft variants are for tints,
+     backgrounds, and badge edges; base variants are for foreground
+     text and dots. */
+  --color-success: oklch(0.78 0.14 158);
+  --color-success-soft: oklch(0.82 0.06 158);
+  --color-warning: oklch(0.83 0.13 78);
+  --color-warning-soft: oklch(0.86 0.05 78);
+  --color-danger: oklch(0.74 0.18 24);
+  --color-danger-soft: oklch(0.82 0.08 24);
+  --color-info: var(--accent-presence);
+  /* Inline danger-alert vocabulary (craft dossier, marketplace, skill
+     builder) — the design-language tint recipe applied to one solid token:
+     14% fill, 38% border, solid text. Referenced while undefined
+     (cave-309m), which computed to transparent fills and inherited text;
+     mixes derive from --color-danger so the light-mode override and all
+     themes track automatically. */
+  --danger-text: var(--color-danger);
+  --danger-bg: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  --danger-border: color-mix(in oklch, var(--color-danger) 38%, transparent);
+  /* Fixed dark mixing endpoint for solid-state hover colors. Keeping the
+     endpoint tokenized makes render code theme-safe without changing values. */
+  --color-mix-dark: oklch(0 0 0);
+
+  /* ---- Icon sizes ----
+     Replaces ad-hoc width={N} props. Consumers default to --icon-sm
+     (14px) where in doubt. */
+  --icon-2xs: 10px;
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 24px;
+
+  /* ---- Focus ring ----
+     Single source of truth for keyboard focus. Pair with
+     `outline: none` on the element and apply via box-shadow or
+     outline-width. */
+  /* Solid, not translucent: a keyboard focus indicator must hit 3:1 against
+     the surface (WCAG 1.4.11 / 2.4.13). Mixing toward --foreground keeps the
+     accent hue while guaranteeing visibility on every theme; the -soft glow
+     below stays translucent for decoration. */
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
+  --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  --ring-width: 2px;
+  --ring-offset: 2px;
+  /* Inset offset for rings on items inside dense/clipping containers (list rows,
+     popover items, nav tabs) where an outset ring would be clipped by the parent.
+     Single source so these don't drift between -1px/-2px ad hoc. */
+  --ring-offset-inset: calc(-1 * var(--ring-width));
+
+  /* ---- Surface alphas ---- */
+  --backdrop-scrim: oklch(0 0 0 / 60%);
+
+  /* ---- Glass (native-vibrancy translucency for overlay chrome) ----
+     Derived from the theme's own surface tokens via color-mix, so every
+     accent theme and light mode track automatically. Overlay surfaces only —
+     base panes have nothing rendering beneath them to blur, so glass there
+     would cost compositing for no visible depth. Pair the translucent fill
+     with blur(var(--glass-blur)); a see-through fill WITHOUT blur is
+     unreadable, which is why the @supports fallback below restores the
+     opaque tokens wherever backdrop-filter is unavailable. */
+  --glass-blur: 20px;
+  --glass-saturate: 140%;
+  --glass-elevated: color-mix(in oklch, var(--bg-elevated) 74%, transparent);
+  --glass-raised: color-mix(in oklch, var(--bg-raised) 80%, transparent);
+
+  /* Foundations PR — disabled state */
+  --opacity-disabled: 0.4;
+
+  /* Dark is the base mode. color-scheme makes native scrollbars and form
+     controls render in their dark variant everywhere (overridden to `light`
+     under [data-mode="light"] below). */
+  color-scheme: dark;
+
+  /* Foundations PR — scrollbar tokens (consumed by all themed scrollbars) */
+  --scrollbar-thumb: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  --scrollbar-track: transparent;
+
+  /* App-wide accessibility magnification. Values are selected through
+     Settings → Appearance and applied by the root controller before user
+     interaction. */
+  --cave-screen-scale: 1;
+}
+
+:root[data-screen-scale="110"] {
+  --cave-screen-scale: 1.1;
+}
+
+:root[data-screen-scale="125"] {
+  --cave-screen-scale: 1.25;
+}
+
+:root[data-screen-scale="150"] {
+  --cave-screen-scale: 1.5;
+}
+
+/* Foundations PR — themed text selection.
+   Derived from --accent-presence so every theme inherits without override. */
+::selection {
+  background: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  color: var(--foreground);
+}
+
+/* ============================================================
+   Coven (default theme) — LIGHT mode palette.
+   :root above holds the DARK palette; this override flips
+   surfaces, foreground, and accents for light mode. Hue and
+   structural tokens (radii, spacing, motion) are inherited.
+   ============================================================ */
+:root[data-mode="light"] {
+  color-scheme: light;
+  /* No numeral bloom on light surfaces — glow reads as blur on paper. */
+  --glow-numeral: none;
+  --background: oklch(0.975 0.004 291);
+  --foreground: oklch(0.18 0.008 291);
+  --card: oklch(0.95 0.005 291);
+  --card-foreground: oklch(0.18 0.008 291);
+  --popover: oklch(0.97 0.005 291);
+  --popover-foreground: oklch(0.18 0.008 291);
+  --primary: oklch(0.20 0.008 291);
+  --primary-foreground: oklch(0.975 0.004 291);
+  --secondary: oklch(0.92 0.007 291);
+  --secondary-foreground: oklch(0.18 0.008 291);
+  --muted: oklch(0.92 0.007 291);
+  --muted-foreground: oklch(0.42 0.009 291);
+  --accent: oklch(0.92 0.007 291);
+  --accent-foreground: oklch(0.18 0.008 291);
+  --ring: oklch(0.55 0.09 291);
+
+  --accent-presence: #6859ac;
+  --accent-presence-foreground: var(--primary-foreground);
+  --accent-presence-soft: oklch(0.53 0.10 291);
+
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.004 291);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.93 0.006 291);
+  --bg-hover: oklch(0.89 0.008 291);
+  /* Lighter mix step than dark mode — light surfaces need less push to
+     read as recessed. */
+  --bg-sunken: color-mix(in oklch, var(--bg-base) 96%, black);
+
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  /* --border and --input derive from --foreground and auto-invert; the
+     strong border needs a higher ink mix over near-white to hold 3:1
+     (WCAG 1.4.11), same asymmetry as --text-muted below. */
+  --border-strong: color-mix(in oklch, var(--foreground) 60%, transparent);
+  /* CHAT-D13-02 → a11y audit 2026-07: dark ink over near-white needs a
+     higher mix than light ink over near-black for the same contrast — 76%
+     clears 4.5:1 across every premade light palette. */
+  --text-muted: color-mix(in oklch, var(--foreground) 76%, transparent);
+
+  /* Solid for 3:1 focus visibility — see the dark-mode note. */
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
+  --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  --backdrop-scrim: oklch(0 0 0 / 40%);
+
+  /* Semantic state colors retuned for AA contrast on near-white surfaces.
+     The :root values above are tuned for dark backgrounds and read too
+     pale on light. */
+  --color-success: oklch(0.52 0.16 158);
+  --color-success-soft: oklch(0.66 0.10 158);
+  --color-warning: oklch(0.58 0.16 78);
+  --color-warning-soft: oklch(0.72 0.10 78);
+  --color-danger: oklch(0.52 0.20 24);
+  --color-danger-soft: oklch(0.70 0.12 24);
+}
+
+/* Respect OS-level reduced-motion preference by collapsing every
+   token-driven duration. Components that hardcode ms values are
+   audited separately in the motion polish phase. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent-presence: var(--accent-presence);
+  /* Coven canonical type system (DESIGN.md §4):
+     --font-serif: EB Garamond   — display / hero / identity moments
+     --font-sans:  Inter          — everything you read (body, chat, UI, prose)
+     --font-mono:  JetBrains Mono — everything you inspect (code, terminal, labels)
+     These map to the preloaded next/font/google instances in src/app/fonts.ts. */
+  --font-serif: var(--font-eb-garamond);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+html,
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  /* The app chrome is sized to exactly fill the viewport (see .shell-frame).
+     Clamp window-level overflow so the desktop window never scrolls — any
+     scrolling happens inside individual panels, which manage their own
+     overflow. */
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Global scrollbars ───────────────────────────────────────────────────────
+ * Dark, thin scrollbars on every scroll surface in dark mode (and a matching
+ * light treatment under [data-mode="light"], via color-scheme + the tokens).
+ *
+ * Three layers of coverage so nothing slips through:
+ *   1. color-scheme (set on :root) — native scrollbars + form controls.
+ *   2. scrollbar-color/-width — Firefox and the standards path. These are
+ *      INHERITED, so declaring them on html cascades to every element; a
+ *      surface with its own scrollbar-color (cave-chat, sidebar, …)
+ *      still overrides via the normal cascade.
+ *   3. ::-webkit-scrollbar — Chromium/WebKit (the Tauri desktop webview). A
+ *      bare pseudo-element matches every scrollbar; per-component
+ *      `.foo::-webkit-scrollbar` rules are more specific and still win. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-control);
+  /* Transparent border + padding-box clip insets the thumb so it reads as a
+     slim pill with breathing room rather than a full-width bar. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--accent-presence) 50%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Magnification is rem-based: scaling the root font-size enlarges text and
+   em-sized icons and lets the layout reflow, rather than a generic full-window
+   `zoom` (which ballooned everything — including the embedded browser/canvas —
+   and broke getBoundingClientRect math). Anything sized in rem/em scales;
+   fixed-px sizes stay put. */
+html {
+  font-size: calc(16px * var(--cave-screen-scale));
+}
+
+body {
+  font-family:
+    var(--font-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  font-size: 0.875rem;
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Mobile foundations — kill iOS focus-zoom on text entry. Any input/
+   textarea/select smaller than 16px triggers Safari's auto-zoom. The
+   max() form lets larger contexts keep their size; <16px gets bumped.
+   Per-class overrides that set font-size < 16px on inputs are removed
+   in this same change so this rule actually wins. */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+
+/* ============================================================
+   Universal focus ring — apply via class on any interactive
+   element. Pairs with `outline: none` so the ring is purely
+   keyboard-driven (`:focus-visible`).
+   ============================================================ */
+.focus-ring,
+.focus-ring:focus { outline: none; }
+.focus-ring:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+.focus-ring-inset:focus { outline: none; }
+.focus-ring-inset:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
+}
+
+/* ============================================================
+   Progressive disclosure — reveal-on-hover (design language §8)
+   ============================================================
+   Secondary controls earn visibility instead of holding it. Mark the
+   hover surface `.reveal-scope` and the quiet control `.reveal-on-hover`:
+
+     <div class="reveal-scope">…<button class="reveal-on-hover">…</button></div>
+
+   Contract (the reason this is a shared utility, not ad-hoc opacity):
+   - opacity-hide, never display/visibility — the control stays in the
+     a11y tree and remains tabbable at all times.
+   - keyboard parity: revealed by :focus-within on the scope, so tabbing
+     into the row shows the whole control cluster, not just the focused
+     button.
+   - touch parity: coarse-pointer devices can't hover — controls are
+     permanently visible there (same media guard as .touch-always-visible).
+   - motion: token duration only; collapses under reduced-motion via the
+     global duration override. */
+.reveal-on-hover {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.reveal-scope:hover .reveal-on-hover,
+.reveal-scope:focus-within .reveal-on-hover,
+.reveal-on-hover:focus-visible,
+/* A control carrying live state (pinned, fullscreen…) is a status indicator,
+   not just an action — badges/state never hide (§8). */
+.reveal-on-hover[aria-pressed="true"] {
+  opacity: 1;
+}
+@media (hover: none) and (pointer: coarse) {
+  .reveal-on-hover { opacity: 1; }
+}
+
+/* Settings search: flash a ring on the group a result jumped to. */
+.settings-group--found > div:last-child {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+  transition: outline-color 1.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-group--found > div:last-child { transition: none; }
+}
+
+/* Skip-to-content link: off-screen until it receives keyboard focus, then it
+   slides into the top-left so the first Tab on any surface reaches it. */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  margin: var(--space-2);
+  padding: var(--space-2) 14px;
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated, var(--background));
+  color: var(--fg-base, var(--foreground));
+  border: 1px solid var(--ring-focus);
+  font-size: var(--text-base);
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  transform: translateY(-150%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
+}
+
+/* Bulk-select rows expose role="checkbox" in select mode; give the keyboard
+   focus an inset ring without changing their pinned className strings. */
+tr[role="checkbox"]:focus { outline: none; }
+tr[role="checkbox"]:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
+}

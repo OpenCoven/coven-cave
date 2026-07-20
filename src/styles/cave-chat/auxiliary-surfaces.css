@@ -1,0 +1,1010 @@
+/* ── Familiar inline card (avatar click → in-thread expand) ──────────────── */
+.cave-linear-turn-avatar { position: relative; }
+
+/* CHAT-D3-07's `content-visibility: auto` on .cave-linear-turn implies paint
+   containment, so the open card was clipped at its own turn's padding box and
+   the turn painted as an atomic unit UNDER the following turns — the card
+   looked "cut inside" the response. While a card is open, release containment
+   on the host turn and lift it above later siblings (below sticky chrome at
+   z-50/60). Only one card opens at a time, so virtualization still applies to
+   every other row. */
+.cave-linear-turn:has(.familiar-inline-card) {
+  content-visibility: visible;
+  position: relative;
+  z-index: 40;
+}
+
+/* The expanded card mounts INSIDE the circular avatar cell, whose
+   `overflow: hidden` (needed to crop photo avatars) was clipping the whole
+   card down to the 48px circle — only its backdrop and close × peeked
+   through. When the cell hosts the interactive button, move the photo crop
+   onto the button itself and let the cell overflow so the card can escape. */
+.cave-linear-turn-avatar:has(> .cave-linear-turn-avatar-btn) {
+  overflow: visible;
+}
+
+.cave-linear-turn-avatar.is-selected {
+  /* Lift the open card above the following turns. */
+  z-index: 40;
+}
+
+.cave-linear-turn-avatar-btn {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.cave-linear-turn-avatar-btn:focus-visible {
+  outline: 2px solid var(--ring-focus, #7c93ff);
+  outline-offset: 2px;
+}
+
+.familiar-inline-card {
+  /* Popover below the avatar — absolute so the fixed-width avatar grid cell
+     (52/64px) neither clips nor stretches around it. */
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: min(320px, 78vw);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated, #161616);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform-origin: top left;
+  animation: familiar-card-grow 140ms ease-out;
+}
+@keyframes familiar-card-grow {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .familiar-inline-card { animation: none; }
+}
+
+.familiar-inline-card__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 6px;
+}
+.familiar-inline-card__close:hover { color: var(--text-primary, #fff); }
+
+.familiar-inline-card__identity { display: flex; gap: 10px; align-items: flex-start; }
+.familiar-inline-card__name { font-weight: 600; font-size: 14px; color: var(--text-primary, #fff); }
+.familiar-inline-card__role { font-size: 12px; color: var(--text-secondary, #aaa); }
+.familiar-inline-card__desc { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-secondary, #bbb); }
+
+.familiar-inline-card__status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary, #ddd); flex-wrap: wrap; }
+.familiar-inline-card__status-muted { color: var(--text-secondary, #888); }
+.familiar-inline-card__dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.familiar-inline-card__dot[data-pulse="1"] { animation: familiar-card-pulse 1.6s ease-in-out infinite; }
+@keyframes familiar-card-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) {
+  .familiar-inline-card__dot[data-pulse="1"] { animation: none; }
+}
+
+.familiar-inline-card__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.familiar-inline-card__actions button {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--text-sm); padding: 4px 8px;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
+  color: var(--text-primary, #eee); cursor: pointer;
+}
+.familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__actions button:focus-visible,
+.familiar-inline-card__workload-item:focus-visible,
+.familiar-inline-card__close:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff);
+  outline-offset: var(--ring-offset, 2px);
+}
+
+.familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__view-all {
+  border: 0; background: transparent; cursor: pointer; font-size: 12px;
+  /* Brand accent (--accent-presence), NOT --accent — that's the shadcn
+     surface token (near-black in dark themes), which rendered this link
+     almost invisible. */
+  color: var(--accent-presence, #7c93ff);
+  border-radius: var(--radius-control);
+}
+.familiar-inline-card__view-all:hover { text-decoration: underline; color: var(--text-primary, #fff); }
+.familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff); outline-offset: var(--ring-offset, 2px); }
+.familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
+.familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* Peek rows are cards: the whole row is a button that opens the doc in the
+   Grimoire. Quiet at rest; hairline + wash raise on hover/focus. */
+.familiar-inline-card__memory-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.familiar-inline-card__memory-item:hover {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+}
+.familiar-inline-card__memory-time { display: inline-flex; align-items: center; gap: var(--space-1); }
+.familiar-inline-card__memory-open { opacity: 0; color: var(--text-muted); transition: opacity 120ms ease; }
+.familiar-inline-card__memory-item:hover .familiar-inline-card__memory-open,
+.familiar-inline-card__memory-item:focus-visible .familiar-inline-card__memory-open { opacity: 1; }
+.familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
+.familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
+.familiar-inline-card__memory-stale {
+  margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px var(--space-1); border-radius: var(--radius-control);
+  color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
+}
+
+/* ── Insight layer (cave-ck70) ─────────────────────────────────────────────
+   Trust/health one-liner, activity meta, live workload and state-driven
+   actions derived by familiar-card-insights from the analytics model. */
+.familiar-inline-card__insight {
+  font-size: var(--text-sm); line-height: 1.4; padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  color: var(--text-primary, #ddd); background: var(--bg-base, #111);
+}
+.familiar-inline-card__insight[data-tone="good"] {
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="bad"] {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+}
+
+.familiar-inline-card__meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.familiar-inline-card__meta-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--text-xs); color: var(--text-secondary, #999);
+}
+.familiar-inline-card__signal {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--text-xs); padding: 1px 6px; border-radius: var(--radius-pill, 999px);
+  color: var(--text-secondary, #999); border: 1px solid var(--border-hairline, #2a2a2a);
+}
+.familiar-inline-card__signal[data-severity="warn"] { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 45%, transparent); }
+.familiar-inline-card__signal[data-severity="crit"] { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
+
+.familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__workload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.familiar-inline-card__workload-item {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: var(--text-sm); padding: 4px 6px; text-align: left;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
+  color: var(--text-primary, #ddd); cursor: pointer;
+}
+.familiar-inline-card__workload-item:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__workload-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary, #777); flex-shrink: 0; }
+
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual {
+  /* Brand accent, not the --accent surface token (see __view-all note). */
+  color: var(--accent-presence, #7c93ff);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 40%, transparent);
+}
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual:hover {
+  background: color-mix(in srgb, var(--accent-presence, #7c93ff) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 60%, transparent);
+}
+
+/* ── New-chat launch surface ───────────────────────────────────────────────
+   Shown when a chat is opened without a resolved familiar. Replaces the old
+   "pick from the sidebar selector" dead-end with an actionable hub: an inline
+   familiar chooser + recent threads, one click into the composer. */
+.cave-launch {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: clamp(24px, 6vh, 56px) clamp(16px, 4vw, 36px);
+  background: var(--bg-base);
+  overflow: auto;
+}
+.cave-launch__shell { width: min(720px, 100%); display: grid; gap: 22px; }
+.cave-launch__hero { display: grid; justify-items: center; gap: 7px; text-align: center; }
+.cave-launch__mark {
+  display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 3px;
+  border-radius: var(--radius-card); color: var(--accent-presence);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  box-shadow: 0 10px 28px oklch(0 0 0 / 22%), inset 0 1px 0 oklch(1 0 0 / 7%);
+}
+.cave-launch__title { margin: 0; font-size: 22px; font-weight: 680; color: var(--text-primary); line-height: 1.15; }
+.cave-launch__subtitle { margin: 0; font-size: 13px; color: var(--text-muted); }
+.cave-launch__section { display: grid; gap: 10px; }
+.cave-launch__label {
+  margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.cave-launch__grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.cave-launch__card {
+  display: flex; align-items: center; gap: 11px; text-align: left;
+  padding: var(--space-3) 13px; border-radius: 11px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.cave-launch__card:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-panel));
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  transform: translateY(-1px);
+}
+.cave-launch__card-copy { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.cave-launch__card-name {
+  font-size: var(--text-base); font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cave-launch__card-meta {
+  font-size: var(--text-xs); color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cave-launch__card-go { color: var(--text-muted); flex: 0 0 auto; opacity: 0; transition: opacity 140ms ease, color 140ms ease; }
+.cave-launch__card:hover .cave-launch__card-go { opacity: 1; color: var(--accent-presence); }
+.cave-launch__recents { display: grid; gap: 5px; }
+.cave-launch__recent {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 9px 11px; border-radius: 9px;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.cave-launch__recent:hover { background: var(--bg-raised); border-color: var(--border-hairline); }
+.cave-launch__recent-icon { color: var(--text-muted); flex: 0 0 auto; }
+.cave-launch__recent-copy { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.cave-launch__recent-title {
+  font-size: var(--text-base); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cave-launch__recent-meta { font-size: 11px; color: var(--text-muted); }
+.cave-launch__recent-go { color: var(--text-muted); flex: 0 0 auto; opacity: 0; transition: opacity 140ms ease; }
+.cave-launch__recent:hover .cave-launch__recent-go { opacity: 1; }
+
+/* ── Workspace (code) rail ─────────────────────────────────────────────
+   Vertical tab strip · header · active panel. Gold accents mirror the
+   composer control pills (--composer-pill-gold) and the .cnav count. */
+.workspace-rail {
+  display: flex;
+  flex-direction: row;
+  /* Fill the hosting panel. The code-rail Panel clamps at maxSize 560px while
+     the resizable layout can hand it more — without flex-grow the rail sat at
+     its content width and left a dead band between its right edge and the
+     collapsed Inspector rail on wide windows. */
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-surface, var(--background));
+}
+
+/* Fullscreen fills its CONTAINING BLOCK via inset alone — no width/height.
+   Historically .cave-mode-fade retained a transform (fill-mode: both) and
+   every mode wrapper was the containing block for fixed descendants —
+   width:100vw stacked on the rail offset hung the diffs pane past the
+   window edge (clipped stat chips / cut "Diff" header). The root cause is
+   fixed (cave-cco, fill-mode: backwards), so this now sizes to the true
+   viewport; inset:0 was chosen precisely to stay correct across that
+   transition. Fullscreen covering the shell's icon rail matches the
+   portaled .chat-artifact--fullscreen precedent. */
+.workspace-rail--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--bg-base, var(--background));
+  border: 0;
+}
+
+.workspace-rail--fullscreen .workspace-rail__strip {
+  flex-basis: 44px;
+  padding-top: 10px;
+}
+
+.workspace-rail--fullscreen .workspace-rail__tab {
+  width: 34px;
+  height: 34px;
+}
+
+/* Rail entrance + tab-switch motion.
+   - .workspace-rail__body eases in when the rail mounts (opens) — a subtle
+     fade + short slide from the right. We animate the inner content, not the
+     react-resizable-panels frame width, so panel layout is never fought.
+   - .workspace-rail__panel is the per-tab body wrapper; it is keyed by
+     activeTab in the component, so switching Changes<->Files remounts it and
+     this same entrance replays as a short crossfade. */
+@keyframes workspace-rail-content-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.workspace-rail__body {
+  /* mount entrance — slightly longer, emphasized ease */
+  animation: workspace-rail-content-in var(--duration-base, 180ms)
+    var(--ease-emphasized, ease) both;
+}
+.workspace-rail__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  /* tab-switch crossfade — shorter, standard ease */
+  animation: workspace-rail-content-in var(--duration-fast, 120ms)
+    var(--ease-standard, ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-rail__body,
+  .workspace-rail__panel {
+    animation: none;
+  }
+}
+
+/* ── Mobile code-rail toggle + slide-over sheet (PR 3, Task 3) ────────────────
+   Below the mobile/narrow breakpoint the rail is a right-edge sheet opened by a
+   compact toggle button in the scope-tabs header (a </> glyph with the pending
+   change-count badge). The sheet slides in from the right edge; reduced-motion
+   zeroes the slide (mirrors the workspace-rail entrance convention above). */
+.mobile-code-rail-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.mobile-code-rail-toggle:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.mobile-code-rail-toggle[aria-expanded="true"] {
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  border-color: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 42%, transparent);
+  background: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 12%, transparent);
+}
+.chat-scope-group-btn.is-active {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+.mobile-code-rail-toggle__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 var(--space-1);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  color: oklch(0.22 0.02 83);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes mobile-code-rail-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.mobile-code-rail-sheet__panel {
+  animation: mobile-code-rail-sheet-in var(--duration-base, 180ms)
+    var(--ease-decelerate, ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-code-rail-sheet__panel {
+    animation: none;
+  }
+}
+
+.workspace-rail__strip {
+  flex: 0 0 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 6px 0;
+  border-right: 1px solid var(--border-hairline);
+}
+
+.workspace-rail__tab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.workspace-rail__tab:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.workspace-rail__tab.is-active {
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  border-color: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 42%, transparent);
+  background: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 12%, transparent);
+}
+
+.workspace-rail__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 var(--space-1);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  color: oklch(0.22 0.02 83);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Failing-checks dot (cave-fpqx.12): a peripheral red cue on the rail's
+   Changes tab and the collapsed reopen strip when the session PR's rollup is
+   red. Sits on the opposite corner from the count badge so both can show. */
+.workspace-rail__badge--alert {
+  top: auto;
+  bottom: -3px;
+  right: -3px;
+  min-width: 9px;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  background: var(--color-danger);
+}
+
+/* On the full-height collapsed reopen strip the dot anchors to the icon area
+   instead of the strip's far corner. */
+.workspace-rail-reopen .workspace-rail__badge--alert {
+  top: 6px;
+  right: 8px;
+  bottom: auto;
+}
+
+.workspace-rail__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Clip the small entrance slide so translateX never spills a horizontal
+     scrollbar while content settles to 0. Scoped to the body (not the whole
+     rail) so the sibling tab strip's focus rings are never clipped. */
+  overflow: hidden;
+}
+
+.workspace-rail__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 10px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.workspace-rail__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.workspace-rail__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.workspace-rail__btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+.workspace-rail__btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.workspace-rail__btn.is-on {
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
+}
+
+.workspace-rail__pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workspace-rail__soon {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--space-6);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Terminal tab — fills the pane so xterm's fit addon can size the shell. Kept
+   mounted but display:none'd when another tab is active (pty keepalive). */
+.workspace-rail__terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-rail__terminal.is-hidden {
+  display: none;
+}
+
+.workspace-rail__terminal-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--space-6);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Files tab — compact rail stacks tree over preview; fullscreen becomes an
+   IDE-style split: files left, code center, diffs far right. */
+.workspace-rail__files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-rail__files-tree {
+  flex: 0 0 45%;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px var(--space-1);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.workspace-rail__files--ide {
+  flex-direction: row;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-base, var(--background));
+}
+
+.workspace-rail__files-ide-group {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace-rail__files-tree-pane,
+.workspace-rail__files-editor,
+.workspace-rail__files-diffs {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-rail__files-tree--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: var(--space-2) 6px;
+  border-right: 1px solid var(--border-hairline);
+  border-bottom: 0;
+  background: color-mix(in oklch, var(--bg-base) 92%, var(--foreground) 3%);
+}
+
+.workspace-rail__files-preview--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  border-bottom: 0;
+}
+
+.workspace-rail__files-diffs {
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 94%, var(--foreground) 2%);
+}
+
+.workspace-rail__files-diffs .session-changes-panel {
+  height: 100%;
+}
+
+.workspace-rail__files-separator {
+  flex: 0 0 auto;
+}
+
+.workspace-rail__files-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.workspace-rail__files-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-6);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Empty-state launchpad: the working tree's changed files as one-click opens,
+   so the main pane starts useful instead of dead space. Dashed = invitation. */
+.workspace-rail__empty-changes {
+  width: min(100%, 380px);
+  margin-top: 6px;
+  padding: 10px var(--space-3);
+  border: 1px dashed var(--border-hairline);
+  border-radius: 10px;
+  text-align: left;
+}
+.workspace-rail__empty-changes-title {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.workspace-rail__empty-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workspace-rail__empty-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-1) 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.workspace-rail__empty-change:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.workspace-rail__empty-change > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.workspace-rail__empty-change-name {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.workspace-rail__empty-change-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.workspace-rail__empty-change-stat {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-rail__preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.workspace-rail__preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+}
+
+.workspace-rail__preview-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* Edit / Save / Cancel / Copy affordances, pushed to the right edge of the
+   preview header. Sans (not the header's mono) so the labels read as chrome. */
+.workspace-rail__preview-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  font-family: var(--font-sans, inherit);
+}
+
+.workspace-rail__preview-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.workspace-rail__preview-action:hover {
+  background-color: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.workspace-rail__preview-action:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.workspace-rail__preview-action--primary {
+  color: var(--accent-presence);
+}
+
+.workspace-rail__preview-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-2xs);
+  font-family: var(--font-sans, inherit);
+  color: var(--color-success, #34d399);
+}
+
+.workspace-rail__preview-saveerr {
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  font-family: var(--font-sans, inherit);
+  color: var(--color-danger, #f87171);
+}
+
+.workspace-rail__preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+/* Editing swaps the padded, scrollable reader for a flush editor that fills the
+   pane and scrolls internally (CodeMirror owns its own scroll). */
+.workspace-rail__preview-body--edit {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-rail__preview-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Reading a highlighted code file: the pane, not the chat transcript, owns the
+   height. Lift SyntaxBlock's chat clamp (max-height: min(60vh, 520px)) so the
+   block shrink-fits the body and scrolls internally — short files keep their
+   natural height, long files fill the pane with the sticky header reachable.
+   Mirrors the --edit editor fill above. */
+.workspace-rail__preview-body--code {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workspace-rail__preview-body--code .cave-syntax-block {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.workspace-rail__preview-body--code .cave-code-wrap {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+/* With the clamp lifted there is nothing to expand — the footer would be a
+   no-op button pinned over the last visible line. */
+.workspace-rail__preview-body--code .cave-code-expand {
+  display: none;
+}
+
+.workspace-rail__preview-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.workspace-rail__preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 160px;
+  padding: var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.workspace-rail__preview-error svg {
+  color: var(--color-danger, #f87171);
+  opacity: 0.8;
+}
+
+.workspace-rail__preview-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-rail__preview-image img {
+  max-width: 100%;
+  object-fit: contain;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+}
+
+.workspace-rail__preview-meta {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* Full-height reopen rail on the chat surface's right edge — the reflection of
+   the left-side shell chrome beside Chat (collapsed global nav / Chats list):
+   icon over a vertical uppercase label ("Code"), reading top→bottom with the
+   glyph face to the right/outside (vertical-rl). An in-flow flex child (NOT
+   absolutely positioned): the rail reserves its own layout width so content
+   sits beside it, never underneath. Carries the same glass as the left panel. */
+.workspace-rail-reopen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 100%;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .workspace-rail-reopen { background: var(--bg-raised); }
+  .voice-call-overlay__dialog { background: var(--bg-raised); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .workspace-rail-reopen {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .voice-call-overlay__dialog {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.workspace-rail-reopen:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+}
+.workspace-rail-reopen__label {
+  writing-mode: vertical-rl;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

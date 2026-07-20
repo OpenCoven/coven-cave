@@ -1,0 +1,449 @@
+/* ── Home content feed (Videos · Tweets · Repos) ─────────────────────────────────────────────────────────
+ *   A compact feed reader replacing the old connector cards. The wrapper keeps
+ *   the `.home-composer-suggestions` class so it inherits the home layout's
+ *   1200px content cap and viewport centering; `.home-feed` overrides the
+ *   flex-center to a single full-width card. */
+.home-composer-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  max-width: min(1200px, 100%);
+  justify-content: center;
+  margin-inline: auto;
+}
+
+.home-feed {
+  display: block;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--bg-raised) 55%, var(--bg-base));
+  overflow: hidden;
+  text-align: left;
+}
+
+.home-feed__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.home-feed__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-base);
+}
+
+.home-feed__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.home-feed__tab:hover { color: var(--text-secondary); }
+.home-feed__tab.is-active {
+  background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised));
+  color: var(--text-primary);
+}
+
+.home-feed__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.home-feed__refresh:hover {
+  background: var(--bg-base);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+/* Repos + Tweets list (shared row layout) */
+.home-feed__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+.home-feed__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.home-feed__row:hover { background: var(--bg-base); }
+.home-feed__rowtop { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.home-feed__rowicon { color: var(--text-muted); flex-shrink: 0; }
+.home-feed__rowtitle {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-feed__rowdesc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.home-feed__rowmeta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.home-feed__lang { color: var(--text-secondary); }
+.home-feed__stars { display: inline-flex; align-items: center; gap: 3px; color: var(--text-secondary); }
+
+/* Shared empty / error / note / skeleton */
+.home-feed__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 30px var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  text-align: center;
+}
+.home-feed__retry {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent-presence);
+  background: transparent;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  border-radius: var(--radius-control);
+  padding: 5px var(--space-3);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.home-feed__retry:hover { background: color-mix(in oklch, var(--accent-presence) 12%, transparent); }
+.home-feed__note { font-size: 11px; color: var(--text-muted); padding: 4px 12px 8px; }
+.home-feed__note--err { color: var(--color-danger); }
+.home-feed__sk-line {
+  background: linear-gradient(
+    90deg,
+    var(--bg-raised) 0%,
+    color-mix(in oklch, var(--bg-raised) 70%, var(--bg-elevated) 30%) 50%,
+    var(--bg-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: ui-skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+  height: 10px;
+  width: 100%;
+}
+.home-feed__sk-line--short { width: 40%; }
+.home-feed__row--skeleton { cursor: default; gap: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .home-feed__sk-line { animation: none; opacity: 0.65; }
+}
+
+@media (max-width: 640px) {
+  .home-feed__list { max-height: 300px; }
+  .home-feed__tab { padding: 6px 9px; }
+}
+
+/* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
+.hc-dest-pill,
+.home-feed__tab,
+.home-feed__row,
+.home-feed__refresh,
+.home-feed__retry {
+  outline: none;
+}
+.hc-dest-pill:focus-visible,
+.home-feed__tab:focus-visible,
+.home-feed__row:focus-visible,
+.home-feed__refresh:focus-visible,
+.home-feed__retry:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+
+/* ── Slash command menu ──────────────────────────────────────────────────────
+ *   Floats above the composer card while the user is typing a `/command`.
+ *   Matches the chat composer's affordance so the muscle memory transfers. */
+.hc-slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 10;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2xl, 14px);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:
+    0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    0 4px 18px -6px rgb(0 0 0 / 0.35);
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+/* Skills picker: option list + detail preview side by side. */
+.hc-slash-body { display: flex; align-items: stretch; min-height: 0; }
+.hc-slash-body .hc-slash-list { flex: 1 1 auto; min-width: 0; }
+.hc-slash-body .skill-preview { max-height: 260px; }
+.hc-slash-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.hc-slash-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.hc-slash-row:hover,
+.hc-slash-row.active {
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+}
+.hc-slash-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  min-width: 110px;
+}
+.hc-slash-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hc-slash-arg {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+.hc-slash-footer {
+  border-top: 1px solid var(--border-hairline);
+  padding: 6px var(--space-3);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Suggested prompts / needs-you — both strips folded into the digest
+   carousel's chats track as tinted cards (see .home-digest__card--needs and
+   .home-digest__card--suggestion below). */
+
+/* ── Two-column footer (Continue · News) ─────────────────────────────────── */
+.home-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 860px;
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .home-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-col {
+  min-width: 0;
+}
+
+.home-col__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.home-col__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-col__empty {
+  margin: 0;
+  padding: 14px var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.home-col-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.home-col-card:hover {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+}
+
+/* The newest session is the resume card: presence-tinted, with a visible
+   Resume affordance (no hover-only reveal — it must read on touch too). */
+.home-col-card--primary {
+  background: color-mix(in oklch, var(--accent-presence) 7%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+}
+
+.home-col-card--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+}
+
+.home-col-card__go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-presence);
+  white-space: nowrap;
+}
+
+.home-col-card__go svg {
+  transition: transform 120ms var(--ease-standard);
+}
+
+.home-col-card--primary:hover .home-col-card__go svg {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-col-card--primary:hover .home-col-card__go svg {
+    transform: none;
+  }
+}
+
+.home-col-card__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.home-col-card--primary .home-col-card__icon {
+  color: var(--accent-presence);
+}
+
+.home-col-card__thumb {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.home-col-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-col-card__title {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-col-card__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

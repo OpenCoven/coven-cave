@@ -1,0 +1,961 @@
+/* ── Conversation thread (shared overlay + tray) ─────────────────────────── */
+.quick-chat-thread {
+  flex: 1 1 auto;
+  min-height: 132px;
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-3);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+.quick-chat-thread::-webkit-scrollbar {
+  width: 8px;
+}
+.quick-chat-thread::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: var(--radius-pill);
+}
+
+/* Turns — user right-aligned; familiar left with an avatar gutter. */
+.quick-chat-turn {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.quick-chat-turn--user {
+  justify-content: flex-end;
+}
+.quick-chat-turn--familiar {
+  align-items: flex-start;
+}
+.quick-chat-turn--familiar > :first-child {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.quick-chat-bubble {
+  min-width: 0;
+  border-radius: var(--radius-panel, 14px);
+  padding: var(--space-2) 11px;
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+.quick-chat-bubble--user {
+  max-width: 84%;
+  color: var(--fg-primary);
+  background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-base));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  border-bottom-right-radius: 5px;
+}
+.quick-chat-bubble--familiar {
+  max-width: calc(100% - 28px);
+  background: color-mix(in oklch, var(--bg-raised) 60%, var(--bg-base));
+  border: 1px solid var(--border-hairline);
+  border-bottom-left-radius: 5px;
+}
+
+/* Markdown reply — trim create-markdown's default block margins in the bubble. */
+.quick-chat-md > .cave-md > :first-child {
+  margin-top: 0;
+}
+.quick-chat-md > .cave-md > :last-child {
+  margin-bottom: 0;
+}
+.quick-chat-md pre {
+  white-space: pre-wrap;
+}
+
+/* Per-turn actions (copy / regenerate) — quiet until the reply is hovered. */
+.quick-chat-turn__actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+  opacity: 0.55;
+  transition: opacity var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.quick-chat-bubble--familiar:hover .quick-chat-turn__actions,
+.quick-chat-turn__actions:focus-within {
+  opacity: 1;
+}
+.quick-chat-turn__error {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-danger, #e5484d);
+}
+
+/* Streaming affordances: a blinking caret and a three-dot "thinking" pulse. */
+.quick-chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent-presence);
+  animation: quick-chat-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes quick-chat-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.quick-chat-typing {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: 3px 0;
+}
+.quick-chat-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--fg-muted);
+  animation: quick-chat-typing-bounce 1.1s ease-in-out infinite;
+}
+.quick-chat-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.quick-chat-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes quick-chat-typing-bounce {
+  0%, 80%, 100% { opacity: 0.35; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-chat-caret,
+  .quick-chat-typing i {
+    animation: none;
+  }
+  .quick-chat-caret {
+    opacity: 1;
+  }
+}
+
+/* Empty state — a friendly nudge + one-tap starters. */
+.quick-chat-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.quick-chat-empty__glyph {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+.quick-chat-empty__title {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.quick-chat-empty__hint {
+  max-width: 20rem;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+.quick-chat-empty__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: var(--space-1);
+}
+.quick-chat-chip {
+  border-radius: var(--radius-pill);
+}
+
+/* Reply recommendation — a proposed next reply offered above the composer,
+ * Tab-to-autofill once a familiar has replied (shared overlay + tray). */
+.quick-chat-reco {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2) 6px 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+}
+.quick-chat-reco__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent-presence);
+}
+.quick-chat-reco__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--fg-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.quick-chat-reco__text--preview {
+  color: var(--fg-muted);
+}
+.quick-chat-reco__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.quick-chat-reco__kbd {
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--fg-muted);
+}
+.quick-chat-reco__shimmer {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--fg-muted) 12%, transparent) 25%,
+    color-mix(in oklch, var(--fg-muted) 22%, transparent) 50%,
+    color-mix(in oklch, var(--fg-muted) 12%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: quick-chat-reco-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes quick-chat-reco-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-chat-reco__shimmer {
+    animation: none;
+  }
+}
+
+/* Next-path suggestions — the agent's parseable trailer surfaced as tap-to-fill
+ * chips on the latest familiar reply (shared overlay + tray). Same accent-tint
+ * language as the main chat's .cave-next-path, sized for the compact tray.
+ * `.ui-btn.` specificity: the chips ride the shared Button primitive, so the
+ * base .ui-btn geometry (32px, nowrap) must lose here. */
+.quick-chat-next-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+.ui-btn.quick-chat-next-path {
+  height: auto;
+  min-height: 24px;
+  padding: 3px 10px;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-secondary);
+}
+.ui-btn.quick-chat-next-path:hover {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  border-color: var(--accent-presence);
+  color: var(--text-primary);
+}
+
+/* Composer — textarea + action row pinned to the bottom (shared overlay + tray). */
+.quick-chat-overlay__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 30%, transparent);
+}
+.quick-chat-overlay__error {
+  font-size: 11.5px;
+  color: var(--color-danger, #e5484d);
+}
+.quick-chat-overlay__input {
+  width: 100%;
+  min-height: 40px;
+  max-height: 128px;
+  resize: none;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  padding: var(--space-2) 10px;
+  font-size: var(--text-base);
+  line-height: 1.45;
+  outline: none;
+  field-sizing: content;
+  transition:
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.quick-chat-overlay__input:focus {
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+.quick-chat-overlay__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.quick-chat-overlay__actions button:not(:disabled):hover {
+  filter: brightness(1.06);
+}
+
+/* Composer meta chips (cave-fdt5): thinking/speed/model as quiet pills
+   instead of a plain-text run-on sentence. */
+.quick-chat-meta-chips {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+}
+.quick-chat-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  padding: 1px 7px;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.quick-chat-meta-chip:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A disabled Send at 50% opacity over the dark composer was near-invisible —
+   keep the control legible as "present but not ready" (cave-fdt5). */
+.quick-chat-overlay__actions .ui-btn--primary:disabled {
+  opacity: 1;
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+/* Drag-and-drop attachments — the composer footer is the drop target; the
+ * counted enter/leave handlers (shared useAttachmentStaging) keep this veil
+ * steady while the drag crosses child elements. */
+.quick-chat-overlay__composer--drop {
+  outline: 1.5px dashed var(--accent-presence);
+  outline-offset: -4px;
+}
+.quick-chat-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--bg-base) 78%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+/* Staged-file chips (above the actions row) and the paperclip line a sent
+ * user turn keeps in its bubble. */
+.quick-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.quick-chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 2px var(--space-1) 2px var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.quick-chat-attachment-chip__name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-chat-bubble__files {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Queued messages — parked while a reply streams, auto-send on settle. The
+ * tinted border echoes the reply-recommendation strip: "held, not lost". */
+.quick-chat-queued {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.quick-chat-queued__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px var(--space-1) 2px var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.quick-chat-queued__steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.quick-chat-queued__steer[aria-disabled="true"] {
+  cursor: default;
+}
+.quick-chat-queued__steer:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  border-radius: calc(var(--radius-control) - 2px);
+}
+.quick-chat-queued__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-chat-queued__count {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--fg-muted);
+}
+
+/* ======================================================================
+ * Drag-to-split — open any sidebar page beside the current surface and
+ * resize it with modern-desktop snapping (DetailSplitHost). The host
+ * renders as a Fragment, so the snap guide + drop overlay anchor against
+ * the .shell-detail main (made position:relative just below).
+ * ====================================================================== */
+.shell-detail { position: relative; }
+
+/* The resizable split group fills the detail panel like the solo surface.
+ * `width: 100%` is belt-and-suspenders: react-resizable-panels normally sets
+ * it inline, but if that inline style is missing/late (observed in the desktop
+ * webview) the group must still span the full detail width so the panes never
+ * leave a trailing gap on the far edge. */
+.split-host__group {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.split-host__mobile-switcher {
+  display: none;
+}
+
+.split-host__grid {
+  display: grid;
+  gap: 1px;
+  background: var(--border-hairline);
+}
+
+.split-host__grid[data-variant="triad"] {
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.split-host__grid[data-variant="triad"] .split-host__tile--primary {
+  grid-row: 1 / span 2;
+}
+
+.split-host__grid[data-variant="quad"] {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+/* Secondary pane shell — a framed "window" beside the primary surface. */
+.split-host__pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-base);
+}
+.split-host__tile {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.split-host__pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px var(--space-2) 6px var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  flex: 0 0 auto;
+}
+.split-host__pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.split-host__pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.split-host__pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.split-host__pane-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border-color: var(--border-hairline);
+}
+.split-host__pane-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-focus);
+}
+.split-host__pane-close:hover {
+  background: color-mix(in oklch, var(--color-danger, #e5484d) 16%, transparent);
+  color: var(--color-danger, #e5484d);
+  border-color: transparent;
+}
+.split-host__pane-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: auto;
+}
+.split-host__pane-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Usability floor (cave-hivd): below ~300px every surface crushes into
+     letter soup — the pane scrolls horizontally instead. Pure CSS so the
+     divider's drag-to-close zones (ratio-based) stay reachable. */
+  min-width: 300px;
+}
+
+/* ── Split divider: a calm hairline that reveals a grip on hover/drag ──────── */
+.split-host__sep {
+  position: relative;
+  /* Sit above the panes so the whole seam is grabbable — pane content otherwise
+     overlaps the hit strip on one side and steals the pointer. */
+  z-index: 5;
+}
+/* Widen the invisible grab strip so the seam is an easy target. */
+.split-host__sep .ui-sep-handle--col::after {
+  left: -7px;
+  right: -7px;
+}
+/* The grip: a short rounded bar centered on the seam, hidden until hover/drag,
+   then it fades and grows in. Pure affordance — no layout impact. */
+.split-host__grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scaleY(0.55);
+  width: 4px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-muted) 60%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.split-host__sep:hover .split-host__grip,
+.split-host__group[data-resizing] .split-host__grip {
+  opacity: 1;
+  transform: translate(-50%, -50%) scaleY(1);
+}
+.split-host__group[data-resizing] .split-host__grip {
+  background: var(--accent-presence);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .split-host__grip { transition: opacity var(--duration-fast) var(--ease-standard); }
+}
+
+/* Live snap guide drawn while dragging the divider. */
+.split-host__guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: color-mix(in oklch, var(--text-muted) 45%, transparent);
+  pointer-events: none;
+  z-index: 6;
+  transition: left 0.04s linear;
+}
+.split-host__guide--snap {
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 40%, transparent),
+    0 0 12px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+.split-host__guide--close { background: var(--color-danger, #e5484d); }
+/* Far-edge "Fill" state — promoting the secondary to the whole surface. Uses
+   the accent (a positive/constructive action) with a stronger glow than snap. */
+.split-host__guide--collapse {
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 55%, transparent),
+    0 0 16px color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+.split-host__guide-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--accent-presence-foreground, #fff);
+  background: var(--accent-presence);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.split-host__guide--close .split-host__guide-chip {
+  background: var(--color-danger, #e5484d);
+  color: #fff;
+}
+
+/* Drop overlay — two desktop-style snap targets over the main area. */
+.split-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  pointer-events: none;
+}
+.split-dropzone__half {
+  flex: 1 1 50%;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px;
+  border: 2px dashed color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--text-muted);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.split-dropzone__half--left { margin-right: 5px; }
+.split-dropzone__half--right { margin-left: 5px; }
+.split-dropzone__half.is-hover {
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-base));
+  border: 2px solid var(--accent-presence);
+  color: var(--text-primary);
+}
+.split-dropzone__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 14px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-base);
+  font-weight: 600;
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  pointer-events: none;
+}
+
+/* ── Chat split panes — drag a conversation from the thread rail onto the
+      chat and snap it left / right / above / below (chat-split-host). ── */
+.chat-split__group {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+/* Quad (2×2) grid: each outer row hosts a nested horizontal group. */
+.chat-split__quad-row {
+  min-width: 0;
+  min-height: 0;
+}
+.chat-split__group--inner {
+  flex: 1 1 auto;
+  width: 100%;
+}
+.chat-split__pane-panel {
+  min-width: 0;
+  min-height: 0;
+}
+/* The focused pane (keyboard target): a quiet accent ring drawn as an inset
+   outline — outlines paint above the pane's (opaque, full-bleed) children,
+   where an inset box-shadow would be hidden. The stronger :focus-visible ring
+   is declared after so it wins while the container itself holds real focus
+   (panes get programmatic focus via tabIndex=-1). */
+.chat-split__pane-panel[data-focused="true"] {
+  outline: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  outline-offset: -1px;
+}
+.chat-split__pane-panel:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
+}
+.chat-split__tile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-base);
+}
+.chat-split__pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+}
+/* The header doubles as the pane's drag handle (reposition via the snap
+   overlay); the grip glyph + grab cursor carry the affordance. */
+.chat-split__pane-head[draggable="true"] {
+  cursor: grab;
+}
+.chat-split__pane-head[draggable="true"]:active {
+  cursor: grabbing;
+}
+.chat-split__pane-grip {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.chat-split__pane-head[draggable="true"]:hover .chat-split__pane-grip {
+  color: var(--text-secondary);
+}
+.chat-split__pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.chat-split__pane-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-split__pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-split__pane-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.chat-split__pane-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+.chat-split__pane-close:hover {
+  color: var(--color-danger, #e5484d);
+}
+.chat-split__pane-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chat-split__pane-body > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Drop overlay: one live layer over the chat — the snap preview tracks the
+   pointer's nearest edge and glows over the half the pane will occupy. */
+.chat-split__dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklch, var(--bg-base) 35%, transparent);
+}
+.chat-split__preview {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 2px solid var(--accent-presence);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
+  pointer-events: none;
+}
+.chat-split__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 80%;
+  padding: var(--space-2) 14px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.chat-split__hint--idle {
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .split-host__guide { transition: none; }
+  .chat-split__preview { transition: none; }
+}
+
+@media (max-width: 1023px) {
+  .split-host__mobile-switcher {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    padding: 6px var(--space-2);
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  }
+
+  .split-host__mobile-tab {
+    flex: 0 0 auto;
+    max-width: 48vw;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .split-host__mobile-tab[aria-selected="true"] {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  }
+
+  .split-host__group {
+    height: calc(100% - 43px);
+  }
+
+  .split-host__grid,
+  .split-host__group[data-variant] {
+    display: block !important;
+    background: transparent;
+  }
+
+  .split-host__sep {
+    display: none !important;
+  }
+
+  .split-host__tile-panel,
+  .split-host__tile {
+    height: 100%;
+    width: 100% !important;
+  }
+
+  .split-host__tile-panel[data-active="false"],
+  .split-host__tile[data-active="false"] {
+    display: none !important;
+  }
+}
