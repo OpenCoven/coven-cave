@@ -317,7 +317,7 @@ test("native browser children can report metadata but cannot control browser lay
   );
   assert.match(
     tauriSetupRust,
-    /browser::browser_report_user_navigation,/,
+    /browser::browser_commands::browser_report_user_navigation,/,
     "the child navigation-attribution command must be registered",
   );
 });

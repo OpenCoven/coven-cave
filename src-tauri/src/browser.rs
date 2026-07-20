@@ -39,7 +39,7 @@ const USER_NAVIGATION_MARKER_TTL: Duration = Duration::from_secs(2);
 const MAX_TRACKED_BROWSER_URLS: usize = 64;
 
 mod browser_bounds;
-mod browser_commands;
+pub(crate) mod browser_commands;
 mod browser_events;
 mod browser_native;
 mod browser_reconciliation;

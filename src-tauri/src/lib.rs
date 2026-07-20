@@ -1,3 +1,8 @@
+#[cfg(desktop)]
+use rand::{rngs::OsRng, RngCore};
+#[cfg(all(desktop, target_os = "windows"))]
+use serde::Serialize;
+#[cfg(desktop)]
 use std::net::TcpListener;
 #[cfg(all(desktop, target_os = "windows"))]
 use std::os::windows::process::CommandExt;
@@ -68,6 +73,8 @@ mod window_geometry;
 mod windows_process_job;
 
 #[cfg(desktop)]
+use platform_lifecycle::*;
+#[cfg(desktop)]
 use shell_open_commands::{shell_open, shell_open_path, shell_pick_directory};
 #[cfg(desktop)]
 use shell_open_helpers::{
@@ -80,5 +87,7 @@ use sidecar_auth::*;
 use sidecar_discovery::*;
 #[cfg(desktop)]
 use sidecar_lifecycle::*;
+#[cfg(desktop)]
+use sidecar_startup::*;
 #[cfg(desktop)]
 use window_geometry::*;

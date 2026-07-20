@@ -191,7 +191,7 @@ impl SidecarStartupControl {
 }
 
 #[cfg(desktop)]
-pub(super) struct SidecarCleanupGuard(Arc<Mutex<Option<SidecarProcess>>>);
+pub(super) struct SidecarCleanupGuard(pub(super) Arc<Mutex<Option<SidecarProcess>>>);
 
 #[cfg(desktop)]
 impl tauri::Resource for SidecarCleanupGuard {}
