@@ -38,11 +38,17 @@ const OFFSCREEN_Y: f64 = -10000.0;
 const USER_NAVIGATION_MARKER_TTL: Duration = Duration::from_secs(2);
 const MAX_TRACKED_BROWSER_URLS: usize = 64;
 
+#[path = "browser_bounds.rs"]
 mod browser_bounds;
+#[path = "browser_commands.rs"]
 pub(crate) mod browser_commands;
+#[path = "browser_events.rs"]
 mod browser_events;
+#[path = "browser_native.rs"]
 mod browser_native;
+#[path = "browser_reconciliation.rs"]
 mod browser_reconciliation;
+#[path = "browser_state.rs"]
 mod browser_state;
 
 use browser_bounds::{
