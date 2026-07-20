@@ -8,7 +8,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const githubView = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8");
+const githubView = [
+  readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // ── Workspace: one shared interceptor, used by every open path ───────────────
 assert.match(
