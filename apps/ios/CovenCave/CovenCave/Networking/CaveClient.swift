@@ -678,8 +678,27 @@ struct CaveClient {
 
     // MARK: - Canvas (generated artifacts)
 
-    private struct CanvasResponse: Decodable { var ok: Bool?; var artifacts: [CanvasArtifact]? }
-    private struct UpsertBody: Encodable { var artifact: CanvasArtifact }
+    private struct CanvasResponse: Decodable {
+        var ok: Bool?
+        var artifact: CanvasArtifact?
+        var artifacts: [CanvasArtifact]?
+    }
+    struct CanvasResolutionToken: Encodable {
+        var id: String
+        var updatedAt: String
+    }
+    private struct UpsertBody: Encodable {
+        var artifact: CanvasArtifact
+        var expectedUpdatedAt: String?
+        var expectedAbsent: Bool?
+        var resolvedAnnotations: [CanvasResolutionToken]?
+    }
+    private struct AnnotationMutationBody: Encodable {
+        var id: String
+        var annotation: CanvasAnnotation
+        var expectedAnnotationUpdatedAt: String?
+        var expectedAnnotationAbsent: Bool?
+    }
 
     /// `GET /api/canvas` — the saved canvas artifacts.
     func canvasArtifacts() async throws -> [CanvasArtifact] {
@@ -693,14 +712,48 @@ struct CaveClient {
         }
     }
 
-    /// `POST /api/canvas` — upsert an artifact; returns the full updated list.
+    /// `POST /api/canvas` — guarded artifact upsert; returns the server-settled artifact.
     @discardableResult
-    func saveCanvasArtifact(_ artifact: CanvasArtifact) async throws -> [CanvasArtifact] {
-        let payload = try JSONEncoder().encode(UpsertBody(artifact: artifact))
+    func saveCanvasArtifact(_ artifact: CanvasArtifact, expectedUpdatedAt: String? = nil,
+                            expectedAbsent: Bool = false,
+                            resolvedAnnotations: [CanvasResolutionToken]? = nil)
+        async throws -> (artifact: CanvasArtifact, artifacts: [CanvasArtifact]) {
+        let payload = try JSONEncoder().encode(UpsertBody(
+            artifact: artifact,
+            expectedUpdatedAt: expectedUpdatedAt,
+            expectedAbsent: expectedAbsent ? true : nil,
+            resolvedAnnotations: resolvedAnnotations
+        ))
         let req = try request("api/canvas", method: "POST", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
-        return (try? JSONDecoder().decode(CanvasResponse.self, from: data).artifacts) ?? []
+        let decoded = try JSONDecoder().decode(CanvasResponse.self, from: data)
+        guard let settled = decoded.artifact else {
+            throw CaveError.decoding("Canvas save did not return the settled artifact.")
+        }
+        return (settled, decoded.artifacts ?? [settled])
+    }
+
+    /// `PATCH /api/canvas` — add or replace one component annotation.
+    func saveCanvasAnnotation(artifactId: String, annotation: CanvasAnnotation,
+                              expectedUpdatedAt: String?)
+        async throws -> (artifact: CanvasArtifact, artifacts: [CanvasArtifact]) {
+        let payload = try JSONEncoder().encode(
+            AnnotationMutationBody(
+                id: artifactId,
+                annotation: annotation,
+                expectedAnnotationUpdatedAt: expectedUpdatedAt,
+                expectedAnnotationAbsent: expectedUpdatedAt == nil ? true : nil
+            )
+        )
+        let req = try request("api/canvas", method: "PATCH", body: payload)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        let decoded = try JSONDecoder().decode(CanvasResponse.self, from: data)
+        guard let settled = decoded.artifact else {
+            throw CaveError.decoding("Canvas annotation save did not return the artifact.")
+        }
+        return (settled, decoded.artifacts ?? [settled])
     }
 
     /// `DELETE /api/canvas` — remove an artifact by id.

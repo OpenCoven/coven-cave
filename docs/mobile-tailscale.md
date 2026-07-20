@@ -34,6 +34,19 @@ pnpm mobile:tailscale:status   # show process/state info with host/token redacte
 pnpm mobile:tailscale:stop     # stop the dev server and reset Tailscale Serve
 ```
 
+For a local simulator/emulator workflow, use the checked-in wrappers:
+
+```bash
+pnpm mobile:ios:sim
+pnpm mobile:android:setup   # one-time SDK, AVD, and Tauri project setup
+pnpm mobile:android:start
+pnpm mobile:android:dev
+```
+
+The Android wrapper uses `Coven_Cave_API_35` by default, selects the system
+image ABI for Apple Silicon or Intel, chooses a free development port in
+`3000..3010`, and keeps `src-tauri/gen/android/` as ignored local build output.
+
 Set `PRINT_URL=1` only when you intentionally want the raw invite printed in a trusted local terminal:
 
 ```bash

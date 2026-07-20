@@ -346,6 +346,39 @@ const art = (id, code, extra = {}) => ({
   assert.equal(added.artifact?.kind, beforeMetadata?.kind, "annotation add never replaces artifact kind");
   assert.equal(added.artifact?.createdAt, beforeMetadata?.createdAt, "annotation add never replaces createdAt");
 
+  const staleAnnotationUpdate = await mutateCanvasArtifactAnnotation({
+    id: "annotation-target",
+    expectedAnnotationUpdatedAt: "2026-07-20T02:00:00.000Z",
+    annotation: {
+      id: "fresh",
+      target: { selector: "#fresh", label: "Stale", excerpt: "<div />" },
+      note: "Overwrite",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T03:30:00.000Z",
+    },
+  });
+  assert.equal(staleAnnotationUpdate.status, "conflict", "stale annotation revisions are rejected");
+  assert.equal(
+    (await loadCanvas()).artifacts
+      .find((entry) => entry.id === "annotation-target")
+      ?.annotations?.find((entry) => entry.id === "fresh")?.note,
+    "Fresh note",
+    "a stale mobile detail view cannot overwrite a newer comment",
+  );
+
+  const duplicateCreate = await mutateCanvasArtifactAnnotation({
+    id: "annotation-target",
+    expectedAnnotationAbsent: true,
+    annotation: {
+      id: "another-id",
+      target: { selector: "#fresh", label: "Duplicate", excerpt: "<div />" },
+      note: "Duplicate",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T03:30:00.000Z",
+    },
+  });
+  assert.equal(duplicateCreate.status, "conflict", "expected-absent annotation creates cannot replace a selector");
+
   const concurrentMutation = mutateCanvasArtifactAnnotation({
     id: "annotation-target",
     annotation: {
@@ -711,6 +744,7 @@ assert.match(
 );
 assert.match(routeSource, /status === "invalid"[\s\S]*status: 400/, "invalid annotation mutations return 400");
 assert.match(routeSource, /status === "not_found"[\s\S]*status: 404/, "unknown artifacts return 404");
+assert.match(routeSource, /status === "conflict"[\s\S]*status: 409/, "stale annotation mutations return 409");
 
 const addTileSource = readFileSync(new URL("../components/canvas-add-tile.tsx", import.meta.url), "utf8");
 assert.match(

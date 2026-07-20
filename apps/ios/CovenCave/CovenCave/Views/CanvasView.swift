@@ -6,6 +6,7 @@ import SwiftUI
 /// open it full-screen, where it can be refined, shared, or deleted.
 struct CanvasView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var prompt = ""
     @State private var selectedFamiliarId: String?
@@ -38,6 +39,10 @@ struct CanvasView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .task { if !app.canvasLoaded { await app.loadCanvas() } }
+            .task(id: scenePhase) {
+                guard scenePhase == .active, !app.isGeneratingCanvas else { return }
+                await app.loadCanvas()
+            }
             .onAppear { if selectedFamiliarId == nil { selectedFamiliarId = app.familiars.first?.id } }
             .navigationDestination(item: $detail) { artifact in
                 ArtifactDetailView(artifact: artifact, familiarId: generationFamiliarId)

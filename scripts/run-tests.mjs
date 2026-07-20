@@ -1092,7 +1092,7 @@ export const SUITES = {
     "scripts/ios-hide-generated-sessions.test.mjs",
     "scripts/ios-code-browser-files.test.mjs",
     "scripts/ios-code-viewer.test.mjs",
-    "scripts/ios-no-canvas-tab.test.mjs",
+    "scripts/ios-canvas-tab.test.mjs",
     "scripts/ios-library-isolation.test.mjs",
     "scripts/ios-slash-commands.test.mjs",
     "scripts/ios-message-reader.test.mjs",

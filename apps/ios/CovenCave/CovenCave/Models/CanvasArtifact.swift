@@ -11,6 +11,20 @@ enum ArtifactKind: String, Codable {
     var symbol: String { self == .react ? "atom" : "chevron.left.forwardslash.chevron.right" }
 }
 
+struct CanvasComponentTarget: Codable, Hashable {
+    var selector: String
+    var label: String
+    var excerpt: String
+}
+
+struct CanvasAnnotation: Identifiable, Codable, Hashable {
+    var id: String
+    var target: CanvasComponentTarget
+    var note: String
+    var createdAt: String
+    var updatedAt: String
+}
+
 /// One Canvas artifact — a generated, self-contained UI document. Mirrors the
 /// web record persisted at `~/.coven/cave-canvas.json` via `/api/canvas`, so the
 /// JSON shape (and `kind` back-compat) matches the desktop exactly.
@@ -24,21 +38,24 @@ struct CanvasArtifact: Identifiable, Codable, Hashable {
     var code: String
     /// How `code` previews. Absent in JSON ⇒ `.html` (back-compat).
     var kind: ArtifactKind
+    var annotations: [CanvasAnnotation]?
     /// ISO-8601 timestamps, kept as strings to round-trip the server record.
     var createdAt: String
     var updatedAt: String
 
     enum CodingKeys: String, CodingKey {
-        case id, title, prompt, code, kind, createdAt, updatedAt
+        case id, title, prompt, code, kind, annotations, createdAt, updatedAt
     }
 
     init(id: String, title: String, prompt: String, code: String,
-         kind: ArtifactKind, createdAt: String, updatedAt: String) {
+         kind: ArtifactKind, annotations: [CanvasAnnotation]? = nil,
+         createdAt: String, updatedAt: String) {
         self.id = id
         self.title = title
         self.prompt = prompt
         self.code = code
         self.kind = kind
+        self.annotations = annotations
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -49,6 +66,7 @@ struct CanvasArtifact: Identifiable, Codable, Hashable {
         prompt = (try? c.decode(String.self, forKey: .prompt)) ?? ""
         code = (try? c.decode(String.self, forKey: .code)) ?? ""
         kind = (try? c.decode(ArtifactKind.self, forKey: .kind)) ?? .html
+        annotations = try? c.decode([CanvasAnnotation].self, forKey: .annotations)
         let decodedTitle = (try? c.decode(String.self, forKey: .title)) ?? ""
         title = decodedTitle.isEmpty ? CanvasArtifact.titleFromPrompt(prompt) : decodedTitle
         let created = (try? c.decode(String.self, forKey: .createdAt)) ?? ""
@@ -162,15 +180,24 @@ extension CanvasArtifact {
 
     /// Neutralize `</script>` so component source can't break out of the tag.
     static func escapeForScriptTag(_ code: String) -> String {
-        code.replacingOccurrences(
-            of: "</(script>)", with: "<\\/$1",
-            options: [.regularExpression, .caseInsensitive]
-        )
+        var escaped = ""
+        var cursor = code.startIndex
+        while let range = code.range(
+            of: "</script",
+            options: [.caseInsensitive],
+            range: cursor..<code.endIndex
+        ) {
+            escaped += code[cursor..<range.lowerBound]
+            escaped += "<\\/script"
+            cursor = range.upperBound
+        }
+        escaped += code[cursor...]
+        return escaped
     }
 
     /// Frame React component source into a full preview document. Requires the
     /// preview WKWebView's base URL to be the Cave server so `/sandbox/*` loads.
-    static func buildReactSrcDoc(_ code: String) -> String {
+    static func buildReactSrcDoc(_ code: String, sandboxBase: String = "/sandbox") -> String {
         """
         <!doctype html>
         <html lang="en">
@@ -181,12 +208,12 @@ extension CanvasArtifact {
           :root { color-scheme: light dark; }
           body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
         </style>
-        <script src="\(sandboxTailwindSrc)"></script>
+        <script src="\(sandboxBase)/tailwind.js"></script>
         </head>
         <body>
         <div id="root"></div>
         <script type="text/jsx">\(escapeForScriptTag(code))</script>
-        <script src="\(sandboxRuntimeSrc)"></script>
+        <script src="\(sandboxBase)/react-runtime.js"></script>
         </body>
         </html>
         """
@@ -238,6 +265,28 @@ extension CanvasArtifact {
         ```\(lang)
         \(currentCode.trimmingCharacters(in: .whitespacesAndNewlines))
         ```
+        """
+    }
+
+    static func buildCommentsPrompt(_ annotations: [CanvasAnnotation]) -> String {
+        let comments = annotations.prefix(100).compactMap { annotation -> String? in
+            let note = annotation.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !note.isEmpty else { return nil }
+            return """
+            Target: \(annotation.target.label.isEmpty ? "Unlabelled component" : annotation.target.label)
+            Selector: \(annotation.target.selector)
+            Excerpt: \(annotation.target.excerpt)
+            Requested change: \(String(note.prefix(4_000)))
+            """
+        }
+        guard !comments.isEmpty else { return "" }
+        return """
+        Apply these \(comments.count) component comments to the artifact:
+
+        \(comments.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n\n"))
+
+        Return the full revised artifact, not a diff.
+        Preserve unrelated behavior, content, styling, and interactions.
         """
     }
 

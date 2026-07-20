@@ -13,6 +13,8 @@ struct ArtifactDetailView: View {
     @State private var refinePrompt = ""
     @State private var showCode = false
     @State private var refineTask: Task<Void, Never>?
+    @State private var selectedTarget: CanvasComponentTarget?
+    @State private var commentDraft = ""
     @FocusState private var refineFocused: Bool
 
     init(artifact: CanvasArtifact, familiarId: String) {
@@ -28,8 +30,12 @@ struct ArtifactDetailView: View {
         .navigationTitle(current.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
-        .safeAreaInset(edge: .bottom) { refineBar }
-        .onDisappear { refineTask?.cancel() }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                if selectedTarget != nil { commentBar }
+                refineBar
+            }
+        }
     }
 
     // MARK: - Preview / code
@@ -37,7 +43,11 @@ struct ArtifactDetailView: View {
     private var previewView: some View {
         ArtifactWebView(artifact: current,
                         serverBaseURL: app.connection?.baseURL,
-                        interactive: true)
+                        interactive: true) { target in
+            selectedTarget = target
+            commentDraft = current.annotations?
+                .first(where: { $0.target.selector == target.selector })?.note ?? ""
+        }
             .background(Color(.systemBackground))
             .ignoresSafeArea(edges: .horizontal)
     }
@@ -83,6 +93,15 @@ struct ArtifactDetailView: View {
                 ShareLink(item: current.code) {
                     Label("Share code", systemImage: "square.and.arrow.up")
                 }
+                if !(current.annotations ?? []).isEmpty {
+                    Button { applyComments() } label: {
+                        Label(
+                            "Apply \(current.annotations?.count ?? 0) comments",
+                            systemImage: "wand.and.stars"
+                        )
+                    }
+                    .disabled(app.isGeneratingCanvas || familiarId.isEmpty)
+                }
                 Divider()
                 Button(role: .destructive) { delete() } label: {
                     Label("Delete", systemImage: "trash")
@@ -91,6 +110,32 @@ struct ArtifactDetailView: View {
                 Image(systemName: "ellipsis.circle")
             }
         }
+    }
+
+    private var commentBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(selectedTarget?.label ?? "Selected component", systemImage: "scope")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button { selectedTarget = nil; commentDraft = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                TextField("Comment on this component…", text: $commentDraft, axis: .vertical)
+                    .lineLimit(1...3)
+                Button("Save") { saveComment() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     // MARK: - Refine bar
@@ -135,6 +180,33 @@ struct ArtifactDetailView: View {
                 current = updated
                 refinePrompt = ""
                 app.showToast("Updated", systemImage: "checkmark.circle.fill", style: .success)
+            } else if let error = app.canvasError {
+                app.showToast(error, systemImage: "exclamationmark.triangle.fill", style: .warning)
+            }
+        }
+    }
+
+    private func saveComment() {
+        guard let target = selectedTarget else { return }
+        let note = commentDraft
+        Task {
+            if let updated = await app.saveCanvasComment(on: current, target: target, note: note) {
+                current = updated
+                selectedTarget = nil
+                commentDraft = ""
+                app.showToast("Comment saved", systemImage: "text.bubble.fill")
+            } else if let error = app.canvasError {
+                app.showToast(error, systemImage: "exclamationmark.triangle.fill", style: .warning)
+            }
+        }
+    }
+
+    private func applyComments() {
+        refineFocused = false
+        refineTask = Task {
+            if let updated = await app.applyCanvasComments(current, familiarId: familiarId) {
+                current = updated
+                app.showToast("Comments applied", systemImage: "checkmark.circle.fill")
             } else if let error = app.canvasError {
                 app.showToast(error, systemImage: "exclamationmark.triangle.fill", style: .warning)
             }
