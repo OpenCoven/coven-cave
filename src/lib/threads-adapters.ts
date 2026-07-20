@@ -22,7 +22,6 @@ import {
   isSafeThreadsId,
   makeThreadsMeta,
   normalizeAuditRow,
-  normalizeProposal,
   normalizeDegradedFamiliar,
   normalizeStrandsOfThread,
   normalizeThread,
@@ -40,6 +39,7 @@ import {
   type WeaveDetail,
   type WeaveSummary,
 } from "./threads-read.ts";
+import { normalizeProposal } from "./proposal-normalize.ts";
 
 export interface ThreadsReadAdapter {
   kind: ThreadsAdapterKind;
@@ -87,14 +87,24 @@ function pendingDirCursor(dir: string): string {
   return `pending:${createHash("sha256").update(listing.join("\n")).digest("hex").slice(0, 16)}`;
 }
 
-function readPendingDir(dir: string): ProposalView[] | null {
+type StagedProposal = {
+  file: string;
+  raw: unknown;
+};
+
+type ProposalSummarySource =
+  | { state: "available"; byId: Map<string, unknown> }
+  | { state: "unavailable" }
+  | { state: "unparseable" };
+
+function readPendingDir(dir: string, fileFilter: (file: string) => boolean = (file) => file.endsWith(".json")): StagedProposal[] | null {
   // null = the listing itself could not be verified (unreadable dir, not a
   // dir, permissions). Callers fail closed — a throw here would 500 the route
   // instead of rendering blocked.
   let files: string[];
   try {
     files = readdirSync(/* turbopackIgnore: true */ dir)
-      .filter((f) => f.endsWith(".json"))
+      .filter(fileFilter)
       .sort();
   } catch {
     return null;
@@ -102,11 +112,61 @@ function readPendingDir(dir: string): ProposalView[] | null {
   return files.map((file) => {
     try {
       const raw: unknown = JSON.parse(readFileSync(path.join(/* turbopackIgnore: true */ dir, file), "utf8"));
-      return normalizeProposal(file, raw);
+      return { file, raw };
     } catch {
       // R6: corrupt pending file — listed, actions disabled, never dropped.
-      return { file, parse: "corrupt", payload: null } satisfies ProposalView;
+      return { file, raw: null };
     }
+  });
+}
+
+function stagedProposalId(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const candidate =
+    typeof record.pending === "object" && record.pending !== null && !Array.isArray(record.pending)
+      ? (record.pending as Record<string, unknown>)
+      : record;
+  return typeof candidate.id === "string" ? candidate.id : null;
+}
+
+function proposalSummarySource(raw: unknown): ProposalSummarySource {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { state: "unparseable" };
+  const record = raw as Record<string, unknown>;
+  if (Object.keys(record).length !== 1 || !Object.hasOwn(record, "proposals")) return { state: "unparseable" };
+  const proposals = record.proposals;
+  if (!Array.isArray(proposals)) return { state: "unparseable" };
+  const byId = new Map<string, unknown>();
+  for (const proposal of proposals) {
+    if (typeof proposal !== "object" || proposal === null || Array.isArray(proposal)) continue;
+    const proposalId = (proposal as Record<string, unknown>).proposalId;
+    if (typeof proposalId === "string") byId.set(proposalId, proposal);
+  }
+  return { state: "available", byId };
+}
+
+function proposalSummaryCursor(raw: unknown): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(raw) ?? String(raw);
+  } catch {
+    serialized = "unserializable";
+  }
+  return createHash("sha256").update(serialized).digest("hex").slice(0, 16);
+}
+
+function joinProposalSummaries(staged: StagedProposal[], summaries: ProposalSummarySource): ProposalView[] {
+  return staged.map(({ file, raw }) => {
+    const id = stagedProposalId(raw);
+    const summary =
+      summaries.state === "unavailable"
+        ? null
+        : summaries.state === "unparseable"
+          ? true
+          : id === null
+            ? undefined
+            : summaries.byId.get(id);
+    return normalizeProposal(file, raw, summary);
   });
 }
 
@@ -136,6 +196,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
   readonly kind = "fixtures" as const;
   private readonly root: string;
   private readonly pendingDir: string;
+  private readonly phase5FixtureDir: string | null;
   private readonly scenario: FixturesScenario;
 
   constructor(options: FixturesAdapterOptions = {}) {
@@ -143,6 +204,10 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     // them as trace roots while retaining the existing validation/read paths.
     this.root = options.root ?? path.join(/* turbopackIgnore: true */ process.cwd(), "fixtures", "phase-4");
     this.pendingDir = options.pendingDir ?? path.join(/* turbopackIgnore: true */ this.root, "pending");
+    this.phase5FixtureDir =
+      options.root === undefined && options.pendingDir === undefined
+        ? path.join(/* turbopackIgnore: true */ process.cwd(), "fixtures", "phase-5")
+        : null;
     this.scenario = options.scenario ?? "default";
   }
 
@@ -269,11 +334,40 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     if (!existsSync(/* turbopackIgnore: true */ this.pendingDir)) {
       return blockedEnvelope("no-fixture", this.meta("pending:absent", false));
     }
-    const listed = readPendingDir(this.pendingDir);
-    if (listed === null) {
+    const staged = readPendingDir(this.pendingDir);
+    if (staged === null) {
       return blockedEnvelope("no-fixture", this.meta("pending:unreadable", false));
     }
-    return okEnvelope(listed, this.meta(pendingDirCursor(this.pendingDir), true));
+    if (this.phase5FixtureDir === null) {
+      return okEnvelope(
+        joinProposalSummaries(staged, { state: "available", byId: new Map() }),
+        this.meta(pendingDirCursor(this.pendingDir), true),
+      );
+    }
+
+    const scheduled = readPendingDir(this.phase5FixtureDir, (file) => file.endsWith(".staged-envelope.json"));
+    if (scheduled === null) {
+      return blockedEnvelope("no-fixture", this.meta("phase5-proposals:unreadable", false));
+    }
+    let summaries: ProposalSummarySource;
+    let summariesCursor = "unreadable";
+    try {
+      const raw: unknown = JSON.parse(
+        readFileSync(path.join(/* turbopackIgnore: true */ this.phase5FixtureDir, "proposals.json"), "utf8"),
+      );
+      summaries = proposalSummarySource(raw);
+      summariesCursor = proposalSummaryCursor(raw);
+    } catch {
+      summaries = { state: "unparseable" };
+    }
+    const listed = [
+      ...joinProposalSummaries(staged, summaries),
+      ...joinProposalSummaries(scheduled, summaries),
+    ];
+    return okEnvelope(
+      listed,
+      this.meta(`${pendingDirCursor(this.pendingDir)}:phase5:${summaries.state}:${summariesCursor}`, true),
+    );
   }
 
   // §3.7 / R5: in fixtures mode there is no daemon to forward to — the action
@@ -297,6 +391,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
  * (`daemon-unreachable` / `daemon-endpoint-missing`) — never fabricated.
  */
 export const DAEMON_WEAVES_PATH = "/api/v1/threads/weaves";
+export const DAEMON_PROPOSALS_PATH = "/api/v1/threads/proposals";
 export const DAEMON_PROPOSAL_DECISION_PATH = (id: string, decision: "approve" | "reject") =>
   `/api/v1/threads/proposals/${id}/${decision}`;
 
@@ -444,13 +539,21 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       if (existsSync(/* turbopackIgnore: true */ this.home)) return okEnvelope([], this.meta("pending:empty", true));
       return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
     }
-    const listed = readPendingDir(pendingDir);
-    if (listed === null) {
+    const staged = readPendingDir(pendingDir);
+    if (staged === null) {
       // The staging area exists but its listing cannot be verified: blocked,
       // never a throw and never an empty-healthy answer.
       return blockedEnvelope("unparseable", this.meta("pending:unreadable", false));
     }
-    return okEnvelope(listed, this.meta(pendingDirCursor(pendingDir), true));
+    if (staged.length === 0) return okEnvelope([], this.meta(pendingDirCursor(pendingDir), true));
+
+    const res = await this.call<unknown>({ path: DAEMON_PROPOSALS_PATH, timeoutMs: this.timeoutMs });
+    const summaries = res.ok ? proposalSummarySource(res.data) : { state: "unavailable" as const };
+    const summariesCursor = res.ok ? proposalSummaryCursor(res.data) : `unavailable:${res.status}`;
+    return okEnvelope(
+      joinProposalSummaries(staged, summaries),
+      this.meta(`${pendingDirCursor(pendingDir)}:${summariesCursor}`, true),
+    );
   }
 
   private async decide(

@@ -8,13 +8,14 @@ import path from "node:path";
 import { after, describe, it } from "node:test";
 
 import {
+  DAEMON_PROPOSALS_PATH,
   DaemonThreadsAdapter,
   FixturesThreadsAdapter,
   httpStatusForEnvelope,
   activeThreadsAdapter,
 } from "./threads-adapters.ts";
 import { canonicalProposalRevision } from "./proposal-authority.ts";
-import { normalizeProposal } from "./threads-read.ts";
+import { normalizeProposal } from "./proposal-normalize.ts";
 import type { ThreadsEnvelope } from "./threads-read.ts";
 
 const WEAVE_HOLDS = "11111111-1111-4111-8111-111111111111";
@@ -201,17 +202,25 @@ describe("fixtures adapter — audit lineage", () => {
 describe("fixtures adapter — proposals", () => {
   const adapter = new FixturesThreadsAdapter();
 
-  it("pending-with-proposals + pending-corrupt: ok and corrupt entries listed together (R6)", async () => {
+  it("joins Phase 5 fixture summaries while retaining Phase 4 staged proposals (R6)", async () => {
     const res = await adapter.proposals();
     assert.equal(res.blocked, false);
-    assert.equal(res.data?.length, 3);
     const okEntries = res.data?.filter((p) => p.parse === "ok") ?? [];
     const corrupt = res.data?.filter((p) => p.parse === "corrupt") ?? [];
-    assert.equal(okEntries.length, 2);
+    assert.equal(okEntries.length, 9);
     assert.equal(corrupt.length, 1);
     assert.equal(corrupt[0]?.payload, null);
     const utf8 = okEntries.find((p) => p.payload?.id === PROPOSAL_OK);
     assert.equal(utf8?.payload?.edits[0]?.contents.encoding, "utf8");
+    assert.deepEqual(utf8?.authority, { state: "legacy", reviewKind: "authority" });
+
+    const scheduled = okEntries.find((p) => p.payload?.id === "cccccccc-0000-4000-8000-000000000501");
+    assert.ok(scheduled, "Phase 5 staged fixture is listed");
+    assert.equal(scheduled.payload?.edits[0]?.contents.data, "Proposed change for awaiting-human-approval.\n");
+    assert.equal(scheduled.authority?.state, "verified");
+    if (scheduled.authority?.state !== "verified") return;
+    assert.equal(scheduled.authority.lifecycle, "awaiting-human-approval");
+    assert.equal(scheduled.authority.approvalPath.label, "human_required");
   });
 
   it("pending-empty: an empty pending dir is a verified empty list", async () => {
@@ -422,6 +431,116 @@ describe("daemon adapter — proposals and decisions", () => {
     );
     return { home, pending };
   }
+
+  function homeWithScheduled(name: string): { home: string; pendingFile: string; staged: unknown; summary: unknown } {
+    const home = tempDir(`phase5-${name}-home-`);
+    const pending = path.join(home, "pending");
+    mkdirSync(pending);
+    const { staged, summary } = loadPhase5Pair(name);
+    const pendingFile = path.join(pending, `${name}.json`);
+    writeFileSync(pendingFile, JSON.stringify(staged));
+    return { home, pendingFile, staged, summary };
+  }
+
+  it("GETs the daemon proposal envelope and joins summaries without rereading staged details", async () => {
+    const { home, pendingFile, summary } = homeWithScheduled("awaiting-human-approval");
+    const calls: string[] = [];
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>(req: { path: string }) => {
+        calls.push(req.path);
+        writeFileSync(pendingFile, "{ changed after the staged read");
+        return { ok: true, status: 200, data: { proposals: [summary] } as T };
+      },
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(calls, [DAEMON_PROPOSALS_PATH]);
+    assert.equal(res.blocked, false);
+    const proposal = res.data?.[0];
+    assert.equal(proposal?.parse, "ok");
+    assert.equal(proposal?.payload?.edits[0]?.contents.data, "Proposed change for awaiting-human-approval.\n");
+    assert.equal(proposal?.authority?.state, "verified");
+    if (proposal?.authority?.state !== "verified") return;
+    assert.equal(proposal.authority.lifecycle, "awaiting-human-approval");
+    assert.equal(proposal.authority.approvalPath.label, "human_required");
+  });
+
+  it("preserves scheduled staged details but blocks authority when the daemon is unavailable", async () => {
+    const { home } = homeWithScheduled("awaiting-human-approval");
+    const adapter = new DaemonThreadsAdapter({
+      call: async () => ({ ok: false, status: 0, data: null, error: "connect ENOENT" }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.equal(res.blocked, false);
+    assert.equal(res.meta.verified, true);
+    assert.equal(res.data?.[0]?.parse, "ok");
+    assert.equal(res.data?.[0]?.payload?.id, "cccccccc-0000-4000-8000-000000000501");
+    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-unavailable" });
+  });
+
+  it("blocks a scheduled proposal when its daemon join is missing", async () => {
+    const { home } = homeWithScheduled("awaiting-human-approval");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [] } as T }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-proposal-missing" });
+  });
+
+  it("changes the source cursor when daemon authority metadata changes", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    let daemonData: unknown = { proposals: [] };
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: true, status: 200, data: daemonData as T }),
+      covenHomeDir: home,
+    });
+
+    const missing = await adapter.proposals();
+    daemonData = { proposals: [summary] };
+    const joined = await adapter.proposals();
+    assert.notEqual(joined.meta.sourceCursor, missing.meta.sourceCursor);
+  });
+
+  it("accepts only the daemon's real proposals envelope shape", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    for (const data of [[summary], { proposals: [summary], extra: "contract drift" }]) {
+      const adapter = new DaemonThreadsAdapter({
+        call: async <T>() => ({ ok: true, status: 200, data: data as T }),
+        covenHomeDir: home,
+      });
+
+      const res = await adapter.proposals();
+      assert.equal(res.meta.verified, true);
+      assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-unparseable" });
+    }
+  });
+
+  it("blocks a joined proposal when daemon metadata mismatches staged authority", async () => {
+    const { home, summary } = homeWithScheduled("mismatched");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [summary] } as T }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-mismatch" });
+  });
+
+  it("blocks a joined proposal with an unknown daemon lifecycle", async () => {
+    const { home, summary } = homeWithScheduled("unknown");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [summary] } as T }),
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "unknown-lifecycle" });
+  });
 
   it("reads staged proposals from ~/.coven/pending", async () => {
     const { home } = homeWithPending();
@@ -652,13 +771,13 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
 
 describe("phase 5 proposal fixtures", () => {
   const verifiedCases = [
-    ["awaiting-human-approval", ["approve", "reject"]],
-    ["veto-window-open", ["reject"]],
-    ["ready-for-replay", []],
-    ["blocked", []],
+    ["awaiting-human-approval", "awaiting-human-approval", ["approve", "reject"], null, "human_required"],
+    ["veto-window-open", "veto-window-open", ["reject"], null, "familiar_review"],
+    ["ready-for-replay", "ready-for-replay", [], null, "familiar_review"],
+    ["blocked", "blocked", [], "daemon-reported-block", "human_review"],
   ] as const;
 
-  for (const [name, decisions] of verifiedCases) {
+  for (const [name, lifecycle, decisions, blockedReason, label] of verifiedCases) {
     it(`${name}: staged envelope and daemon summary normalize to a verified lifecycle`, () => {
       const { staged, summary } = loadPhase5Pair(name);
       assert.equal(canonicalProposalRevision(staged), (summary as { proposalRevision: string }).proposalRevision);
@@ -666,7 +785,10 @@ describe("phase 5 proposal fixtures", () => {
       assert.equal(view.parse, "ok");
       assert.equal(view.authority.state, "verified");
       if (view.authority.state !== "verified") return;
+      assert.equal(view.authority.lifecycle, lifecycle);
       assert.deepEqual(view.authority.availableDecisions, decisions);
+      assert.equal(view.authority.blockedReason, blockedReason);
+      assert.equal(view.authority.approvalPath.label, label);
     });
   }
 
