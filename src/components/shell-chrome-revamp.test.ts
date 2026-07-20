@@ -4,7 +4,7 @@
 //      Settings + account avatar at the bottom; quiet surfaces demoted to the
 //      expanded panel (still reachable via ⌘B / hover-peek / ⌘K).
 //   2. 52px-band command bar: "Search or ask <familiar>…" + ⌘K keycap,
-//      right cluster = "N running" pill + notification bell.
+//      right cluster = compact running status + notification bell.
 //   3. Bottom status bar: session context chips (project/model/branch/cwd) +
 //      PR and Tasks chips, mounted under the Home/Chat detail column.
 import assert from "node:assert/strict";
@@ -76,26 +76,21 @@ assert.match(
 );
 assert.match(
   menuBar,
-  /<div className="menu-bar__group menu-bar__group--status">[\s\S]{0,700}?menu-bar__running[\s\S]{0,500}?\{bell\}\s*<\/div>/,
-  "the right cluster hosts the running pill and the bell slot",
+  /<div className="menu-bar__group menu-bar__group--status">[\s\S]*?className="menu-bar__status"[\s\S]*?\{bell\}\s*<\/div>/,
+  "the right cluster hosts the compact running status before the bell slot",
 );
-assert.match(
+assert.doesNotMatch(
   menuBar,
-  /role="status"\s*\n\s*title=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}/,
-  "the running pill is a live status with an exact-count tooltip",
+  /className="menu-bar__running"/,
+  "the right cluster no longer uses the old running pill",
 );
-assert.match(
+assert.doesNotMatch(
   menuBar,
-  /typeof runningCount === "number" && runningCount > 0 \?/,
-  "the running pill hides at zero",
+  /menu-bar__running-dot/,
+  "the right cluster no longer uses the old running dot",
 );
-assert.match(
-  globals,
-  /\.menu-bar__running-dot \{[\s\S]{0,180}?background: var\(--accent-presence\);/,
-  "the running dot uses the accent presence token",
-);
-// Workspace feeds the pill from the shared session-status vocabulary and
-// mounts the same NotificationBell the mobile TopBar uses.
+// Detailed waveform, badge, zero-hide, and accessibility contracts live in
+// familiar-menu-bar.test.ts. This suite keeps only the shell-level wiring.
 assert.match(
   workspace,
   /const runningSessionCount = useMemo\(\s*\n\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)\.length,\s*\n\s*\[sessions\],\s*\n\s*\);/,
