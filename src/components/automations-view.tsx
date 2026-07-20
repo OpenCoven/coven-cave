@@ -49,7 +49,17 @@ import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-reso
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
-import { AUTOMATION_TEMPLATES, TEMPLATE_CATEGORIES, type AutomationTemplate } from "@/lib/automation-templates";
+import type { AutomationTemplate } from "@/lib/automation-templates";
+import { StatusIcon } from "@/components/automations/status-icon";
+import { TemplatesPanel } from "@/components/automations/templates-panel";
+import {
+  RitualAgendaThread,
+  RitualItemRow,
+  RitualNeedsRow,
+  ritualWeekLabel,
+  type RitualOverviewPane,
+  useRitualNow,
+} from "@/components/automations/ritual-overview";
 import type { FlowDoc } from "@/lib/flows";
 import {
   buildAutomationEntries,
@@ -192,35 +202,6 @@ const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[length:
 const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[length:var(--text-xs)]`;
-
-// ── Status icon ──────────────────────────────────────────────────────────────
-function StatusIcon({ item }: { item: InboxItem }) {
-  const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
-  const active = item.status === "pending" || item.status === "fired";
-  const hasRun = !!item.firedAt;
-
-  // Each state carries an accessible name — the dots are otherwise the ONLY
-  // per-row signal for paused vs active (a paused recurring reminder still
-  // shows its human schedule as row text).
-  if (paused) {
-    // Pause icon — two vertical bars inside circle
-    return (
-      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.18)]! [color:rgba(255,255,255,0.35)]!">
-        <Icon name="ph:minus" width={8} />
-      </span>
-    );
-  }
-  if (active && hasRun) {
-    // Filled purple circle — has fired before
-    return (
-      <span role="img" aria-label="Active, has fired" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full [background:var(--accent-presence)]!" />
-    );
-  }
-  // Hollow circle — active, never fired yet
-  return (
-    <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.28)]!" />
-  );
-}
 
 // A one-time (non-recurring) reminder that has already fired behaves like a
 // notification, not a schedule: Done/Snooze/Delete matter, Run-now/Pause do
@@ -1879,231 +1860,7 @@ function FlowList({
   );
 }
 
-// ── Templates panel ───────────────────────────────────────────────────────────
-function TemplatesPanel({
-  query,
-  onQueryChange,
-  onSelect,
-}: {
-  query: string;
-  onQueryChange: (q: string) => void;
-  onSelect: (tpl: AutomationTemplate) => void;
-}) {
-  const q = query.toLowerCase().trim();
-  const filtered = q
-    ? AUTOMATION_TEMPLATES.filter(
-        (t) => t.title.toLowerCase().includes(q) || t.scheduleLabel.toLowerCase().includes(q),
-      )
-    : AUTOMATION_TEMPLATES;
-
-  const byCategory = TEMPLATE_CATEGORIES.map((cat) => ({
-    cat,
-    templates: filtered.filter((t) => t.category === cat),
-  })).filter(({ templates }) => templates.length > 0);
-
-  return (
-    <div className="automation-templates-panel">
-      <div className="mb-5">
-        <SearchInput
-          value={query}
-          onValueChange={onQueryChange}
-          onClear={() => onQueryChange("")}
-          placeholder="Search templates…"
-          aria-label="Search templates"
-        />
-      </div>
-      {byCategory.length === 0 ? (
-        <EmptyState
-          className="mt-8"
-          icon="ph:magnifying-glass"
-          headline={`No templates match "${query.trim()}"`}
-          subtitle="Try a different search term."
-        />
-      ) : (
-        byCategory.map(({ cat, templates }) => (
-          <section key={cat} className="mb-6">
-            <h2 className="mb-3 text-[length:var(--text-xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">
-              {cat}
-            </h2>
-            <div className="automation-templates-grid">
-              {templates.map((tpl) => (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  className="automation-template-card focus-ring"
-                  onClick={() => onSelect(tpl)}
-                >
-                  <span className="automation-template-card__emoji" aria-hidden>
-                    {tpl.emoji}
-                  </span>
-                  <span className="automation-template-card__title">{tpl.title}</span>
-                  <span className="automation-template-card__schedule">{tpl.scheduleLabel}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))
-      )}
-    </div>
-  );
-}
-
-type RitualOverviewPane = "log" | "agenda";
-
-function ritualItemDate(item: InboxItem): Date | null {
-  const iso = item.fireAt ?? item.firedAt ?? item.updatedAt;
-  if (!iso) return null;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function ritualWeekLabel(days: RitualDay[]): string {
-  const first = days[0]?.date;
-  const last = days.at(-1)?.date;
-  if (!first || !last) return "";
-  const month = new Intl.DateTimeFormat(undefined, { month: "short" });
-  if (first.getMonth() === last.getMonth()) {
-    return `${month.format(first)} ${first.getDate()}–${last.getDate()}`;
-  }
-  return `${month.format(first)} ${first.getDate()} – ${month.format(last)} ${last.getDate()}`;
-}
-
-function useRitualNow(): Date | null {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    let timer: number | null = null;
-    const scheduleMidnight = () => {
-      const current = new Date();
-      const next = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1);
-      timer = window.setTimeout(() => {
-        setNow(new Date());
-        scheduleMidnight();
-      }, Math.max(1_000, next.getTime() - current.getTime() + 250));
-    };
-    setNow(new Date());
-    scheduleMidnight();
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, []);
-  return now;
-}
-
-function RitualItemRow({
-  item,
-  familiarLabel,
-  onSelect,
-  quiet = false,
-}: {
-  item: InboxItem;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  quiet?: boolean;
-}) {
-  const familiar = familiarLabel(item.familiarId);
-  const date = ritualItemDate(item);
-  return (
-    <button
-      type="button"
-      className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`}
-      onClick={() => onSelect(item)}
-    >
-      <StatusIcon item={item} />
-      <span className="rituals-overview__row-title">{item.title}</span>
-      <span className="rituals-overview__kind">{inboxKindLabel(item.kind)}</span>
-      {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
-      <span className="rituals-overview__spacer" />
-      <span className="rituals-overview__meta">{date ? relTime(date.toISOString()) : relTime(item.updatedAt)}</span>
-    </button>
-  );
-}
-
-function RitualNeedsRow({
-  item,
-  familiarLabel,
-  onSelect,
-  onDone,
-  onSnooze,
-  onDismiss,
-  onUnwatch,
-}: {
-  item: InboxItem;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onDone: (item: InboxItem) => void;
-  onSnooze: (item: InboxItem) => void;
-  onDismiss: (item: InboxItem) => void;
-  onUnwatch?: (item: InboxItem, repo: string) => void;
-}) {
-  const familiar = familiarLabel(item.familiarId);
-  const watchedRepo = repoFromGithubSubTag(item.auto);
-  return (
-    <li className="rituals-overview__need-row">
-      <button type="button" className="rituals-overview__need-main focus-ring-inset" onClick={() => onSelect(item)}>
-        <span aria-hidden className="rituals-overview__live-dot" />
-        <span className="rituals-overview__row-title">{item.title}</span>
-        {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
-        <span className="rituals-overview__meta">{item.firedAt ? relTime(item.firedAt) : relTime(item.updatedAt)}</span>
-      </button>
-      <RowActions>
-        <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
-        {item.status === "fired" ? (
-          <RowActionButton icon="ph:clock-countdown" label={`Snooze ${item.title} for 1 hour`} text="Snooze" onClick={() => onSnooze(item)} />
-        ) : null}
-        {onUnwatch && watchedRepo ? (
-          <RowActionButton
-            icon="ph:bell-slash"
-            label={`Unwatch ${watchedRepo} — stop GitHub notifications from it`}
-            text="Unwatch"
-            onClick={() => onUnwatch(item, watchedRepo)}
-          />
-        ) : null}
-        <RowActionButton icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
-      </RowActions>
-    </li>
-  );
-}
-
-function RitualAgendaThread({
-  items,
-  familiarLabel,
-  onSelect,
-}: {
-  items: InboxItem[];
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  const now = Date.now();
-  const upcoming = items.filter((item) => (ritualItemDate(item)?.getTime() ?? 0) >= now).slice(0, 8).reverse();
-  const past = [...items].reverse().filter((item) => (ritualItemDate(item)?.getTime() ?? 0) < now).slice(0, 8);
-  const renderThreadItem = (item: InboxItem) => {
-    const date = ritualItemDate(item);
-    const label = date
-      ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)
-      : "—";
-    return (
-      <div className="rituals-overview__thread-group" key={item.id}>
-        <span className="rituals-overview__thread-date">{label}</span>
-        <div className="rituals-overview__thread-line">
-          <RitualItemRow item={item} familiarLabel={familiarLabel} onSelect={onSelect} quiet />
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="rituals-overview__thread">
-      {upcoming.length > 0 ? upcoming.map(renderThreadItem) : (
-        <p className="rituals-overview__empty">Nothing scheduled ahead.</p>
-      )}
-      <div className="rituals-overview__now">
-        <span>now</span>
-        <span className="rituals-overview__now-line"><span /></span>
-      </div>
-      {past.map(renderThreadItem)}
-    </div>
-  );
-}
+// ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {

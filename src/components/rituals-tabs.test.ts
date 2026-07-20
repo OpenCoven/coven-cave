@@ -5,7 +5,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const automations = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const automations = [
+  readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
+].join("\n");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
