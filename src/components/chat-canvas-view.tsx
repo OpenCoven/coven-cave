@@ -3,7 +3,7 @@
 import "@/styles/chat-artifact.css";
 import "@/styles/chat-canvas.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,7 +14,13 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
-import { formatArtifactWhen, sortArtifactsForGallery } from "@/lib/canvas-gallery";
+import {
+  formatArtifactWhen,
+  isCanvasGalleryLoadCurrent,
+  mergeCanvasArtifactSnapshot,
+  sortArtifactsForGallery,
+  type CanvasArtifactSnapshotMutation,
+} from "@/lib/canvas-gallery";
 
 // The Canvas tab: the gallery for sketches saved from chat ("Save to Canvas"
 // in the inline artifact viewer persists to ~/.coven/cave/canvas.json via
@@ -32,28 +38,65 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
   const confirm = useConfirm();
+  const artifactVersionRef = useRef(0);
+  const loadRequestTokenRef = useRef(0);
+  const deletedArtifactIdsRef = useRef(new Set<string>());
 
   // The id a just-kept sketch settles in with — drives a one-shot highlight.
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
-  const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
-    setArtifacts(sortArtifactsForGallery(next));
+  const acceptArtifacts = useCallback((
+    next: CanvasArtifact[],
+    mutation: CanvasArtifactSnapshotMutation,
+  ) => {
+    artifactVersionRef.current += 1;
+    if (mutation.kind === "delete") deletedArtifactIdsRef.current.add(mutation.deletedId);
+    const sequencedMutation: CanvasArtifactSnapshotMutation = mutation.kind === "upsert"
+      ? {
+          kind: "upsert",
+          changedId: mutation.changedId,
+          deletedIds: new Set(deletedArtifactIdsRef.current),
+        }
+      : mutation;
+    setArtifacts((current) => sortArtifactsForGallery(
+      mergeCanvasArtifactSnapshot(current, next, sequencedMutation),
+    ));
     setState("ready");
+  }, []);
+  const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
+    acceptArtifacts(next, { kind: "upsert", changedId: savedId });
     setJustSavedId(savedId);
     // One-shot: clear after the highlight animation finishes. A stale clear
     // after unmount is harmless.
     setTimeout(() => setJustSavedId((cur) => (cur === savedId ? null : cur)), 2000);
-  }, []);
+  }, [acceptArtifacts]);
+  const handleArtifactUpdated = useCallback((updated: CanvasArtifact, next: CanvasArtifact[]) => {
+    acceptArtifacts(next, { kind: "upsert", changedId: updated.id });
+  }, [acceptArtifacts]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const requestToken = ++loadRequestTokenRef.current;
+    const startedArtifactVersion = artifactVersionRef.current;
     setState("loading");
     try {
       const res = await fetch("/api/canvas", { signal });
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
+      if (!isCanvasGalleryLoadCurrent(
+        startedArtifactVersion,
+        requestToken,
+        artifactVersionRef.current,
+        loadRequestTokenRef.current,
+      )) return;
       setArtifacts(sortArtifactsForGallery(data.artifacts ?? []));
       setState("ready");
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
+      if (!isCanvasGalleryLoadCurrent(
+        startedArtifactVersion,
+        requestToken,
+        artifactVersionRef.current,
+        loadRequestTokenRef.current,
+      )) return;
       setState("error");
     }
   }, []);
@@ -82,7 +125,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
-        setArtifacts(sortArtifactsForGallery(data.artifacts ?? []));
+        acceptArtifacts(data.artifacts ?? [], { kind: "delete", deletedId: artifact.id });
         setOpenId((current) => (current === artifact.id ? null : current));
       } catch {
         // Keep the card; a transient failure shouldn't silently drop it from
@@ -91,7 +134,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         setDeletingId(null);
       }
     },
-    [confirm],
+    [acceptArtifacts, confirm],
   );
 
   const opened = useMemo(
@@ -197,9 +240,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
         </p>
       ) : null}
-      {/* Reopen a saved sketch in the full inline viewer (preview/code tabs,
-          refine, fullscreen). Refine edits live in the modal only; "Save to
-          Canvas" from the viewer stores the refined result as a new sketch. */}
+      {/* Reopen a saved sketch in the full inline viewer. Persisted identity
+          enables component comments and same-artifact revisions. */}
       <Modal
         open={opened !== null}
         onClose={() => setOpenId(null)}
@@ -215,6 +257,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
               title={opened.title}
               familiarId={familiarId}
               sourcePrompt={opened.prompt}
+              artifact={opened}
+              onArtifactUpdated={handleArtifactUpdated}
             />
           </div>
         ) : null}

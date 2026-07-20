@@ -75,7 +75,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-20 (chat stream health): the status route and shared transport
   // module add five traced files on Windows. CI measured 5,542; pin the exact
   // cross-platform maximum without relaxing the expanded-byte ceiling.
-  fileCount: 5_542,
+  // 2026-07-20 (collaborative Canvas): the guarded annotation/revision route
+  // adds one traced file on Windows. CI measured 5,543; keep the exact maximum.
+  fileCount: 5_543,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

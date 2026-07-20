@@ -10,6 +10,8 @@
 // same-origin to our server but the iframe stays an opaque origin — loading a
 // script is allowed; reaching Cave's DOM/cookies is not.
 
+import { injectCanvasInspector } from "./canvas-inspector.ts";
+
 /** Absolute paths (resolved against the parent's base URL inside about:srcdoc). */
 export const SANDBOX_RUNTIME_SRC = "/sandbox/react-runtime.js";
 export const SANDBOX_TAILWIND_SRC = "/sandbox/tailwind.js";
@@ -25,8 +27,8 @@ export function escapeForScriptTag(code: string): string {
 }
 
 /** Frame React component source into a full preview document. */
-export function buildReactSrcDoc(code: string): string {
-  return [
+export function buildReactSrcDoc(code: string, inspectorGeneration = ""): string {
+  return injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
@@ -47,5 +49,5 @@ export function buildReactSrcDoc(code: string): string {
     `<script src="${SANDBOX_RUNTIME_SRC}"></script>`,
     "</body>",
     "</html>",
-  ].join("\n");
+  ].join("\n"), inspectorGeneration);
 }

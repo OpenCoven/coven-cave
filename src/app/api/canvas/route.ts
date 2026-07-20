@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import {
   deleteCanvasArtifact,
   loadCanvas,
   mergeCanvasPositions,
+  mutateCanvasArtifactAnnotation,
   upsertCanvasArtifact,
 } from "@/lib/cave-canvas";
 import type { CanvasArtifact } from "@/lib/canvas-artifacts";
@@ -47,7 +48,12 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { artifact?: CanvasArtifact };
+  let body: {
+    artifact?: CanvasArtifact;
+    expectedUpdatedAt?: unknown;
+    expectedAbsent?: unknown;
+    resolvedAnnotations?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -56,9 +62,68 @@ export async function POST(req: Request) {
   if (!body.artifact || typeof body.artifact !== "object") {
     return NextResponse.json({ ok: false, error: "artifact required" }, { status: 400 });
   }
+  if (
+    body.expectedUpdatedAt !== undefined
+    && (typeof body.expectedUpdatedAt !== "string" || !body.expectedUpdatedAt)
+  ) {
+    return NextResponse.json({ ok: false, error: "invalid expectedUpdatedAt" }, { status: 400 });
+  }
+  if (body.expectedAbsent !== undefined && typeof body.expectedAbsent !== "boolean") {
+    return NextResponse.json({ ok: false, error: "invalid expectedAbsent" }, { status: 400 });
+  }
+  if (body.expectedUpdatedAt !== undefined && body.expectedAbsent === true) {
+    return NextResponse.json({ ok: false, error: "conflicting save preconditions" }, { status: 400 });
+  }
   try {
-    const { file, savedId } = await upsertCanvasArtifact(body.artifact);
-    return NextResponse.json({ ok: true, artifacts: file.artifacts, savedId });
+    const result = await upsertCanvasArtifact(body.artifact, {
+      expectedUpdatedAt: body.expectedUpdatedAt as string | undefined,
+      expectedAbsent: body.expectedAbsent as boolean | undefined,
+      resolvedAnnotations: body.resolvedAnnotations,
+    });
+    if (result.status === "invalid") {
+      return NextResponse.json({ ok: false, error: "invalid resolvedAnnotations" }, { status: 400 });
+    }
+    if (result.status === "not_found") {
+      return NextResponse.json({ ok: false, error: "artifact not found" }, { status: 404 });
+    }
+    if (result.status === "conflict") {
+      return NextResponse.json({
+        ok: false,
+        error: "artifact changed",
+        currentUpdatedAt: result.currentUpdatedAt,
+      }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true,
+      artifacts: result.file.artifacts,
+      artifact: result.artifact,
+      savedId: result.savedId,
+    });
+  } catch (err) {
+    return storeUnreadable(err);
+  }
+}
+
+export async function PATCH(req: Request) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  try {
+    const result = await mutateCanvasArtifactAnnotation(body);
+    if (result.status === "invalid") {
+      return NextResponse.json({ ok: false, error: "invalid annotation mutation" }, { status: 400 });
+    }
+    if (result.status === "not_found") {
+      return NextResponse.json({ ok: false, error: "artifact not found" }, { status: 404 });
+    }
+    return NextResponse.json({
+      ok: true,
+      artifact: result.artifact,
+      artifacts: result.file.artifacts,
+    });
   } catch (err) {
     return storeUnreadable(err);
   }

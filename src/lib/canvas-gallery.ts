@@ -18,3 +18,58 @@ export function formatArtifactWhen(iso: string): string {
     return "";
   }
 }
+
+export function isCanvasGalleryLoadCurrent(
+  startedArtifactVersion: number,
+  requestToken: number,
+  currentArtifactVersion: number,
+  latestRequestToken: number,
+): boolean {
+  return (
+    startedArtifactVersion === currentArtifactVersion &&
+    requestToken === latestRequestToken
+  );
+}
+
+export type CanvasArtifactSnapshotMutation =
+  | { kind: "upsert"; changedId: string; deletedIds?: ReadonlySet<string> }
+  | { kind: "delete"; deletedId: string };
+
+function revisionTime(artifact: CanvasArtifact): number {
+  const parsed = Date.parse(artifact.updatedAt);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * Merge full mutation responses without allowing an older response to erase a
+ * newer revision or an artifact introduced by another in-flight mutation.
+ */
+export function mergeCanvasArtifactSnapshot(
+  current: CanvasArtifact[],
+  incoming: CanvasArtifact[],
+  mutation: CanvasArtifactSnapshotMutation,
+): CanvasArtifact[] {
+  const deletedId = mutation.kind === "delete" ? mutation.deletedId : null;
+  const deletedIds = mutation.kind === "upsert" ? mutation.deletedIds : undefined;
+  const merged = new Map(
+    current
+      .filter((artifact) => artifact.id !== deletedId && !deletedIds?.has(artifact.id))
+      .map((artifact) => [artifact.id, artifact]),
+  );
+
+  for (const artifact of incoming) {
+    if (artifact.id === deletedId || deletedIds?.has(artifact.id)) continue;
+    const existing = merged.get(artifact.id);
+    const incomingRevision = revisionTime(artifact);
+    const existingRevision = existing ? revisionTime(existing) : Number.NEGATIVE_INFINITY;
+    const changedId = mutation.kind === "upsert" ? mutation.changedId : null;
+    if (
+      !existing
+      || incomingRevision > existingRevision
+      || (incomingRevision === existingRevision && artifact.id === changedId)
+    ) {
+      merged.set(artifact.id, artifact);
+    }
+  }
+  return [...merged.values()];
+}
