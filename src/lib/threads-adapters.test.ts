@@ -26,6 +26,7 @@ const THREAD_HOLDS_SOUL = "aaaaaaa1-0001-4001-8001-000000000001";
 const THREAD_FRAYED = "aaaaaaa2-0002-4002-8002-000000000001";
 const FRAYED_STRAND = "bbbbbbb2-0002-4002-8002-000000000001";
 const PROPOSAL_OK = "cccccccc-0001-4001-8001-000000000001";
+const PROPOSAL_REVISION = "a".repeat(64);
 
 const tempRoot = path.join(process.cwd(), "artifacts", "test-tmp", `threads-adapters-${process.pid}`);
 let tempCounter = 0;
@@ -244,7 +245,7 @@ describe("fixtures adapter — proposals", () => {
   });
 
   it("R5: approve and reject refuse in fixtures mode — no daemon, no decision", async () => {
-    for (const envelope of [await adapter.approve(), await adapter.reject()]) {
+    for (const envelope of [await adapter.approve(PROPOSAL_OK), await adapter.reject(PROPOSAL_OK)]) {
       assert.equal(envelope.blocked, true);
       assert.equal(envelope.why, "daemon-unavailable");
       assert.equal(httpStatusForEnvelope(envelope, "POST"), 503);
@@ -665,7 +666,7 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(res.data, null);
   });
 
-  it("approve forwards to the daemon and never touches the pending file itself", async () => {
+  it("approve forwards the exact expected revision and note without touching the pending file", async () => {
     const { home, pending } = homeWithPending();
     const calls: { method?: string; path: string; body?: unknown }[] = [];
     const adapter = new DaemonThreadsAdapter({
@@ -675,14 +676,14 @@ describe("daemon adapter — proposals and decisions", () => {
       },
       covenHomeDir: home,
     });
-    const res = await adapter.approve(PROPOSAL_OK, "looks right");
+    const res = await adapter.approve(PROPOSAL_OK, PROPOSAL_REVISION, "looks right");
     assert.equal(res.blocked, false);
     assert.deepEqual(res.data, { applied: true });
     assert.deepEqual(calls, [
       {
         method: "POST",
         path: `/api/v1/threads/proposals/${PROPOSAL_OK}/approve`,
-        body: { note: "looks right" },
+        body: { expectedRevision: PROPOSAL_REVISION, note: "looks right" },
         timeoutMs: 4000,
       },
     ]);
@@ -690,6 +691,28 @@ describe("daemon adapter — proposals and decisions", () => {
     const still = await adapter.proposals();
     assert.equal(still.data?.length, 1, "pending file untouched by the forwarder");
     assert.ok(pending.length > 0);
+  });
+
+  it("preserves legacy decision body shapes when revision or note is omitted", async () => {
+    const { home } = homeWithPending();
+    const calls: { body?: unknown }[] = [];
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>(req: { body?: unknown }) => {
+        calls.push(req);
+        return { ok: true, status: 200, data: {} as T };
+      },
+      covenHomeDir: home,
+    });
+
+    await adapter.approve(PROPOSAL_OK);
+    await adapter.reject(PROPOSAL_OK, undefined, "legacy note");
+    await adapter.approve(PROPOSAL_OK, PROPOSAL_REVISION);
+
+    assert.deepEqual(calls.map((call) => call.body), [
+      {},
+      { note: "legacy note" },
+      { expectedRevision: PROPOSAL_REVISION },
+    ]);
   });
 
   it("R5: decision fails closed when the daemon is unreachable", async () => {
@@ -714,7 +737,7 @@ describe("daemon adapter — proposals and decisions", () => {
       }),
       covenHomeDir: home,
     });
-    const res = await adapter.approve(PROPOSAL_OK, "reviewed");
+    const res = await adapter.approve(PROPOSAL_OK, undefined, "reviewed");
     assert.equal(res.blocked, true);
     assert.equal(res.why, "proposal-refused");
     assert.equal(httpStatusForEnvelope(res, "POST"), 409);
@@ -827,7 +850,7 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
       await new FixturesThreadsAdapter({ scenario: "daemon-timeout" }).listWeaves(),
       await new FixturesThreadsAdapter({ root: tempDir("phase4-sweep-") }).listWeaves(),
       await new FixturesThreadsAdapter().weave("99999999-9999-4999-8999-999999999999"),
-      await new FixturesThreadsAdapter().approve(),
+      await new FixturesThreadsAdapter().approve(PROPOSAL_OK),
       await new DaemonThreadsAdapter({
         call: async () => ({ ok: false, status: 0, data: null }),
         covenHomeDir: tempDir("phase4-sweep-home-"),

@@ -49,8 +49,8 @@ export interface ThreadsReadAdapter {
   strands(threadId: string): Promise<ThreadsEnvelope<StrandView[]>>;
   audit(threadId: string, before?: number): Promise<ThreadsEnvelope<AuditEntryView[]>>;
   proposals(): Promise<ThreadsEnvelope<ProposalView[]>>;
-  approve(proposalId: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
-  reject(proposalId: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
+  approve(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
+  reject(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
 }
 
 const AUDIT_PAGE_SIZE = 200;
@@ -372,11 +372,11 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
 
   // §3.7 / R5: in fixtures mode there is no daemon to forward to — the action
   // fails closed. No optimistic UI, no queued decisions.
-  async approve(): Promise<ThreadsEnvelope<unknown>> {
+  async approve(_proposalId: string, _expectedRevision?: string, _note?: string): Promise<ThreadsEnvelope<unknown>> {
     return blockedEnvelope("daemon-unavailable", this.meta("none", false));
   }
 
-  async reject(): Promise<ThreadsEnvelope<unknown>> {
+  async reject(_proposalId: string, _expectedRevision?: string, _note?: string): Promise<ThreadsEnvelope<unknown>> {
     return blockedEnvelope("daemon-unavailable", this.meta("none", false));
   }
 }
@@ -559,6 +559,7 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
   private async decide(
     proposalId: string,
     decision: "approve" | "reject",
+    expectedRevision?: string,
     note?: string,
   ): Promise<ThreadsEnvelope<unknown>> {
     if (!isSafeThreadsId(proposalId)) {
@@ -577,10 +578,13 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     }
     // Forward-only: the daemon re-validates, applies or refuses, audits, and
     // removes the pending file. This adapter never mutates anything itself.
+    const body: { expectedRevision?: string; note?: string } = {};
+    if (expectedRevision !== undefined) body.expectedRevision = expectedRevision;
+    if (note !== undefined) body.note = note;
     const res = await this.call<unknown>({
       method: "POST",
       path: DAEMON_PROPOSAL_DECISION_PATH(proposalId, decision),
-      body: note === undefined ? {} : { note },
+      body,
       timeoutMs: this.timeoutMs,
     });
     if (!res.ok) return this.blockedFromDecision(res);
@@ -605,12 +609,12 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     return this.blockedFromDaemon(res);
   }
 
-  async approve(proposalId: string, note?: string): Promise<ThreadsEnvelope<unknown>> {
-    return this.decide(proposalId, "approve", note);
+  async approve(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>> {
+    return this.decide(proposalId, "approve", expectedRevision, note);
   }
 
-  async reject(proposalId: string, note?: string): Promise<ThreadsEnvelope<unknown>> {
-    return this.decide(proposalId, "reject", note);
+  async reject(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>> {
+    return this.decide(proposalId, "reject", expectedRevision, note);
   }
 }
 
