@@ -1,0 +1,1366 @@
+/* ════════════════════════════════════════════════════════════════
+   Vault panel
+   ════════════════════════════════════════════════════════════════ */
+
+.vault-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.vault-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.vault-header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.vault-header-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.vault-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vault-filter {
+  padding: var(--space-2) var(--space-2) 0;
+}
+.vault-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  transition: border-color 0.12s;
+}
+.vault-row:hover { border-color: var(--border-strong); }
+.vault-row--warn { border-color: color-mix(in oklch, var(--color-danger) 35%, transparent); }
+
+.vault-row-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-right: 52px; /* room for action buttons */
+}
+.vault-row-key {
+  font-size: var(--text-sm);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.vault-row-ref {
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.vault-row-desc { font-size: 11px; color: var(--text-secondary); }
+.vault-row-error { font-size: 10px; color: var(--color-danger); margin-top: 2px; }
+
+.vault-row-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.vault-row:hover .vault-row-actions { opacity: 1; }
+
+.vault-action-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+.vault-action-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.vault-action-btn--danger:hover {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+}
+
+.vault-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.vault-required-pill {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-hairline);
+  border-radius: 20px;
+  padding: 1px 6px;
+}
+
+/* Add/edit form */
+.vault-add-wrapper {
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklab, var(--bg-raised) 60%, var(--bg-base));
+  padding: var(--space-3) 14px;
+}
+.vault-add-form { display: flex; flex-direction: column; gap: 10px; }
+.vault-add-row { display: flex; gap: 10px; }
+.vault-add-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.vault-add-input {
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 5px var(--space-2);
+  outline: none;
+  width: 100%;
+}
+.vault-add-input:focus { border-color: var(--accent-presence); }
+.vault-ref-input { font-family: var(--font-mono, monospace); }
+
+.vault-add-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.vault-required-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.vault-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+  white-space: nowrap;
+}
+.vault-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.vault-btn--primary {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+  color: var(--text-primary);
+}
+.vault-btn--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 88%, white);
+}
+.vault-btn--primary:disabled { opacity: 0.5; cursor: default; }
+
+.vault-err {
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+.vault-footer-note {
+  flex-shrink: 0;
+  padding: var(--space-2) 14px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-hairline);
+  line-height: 1.5;
+}
+
+/* ============================================================
+   Theme palettes — preset themes (Coven default lives in :root).
+   Each theme ships a DARK and a LIGHT palette. Hue is held constant
+   per theme; chroma is low on surfaces and saved for the accent.
+   Border / input / text-muted derive from --foreground (set in :root)
+   so they don't need per-theme overrides in the common case.
+   ============================================================ */
+
+/* ---- Tide (moontide 245) — cold, deliberate, mostly underwater ---- */
+[data-theme="tide"] {
+  --background: oklch(0.10 0.035 245);
+  --card: oklch(0.135 0.038 245);
+  --popover: oklch(0.135 0.038 245);
+  --muted: oklch(0.18 0.040 245);
+  --accent: oklch(0.18 0.040 245);
+  --secondary: oklch(0.18 0.040 245);
+  --muted-foreground: oklch(0.70 0.040 245);
+  --accent-presence: #5FB0FF;
+  --ring: oklch(0.62 0.16 245);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.075 0.032 245);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.18 0.040 245);
+  --bg-hover: oklch(0.22 0.042 245);
+  --ring-focus: color-mix(in oklch, #5FB0FF 55%, var(--foreground) 45%);
+}
+[data-theme="tide"][data-mode="light"] {
+  --background: oklch(0.97 0.020 240);
+  --foreground: oklch(0.18 0.030 245);
+  --card: oklch(0.94 0.022 240);
+  --popover: oklch(0.96 0.022 240);
+  --muted: oklch(0.90 0.026 240);
+  --accent: oklch(0.90 0.026 240);
+  --secondary: oklch(0.90 0.026 240);
+  --muted-foreground: oklch(0.42 0.034 245);
+  --accent-presence: #2E6FC9;
+  --ring: oklch(0.55 0.16 245);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.014 240);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.024 240);
+  --bg-hover: oklch(0.87 0.028 240);
+  --ring-focus: color-mix(in oklch, #2E6FC9 55%, var(--foreground) 45%);
+}
+
+/* ---- Grove (hexenwald 150) — damp, patient, full of teeth ---- */
+[data-theme="grove"] {
+  --background: oklch(0.10 0.040 150);
+  --card: oklch(0.135 0.042 150);
+  --popover: oklch(0.135 0.042 150);
+  --muted: oklch(0.18 0.044 150);
+  --accent: oklch(0.18 0.044 150);
+  --secondary: oklch(0.18 0.044 150);
+  --muted-foreground: oklch(0.70 0.034 150);
+  --accent-presence: #7FD89F;
+  --ring: oklch(0.66 0.16 150);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.075 0.038 150);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.18 0.044 150);
+  --bg-hover: oklch(0.22 0.046 150);
+  --ring-focus: color-mix(in oklch, #7FD89F 55%, var(--foreground) 45%);
+}
+[data-theme="grove"][data-mode="light"] {
+  --background: oklch(0.97 0.018 145);
+  --foreground: oklch(0.18 0.028 150);
+  --card: oklch(0.94 0.020 145);
+  --popover: oklch(0.96 0.020 145);
+  --muted: oklch(0.90 0.024 145);
+  --accent: oklch(0.90 0.024 145);
+  --secondary: oklch(0.90 0.024 145);
+  --muted-foreground: oklch(0.42 0.030 150);
+  --accent-presence: #2A8050;
+  --ring: oklch(0.55 0.16 150);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.012 145);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.022 145);
+  --bg-hover: oklch(0.87 0.026 145);
+  --ring-focus: color-mix(in oklch, #2A8050 55%, var(--foreground) 45%);
+}
+
+/* ---- Vintage Paper (id: ember) — warm tan ink steeped into aged folio.
+   Ported from tweakcn's "vintage-paper" theme; mapped onto Cave's semantic
+   token ladder. Dark mode is a warm sepia, not the usual near-black. ---- */
+[data-theme="ember"] {
+  --background: oklch(0.2747 0.0139 57.6523);
+  --foreground: oklch(0.9239 0.0190 83.0636);
+  --card: oklch(0.3237 0.0155 59.0603);
+  --card-foreground: oklch(0.9239 0.0190 83.0636);
+  --popover: oklch(0.3237 0.0155 59.0603);
+  --popover-foreground: oklch(0.9239 0.0190 83.0636);
+  --muted: oklch(0.2939 0.0125 62.1298);
+  --accent: oklch(0.4186 0.0281 56.3404);
+  --secondary: oklch(0.3795 0.0181 57.1280);
+  --muted-foreground: oklch(0.7982 0.0243 82.1078);
+  --accent-presence: oklch(0.7264 0.0581 66.6967);
+  --accent-presence-soft: oklch(0.80 0.050 75);
+  --ring: oklch(0.7264 0.0581 66.6967);
+  --border: oklch(0.3795 0.0181 57.1280);
+  --input: oklch(0.3795 0.0181 57.1280);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.2450 0.0130 57.6523);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.3795 0.0181 57.1280);
+  --bg-hover: oklch(0.4186 0.0281 56.3404);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
+}
+[data-theme="ember"][data-mode="light"] {
+  --background: oklch(0.9582 0.0152 90.2357);
+  --foreground: oklch(0.3760 0.0225 64.3434);
+  --card: oklch(0.9914 0.0098 87.4695);
+  --card-foreground: oklch(0.3760 0.0225 64.3434);
+  --popover: oklch(0.9914 0.0098 87.4695);
+  --popover-foreground: oklch(0.3760 0.0225 64.3434);
+  --muted: oklch(0.9239 0.0190 83.0636);
+  --accent: oklch(0.8348 0.0426 88.8064);
+  --secondary: oklch(0.8846 0.0302 85.5655);
+  --muted-foreground: oklch(0.495 0.0387 71.1655);
+  --accent-presence: oklch(0.6180 0.0778 65.5444);
+  --accent-presence-foreground: #111111;
+  --accent-presence-soft: oklch(0.6180 0.060 65);
+  --ring: oklch(0.6180 0.0778 65.5444);
+  --border: oklch(0.8606 0.0321 84.5881);
+  --input: oklch(0.8606 0.0321 84.5881);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.9914 0.0098 87.4695);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.9239 0.0190 83.0636);
+  --bg-hover: oklch(0.8846 0.0302 85.5655);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
+}
+
+/* ---- Bloom (bewitching-blood 20) — saccharine looks; thorned hands ---- */
+[data-theme="bloom"] {
+  --background: oklch(0.115 0.040 20);
+  --card: oklch(0.15 0.044 20);
+  --popover: oklch(0.15 0.044 20);
+  --muted: oklch(0.19 0.046 20);
+  --accent: oklch(0.19 0.046 20);
+  --secondary: oklch(0.19 0.046 20);
+  --muted-foreground: oklch(0.72 0.038 20);
+  --accent-presence: #F09BB1;
+  --ring: oklch(0.72 0.16 20);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.09 0.038 20);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.19 0.046 20);
+  --bg-hover: oklch(0.23 0.048 20);
+  --ring-focus: color-mix(in oklch, #F09BB1 55%, var(--foreground) 45%);
+}
+[data-theme="bloom"][data-mode="light"] {
+  --background: oklch(0.975 0.018 20);
+  --foreground: oklch(0.20 0.030 20);
+  --card: oklch(0.95 0.020 20);
+  --popover: oklch(0.97 0.020 20);
+  --muted: oklch(0.91 0.026 20);
+  --accent: oklch(0.91 0.026 20);
+  --secondary: oklch(0.91 0.026 20);
+  --muted-foreground: oklch(0.44 0.036 20);
+  --accent-presence: #BE506E;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.60 0.16 20);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.014 20);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.92 0.024 20);
+  --bg-hover: oklch(0.88 0.028 20);
+  --ring-focus: color-mix(in oklch, #BE506E 55%, var(--foreground) 45%);
+}
+
+/* ---- Dusk (witching-hour 322) — the veil thins; so does your patience ---- */
+[data-theme="dusk"] {
+  --background: oklch(0.10 0.050 322);
+  --card: oklch(0.135 0.052 322);
+  --popover: oklch(0.135 0.052 322);
+  --muted: oklch(0.18 0.054 322);
+  --accent: oklch(0.18 0.054 322);
+  --secondary: oklch(0.18 0.054 322);
+  --muted-foreground: oklch(0.72 0.044 322);
+  --accent-presence: #E175FF;
+  --ring: oklch(0.64 0.20 322);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.075 0.046 322);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.18 0.054 322);
+  --bg-hover: oklch(0.22 0.056 322);
+  --ring-focus: color-mix(in oklch, #E175FF 55%, var(--foreground) 45%);
+}
+[data-theme="dusk"][data-mode="light"] {
+  --background: oklch(0.97 0.022 325);
+  --foreground: oklch(0.20 0.034 322);
+  --card: oklch(0.94 0.024 325);
+  --popover: oklch(0.96 0.024 325);
+  --muted: oklch(0.90 0.028 325);
+  --accent: oklch(0.90 0.028 325);
+  --secondary: oklch(0.90 0.028 325);
+  --muted-foreground: oklch(0.44 0.040 322);
+  --accent-presence: #9930C2;
+  --ring: oklch(0.52 0.22 322);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.016 325);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.026 325);
+  --bg-hover: oklch(0.87 0.030 325);
+  --ring-focus: color-mix(in oklch, #9930C2 55%, var(--foreground) 45%);
+}
+
+/* ---- Mist (scrying-pool 198) — cold as a question without an answer ---- */
+[data-theme="mist"] {
+  --background: oklch(0.09 0.030 198);
+  --card: oklch(0.125 0.032 198);
+  --popover: oklch(0.125 0.032 198);
+  --muted: oklch(0.17 0.034 198);
+  --accent: oklch(0.17 0.034 198);
+  --secondary: oklch(0.17 0.034 198);
+  --muted-foreground: oklch(0.70 0.030 198);
+  --accent-presence: #6BD8D3;
+  --ring: oklch(0.72 0.14 198);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.065 0.028 198);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.17 0.034 198);
+  --bg-hover: oklch(0.21 0.036 198);
+  --ring-focus: color-mix(in oklch, #6BD8D3 55%, var(--foreground) 45%);
+}
+[data-theme="mist"][data-mode="light"] {
+  --background: oklch(0.97 0.015 195);
+  --foreground: oklch(0.18 0.024 198);
+  --card: oklch(0.94 0.018 195);
+  --popover: oklch(0.96 0.018 195);
+  --muted: oklch(0.90 0.022 195);
+  --accent: oklch(0.90 0.022 195);
+  --secondary: oklch(0.90 0.022 195);
+  --muted-foreground: oklch(0.42 0.028 198);
+  --accent-presence: #177b76;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.55 0.14 198);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.010 195);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.020 195);
+  --bg-hover: oklch(0.87 0.024 195);
+  --ring-focus: color-mix(in oklch, #1A857F 55%, var(--foreground) 45%);
+}
+
+/* ---- Hex (bloodletter 25) — the mark that doesn't wash off ---- */
+[data-theme="hex"] {
+  --background: oklch(0.09 0.060 25);
+  --card: oklch(0.125 0.062 25);
+  --popover: oklch(0.125 0.062 25);
+  --muted: oklch(0.17 0.066 25);
+  --accent: oklch(0.17 0.066 25);
+  --secondary: oklch(0.17 0.066 25);
+  --muted-foreground: oklch(0.72 0.044 25);
+  --accent-presence: #E04848;
+  --ring: oklch(0.64 0.20 25);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.07 0.054 25);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.17 0.066 25);
+  --bg-hover: oklch(0.21 0.068 25);
+  --ring-focus: color-mix(in oklch, #E04848 55%, var(--foreground) 45%);
+}
+[data-theme="hex"][data-mode="light"] {
+  --background: oklch(0.97 0.022 25);
+  --foreground: oklch(0.20 0.034 25);
+  --card: oklch(0.94 0.024 25);
+  --popover: oklch(0.96 0.024 25);
+  --muted: oklch(0.90 0.030 25);
+  --accent: oklch(0.90 0.030 25);
+  --secondary: oklch(0.90 0.030 25);
+  --muted-foreground: oklch(0.44 0.040 25);
+  --accent-presence: #A41C24;
+  --ring: oklch(0.52 0.22 25);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.016 25);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.026 25);
+  --bg-hover: oklch(0.87 0.030 25);
+  --ring-focus: color-mix(in oklch, #A41C24 55%, var(--foreground) 45%);
+}
+
+/* ---- Bane (wolfsbane 125) — bright; deeply unwise ---- */
+[data-theme="bane"] {
+  --background: oklch(0.09 0.050 125);
+  --card: oklch(0.125 0.052 125);
+  --popover: oklch(0.125 0.052 125);
+  --muted: oklch(0.17 0.054 125);
+  --accent: oklch(0.17 0.054 125);
+  --secondary: oklch(0.17 0.054 125);
+  --muted-foreground: oklch(0.70 0.040 125);
+  --accent-presence: #A5F050;
+  --ring: oklch(0.78 0.18 125);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.07 0.044 125);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.17 0.054 125);
+  --bg-hover: oklch(0.21 0.056 125);
+  --ring-focus: color-mix(in oklch, #A5F050 55%, var(--foreground) 45%);
+}
+[data-theme="bane"][data-mode="light"] {
+  --background: oklch(0.97 0.022 125);
+  --foreground: oklch(0.18 0.030 125);
+  --card: oklch(0.94 0.024 125);
+  --popover: oklch(0.96 0.024 125);
+  --muted: oklch(0.90 0.030 125);
+  --accent: oklch(0.90 0.030 125);
+  --secondary: oklch(0.90 0.030 125);
+  --muted-foreground: oklch(0.42 0.034 125);
+  --accent-presence: #4A7C18;
+  --ring: oklch(0.52 0.18 125);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.016 125);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.026 125);
+  --bg-hover: oklch(0.87 0.030 125);
+  --ring-focus: color-mix(in oklch, #4A7C18 55%, var(--foreground) 45%);
+}
+
+/* ---- Ghosty (tweakcn Ghostlyy) — spectral grayscale with soft graphite chrome ---- */
+[data-theme="ghosty"] {
+  --background: #1a1a1a;
+  --foreground: #fafafa;
+  --card: #1a1a1a;
+  --card-foreground: #fafafa;
+  --popover: #1a1a1a;
+  --popover-foreground: #fafafa;
+  --primary: #a6a6a6;
+  --primary-foreground: #1a1a1a;
+  --secondary: #1e1e1e;
+  --secondary-foreground: #fafafa;
+  --muted: #1a1a1a;
+  --muted-foreground: #a6a6a6;
+  --accent: #a6a6a6;
+  --accent-foreground: #1a1a1a;
+  --destructive: #4d4d4d;
+  --destructive-foreground: #fafafa;
+  --border: #242424;
+  --input: #1a1a1a;
+  --ring: #a6a6a6;
+  --accent-presence: #a6a6a6;
+  --accent-presence-foreground: #1a1a1a;
+  --accent-presence-soft: color-mix(in oklch, #a6a6a6 78%, transparent);
+  --accent-faint: color-mix(in oklch, #a6a6a6 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #171717;
+  --bg-raised: var(--card);
+  --bg-elevated: #1e1e1e;
+  --bg-hover: #242424;
+  --border-strong: #6a6a6a;
+  --ring-focus: color-mix(in oklch, #a6a6a6 55%, var(--foreground) 45%);
+  --chart-1: #a6a6a6;
+  --chart-2: #999999;
+  --chart-3: #b3b3b3;
+  --chart-4: #8d8d8d;
+  --chart-5: #333333;
+}
+[data-theme="ghosty"][data-mode="light"] {
+  --background: #fafafa;
+  --foreground: #1a1a1a;
+  --card: #f5f5f5;
+  --card-foreground: #1a1a1a;
+  --popover: #fafafa;
+  --popover-foreground: #1a1a1a;
+  --primary: #808080;
+  --primary-foreground: #111111;
+  --secondary: #272727;
+  --secondary-foreground: #fafafa;
+  --muted: #ebebeb;
+  --muted-foreground: #666666;
+  --accent: #f2f2f2;
+  --accent-foreground: #666666;
+  --destructive: #999999;
+  --destructive-foreground: #111111;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #808080;
+  --accent-presence: #808080;
+  --accent-presence-foreground: #111111;
+  --accent-presence-soft: color-mix(in oklch, #808080 78%, transparent);
+  --accent-faint: color-mix(in oklch, #808080 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #f8f8f8;
+  --bg-raised: var(--card);
+  --bg-elevated: #f2f2f2;
+  --bg-hover: #ebebeb;
+  --border-strong: #8c8c8c;
+  --ring-focus: color-mix(in oklch, #808080 55%, var(--foreground) 45%);
+  --chart-1: #808080;
+  --chart-2: #272727;
+  --chart-3: #999999;
+  --chart-4: #808080;
+  --chart-5: #cccccc;
+}
+
+/* ---- Claymorphism (tweakcn) — soft stone surfaces with indigo glaze ---- */
+[data-theme="claymorphism"] {
+  --font-sans: var(--font-public-sans), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-roboto-mono), "Roboto Mono", ui-monospace, monospace;
+  --radius: 1.25rem;
+  --radius-control: 16px;
+  --radius-card: 20px;
+  --radius-panel: 24px;
+  --shadow-color: hsl(240 4% 60%);
+  --shadow-popover: 2px 2px 10px 4px hsl(240 4% 60% / 0.18);
+  --cave-reading-leading: 1.6;
+  --cave-reading-tracking: 0;
+  --cave-reading-weight: 400;
+  --background: #1e1b18;
+  --foreground: #e2e8f0;
+  --card: #2c2825;
+  --card-foreground: #e2e8f0;
+  --popover: #2c2825;
+  --popover-foreground: #e2e8f0;
+  --primary: #818cf8;
+  --primary-foreground: #1e1b18;
+  --secondary: #3a3633;
+  --secondary-foreground: #d1d5db;
+  --muted: #1f1c19;
+  --muted-foreground: #9ca3af;
+  --accent: #484441;
+  --accent-foreground: #d1d5db;
+  --destructive: #ef4444;
+  --destructive-foreground: #1e1b18;
+  --border: #3a3633;
+  --input: #3a3633;
+  --ring: #818cf8;
+  --accent-presence: #818cf8;
+  --accent-presence-foreground: #1e1b18;
+  --accent-presence-soft: color-mix(in oklch, #818cf8 78%, transparent);
+  --accent-faint: color-mix(in oklch, #818cf8 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #3a3633;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #8e5e69;
+  --ring-focus: color-mix(in oklch, #818cf8 55%, var(--foreground) 45%);
+  --chart-1: #818cf8;
+  --chart-2: #6366f1;
+  --chart-3: #4f46e5;
+  --chart-4: #4338ca;
+  --chart-5: #3730a3;
+}
+[data-theme="claymorphism"][data-mode="light"] {
+  --background: #e7e5e4;
+  --foreground: #1e293b;
+  --card: #f5f5f4;
+  --card-foreground: #1e293b;
+  --popover: #f5f5f4;
+  --popover-foreground: #1e293b;
+  --primary: #5457e9;
+  --primary-foreground: #ffffff;
+  --secondary: #d6d3d1;
+  --secondary-foreground: #4b5563;
+  --muted: #e7e5e4;
+  --muted-foreground: #555c6a;
+  --accent: #f3e5f5;
+  --accent-foreground: #374151;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #d6d3d1;
+  --input: #d6d3d1;
+  --ring: #5457e9;
+  --accent-presence: #5457e9;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #6366f1 78%, transparent);
+  --accent-faint: color-mix(in oklch, #6366f1 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #d6d3d1;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #b07281;
+  --ring-focus: color-mix(in oklch, #6366f1 55%, var(--foreground) 45%);
+  --chart-1: #6366f1;
+  --chart-2: #4f46e5;
+  --chart-3: #4338ca;
+  --chart-4: #3730a3;
+  --chart-5: #312e81;
+}
+
+/* ---- Claude (tweakcn) — parchment neutrals with burnt-clay primary ---- */
+[data-theme="claude"] {
+  --radius: 0.5rem;
+  --radius-control: 7px;
+  --radius-card: 10px;
+  --radius-panel: 14px;
+  --cave-reading-leading: 1.6;
+  --cave-reading-tracking: 0;
+  --cave-reading-weight: 400;
+  --background: #262624;
+  --foreground: #c3c0b6;
+  --card: #262624;
+  --card-foreground: #faf9f5;
+  --popover: #30302e;
+  --popover-foreground: #e5e5e2;
+  --primary: #d97757;
+  --primary-foreground: #111111;
+  --secondary: #faf9f5;
+  --secondary-foreground: #30302e;
+  --muted: #1b1b19;
+  --muted-foreground: #b7b5a9;
+  --accent: #1a1915;
+  --accent-foreground: #f5f4ee;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #3e3e38;
+  --input: #52514a;
+  --ring: #d97757;
+  --accent-presence: #d97757;
+  --accent-presence-foreground: #111111;
+  --accent-presence-soft: color-mix(in oklch, #d97757 78%, transparent);
+  --accent-faint: color-mix(in oklch, #d97757 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #1f1e1d;
+  --bg-raised: var(--card);
+  --bg-elevated: #30302e;
+  --bg-hover: var(--accent);
+  --border-strong: #806c49;
+  --ring-focus: color-mix(in oklch, #d97757 55%, var(--foreground) 45%);
+  --chart-1: #b05730;
+  --chart-2: #9c87f5;
+  --chart-3: #1a1915;
+  --chart-4: #2f2b48;
+  --chart-5: #b4552d;
+}
+[data-theme="claude"][data-mode="light"] {
+  --background: #faf9f5;
+  --foreground: #3d3929;
+  --card: #faf9f5;
+  --card-foreground: #141413;
+  --popover: #ffffff;
+  --popover-foreground: #28261b;
+  --primary: #c96442;
+  --primary-foreground: #111111;
+  --secondary: #e9e6dc;
+  --secondary-foreground: #535146;
+  --muted: #ede9de;
+  --muted-foreground: #676661;
+  --accent: #e9e6dc;
+  --accent-foreground: #28261b;
+  --destructive: #141413;
+  --destructive-foreground: #ffffff;
+  --border: #dad9d4;
+  --input: #b4b2a7;
+  --ring: #c96442;
+  --accent-presence: #c96442;
+  --accent-presence-foreground: #111111;
+  --accent-presence-soft: color-mix(in oklch, #c96442 78%, transparent);
+  --accent-faint: color-mix(in oklch, #c96442 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #f5f4ee;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #a68d6b;
+  --ring-focus: color-mix(in oklch, #c96442 55%, var(--foreground) 45%);
+  --chart-1: #b05730;
+  --chart-2: #9c87f5;
+  --chart-3: #ded8c4;
+  --chart-4: #dbd3f0;
+  --chart-5: #b4552d;
+}
+
+/* ---- OpenAI — Codex black; void-dark monochrome with paper-white keys ----
+   Modeled on the Codex/ChatGPT surfaces: #0d0d0d canvas over a true-black
+   panel rail, grayscale elevation ladder, and a white filled accent (black
+   ink on it) like the composer send key. Light mode inverts to white paper
+   with black keys. Heritage teal survives only as a chart series. */
+[data-theme="openai"] {
+  --background: #0d0d0d;
+  --foreground: #ececec;
+  --card: #171717;
+  --card-foreground: #ececec;
+  --popover: #212121;
+  --popover-foreground: #ececec;
+  --primary: #ececec;
+  --primary-foreground: #0d0d0d;
+  --secondary: #212121;
+  --secondary-foreground: #ececec;
+  --muted: #212121;
+  --muted-foreground: #b4b4b4;
+  --accent: #2f2f2f;
+  --accent-foreground: #ececec;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #2f2f2f;
+  --input: #424242;
+  --ring: #8f8f8f;
+  --accent-presence: #ececec;
+  --accent-presence-foreground: #0d0d0d;
+  --accent-presence-soft: color-mix(in oklch, #ececec 78%, transparent);
+  --accent-faint: color-mix(in oklch, #ececec 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #000000;
+  --bg-raised: var(--card);
+  --bg-elevated: #212121;
+  --bg-hover: #2f2f2f;
+  --border-strong: #6e6e6e;
+  --ring-focus: color-mix(in oklch, #ececec 55%, var(--foreground) 45%);
+  --chart-1: #ececec;
+  --chart-2: #10a37f;
+  --chart-3: #b4b4b4;
+  --chart-4: #8f8f8f;
+  --chart-5: #5d5d5d;
+}
+[data-theme="openai"][data-mode="light"] {
+  --background: #ffffff;
+  --foreground: #0d0d0d;
+  --card: #f9f9f9;
+  --card-foreground: #0d0d0d;
+  --popover: #ffffff;
+  --popover-foreground: #0d0d0d;
+  --primary: #0d0d0d;
+  --primary-foreground: #ffffff;
+  --secondary: #ececec;
+  --secondary-foreground: #0d0d0d;
+  --muted: #f0f0f0;
+  --muted-foreground: #5d5d5d;
+  --accent: #ececec;
+  --accent-foreground: #0d0d0d;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --border: #e3e3e3;
+  --input: #b4b4b4;
+  --ring: #5d5d5d;
+  --accent-presence: #0d0d0d;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #0d0d0d 78%, transparent);
+  --accent-faint: color-mix(in oklch, #0d0d0d 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #f9f9f9;
+  --bg-raised: var(--card);
+  --bg-elevated: #ececec;
+  --bg-hover: #e3e3e3;
+  --border-strong: #8f8f8f;
+  --ring-focus: color-mix(in oklch, #0d0d0d 55%, var(--foreground) 45%);
+  --chart-1: #0d0d0d;
+  --chart-2: #10a37f;
+  --chart-3: #5d5d5d;
+  --chart-4: #8f8f8f;
+  --chart-5: #b4b4b4;
+}
+
+/* ---- Pastel Dreams (tweakcn) - soft violet pastels with lifted white surfaces ---- */
+[data-theme="pastel-dreams"] {
+  --font-sans: var(--font-open-sans), "Open Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 1.5rem;
+  --radius-control: 18px;
+  --radius-card: 24px;
+  --radius-panel: 28px;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-popover: 0 8px 16px -4px hsl(0 0% 0% / 0.08);
+  --cave-reading-leading: 1.7;
+  --cave-reading-tracking: 0.01em;
+  --cave-reading-weight: 400;
+  --background: #1c1917;
+  --foreground: #e0e7ff;
+  --card: #2d2535;
+  --card-foreground: #e0e7ff;
+  --popover: #2d2535;
+  --popover-foreground: #e0e7ff;
+  --primary: #c0aafd;
+  --primary-foreground: #1c1917;
+  --secondary: #3f324a;
+  --secondary-foreground: #d1d5db;
+  --muted: #20182b;
+  --muted-foreground: #9ca3af;
+  --accent: #4a3d5a;
+  --accent-foreground: #d1d5db;
+  --destructive: #fca5a5;
+  --destructive-foreground: #1c1917;
+  --border: #3f324a;
+  --input: #3f324a;
+  --ring: #c0aafd;
+  --accent-presence: #c0aafd;
+  --accent-presence-foreground: #1c1917;
+  --accent-presence-soft: color-mix(in oklch, #c0aafd 78%, transparent);
+  --accent-faint: color-mix(in oklch, #c0aafd 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #20182b;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #705d89;
+  --ring-focus: color-mix(in oklch, #c0aafd 55%, var(--foreground) 45%);
+  --chart-1: #c0aafd;
+  --chart-2: #a78bfa;
+  --chart-3: #8b5cf6;
+  --chart-4: #7c3aed;
+  --chart-5: #6d28d9;
+}
+[data-theme="pastel-dreams"][data-mode="light"] {
+  --background: #f7f3f9;
+  --foreground: #374151;
+  --card: #ffffff;
+  --card-foreground: #374151;
+  --popover: #ffffff;
+  --popover-foreground: #374151;
+  --primary: #a78bfa;
+  --primary-foreground: #111111;
+  --secondary: #e9d8fd;
+  --secondary-foreground: #4b5563;
+  --muted: #f3e8ff;
+  --muted-foreground: #555c6a;
+  --text-muted: color-mix(in oklch, var(--foreground) 84%, transparent);
+  --accent: #f3e5f5;
+  --accent-foreground: #374151;
+  --destructive: #fca5a5;
+  --destructive-foreground: #111111;
+  --border: #e9d8fd;
+  --input: #e9d8fd;
+  --ring: #9377e6;
+  --accent-presence: #9377e6;
+  --accent-presence-foreground: #111111;
+  --accent-presence-soft: color-mix(in oklch, #a78bfa 78%, transparent);
+  --accent-faint: color-mix(in oklch, #a78bfa 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #e9d8fd;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #9077b8;
+  --ring-focus: color-mix(in oklch, #a78bfa 55%, var(--foreground) 45%);
+  --chart-1: #a78bfa;
+  --chart-2: #8b5cf6;
+  --chart-3: #7c3aed;
+  --chart-4: #6d28d9;
+  --chart-5: #5b21b6;
+}
+
+/* ---- Meatseeks (tweakcn Supabase) — green utility surfaces ---- */
+[data-theme="meatseeks"] {
+  --radius: 0.5rem;
+  --radius-control: 7px;
+  --radius-card: 10px;
+  --radius-panel: 14px;
+  --shadow-color: #000000;
+  --shadow-popover: 0 1px 3px 0 #0000002b;
+  --cave-reading-leading: 1.55;
+  --cave-reading-tracking: 0;
+  --cave-reading-weight: 400;
+  --background: #121212;
+  --foreground: #e2e8f0;
+  --card: #171717;
+  --card-foreground: #e2e8f0;
+  --popover: #242424;
+  --popover-foreground: #a9a9a9;
+  --primary: #006239;
+  --primary-foreground: #dde8e3;
+  --secondary: #242424;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f1f;
+  --muted-foreground: #a2a2a2;
+  --accent: #313131;
+  --accent-foreground: #fafafa;
+  --destructive: #541c15;
+  --destructive-foreground: #ede9e8;
+  --border: #292929;
+  --input: #242424;
+  --ring: #4ade80;
+  --accent-presence: #1d7449;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #006239 78%, transparent);
+  --accent-faint: color-mix(in oklch, #006239 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #121212;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #427050;
+  --ring-focus: color-mix(in oklch, #4ade80 55%, var(--foreground) 45%);
+  --chart-1: #4ade80;
+  --chart-2: #60a5fa;
+  --chart-3: #a78bfa;
+  --chart-4: #fbbf24;
+  --chart-5: #2dd4bf;
+}
+[data-theme="meatseeks"][data-mode="light"] {
+  --background: #fcfcfc;
+  --foreground: #171717;
+  --card: #fcfcfc;
+  --card-foreground: #171717;
+  --popover: #fcfcfc;
+  --popover-foreground: #525252;
+  --primary: #72e3ad;
+  --primary-foreground: #1e2723;
+  --secondary: #fdfdfd;
+  --secondary-foreground: #171717;
+  --muted: #ededed;
+  --muted-foreground: #202020;
+  --accent: #ededed;
+  --accent-foreground: #202020;
+  --destructive: #ca3214;
+  --destructive-foreground: #fffcfc;
+  --border: #dfdfdf;
+  --input: #f6f6f6;
+  --ring: #279c6b;
+  --accent-presence: #279c6b;
+  --accent-presence-foreground: #0d120f;
+  --accent-presence-soft: color-mix(in oklch, #72e3ad 78%, transparent);
+  --accent-faint: color-mix(in oklch, #72e3ad 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #fcfcfc;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #6f927e;
+  --ring-focus: color-mix(in oklch, #72e3ad 55%, var(--foreground) 45%);
+  --chart-1: #72e3ad;
+  --chart-2: #3b82f6;
+  --chart-3: #8b5cf6;
+  --chart-4: #f59e0b;
+  --chart-5: #10b981;
+}
+
+/* ---- Trucker (tweakcn) — roadside evergreen with blacktop panels ---- */
+[data-theme="trucker"] {
+  --background: #020504;
+  --foreground: #f1f5f3;
+  --card: #0a0f0d;
+  --card-foreground: #f1f5f3;
+  --popover: #050807;
+  --popover-foreground: #f1f5f3;
+  --primary: #005735;
+  --primary-foreground: #ffffff;
+  --secondary: #0a1f18;
+  --secondary-foreground: #ffffff;
+  --muted: #0a1a14;
+  --muted-foreground: #a8c7b8;
+  --accent: #005735;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #14241e;
+  --input: #14241e;
+  --ring: #21704a;
+  --accent-presence: #21704a;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #005735 78%, transparent);
+  --accent-faint: color-mix(in oklch, #005735 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #050807;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #426a58;
+  --ring-focus: color-mix(in oklch, #005735 55%, var(--foreground) 45%);
+  --chart-1: #005735;
+  --chart-2: #007a4a;
+  --chart-3: #009c60;
+  --chart-4: #00be75;
+  --chart-5: #00df8b;
+}
+[data-theme="trucker"][data-mode="light"] {
+  --background: #f5fcf9;
+  --foreground: #001a10;
+  --card: #ffffff;
+  --card-foreground: #001a10;
+  --popover: #ffffff;
+  --popover-foreground: #001a10;
+  --primary: #005735;
+  --primary-foreground: #ffffff;
+  --secondary: #e6f0eb;
+  --secondary-foreground: #005735;
+  --muted: #e6f0eb;
+  --muted-foreground: #4a6b5c;
+  --accent: #f0f9f4;
+  --accent-foreground: #005735;
+  --destructive: #9e1a1a;
+  --destructive-foreground: #ffffff;
+  --border: #d1e0d9;
+  --input: #d1e0d9;
+  --ring: #005735;
+  --accent-presence: #005735;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #005735 78%, transparent);
+  --accent-faint: color-mix(in oklch, #005735 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #ffffff;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #6f9280;
+  --ring-focus: color-mix(in oklch, #005735 55%, var(--foreground) 45%);
+  --chart-1: #005735;
+  --chart-2: #208b5e;
+  --chart-3: #40bd8a;
+  --chart-4: #74d9ab;
+  --chart-5: #a8f0cc;
+}
+
+/* ---- Snow (tweakcn "Frosty") — powder-blue light over midnight ice ----
+   Ported from https://tweakcn.com/themes/cmrm843zo000304jm0x7la5rk with
+   AA fixes: light primary/presence text pairs flipped to navy-on-sky or
+   deepened to #1b6ca8, destructive darkened, dark accent-foreground
+   brightened a step — see theme-contrast-audit.test.ts. */
+[data-theme="snow"] {
+  --font-sans: var(--font-manrope), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --radius: 1rem;
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --shadow-color: #000000;
+  --shadow-popover: 0 8px 20px 0 #00000066;
+  --cave-reading-leading: 1.6;
+  --cave-reading-tracking: 0;
+  --cave-reading-weight: 400;
+  --background: #03152d;
+  --foreground: #f8fafc;
+  --card: #0a1e36;
+  --card-foreground: #f8fafc;
+  --popover: #0a1e36;
+  --popover-foreground: #f8fafc;
+  --primary: #2f658e;
+  --primary-foreground: #ffffff;
+  --secondary: #162e4a;
+  --secondary-foreground: #f8fafc;
+  --muted: #0d2542;
+  --muted-foreground: #94a3b8;
+  --accent: #1e3a5f;
+  --accent-foreground: #5eb8ea;
+  --destructive: #991b1b;
+  --destructive-foreground: #ffffff;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #4aade5;
+  --accent-presence: #4aade5;
+  --accent-presence-foreground: #03152d;
+  --accent-presence-soft: color-mix(in oklch, #4aade5 78%, transparent);
+  --accent-faint: color-mix(in oklch, #4aade5 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #020d1c;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #4a7099;
+  --ring-focus: color-mix(in oklch, #4aade5 55%, var(--foreground) 45%);
+  --chart-1: #4aade5;
+  --chart-2: #38bdf8;
+  --chart-3: #0ea5e9;
+  --chart-4: #f8fafc;
+  --chart-5: #475569;
+}
+[data-theme="snow"][data-mode="light"] {
+  --shadow-color: #03152d;
+  --shadow-popover: 0 4px 16px 0 #03152d0a;
+  --background: #f8fafc;
+  --foreground: #03152d;
+  --card: #ffffff;
+  --card-foreground: #03152d;
+  --popover: #ffffff;
+  --popover-foreground: #03152d;
+  --primary: #4aade5;
+  --primary-foreground: #03152d;
+  --secondary: #e0f2fe;
+  --secondary-foreground: #03152d;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #f0f9ff;
+  --accent-foreground: #1b6ca8;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #f1f5f9;
+  --ring: #1b6ca8;
+  --accent-presence: #1b6ca8;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #4aade5 78%, transparent);
+  --accent-faint: color-mix(in oklch, #4aade5 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #ffffff;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #64748b;
+  --ring-focus: color-mix(in oklch, #1b6ca8 55%, var(--foreground) 45%);
+  --chart-1: #4aade5;
+  --chart-2: #03152d;
+  --chart-3: #0ea5e9;
+  --chart-4: #7dd3fc;
+  --chart-5: #cbd5e1;
+}
+
+/* ---- Slate (ink-and-bone 270) — no color, no mercy ---- */
+[data-theme="slate"] {
+  --background: oklch(0.05 0.000 0);
+  --card: oklch(0.10 0.000 0);
+  --popover: oklch(0.10 0.000 0);
+  --muted: oklch(0.14 0.000 0);
+  --accent: oklch(0.14 0.000 0);
+  --secondary: oklch(0.14 0.000 0);
+  --muted-foreground: oklch(0.66 0.000 0);
+  --accent-presence: #B8B8C2;
+  --ring: oklch(0.60 0.000 0);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.03 0.000 0);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.14 0.000 0);
+  --bg-hover: oklch(0.18 0.000 0);
+  --ring-focus: color-mix(in oklch, #B8B8C2 55%, var(--foreground) 45%);
+}
+[data-theme="slate"][data-mode="light"] {
+  --background: oklch(0.985 0.000 0);
+  --foreground: oklch(0.16 0.000 0);
+  --card: oklch(0.96 0.000 0);
+  --popover: oklch(0.98 0.000 0);
+  --muted: oklch(0.92 0.000 0);
+  --accent: oklch(0.92 0.000 0);
+  --secondary: oklch(0.92 0.000 0);
+  --muted-foreground: oklch(0.40 0.000 0);
+  --accent-presence: #525258;
+  --ring: oklch(0.42 0.000 0);
+  --bg-base: var(--background);
+  --bg-panel: oklch(1.00 0.000 0);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.93 0.000 0);
+  --bg-hover: oklch(0.89 0.000 0);
+  --ring-focus: color-mix(in oklch, #525258 55%, var(--foreground) 45%);
+}
+
+/* ---- High Contrast — maximum-legibility ward; AAA text everywhere ----
+   Built for low vision: true black/white surfaces, 7:1+ body text, a
+   goldenrod accent that clears 3:1 as a non-text mark on both modes. */
+[data-theme="contrast"] {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0d0d0d;
+  --popover: #0d0d0d;
+  --muted: #1a1a1a;
+  --accent: #1a1a1a;
+  --secondary: #1a1a1a;
+  --muted-foreground: #d9d9d9;
+  --accent-presence: #ffd60a;
+  --accent-presence-foreground: #000000;
+  --ring: #ffd60a;
+  --border: #666666;
+  --border-strong: #9a9a9a;
+  --text-muted: #cccccc;
+  --bg-base: var(--background);
+  --bg-panel: #050505;
+  --bg-raised: var(--card);
+  --bg-elevated: #161616;
+  --bg-hover: #222222;
+  --ring-focus: #ffd60a;
+}
+[data-theme="contrast"][data-mode="light"] {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #f2f2f2;
+  --popover: #fafafa;
+  --muted: #e6e6e6;
+  --accent: #e6e6e6;
+  --secondary: #e6e6e6;
+  --muted-foreground: #262626;
+  --accent-presence: #0f62fe;
+  --accent-presence-foreground: #ffffff;
+  --ring: #0f62fe;
+  --border: #8c8c8c;
+  --border-strong: #595959;
+  --text-muted: #333333;
+  --bg-base: var(--background);
+  --bg-panel: #fcfcfc;
+  --bg-raised: var(--card);
+  --bg-elevated: #e9e9e9;
+  --bg-hover: #dedede;
+  --ring-focus: #0f62fe;
+}
+
+/* ---- Beacon (harbor 250/60) — signal-fire on a night sea ----
+   Colorblind-considerate: the palette leans on the blue↔orange axis,
+   which stays distinct under deutan/protan vision; nothing important
+   rides a red↔green difference. */
+[data-theme="beacon"] {
+  --background: oklch(0.14 0.025 250);
+  --card: oklch(0.175 0.028 250);
+  --popover: oklch(0.175 0.028 250);
+  --muted: oklch(0.22 0.030 250);
+  --accent: oklch(0.22 0.030 250);
+  --secondary: oklch(0.22 0.030 250);
+  --muted-foreground: oklch(0.72 0.030 250);
+  --accent-presence: #f5a623;
+  --accent-presence-foreground: #000000;
+  --ring: oklch(0.68 0.14 65);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.11 0.022 250);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.22 0.030 250);
+  --bg-hover: oklch(0.26 0.032 250);
+  --ring-focus: color-mix(in oklch, #f5a623 55%, var(--foreground) 45%);
+}
+[data-theme="beacon"][data-mode="light"] {
+  --background: oklch(0.975 0.010 250);
+  --foreground: oklch(0.17 0.030 250);
+  --card: oklch(0.94 0.012 250);
+  --popover: oklch(0.965 0.012 250);
+  --muted: oklch(0.90 0.016 250);
+  --accent: oklch(0.90 0.016 250);
+  --secondary: oklch(0.90 0.016 250);
+  --muted-foreground: oklch(0.40 0.030 250);
+  --accent-presence: #a34d00;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.50 0.13 65);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.008 250);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.014 250);
+  --bg-hover: oklch(0.87 0.018 250);
+  --ring-focus: color-mix(in oklch, #a34d00 55%, var(--foreground) 45%);
+}
+
+/* ---- Solstice (midsummer 85) — long light, gold leaf on shadow ---- */
+[data-theme="solstice"] {
+  --background: oklch(0.145 0.020 85);
+  --card: oklch(0.185 0.022 85);
+  --popover: oklch(0.185 0.022 85);
+  --muted: oklch(0.23 0.024 85);
+  --accent: oklch(0.23 0.024 85);
+  --secondary: oklch(0.23 0.024 85);
+  --muted-foreground: oklch(0.72 0.040 85);
+  --accent-presence: #e3b341;
+  --accent-presence-foreground: #000000;
+  --ring: oklch(0.70 0.13 85);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.115 0.018 85);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.23 0.024 85);
+  --bg-hover: oklch(0.27 0.026 85);
+  --ring-focus: color-mix(in oklch, #e3b341 55%, var(--foreground) 45%);
+}
+[data-theme="solstice"][data-mode="light"] {
+  --background: oklch(0.975 0.016 90);
+  --foreground: oklch(0.19 0.030 85);
+  --card: oklch(0.94 0.020 90);
+  --popover: oklch(0.965 0.018 90);
+  --muted: oklch(0.90 0.026 90);
+  --accent: oklch(0.90 0.026 90);
+  --secondary: oklch(0.90 0.026 90);
+  --muted-foreground: oklch(0.40 0.036 85);
+  --accent-presence: #7a5c00;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.48 0.11 85);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.012 90);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.022 90);
+  --bg-hover: oklch(0.87 0.026 90);
+  --ring-focus: color-mix(in oklch, #7a5c00 55%, var(--foreground) 45%);
+}

@@ -80,12 +80,12 @@ assert.ok(
   familiarCoreNames.length < 40,
   `startup familiar collection should stay deliberately small, got ${familiarCoreNames.length}`,
 );
-const summoningSource = readFileSync(
-  new URL("../components/familiar-summoning-circle.tsx", import.meta.url),
+const summoningModelSource = readFileSync(
+  new URL("../components/familiar-summoning-model.ts", import.meta.url),
   "utf8",
 );
-const starterBlock = summoningSource.match(/STARTER_GLYPHS\s*=\s*\[([\s\S]*?)\];/);
-assert.ok(starterBlock, "summoning circle should declare its starter glyph list");
+const starterBlock = summoningModelSource.match(/STARTER_GLYPHS\s*=\s*\[([\s\S]*?)\];/);
+assert.ok(starterBlock, "summoning model should declare its starter glyph list");
 const starterNames = [...starterBlock[1].matchAll(/"(ph:[^"]+)"/g)].map((match) => match[1]);
 for (const starter of starterNames) {
   assert.ok(

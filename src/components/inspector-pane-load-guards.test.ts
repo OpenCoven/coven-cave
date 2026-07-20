@@ -40,10 +40,10 @@ assert.match(
   "the open-file loader drops a stale response when the selection changes",
 );
 
-// The Familiar tab's capability panel (extracted to chat-familiar-view.tsx)
+// The Familiar tab's capability panel (extracted to chat-familiar-capabilities.tsx)
 // awaits four fetches with one Promise.all — same rule: a slow response must
 // not setState after cleanup, even though the keyed host remounts per familiar.
-const familiarView = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+const familiarView = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 assert.match(familiarView, /let cancelled = false;/, "the capability loader declares a cancelled guard");
 assert.match(
   familiarView,

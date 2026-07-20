@@ -6,7 +6,10 @@ import {
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
 
-const source = readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8");
+const source = [
+  readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 afterEach(() => {
   globalThis.fetch = originalFetch;

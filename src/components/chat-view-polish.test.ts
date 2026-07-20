@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
+const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
 // The empty state (the familiar's starting page) was extracted when it became
 // task-aware; its launch-screen pins now read the dedicated file.
 const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
@@ -38,13 +40,13 @@ assert.match(
 );
 
 assert.match(
-  source,
+  attachmentCards,
   /const isImage = \(attachment\.mimeType \?\? attachment\.type\)\?\.startsWith\("image\/"\)/,
   "Attachment lightbox should fall back to legacy attachment.type for images",
 );
 
 assert.match(
-  source,
+  attachmentCards,
   /role="dialog"[\s\S]*aria-modal="true"/,
   "Attachment lightbox should expose modal dialog semantics",
 );
@@ -93,7 +95,7 @@ assert.match(
   "ReasoningBlock open state is driven by the global Show-thinking preference",
 );
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*checked=\{showThinking\}[\s\S]*\{showThinking \? "Hide thinking" : "Show thinking"\}/,
   "The session overflow menu carries the global Show-thinking toggle",
 );
@@ -508,7 +510,7 @@ assert.match(
   "Open chat header actions collapse to a find bar plus a single overflow menu",
 );
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*Debug session[\s\S]*Delete chat/,
   "Secondary session actions (project, voice, debug, delete) live in the overflow menu",
 );
@@ -543,7 +545,7 @@ assert.doesNotMatch(
 // Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions
 // collapse and reveal on hover / keyboard focus (touch devices show them).
 assert.match(
-  source,
+  sessionHeader,
   /className="focus-ring cave-chat-actions-kebab"/,
   "The overflow kebab is tagged so it stays visible while sibling actions collapse",
 );
@@ -687,22 +689,22 @@ assert.match(
 );
 
 assert.match(
-  source,
+  sessionHeader,
   /icon="ph:pencil-simple"[\s\S]{0,200}dispatchEvent\(new Event\("cave:chat-rename"\)\)[\s\S]{0,160}Rename chat/,
   "Rename lives in the session overflow menu (Codex/ChatGPT idiom), firing cave:chat-rename",
 );
 assert.match(
-  source,
+  sessionHeader,
   /addEventListener\("cave:chat-rename", onRename\)[\s\S]{0,80}setEditing\(true\)|onRename = \(\) => setEditing\(true\)/,
   "ChatTitleEditable enters edit mode when the overflow menu fires cave:chat-rename",
 );
 assert.match(
-  source,
+  sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
   "Chat title carries an explicit, labeled rename button — click-to-rename and the overflow item alone are not discoverable",
 );
 assert.match(
-  source,
+  sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,400}ph:pencil-simple/,
   "The title's rename button uses the same pencil icon as the overflow menu item",
 );
@@ -1168,24 +1170,32 @@ const mentionSendSource = readFileSync(
   new URL("../app/api/chat/send/route.ts", import.meta.url),
   "utf8",
 );
+const mentionAttachmentSource = readFileSync(
+  new URL("../app/api/chat/send/chat-send-attachments.ts", import.meta.url),
+  "utf8",
+);
+const chatRuntimeSource = readFileSync(
+  new URL("../app/api/chat/send/chat-send-runtime.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  mentionSendSource,
+  mentionAttachmentSource,
   /async function resolveMentionedFiles\([\s\S]*?relPaths\.slice\(0, MAX_MENTIONED_FILES\)[\s\S]*?\.includes\("\.\."\)[\s\S]*?candidate\.startsWith\(realRoot \+ path\.sep\)/,
   "/chat/send must validate each mention: cap, repo-relative only, no `..`, prefix containment under the realpathed root",
 );
 assert.match(
-  mentionSendSource,
+  chatRuntimeSource,
   /async function resolveFamiliarWorkspace\([\s\S]*?readFamiliarWorkspaces\(\)[\s\S]*?path\.resolve\(familiarsRoot, familiarId\)[\s\S]*?path\.relative\(familiarsRoot, candidate\)[\s\S]*?relative\.startsWith\("\.\."\)/,
   "/chat/send must validate default familiar workspace paths under the familiar root while preserving configured workspaces",
 );
 assert.match(
-  mentionSendSource,
+  mentionAttachmentSource,
   /const real = await realpath\(candidate\);[\s\S]*?real\.startsWith\(realRoot \+ path\.sep\)/,
   "/chat/send must re-check containment on the realpathed file so in-repo symlinks cannot smuggle outside paths",
 );
 assert.match(
-  mentionSendSource,
-  /"Referenced files \(open with the Read tool\):",\s*\n\s*\.\.\.absPaths\.map\(\(p\) => `- \$\{p\}`\)/,
+  mentionAttachmentSource,
+  /"Referenced files \(open with the Read tool\):",\s*\n\s*\.\.\.absPaths\.map\(\(item\) => `- \$\{item\}`\)/,
   "Validated mentions must render as the compact Referenced-files prompt block of absolute paths",
 );
 assert.match(

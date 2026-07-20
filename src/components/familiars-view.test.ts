@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
+const source = [
+  readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 assert.match(source, /export function FamiliarsView/, "FamiliarsView must be exported");
 

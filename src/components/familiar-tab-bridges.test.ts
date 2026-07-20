@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 // fresh chat. Touch targets grow on coarse pointers, and the pane is a
 // labelled landmark.
 
-const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 

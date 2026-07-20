@@ -1,0 +1,271 @@
+/* ── FamiliarStrip (FamiliarPanel top) ──────────────────────────────────────── */
+.familiar-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-2) 10px 6px;
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.familiar-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.familiar-strip-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  background: var(--bg-raised);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  padding: 0;
+}
+
+.familiar-strip-avatar:hover {
+  border-color: var(--border-strong);
+}
+
+.familiar-strip-avatar--active {
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+}
+
+/* ── Familiars section (left nav) ────────────────────────────────────────── */
+.sidebar-familiar-section-label {
+  margin: 5px 6px 2px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+/* ── Familiar list container ─────────────────────────────────────── */
+.sidebar-familiar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1) 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.sidebar-familiar-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-familiar-list::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+/* ── Familiar nav rows ───────────────────────────────────────────────────── */
+.sidebar-familiar-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+  color: var(--text-secondary);
+}
+
+.sidebar-familiar-row:hover {
+  background: var(--bg-hover, var(--bg-raised));
+  color: var(--text-primary);
+}
+
+.sidebar-familiar-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.sidebar-familiar-row-glyph {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.sidebar-familiar-row:hover .sidebar-familiar-row-glyph,
+.sidebar-familiar-row--active .sidebar-familiar-row-glyph {
+  opacity: 1;
+}
+
+.sidebar-familiar-row-name {
+  flex: 1;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sidebar-familiar-row--active .sidebar-familiar-row-name {
+  color: var(--accent-presence);
+  font-weight: 500;
+}
+
+.sidebar-familiar-row-count {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border-radius: var(--radius-control);
+  padding: 1px 5px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-familiar-row--active .sidebar-familiar-row-count {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--accent-presence);
+}
+
+.sidebar-action-row:hover .sidebar-action-icon {
+  opacity: 1;
+}
+
+/* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
+.sidebar-action-row,
+.sidebar-folder-row,
+.sidebar-recent-row,
+.sidebar-familiar-row,
+.sidebar-settings-row,
+.familiar-strip-avatar {
+  outline: none;
+}
+
+.sidebar-action-row:focus-visible,
+.sidebar-folder-row:focus-visible,
+.sidebar-recent-row:focus-visible,
+.sidebar-familiar-row:focus-visible,
+.sidebar-settings-row:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -1px;
+}
+
+.familiar-strip-avatar:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+/* ── Tighten the "Add-ins" section eyebrow ─────────────────────────────── */
+.sidebar-addins .sidebar-section-label {
+  padding-top: var(--space-2);
+  opacity: 0.7;
+}
+
+.sidebar-action-stack .sidebar-action-row {
+  min-height: 38px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  padding: 0 11px;
+  font-size: var(--text-base);
+}
+
+.sidebar-action-stack .sidebar-action-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--border-hairline);
+}
+
+.sidebar-folder-row,
+.sidebar-actions--footer .sidebar-action-row {
+  gap: 6px;
+  min-height: 30px;
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+}
+
+.sidebar-folder-icon,
+.sidebar-actions--footer .sidebar-action-icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+.sidebar-folder-row:hover,
+.sidebar-actions--footer .sidebar-action-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-folder-row--active,
+.sidebar-actions--footer .sidebar-action-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 13%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+  color: var(--text-primary);
+}
+
+.sidebar-foot-bell > .relative,
+.sidebar-foot-icon-cell {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+}
+
+
+@media (max-height: 760px) {
+  .sidebar-minimal {
+    gap: 7px;
+    padding-top: var(--space-2);
+  }
+
+  .sidebar-nav-scroll {
+    gap: var(--space-2);
+  }
+
+  .sidebar-folder-row,
+  .sidebar-actions--footer .sidebar-action-row,
+  .sidebar-foot-bell,
+  .sidebar-foot-btn,
+  .sidebar-foot-icon-btn {
+    min-height: 31px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .sidebar-minimal .sidebar-header,
+  .sidebar-minimal .sidebar-action-row,
+  .sidebar-minimal .sidebar-folder-row,
+  .sidebar-minimal .sidebar-foot-bell,
+  .sidebar-minimal .sidebar-foot-btn,
+  .sidebar-minimal .sidebar-foot-icon-btn,
+  .sidebar-minimal .sidebar-familiar-filter__control,
+  .sidebar-minimal .sidebar-familiar-filter__select {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+}

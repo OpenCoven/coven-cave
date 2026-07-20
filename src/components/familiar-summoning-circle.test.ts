@@ -9,10 +9,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(
-  new URL("./familiar-summoning-circle.tsx", import.meta.url),
-  "utf8",
-);
+const source = [
+  await readFile(new URL("./familiar-summoning-circle.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiar-summoning-model.ts", import.meta.url), "utf8"),
+].join("\n");
 const css = await readFile(
   new URL("../styles/summoning-circle.css", import.meta.url),
   "utf8",

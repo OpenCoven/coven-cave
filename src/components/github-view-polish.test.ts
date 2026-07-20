@@ -2,10 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(
-  new URL("./github-view.tsx", import.meta.url),
-  "utf8",
-);
+const source = [
+  readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
+].join("\n");
 const boardCss = readFileSync(new URL("../styles/board.css", import.meta.url), "utf8");
 
 // Inner GitHub <h2> and logo removed — the workspace breadcrumb already names the surface.

@@ -7,6 +7,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const installOutput = await readFile(
+  new URL("./install-job-output.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -243,7 +247,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  installOutput,
   /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
   "installer tails re-redact the combined buffer so secrets split across chunks cannot leak",
 );
@@ -369,18 +373,18 @@ assert.match(
 );
 
 assert.match(
-  source,
+  installOutput,
   /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
   "installer output is ANSI-stripped and redacted before the capped diagnostics tail is stored",
 );
 
 assert.match(
-  source,
+  installOutput,
   /slice\(-OUTPUT_CAP\)/,
   "job output is capped, not unbounded",
 );
 assert.match(
-  source,
+  installOutput,
   /function installJobTail\([\s\S]*?CLIENT_TAIL_CAP[\s\S]*?outputBudget[\s\S]*?job\.output\.slice\(-outputBudget\)/,
   "the client tail keeps stable trace facts plus bounded raw output",
 );

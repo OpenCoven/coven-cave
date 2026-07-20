@@ -7,16 +7,17 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
+const model = await readFile(new URL("./marketplace-view-model.ts", import.meta.url), "utf8");
 const builder = await readFile(new URL("./skill-builder.tsx", import.meta.url), "utf8");
 const browser = await readFile(new URL("../skill-browser.tsx", import.meta.url), "utf8");
 const format = await readFile(new URL("../../lib/skill-build-format.ts", import.meta.url), "utf8");
 
 // Section wiring in the hub.
-assert.match(view, /\{ id: "build", label: "Build", icon: "ph:hammer" \}/, "Build is a first-class Marketplace section");
-assert.match(view, /"browse" \| "crafts" \| "roles" \| "skills" \| "build" \| "capabilities"/, "MarketplaceSection includes build");
+assert.match(model, /\{ id: "build", label: "Build", icon: "ph:hammer" \}/, "Build is a first-class Marketplace section");
+assert.match(model, /"browse" \| "crafts" \| "roles" \| "skills" \| "build" \| "capabilities"/, "MarketplaceSection includes build");
 assert.match(view, /id="marketplace-panel-build"/, "Build section has a labelled tabpanel");
 assert.match(view, /aria-labelledby="marketplace-tab-build"/, "Build tabpanel is labelled by its tab");
-assert.match(view, /build: "Author a new skill/, "Build has a section hint (tab tooltip)");
+assert.match(model, /build: "Author a new skill/, "Build has a section hint (tab tooltip)");
 assert.match(view, /section !== "capabilities" && section !== "build"/, "the hub search hides on the Build section");
 assert.match(view, /<SkillBuilder\s/, "the Build panel hosts the SkillBuilder surface");
 assert.match(view, /onSaved=\{\(\) => void loadSkills\(""\)\}/, "a saved skill refreshes the Skills list and tab count");

@@ -5,7 +5,7 @@ import { aggregateThreadSignals, buildThreadSignalReviewQueue, THREAD_SIGNALS_EM
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
-const analyticsSource = readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8");
+const analyticsSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");

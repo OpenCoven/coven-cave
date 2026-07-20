@@ -119,6 +119,7 @@ import { RoleSurfaceHost } from "@/components/role-surface-host";
 import "@/components/role-surfaces/register";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
+import { attachGitHubTaskContext } from "@/lib/workspace-github-task-context";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
@@ -229,40 +230,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
-function taskCanAnnotateSession(task: GitHubTask): boolean {
-  return Boolean(task.sessionId && (task.prNumber != null || task.prUrl));
-}
-
-function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): SessionRow[] {
-  const taskBySessionId = new Map<string, GitHubTask>();
-  for (const task of normalizeGitHubTasks(data)) {
-    if (!taskCanAnnotateSession(task) || !task.sessionId) continue;
-    if (!taskBySessionId.has(task.sessionId)) taskBySessionId.set(task.sessionId, task);
-  }
-  if (taskBySessionId.size === 0) return sessions;
-
-  return sessions.map((session) => {
-    const task = taskBySessionId.get(session.id);
-    if (!task) return session;
-    return {
-      ...session,
-      git: task.branch
-        ? { ...(session.git ?? {}), branch: task.branch }
-        : session.git,
-      // The sessions list's server-side enrichment (gh pr view) carries the
-      // real PR state (open/merged/closed/draft) — never clobber it with the
-      // GitHub task's lifecycle word.
-      pullRequest: session.pullRequest ?? {
-        repo: task.repo,
-        number: task.prNumber,
-        url: task.prUrl,
-        state: task.status,
-        branch: task.branch,
-      },
-    };
-  });
-}
-
 export function Workspace() {
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
@@ -328,7 +295,7 @@ export function Workspace() {
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
   const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
-  const githubTasksRef = useRef<unknown>(null);
+  const githubTasksRef = useRef<GitHubTask[] | null>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
@@ -989,14 +956,15 @@ export function Workspace() {
           reqId !== loadGitHubTasksReqRef.current;
       if (!res.ok || !json || json.ok === false || superseded) return;
 
-      githubTasksRef.current = json;
+      const tasks = normalizeGitHubTasks(json);
+      githubTasksRef.current = tasks;
       setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
       setSessions((currentSessions) => {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
           : currentSessions;
         const visibleBaseSessions = filterDeletedSessions(baseSessions, locallyDeletedSessionIdsRef.current);
-        const enriched = attachGitHubTaskContext(visibleBaseSessions, json);
+        const enriched = attachGitHubTaskContext(visibleBaseSessions, tasks);
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {

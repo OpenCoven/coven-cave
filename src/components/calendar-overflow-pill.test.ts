@@ -5,7 +5,10 @@ import { readFileSync } from "node:fs";
 // Facelift cave-pmeh: the week grid used to give every concurrent event its
 // own lane, so a cron fan-out (a dozen co-timed runs) rendered as unreadable
 // sliver chips. These pin the capped-lane + "+N" rollup contract in TimeGrid.
-const src = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const src = [
+  readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // ── Capped packing ───────────────────────────────────────────────────────────
 assert.match(

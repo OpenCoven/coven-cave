@@ -51,8 +51,17 @@ import {
   type SortKey,
   type MarketplacePlugin,
 } from "@/lib/marketplace-catalog";
+import {
+  MARKETPLACE_KIND_TABS as KIND_TABS,
+  MARKETPLACE_SEARCH_LABEL as SEARCH_LABEL,
+  MARKETPLACE_SECTION_HINT as SECTION_HINT,
+  MARKETPLACE_SECTIONS as SECTIONS,
+  MARKETPLACE_SORT_OPTIONS as SORT_OPTIONS,
+  toSkillDetail,
+  type MarketplaceSection,
+} from "@/components/marketplace/marketplace-view-model";
 
-export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "build" | "capabilities";
+export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
 // Roles and Capabilities are hidden from the hub (kept in the
 // MarketplaceSection type so `mode === "roles"` / `mode === "capabilities"`
@@ -62,64 +71,6 @@ export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "bui
 // CSS followed (cave-4n7j — git history keeps them). /api/roles and
 // /api/capabilities stay intact: they serve live role definitions and the
 // familiar-studio Brain tab / inspector capability chips.
-const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
-  { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
-  { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
-  { id: "skills", label: "Skills", icon: "ph:sparkle" },
-  { id: "build", label: "Build", icon: "ph:hammer" },
-];
-
-// One-line hint per section — surfaces as the tab tooltip (the old hero
-// subtitle, demoted so the header stays a single row).
-const SECTION_HINT: Record<MarketplaceSection, string> = {
-  browse: "The catalog — add MCP servers, connected APIs, skills, and prompt packs to your Cave.",
-  crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
-  roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
-  build: "Author a new skill — write the SKILL.md your familiars load, straight into a local skill root.",
-  capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Browse.",
-};
-
-// Build owns its surface end-to-end, so the hub search hides there and this
-// record only types the searchable sections.
-const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build">, string> = {
-  browse: "Search the marketplace",
-  crafts: "Search Crafts",
-  roles: "Search roles",
-  skills: "Search skills",
-};
-
-const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "api", label: "APIs" },
-  { id: "mcp", label: "MCP servers" },
-  { id: "skill", label: "Skills" },
-  { id: "prompt", label: "Prompts" },
-  { id: "knowledge-pack", label: "Knowledge packs" },
-  { id: "craft", label: "Crafts" },
-];
-
-const SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [
-  { id: "recommended", label: "Recommended" },
-  { id: "name", label: "Name (A–Z)" },
-  { id: "installed", label: "Installed first" },
-];
-
-// Map a scanned local skill to the detail drawer's shape (shared by the Skills
-// browser and the role-card skill chips).
-function toSkillDetail(skill: SkillBrowserEntry): SkillDetailEntry {
-  const owner = skill.owner && skill.repo ? `${skill.owner}/${skill.repo}` : skill.owner;
-  return {
-    id: skill.id,
-    name: skill.name,
-    description: skill.description,
-    version: skill.local?.version,
-    category: skill.installed ? "Installed" : "Directory",
-    owner,
-    tags: [...new Set([...(skill.tags ?? []), ...(skill.topics ?? [])])],
-    source: skill.path,
-  };
-}
 
 type Props = {
   /** Which section to land on — deep links from the roles/capabilities modes. */

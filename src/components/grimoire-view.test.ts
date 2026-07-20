@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const view = await readFile(new URL("./grimoire-view.tsx", import.meta.url), "utf8");
+const view = [
+  await readFile(new URL("./grimoire-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./grimoire-nav-state.ts", import.meta.url), "utf8"),
+].join("\n");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");

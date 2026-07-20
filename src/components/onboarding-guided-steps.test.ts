@@ -8,10 +8,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(
-  new URL("./onboarding-overlay.tsx", import.meta.url),
-  "utf8",
-);
+const source = [
+  await readFile(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
+].join("\n");
 const statusDisplay = await readFile(
   new URL("../lib/opencoven-tools-status-display.ts", import.meta.url),
   "utf8",

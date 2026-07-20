@@ -13,10 +13,11 @@ test("browser tabs are a tablist exposing name + selected state", async () => {
 });
 
 test("calendar urgency dots carry a text alternative", async () => {
-  const src = await read("./calendar-view.tsx");
-  assert.match(src, /function urgencyLabel\(item: InboxItem\): string/);
-  assert.match(src, /role="img" aria-label=\{urgencyLabel\(item\)\}/);
-  assert.match(src, /role="img" aria-label=\{urgencyLabel\(ev\.item\)\}/);
+  const view = await read("./calendar-view.tsx");
+  const primitives = await read("./calendar-view-primitives.tsx");
+  assert.match(primitives, /function urgencyLabel\(item: InboxItem\): string/);
+  assert.match(view, /role="img" aria-label=\{urgencyLabel\(item\)\}/);
+  assert.match(view, /role="img" aria-label=\{urgencyLabel\(ev\.item\)\}/);
 });
 
 test("shell exposes a skip-to-content link targeting the main landmark", async () => {
@@ -102,12 +103,12 @@ test("table lightbox traps Tab and restores focus to its trigger (CHAT-D11-02)",
   // openTableLightbox is imperative DOM — it can't mount useFocusTrap, so it
   // must hand-mirror the hook's contract. Without this, Escape/Close drops
   // keyboard focus to <body> and Tab walks the page behind the dialog.
-  const src = await read("./message-bubble.tsx");
+  const src = await read("./message-dom-wiring.ts");
   const fn = src.slice(src.indexOf("function openTableLightbox"));
   assert.match(fn, /const returnFocus = document\.activeElement instanceof HTMLElement \? document\.activeElement : null;/);
   assert.match(fn, /returnFocus\?\.focus\(\);/, "dismiss must restore focus to the Expand trigger");
-  assert.match(fn, /event\.key === "Tab"/, "keydown handler must intercept Tab");
+  assert.match(fn, /event\.key !== "Tab"/, "keydown handler must intercept Tab");
   assert.match(fn, /querySelectorAll<HTMLElement>\(FOCUSABLE\)/, "trap must cycle the shared FOCUSABLE set");
   assert.match(fn, /\(event\.shiftKey \? last : first\)\.focus\(\);/, "escaped focus must be recaptured into the dialog");
-  assert.match(src, /import \{ useFocusTrap, FOCUSABLE \} from "@\/lib\/use-focus-trap";/);
+  assert.match(src, /import \{ FOCUSABLE \} from "@\/lib\/use-focus-trap";/);
 });

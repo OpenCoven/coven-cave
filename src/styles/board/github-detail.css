@@ -1,0 +1,624 @@
+/* ── Faithful issue/PR detail view (GitHub-style) ───────────────────────────── */
+/* Keep the rich body from running off-screen without drawing a hover-only rail. */
+.gh-glass-panel-scroll {
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+.gh-glass-panel-scroll::-webkit-scrollbar { width:0; height:0; }
+
+.gh-issue-subline {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:var(--space-2);
+  margin-top:11px;
+}
+.gh-issue-number {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+  font-size:var(--text-base);
+  font-weight:650;
+  color:var(--text-secondary);
+}
+.gh-issue-copy {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  border:none;
+  border-radius:5px;
+  background:transparent;
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:background .1s,color .1s;
+}
+.gh-issue-copy:hover { background:var(--bg-hover); color:var(--text-primary); }
+
+.gh-issue-state {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px 3px var(--space-2);
+  border-radius:var(--radius-pill);
+  font-size:var(--text-xs);
+  font-weight:600;
+  color:#fff;
+}
+.gh-issue-state-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.gh-issue-state--open   { background:color-mix(in oklab,var(--color-success) 88%,#000 4%); }
+.gh-issue-state--closed { background:color-mix(in oklab,var(--color-danger) 88%,#000 4%); }
+.gh-issue-state--merged { background:color-mix(in oklab,#a371f7 90%,#000); }
+
+.gh-issue-opened {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:10px;
+  color:var(--text-muted);
+  font-size:11.5px;
+}
+.gh-issue-opened-text { color:var(--text-muted); }
+
+/* ── PR review actions (export HTML · review with familiar) ──────────────────── */
+.gh-review-actions {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:var(--space-2);
+  margin-top:var(--space-3);
+}
+.gh-review-action-group { display:inline-flex; align-items:stretch; }
+.gh-review-action {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:var(--space-1) 10px;
+  border:1px solid var(--border-hairline);
+  border-radius:7px;
+  background:var(--bg-raised);
+  color:var(--text-secondary);
+  font-size:11.5px;
+  font-weight:550;
+  cursor:pointer;
+  transition:background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.gh-review-action:hover:not(:disabled) {
+  border-color:var(--border-strong);
+  background:var(--bg-hover);
+  color:var(--text-primary);
+}
+.gh-review-action:disabled { opacity:0.55; cursor:default; }
+.gh-review-action--accent {
+  border-color:color-mix(in oklch, var(--accent-presence) 50%, var(--border-hairline));
+  color:var(--text-primary);
+  border-top-right-radius:0;
+  border-bottom-right-radius:0;
+}
+.gh-review-action--accent:hover:not(:disabled) {
+  background:color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+.gh-review-familiar {
+  appearance:none;
+  -webkit-appearance:none;
+  border:1px solid color-mix(in oklch, var(--accent-presence) 50%, var(--border-hairline));
+  border-left:none;
+  border-radius:0 7px 7px 0;
+  background:var(--bg-raised);
+  color:var(--text-primary);
+  font:inherit;
+  font-size:11.5px;
+  padding:0 var(--space-2);
+  max-width:130px;
+  cursor:pointer;
+}
+.gh-review-familiar:disabled { opacity:0.55; cursor:default; }
+.gh-review-status { font-size:11.5px; color:var(--text-muted); }
+.gh-review-error { font-size:11.5px; color:var(--color-danger); }
+
+.gh-person { display:inline-flex; align-items:center; gap:5px; }
+.gh-person-avatar {
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-raised);
+  flex-shrink:0;
+}
+.gh-person-avatar--fallback {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:9px;
+  font-weight:700;
+  color:var(--text-secondary);
+  border:1px solid var(--border-hairline);
+}
+.gh-person-login { color:var(--text-secondary); font-size:11.5px; font-weight:550; }
+
+.gh-issue-people { display:flex; flex-wrap:wrap; gap:10px; }
+
+.gh-issue-body {
+  font-size:12.5px;
+  line-height:1.6;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-issue-body :first-child { margin-top:0; }
+.gh-issue-body :last-child { margin-bottom:0; }
+
+/* ── Comments + review threads ───────────────────────────────────────────── */
+.gh-comments-title {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--space-2);
+}
+.gh-comments-count {
+  margin-left:6px;
+  padding:0 6px;
+  border-radius:var(--radius-pill);
+  background:var(--bg-raised);
+  color:var(--text-muted);
+  font-size:var(--text-2xs);
+  font-weight:600;
+}
+.gh-comments-unresolved {
+  display:inline-flex;
+  align-items:center;
+  gap:var(--space-1);
+  color:var(--color-warning);
+  font-size:10.5px;
+  font-weight:600;
+}
+
+.gh-comment-list { display:flex; flex-direction:column; gap:10px; }
+.gh-comment {
+  border:1px solid var(--border-hairline);
+  border-radius:10px;
+  background:var(--bg-base);
+  padding:var(--space-2) 10px;
+}
+.gh-comment--inline {
+  border:none;
+  border-top:1px solid var(--border-hairline);
+  border-radius:0;
+  background:transparent;
+  padding:var(--space-2) 0 0;
+}
+.gh-comment--inline:first-of-type { border-top:none; padding-top:0; }
+.gh-comment-head {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:var(--space-1);
+}
+.gh-comment-assoc {
+  padding:0 5px;
+  border-radius:var(--radius-pill);
+  border:1px solid var(--border-hairline);
+  color:var(--text-muted);
+  font-size:9px;
+  font-weight:600;
+  text-transform:capitalize;
+}
+.gh-comment-time { color:var(--text-muted); font-size:10.5px; }
+.gh-comment-link {
+  margin-left:auto;
+  color:var(--text-muted);
+  display:inline-flex;
+}
+.gh-comment-link:hover { color:var(--text-secondary); }
+.gh-comment-body {
+  font-size:12.5px;
+  line-height:1.6;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-comment-body :first-child { margin-top:0; }
+.gh-comment-body :last-child { margin-bottom:0; }
+
+.gh-threads { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+.gh-threads-toggle {
+  align-self:flex-start;
+  display:inline-flex;
+  align-items:center;
+  gap:var(--space-1);
+  color:var(--text-muted);
+  font-size:var(--text-xs);
+  background:none;
+  border:none;
+  cursor:pointer;
+  padding:2px 0;
+}
+.gh-threads-toggle:hover { color:var(--text-secondary); }
+.gh-thread {
+  border:1px solid var(--border-hairline);
+  border-left:2px solid var(--color-warning);
+  border-radius:10px;
+  background:var(--bg-base);
+  padding:var(--space-2) 10px;
+}
+.gh-thread.is-resolved {
+  border-left-color:var(--color-success);
+  opacity:0.72;
+}
+.gh-thread-head {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:6px;
+  flex-wrap:wrap;
+}
+.gh-thread-path {
+  display:inline-flex;
+  align-items:center;
+  gap:var(--space-1);
+  font-size:var(--text-xs);
+  font-weight:600;
+  color:var(--text-secondary);
+  font-family:var(--font-mono, ui-monospace, monospace);
+}
+.gh-thread-badge {
+  padding:0 6px;
+  border-radius:var(--radius-pill);
+  border:1px solid var(--border-hairline);
+  color:var(--text-muted);
+  font-size:9px;
+  font-weight:600;
+}
+.gh-thread-badge--ok {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  color:var(--color-success);
+  border-color:color-mix(in oklch, var(--color-success) 45%, transparent);
+}
+.gh-thread-resolve {
+  margin-left:auto;
+  padding:2px 9px;
+  border-radius:7px;
+  border:1px solid var(--border-hairline);
+  background:var(--bg-raised);
+  color:var(--text-secondary);
+  font-size:10.5px;
+  font-weight:600;
+  cursor:pointer;
+}
+.gh-thread-resolve:hover {
+  border-color:var(--accent-presence);
+  color:var(--text-primary);
+}
+/* ── GitHub diff renderer (review threads + ```diff fences) ──────────────────
+   Shared by <DiffHunk> (gh-diff-view.tsx) and wireDiffBlocks (markdown post-
+   processing). Reviewer-style: green additions, red deletions, tinted hunk
+   headers, gutter line numbers. */
+.gh-diff {
+  margin:0 0 6px;
+  border:1px solid var(--border-hairline);
+  border-radius:var(--radius-control);
+  background:var(--bg-raised);
+  overflow:hidden;
+  font-family:var(--font-mono, ui-monospace, monospace);
+  font-size:var(--text-xs);
+  line-height:1.55;
+}
+.gh-diff--hunk.gh-thread-diff { margin:0 0 6px; }
+.gh-diff__bar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--space-2);
+  padding:3px var(--space-2);
+  border-bottom:1px solid var(--border-hairline);
+  background:color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+}
+.gh-diff__stat { display:inline-flex; gap:6px; font-size:10.5px; font-weight:600; }
+.gh-diff__stat-add { color:var(--color-success, #3fb950); }
+.gh-diff__stat-del { color:var(--color-danger, #f85149); }
+.gh-diff__expand {
+  border:none; background:transparent; cursor:pointer; padding:1px 4px;
+  font:inherit; font-size:10.5px; color:var(--text-muted); border-radius:5px;
+}
+.gh-diff__expand:hover { color:var(--text-primary); background:var(--bg-hover); }
+.gh-diff__body { overflow-x:auto; }
+.gh-diff__line {
+  display:grid;
+  grid-template-columns:var(--gh-diff-gutter, 2.6em) var(--gh-diff-gutter, 2.6em) 1fr;
+  white-space:pre;
+}
+.gh-diff__no {
+  padding:0 6px; text-align:right; user-select:none;
+  color:var(--text-faint, var(--text-muted)); opacity:0.7; font-size:10px;
+  border-right:1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
+}
+/* Color set on the line so it inherits to the component's <code> child AND
+   applies to the markdown path where text sits directly in the line span. */
+.gh-diff__code { padding:0 8px; color:inherit; background:none; }
+.gh-diff__line--ctx { color:var(--text-muted); }
+.gh-diff__line--add { background:color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent); color:var(--text-primary); }
+.gh-diff__line--del { background:color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent); color:var(--text-primary); }
+.gh-diff__line--meta { background:color-mix(in oklch, var(--accent-presence) 10%, transparent); color:var(--accent-presence); }
+
+/* ```diff fenced blocks rewritten by wireDiffBlocks: the <pre>/<code> keep their
+   markdown styling reset, lines become block spans with the same coloring. */
+pre.gh-diff--md { padding:0; }
+pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
+.gh-diff--md .gh-diff__line {
+  grid-template-columns:1fr;
+  padding:0 10px;
+}
+
+/* ── Composer (reply + familiar tagging) ─────────────────────────────────── */
+.gh-comments .gh-composer { margin-top:12px; }
+.gh-composer-input {
+  width:100%;
+  min-height:52px;
+  resize:vertical;
+  border:1px solid var(--border-hairline);
+  border-radius:10px;
+  background:var(--bg-base);
+  color:var(--text-primary);
+  padding:var(--space-2) 10px;
+  font-size:12.5px;
+  line-height:1.5;
+}
+.gh-composer-input:focus {
+  outline:none;
+  border-color:var(--accent-presence);
+}
+.gh-composer-error { margin:4px 0 0; color:var(--color-danger); font-size:11px; }
+.gh-composer-hint { margin-top:10px; }
+.gh-composer-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:var(--space-2);
+  margin-top:6px;
+}
+
+/* ── Person chip → clickable profile ─────────────────────────────────────── */
+.gh-person--button {
+  appearance:none;
+  border:none;
+  background:none;
+  padding:1px 3px;
+  margin:0 -3px;
+  border-radius:7px;
+  cursor:pointer;
+  font:inherit;
+}
+.gh-person--button:hover { background:var(--bg-raised); }
+.gh-person--button:hover .gh-person-login { color:var(--text-primary); }
+
+/* ── Floating GitHub profile card ────────────────────────────────────────── */
+.gh-profile-card {
+  position:fixed;
+  z-index:60;
+  padding:14px;
+  border:1px solid var(--border-hairline);
+  border-radius:14px;
+  background:var(--glass-elevated);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:0 16px 44px rgba(0,0,0,0.34);
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+.gh-profile-loading,
+.gh-profile-error { color:var(--text-muted); font-size:12px; }
+.gh-profile-error { display:flex; flex-direction:column; gap:8px; }
+.gh-profile-head { display:flex; align-items:center; gap:10px; }
+.gh-profile-avatar {
+  width:48px;
+  height:48px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-raised);
+  flex-shrink:0;
+}
+.gh-profile-avatar--fallback {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:var(--text-xl);
+  font-weight:700;
+  color:var(--text-secondary);
+  border:1px solid var(--border-hairline);
+}
+.gh-profile-id { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.gh-profile-name { font-size:14px; font-weight:650; color:var(--text-primary); }
+.gh-profile-login {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:var(--text-sm);
+  color:var(--text-muted);
+}
+.gh-profile-type {
+  padding:0 5px;
+  border-radius:var(--radius-pill);
+  border:1px solid var(--border-hairline);
+  font-size:9px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+}
+.gh-profile-bio {
+  font-size:var(--text-sm);
+  line-height:1.5;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-profile-stats {
+  display:flex;
+  gap:var(--space-3);
+  font-size:11.5px;
+  color:var(--text-muted);
+  padding:2px 0;
+  border-top:1px solid var(--border-hairline);
+  border-bottom:1px solid var(--border-hairline);
+}
+.gh-profile-stats strong { color:var(--text-primary); font-weight:650; }
+.gh-profile-meta {
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:11.5px;
+  color:var(--text-secondary);
+}
+.gh-profile-meta > span,
+.gh-profile-link {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.gh-profile-meta > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gh-profile-link {
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:0;
+  color:var(--accent-presence);
+  font:inherit;
+  cursor:pointer;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-profile-link:hover { text-decoration:underline; }
+
+/* ── Comment reactions ───────────────────────────────────────────────────── */
+.gh-reactions { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.gh-reaction {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:1px 7px;
+  border-radius:var(--radius-pill);
+  border:1px solid var(--border-hairline);
+  background:var(--bg-base);
+  font-size:var(--text-xs);
+  color:var(--text-secondary);
+  line-height:1.5;
+}
+
+/* ── PR review summaries in the timeline ─────────────────────────────────── */
+.gh-review-entry {
+  border:1px solid var(--border-hairline);
+  border-left:2px solid var(--text-muted);
+  border-radius:10px;
+  background:var(--bg-base);
+  padding:var(--space-2) 10px;
+}
+.gh-review-entry.is-approved { border-left-color:var(--color-success); }
+.gh-review-entry.is-changes { border-left-color:var(--color-danger); }
+.gh-review-verdict { display:inline-flex; flex-shrink:0; }
+.gh-review-verb { font-size:11.5px; color:var(--text-muted); }
+
+/* ── CI action details (per-PR checks) ───────────────────────────────────── */
+.gh-checks-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.gh-checks-rollup {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size:10.5px;
+  font-weight:600;
+}
+.gh-checks-rollup-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.gh-checks-rollup--passing { color:var(--color-success); }
+.gh-checks-rollup--failing { color:var(--color-danger); }
+.gh-checks-rollup--pending { color:var(--color-warning); }
+.gh-checks-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:2px 0;
+  color:var(--text-secondary);
+  font-size:11.5px;
+  font-weight:550;
+  cursor:pointer;
+}
+.gh-checks-toggle:hover { color:var(--text-primary); }
+.gh-checks-list {
+  list-style:none;
+  margin:var(--space-2) 0 0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.gh-check-row {
+  display:flex;
+  align-items:center;
+  gap:var(--space-2);
+  padding:5px 6px;
+  border-radius:var(--radius-control);
+}
+.gh-check-row:hover { background:var(--bg-raised); }
+.gh-check-icon { display:inline-flex; flex-shrink:0; }
+.gh-check-name {
+  flex:1;
+  min-width:0;
+  font-size:var(--text-sm);
+  color:var(--text-secondary);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-check-app {
+  flex-shrink:0;
+  font-size:var(--text-2xs);
+  color:var(--text-muted);
+  padding:0 6px;
+  border-radius:var(--radius-pill);
+  background:var(--bg-base);
+  border:1px solid var(--border-hairline);
+}
+.gh-check-dur { flex-shrink:0; font-size:10.5px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.gh-check-logs {
+  flex-shrink:0;
+  display:inline-flex;
+  background:none;
+  border:none;
+  padding:2px;
+  color:var(--text-muted);
+  cursor:pointer;
+}
+.gh-check-logs:hover { color:var(--text-secondary); }
+
+@media (max-width: 760px) {
+  .gh-compact-header {
+    align-items:flex-start;
+    padding:6px 10px;
+  }
+  .gh-compact-filters {
+    width:100%;
+    margin-left:0;
+    overflow-x:auto;
+  }
+  .gh-compact-login { max-width:120px; }
+  .gh-compact-actions { margin-left:auto; }
+  .gh-compact-tabs {
+    order:3;
+    max-width:100%;
+    overflow-x:auto;
+  }
+  .gh-workspace { padding:10px; gap:10px; }
+  .gh-glass-panel { padding:12px; }
+  .gh-glass-hero h3 { font-size:17px; }
+}

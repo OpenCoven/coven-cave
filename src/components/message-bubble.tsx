@@ -24,7 +24,6 @@ import "@/styles/cave-md.css";
  */
 
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -43,12 +42,18 @@ import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
-import { useFocusTrap, FOCUSABLE } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
-import { parseFileRef, type FileRef } from "@/lib/file-ref";
-import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
-import { wireMermaidDiagrams } from "./mermaid-viewer";
+import {
+  cacheRenderedMarkdown as renderCacheSet,
+  closeTrailingFence,
+  getRenderedMarkdown as renderCacheGet,
+  scanFenceFilenames,
+} from "@/lib/message-markdown-stream";
+import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
+export { FileLinkResolverContext } from "./message-dom-wiring";
+export type { FileLinkResolver } from "./message-dom-wiring";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -338,7 +343,6 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
   );
 }
 
-
 // ---------------------------------------------------------------------------
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
 // ---------------------------------------------------------------------------
@@ -388,33 +392,6 @@ function escHtml(s: string): string {
 // Render markdown to HTML (async, Shiki per code block)
 // ---------------------------------------------------------------------------
 
-/**
- * renderCache LRU — keyed by the FULL markdown string. Capped (CHAT-D3-03):
- * an unbounded Map keyed by entire messages grows for the whole session.
- * Map iteration order is insertion order, so refreshing recency on get and
- * evicting the first key on overflow gives a small LRU for free.
- */
-const RENDER_CACHE_MAX = 200;
-const renderCache = new Map<string, string>();
-
-function renderCacheGet(key: string): string | undefined {
-  const value = renderCache.get(key);
-  if (value !== undefined) {
-    renderCache.delete(key);
-    renderCache.set(key, value);
-  }
-  return value;
-}
-
-function renderCacheSet(key: string, value: string) {
-  if (renderCache.has(key)) renderCache.delete(key);
-  renderCache.set(key, value);
-  if (renderCache.size > RENDER_CACHE_MAX) {
-    const oldest = renderCache.keys().next().value;
-    if (oldest !== undefined) renderCache.delete(oldest);
-  }
-}
-
 /** Streaming markdown re-renders at most once per this many ms (trailing). */
 const STREAM_RENDER_INTERVAL_MS = 200;
 
@@ -425,35 +402,6 @@ const STREAM_RENDER_INTERVAL_MS = 200;
  * block. Only applied to transient streaming snapshots — the final settled
  * render gets the text verbatim.
  */
-function closeTrailingFence(markdown: string): string {
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (/^\s*```/.test(line)) inFence = !inFence;
-  }
-  return inFence ? `${markdown}\n\`\`\`` : markdown;
-}
-
-/**
- * Scan markdown for fence openers in order, returning the filename suffix for
- * each (or null when the fence had no `:filename`). Used to re-attach filename
- * labels after we strip them so @create-markdown/core can parse the fence.
- */
-function scanFenceFilenames(markdown: string): Array<string | null> {
-  const filenames: Array<string | null> = [];
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (!/^\s*```/.test(line)) continue;
-    if (inFence) {
-      inFence = false;
-      continue;
-    }
-    const m = /^\s*```\s*[\w+.-]*(?::(\S+))?\s*$/.exec(line);
-    filenames.push(m?.[1] ?? null);
-    inFence = true;
-  }
-  return filenames;
-}
-
 function coalesceAdjacentNumberedLists(blocks: Block[]): Block[] {
   const coalesced: Block[] = [];
   for (const block of blocks) {
@@ -718,320 +666,6 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   // settled entries out of the LRU for no hit-rate gain.
   if (!opts?.transient) renderCacheSet(markdown, sanitizedHtml);
   return sanitizedHtml;
-}
-
-// ---------------------------------------------------------------------------
-// Post-render: wire copy + expand buttons in DOM
-// ---------------------------------------------------------------------------
-
-/**
- * Click-time code extraction (CHAT-D7-04). The block's full source used to be
- * duplicated into a `data-code` attribute on every Copy button — double the
- * memory and a giant DOM attribute for big tool outputs / file previews (the
- * SyntaxBlock path). Instead, read the text back out of the rendered block:
- * line rows are `.cave-line` spans with no newline text nodes between them,
- * so reconstruct with join("\n"); `.cave-ln` line-number spans are
- * presentation-only (aria-hidden, user-select: none) and must be excluded —
- * textContent WOULD include them, hence the clone-and-strip. Diff +/- line
- * prefixes are real token text and copy as-is, matching the old behavior of
- * copying the raw fence content. Byte-parity with the old data-code path was
- * verified for plain, line-numbered, diff, entity-heavy, empty-interior-line
- * and trailing-newline blocks.
- */
-function codeTextFromWrap(btn: HTMLElement): string {
-  const codeEl = btn.closest(".cave-code-wrap")?.querySelector("pre code");
-  if (!codeEl) return "";
-  const lineEls = Array.from(codeEl.querySelectorAll(".cave-line"));
-  // Shiki-failure fallback renders a plain <pre><code> without line rows.
-  if (lineEls.length === 0) return codeEl.textContent ?? "";
-  return lineEls
-    .map((line) => {
-      const clone = line.cloneNode(true) as HTMLElement;
-      for (const ln of Array.from(clone.querySelectorAll(".cave-ln"))) ln.remove();
-      return clone.textContent ?? "";
-    })
-    .join("\n");
-}
-
-function wireCopyButtons(container: HTMLElement) {
-  // Only the injected-HTML header buttons (.cave-copy-btn-mounted) need
-  // wiring — the React-rendered bubble copy/expand buttons carry their own
-  // onClick handlers and props.
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-copy-btn-mounted"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    btn.addEventListener("click", () => {
-      void copyText(codeTextFromWrap(btn)).then((ok) => {
-        if (!ok) return;
-        btn.textContent = "Copied";
-        btn.classList.add("cave-copy-btn--confirmed");
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          btn.textContent = "Copy";
-          btn.classList.remove("cave-copy-btn--confirmed");
-        }, 2000);
-      });
-    });
-  }
-  // Collapse toggle: fold the whole block down to its header (and back).
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-collapse-btn"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    btn.addEventListener("click", () => {
-      const wrap = btn.closest(".cave-code-wrap");
-      if (!wrap) return;
-      toggleCodeBlockCollapse(wrap, btn);
-    });
-  }
-  // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-expand-btn"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    btn.addEventListener("click", () => {
-      const wrap = btn.closest(".cave-code-wrap");
-      if (!wrap) return;
-      const expanded = wrap.classList.toggle("cave-code-wrap--expanded");
-      btn.textContent = expanded ? "Show less" : "Show more";
-      // Collapsing from deep in a long block would otherwise leave the
-      // clamped viewport scrolled to an arbitrary middle.
-      if (!expanded) wrap.scrollTop = 0;
-    });
-  }
-}
-
-function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
-  if (!onOpenUrl) return;
-  for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
-    if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
-    const href = link.href;
-    let parsed: URL;
-    try {
-      parsed = new URL(href);
-    } catch {
-      continue;
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
-    (link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired = true;
-    link.addEventListener("click", (event) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      event.preventDefault();
-      onOpenUrl(href);
-    });
-  }
-}
-
-// Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
-// clickable, opening the file in the Code workspace. Match logic lives in
-// @/lib/file-ref (pure + unit-tested); only inline code is considered.
-//
-// A ref is only linkified when the surface's resolver confirms the click can
-// actually open it (project root known + file present in its index) — a dead
-// affordance is worse than plain text. Reconciles rather than wires-once:
-// when the resolver changes (project switch, index load), refs gain or lose
-// the affordance in place, so a stale link never lingers.
-export type FileLinkResolver = (ref: FileRef) => boolean;
-
-/** Chat provides a resolver over its transcript; everywhere else (group chat,
- *  quick chat, previews) the default null keeps prose refs as plain text. */
-export const FileLinkResolverContext = createContext<FileLinkResolver | null>(null);
-
-function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | null) {
-  for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
-    // Inline code only — never the highlighted lines inside a fenced block.
-    if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
-    const flagged = code as HTMLElement & { _caveFileLinkCleanup?: () => void };
-    const ref = parseFileRef(code.textContent ?? "");
-    const want = Boolean(ref && resolve?.(ref));
-    if (want === Boolean(flagged._caveFileLinkCleanup)) continue;
-    if (!want) {
-      flagged._caveFileLinkCleanup?.();
-      delete flagged._caveFileLinkCleanup;
-      continue;
-    }
-    const { path, line } = ref!;
-    code.classList.add("cave-file-link");
-    code.setAttribute("role", "button");
-    code.setAttribute("tabindex", "0");
-    code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
-    const open = () =>
-      window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        open();
-      }
-    };
-    code.addEventListener("click", open);
-    code.addEventListener("keydown", onKeydown);
-    flagged._caveFileLinkCleanup = () => {
-      code.removeEventListener("click", open);
-      code.removeEventListener("keydown", onKeydown);
-      code.classList.remove("cave-file-link");
-      code.removeAttribute("role");
-      code.removeAttribute("tabindex");
-      code.removeAttribute("title");
-    };
-  }
-}
-
-// Wide markdown tables are cramped in the narrow chat column. Each rendered
-// table (mdToHtml wraps every one in `.cave-table-scroll`) gets an "Expand"
-// affordance that opens it full-size in a dismissable lightbox so it can be
-// read comfortably. Wired imperatively because the markdown HTML is injected
-// via dangerouslySetInnerHTML; idempotent per table via the `_caveTableWired`
-// flag, like the copy/link wiring above.
-function wireExpandableTables(container: HTMLElement) {
-  for (const scroll of Array.from(container.querySelectorAll<HTMLElement>(".cave-table-scroll"))) {
-    const flagged = scroll as HTMLElement & { _caveTableWired?: boolean };
-    if (flagged._caveTableWired) continue;
-    if (!scroll.querySelector("table")) continue;
-    // Flag BEFORE moving the node so the wrapper insertion's own mutation
-    // observer pass skips it instead of double-wrapping.
-    flagged._caveTableWired = true;
-
-    const wrap = document.createElement("div");
-    wrap.className = "cave-table-block";
-    scroll.parentNode?.insertBefore(wrap, scroll);
-    wrap.appendChild(scroll);
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "cave-table-expand-btn";
-    btn.title = "Expand table";
-    btn.setAttribute("aria-label", "Expand table");
-    btn.innerHTML = '<span class="cave-table-expand-glyph" aria-hidden="true">⤢</span> Expand';
-    btn.addEventListener("click", () => openTableLightbox(scroll));
-    wrap.appendChild(btn);
-  }
-}
-
-function openTableLightbox(scroll: HTMLElement) {
-  const table = scroll.querySelector("table");
-  if (!table) return;
-
-  const overlay = document.createElement("div");
-  overlay.className = "cave-table-lightbox";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Expanded table");
-
-  const panel = document.createElement("div");
-  panel.className = "cave-table-lightbox__panel";
-
-  const bar = document.createElement("div");
-  bar.className = "cave-table-lightbox__bar";
-  const title = document.createElement("span");
-  title.className = "cave-table-lightbox__title";
-  title.textContent = "Table";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "cave-table-lightbox__close focus-ring";
-  close.textContent = "Close";
-  bar.append(title, close);
-
-  // cave-md scopes the table styling; the clone is detached from its turn so
-  // it carries no live listeners — purely a readable, scrollable copy.
-  const body = document.createElement("div");
-  body.className = "cave-table-lightbox__body cave-md";
-  body.appendChild(table.cloneNode(true));
-
-  panel.append(bar, body);
-  overlay.appendChild(panel);
-  document.body.appendChild(overlay);
-
-  const prevOverflow = document.body.style.overflow;
-  document.body.style.overflow = "hidden";
-  // CHAT-D11-02: this dialog is imperative DOM (no React mount), so it can't
-  // use useFocusTrap — mirror its contract by hand: remember the trigger,
-  // trap Tab inside the overlay, and restore focus on dismiss. `.focus()` on
-  // a since-removed trigger is a harmless no-op.
-  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const dismiss = () => {
-    document.body.style.overflow = prevOverflow;
-    document.removeEventListener("keydown", onKey);
-    overlay.remove();
-    returnFocus?.focus();
-  };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      dismiss();
-      return;
-    }
-    if (event.key === "Tab") {
-      // The cloned table can carry focusable links, so cycle everything in
-      // the overlay, not just the Close button. Same recapture rule as
-      // useFocusTrap: focus that escaped the dialog gets pulled back in.
-      const focusables = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => !el.hasAttribute("disabled"),
-      );
-      if (focusables.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const activeEl = document.activeElement as HTMLElement | null;
-      if (!activeEl || !overlay.contains(activeEl)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-        return;
-      }
-      if (event.shiftKey && activeEl === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && activeEl === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-  };
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) dismiss();
-  });
-  close.addEventListener("click", dismiss);
-  document.addEventListener("keydown", onKey);
-  close.focus();
-}
-
-/**
- * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
- * whenever the injected HTML changes. Every component that injects
- * renderCodeBlock/mdToHtml output via dangerouslySetInnerHTML must attach the
- * returned ref, otherwise its Copy buttons render but silently do nothing
- * (wireCopyButtons is idempotent per button via the `_wired` flag).
- *
- * `fileLinkResolver` opts inline file references in prose into clickable
- * Code-workspace links; only chat prose (via FileLinkResolverContext) supplies
- * one, and only refs the resolver confirms openable get the affordance.
- */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, fileLinkResolver: FileLinkResolver | null = null) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!html || !el) return;
-    const wireAll = () => {
-      wireCopyButtons(el);
-      wireMarkdownLinks(el, onOpenUrl);
-      wireMermaidDiagrams(el);
-      wireExpandableTables(el);
-      wireFilePathLinks(el, fileLinkResolver);
-    };
-    wireAll();
-    // Re-wire when nodes are added after the first pass. Components that render
-    // once (e.g. the comux file/markdown preview's MarkdownBlock/SyntaxBlock,
-    // vs the chat's repeatedly-re-rendering MarkdownContent) could otherwise
-    // leave a code block's Copy/collapse/expand buttons unwired if the
-    // highlighter populated them after this effect ran. All wiring is
-    // idempotent (guarded per element), and the wiring itself only touches
-    // attributes/listeners — not childList — so it never re-triggers the
-    // observer into a loop.
-    const observer = new MutationObserver(() => wireAll());
-    observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver]);
-  return containerRef;
 }
 
 // ---------------------------------------------------------------------------

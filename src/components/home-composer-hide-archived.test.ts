@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const contextSource = await readFile(new URL("../lib/home-composer-context.ts", import.meta.url), "utf8");
 
 // 1. Imports the archive hook.
 assert.match(
@@ -38,39 +39,44 @@ assert.match(
   "HomeComposer should call useArchivedFamiliars() to read the archive map",
 );
 
-// 3. Builds a non-archived list and uses it for both the default selection
-//    and the dropdown options.
+// 3. Delegates non-archived selection to the dedicated context boundary.
 assert.match(
   source,
-  /const\s+visibleFamiliars\s*=/,
-  "HomeComposer should derive a visibleFamiliars list (non-archived)",
+  /resolveHomeComposerFamiliar\(familiars, activeFamiliarId, archivedFamiliars\)/,
+  "HomeComposer should resolve familiar selection through the archive-aware context helper",
 );
 
 assert.match(
-  source,
+  contextSource,
+  /const\s+visibleFamiliars\s*=/,
+  "The familiar context should derive a visibleFamiliars list (non-archived)",
+);
+
+assert.match(
+  contextSource,
   /visibleFamiliars[\s\S]{0,200}?!\s*\(.*archivedFamiliars.*\)/,
-  "visibleFamiliars should be filtered by archive state",
+  "The familiar context should filter visibleFamiliars by archive state",
 );
 
 // 4. Default selection picks first non-archived familiar — not familiars[0].
 assert.doesNotMatch(
-  source,
+  contextSource,
   /selectedFamiliarId\s*=\s*activeFamiliarId\s*\?\?\s*familiars\[0\]\?\.id/,
-  "HomeComposer should not default to familiars[0] (could be archived); use first visible familiar instead",
+  "The familiar context should not default to familiars[0] (could be archived)",
 );
 
 assert.match(
-  source,
+  contextSource,
   /visibleFamiliars\[0\]\?\.id/,
-  "HomeComposer selectedFamiliarId fallback should be visibleFamiliars[0]?.id (first non-archived familiar)",
+  "The familiar context fallback should be visibleFamiliars[0]?.id (first non-archived familiar)",
 );
 
 // 4a. If the active familiar is archived, fall through to the first visible
 //     one so the custom select's value matches an option in the DOM.
 assert.match(
-  source,
+  contextSource,
   /activeIsArchived/,
-  "HomeComposer should check whether activeFamiliarId points at an archived familiar",
+  "The familiar context should check whether activeFamiliarId points at an archived familiar",
 );
 
 // 5. The familiar picker itself is gone from home (selection lives in the side

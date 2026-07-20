@@ -31,7 +31,7 @@ describe("Familiar analytics navigation wiring", () => {
   });
 
   it("links familiar landing cards to per-familiar analytics", () => {
-    const source = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8");
 
     assert.match(source, /import Link from "next\/link"/);
     assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/analytics`\}/);

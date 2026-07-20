@@ -1,0 +1,316 @@
+/* ────────────────────────────────────────────────────────────────────
+   BoardCardStack — mobile-first board view.
+   Rendered instead of kanban/table when useIsMobile() is true (see
+   board-view.tsx). Tap-target sized for thumb use; status moves go
+   through a popover menu rather than drag because targets often live
+   off-screen on phone-class viewports.
+   ──────────────────────────────────────────────────────────────────── */
+.board-card-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) clamp(12px, 4vw, 18px) calc(24px + var(--sai-bottom));
+  gap: 18px;
+}
+.board-card-stack__filters {
+  display: flex;
+  align-items: center;
+  flex: 0 0 54px;
+  gap: 6px;
+  min-height: 54px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * clamp(12px, 4vw, 18px)) var(--space-1);
+  padding: 5px clamp(12px, 4vw, 18px);
+  position: sticky;
+  top: 0;
+  background: var(--bg-base);
+  z-index: 2;
+}
+.board-card-stack__filters::-webkit-scrollbar { display: none; }
+
+.board-card-stack__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.board-card-stack__section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 82%, var(--foreground) 18%);
+}
+.board-card-stack__section-label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+}
+.board-card-stack__section-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.board-card-stack__section-add {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.board-card-stack__section-add:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.board-card-stack__empty {
+  padding: var(--space-3) 2px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.board-card-stack__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.board-card-stack__row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.board-card-stack__row::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--border-strong);
+}
+.board-card-stack__row--priority-urgent::before { background: var(--color-danger); }
+.board-card-stack__row--priority-high::before   { background: var(--color-warning); }
+.board-card-stack__row--priority-medium::before { background: color-mix(in oklch, var(--accent-presence) 60%, transparent); }
+.board-card-stack__row--priority-low::before    { background: var(--border-strong); }
+.board-card-stack__row--selected {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+.board-card-stack__row-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: var(--space-3) 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: var(--touch-target);
+}
+.board-card-stack__row-main:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+.board-card-stack__row-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.board-card-stack__priority-pill {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--text-secondary);
+}
+.board-card-stack__priority-pill--urgent {
+  background: color-mix(in oklch, var(--color-danger) 18%, transparent);
+  color: var(--color-danger);
+}
+.board-card-stack__priority-pill--high {
+  background: color-mix(in oklch, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+/* Raw danger/warning text reads on the dark-mode tint but fails WCAG on the
+   light-mode tint (warning especially); darken it toward #000 in light mode. */
+[data-mode="light"] .board-card-stack__priority-pill--urgent { color: color-mix(in oklch, var(--color-danger) 76%, #000); }
+[data-mode="light"] .board-card-stack__priority-pill--high { color: color-mix(in oklch, var(--color-warning) 76%, #000); }
+.board-card-stack__row-title {
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+.board-card-stack__row-notes {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.board-card-stack__row-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.board-card-stack__row-familiar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.board-card-stack__row-familiar-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+.board-card-stack__row-familiar-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-card-stack__row-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.board-card-stack__row-schedule--due-soon { color: var(--color-warning); }
+.board-card-stack__row-attachments {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.board-card-stack__row-schedule--overdue { color: var(--color-danger); font-weight: 600; }
+.board-card-stack__row-no-project {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: var(--text-2xs);
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 32%, var(--border-hairline));
+  white-space: nowrap;
+}
+.board-card-stack__row-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 500;
+  font-size: inherit;
+  font-family: inherit;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.board-card-stack__row-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.board-card-stack__row-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Board Gantt */
+.board-gantt {
+  flex: 1;
+  min-height: 0;
+  /* Frame, not the scroller: controls pinned at top, the timeline scroller
+     fills the middle, the unscheduled tray sits at the bottom. The timeline's
+     own bounded viewport (.board-gantt__scroll) owns BOTH scrollbars so the
+     sticky header/left-column stay put and the horizontal bar stays reachable
+     (cave-hsh). Previously .board-gantt scrolled the whole chart as one block,
+     which scrolled the header off-screen and parked the h-scrollbar below the
+     fold. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 14px;
+}
+.board-gantt--empty {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--text-muted);
+}
+/* NOTE: the pre-rewrite grid/axis/today/priority-bar rules that lived here were
+   removed once the dense `.cg-*` timeline (below) replaced them — they had zero
+   references left in the markup. The current bars + categories are defined in
+   the "Compact Gantt" block further down. */
+.board-gantt-unscheduled {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.board-card-stack__row-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  padding: 0 6px;
+  border: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+.board-card-stack__row-menu-trigger:hover,
+.board-card-stack__row-menu-trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.board-card-stack__row-menu-trigger:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}

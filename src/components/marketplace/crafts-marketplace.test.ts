@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
+const model = await readFile(new URL("./marketplace-view-model.ts", import.meta.url), "utf8");
 const card = await readFile(new URL("./marketplace-card.tsx", import.meta.url), "utf8");
 const detail = await readFile(new URL("./marketplace-detail.tsx", import.meta.url), "utf8");
 const createDrawer = await readFile(new URL("./craft-create-drawer.tsx", import.meta.url), "utf8");
@@ -10,9 +11,9 @@ const craftDetailUrl = new URL("./craft-detail.tsx", import.meta.url);
 const css = await readFile(new URL("../../app/globals.css", import.meta.url), "utf8");
 const marketplaceRoute = await readFile(new URL("../../app/api/marketplace/route.ts", import.meta.url), "utf8");
 
-assert.match(view, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class Marketplace section");
-assert.match(view, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
-assert.match(view, /\{ id: "knowledge-pack", label: "Knowledge packs" \}/, "Browse can filter catalog entries by Knowledge pack kind");
+assert.match(model, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class Marketplace section");
+assert.match(model, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
+assert.match(model, /\{ id: "knowledge-pack", label: "Knowledge packs" \}/, "Browse can filter catalog entries by Knowledge pack kind");
 assert.match(view, /id="marketplace-panel-crafts"/, "Crafts section has a labelled tabpanel");
 assert.match(view, /selectSection\("crafts"\)/, "Browse setup rail links to Crafts");
 assert.match(view, /Familiar[\s\S]*Role[\s\S]*Craft[\s\S]*Capabilities/, "Crafts section explains the loadout hierarchy");

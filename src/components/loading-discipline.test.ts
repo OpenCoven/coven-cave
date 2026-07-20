@@ -62,13 +62,14 @@ assert.match(
 
 // ── Roster memory snapshot: shimmer, not dead text ──────────────────────────
 const familiars = read("./familiars-view.tsx");
+const familiarSections = read("./familiars-view-sections.tsx");
 assert.doesNotMatch(
   familiars,
   />Loading memory…</,
   "Roster cards no longer show a bare 'Loading memory…' line",
 );
 assert.match(
-  familiars,
+  familiarSections,
   /memoryStatus === "loading" \? \([\s\S]{0,400}?<Skeleton variant="text-sm"/,
   "Roster memory snapshot renders the shared Skeleton while loading",
 );

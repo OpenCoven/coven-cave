@@ -78,6 +78,7 @@ import {
   type CovenResponseMode,
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
+import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
 
 type Props = {
   familiars: ResolvedFamiliar[];
@@ -842,18 +843,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // Single pass: this memo recomputes on every streaming token, so the old
   // users.map(… transcript.filter …) shape was O(userTurns × transcript).
   const threads = useMemo(() => {
-    const users: GroupUserTurn[] = [];
-    const repliesByUser = new Map<string, GroupReply[]>();
-    for (const t of transcript) {
-      if (t.role === "user") {
-        users.push(t);
-        continue;
-      }
-      const bucket = repliesByUser.get(t.replyTo);
-      if (bucket) bucket.push(t);
-      else repliesByUser.set(t.replyTo, [t]);
-    }
-    return users.map((u) => ({ user: u, replies: repliesByUser.get(u.id) ?? [] }));
+    return groupChatTranscriptThreads(transcript);
   }, [transcript]);
 
   const participants = activeGroup

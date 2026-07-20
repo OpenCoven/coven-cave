@@ -41,6 +41,7 @@ const matches = (s) => FILE_REF_RE.exec(s);
 
 // ── wiring ───────────────────────────────────────────────────────────────────
 const bubble = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const css = (
   await Promise.all(
@@ -52,20 +53,20 @@ const css = (
 
 // Linkify only inline code, never fenced-block lines.
 assert.match(
-  bubble,
+  wiring,
   /code\.closest\("pre"\) \|\| code\.closest\("\.cave-code-wrap"\)\) continue/,
   "only inline code is linkified (fenced blocks skipped)",
 );
 assert.match(
-  bubble,
+  wiring,
   /dispatchEvent\(new CustomEvent\("cave:open-project-file", \{ detail: \{ path, line \} \}\)\)/,
   "clicking a file ref opens it in the Code workspace",
 );
 // A ref is only linkified when the surface's resolver confirms the click can
 // open it; wiring reconciles (adds AND removes the affordance) so a resolver
 // change never leaves a stale clickable ref.
-assert.match(bubble, /const want = Boolean\(ref && resolve\?\.\(ref\)\)/, "linkify is gated on the resolver approving the ref");
-assert.match(bubble, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListener\("click", open\)[\s\S]*?classList\.remove\("cave-file-link"\)/, "wiring keeps a cleanup so a rejected ref is un-linkified in place");
+assert.match(wiring, /const want = Boolean\(ref && resolve\?\.\(ref\)\)/, "linkify is gated on the resolver approving the ref");
+assert.match(wiring, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListener\("click", open\)[\s\S]*?classList\.remove\("cave-file-link"\)/, "wiring keeps a cleanup so a rejected ref is un-linkified in place");
 // Chat prose supplies the resolver via context; the shared MarkdownBlock must NOT.
 assert.match(bubble, /const fileLinkResolver = useContext\(FileLinkResolverContext\)/, "MarkdownContent reads the resolver from FileLinkResolverContext");
 assert.match(bubble, /const containerRef = useWireCopyButtons\(html\);/, "MarkdownBlock keeps linkify off (default)");

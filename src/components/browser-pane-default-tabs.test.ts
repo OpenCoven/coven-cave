@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./browser-tab-state.ts", import.meta.url), "utf8");
 const defaults = source.match(/function defaultPinnedTabs\(\): BrowserTab\[\] \{[\s\S]*?\n\}/)?.[0] ?? "";
 
 assert.doesNotMatch(

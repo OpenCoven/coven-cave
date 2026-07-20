@@ -34,6 +34,7 @@ export const SUITES = {
     "src/lib/page-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/workspace-mode.test.ts",
+    "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-mission-client.test.ts",
@@ -49,6 +50,8 @@ export const SUITES = {
     "src/components/role-surfaces/reviewer-surface.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
+    "src/lib/chat-composer-prefs.test.ts",
+    "src/lib/chat-transcript-groups.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",
     "src/lib/chunk-coalescer.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
@@ -67,6 +70,8 @@ export const SUITES = {
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/about-diagnostics.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
+    "src/components/browser-tab-state.test.ts",
+    "src/lib/browser-native-overlay.test.ts",
     "src/lib/open-external.test.ts",
     "src/lib/agents-new-chat.test.ts",
     "src/lib/coven-version.test.ts",
@@ -281,11 +286,13 @@ export const SUITES = {
     "src/components/command-palette-polish.test.ts",
     "src/components/command-palette-save-link.test.ts",
     "src/lib/command-palette-search.test.ts",
+    "src/lib/command-palette-salem-context.test.ts",
     "src/lib/command-palette-scope.test.ts",
     "src/lib/recent-searches.test.ts",
     "src/lib/fuzzy-match.test.ts",
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
+    "src/lib/home-composer-context.test.ts",
     "src/components/composer-enhance.test.ts",
     "src/components/prompt-snippets-modal.test.ts",
     "src/components/marketplace/marketplace-detail.test.ts",
@@ -302,6 +309,7 @@ export const SUITES = {
     "src/components/ios-query-url.test.ts",
     "src/components/chat-all-familiars-project-list.test.ts",
     "src/components/chat-list-delete.test.ts",
+    "src/lib/chat-list-model.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
@@ -310,6 +318,7 @@ export const SUITES = {
     "src/components/chat-thread-rail.test.ts",
     "src/components/chat-rail-modern-redesign.test.ts",
     "src/components/message-bubble-markdown.test.ts",
+    "src/lib/message-markdown-stream.test.ts",
     "src/lib/markdown-preview-shell.test.ts",
     "src/lib/markdown-table-cells.test.ts",
     "src/components/mermaid-viewer.test.ts",
@@ -333,6 +342,7 @@ export const SUITES = {
     "src/lib/live-chat-snapshot.test.ts",
     "src/lib/live-chat-generations.test.ts",
     "src/components/chat-view-render-optimization.test.ts",
+    "src/components/chat-attachment-cards.test.ts",
     "src/components/chat-view-canvas-artifact.test.ts",
     "src/components/chat-canvas-tab.test.ts",
     "src/components/chat-response-metadata.test.ts",
@@ -444,6 +454,8 @@ export const SUITES = {
     "src/lib/terminal-broadcast.test.ts",
     "src/components/terminal-key-bar-touch.test.ts",
     "src/components/session-changes-totals.test.ts",
+    "src/lib/session-changes-api.test.ts",
+    "src/components/session-changes-rows.test.ts",
     "src/components/session-changes-panel.test.ts",
     "src/components/project-tree-keynav.test.ts",
     "src/components/a11y-audit-fixes.test.ts",
@@ -475,6 +487,7 @@ export const SUITES = {
     "src/components/familiars-memory-view-sources.test.ts",
     "src/components/familiars-memory-view-scroll-collapse.test.ts",
     "src/app/globals.css.test.ts",
+    "src/app/css-module-order.test.ts",
     "src/app/accent-token-usage.test.ts",
     "src/app/globals-reveal-on-hover.test.ts",
     "src/components/board-reward-flare.test.ts",
@@ -563,6 +576,7 @@ export const SUITES = {
     "src/components/chat-task-create-button-wiring.test.ts",
     "src/lib/chat-task-autofill.test.ts",
     "src/components/group-chat-view.test.ts",
+    "src/lib/group-chat-transcript.test.ts",
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
@@ -773,6 +787,7 @@ export const SUITES = {
     "src/components/quick-chat-polish.test.ts",
     "src/components/notch-quick-chat.test.ts",
     "src/components/quick-chat-controls.test.ts",
+    "src/lib/quick-chat-thread-state.test.ts",
     "src/components/familiar-quick-switch.test.ts",
     "src/lib/salem/happy-paths.test.ts",
     "src/lib/salem/pathfinder-match.test.ts",
@@ -818,6 +833,15 @@ export const SUITES = {
     "src/app/api/chat/stream/route.test.ts",
     "src/lib/harness-failure.test.ts",
     "src/components/harness-fix-actions.test.ts",
+    "src/components/board-inspector-debug.test.ts",
+    "src/components/board-view-display.test.ts",
+    "src/components/calendar-view-primitives.test.ts",
+    "src/components/familiar-summoning-model.test.ts",
+    "src/components/github-view-data.test.ts",
+    "src/components/grimoire-nav-state.test.ts",
+    "src/components/marketplace/marketplace-view-model.test.ts",
+    "src/components/onboarding-model.test.ts",
+    "src/components/settings-multihost.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",
@@ -1253,9 +1277,18 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/elevenlabs.test.ts",
 ]);
 
+// This gate measures the physical CSS tree, where facade imports are part of
+// the source structure. Every other source contract reads the effective
+// cascade through the hook below.
+const RAW_CSS_SCANNER_TESTS = new Set([
+  "src/lib/design-token-drift.test.ts",
+]);
+
 /** Build the `node` argv (flags + file) for a single test path. */
 export function nodeArgsFor(file) {
-  const args = [];
+  const args = RAW_CSS_SCANNER_TESTS.has(file)
+    ? []
+    : ["--require", "./scripts/css-source-contract-hook.cjs"];
   if (file.endsWith(".ts") || STRIP_TYPES_MJS.has(file)) {
     args.push("--experimental-strip-types");
   }

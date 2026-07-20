@@ -8,6 +8,7 @@ const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.
 const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
+const composerContext = await readFile(new URL("../lib/home-composer-context.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 
@@ -94,8 +95,8 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /selectedProjectId === NO_PROJECT_ID\s*\?\s*null/,
+  composerContext,
+  /if \(selectedProjectId === noProjectId\) return null/,
   "An explicit No-project selection should resolve to a null project (not fall back to projects[0])",
 );
 

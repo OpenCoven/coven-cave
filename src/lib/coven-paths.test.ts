@@ -106,6 +106,7 @@ assert.ok(roleSource.includes('path.join(covenHome(), "roles")'));
 assert.doesNotMatch(roleSource, /\.openclaw/);
 
 const chatSend = await readFile("src/app/api/chat/send/route.ts", "utf8");
-assert.match(chatSend, /familiarWorkspace/);
-assert.match(chatSend, /Coven workspace dir/);
+const chatSendRuntime = await readFile("src/app/api/chat/send/chat-send-runtime.ts", "utf8");
+assert.match(chatSend, /resolveFamiliarWorkspace/);
+assert.match(chatSendRuntime, /Resolve a familiar workspace/);
 assert.doesNotMatch(chatSend, /\.openclaw\/workspace/);

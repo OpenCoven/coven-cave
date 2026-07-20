@@ -1,0 +1,267 @@
+/* ── Recent activity roll-up ─────────────────────────────────────────────────
+   Collapsible "Recent Activity" list in the left panel, styled after the
+   Superconductor activity sidebar: stacked cards with title · project · model ·
+   +N -N diff · relative time, the active session marked by a left accent bar. */
+.recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0; }
+/* Quiet eyebrow header, matching .sidebar-section-label so RECENT doesn't
+   outweigh the nav items it sits beside. */
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 12px 0 2px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent;
+  cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
+.recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
+.recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent-presence, currentColor); opacity: 0.55; flex: none; }
+.recent-activity__chevron { transition: transform 140ms ease; }
+.recent-activity__chevron--collapsed { transform: rotate(-90deg); }
+.recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.recent-activity__card { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px 10px 8px 12px; border: 1px solid transparent; border-radius: 10px; background: color-mix(in oklch, var(--bg-raised) 70%, transparent); text-align: left; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease; }
+.recent-activity__card:hover { background: var(--bg-raised); border-color: var(--border-hairline); }
+.recent-activity__card--active { background: var(--bg-raised); }
+.recent-activity__card--active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-presence); }
+.recent-activity__row1, .recent-activity__row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.recent-activity__title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 550; color: var(--text-primary); }
+.recent-activity__status { flex-shrink: 0; width: 7px; height: 7px; border-radius: 999px; background: var(--text-muted); }
+.recent-activity__status--running { background: var(--color-success); animation: recent-activity-status-pulse 1.6s ease-in-out infinite; }
+.recent-activity__status--failed { background: var(--color-danger); }
+.recent-activity__status--queued { background: var(--color-warning); }
+.recent-activity__status--paused { background: var(--accent-presence-soft); }
+@keyframes recent-activity-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .recent-activity__status--running { animation: none; } }
+.recent-activity__project { flex-shrink: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.recent-activity__model { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--text-secondary); }
+.recent-activity__model-icon { flex-shrink: 0; opacity: 0.85; }
+.recent-activity__model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+.recent-activity__meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.recent-activity__diff { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
+.recent-activity__add { color: color-mix(in oklch, #3fb950 80%, var(--text-secondary)); }
+.recent-activity__del { color: color-mix(in oklch, #f85149 80%, var(--text-secondary)); }
+.recent-activity__time { font-size: 10.5px; color: var(--text-muted); }
+
+/* ── Collapsed icon rail (desktop) ───────────────────────────────────────────
+ * When the left nav is collapsed it shrinks to a ~56px rail rather than
+ * vanishing. Strip every text label and section header and center the
+ * destination icons so only the icons remain; each control keeps its native
+ * `title` so hovering names the surface. Mobile is unaffected — it slides the
+ * full drawer in and out (the rail class is only applied on desktop). */
+.shell-nav--rail .sidebar-minimal {
+  padding: 10px 0;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Section headers and the recent-activity rollup have no compact form, so
+   they drop out entirely in the rail. (Rooms cluster label included.) */
+.shell-nav--rail .sidebar-section-label,
+.shell-nav--rail .sidebar-rooms-label,
+.shell-nav--rail .recent-activity {
+  display: none;
+}
+
+/* ── Rail-only bookends (chat-revamp phase D) ────────────────────────────────
+ * The brand mark tops the rail (28px accent-tinted rounded square, star
+ * glyph) and the account avatar circle closes it under Settings. Both are
+ * hidden in the expanded panel, which leads with the familiar switcher and
+ * ends with the shared footer instead. */
+.sidebar-brand-mark,
+.sidebar-user-avatar {
+  display: none;
+}
+
+.shell-nav--rail .sidebar-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  margin: 0 auto var(--space-1);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--accent-presence);
+}
+
+.shell-nav--rail .sidebar-user-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  /* The rail's own column gap separates it from Settings above. */
+  margin: 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-primary) 10%, transparent);
+  color: var(--text-secondary);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.shell-nav--rail .sidebar-user-avatar:hover {
+  background: color-mix(in oklch, var(--text-primary) 16%, transparent);
+  color: var(--text-primary);
+}
+
+/* Primary-surfaces-only rail (phase D): the quiet cluster (Memories /
+   Marketplace / GitHub) and the Dashboard link stay reachable from the
+   EXPANDED panel (⌘B, hover-peek) and the ⌘K palette, but don't earn rail
+   slots — the rail carries the daily destinations plus Settings + account. */
+.shell-nav--rail .sidebar-folder-row--quiet,
+.shell-nav--rail a.sidebar-foot-btn[href="/dashboard"] {
+  display: none;
+}
+
+/* The header familiar switcher survives the rail as the avatar-only trigger:
+   the trigger label drops, the 28px avatar stays reachable. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
+  display: none;
+}
+.shell-nav--rail .sidebar-familiar-switch {
+  padding: 0;
+  justify-content: center;
+}
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-width: 1px;
+}
+/* The dropdown caret is expanded-state chrome — drop it on the rail. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
+  display: none;
+}
+
+/* Labels and count pills collapse away; the icon is all that stays per row.
+   (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
+.shell-nav--rail .sidebar-folder-label,
+.shell-nav--rail .sidebar-action-label,
+.shell-nav--rail .sidebar-actions .sidebar-action-row > span,
+.shell-nav--rail .sidebar-foot-label,
+.shell-nav--rail .sidebar-foot-badge {
+  display: none;
+}
+
+/* The collapsed icon rail has no room for the count text, so render the nav
+   badge as a small accent dot in the icon top-right corner — Board/Schedules/
+   GitHub still signal at a glance when the sidebar is collapsed. */
+.shell-nav--rail .sidebar-folder-row {
+  position: relative;
+}
+.shell-nav--rail .sidebar-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 7px;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  color: transparent;
+}
+
+/* Drop the horizontal padding so the centered icons sit dead-center in the
+   rail, and let the nav region grow without a scrollbar gutter. */
+.shell-nav--rail .sidebar-actions,
+.shell-nav--rail .sidebar-nav-scroll,
+.shell-nav--rail .sidebar-foot {
+  padding-left: 0;
+  padding-right: 0;
+}
+.shell-nav--rail .sidebar-nav-scroll {
+  gap: 6px;
+  align-items: center;
+  scrollbar-width: none;
+}
+.shell-nav--rail .sidebar-folders {
+  width: 100%;
+  align-items: center;
+}
+
+/* The collapsed rail stacks its footer icons vertically (the expanded footer is
+   a horizontal row); a row here would overflow the narrow rail. */
+.shell-nav--rail .sidebar-foot {
+  flex-direction: column;
+  align-items: center;
+}
+
+/* No room for text in the 56px rail — the version returns when expanded. */
+.shell-nav--rail .sidebar-version {
+  display: none;
+}
+
+/* Every rail control is the same centered 36px rounded square (phase-D rail
+   geometry) — one shared hit-area box so the compose, nav, and footer icons
+   read as a single family (previously: compose had a 2px accent outline, the
+   active row a tinted box with a left bar, and the rest were bare icons). */
+.shell-nav--rail .sidebar-folder-row,
+.shell-nav--rail .sidebar-action-row,
+.shell-nav--rail .sidebar-foot-btn,
+.shell-nav--rail .sidebar-foot-icon-btn {
+  justify-content: center;
+  flex: none;
+  gap: 0;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  margin: 0 auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+/* Uniform hover box for every rail control (the active row keeps its own fill
+   below, so it's excluded here). */
+.shell-nav--rail .sidebar-folder-row:not(.sidebar-folder-row--active):hover,
+.shell-nav--rail .sidebar-foot-btn:hover,
+.shell-nav--rail .sidebar-foot-icon-btn:hover {
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
+}
+
+/* Compose ("new chat") shares the exact same square — drop its loud 2px accent
+   outline — and stays recognisable purely through its accent glyph. */
+.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--accent-presence);
+  font-weight: 500;
+}
+.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+
+/* The active destination is the one persistent fill: a single accent-tinted
+   square (no left bar, which looks off-centre under a centred icon). */
+.shell-nav--rail .sidebar-folder-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  box-shadow: none;
+  color: var(--text-primary);
+}
+.shell-nav--rail .sidebar-folder-row--active:hover {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+}
+
+/* Nav icon sizing follows the global icon scale in globals.css. */
+.sidebar-folder-icon,
+.sidebar-action-icon,
+.sidebar-foot-icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+/* Keep the collapsed icon rail readable without oversized glyphs. */
+.shell-nav--rail .sidebar-folder-icon,
+.shell-nav--rail .sidebar-action-icon,
+.shell-nav--rail .sidebar-foot-icon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}

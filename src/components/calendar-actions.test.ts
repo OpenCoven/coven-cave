@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const view = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const view = [
+  await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 const ws = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // ───────── Detail panel: real, kind-aware actions (no dead buttons) ─────────

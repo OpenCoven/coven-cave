@@ -57,14 +57,14 @@ describe("Profile card wiring (cave-ujbr)", () => {
   });
 
   it("links roster cards to per-familiar profiles beside the analytics link", () => {
-    const source = read("./familiars-view.tsx");
+    const source = read("./familiars-view-sections.tsx");
     assert.match(source, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/profile`\}/);
     assert.match(source, /aria-label=\{`Open profile for \$\{familiar\.display_name\}`\}/);
     assert.match(source, /Profile →/);
   });
 
   it("cross-links analytics → profile and settings → the human profile card", () => {
-    const analytics = read("./familiar-analytics-view.tsx");
+    const analytics = read("./familiar-analytics-content.tsx");
     assert.match(analytics, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(model\.familiarId\)\}\/profile`\}/);
     const settings = read("./settings-profile.tsx");
     assert.match(settings, /href="\/profile"/);
