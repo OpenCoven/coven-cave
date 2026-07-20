@@ -49,9 +49,10 @@ assert.match(
 // ---------------------------------------------------------------------------
 
 const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 assert.match(
-  source,
+  wiring,
   /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(el\)/,
   "A shared post-render hook should wire copy buttons once the injected HTML lands",
 );
@@ -312,7 +313,7 @@ assert.match(
   "The expand footer must only be emitted for blocks tall enough to actually clamp",
 );
 
-const wireFn = /function wireCopyButtons\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const wireFn = /function wireCopyButtons\([\s\S]*?\n\}/.exec(wiring)?.[0] ?? "";
 assert.match(
   wireFn,
   /cave-code-expand-btn/,
@@ -354,7 +355,7 @@ assert.match(
 );
 assert.match(wireFn, /codeTextFromWrap/, "Copy clicks must read the code text from the DOM at click time");
 
-const codeTextFn = /function codeTextFromWrap\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const codeTextFn = /function codeTextFromWrap\([\s\S]*?\n\}/.exec(wiring)?.[0] ?? "";
 assert.match(
   codeTextFn,
   /closest\("\.cave-code-wrap"\)/,

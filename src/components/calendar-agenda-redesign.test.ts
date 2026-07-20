@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const view = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const view = [
+  readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ── Agenda "timeline" redesign ───────────────────────────────────────────────

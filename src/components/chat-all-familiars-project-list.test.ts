@@ -7,6 +7,7 @@ const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,
@@ -104,9 +105,14 @@ assert.match(
   "Workspace should normalize GitHub task context when refreshing sessions",
 );
 assert.match(
-  workspace,
+  githubTaskContext,
   /pullRequest: session\.pullRequest \?\? \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
-  "Workspace should attach linked PR number and state to chat sessions (server-enriched PR state wins)",
+  "GitHub task context should attach linked PR number and state without replacing server-enriched state",
+);
+assert.match(
+  workspace,
+  /attachGitHubTaskContext\(visibleBaseSessions, tasks\)/,
+  "Workspace should apply the extracted GitHub task context when refreshing sessions",
 );
 assert.match(
   workspace,

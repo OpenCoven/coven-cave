@@ -6,7 +6,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const view = readFileSync(new URL("./familiar-work-queue-view.tsx", import.meta.url), "utf8");
+const view = [
+  readFileSync(new URL("./familiar-work-queue-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./familiar-work-queue-sections.tsx", import.meta.url), "utf8"),
+].join("\n");
 const css = readFileSync(new URL("../styles/familiar-work-queue.css", import.meta.url), "utf8");
 
 // Lane headers are real disclosure controls, not decorative rows.

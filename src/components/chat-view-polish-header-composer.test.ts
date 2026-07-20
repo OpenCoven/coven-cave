@@ -7,6 +7,7 @@ import {
   emptyStateSource,
   globalsSrc,
   menusHookSource,
+  sessionHeader,
   source,
   splitReasoning,
   styles,
@@ -310,7 +311,7 @@ assert.match(
   "Open chat header actions collapse to a find bar plus a single overflow menu",
 );
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*Debug session[\s\S]*Delete chat/,
   "Secondary session actions (project, voice, debug, delete) live in the overflow menu",
 );
@@ -345,7 +346,7 @@ assert.doesNotMatch(
 // Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions
 // collapse and reveal on hover / keyboard focus (touch devices show them).
 assert.match(
-  source,
+  sessionHeader,
   /className="focus-ring cave-chat-actions-kebab"/,
   "The overflow kebab is tagged so it stays visible while sibling actions collapse",
 );
@@ -489,22 +490,22 @@ assert.match(
 );
 
 assert.match(
-  source,
+  sessionHeader,
   /icon="ph:pencil-simple"[\s\S]{0,200}dispatchEvent\(new Event\("cave:chat-rename"\)\)[\s\S]{0,160}Rename chat/,
   "Rename lives in the session overflow menu (Codex/ChatGPT idiom), firing cave:chat-rename",
 );
 assert.match(
-  source,
+  sessionHeader,
   /addEventListener\("cave:chat-rename", onRename\)[\s\S]{0,80}setEditing\(true\)|onRename = \(\) => setEditing\(true\)/,
   "ChatTitleEditable enters edit mode when the overflow menu fires cave:chat-rename",
 );
 assert.match(
-  source,
+  sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
   "Chat title carries an explicit, labeled rename button — click-to-rename and the overflow item alone are not discoverable",
 );
 assert.match(
-  source,
+  sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,400}ph:pencil-simple/,
   "The title's rename button uses the same pencil icon as the overflow menu item",
 );

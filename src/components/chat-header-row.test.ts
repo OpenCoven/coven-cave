@@ -5,6 +5,7 @@ import { toolArgDetail, toolArgSummary } from "../lib/tool-arg-summary.ts";
 import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
@@ -125,18 +126,18 @@ assert.match(
 // The kebab's delete is a two-step guard: the danger item arms a confirm view
 // (Delete this chat permanently? / Cancel / Delete chat) inside the popover.
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*?confirmingDelete \? \([\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}[\s\S]*?Delete chat…/,
   "SessionOverflowMenu guards delete behind an in-popover confirm view",
 );
 assert.match(
-  source,
+  sessionHeader,
   /onSelect=\{\(\) => setConfirmingDelete\(true\)\}/,
   "the danger Delete chat… item arms the confirm view instead of deleting outright",
 );
 // Closing the kebab disarms the confirm so it never reopens pre-armed.
 assert.match(
-  source,
+  sessionHeader,
   /const close = \(\) => \{\s*setOpen\(false\);\s*setConfirmingDelete\(false\);\s*\};/,
   "closing the overflow menu resets the armed delete confirm",
 );
@@ -156,7 +157,7 @@ assert.doesNotMatch(
 // Project selection is one compact row in the kebab that opens the shared
 // searchable ProjectPickerPopover — not an inline list of every project.
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*?Project: \{activeProject \? activeProject\.name : "No project"\}[\s\S]*?<ProjectPickerPopover/,
   "the kebab shows a single Project row that opens the shared picker popover",
 );
@@ -392,12 +393,12 @@ assert.match(
 // archive-free by default — chat-siderail-hide-archived.test.ts) but the
 // transcript survives, and the same item reads Unarchive on archived chats.
 assert.match(
-  source,
+  sessionHeader,
   /icon="ph:archive"[\s\S]{0,400}\{archiving \? \(archived \? "Unarchiving…" : "Archiving…"\) : archived \? "Unarchive chat" : "Archive chat"\}/,
   "the kebab offers Archive chat (Unarchive on archived sessions)",
 );
 assert.match(
-  source,
+  sessionHeader,
   /onSelect=\{\(\) => \{\s*onSetArchived\(!archived\);\s*close\(\);/,
   "selecting the item toggles the session's archived state",
 );

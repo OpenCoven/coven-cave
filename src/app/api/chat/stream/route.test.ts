@@ -78,7 +78,7 @@ const send = readFileSync(new URL("../send/route.ts", import.meta.url), "utf8");
 test("send route tees both harness stream paths through the run buffer", () => {
   const tees = send.match(/const seq = runBuffer\?\.record\(e(?:vent)?\);\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) return;/g);
   assert.equal(tees?.length, 2, "both push() implementations record before the closed/aborted guard");
-  const seqEmits = send.match(/controller\.enqueue\(sse\(e(?:vent)?, seq\)\)/g);
+  const seqEmits = send.match(/controller\.enqueue\(chatSse\(e(?:vent)?, seq\)\)/g);
   assert.equal(seqEmits?.length, 2, "both paths emit the seq as the SSE id — live clients always hold a resume cursor");
   const opens = send.match(/openRunBuffer\(\[/g);
   assert.equal(opens?.length, 2, "both paths open a buffer under runId + conversation keys");

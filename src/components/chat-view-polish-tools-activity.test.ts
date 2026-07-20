@@ -6,6 +6,7 @@ import {
   emptyStateSource,
   globalsSrc,
   menusHookSource,
+  sessionHeader,
   source,
   splitReasoning,
   styles,
@@ -56,7 +57,7 @@ assert.match(
   "ReasoningBlock open state is driven by the global Show-thinking preference",
 );
 assert.match(
-  source,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*checked=\{showThinking\}[\s\S]*\{showThinking \? "Hide thinking" : "Show thinking"\}/,
   "The session overflow menu carries the global Show-thinking toggle",
 );

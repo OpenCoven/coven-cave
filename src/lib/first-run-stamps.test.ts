@@ -86,7 +86,7 @@ assert.equal(formatTimeToFirstReply(24 * 3_600_000), "1d");
 // ── Wiring pins ───────────────────────────────────────────────────────────────
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-const analytics = await readFile(new URL("../components/familiar-analytics-view.tsx", import.meta.url), "utf8");
+const analytics = await readFile(new URL("../components/familiar-analytics-content.tsx", import.meta.url), "utf8");
 
 assert.match(
   workspace,

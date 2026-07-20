@@ -19,6 +19,10 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const modelHelpers = await readFile(
+  new URL("./chat-send-models.ts", import.meta.url),
+  "utf8",
+);
 const streamEvents = await readFile(
   new URL("../../../../lib/stream-events.ts", import.meta.url),
   "utf8",
@@ -292,7 +296,7 @@ assert.match(
   "Response metadata should expose unsupported/saved state instead of claiming application",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
   "Session-scoped model overrides should feed the response model state, not only desiredModel",
 );
@@ -313,7 +317,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(e, seq\)\);[\s\S]*?catch/,
+  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(e, seq\)\);[\s\S]*?catch/,
   "Native stream pushes should be ignored after close/abort so late child output cannot enqueue into a closed stream",
 );
 assert.match(
@@ -323,7 +327,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(event, seq\)\);[\s\S]*?catch/,
+  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(event, seq\)\);[\s\S]*?catch/,
   "OpenClaw stream pushes should be ignored after close/abort so late child close/error output cannot enqueue into a cancelled stream",
 );
 assert.doesNotMatch(
@@ -358,14 +362,14 @@ assert.match(
   "The send route should carry composer responseSpeed through offline queue payloads",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /function buildPromptWithResponseControls/,
-  "Send route should turn composer controls into harness-visible instructions",
+  "Chat send model helpers should turn composer controls into harness-visible instructions",
 );
 assert.match(
-  chatRoute,
+  modelHelpers,
   /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
-  "Chat send route should continue accepting responseSpeed from all composer send bodies",
+  "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
 );
 assert.match(
   chatRoute,

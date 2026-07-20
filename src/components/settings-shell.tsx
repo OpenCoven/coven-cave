@@ -80,6 +80,11 @@ import {
 } from "@/lib/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
 import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
+import {
+  formatHostWorkspaceText,
+  parseExecutorUrls,
+  parseHostWorkspaceText,
+} from "./settings-multihost";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -637,40 +642,6 @@ function WorkspacePathField() {
 }
 
 // ─── Section: Daemon ──────────────────────────────────────────────────────────
-
-function parseExecutorUrls(text: string): string[] {
-  return Array.from(
-    new Set(
-      text
-        .split(/\r?\n|,/)
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
-/** Parse "host = /abs/path" or "host=/abs/path" lines into a map. */
-function parseHostWorkspaceText(text: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    const val = line.slice(eq + 1).trim();
-    if (key && val) out[key] = val;
-  }
-  return out;
-}
-
-function formatHostWorkspaceText(map: Record<string, string> | undefined): string {
-  if (!map || typeof map !== "object") return "";
-  return Object.entries(map)
-    .filter(([k, v]) => k.trim() && v.trim())
-    .map(([k, v]) => `${k.trim()}=${v.trim()}`)
-    .join("\n");
-}
 
 /** Omnigent fleet connection — the config surface for the host chip and remote runs.
  *  Renders NOTHING unless OMNIGENT_SERVER_URL is set up in the user's Cave

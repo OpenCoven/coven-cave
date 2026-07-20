@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { filterVisibleChatSessions } from "./chat-projects.ts";
 import {
   localConversationSessionRows,
   mergeSessionRows,
@@ -39,6 +40,7 @@ assert.deepEqual(
     updated_at: "2026-06-08T20:05:00.000Z",
     familiarId: "charm",
     origin: "chat",
+    hasLocalConversation: true,
     initiator: { kind: "human", label: "Cave user", channel: "cave" },
   },
   "saved Cave conversations should become complete session rows when the daemon loses them",
@@ -74,6 +76,325 @@ assert.deepEqual(
   merged.find((s) => s.id === "daemon-1")?.initiator,
   { kind: "familiar", label: "Cody", agentId: "cody" },
   "daemon sessions should preserve sanitized initiator provenance when present",
+);
+assert.equal(
+  merged.find((s) => s.id === "local-1")?.hasLocalConversation,
+  true,
+  "local-only saved chats should mark that Cave has a local transcript",
+);
+assert.equal(
+  merged.find((s) => s.id === "daemon-1")?.hasLocalConversation,
+  undefined,
+  "daemon-only sessions without a matching local transcript should not gain local provenance",
+);
+
+const matchedMerged = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "matched-1",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Matched chat",
+      status: "orphaned",
+      exit_code: null,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "matched-1",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Matched chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+    },
+  ],
+  state,
+  includeArchived: false,
+});
+
+assert.equal(
+  matchedMerged.find((s) => s.id === "matched-1")?.hasLocalConversation,
+  true,
+  "matched daemon/local sessions should record that Cave has a local transcript",
+);
+assert.equal(
+  matchedMerged.find((s) => s.id === "matched-1")?.status,
+  "orphaned",
+  "matched daemon rows should keep an interrupted daemon status when the local transcript updated more recently",
+);
+assert.equal(
+  matchedMerged.find((s) => s.id === "matched-1")?.familiarId,
+  "nova",
+  "matched daemon rows should fall back to the local conversation familiar when state has no mapping",
+);
+assert.deepEqual(
+  filterVisibleChatSessions(matchedMerged, "nova").map((s) => s.id),
+  ["matched-1"],
+  "familiar-scoped chat filters should retain the recovered transcript-backed row",
+);
+
+const validRootArchived = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "valid-root-archived",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Archived chat",
+      status: "archived",
+      exit_code: 143,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "valid-root-archived",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Archived chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+    },
+  ],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+});
+
+const invalidRootInterrupted = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "invalid-root-interrupted",
+      project_root: "/invalid",
+      harness: "codex",
+      title: "Interrupted chat",
+      status: "killed",
+      exit_code: 137,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "invalid-root-interrupted",
+      familiarId: "nova",
+      harness: "codex",
+      runtime: "local:/repo",
+      title: "Interrupted chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+      origin: "chat",
+    },
+  ],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+  projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+});
+
+assert.equal(invalidRootInterrupted.length, 1);
+assert.equal(invalidRootInterrupted[0]?.id, "invalid-root-interrupted");
+assert.equal(invalidRootInterrupted[0]?.project_root, "/repo");
+assert.equal(invalidRootInterrupted[0]?.status, "killed");
+assert.equal(invalidRootInterrupted[0]?.exit_code, 137);
+assert.equal(invalidRootInterrupted[0]?.hasLocalConversation, true);
+assert.deepEqual(
+  invalidRootInterrupted[0]?.initiator,
+  { kind: "familiar", label: "Cody", agentId: "cody" },
+  "invalid-root interrupted recovery should preserve daemon initiator provenance",
+);
+
+const invalidRootArchivedMatched = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "invalid-root-archived",
+      project_root: "/invalid",
+      harness: "codex",
+      title: "Archived chat",
+      status: "archived",
+      exit_code: 143,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "invalid-root-archived",
+      familiarId: "nova",
+      harness: "codex",
+      runtime: "local:/repo",
+      title: "Archived chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+      origin: "chat",
+    },
+  ],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+  projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+});
+
+assert.equal(invalidRootArchivedMatched.length, 1, "matched invalid-root archived sessions recover exactly one row");
+assert.equal(invalidRootArchivedMatched[0]?.project_root, "/repo");
+assert.equal(invalidRootArchivedMatched[0]?.status, "archived");
+assert.equal(invalidRootArchivedMatched[0]?.exit_code, 143);
+assert.equal(invalidRootArchivedMatched[0]?.archived_at, null);
+assert.equal(invalidRootArchivedMatched[0]?.hasLocalConversation, true);
+assert.deepEqual(
+  invalidRootArchivedMatched[0]?.initiator,
+  { kind: "familiar", label: "Cody", agentId: "cody" },
+  "invalid-root archived recovery should preserve daemon initiator provenance",
+);
+
+assert.equal(
+  validRootArchived[0]?.status,
+  "archived",
+  "newer local transcripts must not overwrite a valid-root daemon archived status",
+);
+assert.equal(
+  validRootArchived[0]?.exit_code,
+  143,
+  "newer local transcripts must not overwrite the daemon exit code for an archived status",
+);
+assert.equal(validRootArchived[0]?.archived_at, null, "the daemon status is authoritative even without archived_at");
+
+const invalidRootArchived = {
+  ...state,
+  sessionArchived: { "invalid-root-interrupted": "2026-06-08T18:20:00.000Z" },
+};
+
+const invalidRootInterruptedArchived = {
+  ...invalidRootInterrupted[0],
+  archived_at: "2026-06-08T18:25:00.000Z",
+};
+
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "invalid-root-interrupted",
+        project_root: "/invalid",
+        harness: "codex",
+        title: "Interrupted chat",
+        status: "killed",
+        exit_code: 137,
+        archived_at: "2026-06-08T18:25:00.000Z",
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:10:00.000Z",
+        initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "invalid-root-interrupted",
+        familiarId: "nova",
+        harness: "codex",
+        runtime: "local:/repo",
+        title: "Interrupted chat",
+        updatedAt: "2026-06-08T18:15:00.000Z",
+        status: "completed",
+        exitCode: 0,
+        origin: "chat",
+      },
+    ],
+    state,
+    includeArchived: false,
+    isValidDaemonProjectRoot: (root) => root === "/repo",
+    projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+  }).length,
+  0,
+  "invalid-root interrupted chats with daemon archived_at should stay hidden from the active list",
+);
+
+assert.deepEqual(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "invalid-root-interrupted",
+        project_root: "/invalid",
+        harness: "codex",
+        title: "Interrupted chat",
+        status: "killed",
+        exit_code: 137,
+        archived_at: "2026-06-08T18:25:00.000Z",
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:10:00.000Z",
+        initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "invalid-root-interrupted",
+        familiarId: "nova",
+        harness: "codex",
+        runtime: "local:/repo",
+        title: "Interrupted chat",
+        updatedAt: "2026-06-08T18:15:00.000Z",
+        status: "completed",
+        exitCode: 0,
+        origin: "chat",
+      },
+    ],
+    state,
+    includeArchived: true,
+    isValidDaemonProjectRoot: (root) => root === "/repo",
+    projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+  }),
+  [invalidRootInterruptedArchived],
+  "invalid-root interrupted recovery should preserve the daemon archived_at when archived rows are visible",
+);
+
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "invalid-root-interrupted",
+        project_root: "/invalid",
+        harness: "codex",
+        title: "Interrupted chat",
+        status: "killed",
+        exit_code: 137,
+        archived_at: "2026-06-08T18:25:00.000Z",
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:10:00.000Z",
+        initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "invalid-root-interrupted",
+        familiarId: "nova",
+        harness: "codex",
+        runtime: "local:/repo",
+        title: "Interrupted chat",
+        updatedAt: "2026-06-08T18:15:00.000Z",
+        status: "completed",
+        exitCode: 0,
+        origin: "chat",
+      },
+    ],
+    state: invalidRootArchived,
+    includeArchived: true,
+    isValidDaemonProjectRoot: (root) => root === "/repo",
+    projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+  })[0]?.archived_at,
+  "2026-06-08T18:20:00.000Z",
+  "invalid-root interrupted recovery should still honor the Cave-local archive override",
 );
 
 const cwdFiltered = mergeSessionRows({

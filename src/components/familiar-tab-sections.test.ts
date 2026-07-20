@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 // language: washes + hairlines, accent reserved for presence, CTAs on empty
 // states, paths demoted to tooltips.
 
-const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/familiar-surface-navigation.ts", import.meta.url), "utf8");
 

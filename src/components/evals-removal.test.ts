@@ -12,7 +12,7 @@ const lazySurfaces = read("src/components/lazy-surfaces.tsx");
 const globals = read("src/app/globals.css");
 const slash = read("src/lib/slash-commands.ts");
 const apiContracts = read("src/app/api/api-contracts.test.ts");
-const analytics = read("src/components/familiar-analytics-view.tsx");
+const analytics = read("src/components/familiar-analytics-content.tsx");
 const threadSignals = read("src/components/thread-signals-section.tsx");
 
 assert.doesNotMatch(workspaceMode, /\|\s*"evals"|\|\s*"retro"/, "workspace modes should not include evals or legacy retro");

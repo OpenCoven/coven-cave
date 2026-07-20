@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
-const view = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+const view = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");

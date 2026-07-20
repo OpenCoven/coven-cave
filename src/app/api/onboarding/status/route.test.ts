@@ -141,7 +141,11 @@ const overlay = readFileSync(
   new URL("../../../../components/onboarding-overlay.tsx", import.meta.url),
   "utf8",
 );
-assert.match(overlay, /git\?: Step/, "overlay accepts the git step");
+const onboardingModel = readFileSync(
+  new URL("../../../../components/onboarding-model.ts", import.meta.url),
+  "utf8",
+);
+assert.match(onboardingModel, /git\?: Step/, "onboarding model accepts the git step");
 assert.match(overlay, /Find Git \(recommended\)/, "overlay renders the git checklist row");
 
 const projectFiles = readFileSync(

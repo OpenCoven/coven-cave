@@ -19,6 +19,10 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const capabilityProbes = await readFile(
+  new URL("./chat-send-capabilities.ts", import.meta.url),
+  "utf8",
+);
 const streamEvents = await readFile(
   new URL("../../../../lib/stream-events.ts", import.meta.url),
   "utf8",
@@ -37,7 +41,7 @@ const chatView = await readFile(
 );
 // ── Model parity (gated --model passthrough) ───────────────────────────────
 assert.match(
-  chatRoute,
+  capabilityProbes,
   /covenRunSupportsModelFlag/,
   "Model forwarding must gate on the coven run --model capability probe",
 );
@@ -80,7 +84,7 @@ assert.ok(
 // prompt-text-only: the runtime-scope preamble describes the grants, but a
 // harness that only trusts its cwd denies every access to them.
 assert.match(
-  chatRoute,
+  capabilityProbes,
   /covenRunSupportsAddDirFlag/,
   "--add-dir forwarding must gate on the coven run capability probe",
 );

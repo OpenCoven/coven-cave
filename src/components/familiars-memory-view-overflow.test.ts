@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // The <li> wrapping each memory file row must clamp its inner button.
 // Unique fingerprint: this is the only place we have `flex min-w-0 items-stretch gap-1 px-1`.

@@ -18,6 +18,19 @@ import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/l
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
 import { filterInternalCovenNameSuggestions } from "@/lib/familiar-roster-guard";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import {
+  AURA_PRESETS,
+  DEFAULT_GLYPH,
+  IDENTITY_PRESETS,
+  NAME_POOL,
+  STARTER_GLYPHS,
+  STAGES,
+  type HarnessReport,
+  type OpenClawAgent,
+  type SshCheckState,
+  type StageIndex,
+  type VesselKind,
+} from "./familiar-summoning-model";
 
 /**
  * The Familiar Summoning Circle — the app's one creation (and enhancement)
@@ -36,115 +49,6 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
  * (override store, glyph override store, avatar upload, config PATCH).
  */
 
-type VesselKind = "local" | "ssh" | "openclaw";
-
-type HarnessReport = {
-  id: string;
-  label: string;
-  chatSupported: boolean;
-  installed: boolean;
-};
-
-type OpenClawAgent = {
-  id: string;
-  displayName: string;
-  role: string;
-  workspacePath: string | null;
-};
-
-type SshCheckState =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "ok"; detail: string }
-  | { state: "fail"; detail: string };
-
-// Curated starter glyphs — every name is verified present in the trimmed
-// ph-glyph-catalog.json, so none render blank. The Studio's full picker
-// remains the place to browse the whole catalog.
-const STARTER_GLYPHS = [
-  "ph:sparkle-fill",
-  "ph:cat-fill",
-  "ph:robot-fill",
-  "ph:ghost-fill",
-  "ph:brain-fill",
-  "ph:flask-fill",
-  "ph:rocket-fill",
-  "ph:magic-wand-fill",
-  "ph:code-fill",
-  "ph:books-fill",
-  "ph:palette-fill",
-  "ph:chart-bar-fill",
-  "ph:compass-fill",
-  "ph:detective-fill",
-  "ph:planet-fill",
-  "ph:butterfly-fill",
-] as const;
-
-const DEFAULT_GLYPH = "ph:sparkle-fill";
-
-// Aura presets mirror the Familiar Studio Look tab's palette so a color chosen
-// at the circle matches one chosen later in the Studio.
-const AURA_PRESETS: { label: string; color: string }[] = [
-  { label: "Theme", color: "color-mix(in oklch, var(--accent-presence) 72%, white 28%)" },
-  { label: "Lilac", color: "oklch(0.82 0.08 305)" },
-  { label: "Rose", color: "oklch(0.82 0.08 20)" },
-  { label: "Ember", color: "oklch(0.80 0.10 60)" },
-  { label: "Moss", color: "oklch(0.82 0.09 150)" },
-  { label: "Tide", color: "oklch(0.82 0.08 220)" },
-  { label: "Gold", color: "oklch(0.85 0.10 95)" },
-  { label: "Slate", color: "oklch(0.75 0.02 270)" },
-];
-
-// The name dice. Short, familiar-shaped names; the user can always type their own.
-const NAME_POOL = [
-  "Wren", "Ember", "Onyx", "Luna", "Rook",
-  "Hazel", "Fenn", "Moss", "Thistle", "Juniper", "Ivy", "Basil", "Clove",
-  "Nyx", "Ash", "Briar", "Pip", "Marlow", "Quill", "Vesper",
-] as const;
-
-const STAGES = [
-  { key: "vessel", numeral: "I", title: "The vessel", hint: "Choose where your familiar lives — the machine or agent its mind runs on." },
-  { key: "name", numeral: "II", title: "The name", hint: "Every familiar answers to a name." },
-  { key: "form", numeral: "III", title: "The form", hint: "Give it a sigil and an aura." },
-  { key: "summon", numeral: "IV", title: "The summoning", hint: "Read the incantation, then call." },
-] as const;
-
-// One-click identity templates for the name stage. The required "What it
-// does" prose is where first-time users stall (the name has Suggest; the
-// description had nothing) — a preset fills role + description in one click,
-// editable after. Names stay personal, so presets never touch them.
-const IDENTITY_PRESETS: { label: string; icon: IconName; role: string; description: string }[] = [
-  {
-    label: "Code reviewer",
-    icon: "ph:git-branch-bold",
-    role: "Code reviewer",
-    description:
-      "Reviews changes for bugs, regressions, and unclear code, and suggests focused fixes with reasoning.",
-  },
-  {
-    label: "Research assistant",
-    icon: "ph:magnifying-glass",
-    role: "Researcher",
-    description:
-      "Digs into questions, compares sources and trade-offs, and reports findings with clear summaries.",
-  },
-  {
-    label: "Project planner",
-    icon: "ph:kanban",
-    role: "Planner",
-    description:
-      "Breaks goals into small, ordered tasks, tracks what's blocked, and keeps the board tidy.",
-  },
-  {
-    label: "Writing partner",
-    icon: "ph:pencil-line-bold",
-    role: "Editor",
-    description:
-      "Drafts, tightens, and restructures prose while keeping the writer's voice and intent.",
-  },
-];
-
-type StageIndex = 0 | 1 | 2 | 3;
 
 /** Object URL for a picked file, revoked when the file changes or on unmount. */
 function useObjectUrl(file: File | null): string | null {

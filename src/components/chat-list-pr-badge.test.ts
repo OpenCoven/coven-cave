@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
 const listRoute = readFileSync(
   new URL("../app/api/sessions/list/route.ts", import.meta.url),
   "utf8",
@@ -127,7 +128,7 @@ assert.match(
 
 // ── Workspace: server PR state wins over GitHub-task lifecycle words ─────────
 assert.match(
-  workspace,
+  githubTaskContext,
   /pullRequest: session\.pullRequest \?\? \{/,
   "attachGitHubTaskContext never clobbers server-enriched PR state",
 );

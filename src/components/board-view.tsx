@@ -28,7 +28,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
-import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -37,14 +37,8 @@ import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { BoardKanbanSkeleton, loadBoardPreference, type ViewMode } from "@/components/board-view-display";
 
-type ViewMode = "kanban" | "table" | "gantt";
-
-function loadPref<T extends string>(key: string, fallback: T, valid: T[]): T {
-  if (typeof window === "undefined") return fallback;
-  const v = localStorage.getItem(key) as T | null;
-  return v !== null && valid.includes(v) ? v : fallback;
-}
 
 type Props = {
   familiars: Familiar[];
@@ -62,32 +56,6 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenUrl?: (url: string) => void;
 };
-
-// First-load placeholder that previews the kanban structure (ghost columns +
-// cards) instead of a bare spinner, matching the app-wide skeleton convention
-// (schedules/chat/board-inspector). Reuses the real column classes so
-// it's pixel-matched and theme-aware; the shimmer comes from <Skeleton>.
-function BoardKanbanSkeleton() {
-  return (
-    <div className="board-kanban-rail-wrap" aria-hidden>
-      <div className="board-kanban-rail">
-        {Array.from({ length: 4 }).map((_, col) => (
-          <div key={col} className="board-kanban-column">
-            <div className="board-kanban-column-header">
-              <Skeleton variant="avatar" width={7} height={7} />
-              <Skeleton variant="text" width={88} />
-            </div>
-            <div className="flex flex-col gap-2 p-3">
-              {Array.from({ length: 3 - (col % 2) }).map((_, card) => (
-                <Skeleton key={card} variant="card" height={66} />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl, queueSlot, initialTab }: Props) {
   const isMobile = useIsMobile();
@@ -108,8 +76,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [hasLoaded, setHasLoaded] = useState(false);
   // Transient feedback when an optimistic mutation fails and is reverted.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadBoardPreference("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadBoardPreference("cave:board:groupBy", "status", ["status", "familiar", "project"]));
   // Per-status WIP limits (loaded after mount to avoid SSR localStorage access).
   const [wipLimits, setWipLimits] = useState<WipLimits>({});
   useEffect(() => { setWipLimits(readWipLimits()); }, []);
@@ -122,7 +90,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   }, []);
   // Gantt has its own grouping: by project (one bar per task) or by task (one
   // bar per checklist step). Separate from the kanban/table groupBy above.
-  const [ganttGroup, setGanttGroup] = useState<"project" | "task" | "familiar">(() => loadPref("cave:board:ganttGroup", "project", ["project", "task", "familiar"]) as "project" | "task" | "familiar");
+  const [ganttGroup, setGanttGroup] = useState<"project" | "task" | "familiar">(() => loadBoardPreference("cave:board:ganttGroup", "project", ["project", "task", "familiar"]) as "project" | "task" | "familiar");
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);

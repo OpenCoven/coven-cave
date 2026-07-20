@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 
 const intake = readFileSync(new URL("./stitch-intake.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./grimoire-view.tsx", import.meta.url), "utf8");
+const navState = readFileSync(new URL("./grimoire-nav-state.ts", import.meta.url), "utf8");
 const knowledgeRoute = readFileSync(new URL("../app/api/knowledge/route.ts", import.meta.url), "utf8");
 
 describe("stitch intake panel", () => {
@@ -103,7 +104,7 @@ describe("stitch provenance strip", () => {
 describe("grimoire stitch integration", () => {
   it("adds the stitch-new selection without breaking persistence or deep links", () => {
     assert.match(view, /kind: "stitch-new"/, "the intake opens as a tab");
-    assert.match(view, /t\.kind !== "knowledge-new" && t\.kind !== "stitch-new"/, "drafts are not persisted");
+    assert.match(navState, /t\.kind !== "knowledge-new" && t\.kind !== "stitch-new"/, "drafts are not persisted");
     assert.match(view, /if \(sel\.kind === "stitch-new"\) return "New stitch";/, "the tab is labelled");
     assert.match(view, /<StitchIntake/, "the intake panel renders for stitch-new");
     assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: entryId \}\)/, "a sewn entry replaces the intake tab");
@@ -114,6 +115,6 @@ describe("grimoire stitch integration", () => {
     assert.match(view, /Delete this stitch\?/, "delete confirm uses the new vocabulary");
     assert.match(view, /Stitch deleted/, "delete announce uses the new vocabulary");
     assert.match(view, /kind: "knowledge"/, "internal ids/hash kinds stay stable for deep links");
-    assert.match(view, /GRIMOIRE_HASH_PREFIX/, "hash routing unchanged");
+    assert.match(navState, /GRIMOIRE_HASH_PREFIX/, "hash routing unchanged");
   });
 });

@@ -19,6 +19,10 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const attachmentDelivery = await readFile(
+  new URL("./chat-send-attachments.ts", import.meta.url),
+  "utf8",
+);
 const streamEvents = await readFile(
   new URL("../../../../lib/stream-events.ts", import.meta.url),
   "utf8",
@@ -71,13 +75,13 @@ assert.match(
 );
 
 assert.match(
-  chatRoute,
+  attachmentDelivery,
   /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
   "Saved image payloads should be private temp files (mode 0600)",
 );
 
 assert.match(
-  chatRoute,
+  attachmentDelivery,
   /crypto\.randomUUID\(\)\}\.\$\{imageExtension\(attachment\.mimeType\)/,
   "Temp image filenames should be random with an extension derived from the validated mime type, never user input",
 );

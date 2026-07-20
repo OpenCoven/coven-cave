@@ -5,10 +5,20 @@ import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 import { useTauriPlatform } from "@/lib/tauri-platform";
+import { withNativeBrowserSequence } from "@/lib/native-browser-lifecycle";
 import {
-  deactivateAllNativeBrowserWebviews,
-  withNativeBrowserSequence,
-} from "@/lib/native-browser-lifecycle";
+  deactivateNativeBrowserTabs,
+  loadTauriBrowserBridge,
+  type TauriBrowserBridge,
+} from "@/lib/browser-native-bridge";
+import {
+  BROWSER_MOTION_WINDOW_MS,
+  BROWSER_RECONCILE_INTERVAL_MS,
+  nodeContainsNativeWebviewCover,
+  recordBrowserReconcile,
+  surfaceIsCovered,
+  WEBVIEW_OFFSCREEN,
+} from "@/lib/browser-native-overlay";
 import {
   createExpectedBrowserNavigation,
   decideBrowserNavigationEvent,
@@ -16,6 +26,18 @@ import {
   type ExpectedBrowserNavigation,
 } from "@/lib/browser-navigation-queue";
 import { TabFavicon } from "./browser-tab-favicon";
+import {
+  HOME_URL,
+  browserTabTitle,
+  loadPinnedTabs,
+  loadRailPinned,
+  normalizeBrowserUrl,
+  savePinnedTabs,
+  saveRailPinned,
+  type BrowserTab,
+} from "./browser-tab-state";
+
+export type { BrowserTab } from "./browser-tab-state";
 
 // Browser pane — uses Tauri's child WebviewBuilder under the hood. A real
 // Chromium webview is overlaid on top of the placeholder <div> below; we
@@ -29,124 +51,7 @@ import { TabFavicon } from "./browser-tab-favicon";
 // - Pinned tabs persisted in localStorage (user-customizable)
 // - Each tab uses a separate native webview label: `<paneLabel>-tab-<id>`
 
-type TauriBridge = {
-  invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-  listen: <T = unknown>(event: string, cb: (e: { payload: T }) => void) => Promise<() => void>;
-};
-
-async function loadTauri(): Promise<TauriBridge | null> {
-  if (typeof window === "undefined") return null;
-  // @ts-expect-error Tauri runtime
-  if (!window.__TAURI_INTERNALS__) return null;
-  const { invoke } = await import("@tauri-apps/api/core");
-  const { listen } = await import("@tauri-apps/api/event");
-  return { invoke, listen };
-}
-
-function invokeNativeBrowserDeactivateAll(bridge: TauriBridge | null, label: string): void {
-  if (bridge) {
-    void bridge.invoke("browser_deactivate_all", withNativeBrowserSequence({ label }));
-    return;
-  }
-  deactivateAllNativeBrowserWebviews(label);
-}
-
-const HOME_URL = "https://opencoven.ai";
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
-const PINNED_STORAGE_KEY = "cave.browser.pinnedTabs.v1";
-const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
-
-export type BrowserTab = {
-  id: string;
-  url: string;
-  title: string;
-  pinned: boolean;
-  kind: "pinned";
-};
-
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return HOME_URL;
-
-  // Preserve existing convenience behavior first.
-  let candidate = trimmed;
-  if (/^localhost(:\d+)?(\/.*)?$/i.test(trimmed)) {
-    candidate = `http://${trimmed}`;
-  } else if (/^[a-z0-9-]+\.[a-z]{2,}/i.test(trimmed) && !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
-    candidate = `https://${trimmed}`;
-  }
-
-  // Only allow http(s) URLs to reach the iframe src.
-  try {
-    const parsed = new URL(candidate);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.toString();
-    }
-  } catch {
-    // fall through to safe search
-  }
-
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-}
-
-function shortTitle(url: string, title: string): string {
-  if (title && title !== url) return title.slice(0, 22);
-  try {
-    const u = new URL(url);
-    if (u.hostname === "localhost") return `localhost:${u.port || "80"}`;
-    return u.hostname.replace(/^www\./, "").slice(0, 18);
-  } catch {
-    return url.slice(0, 18);
-  }
-}
-
-function loadPinnedTabs(): BrowserTab[] {
-  if (typeof window === "undefined") return defaultPinnedTabs();
-  try {
-    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
-    // Filter out stale non-pinned entries persisted by older versions
-    // (e.g. the auto-injected localhost tab).
-    if (raw) return (JSON.parse(raw) as BrowserTab[]).filter((t) => t.kind === "pinned");
-  } catch { /* ignore */ }
-  return defaultPinnedTabs();
-}
-
-function savePinnedTabs(tabs: BrowserTab[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(tabs));
-  } catch { /* ignore */ }
-}
-
-// The tab rail opens pinned by default so the tabs are visible on first open;
-// the user can auto-hide it and we remember that choice across sessions.
-function loadRailPinned(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const raw = window.localStorage.getItem(RAIL_PINNED_STORAGE_KEY);
-    if (raw === "0") return false;
-    if (raw === "1") return true;
-  } catch { /* ignore */ }
-  return true;
-}
-
-function saveRailPinned(pinned: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(RAIL_PINNED_STORAGE_KEY, pinned ? "1" : "0");
-  } catch { /* ignore */ }
-}
-
-function defaultPinnedTabs(): BrowserTab[] {
-  return [
-    { id: "home", url: HOME_URL, title: "OpenCoven", pinned: true, kind: "pinned" },
-    // OpenCoven docs + feedback live here as default pinned tabs (they used to
-    // be a dedicated "Coven" sidebar surface — folded into the browser instead).
-    { id: "opencoven-docs", url: "https://docs.opencoven.ai", title: "Docs", pinned: true, kind: "pinned" },
-    { id: "opencoven-feedback", url: "https://feedback.opencoven.ai", title: "Feedback", pinned: true, kind: "pinned" },
-    { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
-  ];
-}
 
 // ── Native-overlay occlusion ─────────────────────────────────────────
 // The embedded browser webview is an OS-level layer painted ABOVE the entire
@@ -160,68 +65,6 @@ function defaultPinnedTabs(): BrowserTab[] {
 //      (drag-to-split drop targets, custom covers) sits over it. Transient
 //      live regions (toasts) are ignored so a corner toast doesn't blank the
 //      page.
-function surfaceIsCovered(surface: HTMLElement, rect: DOMRect): boolean {
-  const overlays = document.querySelectorAll(NATIVE_WEBVIEW_COVER_SELECTOR);
-  for (const overlay of overlays) {
-    if (overlay.getClientRects().length > 0) return true;
-  }
-  const inset = 12;
-  const points: Array<[number, number]> = [
-    [rect.left + rect.width / 2, rect.top + rect.height / 2],
-    [rect.left + inset, rect.top + inset],
-    [rect.right - inset, rect.top + inset],
-    [rect.left + inset, rect.bottom - inset],
-    [rect.right - inset, rect.bottom - inset],
-  ];
-  for (const [x, y] of points) {
-    const hit = document.elementFromPoint(x, y);
-    if (!hit || surface.contains(hit)) continue;
-    if (hit.closest('[role="status"], [role="alert"], [aria-live]')) continue;
-    return true;
-  }
-  return false;
-}
-
-const NATIVE_WEBVIEW_COVER_SELECTOR =
-  '[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-native-webview-cover="true"]';
-const BROWSER_RECONCILE_INTERVAL_MS = 100;
-const BROWSER_MOTION_WINDOW_MS = 400;
-const BROWSER_RECONCILE_METRICS_KEY = "__CAVE_BROWSER_RECONCILE_METRICS__";
-
-type BrowserReconcileMetrics = {
-  count: number;
-  totalDurationMs: number;
-  lastDurationMs: number;
-  startedAt: number;
-};
-
-function recordBrowserReconcile(durationMs: number): void {
-  const metricsWindow = window as typeof window & {
-    [BROWSER_RECONCILE_METRICS_KEY]?: BrowserReconcileMetrics;
-  };
-  const metrics = metricsWindow[BROWSER_RECONCILE_METRICS_KEY] ?? {
-    count: 0,
-    totalDurationMs: 0,
-    lastDurationMs: 0,
-    startedAt: Date.now(),
-  };
-  metrics.count += 1;
-  metrics.totalDurationMs += durationMs;
-  metrics.lastDurationMs = durationMs;
-  metricsWindow[BROWSER_RECONCILE_METRICS_KEY] = metrics;
-}
-
-function nodeContainsNativeWebviewCover(node: Node): boolean {
-  return node instanceof Element && (
-    node.matches(NATIVE_WEBVIEW_COVER_SELECTOR) ||
-    node.querySelector(NATIVE_WEBVIEW_COVER_SELECTOR) !== null
-  );
-}
-
-// Mirrors OFFSCREEN_X/OFFSCREEN_Y in src-tauri/src/browser.rs — the "hidden"
-// position for a native webview.
-const WEBVIEW_OFFSCREEN = -10000;
-
 export type BrowserPaneHandle = {
   navigateTo: (url: string) => void;
 };
@@ -232,7 +75,7 @@ export type BrowserPaneHandle = {
 export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
-  const [bridge, setBridge] = useState<TauriBridge | null>(null);
+  const [bridge, setBridge] = useState<TauriBrowserBridge | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const platform = useTauriPlatform();
   const nativeBrowserAvailable = platform === "desktop";
@@ -316,7 +159,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     }
     let cancelled = false;
     void (async () => {
-      const b = await loadTauri();
+      const b = await loadTauriBrowserBridge();
       if (cancelled) return;
       if (!b) setUnavailable(true);
       else setBridge(b);
@@ -329,11 +172,11 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // Hide its OS-level WebViews before the React surface leaves, but retain
   // them so re-entry cannot race an asynchronous close still present in
   // Tauri's WebView registry. bridge arrives asynchronously, hence the ref.
-  const bridgeRef = useRef<TauriBridge | null>(null);
+  const bridgeRef = useRef<TauriBrowserBridge | null>(null);
   bridgeRef.current = bridge;
   useEffect(() => {
     return () => {
-      invokeNativeBrowserDeactivateAll(bridgeRef.current, label);
+      deactivateNativeBrowserTabs(bridgeRef.current, label);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -343,7 +186,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // cover visible controls elsewhere in the app.
   useEffect(() => {
     if (active) return;
-    invokeNativeBrowserDeactivateAll(bridge, label);
+    deactivateNativeBrowserTabs(bridge, label);
   }, [active, bridge, label]);
 
   // ── Page-load + title events ──────────────────────────────────────
@@ -449,7 +292,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // 120-150ms shell and rail transitions that can move the surface.
   useEffect(() => {
     if (!active || !bridge || !nativeBrowserAvailable) {
-      if (!active) invokeNativeBrowserDeactivateAll(bridge, label);
+      if (!active) deactivateNativeBrowserTabs(bridge, label);
       return;
     }
     const surface = surfaceRef.current;
@@ -639,7 +482,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       void bridge.invoke("browser_navigate", navigationArgs).then(() => {
         if (cancelled) return;
         const pending = pendingNavigationRef.current;
-        if (pending && normalizeUrl(pending.url) === activeTab.url) {
+        if (pending && normalizeBrowserUrl(pending.url) === activeTab.url) {
           acknowledgePendingNavigation(pending);
         }
       }).catch(() => {
@@ -710,7 +553,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
 
   // ── Per-tab navigation ────────────────────────────────────────────
   const navigateTo = (raw: string) => {
-    const next = normalizeUrl(raw);
+    const next = normalizeBrowserUrl(raw);
     expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     const nextTabs = tabs.map((t) =>
       t.id === activeTabId ? { ...t, url: next } : t,
@@ -904,7 +747,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         <div role="tablist" aria-orientation="vertical" aria-label="Browser tabs" className="flex w-full flex-col items-center">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
-          const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
+          const title = browserTabTitle(tab.url, tabTitles[tab.id] ?? tab.title);
           return (
             <div
               key={tab.id}
