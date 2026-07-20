@@ -331,5 +331,3 @@ export function CheckpointSection({
     </div>
   );
 }
-
-
