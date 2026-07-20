@@ -316,7 +316,6 @@ fi
 
 if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
   require_tool security
-  setup_notary_keychain_profile
 elif [ "$NOTARY_AUTH_MODE" = "api-key" ]; then
   require_file "$NOTARY_KEY_FILE"
   echo "==> Validating App Store Connect API key"
@@ -419,6 +418,12 @@ create_dmg_with_retry
 echo "==> Signing DMG container"
 codesign --force --timestamp \
   --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+
+if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
+  # Do not expose a usable notarization credential handle to build or
+  # packaging subprocesses. Create it only once the artifact is ready.
+  setup_notary_keychain_profile
+fi
 
 echo "==> Submitting DMG for notarization"
 notarize_with_retries
