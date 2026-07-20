@@ -8,6 +8,7 @@ const source = [
   readFileSync(new URL("./automations/cron-detail-primitives.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/automation-lists.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/templates-panel.tsx", import.meta.url), "utf8"),
