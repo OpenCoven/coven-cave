@@ -96,6 +96,16 @@ assert.match(
   /if \(!open \|\| heartbeatIdle\) return;[\s\S]{0,400}setInterval\(\(\) => \{\s*\n\s*void refresh\(\);\s*\n\s*void refreshNpmLane\(\);/,
   "the recurring status/npm-lane interval is gated on the idle check",
 );
+assert.match(
+  source,
+  /const npmLaneRefreshInFlightRef = useRef\(false\)/,
+  "overlapping open-time and heartbeat npm-lane probes share an in-flight guard",
+);
+assert.match(
+  source,
+  /const refreshNpmLane = useCallback\(async \(\) => \{\s*if \(npmLaneRefreshInFlightRef\.current\) return;\s*npmLaneRefreshInFlightRef\.current = true;[\s\S]{0,1400}finally \{\s*npmLaneRefreshInFlightRef\.current = false;/,
+  "the npm-lane in-flight guard is released after every response outcome",
+);
 
 // Finishing setup must record the dismissal exactly like "Skip for now" —
 // otherwise the workspace auto-open relaunches the whole wizard for a

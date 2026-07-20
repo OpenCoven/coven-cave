@@ -171,6 +171,10 @@ export function OnboardingOverlay({
   statusRef.current = status;
   const statusGenerationRef = useRef(0);
   const statusRefreshInFlightRef = useRef(false);
+  // The open-time load and the heartbeat's immediate tick can overlap before
+  // the first render settles. Keep that from issuing two identical lane
+  // probes (unlike status, this request was not previously coalesced).
+  const npmLaneRefreshInFlightRef = useRef(false);
   const autoFinishFiredRef = useRef(false);
   const finishOnboarding = useCallback(() => {
     try {
@@ -233,6 +237,8 @@ export function OnboardingOverlay({
   }, []);
 
   const refreshNpmLane = useCallback(async () => {
+    if (npmLaneRefreshInFlightRef.current) return;
+    npmLaneRefreshInFlightRef.current = true;
     try {
       const res = await fetch("/api/onboarding/install", { cache: "no-store" });
       if (!res.ok) return;
@@ -253,6 +259,8 @@ export function OnboardingOverlay({
       }
     } catch {
       /* Retain the last observed lane state until the next successful poll. */
+    } finally {
+      npmLaneRefreshInFlightRef.current = false;
     }
   }, []);
 
