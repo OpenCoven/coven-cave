@@ -17,7 +17,6 @@ import {
   PALETTE_CATEGORIES,
   PALETTE_CATEGORY_LABEL,
   filterPaletteRows,
-  paletteCategoryForKind,
   paletteResultCounts,
   paletteResultSummary,
   type PaletteCategory,
@@ -32,46 +31,7 @@ import {
   settingsSectionLabel,
   type SettingsIndexEntry,
 } from "@/components/settings-sections";
-
-function shortProjectRoot(root: string): string {
-  const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
-  return parts.length <= 2 ? root : `…/${parts.slice(-2).join("/")}`;
-}
-
-// Section label for a row in empty-query "browse" mode, so the default palette
-// reads as grouped clusters (Recent / Go to / …) instead of one flat dump.
-// Returns "" for rows that never appear while browsing (salem-answer, etc.).
-function browseGroup(row: Row): string {
-  switch (row.kind) {
-    case "session":
-      return "Recent chats";
-    case "command":
-      if (row.id.startsWith("surface:")) return "Go to";
-      if (row.id.startsWith("project:")) return "Projects";
-      return "Commands";
-    case "familiar":
-      return "Familiars";
-    case "card":
-      return "Tasks";
-    case "coven-memory":
-    case "fs-memory":
-      return "Memory";
-    case "shortcut":
-      return "Shortcuts";
-    case "setting":
-      return "Settings";
-    default:
-      return "";
-  }
-}
-
-// Section label for a row, used to print group headers. Conversation hits get a
-// "Conversations" header in BOTH browse and search mode (they're a distinct
-// content-search cluster); everything else only groups while browsing.
-function paletteGroup(row: Row, browsing: boolean): string {
-  if (browsing) return browseGroup(row);
-  return PALETTE_CATEGORY_LABEL[paletteCategoryForKind(row.kind)];
-}
+import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);

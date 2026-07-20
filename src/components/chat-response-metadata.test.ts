@@ -5,6 +5,7 @@ import { formatRuntime } from "../lib/chat-response-metadata.ts";
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const chatTurnState = await readFile(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const conversations = await readFile(new URL("../lib/cave-conversations.ts", import.meta.url), "utf8");
 const sessionMerge = await readFile(new URL("../lib/session-list-merge.ts", import.meta.url), "utf8");
 const types = await readFile(new URL("../lib/types.ts", import.meta.url), "utf8");
@@ -89,7 +90,7 @@ assert.match(
 );
 
 assert.match(
-  chatView,
+  chatTurnState,
   /responseMetadata\?: ChatResponseMetadata/,
   "Chat turns should carry response metadata for per-response display",
 );
@@ -101,8 +102,8 @@ assert.match(
 );
 
 assert.match(
-  chatView,
-  /durationMs: t\.durationMs,[\s\S]*responseMetadata: t\.responseMetadata,/,
+  chatTurnState,
+  /durationMs: turn\.durationMs,[\s\S]*responseMetadata: turn\.responseMetadata,/,
   "History loading should restore persisted response metadata",
 );
 

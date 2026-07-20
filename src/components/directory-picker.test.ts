@@ -34,6 +34,8 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
   assert.match(src, /Select this folder/, "can select the current folder");
+  assert.match(src, /import \{ PROJECT_ROOT_WORKSPACE_HELP \} from "@\/lib\/project-root-guidance"/, "imports the shared workspace guidance copy");
+  assert.match(src, /\{PROJECT_ROOT_WORKSPACE_HELP\}/, "renders the shared workspace guidance in the modal footer");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
   // cave-psp8: a true modal must trap focus + restore it on close, not just listen

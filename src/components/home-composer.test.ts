@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const destinations = await readFile(new URL("./home/home-destinations.ts", import.meta.url), "utf8");
 const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
-const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 
 assert.match(

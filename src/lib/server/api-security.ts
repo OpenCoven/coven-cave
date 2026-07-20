@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
+
+import { isLocalOrigin } from "./local-origin.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
@@ -17,8 +19,11 @@ function isLocalHost(value: string | null): boolean {
 }
 
 export function rejectNonLocalRequest(req: Request): NextResponse | null {
-  const host = req.headers.get("host");
-  if (!isLocalHost(host)) {
+  // Delegate the mobile-proxy marker, packaged sidecar-token, and loopback-Host
+  // checks to the shared isLocalOrigin gate so the desktop-only security policy
+  // lives in exactly one place (see local-origin.ts). We then layer this
+  // route family's stricter Origin-header parsing on top.
+  if (!isLocalOrigin(req)) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

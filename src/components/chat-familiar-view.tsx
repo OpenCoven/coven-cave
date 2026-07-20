@@ -27,6 +27,7 @@ import type { AdapterReport } from "@/lib/harness-adapters";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import { relativeTime } from "@/lib/relative-time";
+import { navigateFamiliarSurface } from "@/lib/familiar-surface-navigation";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
@@ -92,11 +93,6 @@ function KindBadge({ kind }: { kind: string }) {
 /** Navigate the workspace to a management surface (Roles / Capabilities /
  *  Marketplace hub) through the same `cave:navigate-mode` bridge every other
  *  cross-surface link uses. */
-function navigateMode(mode: "roles" | "capabilities" | "marketplace"): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
-}
-
 /** Teach-state CTA — every empty state gets a real affordance, not a
  *  dead-end sentence naming a page. */
 function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
@@ -642,7 +638,7 @@ function FamiliarCapabilityPanel({
         {activeRoles.length === 0 ? (
           <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
             <p>No roles active for this familiar.</p>
-            <CapCta label="Open Roles →" onClick={() => navigateMode("roles")} />
+            <CapCta label="Open Roles →" onClick={() => navigateFamiliarSurface("roles")} />
           </div>
         ) : (
           <div className="familiar-tab__list">
@@ -717,7 +713,7 @@ function FamiliarCapabilityPanel({
             {familiarSkills.length === 0 ? (
               <div className="px-1 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 <p>No skills installed for this familiar yet.</p>
-                <CapCta label="Browse Marketplace →" onClick={() => navigateMode("marketplace")} />
+                <CapCta label="Browse Marketplace →" onClick={() => navigateFamiliarSurface("marketplace")} />
               </div>
             ) : (
               <ul className="familiar-tab__rows pt-1">
@@ -772,7 +768,7 @@ function FamiliarCapabilityPanel({
         {nonMcpPlugins.length === 0 ? (
           <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
             <p>No plugins in the latest runtime capability scan.</p>
-            <CapCta label="Open Capabilities →" onClick={() => navigateMode("capabilities")} />
+            <CapCta label="Open Capabilities →" onClick={() => navigateFamiliarSurface("capabilities")} />
           </div>
         ) : (
           <div className="familiar-tab__list">

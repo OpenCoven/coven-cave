@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const destinations = await readFile(new URL("./home/home-destinations.ts", import.meta.url), "utf8");
 
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
-  source,
+  destinations,
   /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?\}/,
   "PLACEHOLDERS must be a Record<Destination, string> with chat/board keys",
 );

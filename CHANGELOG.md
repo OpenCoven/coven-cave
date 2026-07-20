@@ -7,8 +7,32 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-19
+
+> 🏠 **Home-first, safer, and calmer.** The Cave now opens on Home with a redesigned navigation and chat interface, a broad security-hardening pass locks down mobile and project surfaces, iOS chat gets noticeably smoother, and a neutral-graphite repaint unifies the whole design system.
+
+### Added
+- **Home-first launch + cross-surface sidebar memory** — every fresh launch opens on the Home surface (chat stays one step away via ⌘2 / the composer; `?mode=` deep links and `#chat-…` hashes still land where they point), and the sidebar's open/collapsed state is now remembered across launches and surfaces via one global preference (`cave:shell:nav-open`) (cave-igs4, #3567 area).
+- **Chat & navigation revamp** — an icon rail information architecture, a single command bar, a progressive-disclosure composer, a left side-panel on every destination page, and a chats rail that sits beside the global nav with overflow-menu actions (#3487, cave-rf2q).
+- **First-project onboarding** — a first-project gate with an inline folder picker, chat gated on the first project, project-root guidance, and closed gate-bypasses (#3566).
+- **Rituals & queue** — rituals sidepanel redesign with per-item mute/snooze/done, a minimalist rituals overview, a queue triage toolbar (search · priority bands · sort) with a bead inspector, file-bead + claim-for-familiar flows, and tamed N-bead lanes (cave-u2p1, cave-p63a, cave-19jy).
+- **Dashboard & analytics** — a bento-grid dashboard, a progression band (renown tier, next-rung meter, ritual streak), a coven ritual-streak KPI, and an ambient ritual-streak chip in the daily summary (cave-g9os, cave-p5d0, cave-eg4g, cave-qvox).
+- **Design-system tooling** — an ESLint design-token lint gate plus a TSX tokenize codemod, and the danger/sunken token vocabulary formalized (#3494, cave-309m).
+- **More surfaces & choices** — doc search moved into the header, voice-started chats, comma-separated stop-phrase options, per-familiar backdrop switch, mobile bottom tabs derived from the sidebar, degraded-familiar rendering on the weave rail, dev phone-pairing self-provisioning, a PR-merge reward flare on the chat GitHub card, and clickable recent-memory peek rows on familiar cards (#3283, cave-kf8p, cave-os73, cave-hshy, cave-00w0).
+
+### Security
+- **Mobile & project surface lockdown** — reject mobile access on local-only APIs while preserving write surfaces for mobile project APIs, gate project stores on Cave-home reconciliation, exempt direct loopback peers from the mobile access-token gate, remove a hijackable iOS app URL scheme, reject SVG familiar avatars, require local confirmation for installs, and use timing-safe compares for sidecar token checks (#3560, #3561, #3558, #3556, #3489-area).
+
 ### Changed
-- **Home-first launch + sidebar memory** — every fresh launch opens on the Home surface (chat stays one step away via ⌘2 / the composer; `?mode=` deep links and `#chat-…` hashes still land where they point), and the sidebar's open/collapsed state is now remembered across launches AND surfaces: one global preference (`cave:shell:nav-open`) replaces the per-panel-group layouts that let Home and Chat disagree about the nav (cave-igs4).
+- **Neutral-graphite repaint** — the default Coven palette was repainted toward neutral graphite and default surfaces darkened for a calmer, more unified look (#3486, #3567).
+- **Navigation consolidation** — standalone routes consolidated behind a redirect pattern with all 20 pages classified, formalized alias modes (canonical/alias split), and one canonical name per surface (Tasks & Rituals everywhere) (cave-m4ih).
+- **iOS chat performance** — thread persistence debounced and moved off the main thread, assistant stream tokens coalesced, unchanged bubbles skipped while typing, and ISO-8601 parsers cached (#3456).
+
+### Fixed
+- **Chat resilience** — recover stale transcript after a stream drop, bound conversation writes with a documented write contract, canonicalize agent attachment paths, prevent deleted sessions from reappearing, abort stale mobile-handoff modal fetches, and add a friendly zero-session empty state (#3476, #3493, #3463).
+- **Windows & daemon** — fixed Windows Cave launch and Hermes chat, daemon status during Cave-home lock contention, deferred notary credentials until submission, avoided daemon npm install during signed updates, let CLI updates proceed on launchd-supervised daemons, and honored models in daemon-backed sessions (#3495, #3488, #3557, #3559).
+- **Canvas, board & charts** — stop corrupt stores from destroying sketches and harden the artifact sanitizer, preserve explicit artifact updates after dedupe, stop byte-identical duplicate saves, reject invalid board status/priority on create, and fix chart mount/label rendering (cave-byr5, cave-spq7, cave-pn9v).
+- **Projects, run-history & misc** — allow creating projects anywhere under `$HOME`, harden flow/workflow run-history mutators, keep archived chats out of the browse-mode Recent list, and keep nav/chats panes solid over the backdrop image (#3480, #3489, cave-lzk2).
 
 ## [0.1.3] - 2026-07-18
 

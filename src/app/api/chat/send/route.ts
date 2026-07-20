@@ -1469,6 +1469,13 @@ export async function POST(req: Request) {
   // fallback (and every other adapter keeps it unconditionally).
   const copilotStream =
     !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+  // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
+  // its Coven adapter convention requires a POSIX shell shim to translate the
+  // positional prompt that `coven run` appends. The shim cannot be installed
+  // beside Hermes's Windows executable, which left Cave showing only a timer.
+  // Spawn Hermes directly for native local chats, as we already do for the
+  // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  const hermesDirect = !sshRuntime && binding.harness === "hermes";
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
@@ -1516,6 +1523,12 @@ export async function POST(req: Request) {
         addDirs: grantDirs,
       });
     }
+    if (hermesDirect) {
+      const a = ["chat", "--source", "coven", "-Q"];
+      if (resumeSessionId) a.push("--resume", resumeSessionId);
+      a.push("--query", prompt);
+      return a;
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
@@ -1552,10 +1565,11 @@ export async function POST(req: Request) {
   // id exists only in Cave's local transcript store. Copilot emits "No
   // session, task, or name matched '<id>'" on `--resume` misses — including
   // every conversation recorded before the direct-stream path existed, whose
-  // harnessSessionId lives only in coven's store. In these cases we retry
-  // once without the resume flag so the chat starts fresh instead of erroring.
+  // harnessSessionId lives only in coven's store. Hermes emits "Session not
+  // found: <id>" when its local session is gone. In these cases we retry once
+  // without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found:/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -1685,6 +1699,24 @@ export async function POST(req: Request) {
         ).catch(() => undefined);
       };
 
+      // Hermes's `-Q` mode reserves stdout for the reply and writes the
+      // resumable id to stderr as `session_id: <id>`. Buffer stderr because
+      // Node can split that short line across data events.
+      let hermesStderrBuffer = "";
+      const captureHermesSessionFromStderr = (text: string, flush = false) => {
+        if (!hermesDirect || sessionId) return;
+        hermesStderrBuffer += text;
+        const lines = hermesStderrBuffer.split(/\r?\n/);
+        hermesStderrBuffer = flush ? "" : (lines.pop() ?? "");
+        for (const line of lines) {
+          const hermesSession = line.trim().match(/^session_id:\s*(\S+)\s*$/i);
+          if (hermesSession) {
+            announceSession(hermesSession[1]);
+            return;
+          }
+        }
+      };
+
       // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
       // claude stream-json. Text arrives as message deltas + a full-content
       // message frame (deduped by CopilotTextAssembler); tool calls arrive as
@@ -1779,7 +1811,7 @@ export async function POST(req: Request) {
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
-        const isJson = line.startsWith("{") && line.endsWith("}");
+        const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
           return;
@@ -1904,6 +1936,15 @@ export async function POST(req: Request) {
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
+        // Older Hermes versions can print the durable session id to stdout.
+        // The current quiet path writes it to stderr (captured separately).
+        if (hermesDirect) {
+          const hermesSession = trimmed.match(/^Session ID:\s*(\S+)\s*$/i);
+          if (hermesSession && !sessionId) {
+            announceSession(hermesSession[1]);
+            return;
+          }
+        }
         // Snapshot error-looking stdout lines for the empty-response diagnostic.
         recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
@@ -1987,12 +2028,17 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot stream turns spawn the adapter binary directly with
-                // its manifest-declared JSONL args; everything else goes
+                // Copilot's JSONL mode and Hermes's documented one-shot mode
+                // are direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const { command, fixedArgs } = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
-                  : covenLaunchCommand();
+                  : hermesDirect
+                    ? {
+                        command: process.platform === "win32" ? "hermes.exe" : "hermes",
+                        fixedArgs: [] as string[],
+                      }
+                    : covenLaunchCommand();
                 return spawn(command, [...fixedArgs, ...spawnArgs], {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -2028,6 +2074,7 @@ export async function POST(req: Request) {
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
               adapterConflict = detectBuiltinAdapterConflict(text);
@@ -2057,7 +2104,9 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
-                      : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+                      : hermesDirect
+                        ? "Hermes CLI not found on PATH. Install Hermes, then try again."
+                        : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });
@@ -2068,6 +2117,7 @@ export async function POST(req: Request) {
           });
 
           child.on("close", () => {
+            captureHermesSessionFromStderr("", true);
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,

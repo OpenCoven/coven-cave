@@ -2,7 +2,7 @@
 
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
@@ -15,21 +15,16 @@ import {
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { Icon, type IconName } from "@/lib/icon";
-import { AuthedImage } from "@/components/ui/authed-image";
 import type { Familiar } from "@/lib/types";
-import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
+import { StandardSelect } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { useReplyRecommendation, type ReplyRecommendationState } from "@/lib/use-reply-recommendation";
 import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { IconButton } from "@/components/ui/icon-button";
-import { MarkdownBlock } from "@/components/message-bubble";
-import { copyText } from "@/lib/clipboard";
 import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
-import { extractNextPaths } from "@/lib/next-paths";
-import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
@@ -47,119 +42,27 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
+import {
+  FamiliarMark,
+  QuickChatIdentity,
+  QuickChatSelect,
+  type QuickChatSelectOption,
+} from "./quick-chat-primitives";
 
-export type QuickChatSelectOption<T extends string> = StandardSelectOption<T>;
+export {
+  FamiliarMark,
+  QuickChatIdentity,
+  QuickChatSelect,
+  type QuickChatSelectOption,
+} from "./quick-chat-primitives";
+export { QuickChatThread } from "./quick-chat-thread";
 
-// One-tap starters for a cold thread — they fill the composer, not send.
-export const QUICK_CHAT_SUGGESTIONS = [
-  "Summarize what needs my attention",
-  "Draft a short status update",
-  "What changed recently?",
-];
+export { QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 
 // Stable empty reference so QuickChatComposer can pass `messages ?? EMPTY` to
 // the recommendation hook without spawning a fresh array (and effect churn)
 // every render.
 const EMPTY_MESSAGES: QuickChatMessage[] = [];
-
-function initials(familiar: Familiar): string {
-  return (familiar.display_name || familiar.id)
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-export function FamiliarMark({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" }) {
-  const sizeClass = size === "md" ? "h-6 w-6 text-[length:var(--text-2xs)]" : "h-5 w-5 text-[length:var(--text-2xs)]";
-  return (
-    <AuthedImage
-      src={familiar.avatarUrl}
-      alt=""
-      className={`${sizeClass} rounded-[var(--radius-control)] object-cover`}
-      fallback={
-        <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--fg-primary)]`}>
-          {initials(familiar)}
-        </span>
-      }
-    />
-  );
-}
-
-// ── Header identity ──────────────────────────────────────────────────────────
-// The avatar + name + handle block both quick-chat surfaces open with.
-
-export function QuickChatIdentity({
-  familiar,
-  loading,
-  as: Heading = "h2",
-}: {
-  familiar: Familiar | null;
-  loading: boolean;
-  /** Heading level — the tray window is a full page (h1), the overlay a dialog (h2). */
-  as?: "h1" | "h2";
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      {familiar ? (
-        <FamiliarMark familiar={familiar} size="md" />
-      ) : (
-        <Icon name="ph:chat-circle-dots" width={20} aria-hidden />
-      )}
-      <div className="min-w-0">
-        <Heading className="truncate text-sm font-semibold">
-          {familiar ? familiar.display_name : "Quick chat"}
-        </Heading>
-        <p className="truncate text-xs text-[var(--fg-muted)]">
-          {/* While the roster loads, say so — "No familiar selected" reads
-              as an error/empty state when it's really just cold. */}
-          {loading ? "Loading familiars…" : familiar ? `@${familiar.id}` : "No familiar selected"}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function QuickChatSelect<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  disabled,
-  className,
-}: {
-  label: string;
-  value: T;
-  options: QuickChatSelectOption<T>[];
-  onChange: (value: T) => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  return (
-    <StandardSelect
-      label={label}
-      value={value}
-      options={options}
-      onChange={onChange}
-      disabled={disabled}
-      showCaret={false}
-      className={[
-        "quick-chat-select__trigger min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-left text-xs outline-none disabled:cursor-not-allowed disabled:opacity-55",
-        className ?? "",
-      ].filter(Boolean).join(" ")}
-      renderValue={(selected) => (
-        <>
-          <span className="flex min-w-0 items-center gap-2">
-            {selected?.leading ?? (selected?.icon ? <Icon name={selected.icon} width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" /> : null)}
-            <span className="min-w-0 truncate">{selected?.label ?? label}</span>
-          </span>
-          <Icon name="ph:caret-down" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
-        </>
-      )}
-    />
-  );
-}
 
 // ── Controls row ─────────────────────────────────────────────────────────────
 // Familiar picker + thinking-effort + response-speed selects — identical in the
@@ -939,235 +842,4 @@ export function useSuggestionPicker(setDraft: (value: string) => void) {
     [setDraft],
   );
   return { composerRef, pickSuggestion };
-}
-
-// ── Conversation thread ──────────────────────────────────────────────────────
-// Shared between the in-app dropdown and the Tauri standalone window so the two
-// render identical turns. Owns its own scroll container + auto-scroll and marks
-// it as a polite live region so streamed replies are announced.
-
-function QuickChatBubble({
-  message,
-  familiar,
-  isLastAssistant,
-  onRegenerate,
-  onSuggestion,
-}: {
-  message: QuickChatMessage;
-  familiar: Familiar | null;
-  isLastAssistant: boolean;
-  onRegenerate?: () => void;
-  /** Fills the composer (caret in) — next-path chips ride the same path as the
-   *  empty-state starters. */
-  onSuggestion?: (value: string) => void;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  // Show the ✓ for a beat, then hand the button back to "copy".
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  // Next-path suggestions (the agent's parseable trailer) never render as raw
-  // text: the block is stripped from every familiar turn — streaming-safe, the
-  // half-open block hides too — and surfaced as chips on the latest turn only,
-  // so stale suggestions don't stack up the compact tray.
-  const { visible, suggestions } =
-    message.role === "assistant"
-      ? extractNextPaths(message.text)
-      : { visible: message.text, suggestions: [] };
-
-  if (message.role === "user") {
-    return (
-      <div className="quick-chat-turn quick-chat-turn--user">
-        <div className="quick-chat-bubble quick-chat-bubble--user">
-          {message.text ? (
-            <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
-          ) : null}
-          {message.attachments?.length ? (
-            <p className="quick-chat-bubble__files" title={message.attachments.map((a) => a.name).join(", ")}>
-              <Icon name="ph:paperclip" width={11} aria-hidden />
-              {message.attachments.map((a) => a.name).join(" · ")}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  const streaming = message.pending;
-  const canAct = !streaming && visible.length > 0;
-  return (
-    <div className="quick-chat-turn quick-chat-turn--familiar">
-      {familiar ? (
-        <FamiliarMark familiar={familiar} size="sm" />
-      ) : (
-        <span className="grid h-5 w-5 place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)]">
-          <Icon name="ph:sparkle" width={12} aria-hidden />
-        </span>
-      )}
-      <div className="quick-chat-bubble quick-chat-bubble--familiar">
-        {visible ? (
-          streaming ? (
-            // Render partial text plainly while it streams — re-parsing markdown
-            // per token is wasteful and flashes half-open code fences.
-            <p className="whitespace-pre-wrap break-words leading-6">
-              {visible}
-              <span className="quick-chat-caret" aria-hidden />
-            </p>
-          ) : (
-            <div className="quick-chat-md">
-              <MarkdownBlock text={visible} />
-            </div>
-          )
-        ) : streaming ? (
-          <span className="quick-chat-typing" aria-label="Thinking…">
-            <i />
-            <i />
-            <i />
-          </span>
-        ) : (
-          <p className="text-[var(--fg-muted)]">No response.</p>
-        )}
-
-        {message.error ? (
-          <p className="quick-chat-turn__error">{message.error}</p>
-        ) : null}
-
-        {canAct ? (
-          <div className="quick-chat-turn__actions">
-            <IconButton
-              icon={copied ? "ph:check" : "ph:copy"}
-              size="xs"
-              aria-label={copied ? "Copied" : "Copy reply"}
-              title="Copy reply"
-              onClick={() => {
-                // Copy what the user sees — the next-paths trailer stays out.
-                void copyText(visible).then((ok) => {
-                  if (ok) setCopied(true);
-                });
-              }}
-            />
-            {isLastAssistant && onRegenerate ? (
-              <IconButton
-                icon="ph:arrow-clockwise"
-                size="xs"
-                aria-label="Regenerate reply"
-                title="Regenerate"
-                onClick={onRegenerate}
-              />
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Suggested follow-ups render LAST — tap-to-fill, so they sit closest
-            to the composer, mirroring the main chat's next-path row. */}
-        {isLastAssistant && !streaming && onSuggestion && suggestions.length > 0 ? (
-          <div className="quick-chat-next-paths" role="group" aria-label="Suggested next steps">
-            {suggestions.map((suggestion, i) => (
-              <Button
-                key={i}
-                size="xs"
-                variant="secondary"
-                className="quick-chat-next-path"
-                onClick={() => onSuggestion(suggestion)}
-              >
-                {suggestion}
-              </Button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export function QuickChatThread({
-  messages,
-  familiar,
-  emptyIcon = "ph:chat-circle-dots",
-  emptyTitle = familiar ? `Ask ${familiar.display_name} anything` : "Ask a familiar anything",
-  emptyHint = "Replies stream right here · @name to switch familiar · Enter to send",
-  suggestions = QUICK_CHAT_SUGGESTIONS,
-  onSuggestion,
-  onRegenerate,
-}: {
-  messages: QuickChatMessage[];
-  familiar: Familiar | null;
-  emptyIcon?: IconName;
-  emptyTitle?: string;
-  emptyHint?: string;
-  suggestions?: string[];
-  onSuggestion?: (value: string) => void;
-  onRegenerate?: () => void;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // Follow the stream with intent-based release (cave-o8si): scrolling up
-  // detaches, returning to the true bottom re-attaches. The old 48px position
-  // threshold re-stuck a reader pausing near the bottom, so the next streamed
-  // token yanked them back down.
-  const { schedulePin, stick } = useStickToBottom(scrollRef);
-  const lastText = messages.length > 0 ? messages[messages.length - 1].text : "";
-
-  // A new turn (sending / a reply starting) re-engages follow-along; on mount
-  // this doubles as the initial snap to the latest turn.
-  useEffect(() => {
-    stick();
-  }, [messages.length, stick]);
-
-  // Keep the newest turn in view as it streams.
-  useEffect(() => {
-    schedulePin();
-  }, [messages.length, lastText, schedulePin]);
-
-  const lastAssistantId = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      // Local notes (slash output like /help) are assistant-styled but not
-      // familiar replies — never the regenerate / next-paths anchor.
-      if (messages[i].role === "assistant" && !messages[i].local) return messages[i].id;
-    }
-    return null;
-  })();
-
-  return (
-    <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">
-      {messages.length === 0 ? (
-        <div className="quick-chat-empty">
-          <span className="quick-chat-empty__glyph" aria-hidden>
-            <Icon name={emptyIcon} width={22} />
-          </span>
-          <p className="quick-chat-empty__title">{emptyTitle}</p>
-          <p className="quick-chat-empty__hint">{emptyHint}</p>
-          {suggestions.length > 0 ? (
-            <div className="quick-chat-empty__chips">
-              {suggestions.map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  size="xs"
-                  variant="secondary"
-                  className="quick-chat-chip"
-                  onClick={() => onSuggestion?.(suggestion)}
-                >
-                  {suggestion}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        messages.map((message) => (
-          <QuickChatBubble
-            key={message.id}
-            message={message}
-            familiar={familiar}
-            isLastAssistant={message.id === lastAssistantId}
-            onRegenerate={onRegenerate}
-            onSuggestion={onSuggestion}
-          />
-        ))
-      )}
-    </div>
-  );
 }

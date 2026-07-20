@@ -12,10 +12,11 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/familiar-surface-navigation.ts", import.meta.url), "utf8");
 
 test("KindBadge is neutral — the per-kind color map is gone", () => {
   assert.doesNotMatch(src, /const colorMap/, "no per-kind color map");
-  const badge = src.slice(src.indexOf("function KindBadge"), src.indexOf("function navigateMode"));
+  const badge = src.slice(src.indexOf("function KindBadge"), src.indexOf("function CapCta"));
   assert.match(badge, /bg-\[var\(--bg-raised\)\][^"]*text-\[var\(--text-muted\)\]/, "one quiet style for every kind");
   assert.doesNotMatch(badge, /accent-presence|color-success|color-warning/, "no status colors on kind metadata");
 });
@@ -44,11 +45,11 @@ test("skills render through one shared SkillItem row with the path demoted to a 
 });
 
 test("every teach state has a real CTA riding cave:navigate-mode", () => {
-  assert.match(src, /function navigateMode\(mode: "roles" \| "capabilities" \| "marketplace"\)/, "navigate helper");
-  assert.match(src, /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode \} \}\)/, "workspace bridge event");
-  assert.match(src, /No roles active for this familiar\.[\s\S]{0,200}?CapCta label="Open Roles →" onClick=\{\(\) => navigateMode\("roles"\)\}/, "roles empty → Open Roles");
-  assert.match(src, /No plugins in the latest runtime capability scan\.[\s\S]{0,200}?CapCta label="Open Capabilities →" onClick=\{\(\) => navigateMode\("capabilities"\)\}/, "plugins empty → Open Capabilities");
-  assert.match(src, /No skills installed for this familiar yet\.[\s\S]{0,200}?CapCta label="Browse Marketplace →" onClick=\{\(\) => navigateMode\("marketplace"\)\}/, "familiar skills empty → Browse Marketplace");
+  assert.match(navigation, /function navigateFamiliarSurface\(mode: "roles" \| "capabilities" \| "marketplace"\)/, "navigate helper");
+  assert.match(navigation, /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode \} \}\)/, "workspace bridge event");
+  assert.match(src, /No roles active for this familiar\.[\s\S]{0,200}?CapCta label="Open Roles →" onClick=\{\(\) => navigateFamiliarSurface\("roles"\)\}/, "roles empty → Open Roles");
+  assert.match(src, /No plugins in the latest runtime capability scan\.[\s\S]{0,200}?CapCta label="Open Capabilities →" onClick=\{\(\) => navigateFamiliarSurface\("capabilities"\)\}/, "plugins empty → Open Capabilities");
+  assert.match(src, /No skills installed for this familiar yet\.[\s\S]{0,200}?CapCta label="Browse Marketplace →" onClick=\{\(\) => navigateFamiliarSurface\("marketplace"\)\}/, "familiar skills empty → Browse Marketplace");
   assert.match(src, /function CapCta\([\s\S]*?focus-ring/, "CTA buttons carry the shared focus ring");
 });
 

@@ -13,6 +13,29 @@ export type OnboardingStatusPayload = {
   steps?: Record<string, { ok?: boolean }>;
 };
 
+export type StartupOnboardingStatusDecision = {
+  status: OnboardingStatusPayload;
+  cancelled: boolean;
+  manuallyOpened: boolean;
+};
+
+export type OnboardingStatusRequestDecision = {
+  requestId: number;
+  currentRequestId: number;
+};
+
+export type OnboardingAutoFinishGateInput = {
+  open: boolean;
+  enabled: boolean;
+  complete: boolean;
+  fired: boolean;
+};
+
+export type OnboardingAutoFinishGateDecision = {
+  fired: boolean;
+  shouldFinish: boolean;
+};
+
 /**
  * First-run: auto-open onboarding if setup is missing. Keyed on the STRUCTURAL
  * steps (CLI, Coven home, runtime adapters) — not on bare `complete` — because
@@ -32,4 +55,31 @@ export function shouldAutoOpenOnboarding(payload: OnboardingStatusPayload): bool
     !step("covenCli") || !step("covenHome") || !step("adapters");
   const daemonUpButUnfinished = step("daemon");
   return structuralMissing || daemonUpButUnfinished;
+}
+
+export function shouldApplyStartupOnboardingStatus({
+  status,
+  cancelled,
+  manuallyOpened,
+}: StartupOnboardingStatusDecision): boolean {
+  return !cancelled && !manuallyOpened && shouldAutoOpenOnboarding(status);
+}
+
+export function isLatestOnboardingStatusRequest({
+  requestId,
+  currentRequestId,
+}: OnboardingStatusRequestDecision): boolean {
+  return requestId === currentRequestId;
+}
+
+export function advanceOnboardingAutoFinishGate({
+  open,
+  enabled,
+  complete,
+  fired,
+}: OnboardingAutoFinishGateInput): OnboardingAutoFinishGateDecision {
+  if (!open || !enabled) return { fired: false, shouldFinish: false };
+  if (!complete) return { fired, shouldFinish: false };
+  if (fired) return { fired: true, shouldFinish: false };
+  return { fired: true, shouldFinish: true };
 }

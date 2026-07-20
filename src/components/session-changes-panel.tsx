@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
+import { checkpointLabel, formatBytes, splitFilePath } from "@/lib/session-changes-format";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -51,32 +51,6 @@ type DiffState = {
 };
 
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
-
-/** "2026-06-13T07-00-33-123Z.patch" → a short, readable local timestamp. */
-function checkpointLabel(name: string): string {
-  const iso = name.replace(/\.patch$/, "").replace(
-    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/,
-    "$1T$2:$3:$4.$5Z",
-  );
-  const d = new Date(iso);
-  // Honor the app's clock + date preferences instead of the raw browser locale.
-  return Number.isNaN(d.getTime()) ? name : formatTimestamp(iso, readDateTimePrefs());
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function splitFilePath(path: string): { basename: string; dirname: string } {
-  const idx = path.lastIndexOf("/");
-  if (idx < 0) return { basename: path, dirname: "" };
-  return {
-    basename: path.slice(idx + 1) || path,
-    dirname: path.slice(0, idx),
-  };
-}
 
 const STATUS_META: Record<FileStatus, { letter: string; label: string; color: string }> = {
   modified: { letter: "M", label: "modified", color: "var(--color-warning)" },

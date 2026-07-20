@@ -33,8 +33,8 @@ assert.match(projectsView, /export function ProjectsView/, "ProjectsView should 
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
 assert.match(
   projectsView,
-  /createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
-  "ProjectsView should defer its registry notification until the scoped familiar grant completes",
+  /createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
+  "ProjectsView should preserve actionable API errors while deferring its registry notification until the scoped familiar grant completes",
 );
 assert.match(
   projectsView,
@@ -44,10 +44,10 @@ assert.match(
 assert.match(projectsView, /const \[projectError, setProjectError\] = useState<string \| null>\(null\)/, "project-creation failures track their own alert state");
 assert.match(
   projectsView,
-  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*setProjectError\(error instanceof Error \? error\.message : "Could not create that project\."\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
+  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]*setCreateError\(message\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
   "handleCreate uses try/finally so the busy state always clears, even if create or grant unexpectedly throws",
 );
-assert.match(projectsView, /if \(!granted\.ok\) setProjectError\(`Project created, but grant failed: \$\{granted\.error\}`\);/, "grant failures still surface as explicit project alerts");
+assert.match(projectsView, /if \(!granted\.ok\) \{[\s\S]{0,160}?const message = `Project created, but grant failed: \$\{granted\.error\}`;[\s\S]{0,120}?setProjectError\(message\);/, "grant failures still surface as explicit project alerts");
 assert.match(
   projectsView,
   /projectError \? \([\s\S]{0,500}?<span className="min-w-0 truncate">\{projectError\}<\/span>[\s\S]{0,260}?onClick=\{\(\) => setProjectError\(null\)\}/,
@@ -56,6 +56,12 @@ assert.match(
 assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
 assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
 assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");
+assert.match(projectsView, /const \[createError, setCreateError\] = useState<string \| null>\(null\)/, "new-project flow tracks inline create errors");
+assert.match(projectsView, /function openCreateProjectForm\(\)[\s\S]{0,120}?setCreateError\(null\)/, "opening the quick-create form clears any prior create error");
+assert.match(projectsView, /const handleCreate = async \(event: FormEvent<HTMLFormElement>\) => \{[\s\S]{0,160}?setCreating\(true\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?try \{/, "create starts a guarded submit flow with inline error reset");
+assert.match(projectsView, /if \(!granted\.ok\) \{[\s\S]{0,160}?setSessionError\(message\);[\s\S]{0,400}?setShowForm\(false\);[\s\S]{0,240}?selectProject\(project\.id\);/, "grant failures after creation stay on the success path: close the form, select the project, and report through the banner channel");
+assert.match(projectsView, /catch \(error\) \{[\s\S]{0,240}?const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]{0,80}?setCreateError\(message\);[\s\S]{0,80}?setProjectError\(message\);/, "create failures stay inline with the thrown error message (and mirror to the project alert)");
+assert.match(projectsView, /finally \{[\s\S]{0,120}?setCreating\(false\);[\s\S]{0,120}?\}/, "create always clears the busy state in finally");
 
 // ── Master-detail: persisted selection replaces per-card expansion ────────────
 assert.match(
@@ -233,6 +239,20 @@ assert.match(projectsView, /aria-label=\{`New session in /, "new-session action 
 assert.doesNotMatch(projectsView, /Open terminal|cave:terminal-open|mode: "terminal"/, "project actions stay focused on chat actions");
 assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
+
+assert.match(projectsView, /PROJECT_ROOT_WORKSPACE_HELP/, "ProjectsView imports the shared workspace guidance copy");
+assert.match(projectsView, /id="project-root-help"/, "the root field renders proactive workspace guidance");
+assert.match(projectsView, /aria-invalid=\{Boolean\(createError\)\}/, "the root field reports invalid state when create fails");
+assert.match(
+  projectsView,
+  /aria-describedby=\{createError \? "project-root-help project-root-error" : "project-root-help"\}/,
+  "the root field links the inline error only while that element is rendered",
+);
+assert.match(projectsView, /onChange=\{\(event\) => \{[\s\S]{0,80}?setRootDraft\(event\.target\.value\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?\}\}/, "editing the root field clears the inline create error");
+assert.match(projectsView, /\{createError \? \(\s*<p id="project-root-error" role="alert"/, "create failures render as an inline alert under the root field");
+assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{json\.error \?\? "delete failed"\}`\)/, "delete API failures add their own contextualized banner prefix");
+assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{err instanceof Error \? err\.message : "delete failed"\}`\)/, "delete exceptions add their own contextualized banner prefix");
+assert.match(projectsView, /<span className="min-w-0 truncate">\{sessionError\}<\/span>/, "the banner renders already-contextualized action errors verbatim");
 
 // The "New project" inline form closes on Escape (parity with its Cancel button + inline edits).
 assert.match(

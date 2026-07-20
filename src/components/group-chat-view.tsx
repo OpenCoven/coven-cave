@@ -77,6 +77,7 @@ import {
   type RosterParticipant,
   type CovenResponseMode,
 } from "@/lib/group-chat";
+import { newId, nowIso } from "@/lib/group-chat-ids";
 
 type Props = {
   familiars: ResolvedFamiliar[];
@@ -85,16 +86,6 @@ type Props = {
   onSessionStarted?: (sessionId: string) => void;
   onOpenUrl?: (url: string) => void;
 };
-
-function newId(): string {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `id-${Math.floor(Math.random() * 1e9)}`;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
 
 export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props) {
   const profileSnapshot = useUserProfile();

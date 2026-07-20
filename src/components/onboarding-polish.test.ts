@@ -88,6 +88,76 @@ assert.equal(
   2,
   "exactly two finish CTAs — the above-the-fold completion banner and the footer — both via finishOnboarding (the meet-familiars step stays retired)",
 );
+assert.match(
+  source,
+  /type Props = \{[\s\S]*autoFinishWhenComplete\?: boolean;[\s\S]*\}/,
+  "OnboardingOverlay accepts an optional autoFinishWhenComplete prop",
+);
+assert.match(
+  source,
+  /export function OnboardingOverlay\(\{[\s\S]*autoFinishWhenComplete = false,[\s\S]*\}: Props\)/,
+  "autoFinishWhenComplete defaults false at the component boundary",
+);
+assert.match(
+  source,
+  /import \{[\s\S]*advanceOnboardingAutoFinishGate[\s\S]*isLatestOnboardingStatusRequest[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "OnboardingOverlay imports the shared onboarding gate helpers",
+);
+assert.match(
+  source,
+  /const statusGenerationRef = useRef\(0\)/,
+  "status polling tracks the latest onboarding-status generation",
+);
+assert.match(
+  source,
+  /const statusRefreshInFlightRef = useRef\(false\)/,
+  "status polling tracks whether a request is already in flight",
+);
+assert.match(
+  source,
+  /if \(statusRefreshInFlightRef\.current\) return;[\s\S]*statusRefreshInFlightRef\.current = true;[\s\S]*const requestId = \+\+statusGenerationRef\.current;/,
+  "overlapping poll ticks are skipped before a new status generation is created",
+);
+assert.match(
+  source,
+  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatus\(json\);\s*setStatusFailures\(0\);/s,
+  "only the latest successful status poll may update status or clear failure count",
+);
+assert.match(
+  source,
+  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatusFailures\(\(n\) => n \+ 1\);/s,
+  "stale failed polls cannot increment the failure counter",
+);
+assert.match(
+  source,
+  /finally \{\s*statusRefreshInFlightRef\.current = false;\s*\}/,
+  "status polling releases the in-flight guard after every request outcome",
+);
+assert.match(
+  source,
+  /return \(\) => \{[\s\S]*statusGenerationRef\.current \+= 1;[\s\S]*\};/s,
+  "closing onboarding invalidates in-flight status generations before late responses resolve",
+);
+assert.match(
+  source,
+  /const autoFinishFiredRef = useRef\(false\)/,
+  "auto-finish tracks whether the current open cycle already fired",
+);
+assert.match(
+  source,
+  /const autoFinishGate = advanceOnboardingAutoFinishGate\(\{\s*open,\s*enabled: autoFinishWhenComplete,\s*complete: setupComplete,\s*fired: autoFinishFiredRef\.current,\s*\}\)/s,
+  "the auto-finish effect delegates one-shot branching to the pure onboarding gate helper",
+);
+assert.match(
+  source,
+  /autoFinishFiredRef\.current = autoFinishGate\.fired;/,
+  "the effect stores the helper-returned auto-finish gate state back into the ref",
+);
+assert.match(
+  source,
+  /if \(autoFinishGate\.shouldFinish\) finishOnboarding\(\);/,
+  "auto-finish still reuses finishOnboarding only when the pure gate says to finish",
+);
 
 // The shared setup-action error banner must be a live alert with a dismiss —
 // every setup action (scaffold, daemon start, connection save) reports

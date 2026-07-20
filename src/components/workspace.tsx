@@ -17,6 +17,7 @@ import {
   type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
+import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -26,7 +27,7 @@ import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  shouldAutoOpenOnboarding,
+  shouldApplyStartupOnboardingStatus,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
@@ -222,56 +223,11 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
-const CHAT_HASH_PREFIX = "#chat-";
-
 // GitHub task context is low-churn. At five minutes, uninterrupted idle
 // foreground use makes at most 12 Cave requests/hour instead of piggybacking on
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
-
-function readChatHash(): string | null {
-  if (typeof window === "undefined") return null;
-  const hash = window.location.hash;
-  if (!hash.startsWith(CHAT_HASH_PREFIX)) return null;
-  try {
-    return decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length));
-  } catch {
-    return null;
-  }
-}
-
-function clearChatHash() {
-  if (typeof window === "undefined") return;
-  if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
-  window.history.replaceState(null, "", window.location.pathname + window.location.search);
-}
-
-// Mode deep links: workspace modes live inside this SPA shell and aren't
-// URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
-// external links land directly on a surface.
-// Only real modes are honoured — canonical surfaces and the compatibility
-// aliases in MODE_ALIASES (setMode routes those onto their canonical
-// surface/tab) — so unknown values are ignored silently.
-function readModeParam(): WorkspaceMode | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("mode");
-  if (raw && isWorkspaceMode(raw)) return raw;
-  return null;
-}
-
-function clearModeParam() {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has("mode")) return;
-  params.delete("mode");
-  const query = params.toString();
-  window.history.replaceState(
-    null,
-    "",
-    window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
-  );
-}
 
 function taskCanAnnotateSession(task: GitHubTask): boolean {
   return Boolean(task.sessionId && (task.prNumber != null || task.prUrl));
@@ -531,12 +487,14 @@ export function Workspace() {
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
+  const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Its refs and job polling intentionally survive close/reopen cycles so an
   // in-flight install is not forgotten and daemon auto-start stays one-shot.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
+  const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -804,7 +762,11 @@ export function Workspace() {
   // also offers a lighter in-app "New familiar" dialog (POST /api/familiars)
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
-    const openCreate = () => setOnboardingOpen(true);
+    const openCreate = () => {
+      manualOnboardingOpenedRef.current = true;
+      setAutoFinishOnboarding(false);
+      setOnboardingOpen(true);
+    };
     window.addEventListener("cave:onboarding-open", openCreate);
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
@@ -1399,7 +1361,11 @@ export function Workspace() {
     })();
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
-  const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
+  const openOnboarding = useCallback(() => {
+    manualOnboardingOpenedRef.current = true;
+    setAutoFinishOnboarding(false);
+    setOnboardingOpen(true);
+  }, []);
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
     void loadFamiliars();
@@ -1449,7 +1415,16 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
+        if (
+          shouldApplyStartupOnboardingStatus({
+            status: json,
+            cancelled,
+            manuallyOpened: manualOnboardingOpenedRef.current,
+          })
+        ) {
+          setAutoFinishOnboarding(true);
+          setOnboardingOpen(true);
+        }
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       } finally {
@@ -3130,8 +3105,10 @@ export function Workspace() {
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
+          autoFinishWhenComplete={autoFinishOnboarding}
           open={onboardingOpen}
           onDismiss={() => {
+            setAutoFinishOnboarding(false);
             setOnboardingMounted(true);
             closeOnboarding();
           }}
