@@ -50,6 +50,7 @@ import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } fr
 import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
 import type { AutomationTemplate } from "@/lib/automation-templates";
 import { StatusIcon } from "@/components/automations/status-icon";
+import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 import { InboxFeedList } from "@/components/automations/inbox-feed-list";
 import { TemplatesPanel } from "@/components/automations/templates-panel";
 import {
@@ -151,25 +152,6 @@ function relTime(iso: string | undefined | null): string {
 }
 
 
-function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }) {
-  return (
-    <label htmlFor={htmlFor} className="mb-1 block text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">
-      {children}
-    </label>
-  );
-}
-
-function CronDetailSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
-  return (
-    <section className={[(`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`), "[border-color:var(--border-hairline)]! [background:color-mix(in_oklch,_var(--bg-base)_72%,_transparent)]!"].filter(Boolean).join(" ")}>
-      <div>
-        <h3 className="text-[length:var(--text-sm)] font-semibold [color:var(--text-primary)]!">{title}</h3>
-        {description ? <p className="mt-0.5 text-[length:var(--text-xs)] [color:var(--text-muted)]!">{description}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 // Beginner-facing names for the schedule cadence modes: the presets read as
 // plain cadences, and the raw-RRULE escape hatch is labeled for what it is.
@@ -179,22 +161,6 @@ const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   raw: "Advanced",
 };
 
-function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
-  const valueColor =
-    tone === "active"
-      ? "oklch(0.75 0.1 150)"
-      : tone === "danger"
-        ? "var(--color-danger)"
-        : tone === "paused"
-          ? "var(--text-muted)"
-          : "var(--text-primary)";
-  return (
-    <div className="rounded-[var(--radius-control)] border px-3 py-2 [border-color:var(--border-hairline)]! [background:var(--bg-base)]!">
-      <p className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">{label}</p>
-      <div className="mt-1 min-w-0 truncate text-[length:var(--text-sm)] font-medium" style={{ color: valueColor }}>{value}</div>
-    </div>
-  );
-}
 
 const automationFieldBaseClass =
   "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
