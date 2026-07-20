@@ -535,6 +535,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /Session not found:/,
+  "Transparent resume fallback should also handle Hermes session-store misses",
+);
+
+assert.match(
+  chatRoute,
   /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
   "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
 );
@@ -1292,6 +1298,12 @@ assert.match(
   chatRoute,
   /if \(copilotStream\) \{\s*\n\s*handleCopilotLine\(line, isJson\);\s*\n\s*return;/,
   "Copilot stdout routes through the copilot JSONL handler, never the AssistantFilter (raw JSON frames must not leak into the bubble)",
+);
+
+assert.match(
+  chatRoute,
+  /const isJson = !hermesDirect && line\.startsWith\("\{"\) && line\.endsWith\("\}"\);/,
+  "Hermes direct stdout must stay plain text even when an assistant reply looks like a JSON object",
 );
 
 assert.match(

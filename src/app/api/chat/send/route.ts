@@ -1565,10 +1565,11 @@ export async function POST(req: Request) {
   // id exists only in Cave's local transcript store. Copilot emits "No
   // session, task, or name matched '<id>'" on `--resume` misses — including
   // every conversation recorded before the direct-stream path existed, whose
-  // harnessSessionId lives only in coven's store. In these cases we retry
-  // once without the resume flag so the chat starts fresh instead of erroring.
+  // harnessSessionId lives only in coven's store. Hermes emits "Session not
+  // found: <id>" when its local session is gone. In these cases we retry once
+  // without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found:/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -1810,7 +1811,7 @@ export async function POST(req: Request) {
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
-        const isJson = line.startsWith("{") && line.endsWith("}");
+        const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
           return;
