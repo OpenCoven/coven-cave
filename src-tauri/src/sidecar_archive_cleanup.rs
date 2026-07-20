@@ -24,7 +24,7 @@ fn has_complete_marker(runtime: &Path) -> bool {
     }
 }
 
-pub(super) fn cleanup_stale_sidecar_runtimes(current: &Path) {
+pub(crate) fn cleanup_stale_sidecar_runtimes(current: &Path) {
     let Some(cache_root) = current.parent() else {
         return;
     };
