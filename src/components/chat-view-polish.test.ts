@@ -1168,24 +1168,32 @@ const mentionSendSource = readFileSync(
   new URL("../app/api/chat/send/route.ts", import.meta.url),
   "utf8",
 );
+const mentionAttachmentSource = readFileSync(
+  new URL("../app/api/chat/send/chat-send-attachments.ts", import.meta.url),
+  "utf8",
+);
+const chatRuntimeSource = readFileSync(
+  new URL("../app/api/chat/send/chat-send-runtime.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  mentionSendSource,
+  mentionAttachmentSource,
   /async function resolveMentionedFiles\([\s\S]*?relPaths\.slice\(0, MAX_MENTIONED_FILES\)[\s\S]*?\.includes\("\.\."\)[\s\S]*?candidate\.startsWith\(realRoot \+ path\.sep\)/,
   "/chat/send must validate each mention: cap, repo-relative only, no `..`, prefix containment under the realpathed root",
 );
 assert.match(
-  mentionSendSource,
+  chatRuntimeSource,
   /async function resolveFamiliarWorkspace\([\s\S]*?readFamiliarWorkspaces\(\)[\s\S]*?path\.resolve\(familiarsRoot, familiarId\)[\s\S]*?path\.relative\(familiarsRoot, candidate\)[\s\S]*?relative\.startsWith\("\.\."\)/,
   "/chat/send must validate default familiar workspace paths under the familiar root while preserving configured workspaces",
 );
 assert.match(
-  mentionSendSource,
+  mentionAttachmentSource,
   /const real = await realpath\(candidate\);[\s\S]*?real\.startsWith\(realRoot \+ path\.sep\)/,
   "/chat/send must re-check containment on the realpathed file so in-repo symlinks cannot smuggle outside paths",
 );
 assert.match(
-  mentionSendSource,
-  /"Referenced files \(open with the Read tool\):",\s*\n\s*\.\.\.absPaths\.map\(\(p\) => `- \$\{p\}`\)/,
+  mentionAttachmentSource,
+  /"Referenced files \(open with the Read tool\):",\s*\n\s*\.\.\.absPaths\.map\(\(item\) => `- \$\{item\}`\)/,
   "Validated mentions must render as the compact Referenced-files prompt block of absolute paths",
 );
 assert.match(

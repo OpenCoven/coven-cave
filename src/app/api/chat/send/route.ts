@@ -1,7 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
-import path from "node:path";
+import { homedir } from "node:os";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -20,7 +18,6 @@ import {
 } from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
-  MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
@@ -62,15 +59,10 @@ import {
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
-import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv, openClawSupportsUntrustedArgs } from "@/lib/openclaw-bin";
-import {
-  familiarWorkspacesRoot,
-  readFamiliarWorkspaces,
-} from "@/lib/coven-paths";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -80,7 +72,7 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, covenRunSupportsAddDirFlag, canonicalHarnessId } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -137,6 +129,24 @@ import {
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
+import {
+  appendMentionedFilesBlock,
+  cleanupImageTempFiles,
+  resolveMentionedFiles,
+  writeImageAttachmentsToTemp,
+} from "./chat-send-attachments";
+import {
+  covenRunSupportsAddDir,
+  covenRunSupportsModel,
+  covenRunSupportsPermission,
+} from "./chat-send-capabilities";
+import {
+  buildPromptWithResponseControls,
+  persistSendModelIntent,
+  resolveSendModelMetadata,
+} from "./chat-send-models";
+import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
+import { conversationCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -191,9 +201,6 @@ type SendBody = {
   origin?: SessionOrigin;
 };
 
-type ReasoningEffort = "low" | "medium" | "high";
-type ResponseSpeed = "fast" | "balanced" | "careful";
-
 type OfflineChatQueuePayload = Pick<
   SendBody,
   | "familiarId"
@@ -224,180 +231,6 @@ const TOOL_HOOK_RE =
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Cwd recorded on the conversation's first turn (`runtime: "local:<cwd>"`).
- *
- * Continued turns don't carry `projectRoot` in the body, but harness session
- * stores are scoped per working directory — resuming `--continue <id>` from
- * homedir instead of the original project either fails resume or silently
- * continues an unrelated homedir session. Both presented as "a new session
- * spun up mid-chat" with the project context gone. Deriving the cwd from the
- * saved conversation keeps resume directory-stable for every turn.
- */
-async function conversationCwd(sessionId?: string): Promise<string | undefined> {
-  if (!sessionId) return undefined;
-  try {
-    const conv = await loadConversation(sessionId);
-    const runtime = conv?.runtime;
-    if (runtime?.startsWith("local:")) {
-      const cwd = runtime.slice("local:".length).trim();
-      return cwd || undefined;
-    }
-  } catch {
-    /* fall back to the caller's default */
-  }
-  return undefined;
-}
-
-/** Resolve the familiar's Coven workspace dir.
- *  Uses ~/.coven/familiars.toml workspace when present, otherwise
- *  ~/.coven/workspaces/familiars/<id>. Falls back to undefined if the dir
- *  doesn't exist so callers can skip --cwd.
- */
-async function resolveFamiliarWorkspace(
-  familiarId: string,
-): Promise<string | undefined> {
-  // Guard against path traversal: familiar IDs should be simple slugs.
-  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const declared = await readFamiliarWorkspaces();
-  const declaredWorkspace = declared.get(familiarId);
-  if (declaredWorkspace) {
-    try {
-      const resolvedDeclared = await realpath(declaredWorkspace);
-      const s = await stat(resolvedDeclared);
-      if (s.isDirectory()) return resolvedDeclared;
-    } catch {
-      /* fall through to the derived workspace path */
-    }
-  }
-  const familiarsRoot = familiarWorkspacesRoot();
-  const candidate = path.resolve(familiarsRoot, familiarId);
-  const relative = path.relative(familiarsRoot, candidate);
-  if (
-    relative.startsWith("..") ||
-    path.isAbsolute(relative) ||
-    relative.split(path.sep).includes("..")
-  ) {
-    return undefined;
-  }
-  try {
-    const root = await realpath(familiarsRoot);
-    const resolvedCandidate = await realpath(candidate);
-    if (resolvedCandidate !== root && !resolvedCandidate.startsWith(root + path.sep)) {
-      return undefined;
-    }
-    const s = await stat(resolvedCandidate);
-    if (s.isDirectory()) return resolvedCandidate;
-  } catch {
-    /* not found */
-  }
-  return undefined;
-}
-
-// ── Image attachment delivery ────────────────────────────────────────────
-// Local coven-run harnesses are agentic CLIs with a Read tool that can open
-// image files, so image payloads are written to private temp files and the
-// prompt points the harness at them. Bridges/remotes that cannot read this
-// machine's filesystem get an explicit unsupported notice instead.
-
-const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
-const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
-  jpeg: "jpg",
-  "svg+xml": "svg",
-};
-
-function imageExtension(mimeType?: string): string {
-  const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
-  const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;
-  // Extension derives from the validated mime subtype only — never from a
-  // user-controlled filename — and falls back to a fixed token.
-  return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
-}
-
-async function writeImageAttachmentsToTemp(
-  attachments: ChatAttachment[],
-): Promise<Map<number, string>> {
-  const filePaths = new Map<number, string>();
-  for (const [index, attachment] of attachments.entries()) {
-    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
-    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
-    const payload = Buffer.from(base64, "base64");
-    // Defense in depth: normalizeChatAttachments already enforces the cap,
-    // but never write more than the cap regardless.
-    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
-    try {
-      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
-      const filePath = path.join(
-        ATTACHMENT_TMP_DIR,
-        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
-      );
-      await writeFile(filePath, payload, { mode: 0o600 });
-      filePaths.set(index, filePath);
-    } catch {
-      /* best effort — the prompt falls back to the not-delivered notice */
-    }
-  }
-  return filePaths;
-}
-
-function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
-  for (const filePath of filePaths.values()) {
-    void rm(filePath, { force: true }).catch(() => undefined);
-  }
-}
-
-// ── @-mentioned file delivery (CHAT-D1-04) ───────────────────────────────
-// The composer's `@` picker records repo-relative paths; the prompt gets a
-// compact "Referenced files" block of absolute paths the harness can open
-// with its Read tool. Validation mirrors /api/changes: repo-relative paths
-// only, resolved against the realpathed root with a prefix containment
-// check — absolute paths, NUL bytes, `..` segments, and symlinks that
-// escape the root are silently skipped, never errors.
-
-const MAX_MENTIONED_FILES = 10;
-
-async function resolveMentionedFiles(
-  relPaths: unknown,
-  root: unknown,
-): Promise<string[]> {
-  if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
-  if (typeof root !== "string" || !path.isAbsolute(root)) return [];
-  let realRoot: string;
-  try {
-    realRoot = await realpath(path.resolve(root));
-    if (!(await stat(realRoot)).isDirectory()) return [];
-  } catch {
-    return [];
-  }
-  const resolved: string[] = [];
-  for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
-    if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
-    if (rel.split(/[\\/]+/).includes("..")) continue;
-    const candidate = path.resolve(realRoot, rel);
-    if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
-    try {
-      // Containment must hold for the real file too, or a symlink inside the
-      // root could point the prompt at an arbitrary path outside it.
-      const real = await realpath(candidate);
-      if (real !== candidate && !real.startsWith(realRoot + path.sep)) continue;
-      if (!(await stat(real)).isFile()) continue;
-      if (!resolved.includes(candidate)) resolved.push(candidate);
-    } catch {
-      /* missing or unreadable — skip */
-    }
-  }
-  return resolved;
-}
-
-function appendMentionedFilesBlock(prompt: string, absPaths: string[]): string {
-  if (absPaths.length === 0) return prompt;
-  const block = [
-    "Referenced files (open with the Read tool):",
-    ...absPaths.map((p) => `- ${p}`),
-  ].join("\n");
-  return prompt ? `${prompt}\n\n${block}` : block;
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
@@ -431,40 +264,6 @@ async function autoNameSessionFromFirstExchange(
   } catch {
     /* best effort */
   }
-}
-
-function sse(event: StreamEvent, seq?: number): Uint8Array {
-  // `id:` carries the run buffer's seq (cave-h40l): a client that saw it can
-  // resume mid-turn via GET /api/chat/stream?cursor=<last id> after a drop.
-  const id = seq != null ? `id: ${seq}\n` : "";
-  return new TextEncoder().encode(`${id}data: ${JSON.stringify(event)}\n\n`);
-}
-
-// SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
-// client idle timeouts can drop a connection that goes silent for the length
-// of a long tool run. Comments are invisible to every consumer — the web
-// readers and the iOS app all skip frames that don't start with `data:`.
-const SSE_HEARTBEAT = new TextEncoder().encode(": hb\n\n");
-const SSE_HEARTBEAT_INTERVAL_MS = 20_000;
-
-// Emit `: hb` comments until the stream closes/aborts; self-cleaning, but
-// callers also clear it from close() so a finished turn stops immediately.
-function startSseHeartbeat(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  isDone: () => boolean,
-): NodeJS.Timeout {
-  const heartbeat = setInterval(() => {
-    if (isDone()) {
-      clearInterval(heartbeat);
-      return;
-    }
-    try {
-      controller.enqueue(SSE_HEARTBEAT);
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, SSE_HEARTBEAT_INTERVAL_MS);
-  return heartbeat;
 }
 
 async function maybeQueueOfflineChat(args: {
@@ -507,7 +306,7 @@ async function maybeQueueOfflineChat(args: {
 
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => {
-      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      const push = (event: StreamEvent) => controller.enqueue(chatSse(event));
       push({ kind: "session", sessionId });
       push({ kind: "user", text: args.promptText });
       push({
@@ -536,226 +335,6 @@ async function maybeQueueOfflineChat(args: {
   });
 }
 
-// Model parity: probe once per process whether the installed `coven run`
-// advertises `--model`. `coven run` rejects unknown flags, so forwarding must be
-// a no-op until the companion CLI change ships. Cached; failures resolve false.
-let covenRunModelFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsModel(): Promise<boolean> {
-  if (!covenRunModelFlagProbe) {
-    covenRunModelFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsModelFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunModelFlagProbe;
-}
-
-// Parallel capability probe for `coven run --permission` (the sandbox flag added
-// in @opencoven/cli). Same shape/caching as the model probe; a CLI that predates
-// the flag rejects unknown flags, so forwarding must stay gated to a no-op.
-let covenRunPermissionFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsPermission(): Promise<boolean> {
-  if (!covenRunPermissionFlagProbe) {
-    covenRunPermissionFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsPermissionFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunPermissionFlagProbe;
-}
-
-// Same gated probe for `coven run --add-dir <DIR>` (repeatable). Granted
-// project roots must be trusted by the spawned harness itself — the
-// runtime-scope preamble only DESCRIBES the grants, and a harness that trusts
-// nothing but its cwd denies every access to them (non-interactive sessions
-// cannot re-request permission mid-turn). Cached; failures resolve false.
-let covenRunAddDirFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsAddDir(): Promise<boolean> {
-  if (!covenRunAddDirFlagProbe) {
-    covenRunAddDirFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsAddDirFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunAddDirFlagProbe;
-}
-
-function resolveSendModelMetadata(args: {
-  body: SendBody;
-  config: CaveConfig;
-  binding: FamiliarBinding;
-  existingConversation: ConversationFile | null;
-  /**
-   * Whether `coven run --model` will actually be forwarded for this turn. When
-   * true the application state reads `pending` (saved, awaiting confirmation)
-   * instead of `unsupported`; the stream's init event later promotes it to
-   * `applied`.
-   */
-  modelForwardingEnabled: boolean;
-}): { desiredModel: string; modelState: ChatModelState } {
-  const requestedModel = cleanModelId(args.body.modelOverride);
-  const sessionModel =
-    args.body.modelOverrideScope === "session"
-      ? requestedModel
-      : args.existingConversation?.modelIntent?.model ?? null;
-  const modelState = resolveChatModelState({
-    familiarId: args.body.familiarId,
-    harness: args.binding.harness,
-    runtime: null,
-    globalDefaultModel: args.config.defaults.model,
-    familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
-    sessionModel,
-    nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
-    application: { supported: args.modelForwardingEnabled },
-  });
-  const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
-  return { desiredModel, modelState };
-}
-
-function persistSendModelIntent(
-  conversation: ConversationFile,
-  body: SendBody,
-  modelState: ChatModelState,
-) {
-  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return;
-  conversation.modelIntent = {
-    model: modelState.effectiveModel,
-    source: "session",
-    applicationState: modelState.applicationState,
-    reason: modelState.reason ?? "Saved for this chat.",
-  };
-}
-
-function normalizeReasoningEffort(value: unknown): ReasoningEffort {
-  return value === "low" || value === "medium" || value === "high" ? value : "high";
-}
-
-function normalizeResponseSpeed(value: unknown): ResponseSpeed {
-  return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
-}
-
-function buildPromptWithResponseControls(prompt: string, body: SendBody): string {
-  const effort = normalizeReasoningEffort(body.reasoningEffort);
-  const speed = normalizeResponseSpeed(body.responseSpeed);
-  const effortInstruction: Record<ReasoningEffort, string> = {
-    low: "Use minimal internal planning and answer directly.",
-    medium: "Balance planning with a concise answer.",
-    high: "Spend extra internal planning on correctness before answering.",
-  };
-  const speedInstruction: Record<ResponseSpeed, string> = {
-    fast: "Prioritize a fast, terse, action-first response.",
-    balanced: "Balance speed, detail, and clarity.",
-    careful: "Prioritize careful completeness over speed.",
-  };
-  return [
-    "<response_controls>",
-    `thinking: ${effort} — ${effortInstruction[effort]}`,
-    `speed: ${speed} — ${speedInstruction[speed]}`,
-    "Do not mention these controls unless the user asks about them.",
-    "</response_controls>",
-    "",
-    buildNextPathsDirective(),
-    "",
-    prompt,
-  ].join("\n");
-}
-
 function openClawChatResponse(args: {
   req: Request;
   body: SendBody;
@@ -781,7 +360,7 @@ function openClawChatResponse(args: {
         const seq = runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(sse(event, seq));
+          controller.enqueue(chatSse(event, seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -803,7 +382,7 @@ function openClawChatResponse(args: {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      const heartbeat = startSseHeartbeat(controller, () => closed || args.req.signal.aborted);
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || args.req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
@@ -1582,7 +1161,7 @@ export async function POST(req: Request) {
         const seq = runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(sse(e, seq));
+          controller.enqueue(chatSse(e, seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -1604,7 +1183,7 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      const heartbeat = startSseHeartbeat(controller, () => closed || req.signal.aborted);
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
