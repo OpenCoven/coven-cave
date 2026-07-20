@@ -32,7 +32,7 @@ assert.match(src, /const headingId = useId\(\);/, "each section gets a stable he
 // ── Selected inbox row announces itself ──────────────────────────────────────
 assert.match(
   src,
-  /aria-current=\{selected \? "true" : undefined\}/,
+  /aria-current=\{!selectMode && selected \? "true" : undefined\}/,
   "the open inbox row is aria-current, not just a background tint",
 );
 
