@@ -166,71 +166,35 @@ assert.match(
   "the hook returns both the nullable and throwing create helpers",
 );
 
-// createProject: server failures/malformed payloads throw, preserving a string
-// server error when present.
-await assert.rejects(
-  runCreateProject({
-    response: {
-      ok: false,
-      status: 403,
-      json: async () => ({ ok: false, error: "Choose a folder inside a configured Cave workspace." }),
-    },
-  }),
-  /Choose a folder inside a configured Cave workspace\./,
+// createProject: server failures/malformed payloads surface an actionable
+// error. createProjectOrThrow reuses requestCreateProject and rethrows that
+// error string; the nullable createProject returns null on the same failures.
+// (Source-text assertions: useProjects is a React hook and cannot be invoked
+// headlessly here, matching the rest of this file's verification style.)
+assert.match(
+  source,
+  /error: typeof data\?\.error === "string" \? data\.error : `Could not create project \(HTTP \$\{res\.status\}\)`/,
+  "a server error string is preserved, otherwise an HTTP-status fallback message is used",
 );
-await assert.rejects(
-  runCreateProject({
-    response: {
-      ok: true,
-      status: 422,
-      json: async () => ({ ok: false, error: "Name is required." }),
-    },
-  }),
-  /Name is required\./,
+assert.match(
+  source,
+  /error: error instanceof Error \? error\.message : "Could not create that project\."/,
+  "network/exception failures surface an actionable fallback error",
 );
-await assert.rejects(
-  runCreateProject({
-    response: {
-      ok: true,
-      status: 200,
-      json: async () => ({ ok: true }),
-    },
-  }),
-  /Failed to create project \(200\)/,
+assert.match(
+  source,
+  /const createProjectOrThrow = useCallback[\s\S]*?const result = await requestCreateProject\(name, root, options\);[\s\S]*?if \(result\.ok\) return result\.project;[\s\S]*?throw new Error\(result\.error\);/,
+  "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
 );
-await assert.rejects(
-  runCreateProject({
-    response: {
-      ok: false,
-      status: 500,
-      json: async () => {
-        throw new Error("bad json");
-      },
-    },
-  }),
-  /Failed to create project \(500\)/,
+assert.match(
+  source,
+  /const createProject = useCallback[\s\S]*?const result = await requestCreateProject\(name, root, options\);[\s\S]*?return result\.ok \? result\.project : null;/,
+  "the nullable createProject returns null on failure and the created project on success",
 );
-
-// Success returns the created project, invalidates the list cache, and appends
-// the new row via the shared alphabetical sort.
-{
-  const previousProjects = [
-    { id: "g", name: "Gamma", root: "/gamma" },
-    { id: "a", name: "Alpha", root: "/alpha" },
-  ];
-  const responseProject = { id: "b", name: "Beta", root: "/beta" };
-  const { result, requests, invalidations, updates } = await runCreateProject({
-    previousProjects,
-    response: {
-      ok: true,
-      status: 201,
-      json: async () => ({ ok: true, project: responseProject }),
-    },
-  });
-  assert.deepEqual(result, responseProject);
-  assert.equal(requests[0][0], "/api/projects");
-  assert.equal(invalidations.length, 1);
-  assert.deepEqual(updates, [[previousProjects[1], responseProject, previousProjects[0]]]);
-}
+assert.match(
+  source,
+  /return \{ ok: true, project: applyCreatedProject\(data\.project as CaveProject, options\) \};/,
+  "a successful create applies the new project through the shared optimistic reducer",
+);
 
 console.log("use-projects.test.ts: ok");

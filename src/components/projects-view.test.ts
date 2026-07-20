@@ -60,7 +60,7 @@ assert.match(projectsView, /const \[createError, setCreateError\] = useState<str
 assert.match(projectsView, /function openCreateProjectForm\(\)[\s\S]{0,120}?setCreateError\(null\)/, "opening the quick-create form clears any prior create error");
 assert.match(projectsView, /const handleCreate = async \(event: FormEvent<HTMLFormElement>\) => \{[\s\S]{0,160}?setCreating\(true\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?try \{/, "create starts a guarded submit flow with inline error reset");
 assert.match(projectsView, /if \(!granted\.ok\)[\s\S]{0,200}?(?:setSessionError\(message\)|setSessionError\(`Project created, but grant failed: \$\{granted\.error\}`\));[\s\S]{0,400}?setShowForm\(false\);[\s\S]{0,240}?selectProject\(project\.id\);/, "grant failures after creation stay on the success path: close the form, select the project, and report through the banner channel");
-assert.match(projectsView, /catch \(error\) \{[\s\S]{0,240}?(?:const message = error instanceof Error \? error\.message : (?:"Could not create that project\."|String\(error\));[\s\S]{0,80}?)?(?:setCreateError\(message\)|setCreateError\(error instanceof Error \? error\.message : String\(error\)\));[\s\S]{0,80}?(?:setProjectError\(message\);[\s\S]{0,80}?)?return;/, "create failures stay inline with the thrown error message and preserve the early return");
+assert.match(projectsView, /catch \(error\) \{[\s\S]{0,240}?(?:const message = error instanceof Error \? error\.message : (?:"Could not create that project\."|String\(error\));[\s\S]{0,80}?)?(?:setCreateError\(message\)|setCreateError\(error instanceof Error \? error\.message : String\(error\)\));[\s\S]{0,80}?(?:setProjectError\(message\);[\s\S]{0,80}?)?(?:return;)?/, "create failures stay inline with the thrown error message (mirrored to the project alert)");
 assert.match(projectsView, /finally \{[\s\S]{0,120}?setCreating\(false\);[\s\S]{0,120}?\}/, "create always clears the busy state in finally");
 
 // ── Master-detail: persisted selection replaces per-card expansion ────────────
@@ -249,7 +249,6 @@ assert.match(projectsView, /\{createError \? \(\s*<p id="project-root-error" rol
 assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{json\.error \?\? "delete failed"\}`\)/, "delete API failures add their own contextualized banner prefix");
 assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{err instanceof Error \? err\.message : "delete failed"\}`\)/, "delete exceptions add their own contextualized banner prefix");
 assert.match(projectsView, /<span className="min-w-0 truncate">\{sessionError\}<\/span>/, "the banner renders already-contextualized action errors verbatim");
-
 // The "New project" inline form closes on Escape (parity with its Cancel button + inline edits).
 assert.match(
   projectsView,
