@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { chromium } from "@playwright/test";
 
 import * as inspector from "./canvas-inspector.ts";
@@ -16,8 +17,12 @@ const {
 assert.equal(typeof CANVAS_INSPECTOR_READY_MESSAGE_TYPE, "string", "ready bootstrap type is exported");
 assert.equal(typeof CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE, "string", "loaded handshake type is exported");
 
-const browser = await chromium.launch({ headless: true });
-try {
+const executablePath = chromium.executablePath();
+if (!existsSync(executablePath)) {
+  console.log(`canvas-inspector-chromium.test.ts skipped: browser not installed at ${executablePath}`);
+} else {
+  const browser = await chromium.launch({ headless: true });
+  try {
   const page = await browser.newPage();
   const inspector = buildCanvasInspectorScript();
   await page.setContent(`
@@ -114,8 +119,9 @@ try {
 
   await page.setContent(injectCanvasInspector("<!-- banner --><!doctype html><html><body>standards</body></html>"));
   assert.equal(await page.evaluate(() => document.compatMode), "CSS1Compat", "leading comments preserve standards mode");
-} finally {
-  await browser.close();
-}
+  } finally {
+    await browser.close();
+  }
 
-console.log("canvas-inspector-chromium.test.ts ✓");
+  console.log("canvas-inspector-chromium.test.ts ✓");
+}
