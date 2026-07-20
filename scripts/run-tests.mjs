@@ -342,6 +342,7 @@ export const SUITES = {
     "src/lib/live-chat-snapshot.test.ts",
     "src/lib/live-chat-generations.test.ts",
     "src/components/chat-view-render-optimization.test.ts",
+    "src/components/chat-attachment-cards.test.ts",
     "src/components/chat-view-canvas-artifact.test.ts",
     "src/components/chat-canvas-tab.test.ts",
     "src/components/chat-response-metadata.test.ts",
