@@ -4,7 +4,6 @@ import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { stripAnsi } from "@/lib/ansi";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   globalNpmInstallOwner,
@@ -30,7 +29,6 @@ import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verifica
 import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
 import { startLocalDaemon } from "@/lib/daemon-start";
-import { redactSecretText } from "@/lib/secret-redaction";
 import {
   markDaemonCliInstalling,
   daemonUpdateTraceLine,
@@ -40,6 +38,13 @@ import {
   type DaemonUpdateDependencies,
   type DaemonUpdateLifecycle,
 } from "@/lib/daemon-update-lifecycle";
+import {
+  appendOutput,
+  appendTrace,
+  installJobTail,
+  redactSensitiveInstallOutput,
+  type InstallJobOutput,
+} from "./install-job-output";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -319,15 +324,7 @@ type InstallJob = {
   /** Cancels preparation or the spawned process; never exposed to clients. */
   cancel?: () => void;
   cancelRequested?: boolean;
-};
-
-/** Last ~8 KB of installer output is plenty for a progress tail and keeps
- *  long installs (Hermes bootstraps a Python toolchain) from growing
- *  unbounded in memory. */
-const OUTPUT_CAP = 8_192;
-const CLIENT_TAIL_CAP = 2_000;
-const TRACE_LINE_CAP = 240;
-const TRACE_LINES_CAP = 8;
+} & InstallJobOutput;
 
 // Next dev re-evaluates this module on HMR; a plain module-level Map would
 // orphan running jobs. globalThis survives re-evaluation.
@@ -336,13 +333,6 @@ const globalScope = globalThis as unknown as {
 };
 const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
   new Map());
-
-function redactSensitiveInstallOutput(value: string): string {
-  return redactSecretText(value).replace(
-    /^.*(?:GITHUB_(?:PAT|PERSONAL_ACCESS_TOKEN)|NPM_CONFIG_.*(?:AUTH|TOKEN)|(?:^|[_-])TOKEN)\s*=.*$/gim,
-    "[redacted sensitive installer output]",
-  );
-}
 
 type NpmLaneView = {
   npmBusy: boolean;
@@ -393,27 +383,6 @@ function npmBusyResponse(owner: InstallTarget) {
     },
     { status: 409, headers: { "Retry-After": "2" } },
   );
-}
-
-function appendOutput(job: InstallJob, chunk: string) {
-  job.output = redactSensitiveInstallOutput(job.output + stripAnsi(chunk)).slice(-OUTPUT_CAP);
-}
-
-function appendTrace(job: InstallJob, line: string) {
-  const safeLine = redactSensitiveInstallOutput(stripAnsi(line))
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, TRACE_LINE_CAP);
-  if (!safeLine) return;
-  job.trace = [...job.trace, safeLine].slice(-TRACE_LINES_CAP);
-}
-
-/** Keep lifecycle facts stable while retaining the most useful raw output. */
-function installJobTail(job: InstallJob): string {
-  const trace = job.trace.join("\n").slice(-CLIENT_TAIL_CAP);
-  const separator = trace && job.output ? "\n" : "";
-  const outputBudget = Math.max(0, CLIENT_TAIL_CAP - trace.length - separator.length);
-  return `${trace}${separator}${job.output.slice(-outputBudget)}`;
 }
 
 function releaseNpmLease(job: InstallJob, npmLease?: NpmInstallLease) {
