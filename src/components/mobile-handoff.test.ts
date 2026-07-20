@@ -12,7 +12,7 @@ const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts"
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
 const tauriConfig = await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
-const tauriLib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const tauriLib = await readFile(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
 
 assert.match(topBar, /onOpenMobileHandoff/, "TopBar should accept a mobile handoff opener");
 assert.match(topBar, /ph:device-mobile/, "TopBar should render a mobile-phone icon");

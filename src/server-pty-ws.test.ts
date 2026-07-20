@@ -245,7 +245,7 @@ assert.match(
   /copyResolvedEntry\(path\.join\(projectRoot, "server\.mjs"\), path\.join\(destination, "server\.mjs"\)/,
   "sidecar bundle ships the custom PTY-bridge server next to the standalone tree",
 );
-const tauriLib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const tauriLib = readFileSync(new URL("../src-tauri/src/sidecar_startup.rs", import.meta.url), "utf8");
 assert.match(
   tauriLib,
   /server_mjs\.exists\(\)[\s\S]{0,400}server_js\.exists\(\)/,

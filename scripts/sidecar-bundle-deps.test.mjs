@@ -19,7 +19,7 @@ const [
   readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8"),
-  readFile(new URL("../src-tauri/src/sidecar_archive.rs", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/src/sidecar_archive_manifest.rs", import.meta.url), "utf8"),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
