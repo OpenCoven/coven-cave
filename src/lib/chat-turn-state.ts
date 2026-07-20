@@ -1,6 +1,7 @@
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
 
@@ -128,12 +129,20 @@ function cloneLiveTurn(turn: Turn): Turn {
   };
 }
 
-export type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn>;
+export type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & {
+  runId?: string | null;
+  streamHealth?: ChatStreamClientHealth;
+};
+
+export type LiveChatGenerationMetadata = {
+  runId: string;
+  streamHealth: ChatStreamClientHealth;
+};
 
 // A generation must outlive the ChatView instance that started it: thread
 // switches and surface unmounts otherwise cause React to drop later state
 // updates, freezing the visible snapshot mid-stream.
-const liveChatRegistry = createLiveGenerationRegistry<Turn>(cloneLiveTurn);
+const liveChatRegistry = createLiveGenerationRegistry<Turn, LiveChatGenerationSnapshot>(cloneLiveTurn);
 
 export function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
   return liveChatRegistry.read(sessionId);
@@ -143,15 +152,44 @@ export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): 
   return liveChatRegistry.record(snapshot);
 }
 
+export function stageLiveChatGenerationMetadata(
+  sessionId: string,
+  metadata: LiveChatGenerationMetadata,
+): LiveChatGenerationSnapshot | null {
+  const current = liveChatRegistry.read(sessionId);
+  if (!current || (current.runId != null && current.runId !== metadata.runId)) return null;
+  return liveChatRegistry.stage(sessionId, (snapshot) => ({
+    ...snapshot,
+    ...metadata,
+  }));
+}
+
+export function publishLiveChatGenerationMetadata(
+  sessionId: string,
+  metadata: LiveChatGenerationMetadata,
+): LiveChatGenerationSnapshot | null {
+  const staged = stageLiveChatGenerationMetadata(sessionId, metadata);
+  return staged ? recordLiveChatGeneration(staged) : null;
+}
+
 export function advanceLiveChatGeneration(
   sessionId: string,
   updater: (turns: Turn[]) => Turn[],
   activeLeafId: string,
+  metadata?: LiveChatGenerationMetadata,
 ): LiveChatGenerationSnapshot | null {
+  if (metadata && !stageLiveChatGenerationMetadata(sessionId, metadata)) return null;
   return liveChatRegistry.advance(sessionId, updater, activeLeafId);
 }
 
-export function clearLiveChatGeneration(sessionId: string | null | undefined) {
+export function clearLiveChatGeneration(
+  sessionId: string | null | undefined,
+  expectedRunId?: string,
+) {
+  if (sessionId && expectedRunId) {
+    const current = liveChatRegistry.read(sessionId);
+    if (current?.runId != null && current.runId !== expectedRunId) return;
+  }
   liveChatRegistry.clear(sessionId);
 }
 

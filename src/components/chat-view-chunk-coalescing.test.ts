@@ -26,35 +26,42 @@ assert.match(
   "assistant_chunk frames must be buffered, not committed per frame",
 );
 
-// ── 2. Non-chunk events flush buffered text FIRST (ordering) ────────────────
+// ── 2. Non-chunk events flush via the shared helper before handling ─────────
 assert.match(
   src,
-  /\} else \{[\s\S]{0,300}?chunkCoalescer\.flush\(\);\s*\n\s*handleEvent\(ev, assistantId, request, liveGeneration\);/,
+  /\} else \{[\s\S]{0,400}?(?:flushStreamUpdates\(\)|chunkCoalescer\.flush\(\);\s*\n\s*flushPendingStreamHealthEvent\(\);)[\s\S]{0,2000}?handleEvent\(ev, assistantId, request, liveGeneration\);/,
   "any non-chunk event must flush buffered text before it is handled — text vs progress/attachment ordering is load-bearing",
 );
 
-// ── 3. Stream end flushes ────────────────────────────────────────────────────
+// ── 3. flushStreamUpdates flushes then publishes the latest cursor ───────────
 assert.match(
   src,
-  /if \(!sawDone && !controller\.signal\.aborted\) \{[\s\S]*?\/api\/chat\/stream[\s\S]*?\}\s*\n\s*chunkCoalescer\.flush\(\);/,
-  "a stream that ends before done must try recovery, then flush the tail of the buffer",
+  /const flushStreamUpdates = \(\) => \{\s*\n\s*chunkCoalescer\.flush\(\);\s*\n\s*flushPendingStreamHealthEvent\(\);\s*\n\s*\};/,
+  "flushStreamUpdates must publish the latest cursor only after buffered chunks are flushed",
 );
 
-// ── 4. The error/abort path flushes before reading t.text ───────────────────
+// ── 4. Stream end recovers first, then flushes the tail ──────────────────────
 assert.match(
   src,
-  /\} catch \(err\) \{[\s\S]{0,300}?chunkCoalescer\.flush\(\);[\s\S]{0,300}?AbortError/,
+  /if \(!sawDone && !controller\.signal\.aborted\) \{[\s\S]{0,1000}?\/api\/chat\/stream\?runId=\$\{encodeURIComponent\(runId\)\}&cursor=\$\{cursor\}[\s\S]{0,1200}?\}\s*\n\s*flushStreamUpdates\(\);/,
+  "a stream that ends before done must try recovery first, then flush the tail of the buffer",
+);
+
+// ── 5. The error/abort path flushes before reading t.text ───────────────────
+assert.match(
+  src,
+  /\} catch \(err\) \{[\s\S]{0,300}?flushStreamUpdates\(\);[\s\S]{0,300}?AbortError/,
   "abort/error handling must flush first — the cancelled fallback reads t.text and must see all streamed text",
 );
 
-// ── 5. The coalescer is declared outside the try so the catch can flush ─────
+// ── 6. The coalescer is declared outside the try and preserves ordering ─────
 assert.match(
   src,
-  /const chunkCoalescer = createChunkCoalescer\(\{\s*\n\s*flushMs: CHUNK_FLUSH_MS,\s*\n\s*apply: \(text\) => applyAssistantChunk\(text, assistantId, liveGeneration\),/,
-  "the coalescer applies through applyAssistantChunk with the send's own liveGeneration",
+  /const chunkCoalescer = createChunkCoalescer\(\{\s*\n\s*flushMs: CHUNK_FLUSH_MS,\s*\n\s*apply: \(text\) => \{\s*\n\s*flushPendingStreamHealthEvent\(\);\s*\n\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\n\s*\},/,
+  "the coalescer must use the current send's liveGeneration and publish stream health before applying the buffered chunk",
 );
 
-// ── 6. One application path: the extracted applyAssistantChunk ───────────────
+// ── 7. One application path: the extracted applyAssistantChunk ───────────────
 assert.match(
   src,
   /const applyAssistantChunk = \(\s*\n\s*text: string,/,
@@ -72,13 +79,13 @@ assert.ok(
   "the per-frame switch case must stay a thin delegate — the text append lives in applyAssistantChunk",
 );
 
-// ── 7. The flush window is short enough to be imperceptible ─────────────────
+// ── 8. The flush window is short enough to be imperceptible ─────────────────
 const flushMs = src.match(/const CHUNK_FLUSH_MS = (\d+);/);
 assert.ok(flushMs, "CHUNK_FLUSH_MS constant exists");
 const ms = Number(flushMs[1]);
 assert.ok(ms >= 15 && ms <= 100, `CHUNK_FLUSH_MS (${ms}) must batch meaningfully (>=15ms) but stay imperceptible (<=100ms)`);
 
-// ── 8. Timer-based, not rAF — chunks keep landing after unmount/hide ────────
+// ── 9. Timer-based, not rAF — chunks keep landing after unmount/hide ────────
 const coalescerLib = readFileSync(new URL("../lib/chunk-coalescer.ts", import.meta.url), "utf8");
 assert.ok(
   !coalescerLib.includes("requestAnimationFrame("),
