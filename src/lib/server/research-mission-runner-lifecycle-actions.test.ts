@@ -392,4 +392,3 @@ test("artifact rejection preserves the file reference and refine starts once", a
   assert.equal(refined.direction, "Prioritize primary sources published since 2024");
   assert.equal(refined.iterations.length, 2);
 });
-

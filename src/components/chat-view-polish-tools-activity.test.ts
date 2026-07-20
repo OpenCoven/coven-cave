@@ -178,4 +178,3 @@ assert.match(
   /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}/,
   "Assistant turns should render only filtered visible content",
 );
-

@@ -573,4 +573,3 @@ assert.match(
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",
 );
-
