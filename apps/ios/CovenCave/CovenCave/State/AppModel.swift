@@ -5,7 +5,7 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, calendar, dev, settings, search }
+enum AppTab: String { case chats, canvas, tasks, calendar, dev, settings, search }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -240,6 +240,16 @@ final class AppModel {
         }
         return true
     }
+
+    // MARK: - Canvas (generated UI artifacts)
+
+    var canvasArtifacts: [CanvasArtifact] = []
+    var canvasError: String?
+    var canvasLoaded = false
+    /// True while a generate/refine stream is in flight.
+    var isGeneratingCanvas = false
+    /// The familiar's reply text as it streams in (for the "sketching…" preview).
+    var canvasStreamText = ""
 
     var client: CaveClient? {
         guard let connection else { return nil }
@@ -624,6 +634,252 @@ final class AppModel {
         var r = reminders[idx]; mutate(&r); reminders[idx] = r
     }
 
+    // MARK: - Canvas actions
+
+    func loadCanvas() async {
+        guard let client else { return }
+        do {
+            canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
+            canvasError = nil
+        } catch {
+            canvasError = error.localizedDescription
+        }
+        canvasLoaded = true
+    }
+
+    /// Generate a new artifact from `prompt` via `familiarId`'s chat bridge,
+    /// extract the renderable document, persist it, and return it. Cancellation
+    /// (the caller cancelling its Task) aborts the stream and returns nil.
+    func generateArtifact(prompt: String, familiarId: String) async -> CanvasArtifact? {
+        guard let client else { return nil }
+        let userPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userPrompt.isEmpty else { return nil }
+
+        isGeneratingCanvas = true
+        canvasStreamText = ""
+        canvasError = nil
+        defer { isGeneratingCanvas = false }
+
+        do {
+            let text = try await streamText(
+                CanvasArtifact.buildSketchPrompt(userPrompt),
+                familiarId: familiarId, client: client
+            )
+            guard !Task.isCancelled else { return nil }
+            guard let extracted = CanvasArtifact.extractArtifact(text) else {
+                canvasError = "The familiar didn’t return a renderable UI. Try rephrasing."
+                return nil
+            }
+            let now = CanvasArtifact.nowISO()
+            let artifact = CanvasArtifact(
+                id: UUID().uuidString,
+                title: CanvasArtifact.titleFromPrompt(userPrompt),
+                prompt: userPrompt,
+                code: CanvasArtifact.clampCode(extracted.code),
+                kind: extracted.kind,
+                createdAt: now, updatedAt: now
+            )
+            let saved = try await client.saveCanvasArtifact(artifact, expectedAbsent: true)
+            canvasArtifacts = sortedArtifacts(saved.artifacts)
+            return saved.artifact
+        } catch is CancellationError {
+            return nil
+        } catch {
+            canvasError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Re-generate an existing artifact with a change request, keeping its id.
+    func refineArtifact(_ artifact: CanvasArtifact, changeRequest: String,
+                        familiarId: String) async -> CanvasArtifact? {
+        guard let client else { return nil }
+        let ask = changeRequest.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ask.isEmpty else { return nil }
+
+        isGeneratingCanvas = true
+        canvasStreamText = ""
+        canvasError = nil
+        defer { isGeneratingCanvas = false }
+
+        do {
+            let text = try await streamText(
+                CanvasArtifact.buildRefinePrompt(
+                    currentCode: artifact.code, changeRequest: ask, kind: artifact.kind
+                ),
+                familiarId: familiarId, client: client
+            )
+            guard !Task.isCancelled else { return nil }
+            guard let extracted = CanvasArtifact.extractArtifact(text) else {
+                canvasError = "The familiar didn’t return an updated UI. Try rephrasing."
+                return nil
+            }
+            var updated = artifact
+            updated.code = CanvasArtifact.clampCode(extracted.code)
+            updated.kind = extracted.kind
+            updated.updatedAt = CanvasArtifact.nowISO()
+            let saved = try await client.saveCanvasArtifact(
+                updated, expectedUpdatedAt: artifact.updatedAt
+            )
+            canvasArtifacts = sortedArtifacts(saved.artifacts)
+            return saved.artifact
+        } catch is CancellationError {
+            return nil
+        } catch {
+            canvasError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Remove an artifact, optimistically; restore on failure.
+    func deleteArtifact(_ artifact: CanvasArtifact) async {
+        guard let client else { return }
+        let previous = canvasArtifacts
+        canvasArtifacts.removeAll { $0.id == artifact.id }
+        do {
+            try await client.deleteCanvasArtifact(id: artifact.id)
+        } catch {
+            canvasArtifacts = previous
+            canvasError = error.localizedDescription
+        }
+    }
+
+    func saveCanvasComment(on artifact: CanvasArtifact, target: CanvasComponentTarget,
+                           note: String) async -> CanvasArtifact? {
+        guard let client else { return nil }
+        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
+        guard !trimmed.isEmpty else { return nil }
+        let now = CanvasArtifact.nowISO()
+        let existing = artifact.annotations?.first { $0.target.selector == target.selector }
+        let annotation = CanvasAnnotation(
+            id: existing?.id ?? UUID().uuidString,
+            target: target,
+            note: trimmed,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now
+        )
+        do {
+            let saved = try await client.saveCanvasAnnotation(
+                artifactId: artifact.id,
+                annotation: annotation,
+                expectedUpdatedAt: existing?.updatedAt
+            )
+            canvasArtifacts = sortedArtifacts(saved.artifacts)
+            return saved.artifact
+        } catch {
+            canvasError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func applyCanvasComments(_ artifact: CanvasArtifact, familiarId: String) async -> CanvasArtifact? {
+        let annotations = artifact.annotations ?? []
+        let prompt = CanvasArtifact.buildCommentsPrompt(annotations)
+        guard !prompt.isEmpty else { return nil }
+        guard let client else { return nil }
+
+        isGeneratingCanvas = true
+        canvasStreamText = ""
+        canvasError = nil
+        defer { isGeneratingCanvas = false }
+        do {
+            let text = try await streamText(
+                CanvasArtifact.buildRefinePrompt(
+                    currentCode: artifact.code,
+                    changeRequest: prompt,
+                    kind: artifact.kind
+                ),
+                familiarId: familiarId,
+                client: client
+            )
+            guard let extracted = CanvasArtifact.extractArtifact(text) else {
+                canvasError = "The familiar didn’t return an updated UI. Try again."
+                return nil
+            }
+            var updated = artifact
+            updated.code = CanvasArtifact.clampCode(extracted.code)
+            updated.kind = extracted.kind
+            updated.updatedAt = CanvasArtifact.nowISO()
+            let tokens = annotations
+                .filter { !$0.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map {
+                CaveClient.CanvasResolutionToken(id: $0.id, updatedAt: $0.updatedAt)
+            }
+            let saved = try await client.saveCanvasArtifact(
+                updated,
+                expectedUpdatedAt: artifact.updatedAt,
+                resolvedAnnotations: tokens
+            )
+            canvasArtifacts = sortedArtifacts(saved.artifacts)
+            return saved.artifact
+        } catch {
+            canvasError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Consume the chat SSE stream for `prompt`, accumulating assistant text into
+    /// `canvasStreamText`. Throws on a stream `error` event with no text yet.
+    private func streamText(_ prompt: String, familiarId: String,
+                            client: CaveClient) async throws -> String {
+        var text = ""
+        let runId = UUID().uuidString
+        let body = CaveClient.SendBody(
+            familiarId: familiarId, prompt: prompt, sessionId: nil, runId: runId
+        )
+        var stream = client.sendStream(body)
+        var cursor = 0
+        var completed = false
+        var resumeAttempts = 0
+        var reportedError: Error?
+
+        while !completed {
+            do {
+                for try await frame in stream {
+                    try Task.checkCancellation()
+                    if let id = frame.id { cursor = max(cursor, id) }
+                    switch frame.event {
+                    case .assistantChunk(let chunk):
+                        text += chunk
+                        canvasStreamText = text
+                    case .done(let isError, _):
+                        completed = true
+                        if isError && text.isEmpty {
+                            reportedError = CaveError.transport("The familiar reported an error.")
+                        }
+                    case .error(let message):
+                        if text.isEmpty {
+                            reportedError = CaveError.transport(message)
+                            completed = true
+                        }
+                    default:
+                        break
+                    }
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard resumeAttempts < 3 else { throw error }
+            }
+            guard !completed else { break }
+            guard resumeAttempts < 3 else {
+                throw CaveError.transport("The Canvas generation connection ended before completion.")
+            }
+            resumeAttempts += 1
+            try await Task.sleep(for: .milliseconds(350 * resumeAttempts))
+            stream = client.resumeStream(runId: runId, cursor: cursor)
+        }
+        if let reportedError { throw reportedError }
+        return text
+    }
+
+    /// Newest-updated first; the canvas gallery's stable order.
+    private func sortedArtifacts(_ artifacts: [CanvasArtifact]) -> [CanvasArtifact] {
+        artifacts.sorted {
+            ($0.updatedDate ?? .distantPast) > ($1.updatedDate ?? .distantPast)
+        }
+    }
+
     // MARK: - Connection lifecycle
 
     func configure(host: String, token: String? = nil) async {
@@ -663,6 +919,9 @@ final class AppModel {
         projects = []
         projectsError = nil
         projectsLoaded = false
+        canvasArtifacts = []
+        canvasError = nil
+        canvasLoaded = false
         journalDays = []
         journalError = nil
         journalLoaded = false

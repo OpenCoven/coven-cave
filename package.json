@@ -13,6 +13,10 @@
   "scripts": {
     "dev": "node --experimental-strip-types server.ts",
     "dev:app": "bash scripts/dev-app.sh",
+    "mobile:ios:sim": "bash scripts/ios-simulator.sh",
+    "mobile:android:setup": "bash scripts/android-emulator.sh setup",
+    "mobile:android:start": "bash scripts/android-emulator.sh start",
+    "mobile:android:dev": "bash scripts/android-emulator.sh dev",
     "uninstall:app": "bash scripts/uninstall-app.sh",
     "mobile:tailscale": "bash scripts/mobile-tailscale.sh start",
     "mobile:tailscale:invite": "bash scripts/mobile-tailscale.sh invite",

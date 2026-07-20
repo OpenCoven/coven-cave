@@ -119,6 +119,13 @@ export async function PATCH(req: Request) {
     if (result.status === "not_found") {
       return NextResponse.json({ ok: false, error: "artifact not found" }, { status: 404 });
     }
+    if (result.status === "conflict") {
+      return NextResponse.json({
+        ok: false,
+        error: "annotation changed",
+        currentUpdatedAt: result.currentUpdatedAt,
+      }, { status: 409 });
+    }
     return NextResponse.json({
       ok: true,
       artifact: result.artifact,

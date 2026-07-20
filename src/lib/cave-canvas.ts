@@ -336,13 +336,19 @@ export async function upsertCanvasArtifact(
 }
 
 export type CanvasAnnotationMutation =
-  | { id: string; annotation: CanvasAnnotation }
+  | {
+      id: string;
+      annotation: CanvasAnnotation;
+      expectedAnnotationUpdatedAt?: string;
+      expectedAnnotationAbsent?: true;
+    }
   | { id: string; removeAnnotationId: string }
   | { id: string; clearAnnotations: true };
 
 export type CanvasAnnotationMutationResult =
   | { status: "invalid" }
   | { status: "not_found"; file: CanvasFile }
+  | { status: "conflict"; file: CanvasFile; currentUpdatedAt: string | null }
   | { status: "updated"; file: CanvasFile; artifact: CanvasArtifact };
 
 function parseCanvasAnnotationMutation(value: unknown): CanvasAnnotationMutation | null {
@@ -357,9 +363,32 @@ function parseCanvasAnnotationMutation(value: unknown): CanvasAnnotationMutation
   if (Number(hasAnnotation) + Number(hasRemove) + Number(hasClear) !== 1) return null;
 
   if (hasAnnotation) {
-    if (Object.keys(raw).some((key) => key !== "id" && key !== "annotation")) return null;
+    if (Object.keys(raw).some((key) => ![
+      "id",
+      "annotation",
+      "expectedAnnotationUpdatedAt",
+      "expectedAnnotationAbsent",
+    ].includes(key))) return null;
     const annotation = sanitizeAnnotation(raw.annotation);
-    return annotation ? { id, annotation } : null;
+    if (!annotation) return null;
+    const expectedAnnotationUpdatedAt = raw.expectedAnnotationUpdatedAt;
+    const expectedAnnotationAbsent = raw.expectedAnnotationAbsent;
+    if (
+      expectedAnnotationUpdatedAt !== undefined
+      && (
+        typeof expectedAnnotationUpdatedAt !== "string"
+        || !Number.isFinite(Date.parse(expectedAnnotationUpdatedAt))
+        || new Date(Date.parse(expectedAnnotationUpdatedAt)).toISOString() !== expectedAnnotationUpdatedAt
+      )
+    ) return null;
+    if (expectedAnnotationAbsent !== undefined && expectedAnnotationAbsent !== true) return null;
+    if (expectedAnnotationUpdatedAt !== undefined && expectedAnnotationAbsent === true) return null;
+    return {
+      id,
+      annotation,
+      ...(expectedAnnotationUpdatedAt !== undefined ? { expectedAnnotationUpdatedAt } : {}),
+      ...(expectedAnnotationAbsent === true ? { expectedAnnotationAbsent: true as const } : {}),
+    };
   }
   if (hasRemove) {
     if (Object.keys(raw).some((key) => key !== "id" && key !== "removeAnnotationId")) return null;
@@ -403,6 +432,26 @@ export async function mutateCanvasArtifactAnnotation(
           || annotation.target.selector === mutation.annotation.target.selector
         ),
       );
+      if (mutation.expectedAnnotationAbsent && matchingIndex >= 0) {
+        return {
+          status: "conflict",
+          file: current,
+          currentUpdatedAt: annotations[matchingIndex].updatedAt,
+        };
+      }
+      if (
+        mutation.expectedAnnotationUpdatedAt !== undefined
+        && (
+          matchingIndex < 0
+          || annotations[matchingIndex].updatedAt !== mutation.expectedAnnotationUpdatedAt
+        )
+      ) {
+        return {
+          status: "conflict",
+          file: current,
+          currentUpdatedAt: matchingIndex >= 0 ? annotations[matchingIndex].updatedAt : null,
+        };
+      }
       if (matchingIndex >= 0) {
         annotations = annotations.slice();
         annotations[matchingIndex] = mutation.annotation;
