@@ -19,10 +19,12 @@ const PR_URL_RE = /https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/;
 /** stdout of `gh pr view <branch> --json number,url,state,isDraft` in `root`. */
 export type BranchPrRunner = (root: string, branch: string) => Promise<string>;
 
-/** Parse gh's JSON into the SessionRow.pullRequest shape (state lowercased). */
+/** Parse gh's JSON into the SessionRow.pullRequest shape (state lowercased).
+ *  `branch` is stamped when known (branch-keyed lookups); URL-keyed lookups
+ *  omit it. */
 export function parseBranchPr(
   stdout: string,
-  branch: string,
+  branch?: string,
 ): SessionPullRequestContext | null {
   let parsed: { number?: unknown; url?: unknown; state?: unknown; isDraft?: unknown };
   try {
@@ -38,7 +40,7 @@ export function parseBranchPr(
     number: parsed.number,
     url: match[0],
     state: typeof parsed.state === "string" ? parsed.state.toLowerCase() : "open",
-    branch,
+    ...(branch ? { branch } : {}),
     draft: parsed.isDraft === true,
   };
 }
@@ -49,6 +51,20 @@ const defaultRunner: BranchPrRunner = (root, branch) =>
       "gh",
       ["pr", "view", branch, "--json", "number,url,state,isDraft"],
       { cwd: root, timeout: 10_000, env: scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLED: "1" }) },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    );
+  });
+
+/** stdout of `gh pr view <url> --json number,url,state,isDraft` (repo inferred
+ *  from the URL, so no project cwd is needed). */
+export type UrlPrRunner = (url: string) => Promise<string>;
+
+const defaultUrlRunner: UrlPrRunner = (url) =>
+  new Promise((resolve, reject) => {
+    execFile(
+      "gh",
+      ["pr", "view", url, "--json", "number,url,state,isDraft"],
+      { timeout: 10_000, env: scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLED: "1" }) },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
   });
@@ -114,3 +130,66 @@ export function createBranchPrCache(options?: {
 
 /** Process-wide cache instance for API routes (module state survives requests). */
 export const branchPrCache: BranchPrCache = createBranchPrCache();
+
+export type PrUrlCache = {
+  /** Cached PR for a canonical PR URL — null = known unresolvable, undefined =
+   *  not yet resolved. Schedules a background refresh when missing or stale. */
+  get(url: string): SessionPullRequestContext | null | undefined;
+};
+
+/**
+ * URL-keyed sibling of the branch cache, for transcript-derived attribution
+ * (cave-u9wl): familiar chats report the PR they landed in a reply, and the
+ * chat's own cwd never sits on that branch — so the lookup keys on the PR URL
+ * itself. Same stale-while-revalidate posture: synchronous reads, one
+ * background `gh pr view <url>` per URL, negative-cache on failure.
+ */
+export function createPrUrlCache(options?: {
+  runner?: UrlPrRunner;
+  ttlMs?: number;
+  /** Merged/closed PRs are terminal — cache them longer. */
+  settledTtlMs?: number;
+  maxConcurrent?: number;
+  now?: () => number;
+}): PrUrlCache {
+  const runner = options?.runner ?? defaultUrlRunner;
+  const ttlMs = options?.ttlMs ?? 60_000;
+  const settledTtlMs = options?.settledTtlMs ?? 15 * 60_000;
+  const maxConcurrent = options?.maxConcurrent ?? 3;
+  const now = options?.now ?? Date.now;
+
+  const entries = new Map<string, CacheEntry>();
+  const inFlight = new Set<string>();
+
+  function ttlFor(entry: CacheEntry): number {
+    const state = entry.value?.state;
+    return state === "merged" || state === "closed" ? settledTtlMs : ttlMs;
+  }
+
+  function refresh(url: string): void {
+    if (inFlight.has(url) || inFlight.size >= maxConcurrent) return;
+    inFlight.add(url);
+    void runner(url)
+      .then((stdout) => {
+        entries.set(url, { value: parseBranchPr(stdout), fetchedAt: now() });
+      })
+      .catch(() => {
+        // PR gone, or gh missing/unauthenticated — negative-cache.
+        entries.set(url, { value: null, fetchedAt: now() });
+      })
+      .finally(() => {
+        inFlight.delete(url);
+      });
+  }
+
+  return {
+    get(url) {
+      const entry = entries.get(url);
+      if (!entry || now() - entry.fetchedAt >= ttlFor(entry)) refresh(url);
+      return entry?.value;
+    },
+  };
+}
+
+/** Process-wide URL-keyed cache instance for API routes. */
+export const prUrlCache: PrUrlCache = createPrUrlCache();

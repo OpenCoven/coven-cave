@@ -95,21 +95,13 @@ html[data-backdrop-on] .cave-group-chat-shell {
    (faces, props) fights the copy. Ground the centered content clusters
    without dulling the scene at its edges. */
 
-/* Home: a radial ground behind the hero + composer column. Sits as the
-   root's first child so all in-flow content paints above it. */
-html[data-backdrop-on] .home-composer-root {
-  position: relative;
-}
-html[data-backdrop-on] .home-composer-root::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse 72% 58% at 50% 42%,
-    color-mix(in oklch, var(--bg-base) 52%, transparent),
-    transparent 78%
-  );
+/* Home: one uniform, theme-derived readability surface on the existing
+   hearth card (cave-hct3). The old full-area radial ground behind the whole
+   column read as a blurry oval over busy imagery; the card is the thing that
+   needs the contrast, so deepen ITS fill instead and leave the scene visible
+   around it. */
+html[data-backdrop-on] .home-hearth-card {
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
 }
 
 /* Chat landing (no thread yet): the greeting/identity/suggestions cluster
@@ -172,9 +164,10 @@ html[data-backdrop-on] .home-composer-root {
     padding-inline: 0;
   }
 
-  /* Same reasoning for the new grounds: no image → no scrim needed. */
-  html[data-backdrop-on] .home-composer-root::before {
-    display: none;
+  /* Same reasoning for the new grounds: no image → no deepened fill; restore
+     the hearth card's normal translucent panel fill. */
+  html[data-backdrop-on] .home-hearth-card {
+    background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
   }
 
   html[data-backdrop-on] .cave-chat-empty-shell {

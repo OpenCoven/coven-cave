@@ -5,7 +5,7 @@
 // list enriches rows with branch PR context (never blocking the poll) and
 // auto-archives chats whose PR merged.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
@@ -15,7 +15,15 @@ const listRoute = readFileSync(
   new URL("../app/api/sessions/list/route.ts", import.meta.url),
   "utf8",
 );
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// #3576 decomposed globals.css into @imported sheets under src/styles —
+// pin against the whole global cascade, wherever a rule now lives.
+const stylesDir = new URL("../styles/", import.meta.url);
+const css = [
+  readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ...readdirSync(stylesDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => readFileSync(new URL(f, stylesDir), "utf8")),
+].join("\n");
 const caveConfig = readFileSync(new URL("../lib/cave-config.ts", import.meta.url), "utf8");
 
 // ── Chat list: PR badge replaces the status dot where applicable ─────────────
@@ -81,8 +89,13 @@ assert.match(
 );
 assert.match(
   gitEnrichLib,
-  /session\.workBranch \?\?\s*\n\s*\(entry\.gitContext\?\.isWorktree \? entry\.gitContext\.branch \?\? null : null\)/,
+  /session\.workBranch \?\?\s*\n\s*\(entry\?\.gitContext\?\.isWorktree \? entry\.gitContext\.branch \?\? null : null\)/,
   "PR context is attributed per session (recorded work branch, or a branch-stable worktree root) — never the shared root's current branch (cave-9q24)",
+);
+assert.match(
+  gitEnrichLib,
+  /if \(!enriched\.pullRequest && session\.chatPrUrl\) \{\s*\n\s*const pr = urlPrCache\.get\(session\.chatPrUrl\);\s*\n\s*if \(pr\) enriched\.pullRequest = \{ \.\.\.pr, attribution: "transcript" \};/,
+  "transcript-reported PR URLs are a badge-only fallback, tagged so the merged sweep skips them (cave-u9wl)",
 );
 assert.match(
   listRoute,

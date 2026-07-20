@@ -83,6 +83,7 @@ import {
   captureWorkBranch,
   cwdFromConversationRuntime,
 } from "@/lib/server/chat-work-branch";
+import { latestPrUrlFromText } from "@/lib/chat-pr-link";
 import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
@@ -655,6 +656,10 @@ function openClawChatResponse(args: {
           // failed capture keeps the previous snapshot.
           const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
           if (workBranch) conv.branch = workBranch;
+          // Transcript PR snapshot: the reply's last reported PR URL (fallback
+          // attribution for chats whose work happens in agent worktrees).
+          const reportedPrUrl = latestPrUrlFromText(assistantText);
+          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
           conv.turns.push(
             {
               id: userTurnId,
@@ -1959,6 +1964,10 @@ export async function POST(req: Request) {
         // failed capture keeps the previous snapshot.
         const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
         if (workBranch) conv.branch = workBranch;
+        // Transcript PR snapshot: the reply's last reported PR URL (fallback
+        // attribution for chats whose work happens in agent worktrees).
+        const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+        if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;

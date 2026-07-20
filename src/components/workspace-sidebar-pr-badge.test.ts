@@ -5,11 +5,19 @@
 // the session carries real PR context; clicking routes PR URLs through the
 // native GitHubView deep-linker (browser/new-tab fallback) without opening the chat.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// #3576 decomposed globals.css into @imported sheets under src/styles —
+// pin against the whole global cascade, wherever a rule now lives.
+const stylesDir = new URL("../styles/", import.meta.url);
+const css = [
+  readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ...readdirSync(stylesDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => readFileSync(new URL(f, stylesDir), "utf8")),
+].join("\n");
 
 // ── ThreadRow: real PR context wins the leading slot ─────────────────────────
 assert.match(

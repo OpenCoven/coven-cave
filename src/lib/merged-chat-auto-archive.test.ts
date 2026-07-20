@@ -118,3 +118,21 @@ test("mergedPrKey prefers repo#number, falls back to url, else null", () => {
   assert.equal(mergedPrKey({ repo: "o/r", url: "https://github.com/o/r/pull/5" }), "https://github.com/o/r/pull/5");
   assert.equal(mergedPrKey({ repo: "o/r" }), null);
 });
+
+test("transcript-attributed PRs are badge-only — never swept (cave-u9wl)", () => {
+  const transcriptRow = row({
+    pullRequest: {
+      repo: "OpenCoven/coven-cave",
+      number: 42,
+      url: "https://github.com/OpenCoven/coven-cave/pull/42",
+      state: "merged",
+      attribution: "transcript",
+    },
+  });
+  assert.deepEqual(mergedChatAutoArchiveDecisions([transcriptRow], {}, ctx()), []);
+  // Explicit "branch" attribution still sweeps like the default.
+  const branchRow = row({
+    pullRequest: { ...transcriptRow.pullRequest, attribution: "branch" },
+  });
+  assert.equal(mergedChatAutoArchiveDecisions([branchRow], {}, ctx()).length, 1);
+});

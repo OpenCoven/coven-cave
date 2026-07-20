@@ -239,7 +239,10 @@ const REPO_SCRIPT = {
   const { runner, calls } = fakeGit(REPO_SCRIPT);
   const bare = { id: "s1", project_root: "", harness: "codex", title: "s1", status: "completed" };
   const rows = await enrichSessionsWithGitContext([bare], runner);
-  assert.equal(rows[0], bare, "rootless rows keep their identity");
+  // Value equality (not identity): rootless rows now flow through the map so
+  // transcript PR attribution can reach them (cave-u9wl) — but with no
+  // chatPrUrl they must come out byte-identical and never touch git.
+  assert.deepEqual(rows[0], bare, "rootless rows keep their content");
   assert.equal(calls.length, 0);
 }
 
@@ -317,6 +320,83 @@ const REPO_SCRIPT = {
     const rows = await enrichSessionsWithGitContext([session("wt", root)], runner, prCache);
     assert.equal(rows[0].git.isWorktree, true);
     assert.deepEqual(rows[0].pullRequest, mergedPr("feat/thing"));
+  }
+}
+
+// 12. Transcript fallback (cave-u9wl): a chat that reported a PR URL in a
+// reply gets URL-resolved PR context tagged attribution:"transcript" — even
+// with no project root — and branch attribution always wins when present.
+{
+  /** Fake PrUrlCache scripted per URL; records lookups. */
+  function fakeUrlCache(byUrl) {
+    const lookups = [];
+    return {
+      lookups,
+      get(url) {
+        lookups.push(url);
+        return byUrl[url] ?? null;
+      },
+    };
+  }
+  const url = "https://github.com/acme/app/pull/77";
+  const transcriptPr = { repo: "acme/app", number: 77, url, state: "merged" };
+  const noGit = async () => null;
+  const noPrCache = { get: () => null };
+
+  // 12a. Rootless chat with a reported PR URL → transcript-attributed badge.
+  {
+    const urlCache = fakeUrlCache({ [url]: transcriptPr });
+    const rows = await enrichSessionsWithGitContext(
+      [{ ...session("familiar-chat", ""), chatPrUrl: url }],
+      noGit,
+      noPrCache,
+      urlCache,
+    );
+    assert.deepEqual(rows[0].pullRequest, { ...transcriptPr, attribution: "transcript" });
+    assert.deepEqual(urlCache.lookups, [url]);
+  }
+
+  // 12b. Rooted chat whose branch attribution found nothing falls back too.
+  {
+    const root = makeRoot("repo-transcript-fallback");
+    const { runner } = fakeGit(REPO_SCRIPT);
+    const urlCache = fakeUrlCache({ [url]: transcriptPr });
+    const rows = await enrichSessionsWithGitContext(
+      [{ ...session("chat", root), chatPrUrl: url }],
+      runner,
+      noPrCache,
+      urlCache,
+    );
+    assert.equal(rows[0].pullRequest?.attribution, "transcript");
+  }
+
+  // 12c. Branch attribution wins over the transcript URL.
+  {
+    const root = makeRoot("repo-branch-beats-transcript");
+    const { runner } = fakeGit(REPO_SCRIPT);
+    const branchPr = { repo: "acme/app", number: 9, url: "https://github.com/acme/app/pull/9", state: "open", branch: "feat/mine" };
+    const urlCache = fakeUrlCache({ [url]: transcriptPr });
+    const rows = await enrichSessionsWithGitContext(
+      [{ ...session("chat", root), workBranch: "feat/mine", chatPrUrl: url }],
+      runner,
+      { get: (_root, branch) => (branch === "feat/mine" ? branchPr : null) },
+      urlCache,
+    );
+    assert.deepEqual(rows[0].pullRequest, branchPr);
+    assert.equal(urlCache.lookups.length, 0, "branch-attributed rows never probe the URL cache");
+  }
+
+  // 12d. No reported URL → URL cache untouched.
+  {
+    const urlCache = fakeUrlCache({});
+    const rows = await enrichSessionsWithGitContext(
+      [session("plain", "")],
+      noGit,
+      noPrCache,
+      urlCache,
+    );
+    assert.equal(rows[0].pullRequest, undefined);
+    assert.equal(urlCache.lookups.length, 0);
   }
 }
 
