@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
@@ -20,7 +20,6 @@ import {
 } from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
-  MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
@@ -137,6 +136,12 @@ import {
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
+import {
+  appendMentionedFilesBlock,
+  cleanupImageTempFiles,
+  resolveMentionedFiles,
+  writeImageAttachmentsToTemp,
+} from "./chat-send-attachments";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -294,110 +299,6 @@ async function resolveFamiliarWorkspace(
     /* not found */
   }
   return undefined;
-}
-
-// ── Image attachment delivery ────────────────────────────────────────────
-// Local coven-run harnesses are agentic CLIs with a Read tool that can open
-// image files, so image payloads are written to private temp files and the
-// prompt points the harness at them. Bridges/remotes that cannot read this
-// machine's filesystem get an explicit unsupported notice instead.
-
-const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
-const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
-  jpeg: "jpg",
-  "svg+xml": "svg",
-};
-
-function imageExtension(mimeType?: string): string {
-  const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
-  const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;
-  // Extension derives from the validated mime subtype only — never from a
-  // user-controlled filename — and falls back to a fixed token.
-  return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
-}
-
-async function writeImageAttachmentsToTemp(
-  attachments: ChatAttachment[],
-): Promise<Map<number, string>> {
-  const filePaths = new Map<number, string>();
-  for (const [index, attachment] of attachments.entries()) {
-    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
-    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
-    const payload = Buffer.from(base64, "base64");
-    // Defense in depth: normalizeChatAttachments already enforces the cap,
-    // but never write more than the cap regardless.
-    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
-    try {
-      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
-      const filePath = path.join(
-        ATTACHMENT_TMP_DIR,
-        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
-      );
-      await writeFile(filePath, payload, { mode: 0o600 });
-      filePaths.set(index, filePath);
-    } catch {
-      /* best effort — the prompt falls back to the not-delivered notice */
-    }
-  }
-  return filePaths;
-}
-
-function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
-  for (const filePath of filePaths.values()) {
-    void rm(filePath, { force: true }).catch(() => undefined);
-  }
-}
-
-// ── @-mentioned file delivery (CHAT-D1-04) ───────────────────────────────
-// The composer's `@` picker records repo-relative paths; the prompt gets a
-// compact "Referenced files" block of absolute paths the harness can open
-// with its Read tool. Validation mirrors /api/changes: repo-relative paths
-// only, resolved against the realpathed root with a prefix containment
-// check — absolute paths, NUL bytes, `..` segments, and symlinks that
-// escape the root are silently skipped, never errors.
-
-const MAX_MENTIONED_FILES = 10;
-
-async function resolveMentionedFiles(
-  relPaths: unknown,
-  root: unknown,
-): Promise<string[]> {
-  if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
-  if (typeof root !== "string" || !path.isAbsolute(root)) return [];
-  let realRoot: string;
-  try {
-    realRoot = await realpath(path.resolve(root));
-    if (!(await stat(realRoot)).isDirectory()) return [];
-  } catch {
-    return [];
-  }
-  const resolved: string[] = [];
-  for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
-    if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
-    if (rel.split(/[\\/]+/).includes("..")) continue;
-    const candidate = path.resolve(realRoot, rel);
-    if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
-    try {
-      // Containment must hold for the real file too, or a symlink inside the
-      // root could point the prompt at an arbitrary path outside it.
-      const real = await realpath(candidate);
-      if (real !== candidate && !real.startsWith(realRoot + path.sep)) continue;
-      if (!(await stat(real)).isFile()) continue;
-      if (!resolved.includes(candidate)) resolved.push(candidate);
-    } catch {
-      /* missing or unreadable — skip */
-    }
-  }
-  return resolved;
-}
-
-function appendMentionedFilesBlock(prompt: string, absPaths: string[]): string {
-  if (absPaths.length === 0) return prompt;
-  const block = [
-    "Referenced files (open with the Read tool):",
-    ...absPaths.map((p) => `- ${p}`),
-  ].join("\n");
-  return prompt ? `${prompt}\n\n${block}` : block;
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
