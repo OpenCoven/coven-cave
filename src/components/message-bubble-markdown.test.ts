@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts", import.meta.url), "utf8");
+const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 // StrictMode regression guard: a ref-based "same text" check poisons itself
 // when the first (dev double-invoke) effect run is cancelled — run 2 then
@@ -203,12 +204,12 @@ assert.match(
   "MessageBubble should accept a link-open callback so chat links can route into the side-panel browser",
 );
 assert.match(
-  source,
+  domWiring,
   /wireMarkdownLinks\(el, onOpenUrl\)/,
-  "MarkdownContent should wire rendered markdown links through the chat link-open callback",
+  "The markdown DOM boundary should wire rendered links through the chat link-open callback",
 );
 assert.match(
-  source,
+  domWiring,
   /event\.preventDefault\(\)[\s\S]*onOpenUrl\(href\)/,
   "Markdown link clicks should prevent normal navigation and open in the provided browser target",
 );

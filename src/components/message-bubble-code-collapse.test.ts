@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 // container so the presentation can't silently regress.
 
 const bubble = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 const css = (
   await Promise.all(
     ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
@@ -32,7 +33,7 @@ assert.match(
 
 // ── wireCopyButtons wires the chevron to the (unit-tested) collapse toggle ───
 assert.match(
-  bubble,
+  wiring,
   /querySelectorAll<HTMLButtonElement>\("\.cave-code-collapse-btn"\)[\s\S]*?addEventListener\("click"[\s\S]*?toggleCodeBlockCollapse\(wrap, btn\)/,
   "clicking the chevron calls toggleCodeBlockCollapse (collapse logic lives in @/lib/code-block-collapse, unit-tested)",
 );
