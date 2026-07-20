@@ -676,24 +676,24 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                   placeholder="/absolute/path/to/project"
                   aria-invalid={Boolean(createError)}
                   aria-describedby={createError ? "project-root-help project-root-error" : "project-root-help"}
-                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
                 />
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => void handleBrowse()}
                   title="Browse for a project folder"
-                  className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                  className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
                   leadingIcon="ph:folder-open"
                 >
                   Browse
                 </Button>
               </div>
-              <p id="project-root-help" className="text-[11px] text-[var(--text-muted)]">
+              <p id="project-root-help" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 {PROJECT_ROOT_WORKSPACE_HELP}
               </p>
               {createError ? (
-                <p id="project-root-error" role="alert" className="text-[11px] text-[var(--color-danger,#e5484d)]">
+                <p id="project-root-error" role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
                   {createError}
                 </p>
               ) : null}

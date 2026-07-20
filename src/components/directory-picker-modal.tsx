@@ -341,7 +341,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
         </div>
 
         <div className="flex items-start justify-between gap-3 border-t border-[var(--border-hairline)] px-3 py-2">
-          <div className="min-w-0 flex-1 space-y-1 text-[11px] text-[var(--text-muted)]">
+          <div className="min-w-0 flex-1 space-y-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <p>{PROJECT_ROOT_WORKSPACE_HELP}</p>
             <p>Select the folder you're browsing, or open a subfolder first.</p>
           </div>
