@@ -10,7 +10,7 @@ const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.u
 // instance per tab, so every quick chat holds its own thread.
 const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
 const glassCss = readFileSync(new URL("../styles/quick-chat-glass.css", import.meta.url), "utf8");
-const shell = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const shell = readFileSync(new URL("../../src-tauri/src/window_geometry.rs", import.meta.url), "utf8");
 const tauriConf = readFileSync(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
 const cargo = readFileSync(new URL("../../src-tauri/Cargo.toml", import.meta.url), "utf8");
 

@@ -24,7 +24,7 @@ assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
 const entitlements = read("src-tauri/gen/apple/app_iOS/app_iOS.entitlements");
 assert.match(entitlements, /com\.apple\.developer\.networking\.wifi-info/);
 
-const libRs = read("src-tauri/src/lib.rs");
+const libRs = read("src-tauri/src/tauri_setup.rs");
 assert.match(libRs, /CAVE_MOBILE_DEV_URL/);
 assert.match(libRs, /\.ts\.net/);
 assert.match(libRs, /WebviewUrl::External/);
