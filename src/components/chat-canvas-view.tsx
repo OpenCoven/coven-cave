@@ -43,6 +43,9 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     // after unmount is harmless.
     setTimeout(() => setJustSavedId((cur) => (cur === savedId ? null : cur)), 2000);
   }, []);
+  const handleArtifactUpdated = useCallback((_updated: CanvasArtifact, next: CanvasArtifact[]) => {
+    setArtifacts(sortArtifactsForGallery(next));
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
@@ -197,9 +200,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
         </p>
       ) : null}
-      {/* Reopen a saved sketch in the full inline viewer (preview/code tabs,
-          refine, fullscreen). Refine edits live in the modal only; "Save to
-          Canvas" from the viewer stores the refined result as a new sketch. */}
+      {/* Reopen a saved sketch in the full inline viewer. Persisted identity
+          enables component comments and same-artifact revisions. */}
       <Modal
         open={opened !== null}
         onClose={() => setOpenId(null)}
@@ -215,6 +217,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
               title={opened.title}
               familiarId={familiarId}
               sourcePrompt={opened.prompt}
+              artifact={opened}
+              onArtifactUpdated={handleArtifactUpdated}
             />
           </div>
         ) : null}

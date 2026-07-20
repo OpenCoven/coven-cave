@@ -2,12 +2,19 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
 
-import {
+import * as inspector from "./canvas-inspector.ts";
+
+const {
   buildCanvasInspectorScript,
   CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE,
+  CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE,
   CANVAS_INSPECTOR_MESSAGE_TYPE,
+  CANVAS_INSPECTOR_READY_MESSAGE_TYPE,
   injectCanvasInspector,
-} from "./canvas-inspector.ts";
+} = inspector;
+
+assert.equal(typeof CANVAS_INSPECTOR_READY_MESSAGE_TYPE, "string", "ready bootstrap type is exported");
+assert.equal(typeof CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE, "string", "loaded handshake type is exported");
 
 class FakeElement {
   nodeType = 1;
@@ -27,6 +34,48 @@ class FakeElement {
   getAttribute(name: string) {
     return this.attributes.get(name) ?? null;
   }
+
+  hasAttribute(name: string) {
+    return this.attributes.has(name);
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, String(value));
+  }
+
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
+
+  getClientRects() {
+    return [{}];
+  }
+}
+
+class FakePort {
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  posted: unknown[] = [];
+  closed = false;
+  started = false;
+  peer: FakePort | null = null;
+
+  postMessage(message: unknown) {
+    if (this.closed) return;
+    this.posted.push(message);
+    this.peer?.receive(message);
+  }
+
+  start() {
+    this.started = true;
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  receive(data: unknown) {
+    if (!this.closed) this.onmessage?.({ data });
+  }
 }
 
 const scriptTag = buildCanvasInspectorScript();
@@ -35,17 +84,45 @@ assert.equal((scriptTag.match(/<\/script>/gi) ?? []).length, 1, "script body can
 assert.doesNotMatch(scriptTag.slice(0, -"</script>".length), /<\/script>/i, "embedded source neutralizes </script>");
 assert.doesNotMatch(scriptTag, /parent\.(?:document|location)|document\.cookie/, "does not access parent DOM or cookies");
 assert.doesNotMatch(scriptTag, /allow-same-origin/, "does not assume a same-origin sandbox");
+assert.match(scriptTag, /new MessageChannel\(\)/, "the trusted inspector creates its own channel");
+assert.match(scriptTag, new RegExp(CANVAS_INSPECTOR_READY_MESSAGE_TYPE), "the trusted inspector posts ready immediately");
+assert.match(scriptTag, new RegExp(CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE), "the trusted inspector authenticates window load");
+assert.doesNotMatch(scriptTag, /cave-canvas-inspector-connect/, "the parent-to-child port transfer is removed");
+assert.doesNotMatch(
+  scriptTag,
+  /querySelectorAll\(["']body \*["']\)/,
+  "keyboard promotion does not scan and promote every body descendant",
+);
 
-const html = "<!doctype html><html><head></head><body><main>x</main></body></html>";
+const html = "<!doctype html><html><head><script>artifactHandler()</script></head><body><main>x</main></body></html>";
 const injected = injectCanvasInspector(html);
-assert.ok(injected.includes(scriptTag), "injects the inspector into a full document");
-assert.ok(injected.startsWith(html), "the entire original document is an exact prefix");
-assert.equal(injected.slice(html.length), `\n${scriptTag}`, "the inspector is appended after the document bytes");
+const doctype = "<!doctype html>";
+assert.equal(
+  injected,
+  `${doctype}${scriptTag}${html.slice(doctype.length)}`,
+  "inspector executes immediately after a leading doctype without changing any artifact byte",
+);
+assert.ok(
+  injected.indexOf(scriptTag) < injected.indexOf("artifactHandler()"),
+  "inspector parser order precedes artifact scripts",
+);
+assert.equal(
+  injectCanvasInspector("<main>x</main>"),
+  `${scriptTag}<main>x</main>`,
+  "documents without a leading doctype receive the inspector first",
+);
+const commentedDoctype = "\n<!-- generated artifact -->\n<!doctype html><html><body>x</body></html>";
+const commentedDoctypeEnd = commentedDoctype.indexOf(">", commentedDoctype.indexOf("<!doctype")) + 1;
+assert.equal(
+  injectCanvasInspector(commentedDoctype),
+  `${commentedDoctype.slice(0, commentedDoctypeEnd)}${scriptTag}${commentedDoctype.slice(commentedDoctypeEnd)}`,
+  "leading comments stay before the doctype while the inspector remains standards-mode safe",
+);
 
 const markerStrings = ["<head>", "</head>", "<body>", "</body>", "<html>", "</html>"];
 const preservationCases = [
   [
-    "<!doctype html>",
+    " \n<!DOCTYPE HTML PUBLIC \"legacy\">",
     "<html>",
     "<head>",
     `<title>${markerStrings.join(" title ")}</title>`,
@@ -59,7 +136,6 @@ const preservationCases = [
     "</html>",
   ].join("\n"),
   [
-    "<!doctype html>",
     "<html>",
     "<head><title>Fallback containers</title></head>",
     "<body>",
@@ -73,167 +149,197 @@ const preservationCases = [
 
 for (const source of preservationCases) {
   const result = injectCanvasInspector(source);
-  assert.ok(result.startsWith(source), "raw-text, fallback, template, and comment bytes remain an exact prefix");
-  assert.equal(result.slice(source.length), `\n${scriptTag}`, "the inspector appears only after the original source");
-  assert.equal(result.split(scriptTag).length - 1, 1, "the inspector script is appended exactly once");
+  assert.equal(
+    result.replace(scriptTag, ""),
+    source,
+    "removing the one inserted inspector recovers every original artifact byte",
+  );
+  assert.equal(result.split(scriptTag).length - 1, 1, "the inspector script is inserted exactly once");
+  if (source.includes("artifactHandler")) {
+    assert.ok(result.indexOf(scriptTag) < result.indexOf("artifactHandler"), "inspector remains before artifact code");
+  }
 }
 
-const listeners = new Map<string, { listener: Function; options?: unknown }>();
-const posted: unknown[] = [];
-const parentWindow = { postMessage: (message: unknown) => posted.push(message) };
+const listeners = new Map<string, Array<{ listener: Function; options?: unknown }>>();
+const queryResults = new Map<string, FakeElement[]>();
+let keyboardCandidates: FakeElement[] = [];
+let readyMessage: unknown = null;
+let transferredPort: FakePort | null = null;
+const parentWindow = {
+  postMessage(message: unknown, _target: string, ports: FakePort[]) {
+    readyMessage = message;
+    transferredPort = ports[0] ?? null;
+  },
+};
+const addListener = (scope: string, type: string, listener: Function, options?: unknown) => {
+  const key = `${scope}:${type}`;
+  listeners.set(key, [...(listeners.get(key) ?? []), { listener, options }]);
+};
 const windowObject = {
   parent: parentWindow,
-  addEventListener(type: string, listener: Function) {
-    listeners.set(`window:${type}`, { listener });
+  CSS: { escape: (value: string) => value.replace(/"/g, '\\"') },
+  addEventListener(type: string, listener: Function, options?: unknown) {
+    addListener("window", type, listener, options);
+  },
+  getComputedStyle() {
+    return { display: "block", visibility: "visible" };
   },
 };
 const documentObject = {
   addEventListener(type: string, listener: Function, options?: unknown) {
-    listeners.set(`document:${type}`, { listener, options });
+    addListener("document", type, listener, options);
   },
   querySelectorAll(selector: string) {
-    return queryResults.get(selector) ?? [];
+    return queryResults.get(selector)
+      ?? (selector.includes("[data-testid]") ? keyboardCandidates : []);
   },
 };
-const queryResults = new Map<string, FakeElement[]>();
 
 const scriptSource = scriptTag.slice("<script>".length, -"</script>".length);
 vm.runInNewContext(scriptSource, {
   window: windowObject,
   document: documentObject,
-  CSS: { escape: (value: string) => value.replace(/"/g, '\\"') },
+  CSS: windowObject.CSS,
+  MessageChannel: class FakeMessageChannel {
+    port1 = new FakePort();
+    port2 = new FakePort();
+
+    constructor() {
+      this.port1.peer = this.port2;
+      this.port2.peer = this.port1;
+    }
+  },
+  Map,
+  Set,
+  Array,
+  String,
 });
 
-assert.equal(listeners.get("document:click")?.options, true, "click interception is registered in capture phase");
+assert.equal(
+  JSON.stringify(readyMessage),
+  JSON.stringify({ type: CANVAS_INSPECTOR_READY_MESSAGE_TYPE, generation: "" }),
+  "the trusted script posts its bootstrap immediately",
+);
+assert.ok(transferredPort, "the bootstrap transfers one child-created port");
+assert.equal(listeners.get("document:click")?.[0]?.options, true, "click interception is registered in capture phase");
+assert.equal(listeners.get("document:keydown")?.[0]?.options, true, "keyboard interception is registered in capture phase");
+
+const parentMessages: unknown[] = [];
+transferredPort!.onmessage = (event) => parentMessages.push(event.data);
+transferredPort!.start();
+assert.deepEqual(parentMessages, [], "loaded is not sent during bootstrap");
+for (const { listener } of listeners.get("window:load") ?? []) listener({});
+assert.equal(
+  JSON.stringify(parentMessages),
+  JSON.stringify([{ type: CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE }]),
+  "loaded is sent only from the inspector's own window.load listener",
+);
 
 const root = new FakeElement("main");
+root.textContent = "Main content";
+root.outerHTML = "<main>Main content</main>";
 const button = new FakeElement("button");
 root.children.push(button);
 button.parentElement = root;
 button.id = "x".repeat(600);
 button.attributes.set("aria-label", "L".repeat(300));
 button.outerHTML = `<button id="${button.id}">${"z".repeat(1_500)}</button>`;
-queryResults.set("main > button", [button]);
+const staticCard = new FakeElement("p");
+staticCard.textContent = "Static card";
+staticCard.outerHTML = "<p>Static card</p>";
+staticCard.attributes.set("tabindex", "-1");
+const wrapper = new FakeElement("div");
+wrapper.textContent = "Nested title Save details";
+const nestedCard = new FakeElement("div");
+nestedCard.textContent = "Save details";
+const heading = new FakeElement("h2");
+heading.textContent = "Nested title";
+const paragraph = new FakeElement("p");
+paragraph.textContent = "Details";
+const leafText = new FakeElement("span");
+leafText.textContent = "Leaf label";
+const emptyLeaf = new FakeElement("span");
+const labelledWrapper = new FakeElement("div");
+labelledWrapper.textContent = "Labelled group";
+labelledWrapper.attributes.set("aria-label", "Labelled group");
+wrapper.children.push(heading, nestedCard);
+heading.parentElement = wrapper;
+nestedCard.parentElement = wrapper;
+nestedCard.children.push(button, paragraph, leafText, emptyLeaf);
+button.parentElement = nestedCard;
+paragraph.parentElement = nestedCard;
+leafText.parentElement = nestedCard;
+emptyLeaf.parentElement = nestedCard;
+keyboardCandidates = [
+  root,
+  button,
+  staticCard,
+  wrapper,
+  nestedCard,
+  heading,
+  paragraph,
+  leafText,
+  emptyLeaf,
+  labelledWrapper,
+];
+queryResults.set("div > div > button", [button]);
+queryResults.set("p", [staticCard]);
 
-function click(target: FakeElement) {
+function dispatchDocument(type: string, target: FakeElement, key?: string) {
   const calls: string[] = [];
-  listeners.get("document:click")?.listener({
+  const event = {
     target,
+    key,
     preventDefault: () => calls.push("preventDefault"),
     stopPropagation: () => calls.push("stopPropagation"),
     stopImmediatePropagation: () => calls.push("stopImmediatePropagation"),
-  });
+  };
+  for (const { listener } of listeners.get(`document:${type}`) ?? []) listener(event);
   return calls;
 }
 
-assert.deepEqual(click(button), [], "inspection is inert by default");
-assert.equal(posted.length, 0, "inert clicks do not post messages");
+assert.deepEqual(dispatchDocument("click", button), [], "inspection is inert before the owned port enables it");
+assert.equal(parentMessages.length, 1, "window messages cannot forge a selected target");
 
-listeners.get("window:message")?.listener({
-  source: {},
-  data: { type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: true },
-});
-assert.deepEqual(click(button), [], "messages from non-parent sources are ignored");
-
-listeners.get("window:message")?.listener({
-  source: parentWindow,
-  data: { type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: true },
-});
+transferredPort!.postMessage({ type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: true });
+assert.equal(staticCard.getAttribute("tabindex"), "0", "visible static candidates become keyboard focusable");
+assert.equal(wrapper.getAttribute("tabindex"), null, "generic outer wrappers are not promoted for descendant text");
+assert.equal(nestedCard.getAttribute("tabindex"), null, "generic nested wrappers are not promoted for descendant text");
+assert.equal(heading.getAttribute("tabindex"), "0", "headings remain keyboard selectable");
+assert.equal(paragraph.getAttribute("tabindex"), "0", "paragraphs remain keyboard selectable");
+assert.equal(leafText.getAttribute("tabindex"), "0", "leaf-level visible text remains keyboard selectable");
+assert.equal(emptyLeaf.getAttribute("tabindex"), null, "empty generic leaves are skipped");
+assert.equal(labelledWrapper.getAttribute("tabindex"), "0", "explicit aria-labelled targets remain selectable");
 assert.deepEqual(
-  click(button),
+  dispatchDocument("click", button),
   ["preventDefault", "stopPropagation", "stopImmediatePropagation"],
   "enabled inspection blocks artifact click handlers",
 );
 assert.equal(button.style.outline, "2px solid #8b5cf6", "selected element is highlighted");
-assert.equal(posted.length, 1);
-assert.deepEqual(Object.keys(posted[0] as object), ["type", "target"], "posts only the selected message shape");
-const selected = posted[0] as {
+const selected = parentMessages.at(-1) as {
   type: string;
   target: { selector: string; label: string; excerpt: string };
 };
 assert.equal(selected.type, CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE);
-assert.equal(selected.target.selector, "main > button", "an oversized id falls back instead of being truncated");
+assert.equal(selected.target.selector, "div > div > button", "an oversized id falls back instead of being truncated");
 assert.ok(selected.target.selector.length <= 500, "selector matches the sanitizer bound");
 assert.ok(selected.target.label.length <= 200, "label matches the sanitizer bound");
 assert.ok(selected.target.excerpt.length <= 1_000, "excerpt matches the sanitizer bound");
 
-listeners.get("window:message")?.listener({
-  source: parentWindow,
-  data: { type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: false },
-});
-assert.equal(button.style.outline, "", "disabling clears the highlight");
-assert.deepEqual(click(button), [], "disabling restores normal clicks");
+dispatchDocument("focusin", staticCard);
+assert.equal(staticCard.style.outline, "2px solid #8b5cf6", "keyboard focus uses the same highlight");
+assert.deepEqual(
+  dispatchDocument("keydown", staticCard, "Enter"),
+  ["preventDefault", "stopPropagation", "stopImmediatePropagation"],
+  "Enter selects the focused candidate and intercepts activation",
+);
+assert.equal((parentMessages.at(-1) as { target: { selector: string } }).target.selector, "p");
+dispatchDocument("keydown", staticCard, " ");
+assert.equal(parentMessages.length, 4, "Space also selects over the authenticated port");
 
-const list = new FakeElement("ul");
-const first = new FakeElement("li");
-const second = new FakeElement("li");
-list.children.push(first, second);
-first.parentElement = list;
-second.parentElement = list;
-second.attributes.set("data-testid", "result-row");
-second.textContent = "Second result";
-second.outerHTML = "<li data-testid=\"result-row\">Second result</li>";
-queryResults.set('[data-testid="result-row"]', [first, second]);
-queryResults.set("ul > li:nth-of-type(2)", [second]);
-listeners.get("window:message")?.listener({
-  source: parentWindow,
-  data: { type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: true },
-});
-click(second);
-assert.equal(
-  (posted.at(-1) as { target: { selector: string } }).target.selector,
-  "ul > li:nth-of-type(2)",
-  "a duplicate data-testid falls back to a unique structural selector",
-);
-
-const uniqueById = new FakeElement("button");
-uniqueById.id = "save";
-uniqueById.outerHTML = '<button id="save">Save</button>';
-queryResults.set("#save", [uniqueById]);
-click(uniqueById);
-assert.equal(
-  (posted.at(-1) as { target: { selector: string } }).target.selector,
-  "#save",
-  "an id is accepted only after unique exact-match verification",
-);
-
-const wrongIdTarget = new FakeElement("button");
-wrongIdTarget.id = "duplicate";
-wrongIdTarget.outerHTML = '<button id="duplicate">Wrong target</button>';
-const otherDuplicate = new FakeElement("button");
-const section = new FakeElement("section");
-section.children.push(wrongIdTarget);
-wrongIdTarget.parentElement = section;
-queryResults.set("#duplicate", [otherDuplicate]);
-queryResults.set("section > button", [wrongIdTarget]);
-click(wrongIdTarget);
-assert.equal(
-  (posted.at(-1) as { target: { selector: string } }).target.selector,
-  "section > button",
-  "a selector resolving to another element is rejected in favor of structural fallback",
-);
-
-const unresolved = new FakeElement("aside");
-unresolved.outerHTML = "<aside>Ambiguous</aside>";
-let unresolvedRoot = unresolved;
-for (let depth = 0; depth < 6; depth += 1) {
-  const ancestor = new FakeElement("section");
-  ancestor.children.push(unresolvedRoot);
-  unresolvedRoot.parentElement = ancestor;
-  unresolvedRoot = ancestor;
-}
-queryResults.set(
-  "section > section > section > section > section > section > aside",
-  [unresolved],
-);
-const postedBeforeUnresolved = posted.length;
-click(unresolved);
-assert.equal(
-  posted.length,
-  postedBeforeUnresolved,
-  "no selected-target message is posted when uniqueness requires ancestry beyond the bound",
-);
-assert.equal(unresolved.style.outline, "", "an unresolved target is not highlighted");
-assert.equal(wrongIdTarget.style.outline, "", "an unresolved selection clears the previous highlight");
+transferredPort!.postMessage({ type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: false });
+assert.equal(staticCard.getAttribute("tabindex"), "-1", "disabling restores the candidate's prior tabindex");
+assert.equal(staticCard.style.outline, "", "disabling clears the highlight");
+assert.deepEqual(dispatchDocument("click", button), [], "disabling restores normal controls");
 
 console.log("canvas-inspector.test.ts ✓");

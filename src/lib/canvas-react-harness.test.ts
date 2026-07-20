@@ -41,8 +41,8 @@ assert.ok(
   "the existing Tailwind, JSX, and React runtime order is preserved",
 );
 assert.ok(
-  doc.indexOf(SANDBOX_RUNTIME_SRC) < doc.indexOf("cave-canvas-inspector"),
-  "the inspector executes after Tailwind and the React runtime",
+  doc.indexOf("cave-canvas-inspector") < doc.indexOf(SANDBOX_TAILWIND_SRC),
+  "the inspector executes before Tailwind, JSX, and the React runtime",
 );
 assert.doesNotMatch(doc, /allow-same-origin/, "the inspector does not weaken the opaque-origin sandbox");
 

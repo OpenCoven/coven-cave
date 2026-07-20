@@ -53,8 +53,15 @@ assert.ok(!isFullDocument("<div>fragment</div>"), "a bare fragment is not a full
 const fullDoc = "<!doctype html><html><body>x</body></html>";
 const inspectedFullDoc = buildPreviewSrcDoc(fullDoc);
 assert.match(inspectedFullDoc, /cave-canvas-inspector/, "a full document receives the inspector script");
-assert.ok(inspectedFullDoc.startsWith(fullDoc), "a full document remains an exact source prefix");
-assert.ok(inspectedFullDoc.indexOf("cave-canvas-inspector") > fullDoc.length);
+assert.equal(
+  inspectedFullDoc.replace(/<script>\(\(\) => \{[\s\S]*?<\/script>/, ""),
+  fullDoc,
+  "removing the inspector recovers every original full-document byte",
+);
+assert.ok(
+  inspectedFullDoc.indexOf("cave-canvas-inspector") < inspectedFullDoc.indexOf("<html>"),
+  "the inspector executes before artifact markup and scripts",
+);
 
 const wrapped = buildPreviewSrcDoc("<button>Click</button>");
 assert.match(wrapped, /^<!doctype html>/i, "a fragment is wrapped into a full document");

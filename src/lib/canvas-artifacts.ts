@@ -159,9 +159,9 @@ export function isFullDocument(code: string): boolean {
  * runs under `sandbox="allow-scripts"` (no same-origin) — isolation comes from
  * the sandbox, so we intentionally do NOT strip scripts here.
  */
-export function buildPreviewSrcDoc(code: string): string {
+export function buildPreviewSrcDoc(code: string, inspectorGeneration = ""): string {
   const src = typeof code === "string" ? code : "";
-  if (isFullDocument(src)) return injectCanvasInspector(src);
+  if (isFullDocument(src)) return injectCanvasInspector(src, inspectorGeneration);
   return injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
@@ -175,7 +175,7 @@ export function buildPreviewSrcDoc(code: string): string {
     "</head>",
     `<body>${src}</body>`,
     "</html>",
-  ].join("\n"));
+  ].join("\n"), inspectorGeneration);
 }
 
 /** A compact title from a prompt: first line, collapsed, clamped. */
@@ -310,25 +310,36 @@ export const STARTER_ARTIFACT_REACT = [
   "}",
 ].join("\n");
 
-/** Validate and bound one persisted component annotation. */
-export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
+/** Validate and bound a component target received from the preview sandbox. */
+export function sanitizeCanvasComponentTarget(value: unknown): CanvasComponentTarget | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const v = value as Record<string, unknown>;
-  if (!v.target || typeof v.target !== "object" || Array.isArray(v.target)) return null;
-  const target = v.target as Record<string, unknown>;
+  const target = value as Record<string, unknown>;
   if (
-    typeof v.id !== "string"
-    || typeof target.selector !== "string"
+    typeof target.selector !== "string"
     || typeof target.label !== "string"
     || typeof target.excerpt !== "string"
-    || typeof v.note !== "string"
   ) {
     return null;
   }
 
-  const id = v.id.trim();
   const selector = target.selector.trim();
-  if (!id || id.length > MAX_ANNOTATION_ID_CHARS || !selector) return null;
+  if (!selector) return null;
+  return {
+    selector: selector.slice(0, MAX_ANNOTATION_SELECTOR_CHARS),
+    label: target.label.trim().slice(0, MAX_ANNOTATION_LABEL_CHARS),
+    excerpt: target.excerpt.trim().slice(0, MAX_ANNOTATION_EXCERPT_CHARS),
+  };
+}
+
+/** Validate and bound one persisted component annotation. */
+export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const target = sanitizeCanvasComponentTarget(v.target);
+  if (typeof v.id !== "string" || !target || typeof v.note !== "string") return null;
+
+  const id = v.id.trim();
+  if (!id || id.length > MAX_ANNOTATION_ID_CHARS) return null;
 
   const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
     ? v.createdAt
@@ -338,11 +349,7 @@ export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
     : createdAt;
   return {
     id,
-    target: {
-      selector: selector.slice(0, MAX_ANNOTATION_SELECTOR_CHARS),
-      label: target.label.trim().slice(0, MAX_ANNOTATION_LABEL_CHARS),
-      excerpt: target.excerpt.trim().slice(0, MAX_ANNOTATION_EXCERPT_CHARS),
-    },
+    target,
     note: v.note.trim().slice(0, MAX_ANNOTATION_NOTE_CHARS),
     createdAt,
     updatedAt,

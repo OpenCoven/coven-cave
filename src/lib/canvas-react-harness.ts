@@ -27,7 +27,7 @@ export function escapeForScriptTag(code: string): string {
 }
 
 /** Frame React component source into a full preview document. */
-export function buildReactSrcDoc(code: string): string {
+export function buildReactSrcDoc(code: string, inspectorGeneration = ""): string {
   return injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
@@ -49,5 +49,5 @@ export function buildReactSrcDoc(code: string): string {
     `<script src="${SANDBOX_RUNTIME_SRC}"></script>`,
     "</body>",
     "</html>",
-  ].join("\n"));
+  ].join("\n"), inspectorGeneration);
 }
