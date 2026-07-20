@@ -463,7 +463,7 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(proposal?.authority?.state, "verified");
     if (proposal?.authority?.state !== "verified") return;
     assert.equal(proposal.authority.lifecycle, "awaiting-human-approval");
-    assert.equal(proposal.authority.approvalPath.label, "human_required");
+    assert.equal(proposal.authority.approvalPath.label, "human_review");
   });
 
   it("preserves scheduled staged details but blocks authority when the daemon is unavailable", async () => {
@@ -771,10 +771,10 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
 
 describe("phase 5 proposal fixtures", () => {
   const verifiedCases = [
-    ["awaiting-human-approval", "awaiting-human-approval", ["approve", "reject"], null, "human_required"],
-    ["veto-window-open", "veto-window-open", ["reject"], null, "familiar_review"],
-    ["ready-for-replay", "ready-for-replay", [], null, "familiar_review"],
-    ["blocked", "blocked", [], "daemon-reported-block", "human_review"],
+    ["awaiting-human-approval", "awaiting-human-approval", ["approve", "reject"], null, "human_review"],
+    ["veto-window-open", "veto-window-open", ["reject"], null, "coherence_review"],
+    ["ready-for-replay", "ready-for-replay", [], null, "replay_ready"],
+    ["blocked", "blocked", [], "daemon-reported-block", "policy_blocked"],
   ] as const;
 
   for (const [name, lifecycle, decisions, blockedReason, label] of verifiedCases) {

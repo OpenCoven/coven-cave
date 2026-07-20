@@ -399,16 +399,21 @@ function isStagedTensionReason(value: unknown, variant: "Frayed" | "Snapped"): b
   );
 }
 
-function isFrayShape(value: unknown): boolean {
+function isFrayShape(value: unknown, pendingChannel: unknown): boolean {
   if (!isRecord(value) || Object.keys(value).length !== 1) return false;
   if (isRecord(value.NotCovered)) {
-    return hasExactKeys(value.NotCovered, ["channel"]) && CHANNEL_VALUES.has(String(value.NotCovered.channel));
+    return (
+      hasExactKeys(value.NotCovered, ["channel"]) &&
+      CHANNEL_VALUES.has(String(value.NotCovered.channel)) &&
+      value.NotCovered.channel === pendingChannel
+    );
   }
   if (isRecord(value.Frayed)) {
     return (
       hasExactKeys(value.Frayed, ["strand", "channel", "reason"]) &&
       (value.Frayed.strand === null || normalizeCanonicalUuid(value.Frayed.strand) !== null) &&
       CHANNEL_VALUES.has(String(value.Frayed.channel)) &&
+      value.Frayed.channel === pendingChannel &&
       isStagedTensionReason(value.Frayed.reason, "Frayed")
     );
   }
@@ -416,6 +421,7 @@ function isFrayShape(value: unknown): boolean {
     return (
       hasExactKeys(value.Snapped, ["channel", "reason"]) &&
       CHANNEL_VALUES.has(String(value.Snapped.channel)) &&
+      value.Snapped.channel === pendingChannel &&
       isStagedTensionReason(value.Snapped.reason, "Snapped")
     );
   }
@@ -439,7 +445,7 @@ function isPendingShape(value: unknown): boolean {
     typeof value.writer !== "string" ||
     !CHANNEL_VALUES.has(String(value.channel)) ||
     normalizeCanonicalUuid(value.thread_id) === null ||
-    !isFrayShape(value.fray) ||
+    !isFrayShape(value.fray, value.channel) ||
     canonicalStagedInstant(value.staged_at) === null
   ) {
     return false;
@@ -755,6 +761,7 @@ function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
     !isStringArray(raw.affectedRegions) ||
     !isRecord(raw.approvalPath) ||
     typeof raw.lifecycle !== "string" ||
+    !("blockedReason" in raw) ||
     !("earliestClose" in raw)
   ) {
     return null;

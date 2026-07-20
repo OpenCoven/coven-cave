@@ -16,7 +16,6 @@ import {
   normalizeChannel,
   normalizeCoherence,
   normalizeFrayReason,
-  normalizeProposal,
   normalizeStrand,
   normalizeTension,
   normalizeThread,
@@ -29,6 +28,7 @@ import {
   type TensionView,
 } from "./threads-read.ts";
 import { canonicalProposalRevision, normalizeProposalAuthority } from "./proposal-authority.ts";
+import { normalizeProposal } from "./proposal-normalize.ts";
 
 function daemonContractFixture() {
   const familiarUuid = "eeeeeeee-0000-4000-8000-000000000098";
@@ -94,6 +94,7 @@ function daemonContractFixture() {
       affected_surfaces: ["MEMORY.md"],
     },
     lifecycle: "awaiting_human_approval",
+    blockedReason: null,
     earliestClose: null,
     affectedRegions: ["memory_conventions"],
   };
@@ -725,6 +726,30 @@ describe("normalizeProposal (§2.6)", () => {
         normalizeProposalAuthority(candidate, summary).state,
         accepted ? "verified" : "blocked",
         `${variant} reason ${JSON.stringify(reason)}`,
+      );
+    }
+  });
+
+  it("requires every nested pending fray channel to equal pending.channel", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const mismatchedFrays = [
+      { NotCovered: { channel: "Serialization" } },
+      { Frayed: { strand: null, channel: "Serialization", reason: "ContentHashMismatch" } },
+      { Snapped: { channel: "Serialization", reason: "Revoked" } },
+    ];
+
+    for (const fray of mismatchedFrays) {
+      const candidate = {
+        ...staged,
+        pending: { ...staged.pending, fray },
+      };
+      assert.deepEqual(
+        normalizeProposalAuthority(candidate, {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(candidate),
+        }),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted nested channel mismatch for ${Object.keys(fray)[0]}`,
       );
     }
   });
@@ -1633,6 +1658,16 @@ describe("normalizeProposal (§2.6)", () => {
     if (authority.state !== "verified") return;
     assert.equal(authority.blockedReason, null);
     assert.deepEqual(authority.availableDecisions, []);
+  });
+
+  it("requires daemon summaries to contain an explicit blockedReason key", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { blockedReason: _blockedReason, ...missingBlockedReason } = daemon;
+
+    assert.deepEqual(normalizeProposalAuthority(staged, missingBlockedReason), {
+      state: "blocked",
+      why: "daemon-unparseable",
+    });
   });
 
   it("rejects blank or non-string daemon blockedReason and preserves unknown nonblank strings", () => {
