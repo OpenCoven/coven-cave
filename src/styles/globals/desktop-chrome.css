@@ -609,10 +609,10 @@ button:active > .edge-rail-chip {
    keyboard shortcuts keep search available.
    ──────────────────────────────────────────────── */
 
-/* Desktop top menu bar — quick chat with familiars (left) + view tasks
-   (right). Hidden below 1024px, where the mobile `.top-bar` takes over (the
-   two are mutually exclusive so they never both render). Lives in the Shell's
-   `topBar` slot above `.shell-body`. */
+/* Desktop top menu bar — centered search with compact action/status controls.
+   Hidden below 1024px, where the mobile `.top-bar` takes over (the two are
+   mutually exclusive so they never both render). Lives in the Shell's `topBar`
+   slot above `.shell-body`. */
 .menu-bar {
   display: none;
   /* Search is absolutely centered in the bar (Codex-style); the task chrome
@@ -660,7 +660,7 @@ button:active > .edge-rail-chip {
   left: 50%;
   transform: translateX(-50%);
   /* Stay geometrically centered, but reserve equal room on both sides for the
-     action cluster (task verbs + running pill + bell) plus breathing room.
+     action cluster (task verbs + compact status controls) plus breathing room.
      Basing the third cap on this bar's own width makes compact native windows
      shrink gracefully. Phase-D command bar: 557px max per the revamp design. */
   width: min(557px, 42vw, calc(100% - 560px));
@@ -748,7 +748,8 @@ button:active > .edge-rail-chip {
 }
 
 .menu-bar__new,
-.menu-bar__task {
+.menu-bar__task,
+.menu-bar__status {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -766,10 +767,18 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
   font-size: var(--text-base);
   white-space: nowrap;
-  cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
+}
+
+.menu-bar__task {
+  cursor: pointer;
+}
+
+.menu-bar__status {
+  cursor: default;
+  color: var(--text-secondary);
 }
 
 /* Live enrich progress is visible text (information, not chrome) — let that
@@ -790,10 +799,11 @@ button:active > .edge-rail-chip {
   display: inline;
 }
 
-/* One compact standard across the top chrome (var(--icon-sm), 14px): the
-   Enhance/Tasks/Inbox glyphs, the search glyph, and the sidepanel toggle all
-   share this size, rather than scaling with their own label. */
-.menu-bar__task > svg {
+/* One compact standard across the top chrome (var(--icon-sm), 14px): action
+   and status glyphs, the search glyph, and the sidepanel toggle all share this
+   size, rather than scaling with their own label. */
+.menu-bar__task > svg,
+.menu-bar__status > svg {
   flex-shrink: 0;
   width: var(--icon-sm);
   height: var(--icon-sm);
@@ -816,57 +826,59 @@ button:active > .edge-rail-chip {
   color: var(--text-primary);
 }
 
-/* The count badge overlaps its button's corner (like the mobile top-bar's
-   tasks badge) so the 28px square never stretches around it. The bg-base ring
-   separates it from the icon underneath. */
-.menu-bar__badge {
+/* Notification badge baseline matches the mobile top-bar geometry and alert
+   semantics. Desktop overrides only its geometry inside `.menu-bar`. */
+.notification-bell__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  color: var(--color-danger-foreground);
+  background: var(--color-danger);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Desktop count badges overlap compact controls so every 28px square stays
+   uniform. The bg-base ring separates each badge from its icon. */
+.menu-bar__badge,
+.menu-bar .notification-bell__badge {
+  min-width: 15px;
+  height: 15px;
+  border-radius: var(--radius-control);
   position: absolute;
   top: -4px;
   right: -4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 15px;
-  height: 15px;
   padding: 0 5px;
-  border-radius: var(--radius-control);
   font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1;
-  color: var(--accent-presence-foreground);
-  /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
-     composited over the dark app background dropped the count to ~1:1 (WCAG). */
-  background: var(--accent-presence);
   box-shadow: 0 0 0 2px var(--bg-base);
   pointer-events: none;
 }
 
+.menu-bar__badge {
+  color: var(--accent-presence-foreground);
+  /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
+     composited over the dark app background dropped the count to ~1:1 (WCAG). */
+  background: var(--accent-presence);
+}
+
 /* ── Right status cluster (chat-revamp phase D) ──────────────────────────────
- * "N running" pill (accent presence dot + live daemon-session count) and the
- * notification bell, anchoring the bar's right edge. */
+ * Compact running-session status and notification controls anchor the bar's
+ * right edge. */
 .menu-bar__group--status {
   flex: 0 0 auto;
-}
-
-.menu-bar__running {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-
-.menu-bar__running-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: var(--radius-pill);
-  background: var(--accent-presence);
 }
 
 /* The bell popover hangs from the slim title band; keep it clear of the

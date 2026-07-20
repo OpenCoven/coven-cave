@@ -4,7 +4,15 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const desktopChrome = readFileSync(
+  new URL("../styles/globals/desktop-chrome.css", import.meta.url),
+  "utf8",
+);
+const foundations = readFileSync(
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
+const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 // The switcher moved to the sidenav header (cave-vtk9); its compact geometry
 // is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
@@ -120,6 +128,56 @@ assert.match(
   /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
   "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
+assert.match(
+  source,
+  /typeof runningCount === "number" && runningCount > 0 \? \(\s*<span\s+className="menu-bar__status"[^>]*role="status"[^>]*aria-label=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*title=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*>[\s\S]{0,260}?<Icon name="ph:waveform"[\s\S]{0,250}?<span className="menu-bar__badge" aria-hidden>\s*\{fmtBadge\(runningCount\)\}\s*<\/span>[\s\S]{0,120}?\)\s*:\s*null/,
+  "running sessions render as a compact status control that hides at zero and carries the exact label",
+);
+assert.doesNotMatch(
+  source,
+  /menu-bar__running-dot/,
+  "the running status no longer uses a presence dot",
+);
+assert.doesNotMatch(
+  source,
+  /\{runningCount\} running/,
+  "the running status no longer renders the literal running pill text",
+);
+assert.match(
+  notificationBell,
+  /displayBadgeCount > 0 \? \(\s*<span[^>]*className="notification-bell__badge"[^>]*>[\s\S]{0,120}?\)\s*:\s*null/,
+  "notification alerts render their badge only inside the displayBadgeCount conditional and fall back to null",
+);
+assert.match(
+  desktopChrome,
+  /\.menu-bar__badge,\s*\n\.menu-bar \.notification-bell__badge \{\s*\n\s*min-width:\s*15px;\s*\n\s*height:\s*15px;\s*\n\s*border-radius:\s*var\(--radius-control\);/,
+  "desktop corner badges share the same compact geometry",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[\s\S]{0,180}?padding:\s*0 var\(--space-1\);/,
+  "notification badges keep horizontal padding only on the base rule",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*background:\s*var\(--color-danger\);/,
+  "notification badges use the danger background",
+);
+assert.match(
+  foundations,
+  /:root \{[\s\S]*?--color-danger:\s*oklch\(0\.74 0\.18 24\);\s*\n\s*--color-danger-foreground:\s*#111111;\s*\n\s*--color-danger-soft:/,
+  "the default dark danger palette uses deterministic near-black foreground ink",
+);
+assert.match(
+  foundations,
+  /:root\[data-mode="light"\] \{[\s\S]*?--color-danger:\s*oklch\(0\.52 0\.20 24\);\s*\n\s*--color-danger-foreground:\s*#ffffff;\s*\n\s*--color-danger-soft:/,
+  "the light danger palette overrides the foreground with deterministic white ink",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-danger-foreground\);/,
+  "notification badges use the semantic danger foreground",
+);
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
 // real scope/navigation handlers and live counts.
@@ -171,9 +229,9 @@ assert.match(
 );
 
 // Desktop-only: the bar shows ≥1024px (where the mobile .top-bar is hidden).
-assert.match(globals, /\.menu-bar \{\s*display: none;/, "menu bar is hidden by default");
+assert.match(desktopChrome, /\.menu-bar \{\s*display: none;/, "menu bar is hidden by default");
 assert.match(
-  globals,
+  desktopChrome,
   /@media \(min-width: 1024px\) \{\s*\.menu-bar \{\s*display: flex;/,
   "menu bar shows on desktop (≥1024px)",
 );

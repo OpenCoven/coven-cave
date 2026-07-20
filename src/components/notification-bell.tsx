@@ -323,10 +323,7 @@ export function NotificationBell({
         <Icon name="ph:bell-fill" aria-hidden />
 
         {displayBadgeCount > 0 ? (
-          <span
-            aria-hidden
-            className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[length:var(--text-2xs)] font-bold leading-none text-[var(--text-primary)]"
-          >
+          <span aria-hidden className="notification-bell__badge">
             {displayBadgeCount > 9 ? "9+" : displayBadgeCount}
           </span>
         ) : null}

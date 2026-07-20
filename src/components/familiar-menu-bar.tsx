@@ -11,11 +11,11 @@ type Props = {
   /** Active familiar display name — personalizes the command-bar placeholder
    *  ("Search or ask <name>…"). Falls back to Salem, the docs familiar. */
   activeFamiliarName?: string | null;
-  /** Live count of running daemon sessions — drives the "N running" pill
+  /** Live count of running daemon sessions — drives the compact status control
    *  (hidden at zero). */
   runningCount?: number;
   /** Notification bell, rendered by the workspace (it owns the inbox state)
-   *  so this bar stays markup-thin. Sits at the bar's right edge. */
+   *  so this bar stays markup-thin. Joins the right-side status controls. */
   bell?: ReactNode;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
@@ -176,17 +176,20 @@ export function FamiliarMenuBar({
         </button>
       </div>
 
-      {/* Right edge (chat-revamp phase D): live running-session pill (accent
-          presence dot + count, hidden at zero) and the notification bell. */}
+      {/* Right edge (chat-revamp phase D): compact running-session status
+          (waveform + count, hidden at zero) and the notification bell. */}
       <div className="menu-bar__group menu-bar__group--status">
         {typeof runningCount === "number" && runningCount > 0 ? (
           <span
-            className="menu-bar__running"
+            className="menu-bar__status"
             role="status"
+            aria-label={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
             title={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
           >
-            <span className="menu-bar__running-dot" aria-hidden />
-            {runningCount} running
+            <Icon name="ph:waveform" width={22} height={22} aria-hidden />
+            <span className="menu-bar__badge" aria-hidden>
+              {fmtBadge(runningCount)}
+            </span>
           </span>
         ) : null}
         {bell}
