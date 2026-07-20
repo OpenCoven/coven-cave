@@ -4,6 +4,8 @@
 // preview, and persist it. Everything here is framework-/fs-free so it can be
 // unit-tested without a DOM, a daemon, or React Flow.
 
+import { injectCanvasInspector } from "./canvas-inspector.ts";
+
 // An artifact is either a self-contained HTML document or a single React
 // component (transpiled + rendered by the sandbox runtime). Older records
 // (pre-React) have no `kind` and are treated as "html".
@@ -159,8 +161,8 @@ export function isFullDocument(code: string): boolean {
  */
 export function buildPreviewSrcDoc(code: string): string {
   const src = typeof code === "string" ? code : "";
-  if (isFullDocument(src)) return src;
-  return [
+  if (isFullDocument(src)) return injectCanvasInspector(src);
+  return injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
@@ -173,7 +175,7 @@ export function buildPreviewSrcDoc(code: string): string {
     "</head>",
     `<body>${src}</body>`,
     "</html>",
-  ].join("\n");
+  ].join("\n"));
 }
 
 /** A compact title from a prompt: first line, collapsed, clamped. */

@@ -51,11 +51,15 @@ assert.ok(isFullDocument("<HTML lang=en>"), "an <html> tag counts (case-insensit
 assert.ok(!isFullDocument("<div>fragment</div>"), "a bare fragment is not a full document");
 
 const fullDoc = "<!doctype html><html><body>x</body></html>";
-assert.equal(buildPreviewSrcDoc(fullDoc), fullDoc, "a full document is returned untouched");
+const inspectedFullDoc = buildPreviewSrcDoc(fullDoc);
+assert.match(inspectedFullDoc, /cave-canvas-inspector/, "a full document receives the inspector script");
+assert.ok(inspectedFullDoc.startsWith(fullDoc), "a full document remains an exact source prefix");
+assert.ok(inspectedFullDoc.indexOf("cave-canvas-inspector") > fullDoc.length);
 
 const wrapped = buildPreviewSrcDoc("<button>Click</button>");
 assert.match(wrapped, /^<!doctype html>/i, "a fragment is wrapped into a full document");
 assert.match(wrapped, /<button>Click<\/button>/, "the fragment is placed in the wrapped body");
+assert.match(wrapped, /cave-canvas-inspector/, "a wrapped fragment receives the inspector script");
 
 // ── titles, clamping, prompts ──────────────────────────────────────────────
 
