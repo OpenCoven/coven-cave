@@ -148,6 +148,7 @@ import {
   persistSendModelIntent,
   resolveSendModelMetadata,
 } from "./chat-send-models";
+import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -337,40 +338,6 @@ async function autoNameSessionFromFirstExchange(
   }
 }
 
-function sse(event: StreamEvent, seq?: number): Uint8Array {
-  // `id:` carries the run buffer's seq (cave-h40l): a client that saw it can
-  // resume mid-turn via GET /api/chat/stream?cursor=<last id> after a drop.
-  const id = seq != null ? `id: ${seq}\n` : "";
-  return new TextEncoder().encode(`${id}data: ${JSON.stringify(event)}\n\n`);
-}
-
-// SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
-// client idle timeouts can drop a connection that goes silent for the length
-// of a long tool run. Comments are invisible to every consumer — the web
-// readers and the iOS app all skip frames that don't start with `data:`.
-const SSE_HEARTBEAT = new TextEncoder().encode(": hb\n\n");
-const SSE_HEARTBEAT_INTERVAL_MS = 20_000;
-
-// Emit `: hb` comments until the stream closes/aborts; self-cleaning, but
-// callers also clear it from close() so a finished turn stops immediately.
-function startSseHeartbeat(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  isDone: () => boolean,
-): NodeJS.Timeout {
-  const heartbeat = setInterval(() => {
-    if (isDone()) {
-      clearInterval(heartbeat);
-      return;
-    }
-    try {
-      controller.enqueue(SSE_HEARTBEAT);
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, SSE_HEARTBEAT_INTERVAL_MS);
-  return heartbeat;
-}
-
 async function maybeQueueOfflineChat(args: {
   body: SendBody;
   config: CaveConfig;
@@ -411,7 +378,7 @@ async function maybeQueueOfflineChat(args: {
 
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => {
-      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      const push = (event: StreamEvent) => controller.enqueue(chatSse(event));
       push({ kind: "session", sessionId });
       push({ kind: "user", text: args.promptText });
       push({
@@ -465,7 +432,7 @@ function openClawChatResponse(args: {
         const seq = runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(sse(event, seq));
+          controller.enqueue(chatSse(event, seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -487,7 +454,7 @@ function openClawChatResponse(args: {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      const heartbeat = startSseHeartbeat(controller, () => closed || args.req.signal.aborted);
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || args.req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
@@ -1266,7 +1233,7 @@ export async function POST(req: Request) {
         const seq = runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(sse(e, seq));
+          controller.enqueue(chatSse(e, seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -1288,7 +1255,7 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      const heartbeat = startSseHeartbeat(controller, () => closed || req.signal.aborted);
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;

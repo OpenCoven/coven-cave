@@ -384,6 +384,10 @@ for (const contract of contracts) {
     path.join(apiRoot, "chat", "send", "route.ts"),
     "utf8",
   );
+  const sseSource = readFileSync(
+    path.join(apiRoot, "chat", "send", "chat-send-sse.ts"),
+    "utf8",
+  );
   const stopReads = [
     ...sendSource.matchAll(/const cancelledByUser = runHandle\.stopRequested;/g),
   ];
@@ -457,11 +461,11 @@ for (const contract of contracts) {
   // — which every consumer skips (frames not starting with "data:") — and
   // clear the interval when the stream closes.
   assert.match(
-    sendSource,
-    /const SSE_HEARTBEAT = new TextEncoder\(\)\.encode\(": hb\\n\\n"\)/,
+    sseSource,
+    /const HEARTBEAT = new TextEncoder\(\)\.encode\(": hb\\n\\n"\)/,
     "/chat/send: heartbeat is an SSE comment frame, invisible to data: parsers",
   );
-  const heartbeatStarts = [...sendSource.matchAll(/const heartbeat = startSseHeartbeat\(controller,/g)];
+  const heartbeatStarts = [...sendSource.matchAll(/const heartbeat = startChatSseHeartbeat\(controller,/g)];
   assert.equal(
     heartbeatStarts.length,
     2,
