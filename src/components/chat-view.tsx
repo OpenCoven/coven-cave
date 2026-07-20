@@ -35,6 +35,7 @@ import {
   type Turn,
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
+import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
@@ -291,7 +292,6 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // Fallback cap when the computed CSS max-height can't be read; kept in sync with
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
-const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 // Persist the in-progress composer text so a page reload doesn't eat a
 // half-written message. The composer is a single shared input (it isn't
 // remounted per session), so one key mirrors the in-memory behaviour.
@@ -350,43 +350,6 @@ const CHAT_ATTACHMENT_ACCEPT = [
   ".sql",
   ".log",
 ].join(",");
-
-function readComposerPrefs(): {
-  thinkingEffort: ComposerThinkingEffort;
-  responseSpeed: ComposerResponseSpeed;
-  permissionMode: CommandPermissionMode;
-} {
-  if (typeof window === "undefined") return { ...COMMAND_CONTROL_DEFAULTS, permissionMode: DEFAULT_PERMISSION_MODE };
-  try {
-    const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY);
-    const parsed = raw ? JSON.parse(raw) as Partial<{ thinkingEffort: string; responseSpeed: string; permissionMode: string }> : {};
-    const thinkingEffort = THINKING_OPTIONS.some((option) => option.value === parsed.thinkingEffort)
-      ? parsed.thinkingEffort as ComposerThinkingEffort
-      : COMMAND_CONTROL_DEFAULTS.thinkingEffort;
-    const responseSpeed = SPEED_OPTIONS.some((option) => option.value === parsed.responseSpeed)
-      ? parsed.responseSpeed as ComposerResponseSpeed
-      : COMMAND_CONTROL_DEFAULTS.responseSpeed;
-    const permissionMode = PERMISSION_MODES.some((mode) => mode.value === parsed.permissionMode)
-      ? parsed.permissionMode as CommandPermissionMode
-      : DEFAULT_PERMISSION_MODE;
-    return { thinkingEffort, responseSpeed, permissionMode };
-  } catch {
-    return { ...COMMAND_CONTROL_DEFAULTS, permissionMode: DEFAULT_PERMISSION_MODE };
-  }
-}
-
-function writeComposerPrefs(prefs: {
-  thinkingEffort: ComposerThinkingEffort;
-  responseSpeed: ComposerResponseSpeed;
-  permissionMode: CommandPermissionMode;
-}) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    /* best effort */
-  }
-}
 
 
 function shouldKeepLiveNewChatState({
@@ -2415,9 +2378,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
-  const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readComposerPrefs().thinkingEffort);
-  const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
-  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readComposerPrefs().permissionMode);
+  const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
+  const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
   // Composer Host chip: null = auto — the conversation's recorded host, else
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
@@ -2763,7 +2726,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [refreshUsagePlan]);
 
   useEffect(() => {
-    writeComposerPrefs({ thinkingEffort, responseSpeed, permissionMode });
+    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode });
   }, [thinkingEffort, responseSpeed, permissionMode]);
 
   // Persist a model choice through the existing channels: session scope when a

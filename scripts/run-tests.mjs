@@ -50,6 +50,7 @@ export const SUITES = {
     "src/components/role-surfaces/reviewer-surface.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
+    "src/lib/chat-composer-prefs.test.ts",
     "src/lib/chat-transcript-groups.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",
     "src/lib/chunk-coalescer.test.ts",
