@@ -1,16 +1,16 @@
 use super::*;
 
-struct PendingUserNavigation {
-    sequence: u64,
-    target: String,
-    allow_query_change: bool,
-    started: Instant,
+pub(super) struct PendingUserNavigation {
+    pub(super) sequence: u64,
+    pub(super) target: String,
+    pub(super) allow_query_change: bool,
+    pub(super) started: Instant,
 }
 
 #[derive(Default)]
 pub(super) struct BrowserEventTracker {
     pub(super) pending: Option<(u64, String)>,
-    pending_user_navigation: Option<PendingUserNavigation>,
+    pub(super) pending_user_navigation: Option<PendingUserNavigation>,
     active_sequence: u64,
     active_url: Option<String>,
     active_completed: bool,
