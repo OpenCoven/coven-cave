@@ -9,6 +9,7 @@ const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"
 const assistantTurnRule = styles.match(/\.cave-turn-assistant\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
 const assistantContentRule = styles.match(/\.cave-turn-content\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 
 assert.ok(assistantTurnRule, "Assistant turn styles should exist");
 assert.ok(assistantContentRule, "Assistant content styles should exist");
@@ -61,7 +62,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  sessionHeader,
   /Reflect on this thread[\s\S]{0,600}ph:phone/,
   "ChatView should expose a Reflect action in the session overflow menu",
 );
@@ -69,7 +70,7 @@ assert.match(
 // in one menu made the actions indistinguishable. Sparkle matches the daily
 // note's Reflection section where reflections land.
 assert.match(
-  source,
+  sessionHeader,
   /reflecting \? "ph:circle-notch-bold" : "ph:sparkle-bold"/,
   "the Reflect action keeps its sparkle (spinner while reflecting), distinct from the thinking brain",
 );

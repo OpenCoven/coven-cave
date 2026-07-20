@@ -129,20 +129,21 @@ const changesPanel = await readFile(
   new URL("./session-changes-panel.tsx", import.meta.url),
   "utf8",
 );
+const changesRows = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
 const changesFormat = await readFile(new URL("../lib/session-changes-format.ts", import.meta.url), "utf8");
 
 assert.match(
-  changesPanel,
+  changesRows,
   /<SyntaxBlock text=\{diffState\.diff\} lang="diff"/,
   "File diffs should render through SyntaxBlock with diff highlighting",
 );
 assert.match(
-  changesPanel,
+  changesRows,
   /Two-step revert[\s\S]*?setConfirmRevert\(true\)/,
   "Revert must be two-step: first click arms an inline confirm",
 );
 assert.match(
-  changesPanel,
+  changesRows,
   /confirmRevert \?[\s\S]*?Cancel[\s\S]*?onRevert\(\)/,
   "Armed revert row offers Cancel and only the explicit confirm commits",
 );
@@ -157,13 +158,13 @@ assert.match(
   "Panel caption should switch copy when the project is not a git repository",
 );
 assert.match(
-  changesPanel,
+  changesRows,
   /title=\{untracked \? `Delete \$\{file\.path\}` : `Revert \$\{file\.path\}`\}[\s\S]*?<Icon name=\{untracked \? "ph:trash" : "ph:arrow-counter-clockwise"\}/,
   "Untracked file delete action should use a trash icon before confirm, matching its label",
 );
 assert.match(
   changesPanel,
-  /saveCheckpoint[\s\S]*?action: "checkpoint"[\s\S]*?Checkpoint/,
+  /saveCheckpoint[\s\S]*?mutateSessionChanges[\s\S]*?"checkpoint"[\s\S]*?Checkpoint/,
   "Changes panel should expose a checkpoint action that saves a patch snapshot before risky review/revert work",
 );
 assert.match(
@@ -173,7 +174,7 @@ assert.match(
 );
 assert.match(
   changesPanel,
-  /action: "restore-checkpoint"[\s\S]*?checkpoint: name/,
+  /mutateSessionChanges\(fetch, projectRoot, "restore-checkpoint", \{ checkpoint: name \}\)/,
   "Panel should let the user restore a saved checkpoint",
 );
 assert.match(
