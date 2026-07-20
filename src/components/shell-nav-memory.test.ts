@@ -4,9 +4,58 @@
 // reading or overwriting the global cave:shell:nav-open preference.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolveShellDestinationLayout } from "./shell-layout.ts";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const compactWhitespace = (input: string) => input.replace(/\s+/g, " ").trim();
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "detail"],
+    savedLayout: { nav: 35, detail: 65 },
+    groupSize: 1_000,
+    defaultPanelPixels: { nav: 260 },
+    requireOpenNav: true,
+  }),
+  { nav: 35, detail: 65 },
+  "Chat restores its own user-resized layout instead of inheriting the normal group's live width",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "detail"],
+    savedLayout: { nav: 0, detail: 100 },
+    groupSize: 1_000,
+    defaultPanelPixels: { nav: 260 },
+    requireOpenNav: true,
+  }),
+  { nav: 26, detail: 74 },
+  "Chat falls back to its 260px default when no nonzero saved Chat width exists",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "list", "detail"],
+    savedLayout: undefined,
+    groupSize: 1_000,
+    defaultPanelPixels: { nav: 240, list: 260 },
+    requireOpenNav: false,
+  }),
+  { nav: 24, list: 26, detail: 50 },
+  "a fresh normal group restores both left-panel defaults without borrowing Chat or corrupting detail",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "detail"],
+    savedLayout: { nav: 5.6, detail: 94.4 },
+    groupSize: 1_000,
+    defaultPanelPixels: { nav: 240 },
+    requireOpenNav: false,
+  }),
+  { nav: 5.6, detail: 94.4 },
+  "normal navigation preserves its own saved collapsed rail layout before applying the remembered open preference",
+);
 
 assert.match(
   shell,
@@ -24,6 +73,31 @@ assert.match(
   shell,
   /navPolicy = "remembered"/,
   "Shell defaults nav policy to remembered",
+);
+
+assert.match(
+  shell,
+  /import \{ resolveShellDestinationLayout \} from "\.\/shell-layout";/,
+  "Shell uses the tested destination-layout resolver",
+);
+
+const destinationLayoutEffect =
+  shell.match(/const layoutPersistenceGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[mounted, groupId, chatContextual, defaultLayout, twoPane\]\);/)?.[0] ?? "";
+assert.ok(destinationLayoutEffect.length > 0, "the destination group restoration effect exists");
+assert.match(
+  destinationLayoutEffect,
+  /Array\.from\(groupElement\.children\)\.reduce\([\s\S]*?child\.hasAttribute\("data-panel"\)[\s\S]*?child\.offsetWidth/,
+  "destination defaults use the panel library's available panel width rather than the group width including separators",
+);
+assert.match(
+  destinationLayoutEffect,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ nav: chatContextual \? 260 : NAV_OPEN_PX, \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?requireOpenNav: chatContextual,/,
+  "every group transition resolves the destination's saved layout or its own Chat/normal pixel defaults",
+);
+assert.match(
+  destinationLayoutEffect,
+  /layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;\s*group\.setLayout\(destinationLayout\);/,
+  "the destination group is armed only when its complete layout is ready to apply",
 );
 
 // Boot/group-switch application: after the group settles, a saved preference
@@ -58,7 +132,7 @@ assert.match(
 );
 
 const routePolicyEffect =
-  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy, defaultLayout\?\.nav\]\);/)?.[0] ?? "";
+  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy\]\);/)?.[0] ?? "";
 assert.ok(
   routePolicyEffect.length > 0,
   "the route-policy layout effect reruns after the real nav panel mounts",
@@ -79,13 +153,6 @@ assert.equal(
           chatContextualGroupRef.current !== groupId
         ) {
           chatContextualGroupRef.current = groupId;
-          const panel = navRef.current;
-          if (panel?.isCollapsed()) {
-            const savedSize = defaultLayout?.nav;
-            panel.resize(
-              typeof savedSize === "number" && savedSize > 0 ? \`\${savedSize}%\` : "260px",
-            );
-          }
           setNavOpen(true);
         }
         previousNavPolicyRef.current = navPolicy;
@@ -111,15 +178,15 @@ assert.equal(
         setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
-    }, [mounted, groupId, isMobile, navPolicy, defaultLayout?.nav]);
+    }, [mounted, groupId, isMobile, navPolicy]);
   `),
-  "Chat restores once per contextual group entry without arming memory, while visit-collapsed keeps its desktop-only behavior",
+  "Chat opens after destination restoration without arming memory, while visit-collapsed keeps its desktop-only behavior",
 );
 
 assert.match(
   shell,
-  /onLayoutChanged=\{\(layout, detail\) => \{[\s\S]{0,240}?if \(!chatContextual \|\| \(layout\.nav \?\? 0\) > 0\) \{\s*onLayoutChanged\(layout, detail\);\s*\}\s*\}\}/,
-  "Chat keeps its last expanded layout instead of persisting the collapsed zero-width layout",
+  /onLayoutChanged=\{\(layout, detail\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]{0,240}?if \(!chatContextual \|\| \(layout\.nav \?\? 0\) > 0\) \{\s*onLayoutChanged\(layout, detail\);\s*\}\s*\}\}/,
+  "group-swap churn cannot overwrite the destination layout, and Chat keeps its last expanded width",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
