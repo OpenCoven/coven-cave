@@ -290,6 +290,7 @@ export const SUITES = {
     "src/lib/fuzzy-match.test.ts",
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
+    "src/lib/home-composer-context.test.ts",
     "src/components/composer-enhance.test.ts",
     "src/components/prompt-snippets-modal.test.ts",
     "src/components/marketplace/marketplace-detail.test.ts",

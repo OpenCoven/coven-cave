@@ -80,6 +80,7 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, PLACEHOLDERS, type Destination } from "@/components/home/home-destinations";
+import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -210,22 +211,9 @@ export function HomeComposer({
   // confusing state. Archived familiars stay reachable from Familiar Studio
   // Lifecycle (unarchive there) but should never appear in fresh-session
   // surfaces.
-  const visibleFamiliars = useMemo(
-    () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
-    [familiars, archivedFamiliars],
-  );
-  // If the user's previously-active familiar is now archived, fall through to
-  // the first visible one so the picker value matches an actual option and
-  // the new-session flow stays usable.
-  const activeIsArchived =
-    activeFamiliarId != null && activeFamiliarId in archivedFamiliars;
-  const selectedFamiliarId =
-    activeFamiliarId && !activeIsArchived
-      ? activeFamiliarId
-      : visibleFamiliars[0]?.id ?? "";
-  const selectedFamiliar = useMemo(
-    () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
-    [familiars, selectedFamiliarId],
+  const { visibleFamiliars, selectedFamiliarId, selectedFamiliar } = useMemo(
+    () => resolveHomeComposerFamiliar(familiars, activeFamiliarId, archivedFamiliars),
+    [familiars, activeFamiliarId, archivedFamiliars],
   );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
@@ -241,10 +229,7 @@ export function HomeComposer({
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
   const selectedProject = useMemo(
-    () =>
-      selectedProjectId === NO_PROJECT_ID
-        ? null
-        : projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null,
+    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID),
     [projects, selectedProjectId],
   );
   const selectedRuntime =
