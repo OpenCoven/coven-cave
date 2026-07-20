@@ -5,7 +5,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const automations = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const automations = [
+  readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
+].join("\n");
 const githubView = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8");
 
 // ── Rituals: the Subscriptions manager stays in the overview options menu ────
