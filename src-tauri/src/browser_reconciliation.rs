@@ -2,10 +2,10 @@ use super::*;
 
 #[derive(Debug, Serialize, Clone)]
 pub(super) struct BrowserTitleEvent {
-    label: String,
-    title: String,
-    url: String,
-    sequence: u64,
+    pub(super) label: String,
+    pub(super) title: String,
+    pub(super) url: String,
+    pub(super) sequence: u64,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -19,8 +19,8 @@ struct BrowserPageLoadEvent {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct BrowserScrollEvent {
-    label: String,
-    scroll_y: f64,
+    pub(super) label: String,
+    pub(super) scroll_y: f64,
 }
 
 #[derive(Debug)]
