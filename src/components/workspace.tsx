@@ -17,6 +17,7 @@ import {
   type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
+import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -222,56 +223,11 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
-const CHAT_HASH_PREFIX = "#chat-";
-
 // GitHub task context is low-churn. At five minutes, uninterrupted idle
 // foreground use makes at most 12 Cave requests/hour instead of piggybacking on
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
-
-function readChatHash(): string | null {
-  if (typeof window === "undefined") return null;
-  const hash = window.location.hash;
-  if (!hash.startsWith(CHAT_HASH_PREFIX)) return null;
-  try {
-    return decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length));
-  } catch {
-    return null;
-  }
-}
-
-function clearChatHash() {
-  if (typeof window === "undefined") return;
-  if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
-  window.history.replaceState(null, "", window.location.pathname + window.location.search);
-}
-
-// Mode deep links: workspace modes live inside this SPA shell and aren't
-// URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
-// external links land directly on a surface.
-// Only real modes are honoured — canonical surfaces and the compatibility
-// aliases in MODE_ALIASES (setMode routes those onto their canonical
-// surface/tab) — so unknown values are ignored silently.
-function readModeParam(): WorkspaceMode | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("mode");
-  if (raw && isWorkspaceMode(raw)) return raw;
-  return null;
-}
-
-function clearModeParam() {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has("mode")) return;
-  params.delete("mode");
-  const query = params.toString();
-  window.history.replaceState(
-    null,
-    "",
-    window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
-  );
-}
 
 function taskCanAnnotateSession(task: GitHubTask): boolean {
   return Boolean(task.sessionId && (task.prNumber != null || task.prUrl));
