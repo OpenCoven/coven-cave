@@ -16,7 +16,6 @@ export function HighlightedSnippet({ snippet, query }: { snippet: string; query:
     </>
   );
 }
-
 type SortableHandleProps = {
   attributes: ReturnType<typeof useSortable>["attributes"];
   listeners: ReturnType<typeof useSortable>["listeners"];
@@ -48,4 +47,3 @@ export function ChatListSection({
   if (onToggle) return <li className="border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)]"><button type="button" onClick={onToggle} aria-expanded={!collapsed} aria-label={`${collapsed ? "Expand" : "Collapse"} ${label}`} className="focus-ring flex w-full items-center gap-1.5 px-4 py-2 text-left hover:bg-[var(--bg-raised)]/40">{inner}</button></li>;
   return <li className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">{inner}</li>;
 }
-
