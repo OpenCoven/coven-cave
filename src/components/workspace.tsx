@@ -2982,6 +2982,7 @@ export function Workspace() {
           it claims its 28px and the surface shrinks around it. Hidden while
           the first-project gate holds the surface inert. */}
       {firstProjectGateOpen ? null : statusBar}
+
     </div>
   );
 

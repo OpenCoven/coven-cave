@@ -54,9 +54,17 @@ cleanup() { rm -f "$TAURI_OVERRIDE_CONFIG"; }
 trap cleanup EXIT
 
 if [ "$should_start_server" = true ]; then
-  # Use beforeDevCommand but set PORT so it uses our free port
+  # The desktop shell always uses a loopback devUrl. A host-provided HOSTNAME
+  # (for example Docker/WSL's machine name) would bind the server elsewhere
+  # and leave Tauri waiting forever. Tauri invokes beforeDevCommand through
+  # cmd.exe on Windows, so use cmd's `set` form under Git Bash/MSYS.
+  before_dev_command="HOSTNAME=127.0.0.1 PORT=${dev_port} pnpm dev"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) before_dev_command="set HOSTNAME=127.0.0.1&& set PORT=${dev_port}&& pnpm dev" ;;
+  esac
+  # Use beforeDevCommand but set PORT so it uses our free port.
   cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
-{"build":{"beforeDevCommand":"PORT=${dev_port} pnpm dev","devUrl":"http://127.0.0.1:${dev_port}"}}
+{"build":{"beforeDevCommand":"${before_dev_command}","devUrl":"http://127.0.0.1:${dev_port}"}}
 CONF
 else
   # Skip beforeDevCommand since the server is already running

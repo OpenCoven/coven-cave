@@ -20,7 +20,20 @@ import { segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
-import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
+import {
+  advanceLiveChatGeneration,
+  clearLiveChatGeneration,
+  mapConversationHistoryTurns,
+  readLiveChatGeneration,
+  recordLiveChatGeneration,
+  subscribeLiveChatGeneration,
+  type ChatTurnLifecycle,
+  type ConversationHistoryPayload,
+  type LiveChatGenerationSnapshot,
+  type ProgressEvent,
+  type ToolEvent,
+  type Turn,
+} from "@/lib/chat-turn-state";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
@@ -172,62 +185,6 @@ import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 
-type ToolEvent = {
-  id: string;
-  name: string;
-  input?: string;
-  output?: string;
-  status: "running" | "ok" | "error";
-  durationMs?: number;
-  /** CHAT-D4-01: length of the turn's accumulated text when this tool's
-   *  FIRST event arrived — lets TurnRow interleave the tool block at its
-   *  chronological position between prose spans. Absent on tool events from
-   *  stored transcripts that predate the field (legacy turns keep the
-   *  trailing rollup). */
-  textOffset?: number;
-};
-
-type ProgressEvent = {
-  id: string;
-  label: string;
-  detail?: string;
-  status: "running" | "done" | "error";
-  createdAt: string;
-  durationMs?: number;
-};
-
-type ChatTurnLifecycle =
-  | "queued"
-  | "connecting"
-  | "streaming"
-  | "tooling"
-  | "cancelled"
-  | "failed"
-  | "complete";
-
-type Turn = {
-  id: string;
-  parentId?: string | null;
-  role: "user" | "assistant" | "system";
-  text: string;
-  attachments?: ChatAttachment[];
-  reasoning?: string;
-  tools?: ToolEvent[];
-  progress?: ProgressEvent[];
-  createdAt: string;
-  pending?: boolean;
-  error?: boolean;
-  lifecycle?: ChatTurnLifecycle;
-  durationMs?: number;
-  /** Token usage / cost from the harness result event (CHAT-D12-02).
-   *  Absent when the harness emitted none (e.g. the OpenClaw bridge). */
-  usage?: TurnUsage;
-  costUsd?: number;
-  responseMetadata?: ChatResponseMetadata;
-  origin?: "chat" | "voice";
-  voiceCallId?: string;
-};
-
 // CHAT-D3-07 perf: `replyFor` runs for every row on every render and parses the
 // turn text (strip reasoning + Next paths) to decide whether the Reply action
 // shows. During streaming that would re-parse the whole settled transcript on
@@ -236,102 +193,6 @@ type Turn = {
 // (correct miss). Module-scoped and keyed weakly, so dead turns are GC'd; the
 // value is a pure function of the turn, so sharing across instances is safe.
 const replyableTurnCache = new WeakMap<Turn, boolean>();
-
-type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn>;
-
-// Raw turn shape returned by GET /api/chat/conversation/:id.
-type ConversationHistoryTurn = {
-  id: string;
-  parentId?: string | null;
-  role: string;
-  text: string;
-  attachments?: ChatAttachment[];
-  reasoning?: string;
-  tools?: ToolEvent[];
-  durationMs?: number;
-  isError?: boolean;
-  usage?: TurnUsage;
-  costUsd?: number;
-  responseMetadata?: ChatResponseMetadata;
-  cancelled?: boolean;
-  createdAt?: string;
-  origin?: "chat" | "voice";
-  voiceCallId?: string;
-};
-
-// Parsed payload of GET /api/chat/conversation/:id — also what the
-// conversation cache stores, so a hover-prefetched payload and a fresh fetch
-// go through the same apply path in the history-load effect.
-type ConversationHistoryPayload = {
-  ok?: boolean;
-  context?: ChatLinkedContext | null;
-  conversation?: {
-    activeLeafId?: string;
-    turns?: ConversationHistoryTurn[];
-  };
-};
-
-function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[]): Turn[] {
-  return rawTurns
-    .filter(
-      (t): t is ConversationHistoryTurn & { role: "user" | "assistant" } =>
-        t.role === "user" || t.role === "assistant",
-    )
-    .map((t) => ({
-      id: t.id,
-      parentId: t.parentId,
-      role: t.role,
-      text: t.text,
-      attachments: t.attachments,
-      reasoning: t.reasoning,
-      tools: t.tools,
-      durationMs: t.durationMs,
-      usage: t.usage,
-      costUsd: t.costUsd,
-      responseMetadata: t.responseMetadata,
-      error: t.isError,
-      lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
-      createdAt: t.createdAt ?? new Date().toISOString(),
-      origin: t.origin,
-      voiceCallId: t.voiceCallId,
-    }));
-}
-
-function cloneLiveTurn(turn: Turn): Turn {
-  return {
-    ...turn,
-    attachments: turn.attachments ? [...turn.attachments] : undefined,
-    tools: turn.tools ? turn.tools.map((tool) => ({ ...tool })) : undefined,
-    progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
-  };
-}
-
-// Module-scope so a generation outlives the ChatView instance that started
-// it (thread switches AND full surface unmounts — cave-0er). All streaming
-// mutations must go through the registry (see updateLiveTurns), never only
-// through component setState: React silently drops setState on an unmounted
-// instance, which used to freeze the snapshot mid-generation and lose the
-// response. See src/lib/live-chat-generations.ts.
-const liveChatRegistry = createLiveGenerationRegistry<Turn>(cloneLiveTurn);
-
-function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
-  return liveChatRegistry.read(sessionId);
-}
-
-function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot {
-  return liveChatRegistry.record(snapshot);
-}
-
-function clearLiveChatGeneration(sessionId: string | null | undefined) {
-  liveChatRegistry.clear(sessionId);
-}
-
-function subscribeLiveChatGeneration(
-  sessionId: string,
-  listener: (snapshot: LiveChatGenerationSnapshot | null) => void,
-) {
-  return liveChatRegistry.subscribe(sessionId, listener);
-}
 
 // `isLiveSnapshotActive` lives in @/lib/live-chat-snapshot so the staleness rule
 // (the guard that stops a remounted view from inheriting a zombie "Streaming…"
@@ -3040,7 +2901,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // ignores setState on unmounted instances), freezing the snapshot and
     // losing the response.
     if (targetSessionId) {
-      const stored = liveChatRegistry.advance(targetSessionId, updater, nextActiveLeafId);
+      const stored = advanceLiveChatGeneration(targetSessionId, updater, nextActiveLeafId);
       if (stored) {
         // Mirror synchronously into THIS view's state when it is showing the
         // streaming session. Reusing the stored array means the microtask
@@ -4019,7 +3880,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // leaf: mid-stream the registry's activeLeafId is the streaming assistant
     // turn, and overwriting it with this view's (possibly stale) state would
     // re-point the rendered branch.
-    const live = currentSessionRef.current ? liveChatRegistry.read(currentSessionRef.current) : null;
+    const live = currentSessionRef.current ? readLiveChatGeneration(currentSessionRef.current) : null;
     updateLiveTurns((prev) => [...prev, newTurn], live?.activeLeafId ?? activeLeafId);
   };
 
