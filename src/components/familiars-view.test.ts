@@ -29,20 +29,14 @@ assert.match(
 
 assert.match(
   source,
-  /const LAST_SELECTED_KEY = "cave:agents\.lastSelected"/,
-  "Selection persistence uses cave:agents.lastSelected localStorage key",
+  /useSurfacePreference\(surfacePreferenceSpecs\.familiars\.selectedId\)/,
+  "Selection persistence uses the shared workspace preference registry",
 );
 
 assert.match(
   source,
-  /window\.localStorage\.getItem\(LAST_SELECTED_KEY\)/,
-  "Initial selectedFamiliarId reads from localStorage",
-);
-
-assert.match(
-  source,
-  /window\.localStorage\.getItem\(LAST_SELECTED_KEY\) \? "detail" : "roster"/,
-  "Initial viewMode boots into detail when a selection is persisted, else roster",
+  /useSurfacePreference\(surfacePreferenceSpecs\.familiars\.viewMode\)/,
+  "The roster/detail preference is restored through the same registry",
 );
 
 assert.match(

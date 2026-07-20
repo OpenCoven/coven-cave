@@ -47,8 +47,8 @@ assert.match(
 
 assert.match(
   source,
-  /const \[sortMode, setSortMode\] = useState<"recent" \| "oldest" \| "name" \| "size" \| "staleFirst">\("recent"\);/,
-  "Files must default to recency sort with the extended sort alternatives",
+  /const \[sortMode, setSortMode\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.sort\);/,
+  "Files must retain the recency-default sort preference through the Workspace registry",
 );
 // Sort now lives in the management controls bar (group/sort/stale-only).
 assert.match(source, /value=\{sortMode\}/, "Sort control must be bound to sortMode");

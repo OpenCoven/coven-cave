@@ -106,8 +106,8 @@ assert.doesNotMatch(
 );
 assert.match(
   automations,
-  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*initialTab === "crons" \? "crons" : "overview",?\s*\)/,
-  "Surface defaults to the unified overview unless a deep link asks otherwise",
+  /const \[storedActiveTab, setStoredActiveTab\] = useSurfacePreference\(surfacePreferenceSpecs\.schedules\.activeTab\);[\s\S]*const activeTab = deepLinkTab \?\? storedActiveTab/,
+  "Surface restores the unified overview tab preference unless a deep link asks otherwise",
 );
 assert.match(automations, /<h1[\s\S]*?>\s*Rituals\s*<\/h1>/, "Surface header reads Rituals");
 assert.match(
@@ -133,7 +133,7 @@ assert.match(
 assert.match(automations, /sessionStorage\.setItem\("cave:calendar:pending-open-date", day\.key\)[\s\S]{0,100}selectTab\("calendar"\)/, "a ribbon day queues its date before Calendar mounts");
 assert.match(calendar, /sessionStorage\.getItem\("cave:calendar:pending-open-date"\)[\s\S]{0,180}openDateValue\(pendingDate\)/, "Calendar consumes a queued ribbon date on mount");
 assert.match(calendar, /addEventListener\("cave:calendar:open-date", openDate\)/, "Calendar accepts a day selected from the overview ribbon");
-assert.match(calendar, /setAnchor\(next\);[\s\S]{0,140}setViewMode\("day"\)/, "a ribbon day opens the matching single-day calendar");
+assert.match(calendar, /setDeepLinkAnchor\(next\);[\s\S]{0,140}setDeepLinkViewMode\("day"\)/, "a ribbon day opens the matching single-day calendar without overwriting saved navigation preferences");
 assert.match(calendar, /mobileRibbonDayOpen && viewMode === "day"/, "mobile preserves an explicitly selected ribbon day instead of forcing Agenda");
 assert.doesNotMatch(
   globals,

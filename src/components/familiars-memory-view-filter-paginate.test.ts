@@ -11,8 +11,8 @@ const source = [
 
 assert.match(
   source,
-  /const \[sourceFilter, setSourceFilter\] = useState<"all" \| FileMemoryEntry\["sourceKind"\]>\("all"\);/,
-  "FamiliarsMemoryView must track a source-kind filter",
+  /const \[sourceFilter, setSourceFilter\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.source\);/,
+  "FamiliarsMemoryView must persist its source-kind filter through the Workspace registry",
 );
 
 assert.match(

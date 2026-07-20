@@ -63,12 +63,12 @@ assert.match(
 );
 assert.match(
   githubView,
-  /deepLinkItem \?\? sorted\.find\(\(item\) => item\.id === selectedItemId\) \?\? sorted\[0\] \?\? null/,
+  /deepLinkItem \?\? sorted\.find\(\(item\) =>[\s\S]{0,220}selectedTarget !== null/,
   "the deep-linked item wins the detail selection until the user picks a row",
 );
 assert.match(
   githubView,
-  /const selectRow = useCallback\(\(id: string\) => \{\s*setDeepLink\(null\);\s*setSelectedItemId\(id\);/,
+  /const selectRow = useCallback\(\(id: string\) => \{\s*setDeepLink\(null\);[\s\S]{0,360}setSelectedTarget\(/,
   "manual row selection clears the deep link",
 );
 assert.match(

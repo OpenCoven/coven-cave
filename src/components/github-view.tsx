@@ -60,6 +60,8 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
@@ -2282,16 +2284,16 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [orgFilter, setOrgFilter] = useState<string>("all");
-  const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
+  const [orgFilter, setOrgFilter] = useSurfacePreference(surfacePreferenceSpecs.github.organization);
+  const [repoFilter, setRepoFilter] = useSurfacePreference(surfacePreferenceSpecs.github.repository);
   const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
   const [showSubsModal, setShowSubsModal] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
+  const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
+  const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
   // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
   // user picks a row themselves — from then on selection owns the detail.
   const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
@@ -2300,8 +2302,14 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [initialTarget]);
   const selectRow = useCallback((id: string) => {
     setDeepLink(null);
-    setSelectedItemId(id);
-  }, []);
+    const item = activity?.items.find((candidate) => candidate.id === id);
+    // The durable selection is a semantic GitHub identity, not the API row id.
+    // Notifications without a PR/issue number continue to open for the current
+    // visit but are intentionally not persisted.
+    setSelectedTarget(item && typeof item.number === "number"
+      ? { repo: item.repo, number: item.number, kind: item.kind }
+      : null);
+  }, [activity?.items, setSelectedTarget]);
   const timerRef = useRef<number | null>(null);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
@@ -2455,6 +2463,21 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     if (orgFilter !== org) setOrgFilter(org);
   }, [repoFilter, orgFilter]);
 
+  // Stored repository and organization names are meaningful only while the
+  // connected account still exposes them. Clear stale values after a successful
+  // refresh; use the unfiltered feed so changing the activity tab cannot erase
+  // an otherwise valid scope.
+  useEffect(() => {
+    if (loading || error) return;
+    if (repoFilter !== "all" && !items.some((item) => item.repo === repoFilter)) {
+      setRepoFilter("all");
+      return;
+    }
+    if (orgFilter !== "all" && !items.some((item) => orgOf(item.repo) === orgFilter)) {
+      setOrgFilter("all");
+    }
+  }, [items, loading, error, orgFilter, repoFilter, setOrgFilter, setRepoFilter]);
+
   const scoped = useMemo(
     () =>
       filtered.filter(
@@ -2531,14 +2554,12 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   );
 
   useEffect(() => {
-    if (sorted.length === 0) {
-      if (selectedItemId !== null) setSelectedItemId(null);
-      return;
-    }
-    if (!selectedItemId || !sorted.some((item) => item.id === selectedItemId)) {
-      setSelectedItemId(sorted[0].id);
-    }
-  }, [sorted, selectedItemId]);
+    if (!selectedTarget || loading || error) return;
+    const exists = items.some((item) =>
+      item.repo === selectedTarget.repo && item.number === selectedTarget.number && item.kind === selectedTarget.kind,
+    );
+    if (!exists) setSelectedTarget(null);
+  }, [items, loading, error, selectedTarget, setSelectedTarget]);
 
   // The deep-linked item may not be in the activity list (old PR, other repo):
   // prefer the live row when present (real title/state, row highlight), else
@@ -2560,8 +2581,10 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [deepLink, sorted]);
 
   const selectedItem = useMemo(
-    () => deepLinkItem ?? sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
-    [deepLinkItem, sorted, selectedItemId],
+    () => deepLinkItem ?? sorted.find((item) =>
+      selectedTarget !== null && item.repo === selectedTarget.repo && item.number === selectedTarget.number && item.kind === selectedTarget.kind,
+    ) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, selectedTarget],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 

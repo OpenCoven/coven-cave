@@ -114,6 +114,9 @@ type Props = {
   familiars: Familiar[];
   projects: CaveProject[];
   groupBy: GroupBy;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSortChange: (key: SortKey, direction: SortDir) => void;
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   /** Bulk-select mode: clicking a row toggles its checkbox instead of opening. */
@@ -123,9 +126,7 @@ type Props = {
   onPatch: (id: string, patch: Partial<Card>) => void;
 };
 
-export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortDir, onSortChange, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
 
   // Which group holds the current selection (null when nothing is selected).
   const selectedGroupKey = useMemo(() => {
@@ -276,8 +277,8 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
   }, [onSelect]);
 
   const handleCol = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
+    if (sortKey === key) onSortChange(key, sortDir === "asc" ? "desc" : "asc");
+    else onSortChange(key, "asc");
   };
 
   const toggleGroup = (key: string) =>

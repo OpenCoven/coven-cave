@@ -40,6 +40,8 @@ import {
   SourceFilterChip,
 } from "@/components/familiars-memory-files";
 import { compactPath, fileBase, fileDir, formatBytes, memoryMatches, type FileMemoryEntry } from "@/components/familiars-memory-utils";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export type { FileMemoryEntry } from "@/components/familiars-memory-utils";
 
@@ -86,12 +88,13 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
-  const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
+  const [storedFamiliarFilter, setFamiliarFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.familiarId);
+  const familiarFilter = storedFamiliarFilter || activeFamiliar?.id || familiars[0]?.id || "";
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
-  const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
-  const [groupMode, setGroupMode] = useState<GroupBy>("none");
-  const [staleOnly, setStaleOnly] = useState(false);
+  const [sourceFilter, setSourceFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.source);
+  const [sortMode, setSortMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.sort);
+  const [groupMode, setGroupMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.group);
+  const [staleOnly, setStaleOnly] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.staleOnly);
   const [expandRow, setExpandRow] = useState<MemoryRow | null>(null);
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
   // The real DELETE is deferred 4s for undo, but the 30s poll / on-focus refresh

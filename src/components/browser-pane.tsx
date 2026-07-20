@@ -36,6 +36,8 @@ import {
   saveRailPinned,
   type BrowserTab,
 } from "./browser-tab-state";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export type { BrowserTab } from "./browser-tab-state";
 
@@ -91,10 +93,38 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
 
   // Tab state
   const [tabs, setTabs] = useState<BrowserTab[]>(() => loadPinnedTabs());
+  const [storedActiveTabId, setStoredActiveTabId, preferencesHydrated] = useSurfacePreference(surfacePreferenceSpecs.browser.activeTabId);
+  const [storedAddress, setStoredAddress] = useSurfacePreference(surfacePreferenceSpecs.browser.address);
   const [activeTabId, setActiveTabId] = useState<string>(() => loadPinnedTabs()[0]?.id ?? "home");
   const [tabTitles, setTabTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
+  const transientNavigationUrlRef = useRef<string | null>(null);
+  const selectActiveTab = useCallback((id: string) => {
+    setActiveTabId(id);
+    setStoredActiveTabId(id);
+  }, [setStoredActiveTabId]);
+  const commitAddress = useCallback((url: string) => {
+    setAddressBar(url);
+    setStoredAddress(url);
+  }, [setStoredAddress]);
+
+  // Pinned tabs remain their own browser-specific persistence. The registry
+  // only restores which tab was active and its latest committed URL.
+  useEffect(() => {
+    if (!preferencesHydrated) return;
+    const restored = tabs.find((tab) => tab.id === storedActiveTabId) ?? tabs[0];
+    if (!restored) return;
+    setActiveTabId(restored.id);
+    if (storedAddress) {
+      setTabs((current) => current.map((tab) => tab.id === restored.id ? { ...tab, url: storedAddress } : tab));
+      setAddressBar(storedAddress);
+    } else {
+      setAddressBar(restored.url);
+    }
+  // Restore once after hydration; later tab changes are deliberate user actions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferencesHydrated]);
   const [quickOpen, setQuickOpen] = useState(false);
   const quickOpenRef = useRef(false);
   quickOpenRef.current = quickOpen;
@@ -227,7 +257,8 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         } else {
           if (tabId === activeTabId) {
             setLoading(false);
-            setAddressBar(evUrl);
+            if (transientNavigationUrlRef.current === evUrl) setAddressBar(evUrl);
+            else commitAddress(evUrl);
           }
           // Update tab URL
           setTabs((prev) =>
@@ -272,12 +303,15 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
           delete expectedPageLoadRef.current[tabId];
         }
         setTabTitles((prev) => ({ ...prev, [tabId]: title }));
-        if (tabId === activeTabId) setAddressBar(evUrl);
+        if (tabId === activeTabId) {
+          if (transientNavigationUrlRef.current === evUrl) setAddressBar(evUrl);
+          else commitAddress(evUrl);
+        }
       },
     ).then((fn) => { if (cancelled) fn(); else unlistenTitle = fn; });
 
     return () => { cancelled = true; unlistenLoad?.(); unlistenTitle?.(); };
-  }, [bridge, nativeBrowserAvailable, label, activeTabId]);
+  }, [bridge, nativeBrowserAvailable, label, activeTabId, commitAddress]);
 
   // ── Sync active tab webview bounds ────────────────────────────────
   // The native Tauri child webview is an OS-level overlay rendered ABOVE
@@ -488,26 +522,28 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       }).catch(() => {
         if (!cancelled) setUnavailable(true);
       });
-      setAddressBar(activeTab.url);
+      if (transientNavigationUrlRef.current === activeTab.url) setAddressBar(activeTab.url);
+      else commitAddress(activeTab.url);
     }, 80);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id, acknowledgePendingNavigation]);
+  }, [active, bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id, acknowledgePendingNavigation, commitAddress]);
 
   // ── Tab actions ───────────────────────────────────────────────────
   const switchTab = useCallback((id: string) => {
-    setActiveTabId(id);
+    transientNavigationUrlRef.current = null;
+    selectActiveTab(id);
     const tab = tabs.find((t) => t.id === id);
     if (tab) {
-      setAddressBar(tab.url);
+      commitAddress(tab.url);
       historyRef.current[id] ??= { stack: [tab.url], idx: 0 };
     }
     setLoading(false);
     setToolbarOpen(false);
-  }, [tabs]);
+  }, [tabs, selectActiveTab, commitAddress]);
 
   // Clicking the pane's empty chrome — anything that isn't an interactive
   // control — toggles the rail pinned-open, giving the pin button a large,
@@ -552,14 +588,19 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   };
 
   // ── Per-tab navigation ────────────────────────────────────────────
-  const navigateTo = (raw: string) => {
+  const navigateTo = (raw: string, persist = true) => {
     const next = normalizeBrowserUrl(raw);
+    if (persist) transientNavigationUrlRef.current = null;
     expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     const nextTabs = tabs.map((t) =>
       t.id === activeTabId ? { ...t, url: next } : t,
     );
     setTabs(nextTabs);
-    setAddressBar(next);
+    if (persist) commitAddress(next);
+    else {
+      transientNavigationUrlRef.current = next;
+      setAddressBar(next);
+    }
 
     if (!bridge) {
       const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
@@ -590,7 +631,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     if (acceptedNavigationIdRef.current !== navigationRequest.id) {
       acceptedNavigationIdRef.current = navigationRequest.id;
       pendingNavigationRef.current = navigationRequest;
-      navigateTo(navigationRequest.url);
+      navigateTo(navigationRequest.url, false);
     }
     if (platform !== "unknown" && (!nativeBrowserAvailable || unavailable)) {
       acknowledgePendingNavigation(navigationRequest);
@@ -610,7 +651,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     const prev = hh.stack[hh.idx];
     expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(prev);
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: prev } : tab));
-    setAddressBar(prev);
+    commitAddress(prev);
   };
 
   const goForward = () => {
@@ -620,7 +661,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     const next = hh.stack[hh.idx];
     expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: next } : tab));
-    setAddressBar(next);
+    commitAddress(next);
   };
 
   // Cmd+K / Ctrl+K → open quick-open palette.
