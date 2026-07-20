@@ -72,6 +72,8 @@ export type SessionRow = {
   updated_at: string;
   familiarId?: string | null;
   origin?: SessionOrigin;
+  /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */
+  hasLocalConversation?: boolean;
   /**
    * True for daemon sessions with no Cave conversation behind them — runs
    * spawned by generators (journal narratives, flows, automations, CLI runs)
