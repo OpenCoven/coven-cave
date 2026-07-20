@@ -39,6 +39,7 @@ import type { PreviewPlugin } from "@create-markdown/preview";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
+import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
@@ -101,16 +102,6 @@ function getHighlighter(): Promise<Highlighter> {
 // Parse fence info → { lang, filename }
 // ---------------------------------------------------------------------------
 
-function parseFenceInfo(info: string): { lang: string; filename?: string } {
-  if (!info) return { lang: "text" };
-  // Support `lang:filename.ext` syntax
-  const colonIdx = info.indexOf(":");
-  if (colonIdx > 0) {
-    return { lang: info.slice(0, colonIdx).trim(), filename: info.slice(colonIdx + 1).trim() };
-  }
-  return { lang: info.trim() };
-}
-
 // ---------------------------------------------------------------------------
 // Render a single code block with Shiki + chrome
 // ---------------------------------------------------------------------------
@@ -137,27 +128,6 @@ function plainTextFromHtmlLine(line: string): string {
 // modal reads like code with add/remove strips instead of a flat wall of
 // uniformly "inserted"-colored lines. Diffs whose target has no resolvable
 // grammar keep the bundled `diff` grammar (whole-line coloring) below.
-
-type DiffLineKind = "add" | "del" | "ctx" | "meta" | "hunk";
-type DiffLine = { kind: DiffLineKind; raw: string; marker: string | null; content: string };
-
-const DIFF_META_RE =
-  /^(\+\+\+ |--- |diff --git |index |new file|deleted file|rename |similarity |old mode|new mode|Binary files|\\ No newline)/;
-
-function classifyDiffLines(code: string): DiffLine[] {
-  return code.split("\n").map((raw): DiffLine => {
-    // Meta and @@ hunk rows are blanked out of the document the language
-    // grammar sees (content: "") so they can't derail the parse; the raw text
-    // is re-substituted as muted chrome when the lines are wrapped.
-    if (/^@@/.test(raw)) return { kind: "hunk", raw, marker: null, content: "" };
-    if (DIFF_META_RE.test(raw)) return { kind: "meta", raw, marker: null, content: "" };
-    if (raw.startsWith("+")) return { kind: "add", raw, marker: "+", content: raw.slice(1) };
-    if (raw.startsWith("-")) return { kind: "del", raw, marker: "-", content: raw.slice(1) };
-    if (raw.startsWith(" ")) return { kind: "ctx", raw, marker: " ", content: raw.slice(1) };
-    // e.g. the "… (N more lines truncated)" cap marker — pass through as-is.
-    return { kind: "ctx", raw, marker: null, content: raw };
-  });
-}
 
 async function renderCodeBlock(
   code: string,
