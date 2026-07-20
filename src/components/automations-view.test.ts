@@ -6,17 +6,15 @@ const source = [
   readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/status-icon.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/cron-detail-primitives.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/templates-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
 ].join("\n");
+const codexDetailPanel = readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8");
 const detailPanelControls = source.slice(
   source.indexOf("function DetailPanel"),
   source.indexOf("function RowActions"),
-);
-const codexDetailPanel = source.slice(
-  source.indexOf("function CodexDetailPanel"),
-  source.indexOf("function AutomationScheduleRow"),
 );
 
 assert.match(source, /from "@\/components\/automations\/templates-panel"/, "template browsing is owned by its dedicated module");
