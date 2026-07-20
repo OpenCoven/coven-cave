@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { resolveModelArg } from "@/lib/slash-model";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
@@ -79,20 +79,11 @@ import {
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
+import { DESTINATIONS, PLACEHOLDERS, type Destination } from "@/components/home/home-destinations";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Destination = "chat" | "board";
-
-const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
-  { id: "chat",  label: "Chat", icon: "ph:chat-circle-dots" },
-  { id: "board", label: "Task", icon: "ph:kanban" },
-];
-
-const PLACEHOLDERS: Record<Destination, string> = {
-  chat: "Summon something magical",
-  board: "Describe a new task…",
-};
+export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
   familiars: Familiar[];
