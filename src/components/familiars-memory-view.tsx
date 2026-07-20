@@ -213,8 +213,11 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   usePausablePoll(() => void load(), 30_000, { enabled: !feed });
 
   useEffect(() => {
-    if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
-  }, [activeFamiliar?.id]);
+    // Embedded familiar-detail views are deliberately locked to their owner.
+    // They must not replace the full Memory surface's return preference just
+    // because they mounted with a different active familiar.
+    if (!lockToFamiliar && activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
+  }, [activeFamiliar?.id, lockToFamiliar, setFamiliarFilter]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const effectiveFamiliarFilter = lockToFamiliar && activeFamiliar?.id ? activeFamiliar.id : familiarFilter;
@@ -322,6 +325,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }), [familiarScopedFiles]);
 
   useEffect(() => {
+    if (lockToFamiliar) return;
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
     if (activeFamiliar?.id && familiarIds.has(activeFamiliar.id)) {
       if (activeFamiliar.id !== familiarFilter) setFamiliarFilter(activeFamiliar.id);
@@ -339,7 +343,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
     const next = familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
     if (next && next !== familiarFilter) setFamiliarFilter(next);
-  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
+  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars, lockToFamiliar, setFamiliarFilter]);
 
   const selectedFamiliar =
     familiarById.get(effectiveFamiliarFilter) ??

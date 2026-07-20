@@ -17,6 +17,17 @@ assert.match(
 
 assert.match(
   source,
+  /if \(!lockToFamiliar && activeFamiliar\?\.id\) setFamiliarFilter\(activeFamiliar\.id\);/,
+  "a detail view locked to one familiar must not overwrite the full Memory familiar preference",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*if \(lockToFamiliar\) return;\s*const familiarIds/,
+  "locked detail views skip the stale-filter repair that writes the shared preference",
+);
+
+assert.match(
+  source,
   /sourceFilter === "all" \|\| entry\.sourceKind === sourceFilter/,
   "Memory files must be filtered by the active source-kind filter",
 );
