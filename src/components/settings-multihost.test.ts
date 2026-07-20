@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import {
+  formatHostWorkspaceText,
+  parseExecutorUrls,
+  parseHostWorkspaceText,
+} from "./settings-multihost.ts";
 
-const source = readFileSync(new URL("./settings-multihost.ts", import.meta.url), "utf8");
-assert.match(source, /export function parseExecutorUrls/, "executor normalization has a focused owner");
-assert.match(source, /export function parseHostWorkspaceText/, "host workspace parsing has a focused owner");
-assert.match(source, /line\.startsWith\("#"\)/, "comment lines remain excluded from persisted mappings");
-assert.match(source, /export function formatHostWorkspaceText/, "valid mappings can round-trip into the settings textarea");
+assert.deepEqual(
+  parseExecutorUrls(" https://one.example,https://two.example\nhttps://one.example "),
+  ["https://one.example", "https://two.example"],
+  "executor normalization trims, splits, and de-duplicates persisted addresses",
+);
+assert.deepEqual(
+  parseHostWorkspaceText("# ignored\none = /repo/one\ntwo=/repo/two\ninvalid"),
+  { one: "/repo/one", two: "/repo/two" },
+  "host-workspace parsing ignores comments and malformed lines",
+);
+assert.equal(
+  formatHostWorkspaceText({ one: " /repo/one ", empty: "" }),
+  "one=/repo/one",
+  "only valid host-workspace mappings round-trip into the textarea",
+);

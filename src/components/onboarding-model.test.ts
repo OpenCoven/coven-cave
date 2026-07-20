@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import {
+  HARNESS_ONE_CLICK,
+  NPM_INSTALL_TARGETS,
+  isInstallTargetValue,
+  parseOnboardingExecutorUrls,
+} from "./onboarding-model.ts";
 
-const source = readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8");
-
-assert.match(source, /export const INSTALL_TARGET_KIND/, "the install protocol has a single model owner");
-assert.match(source, /export const NPM_INSTALL_TARGETS/, "npm serialization remains explicit");
-assert.match(source, /export const HARNESS_ONE_CLICK/, "runtime install instructions remain centralized");
-assert.match(source, /export const PLATFORM_COPY/, "native platform guidance remains data-driven");
-assert.match(source, /export function parseOnboardingExecutorUrls/, "multi-host URL normalization remains reusable");
+assert.deepEqual(
+  parseOnboardingExecutorUrls(" https://one.example,https://two.example\nhttps://one.example "),
+  ["https://one.example", "https://two.example"],
+  "onboarding persists each executor once after normalizing user input",
+);
+assert.deepEqual(
+  NPM_INSTALL_TARGETS,
+  ["coven-cli", "codex", "claude", "copilot", "openclaw"],
+  "the shared npm install lock covers every npm-backed target",
+);
+assert.ok(HARNESS_ONE_CLICK.codex?.command.includes("@openai/codex"));
+assert.equal(isInstallTargetValue("codex"), true);
+assert.equal(isInstallTargetValue("not-a-target"), false);
