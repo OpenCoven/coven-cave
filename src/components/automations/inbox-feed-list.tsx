@@ -17,11 +17,38 @@ function relativeTime(iso: string | undefined | null): string {
 }
 
 function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
-  return <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide [background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [color:var(--text-muted)]!">{inboxKindLabel(kind)}</span>;
+  return (
+    <span
+      className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium uppercase tracking-wide [background:var(--bg-base)]! [border:1px_solid_var(--border-hairline)]! [color:var(--text-muted)]!"
+    >
+      {inboxKindLabel(kind)}
+    </span>
+  );
 }
 
-function InboxAction({ icon, label, text, onClick }: { icon: IconName; label: string; text: string; onClick: () => void }) {
-  return <Button variant="ghost" size="xs" aria-label={label} onClick={onClick} className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] [color:var(--text-secondary)]!" leadingIcon={icon}><span className="@max-[520px]:hidden">{text}</span></Button>;
+function InboxAction({
+  icon,
+  label,
+  text,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  text: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      aria-label={label}
+      onClick={onClick}
+      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] [color:var(--text-secondary)]!"
+      leadingIcon={icon}
+    >
+      <span className="@max-[520px]:hidden">{text}</span>
+    </Button>
+  );
 }
 
 function InboxFeedRow({ item, selected, selectMode, checked, familiarLabel, onSelect, onToggle, onDone, onSnooze, onDismiss, onUnwatch }: { item: InboxItem; selected: boolean; selectMode: boolean; checked: boolean; familiarLabel: FamiliarLabel; onSelect: ItemAction; onToggle: (id: string) => void; onDone?: ItemAction; onSnooze?: ItemAction; onDismiss?: ItemAction; onUnwatch?: UnwatchAction }) {
