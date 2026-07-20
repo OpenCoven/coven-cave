@@ -170,7 +170,9 @@ for (const rel of [
   // footer-collaborator rows.
   "../components/dashboard/bento-dashboard.tsx",
 ]) {
-  const src = read(rel);
+  const src = rel === "../components/familiar-analytics-view.tsx"
+    ? [read(rel), read("../components/familiar-analytics-content.tsx")].join("\n")
+    : read(rel);
   assert.match(src, /AuthedImage/, `${rel} renders avatars via <AuthedImage>`);
   assert.doesNotMatch(
     src,
