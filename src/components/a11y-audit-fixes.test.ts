@@ -13,10 +13,11 @@ test("browser tabs are a tablist exposing name + selected state", async () => {
 });
 
 test("calendar urgency dots carry a text alternative", async () => {
-  const src = await read("./calendar-view.tsx");
-  assert.match(src, /function urgencyLabel\(item: InboxItem\): string/);
-  assert.match(src, /role="img" aria-label=\{urgencyLabel\(item\)\}/);
-  assert.match(src, /role="img" aria-label=\{urgencyLabel\(ev\.item\)\}/);
+  const view = await read("./calendar-view.tsx");
+  const primitives = await read("./calendar-view-primitives.tsx");
+  assert.match(primitives, /function urgencyLabel\(item: InboxItem\): string/);
+  assert.match(view, /role="img" aria-label=\{urgencyLabel\(item\)\}/);
+  assert.match(view, /role="img" aria-label=\{urgencyLabel\(ev\.item\)\}/);
 });
 
 test("shell exposes a skip-to-content link targeting the main landmark", async () => {

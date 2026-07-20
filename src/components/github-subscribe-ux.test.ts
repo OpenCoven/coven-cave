@@ -11,7 +11,10 @@ const automations = [
   readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
 ].join("\n");
-const githubView = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8");
+const githubView = [
+  readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // ── Rituals: the Subscriptions manager stays in the overview options menu ────
 assert.match(

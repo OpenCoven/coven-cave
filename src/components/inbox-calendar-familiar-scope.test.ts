@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const inbox = await readFile(new URL("./inbox-escalations-view.tsx", import.meta.url), "utf8");
-const calendar = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const calendar = [
+  await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // ───────── Automations wrapper ─────────

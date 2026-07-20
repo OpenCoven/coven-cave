@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const src = readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8");
+const src = [
+  readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./board-inspector-debug.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // ── TimeoutBadge poll pauses when hidden — via the shared usePausablePoll hook ─
 assert.match(

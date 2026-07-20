@@ -10,7 +10,10 @@ const inspector = readFileSync("src/components/board-inspector.tsx", "utf8");
 const kanban = readFileSync("src/components/board-kanban.tsx", "utf8");
 const table = readFileSync("src/components/board-table.tsx", "utf8");
 const stack = readFileSync("src/components/board-card-stack.tsx", "utf8");
-const view = readFileSync("src/components/board-view.tsx", "utf8");
+const view = [
+  readFileSync("src/components/board-view.tsx", "utf8"),
+  readFileSync("src/components/board-view-display.tsx", "utf8"),
+].join("\n");
 const gantt = readFileSync("src/components/board-gantt.tsx", "utf8");
 const styles = readFileSync("src/styles/board.css", "utf8");
 

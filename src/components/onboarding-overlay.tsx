@@ -38,6 +38,32 @@ import {
   advanceOnboardingAutoFinishGate,
   isLatestOnboardingStatusRequest,
 } from "@/lib/onboarding-gate";
+import {
+  ALL_INSTALL_TARGETS,
+  HARNESS_ONE_CLICK,
+  HARNESS_RETRY_BUDGET,
+  INSTALL_TARGET_KIND,
+  NPM_INSTALL_TARGETS,
+  OPENCLAW_AGENT_ROOT,
+  OPENCLAW_WORKSPACE_ROOT,
+  PLATFORM_COPY,
+  isInstallTargetValue,
+  parseOnboardingExecutorUrls,
+  type GuidedStep,
+  type HarnessReport,
+  type InstallJobView,
+  type InstallResult,
+  type InstallTarget,
+  type MultiHostMode,
+  type NpmLaneState,
+  type OnboardingStatus,
+  type OnboardingUpdatePayload,
+  type PlatformId,
+  type PortPreflightResult,
+  type PruneState,
+  type Step,
+  type OpenCovenToolStatus,
+} from "./onboarding-model";
 
 // Guided onboarding: one numbered path from "nothing installed" to "ready to
 // summon". Every step carries its own instructions, a one-click action where
@@ -47,277 +73,6 @@ import {
 // app (the Familiar Summoning Circle on the Familiars surface): the wizard
 // stops at infrastructure — tools, home, runtime, daemon — and the workspace
 // walks a familiar-less user into the circle after dismissal.
-
-type PruneState =
-  | { idle: true }
-  | { counting: true }
-  | { count: number }
-  | { pruning: true }
-  | { pruned: number }
-  | { error: string };
-type Step = { ok: boolean; detail?: string; hint?: string; optional?: boolean };
-type PlatformId = "windows" | "linux" | "mac" | "unknown";
-
-type OnboardingStatus = {
-  complete: boolean;
-  steps: {
-    covenCli: Step;
-    covenHome: Step;
-    git?: Step;
-    adapters: Step;
-    daemon: Step;
-    familiars: Step;
-    binding: Step;
-  };
-  tools?: OpenCovenToolStatus[];
-};
-
-type OpenCovenToolStatus = {
-  id: "coven-cli";
-  label: string;
-  packageName: string;
-  binary: string;
-  installed: boolean;
-  path: string | null;
-  current: string | null;
-  latest: string | null;
-  latestCheck: LatestCheckDisplay | null;
-  outdated: boolean;
-  compatible: boolean;
-  minimumVersion: string;
-  checkedAt?: string | null;
-};
-
-type OnboardingUpdatePayload = {
-  ok: boolean;
-  tools: OpenCovenToolStatus[];
-  checkedAt: string | null;
-  freshness: "fresh" | "stale" | "unavailable";
-  stale: boolean;
-  refreshing: boolean;
-  error: string | null;
-};
-
-type HarnessReport = {
-  id: string;
-  label: string;
-  binary: string;
-  chatSupported: boolean;
-  installed: boolean;
-  path: string | null;
-  version: string | null;
-  installHint: string;
-  source: string;
-  manifestPath: string | null;
-};
-
-type InstallTarget =
-  | "coven-cli"
-  | "codex"
-  | "claude"
-  | "copilot"
-  | "openclaw"
-  | "hermes";
-
-type InstallResult = {
-  ok: boolean;
-  detail: string;
-  /** Server-capped and secret-redacted terminal output retained on failure. */
-  tail?: string;
-};
-
-type NpmLaneState = {
-  target: InstallTarget;
-  label: string;
-};
-
-/** Result of the codex OAuth port preflight (POST /api/onboarding/codex-port-preflight).
- *  The four outcomes mirror the route handler's response shape. UI consumes
- *  `ok` for color/icon and `detail` for the user-facing message. */
-type PortPreflightResult = {
-  ok: boolean;
-  detail: string;
-  outcome:
-    | "port-free"
-    | "cleared-stale-codex"
-    | "held-by-other"
-    | "held-unknown";
-};
-
-type InstallJobView = {
-  status: "running" | "done";
-  elapsedMs: number;
-  tail: string;
-  ok?: boolean;
-  binaryPath?: string | null;
-  error?: string;
-};
-
-/** Mirrors the server's per-target install mechanism (route.ts INSTALL_TARGETS).
- *  npm-kind installs are mutually exclusive — the route 409s — so they share
- *  one client-side busy lock. */
-const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
-  "coven-cli": "npm",
-  codex: "npm",
-  claude: "npm",
-  copilot: "npm",
-  openclaw: "npm",
-  hermes: "script",
-};
-const ALL_INSTALL_TARGETS = Object.keys(INSTALL_TARGET_KIND) as InstallTarget[];
-const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
-  (target) => INSTALL_TARGET_KIND[target] === "npm",
-);
-
-function isInstallTargetValue(value: string): value is InstallTarget {
-  return ALL_INSTALL_TARGETS.includes(value as InstallTarget);
-}
-
-// ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
-// enough that a genuinely broken /api/harnesses surfaces as a retryable
-// error instead of an empty runtime grid polling silently forever.
-const HARNESS_RETRY_BUDGET = 15;
-
-const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
-const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
-
-/** Every chat harness Cave can install itself. `command` is the manual
- *  equivalent shown beside the button; `windowsCommand` overrides it on
- *  Windows when the official installer differs (Hermes). */
-const HARNESS_ONE_CLICK: Partial<
-  Record<
-    string,
-    {
-      target: InstallTarget;
-      command: string;
-      windowsCommand?: string;
-      afterInstall: string;
-    }
-  >
-> = {
-  codex: {
-    target: "codex",
-    command: "npm install -g @openai/codex",
-    afterInstall: "then run `codex login` in a terminal to sign in",
-  },
-  claude: {
-    target: "claude",
-    command: "npm install -g @anthropic-ai/claude-code",
-    afterInstall: "then run `claude doctor` in a terminal to finish setup",
-  },
-  copilot: {
-    target: "copilot",
-    command: "npm install -g @github/copilot",
-    afterInstall:
-      "then run `copilot` in a terminal and sign in with `/login` (or set GH_TOKEN)",
-  },
-  openclaw: {
-    target: "openclaw",
-    command: "npm i -g openclaw@latest",
-    afterInstall:
-      `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
-  },
-  hermes: {
-    target: "hermes",
-    command:
-      "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-    windowsCommand: "iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
-    afterInstall:
-      "then run `hermes setup` in a terminal (installer can take several minutes — it bootstraps its own toolchain)",
-  },
-};
-
-const PLATFORM_COPY: Record<
-  PlatformId,
-  {
-    label: string;
-    nodeSetup: string[];
-    caveInstall: string[];
-    cliInstall: string[];
-    warning?: string;
-    warningLink?: { label: string; href: string };
-  }
-> = {
-  windows: {
-    label: "Windows",
-    warning:
-      "The Windows build isn't code-signed yet, so Smart App Control blocks it when enabled. Check Windows Security > App & browser control: if Smart App Control is On, turn it off before downloading. On most PCs it's already Off and nothing is needed.",
-    warningLink: {
-      label: "What is Smart App Control?",
-      href: "https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003",
-    },
-    nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org, or run winget install OpenJS.NodeJS.LTS.",
-      "Restart Cave afterwards so the new PATH applies.",
-      "Click the Install button again — Cave re-finds npm automatically.",
-    ],
-    caveInstall: [
-      "Download the MSI from the official GitHub Release.",
-      "Only if Smart App Control is On (see the notice above): Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings > Off.",
-      "If SmartScreen shows \"Windows protected your PC\" when you open the MSI, click More info > Run anyway.",
-      "Install CovenCave, then open it from Start.",
-    ],
-    cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven.exe is on PATH after the global npm install.",
-      "Click Re-check after Windows can run coven from a new terminal.",
-    ],
-  },
-  linux: {
-    label: "Linux",
-    nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org or your package manager (e.g. sudo apt install nodejs npm).",
-      "Open a new terminal so PATH updates apply.",
-      "Click the Install button again — Cave re-finds npm automatically.",
-    ],
-    caveInstall: [
-      "Download the AppImage from the official GitHub Release.",
-      "Run chmod +x CovenCave_*.AppImage.",
-      "Launch the AppImage from your file manager or terminal.",
-    ],
-    cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven is on PATH after the global npm install.",
-      "If your desktop shell has an older PATH, restart Cave after installing the tools.",
-    ],
-  },
-  mac: {
-    label: "macOS",
-    nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org, or run brew install node.",
-      "Open a new terminal so PATH updates apply.",
-      "Click the Install button again — Cave re-finds npm automatically.",
-    ],
-    caveInstall: [
-      "Download the DMG from the official GitHub Release.",
-      "Open the DMG and drag CovenCave to Applications.",
-      "Open CovenCave from Applications.",
-    ],
-    cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure a terminal can run coven after the global npm install.",
-      "Click Re-check here after install.",
-    ],
-  },
-  unknown: {
-    label: "Your platform",
-    nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org.",
-      "Open a new terminal so PATH updates apply.",
-      "Click the Install button again — Cave re-finds npm automatically.",
-    ],
-    caveInstall: [
-      "Download the matching asset from the official GitHub Release.",
-      "Install or launch the app for your OS.",
-      "Open CovenCave and continue setup here.",
-    ],
-    cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven is on PATH.",
-      "Click Re-check here after install.",
-    ],
-  },
-};
 
 type Props = {
   open: boolean;
@@ -336,28 +91,6 @@ function detectPlatform(): PlatformId {
   if (raw.includes("linux")) return "linux";
   if (raw.includes("mac")) return "mac";
   return "unknown";
-}
-
-type GuidedStep = {
-  key: string;
-  title: string;
-  ok: boolean;
-  optional?: boolean;
-  detail: string;
-  icon: IconName;
-};
-
-type MultiHostMode = "local" | "hub";
-
-function parseOnboardingExecutorUrls(text: string): string[] {
-  return Array.from(
-    new Set(
-      text
-        .split(/\r?\n|,/)
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ),
-  );
 }
 
 export function OnboardingOverlay({

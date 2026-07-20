@@ -60,36 +60,11 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type ActivityResult = {
-  ok: true;
-  authed: boolean;
-  /** GitHub rejected the stored PAT (revoked/expired) — surface it, don't
-   *  render an authed-looking empty state over a dead token (cave-cjgg). */
-  patInvalid?: boolean;
-  login: string | null;
-  items: GitHubItem[];
-  rateLimit: { remaining: number; limit: number } | null;
-};
-
-type PatStatus = { hasPat: boolean; login: string | null };
-
-type Filter = "all" | "pr" | "review_request" | "issue";
-
-type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
-type SortDir = "asc" | "desc";
-
-type GroupBy = "none" | "org" | "repo";
-
-const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
-
-/** `item.repo` is "owner/name" — the organization is the slash prefix. */
-function orgOf(repo: string): string {
-  const i = repo.indexOf("/");
-  return i === -1 ? repo : repo.slice(0, i);
-}
+import {
+  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
+  linkedCardsForItem, orgOf, useCards, useFamiliars,
+  type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortDir, type SortKey,
+} from "./github-view-data";
 
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
@@ -103,112 +78,6 @@ type Props = {
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
-function useFamiliars(): { familiars: Familiar[]; familiarsFailed: boolean } {
-  const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const [familiarsFailed, setFamiliarsFailed] = useState(false);
-  useEffect(() => {
-    fetch("/api/familiars")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.ok && Array.isArray(data.familiars)) {
-          setFamiliars(data.familiars as Familiar[]);
-          setFamiliarsFailed(false);
-        } else {
-          setFamiliarsFailed(true);
-        }
-      })
-      .catch(() => setFamiliarsFailed(true)); // failed ≠ empty (cave-59cv)
-  }, []);
-  return { familiars, familiarsFailed };
-}
-
-function useCards(): { cards: Card[]; cardsFailed: boolean; reload: () => void } {
-  const [cards, setCards] = useState<Card[]>([]);
-  const [cardsFailed, setCardsFailed] = useState(false);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/board")
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.ok && Array.isArray(data.cards)) {
-          setCards(data.cards as Card[]);
-          setCardsFailed(false);
-        } else {
-          setCardsFailed(true);
-        }
-      })
-      .catch(() => {
-        // A failed board load is NOT "no cards" — the link picker rendered a
-        // convincing empty over it with no cue (cave-59cv).
-        if (!cancelled) setCardsFailed(true);
-      });
-    return () => { cancelled = true; };
-  }, [tick]);
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { cards, cardsFailed, reload };
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:circle-dashed" | "ph:bell" | "ph:github-logo"> = {
-  pr: "ph:git-pull-request",
-  issue: "ph:circle-dashed",
-  review_request: "ph:git-pull-request",
-  notification: "ph:bell",
-};
-
-const KIND_LABEL: Record<string, string> = {
-  pr: "PR",
-  issue: "Issue",
-  review_request: "Review",
-  notification: "Notif",
-};
-
-const KIND_DETAIL_LABEL: Record<string, string> = {
-  pr: "Pull request",
-  issue: "Issue",
-  review_request: "Review request",
-  notification: "Notification",
-};
-
-const KIND_COLOR: Record<string, string> = {
-  pr: "var(--color-success)",
-  issue: "var(--accent-presence)",
-  review_request: "var(--color-warning)",
-  notification: "var(--text-muted)",
-};
-
-const KIND_ORDER: Record<string, number> = {
-  review_request: 0,
-  pr: 1,
-  issue: 2,
-  notification: 3,
-};
-
-const STATUS_DOT_COLOR: Record<CardStatus, string> = {
-  backlog: "var(--text-muted)",
-  inbox: "var(--accent-presence)",
-  running: "var(--color-warning)",
-  review: "var(--color-warning)",
-  blocked: "var(--color-danger)",
-  done: "var(--color-success)",
-};
-
-function linkedCardsForItem(cards: Card[], item: GitHubItem): Card[] {
-  const url = item.url.trim().toLowerCase();
-  const id = item.id.trim().toLowerCase();
-  return cards.filter((c) =>
-    (c.github ?? []).some(
-      (g) =>
-        g.url.trim().toLowerCase() === url ||
-        (id && g.id.trim().toLowerCase() === id),
-    ),
-  );
-}
-
-// ── PAT Setup Modal ───────────────────────────────────────────────────────────
 
 function PatSetupModal({
   onSaved,
