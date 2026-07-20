@@ -34,6 +34,10 @@ import {
   openCovenToolsPrimaryActionLabel,
 } from "@/lib/opencoven-tools-install";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
+import {
+  advanceOnboardingAutoFinishGate,
+  isLatestOnboardingStatusRequest,
+} from "@/lib/onboarding-gate";
 
 // Guided onboarding: one numbered path from "nothing installed" to "ready to
 // summon". Every step carries its own instructions, a one-click action where
@@ -318,6 +322,7 @@ const PLATFORM_COPY: Record<
 type Props = {
   open: boolean;
   onDismiss: () => void;
+  autoFinishWhenComplete?: boolean;
 };
 
 function detectPlatform(): PlatformId {
@@ -355,7 +360,11 @@ function parseOnboardingExecutorUrls(text: string): string[] {
   );
 }
 
-export function OnboardingOverlay({ open, onDismiss }: Props) {
+export function OnboardingOverlay({
+  open,
+  onDismiss,
+  autoFinishWhenComplete = false,
+}: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [updateTools, setUpdateTools] = useState<OpenCovenToolStatus[]>([]);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -427,6 +436,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // harmless second net). Skip/Escape stay non-pushy: no circle for them.
   const statusRef = useRef<OnboardingStatus | null>(null);
   statusRef.current = status;
+  const statusGenerationRef = useRef(0);
+  const statusRefreshInFlightRef = useRef(false);
+  const autoFinishFiredRef = useRef(false);
   const finishOnboarding = useCallback(() => {
     try {
       localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -439,19 +451,27 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   }, [onDismiss]);
 
   const refresh = useCallback(async () => {
+    if (statusRefreshInFlightRef.current) return;
+    statusRefreshInFlightRef.current = true;
+    const requestId = ++statusGenerationRef.current;
     try {
       const res = await fetch("/api/onboarding/status", { cache: "no-store" });
       if (!res.ok) {
+        if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
         setStatusFailures((n) => n + 1);
         return;
       }
       const json = (await res.json()) as OnboardingStatus & { ok: boolean };
+      if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
       setStatus(json);
       setStatusFailures(0);
     } catch {
       // Track consecutive failures so the UI can move past "checking…" once
       // we're sure the poll isn't just slow. One blip stays silent.
+      if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
       setStatusFailures((n) => n + 1);
+    } finally {
+      statusRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -552,6 +572,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
+      statusGenerationRef.current += 1;
     };
   }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
 
@@ -1086,6 +1107,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // be "required + skippable" via a client-side AND that could diverge from
   // the workspace auto-open gate).
   const setupComplete = status?.complete ?? false;
+  useEffect(() => {
+    const autoFinishGate = advanceOnboardingAutoFinishGate({
+      open,
+      enabled: autoFinishWhenComplete,
+      complete: setupComplete,
+      fired: autoFinishFiredRef.current,
+    });
+    autoFinishFiredRef.current = autoFinishGate.fired;
+    if (autoFinishGate.shouldFinish) finishOnboarding();
+  }, [open, autoFinishWhenComplete, setupComplete, finishOnboarding]);
 
   const steps = useMemo<GuidedStep[]>(() => {
     const s = status?.steps;
