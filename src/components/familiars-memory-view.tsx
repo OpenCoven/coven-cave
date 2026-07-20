@@ -212,13 +212,6 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   // (cave-5dnw: this used to double-fetch /api/coven-memory + /api/memory).
   usePausablePoll(() => void load(), 30_000, { enabled: !feed });
 
-  useEffect(() => {
-    // Embedded familiar-detail views are deliberately locked to their owner.
-    // They must not replace the full Memory surface's return preference just
-    // because they mounted with a different active familiar.
-    if (!lockToFamiliar && activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
-  }, [activeFamiliar?.id, lockToFamiliar, setFamiliarFilter]);
-
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const effectiveFamiliarFilter = lockToFamiliar && activeFamiliar?.id ? activeFamiliar.id : familiarFilter;
   const q = query.trim().toLowerCase();
@@ -327,23 +320,24 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   useEffect(() => {
     if (lockToFamiliar) return;
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
-    if (activeFamiliar?.id && familiarIds.has(activeFamiliar.id)) {
-      if (activeFamiliar.id !== familiarFilter) setFamiliarFilter(activeFamiliar.id);
-      return;
-    }
-
+    // A valid restored selection is the user's return preference. The active
+    // workspace familiar is only a fallback for an empty or stale preference;
+    // otherwise every remount would immediately overwrite the remembered
+    // Memory filter with whichever familiar happens to be active in Chat.
     const memoryFamiliarIds = new Set(covenEntries.map((entry) => entry.familiar_id));
     if (
-      familiarFilter &&
-      familiarIds.has(familiarFilter) &&
-      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(familiarFilter))
+      storedFamiliarFilter &&
+      familiarIds.has(storedFamiliarFilter) &&
+      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(storedFamiliarFilter))
     ) {
       return;
     }
 
-    const next = familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
-    if (next && next !== familiarFilter) setFamiliarFilter(next);
-  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars, lockToFamiliar, setFamiliarFilter]);
+    const next = activeFamiliar?.id && familiarIds.has(activeFamiliar.id)
+      ? activeFamiliar.id
+      : familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
+    if (next && next !== storedFamiliarFilter) setFamiliarFilter(next);
+  }, [activeFamiliar?.id, covenEntries, familiars, lockToFamiliar, setFamiliarFilter, storedFamiliarFilter]);
 
   const selectedFamiliar =
     familiarById.get(effectiveFamiliarFilter) ??

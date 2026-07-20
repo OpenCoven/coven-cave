@@ -17,13 +17,13 @@ assert.match(
 
 assert.match(
   source,
-  /if \(!lockToFamiliar && activeFamiliar\?\.id\) setFamiliarFilter\(activeFamiliar\.id\);/,
-  "a detail view locked to one familiar must not overwrite the full Memory familiar preference",
+  /storedFamiliarFilter &&\s*familiarIds\.has\(storedFamiliarFilter\)[\s\S]{0,240}return;/,
+  "a valid restored familiar filter must not be overwritten by the active workspace familiar",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*if \(lockToFamiliar\) return;\s*const familiarIds/,
-  "locked detail views skip the stale-filter repair that writes the shared preference",
+  /const next = activeFamiliar\?\.id && familiarIds\.has\(activeFamiliar\.id\)/,
+  "the active familiar remains a fallback when no valid Memory preference exists",
 );
 
 assert.match(
