@@ -2294,6 +2294,9 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
   const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
   const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
+  // Notifications without a PR/issue number cannot be restored semantically,
+  // but still need to remain selected for the current visit.
+  const [transientSelectedItemId, setTransientSelectedItemId] = useState<string | null>(null);
   // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
   // user picks a row themselves — from then on selection owns the detail.
   const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
@@ -2302,6 +2305,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [initialTarget]);
   const selectRow = useCallback((id: string) => {
     setDeepLink(null);
+    setTransientSelectedItemId(id);
     const item = activity?.items.find((candidate) => candidate.id === id);
     // The durable selection is a semantic GitHub identity, not the API row id.
     // Notifications without a PR/issue number continue to open for the current
@@ -2573,8 +2577,8 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [deepLink, sorted]);
 
   const selectedItem = useMemo(
-    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted[0] ?? null,
-    [deepLinkItem, sorted, sameSelectedTarget],
+    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted.find((item) => item.id === transientSelectedItemId) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, sameSelectedTarget, transientSelectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 

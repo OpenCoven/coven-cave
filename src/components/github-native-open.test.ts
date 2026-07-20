@@ -63,13 +63,23 @@ assert.match(
 );
 assert.match(
   githubView,
-  /deepLinkItem \?\? sorted\.find\(sameSelectedTarget\) \?\? sorted\[0\] \?\? null/,
+  /deepLinkItem \?\? sorted\.find\(sameSelectedTarget\) \?\? sorted\.find\(\(item\) => item\.id === transientSelectedItemId\) \?\? sorted\[0\] \?\? null/,
   "the deep-linked item wins the detail selection until the user picks a row",
 );
 assert.match(
   githubView,
   /const selectRow = useCallback\(\(id: string\) => \{\s*setDeepLink\(null\);[\s\S]{0,360}setSelectedTarget\(/,
   "manual row selection clears the deep link",
+);
+assert.match(
+  githubView,
+  /setTransientSelectedItemId\(id\);[\s\S]{0,360}setSelectedTarget\(/,
+  "a notification without a durable issue number remains selected for the current visit",
+);
+assert.match(
+  githubView,
+  /sorted\.find\(sameSelectedTarget\) \?\? sorted\.find\(\(item\) => item\.id === transientSelectedItemId\)/,
+  "the transient notification selection wins over the default first row",
 );
 assert.match(
   githubView,
