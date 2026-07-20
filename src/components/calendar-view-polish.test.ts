@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ───────── Task 1: AM/PM hour labels ─────────
