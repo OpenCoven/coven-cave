@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { MODE_ALIASES } from "../lib/workspace-mode.ts";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const urlState = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
 const navState = readFileSync(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 
@@ -60,7 +61,7 @@ assert.match(
 //    vocabulary instead of ad-hoc special cases ──────────────────────────────
 
 assert.match(
-  workspace,
+  urlState,
   /function readModeParam\(\): WorkspaceMode \| null \{[\s\S]{0,300}?isWorkspaceMode\(raw\)/,
   "?mode= deep links validate via isWorkspaceMode (canonical + alias vocabulary)",
 );

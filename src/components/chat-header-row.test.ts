@@ -9,6 +9,7 @@ const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const codeFenceSource = readFileSync(new URL("../lib/message-code-fences.ts", import.meta.url), "utf8");
 
 // After the streamline refactor the header is MetaLine (title + status meta)
 // plus an optional LinkedContextRow — no ChatContextStrip, no headline row.
@@ -364,7 +365,7 @@ assert.match(
   "renderCodeBlock resolves the diff's content grammar from its file headers",
 );
 assert.match(
-  bubbleSource,
+  codeFenceSource,
   /function classifyDiffLines\(/,
   "diff lines are classified (add/del/ctx/meta/hunk) for language-aware rendering",
 );

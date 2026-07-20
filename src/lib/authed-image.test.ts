@@ -162,7 +162,7 @@ assert.doesNotMatch(
 );
 
 for (const rel of [
-  "../components/quick-chat-controls.tsx",
+  "../components/quick-chat-primitives.tsx",
   "../components/familiar-growth-view.tsx",
   "../components/familiar-analytics-view.tsx",
   "../components/familiars-view.tsx",

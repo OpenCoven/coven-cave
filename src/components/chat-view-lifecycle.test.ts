@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
@@ -10,13 +11,13 @@ const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"
   .join("\n");
 
 assert.match(
-  source,
+  turnStateSource,
   /type ChatTurnLifecycle =[\s\S]*"queued"[\s\S]*"connecting"[\s\S]*"streaming"[\s\S]*"tooling"[\s\S]*"cancelled"[\s\S]*"failed"[\s\S]*"complete"/,
   "ChatView should model assistant send lifecycle with explicit phases",
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /lifecycle\?: ChatTurnLifecycle/,
   "Assistant turns should carry lifecycle metadata for trustworthy status UI",
 );
@@ -52,7 +53,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /progress\?: ProgressEvent\[\]/,
   "Assistant turns should keep progress events alongside text, thinking, and tools",
 );
@@ -148,13 +149,13 @@ assert.match(
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /const liveChatRegistry = createLiveGenerationRegistry<Turn>\(cloneLiveTurn\)/,
   "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /function subscribeLiveChatGeneration\(\s*sessionId: string,\s*listener: \(snapshot: LiveChatGenerationSnapshot \| null\) => void,\s*\)/,
   "ChatView should subscribe to live generation snapshots when returning to a session",
 );
@@ -327,8 +328,8 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /durationMs: t\.durationMs,\s*\n\s*usage: t\.usage,\s*\n\s*costUsd: t\.costUsd,/,
+  turnStateSource,
+  /durationMs: turn\.durationMs,\s*\n\s*usage: turn\.usage,\s*\n\s*costUsd: turn\.costUsd,/,
   "History load must map persisted usage and cost back onto turns (CHAT-D12-02)",
 );
 
@@ -517,7 +518,7 @@ assert.match(
 // view currently showing that session mirrors the update into setTurns.
 assert.match(
   source,
-  /if \(targetSessionId\) \{[\s\S]*?const stored = liveChatRegistry\.advance\(targetSessionId, updater, nextActiveLeafId\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
+  /if \(targetSessionId\) \{[\s\S]*?const stored = advanceLiveChatGeneration\(targetSessionId, updater, nextActiveLeafId\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
   "updateLiveTurns accumulates in the module-scope registry first so unmounted views can't drop chunks, mirroring into setTurns only for the on-screen session",
 );
 // A view that adopted (not started) a stream reconciles from disk on settle —

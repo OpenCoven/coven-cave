@@ -3,23 +3,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
+const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 
-assert.match(source, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
-assert.doesNotMatch(source, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
-assert.match(source, /renderValue=/, "quick-chat select helper should keep its compact trigger rendering through StandardSelect");
+assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
+assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
+assert.match(primitives, /renderValue=/, "quick-chat select helper should keep its compact trigger rendering through StandardSelect");
 
 // Shared conversation thread — used by both the in-app dropdown and the tray.
-assert.match(source, /export function QuickChatThread/, "controls export the shared multi-turn thread renderer");
-assert.match(source, /import \{ MarkdownBlock \} from "@\/components\/message-bubble"/, "familiar replies render markdown via the shared MarkdownBlock");
-assert.match(source, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
-assert.match(source, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
-assert.match(source, /quick-chat-caret|quick-chat-typing/, "streaming turns show a caret / thinking affordance");
+assert.match(source, /export \{ QuickChatThread \} from "\.\/quick-chat-thread"/, "controls preserve the shared thread export");
+assert.match(thread, /import \{ MarkdownBlock \} from "@\/components\/message-bubble"/, "familiar replies render markdown via the shared MarkdownBlock");
+assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
+assert.match(thread, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
+assert.match(thread, /quick-chat-caret|quick-chat-typing/, "streaming turns show a caret / thinking affordance");
 
 // ── Shared building blocks: one source of truth for both surfaces ────────────
 // The overlay and the tray render the same header identity, controls row, and
 // composer — drift between the two (e.g. hint copy, focus behavior) was a bug.
 for (const name of [
-  "QuickChatIdentity",
   "QuickChatControlsRow",
   "QuickChatComposer",
   "useSuggestionPicker",
@@ -31,15 +32,16 @@ for (const name of [
   );
 }
 assert.match(
-  source,
+  primitives,
   /export const QUICK_CHAT_SUGGESTIONS/,
   "the one-tap starter suggestions are defined once and shared",
 );
 assert.match(
-  source,
+  primitives,
   /loading \? "Loading familiars…" : familiar \? `@\$\{familiar\.id\}` : "No familiar selected"/,
   "the shared header identity shows a loading state while the roster loads",
 );
+assert.match(primitives, /export function QuickChatIdentity/, "controls preserve the shared header identity export");
 assert.match(
   source,
   /loading && familiars\.length === 0\s*\?\s*\[\{ value: "", label: "Loading…", disabled: true \}\]/,
@@ -134,7 +136,7 @@ assert.match(
 // rAF-coalesced. The old `< 48px` position re-stick — which yanked a reader
 // pausing near the bottom — stays gone.
 assert.match(
-  source,
+  thread,
   /const \{ schedulePin, stick \} = useStickToBottom\(scrollRef\)/,
   "the thread follows via the shared intent-release hook",
 );
@@ -144,12 +146,12 @@ assert.doesNotMatch(
   "the position-threshold re-stick stays gone",
 );
 assert.match(
-  source,
+  thread,
   /schedulePin\(\);\s*\}, \[messages\.length, lastText, schedulePin\]\)/,
   "streamed tokens pin through the coalesced scheduler",
 );
 assert.match(
-  source,
+  thread,
   /stick\(\);\s*\}, \[messages\.length, stick\]\)/,
   "a new turn re-engages follow-along scrolling",
 );
@@ -162,7 +164,7 @@ assert.match(
 
 // ── Copy affordance resets ────────────────────────────────────────────────────
 assert.match(
-  source,
+  thread,
   /setTimeout\(\(\) => setCopied\(false\), 1500\)/,
   "the copied ✓ hands the button back to copy after a beat (it used to stick forever)",
 );
@@ -173,27 +175,27 @@ assert.match(
 // the half-open block hides too) and renders the suggestions as chips on the
 // LATEST settled reply only — a compact tray can't afford stale chip rows.
 assert.match(
-  source,
+  thread,
   /import \{ extractNextPaths \} from "@\/lib\/next-paths"/,
   "the thread parses the shared next-paths trailer format — no bespoke parser",
 );
 assert.match(
-  source,
+  thread,
   /message\.role === "assistant"\s*\?\s*extractNextPaths\(message\.text\)/,
   "the trailer is stripped from familiar turns (never shown raw)",
 );
 assert.match(
-  source,
+  thread,
   /isLastAssistant && !streaming && onSuggestion && suggestions\.length > 0/,
   "chips render only on the latest settled reply, and only when a composer can accept them",
 );
 assert.match(
-  source,
+  thread,
   /className="quick-chat-next-path"[\s\S]*?onClick=\{\(\) => onSuggestion\(suggestion\)\}/,
   "clicking a chip fills the composer through the shared suggestion path (fill, not send)",
 );
 assert.match(
-  source,
+  thread,
   /aria-label="Suggested next steps"/,
   "the chip row is a labelled group",
 );
@@ -245,7 +247,7 @@ assert.match(
   "each staged file is individually removable",
 );
 assert.match(
-  source,
+  thread,
   /message\.attachments\?\.length \?[\s\S]*?quick-chat-bubble__files/,
   "a sent user turn keeps its paperclip line in the bubble",
 );
