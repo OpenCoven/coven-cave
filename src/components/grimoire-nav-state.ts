@@ -1,5 +1,5 @@
-import { GRIMOIRE_HASH_PREFIX } from "@/lib/grimoire-link";
-import { knowledgeDocKey } from "./grimoire-helpers";
+import { GRIMOIRE_HASH_PREFIX } from "../lib/grimoire-link.ts";
+import { knowledgeDocKey } from "./grimoire-helpers.ts";
 
 export type GrimoireSelection =
   | { kind: "knowledge"; id: string; collection?: string }
