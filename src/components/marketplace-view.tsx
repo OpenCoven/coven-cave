@@ -94,7 +94,9 @@ export function MarketplaceViewSurface({
   // return preference.
   const initialDestination = initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection;
   const [deepLinkSection, setDeepLinkSection] = useState<MarketplaceSection | null>(
-    initialDestination === "browse" ? null : initialDestination,
+    initialSection === "roles" || initialSection === "capabilities"
+      ? "browse"
+      : initialDestination === "browse" ? null : initialDestination,
   );
   const section = deepLinkSection ?? storedSection;
   const [query, setQuery] = useState("");

@@ -63,7 +63,7 @@ assert.match(
 );
 assert.match(
   githubView,
-  /deepLinkItem \?\? sorted\.find\(\(item\) =>[\s\S]{0,220}selectedTarget !== null/,
+  /deepLinkItem \?\? sorted\.find\(sameSelectedTarget\) \?\? sorted\[0\] \?\? null/,
   "the deep-linked item wins the detail selection until the user picks a row",
 );
 assert.match(

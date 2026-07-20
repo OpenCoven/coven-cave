@@ -75,6 +75,7 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.marketplace, /const \[query, setQuery\] = useState\(""\)/, "Marketplace search stays transient");
   assert.match(sources.github, /\(\) => deepLinkItem \?\? sorted\.find/, "an explicit GitHub deep link wins over restored selection");
   assert.match(sources.board, /const activeTab = deepLinkTab \?\? storedActiveTab/, "an explicit Board deep link wins without replacing the saved tab");
+  assert.match(sources.marketplace, /initialSection === "roles" \|\| initialSection === "capabilities"\s*\? "browse"/, "Marketplace aliases override a saved section for the current visit");
   assert.match(sources.grimoire, /useSurfacePreference\(surfacePreferenceSpecs\.grimoire\.selected\)/, "Grimoire restores its durable selected document through the registry");
   assert.match(sources.grimoire, /writeStoredTabs\(/, "Grimoire retains its existing resilient open-tab persistence");
   assert.match(sources.grimoire, /if \(deepLinkActiveRef\.current\) \{\s*deepLinkActiveRef\.current = false;/, "a one-visit Grimoire deep link yields to later user selections");
