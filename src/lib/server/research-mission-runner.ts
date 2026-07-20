@@ -29,6 +29,7 @@ import {
   researchMissionWorkspacePath,
   saveResearchMission,
 } from "./research-mission-store.ts";
+import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 
 export type ResearchFlowStartResult = {
   ok: boolean;
@@ -243,23 +244,6 @@ function conversationCost(conversation: ConversationFile | null): number | undef
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (reported.length === 0) return undefined;
   return reported.reduce((sum, value) => sum + value, 0);
-}
-
-declare global {
-  var __caveResearchMissionActionLocks: Map<string, Promise<void>> | undefined;
-}
-
-function withResearchMissionActionLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
-  globalThis.__caveResearchMissionActionLocks ??= new Map();
-  const locks = globalThis.__caveResearchMissionActionLocks;
-  const previous = locks.get(id) ?? Promise.resolve();
-  const result = previous.then(operation, operation);
-  const tail = result.then(() => undefined, () => undefined);
-  locks.set(id, tail);
-  void tail.then(() => {
-    if (locks.get(id) === tail) locks.delete(id);
-  });
-  return result;
 }
 
 function stopBeforeNextIteration(mission: ResearchMission, now: Date): string | null {
