@@ -65,7 +65,6 @@ mod sidecar_lifecycle;
 mod sidecar_startup;
 #[cfg(desktop)]
 mod speech;
-#[cfg(desktop)]
 mod tauri_setup;
 #[cfg(desktop)]
 mod window_geometry;

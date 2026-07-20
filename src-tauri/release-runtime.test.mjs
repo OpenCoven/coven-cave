@@ -377,6 +377,17 @@ test("Rust mobile access-token coverage follows extracted lifecycle tests", asyn
   );
 });
 
+test("mobile startup remains available after native-host extraction", async () => {
+  const [nativeHost, setup] = await Promise.all([
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(nativeHost, /\nmod tauri_setup;/);
+  assert.doesNotMatch(nativeHost, /#\[cfg\(desktop\)\]\s*\nmod tauri_setup;/);
+  assert.match(setup, /#\[cfg_attr\(mobile, tauri::mobile_entry_point\)\]\npub fn run\(\)/);
+});
+
 test("Windows close watchdog helper follows extracted lifecycle tests", async () => {
   const lifecycleTests = await readNativeHost("app_lifecycle_tests.rs");
 
