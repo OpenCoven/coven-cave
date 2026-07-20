@@ -1,7 +1,5 @@
 import { spawn } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import path from "node:path";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -64,10 +62,6 @@ import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv, openClawSupportsUntrustedArgs } from "@/lib/openclaw-bin";
-import {
-  familiarWorkspacesRoot,
-  readFamiliarWorkspaces,
-} from "@/lib/coven-paths";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -149,6 +143,7 @@ import {
   resolveSendModelMetadata,
 } from "./chat-send-models";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
+import { conversationCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -233,76 +228,6 @@ const TOOL_HOOK_RE =
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Cwd recorded on the conversation's first turn (`runtime: "local:<cwd>"`).
- *
- * Continued turns don't carry `projectRoot` in the body, but harness session
- * stores are scoped per working directory — resuming `--continue <id>` from
- * homedir instead of the original project either fails resume or silently
- * continues an unrelated homedir session. Both presented as "a new session
- * spun up mid-chat" with the project context gone. Deriving the cwd from the
- * saved conversation keeps resume directory-stable for every turn.
- */
-async function conversationCwd(sessionId?: string): Promise<string | undefined> {
-  if (!sessionId) return undefined;
-  try {
-    const conv = await loadConversation(sessionId);
-    const runtime = conv?.runtime;
-    if (runtime?.startsWith("local:")) {
-      const cwd = runtime.slice("local:".length).trim();
-      return cwd || undefined;
-    }
-  } catch {
-    /* fall back to the caller's default */
-  }
-  return undefined;
-}
-
-/** Resolve the familiar's Coven workspace dir.
- *  Uses ~/.coven/familiars.toml workspace when present, otherwise
- *  ~/.coven/workspaces/familiars/<id>. Falls back to undefined if the dir
- *  doesn't exist so callers can skip --cwd.
- */
-async function resolveFamiliarWorkspace(
-  familiarId: string,
-): Promise<string | undefined> {
-  // Guard against path traversal: familiar IDs should be simple slugs.
-  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const declared = await readFamiliarWorkspaces();
-  const declaredWorkspace = declared.get(familiarId);
-  if (declaredWorkspace) {
-    try {
-      const resolvedDeclared = await realpath(declaredWorkspace);
-      const s = await stat(resolvedDeclared);
-      if (s.isDirectory()) return resolvedDeclared;
-    } catch {
-      /* fall through to the derived workspace path */
-    }
-  }
-  const familiarsRoot = familiarWorkspacesRoot();
-  const candidate = path.resolve(familiarsRoot, familiarId);
-  const relative = path.relative(familiarsRoot, candidate);
-  if (
-    relative.startsWith("..") ||
-    path.isAbsolute(relative) ||
-    relative.split(path.sep).includes("..")
-  ) {
-    return undefined;
-  }
-  try {
-    const root = await realpath(familiarsRoot);
-    const resolvedCandidate = await realpath(candidate);
-    if (resolvedCandidate !== root && !resolvedCandidate.startsWith(root + path.sep)) {
-      return undefined;
-    }
-    const s = await stat(resolvedCandidate);
-    if (s.isDirectory()) return resolvedCandidate;
-  } catch {
-    /* not found */
-  }
-  return undefined;
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
