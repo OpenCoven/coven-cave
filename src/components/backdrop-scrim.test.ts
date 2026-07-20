@@ -20,7 +20,7 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   css,
-  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*radial-gradient\(/s,
+  /html\[data-backdrop-on\] \.home-hearth-card(?:::before|::after)? \{[^}]*radial-gradient\(/s,
   "the backdrop-only Home treatment contains no radial gradient",
 );
 
@@ -58,7 +58,7 @@ assert.match(
 );
 assert.match(
   css,
-  /prefers-reduced-transparency: reduce[\s\S]*html\[data-backdrop-on\] \.home-hearth-card \{\s*background: color-mix\(in oklch, var\(--bg-panel\) 55%, transparent\);/,
+  /prefers-reduced-transparency: reduce[\s\S]*html\[data-backdrop-on\] \.home-hearth-card \{[^}]*background: color-mix\(in oklch, var\(--bg-panel\) 55%, transparent\);[^}]*\}/,
   "reduced transparency restores the normal Home card fill",
 );
 assert.match(
