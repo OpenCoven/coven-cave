@@ -34,3 +34,51 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{SC_CLOSE, WM_CLOSE, WM_NCDESTROY, WM_SYSCOMMAND},
     },
 };
+
+#[cfg(all(test, desktop))]
+#[path = "app_lifecycle_tests.rs"]
+mod app_lifecycle_tests;
+#[cfg(desktop)]
+pub mod browser;
+#[cfg(desktop)]
+mod platform_lifecycle;
+#[cfg(desktop)]
+mod pty;
+#[cfg(desktop)]
+mod shell_open_commands;
+#[cfg(desktop)]
+mod shell_open_helpers;
+#[cfg(all(desktop, target_os = "windows"))]
+mod sidecar_archive;
+#[cfg(desktop)]
+mod sidecar_auth;
+#[cfg(desktop)]
+mod sidecar_discovery;
+#[cfg(desktop)]
+mod sidecar_lifecycle;
+#[cfg(desktop)]
+mod sidecar_startup;
+#[cfg(desktop)]
+mod speech;
+#[cfg(desktop)]
+mod tauri_setup;
+#[cfg(desktop)]
+mod window_geometry;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_process_job;
+
+#[cfg(desktop)]
+use shell_open_commands::{shell_open, shell_open_path, shell_pick_directory};
+#[cfg(desktop)]
+use shell_open_helpers::{
+    normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
+    windows_system32_binary,
+};
+#[cfg(desktop)]
+use sidecar_auth::*;
+#[cfg(desktop)]
+use sidecar_discovery::*;
+#[cfg(desktop)]
+use sidecar_lifecycle::*;
+#[cfg(desktop)]
+use window_geometry::*;

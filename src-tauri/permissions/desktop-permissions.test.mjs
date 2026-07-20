@@ -25,8 +25,9 @@ const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.ur
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
+const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
-const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
+const tauriSetupRust = readFileSync(new URL("../src/tauri_setup.rs", import.meta.url), "utf8");
 const nativeSttTs = readFileSync(new URL("../../src/lib/voice/native-stt.ts", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
@@ -301,21 +302,21 @@ test("native browser children can report metadata but cannot control browser lay
     "browser_reload",
   ]) {
     assert.match(
-      browserRust,
+      browserCommandsRust,
       new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}ensure_browser_controller\(&caller\)\?;`),
       `${command} must reject browser-child callers even if a capability is misconfigured`,
     );
   }
-  assert.match(browserRust, /pub fn browser_report_title\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)/);
-  assert.match(browserRust, /title\.chars\(\)\.take\(512\)/, "untrusted child titles must be bounded");
-  assert.match(browserRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
+  assert.match(browserCommandsRust, /pub fn browser_report_title\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)/);
+  assert.match(browserCommandsRust, /title\.chars\(\)\.take\(512\)/, "untrusted child titles must be bounded");
+  assert.match(browserCommandsRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
   assert.match(
-    browserRust,
+    browserCommandsRust,
     /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,500}event_tracker_for_label\(lifecycle\.inner\(\), &label\)/,
     "navigation attribution must validate and use the actual child caller label",
   );
   assert.match(
-    libRust,
+    tauriSetupRust,
     /browser::browser_report_user_navigation,/,
     "the child navigation-attribution command must be registered",
   );
@@ -324,7 +325,7 @@ test("native browser children can report metadata but cannot control browser lay
 test("privileged PTY commands require the trusted main webview at runtime", () => {
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(libRust, /pty::trust_main_origin\(&main_url\);/);
+  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
   assert.match(ptyRust, /if webview\.label\(\) != "main"/);
   assert.match(ptyRust, /trusted\.clear\(\);/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
@@ -342,7 +343,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
 test("privileged PTY commands require the trusted main webview at runtime", () => {
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(libRust, /pty::trust_main_origin\(&main_url\);/);
+  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
   assert.match(ptyRust, /if webview\.label\(\) != "main"/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
 
@@ -359,7 +360,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
 test("privileged PTY commands require the trusted main webview at runtime", () => {
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(libRust, /pty::trust_main_origin\(&main_url\);/);
+  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
   assert.match(ptyRust, /if webview\.label\(\) != "main"/);
   assert.match(ptyRust, /trusted\.clear\(\);/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
@@ -578,7 +579,7 @@ test("native speech recognition is scoped to the trusted main webview", () => {
       `${permission} must map to ${command}`,
     );
     assert.match(
-      libRust,
+      tauriSetupRust,
       new RegExp(String.raw`speech::${command}`),
       `${command} must be registered in the desktop invoke handler`,
     );
