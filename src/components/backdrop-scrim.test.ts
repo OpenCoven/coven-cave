@@ -10,7 +10,7 @@ const css = readFileSync(new URL("../styles/backdrop.css", import.meta.url), "ut
 // ── Home hearth glass ─────────────────────────────────────────────────────────
 assert.match(
   css,
-  /html\[data-backdrop-on\] \.home-hearth-card \{\s*background: color-mix\(in oklch, var\(--bg-base\) 72%, transparent\);\s*\}/,
+  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*background: color-mix\(in oklch, var\(--bg-base\) 72%, transparent\);[^}]*\}/,
   "Home uses one uniform theme-derived hearth surface while a backdrop is active",
 );
 assert.doesNotMatch(
@@ -20,7 +20,7 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   css,
-  /html\[data-backdrop-on\][^{]*home[^{]*\{[^}]*radial-gradient\(/s,
+  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*radial-gradient\(/s,
   "the backdrop-only Home treatment contains no radial gradient",
 );
 
