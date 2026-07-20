@@ -111,7 +111,7 @@ jobs:
 
       # Persisted mobile pairing secret (cave-y482): a desktop restart must
       # not rotate the secret phones signed their tokens against.
-      - run: cargo test --locked --lib tests::mobile_access_token -- --nocapture
+      - run: cargo test --locked --lib app_lifecycle_tests::mobile_access_token -- --nocapture
 
   e2e:
     name: E2E (Playwright)
@@ -285,7 +285,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
           $testExitCode = $LASTEXITCODE
           $testOutput | ForEach-Object { Write-Host $_ }
           if ($testExitCode -ne 0) { exit $testExitCode }
@@ -298,7 +298,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
           $testExitCode = $LASTEXITCODE
           $testOutput | ForEach-Object { Write-Host $_ }
           if ($testExitCode -ne 0) { exit $testExitCode }
@@ -311,7 +311,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
           $testExitCode = $LASTEXITCODE
           $testOutput | ForEach-Object { Write-Host $_ }
           if ($testExitCode -ne 0) { exit $testExitCode }
@@ -324,7 +324,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
           $testExitCode = $LASTEXITCODE
           $testOutput | ForEach-Object { Write-Host $_ }
           if ($testExitCode -ne 0) { exit $testExitCode }

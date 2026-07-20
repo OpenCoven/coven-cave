@@ -20,22 +20,22 @@ const WINDOWS_NATIVE_RUST_STEPS = [
   },
   {
     name: "Test Windows raw main close fallback",
-    filter: "tests::raw_main_close_fallback_recognizes_only_native_close_messages",
+    filter: "app_lifecycle_tests::raw_main_close_fallback_recognizes_only_native_close_messages",
     exact: true,
   },
   {
     name: "Test Windows close hard deadline",
-    filter: "tests::close_hard_deadline_terminates_the_exact_stalled_process",
+    filter: "app_lifecycle_tests::close_hard_deadline_terminates_the_exact_stalled_process",
     exact: true,
   },
   {
     name: "Test Windows idempotent sidecar cleanup",
-    filter: "tests::sidecar_cleanup_is_idempotent_when_no_child_is_running",
+    filter: "app_lifecycle_tests::sidecar_cleanup_is_idempotent_when_no_child_is_running",
     exact: true,
   },
   {
     name: "Test Windows sidecar descendant cleanup",
-    filter: "tests::sidecar_state_terminates_root_and_descendant_within_deadline",
+    filter: "app_lifecycle_tests::sidecar_state_terminates_root_and_descendant_within_deadline",
     exact: true,
   },
 ];
@@ -360,6 +360,20 @@ test("Windows native Rust regression filters are isolated and cannot pass with z
     sidecarRuntimeJob,
     /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
     "Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows",
+  );
+});
+
+test("Rust mobile access-token coverage follows extracted lifecycle tests", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const cargoCheckJob = getWorkflowJob(workflow, "cargo-check");
+
+  assert.match(
+    cargoCheckJob,
+    /cargo test --locked --lib app_lifecycle_tests::mobile_access_token -- --nocapture/,
+    "the Rust check must retain the persisted mobile-token lifecycle coverage after extraction",
   );
 });
 
