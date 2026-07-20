@@ -72,7 +72,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-18 (Charm's Loom): the bundled Marketplace craft adds five traced
   // files on Windows. CI measured 5,527; retain ten files of headroom without
   // relaxing the expanded-byte ceiling.
-  fileCount: 5_537,
+  // 2026-07-20 (chat stream health): the status route and shared transport
+  // module add five traced files on Windows. CI measured 5,542; pin the exact
+  // cross-platform maximum without relaxing the expanded-byte ceiling.
+  fileCount: 5_542,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
