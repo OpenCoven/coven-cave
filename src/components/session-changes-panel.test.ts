@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./session-changes-panel.tsx", import.meta.url), "utf8");
+const rows = readFileSync(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
 
 assert.match(
   src,
@@ -65,9 +66,9 @@ assert.match(
   "session-changes-panel imports the shared IconButton primitive",
 );
 assert.match(
-  src,
+  rows,
   /<IconButton[\s\S]{0,80}icon=\{untracked \? "ph:trash" : "ph:arrow-counter-clockwise"\}[\s\S]{0,60}danger/,
-  "file-row revert/delete is a danger IconButton",
+  "file-row revert/delete remains a danger IconButton in the row presentation boundary",
 );
 assert.match(
   src,

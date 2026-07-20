@@ -455,6 +455,7 @@ export const SUITES = {
     "src/components/terminal-key-bar-touch.test.ts",
     "src/components/session-changes-totals.test.ts",
     "src/lib/session-changes-api.test.ts",
+    "src/components/session-changes-rows.test.ts",
     "src/components/session-changes-panel.test.ts",
     "src/components/project-tree-keynav.test.ts",
     "src/components/a11y-audit-fixes.test.ts",
