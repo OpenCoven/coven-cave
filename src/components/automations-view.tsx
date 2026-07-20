@@ -22,7 +22,6 @@ import type {
 } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
-import type { IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -121,54 +120,6 @@ const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   raw: "Advanced",
 };
 
-
-const automationFieldBaseClass =
-  "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
-const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
-const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
-const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[length:var(--text-xs)]`;
-
-// Row quick-actions (run-now, pause/resume) are wired once at the top of the
-// view and read by each leaf row — so the most-used actions sit right on the
-// row instead of buried in the detail panel. Avoids threading callbacks through
-// the list/section components.
-function NewMenuItem({
-  icon,
-  accent,
-  label,
-  blurb,
-  disabled,
-  onClick,
-}: {
-  icon: string;
-  accent: string;
-  label: string;
-  blurb: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
-    >
-      <span
-        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
-        style={{ background: `color-mix(in oklch, ${accent} 18%, transparent)`, color: accent }}
-      >
-        <Icon name={icon as IconName} width={13} />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[length:var(--text-base)] font-medium [color:var(--text-primary)]!">{label}</span>
-        <span className="block text-[length:var(--text-xs)] [color:var(--text-muted)]!">{blurb}</span>
-      </span>
-    </button>
-  );
-}
 
 // ── Ritual overview ──────────────────────────────────────────────────────────
 
@@ -821,8 +772,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     });
   };
   const automationsEmpty = codexAutos.length === 0;
-  const inboxEmpty = items.length === 0;
-  const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
   const detailOpen = Boolean(selectedItem || selectedCodex);
   // The cron detail can grow from its side rail into the full page width —
