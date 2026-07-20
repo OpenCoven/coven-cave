@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /const visibleBaseSessions = filterDeletedSessions\(baseSessions, locallyDeletedSessionIdsRef\.current\)[\s\S]*?attachGitHubTaskContext\(visibleBaseSessions, json\)/,
+  /const visibleBaseSessions = filterDeletedSessions\(baseSessions, locallyDeletedSessionIdsRef\.current\)[\s\S]*?attachGitHubTaskContext\(visibleBaseSessions, tasks\)/,
   "GitHub task enrichment should not reintroduce locally deleted sessions",
 );
 
