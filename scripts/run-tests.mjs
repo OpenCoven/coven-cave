@@ -569,6 +569,7 @@ export const SUITES = {
     "src/components/chat-task-create-button-wiring.test.ts",
     "src/lib/chat-task-autofill.test.ts",
     "src/components/group-chat-view.test.ts",
+    "src/lib/group-chat-transcript.test.ts",
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
