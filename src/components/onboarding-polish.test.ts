@@ -110,8 +110,13 @@ assert.match(
 );
 assert.match(
   source,
-  /const requestId = \+\+statusGenerationRef\.current;/,
-  "each refresh captures a fresh onboarding-status generation id",
+  /const statusRefreshInFlightRef = useRef\(false\)/,
+  "status polling tracks whether a request is already in flight",
+);
+assert.match(
+  source,
+  /if \(statusRefreshInFlightRef\.current\) return;[\s\S]*statusRefreshInFlightRef\.current = true;[\s\S]*const requestId = \+\+statusGenerationRef\.current;/,
+  "overlapping poll ticks are skipped before a new status generation is created",
 );
 assert.match(
   source,
@@ -122,6 +127,11 @@ assert.match(
   source,
   /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatusFailures\(\(n\) => n \+ 1\);/s,
   "stale failed polls cannot increment the failure counter",
+);
+assert.match(
+  source,
+  /finally \{\s*statusRefreshInFlightRef\.current = false;\s*\}/,
+  "status polling releases the in-flight guard after every request outcome",
 );
 assert.match(
   source,

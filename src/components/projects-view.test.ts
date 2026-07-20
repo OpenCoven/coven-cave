@@ -33,8 +33,8 @@ assert.match(projectsView, /export function ProjectsView/, "ProjectsView should 
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
 assert.match(
   projectsView,
-  /createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
-  "ProjectsView should defer its registry notification until the scoped familiar grant completes",
+  /createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
+  "ProjectsView should preserve actionable API errors while deferring its registry notification until the scoped familiar grant completes",
 );
 assert.match(
   projectsView,
@@ -44,7 +44,7 @@ assert.match(
 assert.match(projectsView, /const \[projectError, setProjectError\] = useState<string \| null>\(null\)/, "project-creation failures track their own alert state");
 assert.match(
   projectsView,
-  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProject\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]*setCreateError\(message\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
+  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]*setCreateError\(message\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
   "handleCreate uses try/finally so the busy state always clears, even if create or grant unexpectedly throws",
 );
 assert.match(projectsView, /if \(!granted\.ok\) \{[\s\S]{0,160}?const message = `Project created, but grant failed: \$\{granted\.error\}`;[\s\S]{0,120}?setProjectError\(message\);/, "grant failures still surface as explicit project alerts");
@@ -243,7 +243,11 @@ assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delet
 assert.match(projectsView, /PROJECT_ROOT_WORKSPACE_HELP/, "ProjectsView imports the shared workspace guidance copy");
 assert.match(projectsView, /id="project-root-help"/, "the root field renders proactive workspace guidance");
 assert.match(projectsView, /aria-invalid=\{Boolean\(createError\)\}/, "the root field reports invalid state when create fails");
-assert.match(projectsView, /aria-describedby="project-root-help project-root-error"/, "the root field links helper and inline error text");
+assert.match(
+  projectsView,
+  /aria-describedby=\{createError \? "project-root-help project-root-error" : "project-root-help"\}/,
+  "the root field links the inline error only while that element is rendered",
+);
 assert.match(projectsView, /onChange=\{\(event\) => \{[\s\S]{0,80}?setRootDraft\(event\.target\.value\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?\}\}/, "editing the root field clears the inline create error");
 assert.match(projectsView, /\{createError \? \(\s*<p id="project-root-error" role="alert"/, "create failures render as an inline alert under the root field");
 assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{json\.error \?\? "delete failed"\}`\)/, "delete API failures add their own contextualized banner prefix");

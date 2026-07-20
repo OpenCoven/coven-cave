@@ -437,6 +437,7 @@ export function OnboardingOverlay({
   const statusRef = useRef<OnboardingStatus | null>(null);
   statusRef.current = status;
   const statusGenerationRef = useRef(0);
+  const statusRefreshInFlightRef = useRef(false);
   const autoFinishFiredRef = useRef(false);
   const finishOnboarding = useCallback(() => {
     try {
@@ -450,6 +451,8 @@ export function OnboardingOverlay({
   }, [onDismiss]);
 
   const refresh = useCallback(async () => {
+    if (statusRefreshInFlightRef.current) return;
+    statusRefreshInFlightRef.current = true;
     const requestId = ++statusGenerationRef.current;
     try {
       const res = await fetch("/api/onboarding/status", { cache: "no-store" });
@@ -467,6 +470,8 @@ export function OnboardingOverlay({
       // we're sure the poll isn't just slow. One blip stays silent.
       if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
       setStatusFailures((n) => n + 1);
+    } finally {
+      statusRefreshInFlightRef.current = false;
     }
   }, []);
 
