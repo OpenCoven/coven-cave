@@ -292,11 +292,37 @@ export function OnboardingOverlay({
     }
   }, []);
 
+  // One-shot loads when the wizard opens; the recurring heartbeat below owns
+  // the 2s cadence.
   useEffect(() => {
     if (!open) return;
     void refresh();
     void loadUpdates();
     void loadHarnesses();
+    void refreshNpmLane();
+  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+
+  // The 2s status/npm-lane heartbeat runs only while something can still
+  // change underneath the wizard: an incomplete required step, a running or
+  // queued install, a busy shared npm lane, or a setup action in flight.
+  // Once every step is confirmed and nothing is running, stop re-probing the
+  // CLI every 2 seconds (cave-0hhd) — the confirmed state stays on screen,
+  // manual Re-check and each action's own refresh() still work, and any new
+  // activity (an install click, the queue draining) resumes the heartbeat.
+  const heartbeatIdle =
+    (status?.complete ?? false) &&
+    npmLane === null &&
+    installQueue.length === 0 &&
+    !Object.values(installJobs).some((job) => job.status === "running") &&
+    picking === null &&
+    !startingDaemon &&
+    !savingOnboardingConnection;
+
+  useEffect(() => {
+    if (!open || heartbeatIdle) return;
+    // Immediate tick when the heartbeat (re)starts — refresh() collapses the
+    // duplicate with the open-time load via its in-flight guard.
+    void refresh();
     void refreshNpmLane();
     pollRef.current = setInterval(() => {
       void refresh();
@@ -307,7 +333,7 @@ export function OnboardingOverlay({
       pollRef.current = null;
       statusGenerationRef.current += 1;
     };
-  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+  }, [open, heartbeatIdle, refresh, refreshNpmLane]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
