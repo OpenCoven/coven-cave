@@ -343,7 +343,7 @@ fn close_hard_deadline_terminates_the_exact_stalled_process() {
     let mut child = Command::new(std::env::current_exe().expect("current test executable"))
         .args([
             "--exact",
-            "tests::windows_close_watchdog_helper_process",
+            "app_lifecycle_tests::windows_close_watchdog_helper_process",
             "--nocapture",
             "--test-threads=1",
         ])

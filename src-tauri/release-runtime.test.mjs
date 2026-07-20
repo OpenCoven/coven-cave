@@ -377,6 +377,16 @@ test("Rust mobile access-token coverage follows extracted lifecycle tests", asyn
   );
 });
 
+test("Windows close watchdog helper follows extracted lifecycle tests", async () => {
+  const lifecycleTests = await readNativeHost("app_lifecycle_tests.rs");
+
+  assert.match(
+    lifecycleTests,
+    /"--exact",\s*"app_lifecycle_tests::windows_close_watchdog_helper_process"/,
+    "the close-deadline test must spawn its retained watchdog helper by its extracted module path",
+  );
+});
+
 test("Windows conformance runs the native harness parser and DryRun fixture", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/ci.yml", import.meta.url),
