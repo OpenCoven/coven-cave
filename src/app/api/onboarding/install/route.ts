@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
@@ -13,7 +13,6 @@ import {
 } from "@/lib/server/global-npm-install-lane";
 import {
   covenBin,
-  covenSpawnEnv,
   pickWindowsLauncher,
   refreshCovenBin,
   refreshCovenSpawnEnv,
@@ -45,6 +44,7 @@ import {
   redactSensitiveInstallOutput,
   type InstallJobOutput,
 } from "./install-job-output";
+import { runInstallProcess } from "./install-process";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -403,36 +403,6 @@ function verificationTraceLine(verification: OpenCovenToolVerification): string 
   );
 }
 
-function runCommand(
-  command: string,
-  args: string[],
-  options: { shell: boolean; timeoutMs: number },
-): Promise<{ code: number | null; signal: NodeJS.Signals | null; output: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
-      shell: options.shell,
-    });
-    let output = "";
-    const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
-    child.stdout.on("data", (data) => {
-      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
-    });
-    child.stderr.on("data", (data) => {
-      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      resolve({ code: 1, signal: null, output: err.message });
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal, output });
-    });
-  });
-}
-
 type LocalDaemonHealth = { ok?: boolean; daemon?: { pid?: number } };
 
 function commandResultDetail(result: {
@@ -468,7 +438,7 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
       };
     },
     stop: async (): Promise<DaemonCommandResult> => {
-      const stop = await runCommand(covenBin(), ["daemon", "stop"], {
+      const stop = await runInstallProcess(covenBin(), ["daemon", "stop"], {
         shell: process.platform === "win32",
         timeoutMs: 8_000,
       });
