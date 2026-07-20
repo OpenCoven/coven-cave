@@ -306,6 +306,7 @@ export const SUITES = {
     "src/components/ios-query-url.test.ts",
     "src/components/chat-all-familiars-project-list.test.ts",
     "src/components/chat-list-delete.test.ts",
+    "src/lib/chat-list-model.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",

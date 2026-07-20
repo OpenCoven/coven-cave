@@ -71,6 +71,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
+import { chatListCandidates, filterChatListRows, sortChatRowsByRecency } from "@/lib/chat-list-model";
 
 type Props = {
   familiar: Familiar | null;
@@ -109,18 +110,6 @@ function repoName(p: string): string {
   if (!p) return "";
   const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
   return parts[parts.length - 1] ?? p;
-}
-
-/** Most-recent-first by last activity. The merge layer already sorts globally,
- *  but the flat "All" view flattens per-project groups (concatenating them),
- *  which loses that order — a recent chat in one project would sink below older
- *  chats in another. Re-sorting the flattened rows restores global recency. */
-function sortByRecency(rows: SessionRow[]): SessionRow[] {
-  return [...rows].sort((a, b) => {
-    const at = Date.parse(a.updated_at || a.created_at) || 0;
-    const bt = Date.parse(b.updated_at || b.created_at) || 0;
-    return bt - at;
-  });
 }
 
 const STATUS_STYLES: Record<string, { dot: string; label: string; preview: string }> = {
@@ -231,15 +220,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // ── Data: filter ──────────────────────────────────────────────────────────
 
   const mine = useMemo(() => {
-    let rows = sessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(sessions.map((s) => s.id));
-      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
-    }
     // Hide chats whose bulk delete is pending in the undo window (still on the
     // server; restored if the user hits Undo).
     const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
-    if (hidden.size) rows = rows.filter((s) => !hidden.has(s.id));
+    const rows = chatListCandidates(sessions, archivedRows, showArchived, hidden);
     return filterVisibleChatSessions(rows, familiar?.id ?? null, { includeArchived: showArchived });
   }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
 
@@ -248,17 +232,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
 
   const filtered = useMemo(() => {
-    let rows = mine;
-    if (unreadsOnly) rows = rows.filter((s) => s.status === "running");
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (s) =>
-          (s.title ?? "").toLowerCase().includes(q) ||
-          (s.project_root ?? "").toLowerCase().includes(q)
-      );
-    }
-    return rows;
+    return filterChatListRows(mine, search, unreadsOnly);
   }, [mine, search, unreadsOnly]);
 
   const hasAny = mine.length > 0;
@@ -403,7 +377,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (effectiveSelection === "all") {
       let rows = scopedGroups.flatMap((group) => group.sessions);
       rows = sessionOrder.length === 0
-        ? partitionPinnedFirst(sortByRecency(rows), pinnedIds)
+        ? partitionPinnedFirst(sortChatRowsByRecency(rows), pinnedIds)
         : applyManualOrder(rows, sessionOrder);
       const latest = rows[0] ?? null;
       return [{
