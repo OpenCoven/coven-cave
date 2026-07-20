@@ -3,7 +3,7 @@
 // with an injected daemon call and temp coven homes — the real socket and a
 // live daemon belong to the Phase 4 E2E lane (threads-986.17.6).
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 
@@ -13,6 +13,8 @@ import {
   httpStatusForEnvelope,
   activeThreadsAdapter,
 } from "./threads-adapters.ts";
+import { canonicalProposalRevision } from "./proposal-authority.ts";
+import { normalizeProposal } from "./threads-read.ts";
 import type { ThreadsEnvelope } from "./threads-read.ts";
 
 const WEAVE_HOLDS = "11111111-1111-4111-8111-111111111111";
@@ -31,6 +33,24 @@ function tempDir(prefix: string): string {
   mkdirSync(dir, { recursive: true });
   return dir;
 }
+
+const phase5FixtureRoot = path.join(process.cwd(), "fixtures", "phase-5");
+
+function readJson<T>(file: string): T {
+  return JSON.parse(readFileSync(file, "utf8")) as T;
+}
+
+function loadPhase5Pair(name: string): { staged: unknown; summary: unknown } {
+  return {
+    staged: readJson(path.join(phase5FixtureRoot, `${name}.staged-envelope.json`)),
+    summary: readJson(path.join(phase5FixtureRoot, `${name}.daemon-summary.json`)),
+  };
+}
+
+function assertHasNoDecisions(authority: { state: string; availableDecisions?: unknown }) {
+  assert.equal("availableDecisions" in authority, false);
+}
+
 after(() => {
   rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -627,5 +647,53 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
     assert.ok(weave && !("kind" in weave));
     assert.equal(weave.tensionRollup.state, "unknown");
     assert.equal(weave.coherence, "unknown");
+  });
+});
+
+describe("phase 5 proposal fixtures", () => {
+  const verifiedCases = [
+    ["awaiting-human-approval", ["approve", "reject"]],
+    ["veto-window-open", ["reject"]],
+    ["ready-for-replay", []],
+    ["blocked", []],
+  ] as const;
+
+  for (const [name, decisions] of verifiedCases) {
+    it(`${name}: staged envelope and daemon summary normalize to a verified lifecycle`, () => {
+      const { staged, summary } = loadPhase5Pair(name);
+      assert.equal(canonicalProposalRevision(staged), (summary as { proposalRevision: string }).proposalRevision);
+      const view = normalizeProposal(`${name}.staged-envelope.json`, staged, summary);
+      assert.equal(view.parse, "ok");
+      assert.equal(view.authority.state, "verified");
+      if (view.authority.state !== "verified") return;
+      assert.deepEqual(view.authority.availableDecisions, decisions);
+    });
+  }
+
+  it("unavailable metadata normalizes to blocked with no decisions", () => {
+    const { staged, summary } = loadPhase5Pair("unavailable");
+    assert.equal(summary, null);
+    const view = normalizeProposal("unavailable.staged-envelope.json", staged, summary);
+    assert.equal(view.authority.state, "blocked");
+    assert.equal(view.authority.state === "blocked" ? view.authority.why : "", "daemon-unavailable");
+    assertHasNoDecisions(view.authority);
+  });
+
+  it("mismatched metadata normalizes to blocked with no decisions", () => {
+    const { staged, summary } = loadPhase5Pair("mismatched");
+    assert.equal(canonicalProposalRevision(staged), (summary as { proposalRevision: string }).proposalRevision);
+    const view = normalizeProposal("mismatched.staged-envelope.json", staged, summary);
+    assert.equal(view.authority.state, "blocked");
+    assert.equal(view.authority.state === "blocked" ? view.authority.why : "", "daemon-mismatch");
+    assertHasNoDecisions(view.authority);
+  });
+
+  it("unknown metadata normalizes to blocked with no decisions", () => {
+    const { staged, summary } = loadPhase5Pair("unknown");
+    assert.equal(canonicalProposalRevision(staged), (summary as { proposalRevision: string }).proposalRevision);
+    const view = normalizeProposal("unknown.staged-envelope.json", staged, summary);
+    assert.equal(view.authority.state, "blocked");
+    assert.equal(view.authority.state === "blocked" ? view.authority.why : "", "unknown-lifecycle");
+    assertHasNoDecisions(view.authority);
   });
 });
