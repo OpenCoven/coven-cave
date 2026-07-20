@@ -5,8 +5,6 @@ import { compareProjectsAlphabetically } from "./cave-projects-types.ts";
 export type ChatProject = CaveProject;
 export type { CaveProject };
 
-const DEAD_CHAT_STATUSES = new Set(["killed", "orphaned", "stopped", "archived"]);
-
 export type ChatProjectGroup = {
   projectId: string | null;
   projectRoot: string | null;
@@ -159,7 +157,13 @@ export function filterVisibleChatSessions(
 ): SessionRow[] {
   const includeArchived = opts?.includeArchived ?? false;
   return sessions
-    .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
+    .filter((session) => {
+      if (session.status === "archived") return false;
+      if (session.status === "killed" || session.status === "orphaned" || session.status === "stopped") {
+        return session.hasLocalConversation === true;
+      }
+      return true;
+    })
     .filter((session) => includeArchived || !session.archived_at)
     .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)

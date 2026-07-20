@@ -37,6 +37,12 @@ type MergeOptions = {
   projectRootForCwd?: (cwd: string) => string | null;
 };
 
+const DAEMON_AUTHORITATIVE_TERMINAL_STATUSES = new Set(["archived", "killed", "orphaned", "stopped"]);
+
+function isDaemonAuthoritativeTerminalStatus(status: string): boolean {
+  return DAEMON_AUTHORITATIVE_TERMINAL_STATUSES.has(status);
+}
+
 /** Extract the local cwd from a conversation runtime ("local:<cwd>").
  *  Kept dependency-free here (rather than importing the server work-branch
  *  helper) so this module stays pure and unit-testable. */
@@ -79,6 +85,7 @@ function localConversationToSession(
     updated_at: conv.updatedAt,
     familiarId,
     origin: conv.origin ?? "chat",
+    hasLocalConversation: true,
     ...(conv.branch ? { workBranch: conv.branch } : {}),
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
     ...(keep ? { keep: true } : {}),
@@ -130,7 +137,20 @@ export function mergeSessionRows({
   }
 
   for (const session of daemonSessions) {
+    const local = localById.get(session.id);
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
+      if (local && isDaemonAuthoritativeTerminalStatus(session.status)) {
+        seen.add(session.id);
+        const recovered = localConversationToSession(local, state, projectRootForCwd);
+        const row: SessionRow = {
+          ...recovered,
+          status: session.status,
+          exit_code: session.exit_code,
+          archived_at: state.sessionArchived[session.id] ?? session.archived_at,
+          initiator: session.initiator ?? recovered.initiator,
+        };
+        if (visibleSession(row, state, includeArchived)) rows.push(row);
+      }
       continue;
     }
     seen.add(session.id);
@@ -140,17 +160,18 @@ export function mergeSessionRows({
     const extendedUntil = state.sessionArchiveExtendedUntil?.[session.id] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
     const localUpdatedAt = localUpdatedById.get(session.id);
-    const local = localById.get(session.id);
+    const familiarId = state.sessionFamiliar[session.id] ?? local?.familiarId ?? null;
     const localIsNewer =
       localUpdatedAt != null &&
       Number.isFinite(Date.parse(localUpdatedAt)) &&
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
+    const daemonStatusIsAuthoritative = isDaemonAuthoritativeTerminalStatus(session.status);
     const row: SessionRow = {
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
-      ...(localIsNewer && local?.status ? { status: local.status } : {}),
-      ...(localIsNewer && local ? { exit_code: local.exitCode ?? 0 } : {}),
+      ...(localIsNewer && !daemonStatusIsAuthoritative && local?.status ? { status: local.status } : {}),
+      ...(localIsNewer && !daemonStatusIsAuthoritative && local ? { exit_code: local.exitCode ?? 0 } : {}),
       // Daemon titles derive from the harness prompt, which the chat route
       // prefixes with the identity canon — sanitize so the preamble never
       // surfaces as a session title.
@@ -159,7 +180,6 @@ export function mergeSessionRows({
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
       archived_at,
-      familiarId: state.sessionFamiliar[session.id] ?? null,
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),
@@ -170,11 +190,11 @@ export function mergeSessionRows({
       // a run some generator spawned (journal narrative, flow, automation,
       // CLI), not something a person typed into a chat surface.
       ...(!local && inferOrigin(session) === "chat" ? { generated: true } : {}),
+      ...(local ? { hasLocalConversation: true } : {}),
       ...(keep ? { keep: true } : {}),
       ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
-      initiator:
-        session.initiator ??
-        initiatorFromSessionKey("", state.sessionFamiliar[session.id] ?? session.harness),
+      familiarId,
+      initiator: session.initiator ?? initiatorFromSessionKey("", familiarId ?? session.harness),
     };
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }
