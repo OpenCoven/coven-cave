@@ -1995,6 +1995,10 @@ mod app_lifecycle_tests;
 mod browser;
 #[cfg(desktop)]
 mod pty;
+#[cfg(desktop)]
+mod shell_open_commands;
+#[cfg(desktop)]
+mod shell_open_helpers;
 #[cfg(all(desktop, target_os = "windows"))]
 mod sidecar_archive;
 #[cfg(desktop)]
@@ -2003,63 +2007,12 @@ mod speech;
 mod windows_process_job;
 
 #[cfg(desktop)]
-fn validate_shell_open_url(url: &str) -> Result<(), String> {
-    let parsed = Url::parse(url).map_err(|_| "shell_open requires a valid URL".to_string())?;
-
-    match parsed.scheme() {
-        "http" | "https" => Ok(()),
-        _ => Err("shell_open only supports http(s) URLs".to_string()),
-    }
-}
-
+use shell_open_commands::{shell_open, shell_open_path, shell_pick_directory};
 #[cfg(desktop)]
-fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
-    let path = path.trim();
-    if path.is_empty() {
-        return Err("shell_open_path requires a path".to_string());
-    }
-
-    let path = PathBuf::from(path);
-    if !path.is_absolute() {
-        return Err("shell_open_path requires an absolute path".to_string());
-    }
-
-    let metadata =
-        std::fs::metadata(&path).map_err(|_| "shell_open_path path does not exist".to_string())?;
-    if !metadata.is_dir() {
-        return Err("shell_open_path only opens directories".to_string());
-    }
-
-    Ok(path)
-}
-
-#[cfg(desktop)]
-fn normalize_picked_directory(path: &str) -> Result<Option<String>, String> {
-    let path = path.trim();
-    if path.is_empty() {
-        return Ok(None);
-    }
-
-    let path_buf = PathBuf::from(path);
-    if !path_buf.is_absolute() {
-        return Err("folder picker returned a relative path".to_string());
-    }
-    if !path_buf.is_dir() {
-        return Err("folder picker returned a non-directory path".to_string());
-    }
-
-    Ok(Some(path_buf.to_string_lossy().to_string()))
-}
-
-#[cfg(desktop)]
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
-fn windows_system32_binary(binary: &str) -> std::path::PathBuf {
-    let system_root = std::env::var_os("SystemRoot")
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
-    system_root.join("System32").join(binary)
-}
+use shell_open_helpers::{
+    normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
+    windows_system32_binary,
+};
 
 /// Show or hide the macOS traffic lights (close/minimize/zoom) on the
 /// invoking window. The main window's title bar is an Overlay (see the main
@@ -2092,149 +2045,6 @@ fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (window, visible);
-    }
-}
-
-/// Open an http(s) URL in the system default browser.
-#[cfg(desktop)]
-#[tauri::command]
-fn shell_open(url: String) -> Result<(), String> {
-    validate_shell_open_url(&url)?;
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // Use the Windows URL protocol handler directly instead of routing
-        // attacker-controlled URLs through `cmd.exe /c start`, where shell
-        // metacharacters such as `&` can execute additional commands.
-        std::process::Command::new("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", &url])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Open an absolute local directory in the system file explorer.
-#[cfg(desktop)]
-#[tauri::command]
-fn shell_open_path(path: String) -> Result<(), String> {
-    let path = validate_shell_open_path(&path)?;
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new(windows_system32_binary("explorer.exe"))
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Ask the OS for a local directory and return its absolute path.
-#[cfg(desktop)]
-#[tauri::command]
-fn shell_pick_directory() -> Result<Option<String>, String> {
-    #[cfg(target_os = "macos")]
-    {
-        // `tell app "System Events" ... activate` pulls the picker to the
-        // foreground so it isn't summoned behind Cave's window (issue #2614b).
-        let output = std::process::Command::new("osascript")
-            .args([
-                "-e",
-                "tell application \"System Events\" to activate",
-                "-e",
-                "POSIX path of (choose folder with prompt \"Choose a folder for CovenCave\")",
-            ])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if output.status.success() {
-            return normalize_picked_directory(&String::from_utf8_lossy(&output.stdout));
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("-128") || stderr.to_lowercase().contains("user canceled") {
-            return Ok(None);
-        }
-        return Err(stderr.trim().to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        // A bare FolderBrowserDialog has no owner window, so Windows opens it
-        // *behind* every other window, unfocused, with no taskbar entry — it
-        // looks like the click did nothing (issue #2614b). Give it a TopMost,
-        // ShowInTaskbar owner form (created off-screen) and pass that form as
-        // the ShowDialog owner so the picker is summoned to the foreground.
-        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object System.Drawing.Point(-32000, -32000); $owner.Size = New-Object System.Drawing.Size(1, 1); $owner.Show(); $owner.Activate(); $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for CovenCave'; $result = $d.ShowDialog($owner); $owner.Close(); if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
-        let output = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-Sta", "-Command", script])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(if stderr.is_empty() {
-                "folder picker failed".to_string()
-            } else {
-                stderr
-            });
-        }
-        return normalize_picked_directory(&String::from_utf8_lossy(&output.stdout));
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let zenity = std::process::Command::new("zenity")
-            .args([
-                "--file-selection",
-                "--directory",
-                "--modal",
-                "--title",
-                "Choose a folder for CovenCave",
-            ])
-            .output();
-        if let Ok(output) = zenity {
-            if output.status.success() {
-                return normalize_picked_directory(&String::from_utf8_lossy(&output.stdout));
-            }
-            return Ok(None);
-        }
-
-        let kdialog = std::process::Command::new("kdialog")
-            .args(["--getexistingdirectory"])
-            .output()
-            .map_err(|_| "No folder picker is available; install zenity or kdialog.".to_string())?;
-        if kdialog.status.success() {
-            return normalize_picked_directory(&String::from_utf8_lossy(&kdialog.stdout));
-        }
-        Ok(None)
     }
 }
 

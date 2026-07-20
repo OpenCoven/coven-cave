@@ -52,7 +52,7 @@ fn normalizes_only_absolute_existing_picked_directories() {
 // platform's picker invocation so a future edit can't silently regress it.
 #[test]
 fn folder_picker_is_summoned_to_the_foreground() {
-    let src = include_str!("lib.rs");
+    let src = include_str!("shell_open_commands.rs");
     // Windows: the FolderBrowserDialog gets a TopMost owner form passed to
     // ShowDialog so it can't open buried/unfocused.
     assert!(
