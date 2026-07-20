@@ -1,7 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 assert.match(source, /buildMemoryRows\(/, "full view must derive rows from buildMemoryRows");
 assert.match(source, /import \{ MemoryRowItem \}/, "must render MemoryRowItem rows");
