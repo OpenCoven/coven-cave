@@ -9,6 +9,7 @@ import {
 } from "../lib/chat-session-prefs.ts";
 
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   source,
@@ -119,7 +120,7 @@ assert.match(source, /from "@dnd-kit\/core"/, "ChatList should use @dnd-kit for 
 assert.match(source, /const displayIds = useMemo\([\s\S]*displayGroups\.flatMap\(\(group\) => group\.sessions\.map\(\(session\) => session\.id\)\)/, "ChatList should derive one flat list of visible sortable ids");
 assert.match(source, /<DndContext[\s\S]*onDragEnd=\{\(event\) => handleDragEnd\(event, displayIds\)\}/, "The visible chat list should wire drag end with all displayed ids");
 assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalListSortingStrategy\}/, "All visible chat rows should share one SortableContext");
-assert.match(source, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
+assert.match(primitives, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
 assert.match(source, /if \(effectiveSelection === "all"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups so cross-project drag order can stick");
 assert.match(source, /partitionPinnedFirst\(sortByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
@@ -245,7 +246,7 @@ assert.match(
   "Content search shows the shared shimmer skeleton while the first fetch is in flight",
 );
 assert.match(
-  source,
+  primitives,
   /<mark className=/,
   "The matched substring inside the snippet is highlighted with <mark>",
 );
