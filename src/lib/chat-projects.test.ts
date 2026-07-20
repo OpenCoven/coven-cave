@@ -34,7 +34,7 @@ const sessions = [
   session("old-alpha", "/work/alpha", "2026-06-01T00:00:00.000Z", "sage"),
   session("new-alpha", "/work/alpha", "2026-06-03T00:00:00.000Z", "cody", "running"),
   session("beta", "/work/beta", "2026-06-02T00:00:00.000Z", "nova"),
-  session("hidden", "/work/alpha", "2026-06-04T00:00:00.000Z", "cody", "archived"),
+  session("status-archived", "/work/alpha", "2026-06-04T00:00:00.000Z", "cody", "archived"),
   session("scratch", "", "2026-06-05T00:00:00.000Z", "charm"),
 ];
 
@@ -75,6 +75,24 @@ assert.deepEqual(
     filterVisibleChatSessions(withArchived, "cody", { includeArchived: true }).map((s) => s.id),
     ["stashed", "new-alpha"],
     "includeArchived still applies the familiar scope",
+  );
+}
+
+// Dead-status caveats: `archived` stays hidden outright, while killed/orphaned/
+// stopped chats that still have a Cave-local conversation remain visible as
+// recoverable history. Daemon-only rows with those statuses stay hidden.
+{
+  const recoverable = [
+    { ...session("recoverable-orphan", "", "2026-06-11T09:00:00.000Z", "nova", "orphaned"), hasLocalConversation: true },
+    { ...session("recoverable-killed", "", "2026-06-11T10:00:00.000Z", "cody", "killed"), hasLocalConversation: true },
+    { ...session("recoverable-stopped", "", "2026-06-11T11:00:00.000Z", "charm", "stopped"), hasLocalConversation: true },
+    { ...session("daemon-orphan", "", "2026-06-11T12:00:00.000Z", "sage", "orphaned") },
+    { ...session("status-archived", "", "2026-06-11T13:00:00.000Z", "sage", "archived"), hasLocalConversation: true },
+  ];
+  assert.deepEqual(
+    filterVisibleChatSessions(recoverable, null).map((s) => s.id),
+    ["recoverable-stopped", "recoverable-killed", "recoverable-orphan"],
+    "only Cave-backed recoverable dead-status chats should stay visible, in recency order",
   );
 }
 
