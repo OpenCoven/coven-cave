@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const tabState = await readFile(new URL("./browser-tab-state.ts", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -37,7 +38,7 @@ assert.match(
   "railPinned must initialize from the persisted loadRailPinned() helper",
 );
 assert.match(
-  pane,
+  tabState,
   /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\r?\n\}/,
   "loadRailPinned() must default to true (rail open) when no preference is stored",
 );

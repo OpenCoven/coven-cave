@@ -16,6 +16,18 @@ import {
   type ExpectedBrowserNavigation,
 } from "@/lib/browser-navigation-queue";
 import { TabFavicon } from "./browser-tab-favicon";
+import {
+  HOME_URL,
+  browserTabTitle,
+  loadPinnedTabs,
+  loadRailPinned,
+  normalizeBrowserUrl,
+  savePinnedTabs,
+  saveRailPinned,
+  type BrowserTab,
+} from "./browser-tab-state";
+
+export type { BrowserTab } from "./browser-tab-state";
 
 // Browser pane — uses Tauri's child WebviewBuilder under the hood. A real
 // Chromium webview is overlaid on top of the placeholder <div> below; we
@@ -51,102 +63,7 @@ function invokeNativeBrowserDeactivateAll(bridge: TauriBridge | null, label: str
   deactivateAllNativeBrowserWebviews(label);
 }
 
-const HOME_URL = "https://opencoven.ai";
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
-const PINNED_STORAGE_KEY = "cave.browser.pinnedTabs.v1";
-const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
-
-export type BrowserTab = {
-  id: string;
-  url: string;
-  title: string;
-  pinned: boolean;
-  kind: "pinned";
-};
-
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return HOME_URL;
-
-  // Preserve existing convenience behavior first.
-  let candidate = trimmed;
-  if (/^localhost(:\d+)?(\/.*)?$/i.test(trimmed)) {
-    candidate = `http://${trimmed}`;
-  } else if (/^[a-z0-9-]+\.[a-z]{2,}/i.test(trimmed) && !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
-    candidate = `https://${trimmed}`;
-  }
-
-  // Only allow http(s) URLs to reach the iframe src.
-  try {
-    const parsed = new URL(candidate);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.toString();
-    }
-  } catch {
-    // fall through to safe search
-  }
-
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-}
-
-function shortTitle(url: string, title: string): string {
-  if (title && title !== url) return title.slice(0, 22);
-  try {
-    const u = new URL(url);
-    if (u.hostname === "localhost") return `localhost:${u.port || "80"}`;
-    return u.hostname.replace(/^www\./, "").slice(0, 18);
-  } catch {
-    return url.slice(0, 18);
-  }
-}
-
-function loadPinnedTabs(): BrowserTab[] {
-  if (typeof window === "undefined") return defaultPinnedTabs();
-  try {
-    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
-    // Filter out stale non-pinned entries persisted by older versions
-    // (e.g. the auto-injected localhost tab).
-    if (raw) return (JSON.parse(raw) as BrowserTab[]).filter((t) => t.kind === "pinned");
-  } catch { /* ignore */ }
-  return defaultPinnedTabs();
-}
-
-function savePinnedTabs(tabs: BrowserTab[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(tabs));
-  } catch { /* ignore */ }
-}
-
-// The tab rail opens pinned by default so the tabs are visible on first open;
-// the user can auto-hide it and we remember that choice across sessions.
-function loadRailPinned(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const raw = window.localStorage.getItem(RAIL_PINNED_STORAGE_KEY);
-    if (raw === "0") return false;
-    if (raw === "1") return true;
-  } catch { /* ignore */ }
-  return true;
-}
-
-function saveRailPinned(pinned: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(RAIL_PINNED_STORAGE_KEY, pinned ? "1" : "0");
-  } catch { /* ignore */ }
-}
-
-function defaultPinnedTabs(): BrowserTab[] {
-  return [
-    { id: "home", url: HOME_URL, title: "OpenCoven", pinned: true, kind: "pinned" },
-    // OpenCoven docs + feedback live here as default pinned tabs (they used to
-    // be a dedicated "Coven" sidebar surface — folded into the browser instead).
-    { id: "opencoven-docs", url: "https://docs.opencoven.ai", title: "Docs", pinned: true, kind: "pinned" },
-    { id: "opencoven-feedback", url: "https://feedback.opencoven.ai", title: "Feedback", pinned: true, kind: "pinned" },
-    { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
-  ];
-}
 
 // ── Native-overlay occlusion ─────────────────────────────────────────
 // The embedded browser webview is an OS-level layer painted ABOVE the entire
@@ -639,7 +556,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       void bridge.invoke("browser_navigate", navigationArgs).then(() => {
         if (cancelled) return;
         const pending = pendingNavigationRef.current;
-        if (pending && normalizeUrl(pending.url) === activeTab.url) {
+        if (pending && normalizeBrowserUrl(pending.url) === activeTab.url) {
           acknowledgePendingNavigation(pending);
         }
       }).catch(() => {
@@ -710,7 +627,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
 
   // ── Per-tab navigation ────────────────────────────────────────────
   const navigateTo = (raw: string) => {
-    const next = normalizeUrl(raw);
+    const next = normalizeBrowserUrl(raw);
     expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     const nextTabs = tabs.map((t) =>
       t.id === activeTabId ? { ...t, url: next } : t,
@@ -904,7 +821,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         <div role="tablist" aria-orientation="vertical" aria-label="Browser tabs" className="flex w-full flex-col items-center">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
-          const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
+          const title = browserTabTitle(tab.url, tabTitles[tab.id] ?? tab.title);
           return (
             <div
               key={tab.id}
