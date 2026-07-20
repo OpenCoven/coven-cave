@@ -32,6 +32,7 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand } from "@/lib/coven-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -86,6 +87,8 @@ import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
+  resolveChatModelState,
+  type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
   RuntimeScopeError,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/server/global-npm-install-lane";
 import {
   covenBin,
+  covenSpawnEnv,
   pickWindowsLauncher,
   refreshCovenBin,
   refreshCovenSpawnEnv,
