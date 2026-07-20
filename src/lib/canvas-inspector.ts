@@ -357,8 +357,24 @@ export function buildCanvasInspectorScript(generation = ""): string {
 export function injectCanvasInspector(html: string, generation = ""): string {
   const source = typeof html === "string" ? html : "";
   const script = buildCanvasInspectorScript(generation);
-  const leadingDoctype = source.match(/^(\s*(?:<!--[\s\S]*?-->\s*)*<!doctype[^>]*>)/i);
-  if (!leadingDoctype) return `${script}${source}`;
-  const splitAt = leadingDoctype[0].length;
+  const splitAt = findLeadingDoctypeEnd(source);
+  if (splitAt === null) return `${script}${source}`;
   return `${source.slice(0, splitAt)}${script}${source.slice(splitAt)}`;
+}
+
+function findLeadingDoctypeEnd(source: string): number | null {
+  let offset = 0;
+
+  while (offset < source.length) {
+    while (offset < source.length && source[offset].trim() === "") offset += 1;
+    if (!source.startsWith("<!--", offset)) break;
+
+    const commentEnd = source.indexOf("-->", offset + 4);
+    if (commentEnd === -1) return null;
+    offset = commentEnd + 3;
+  }
+
+  if (source.slice(offset, offset + 9).toLowerCase() !== "<!doctype") return null;
+  const doctypeEnd = source.indexOf(">", offset + 9);
+  return doctypeEnd === -1 ? null : doctypeEnd + 1;
 }

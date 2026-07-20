@@ -79,7 +79,7 @@ class FakePort {
 }
 
 const scriptTag = buildCanvasInspectorScript();
-assert.match(scriptTag, /^<script>/, "returns an inline script tag");
+assert.equal(scriptTag.startsWith("<script>"), true, "returns an inline script tag");
 assert.equal((scriptTag.match(/<\/script>/gi) ?? []).length, 1, "script body cannot inject a closing script tag");
 assert.doesNotMatch(scriptTag.slice(0, -"</script>".length), /<\/script>/i, "embedded source neutralizes </script>");
 assert.doesNotMatch(scriptTag, /parent\.(?:document|location)|document\.cookie/, "does not access parent DOM or cookies");
@@ -117,6 +117,13 @@ assert.equal(
   injectCanvasInspector(commentedDoctype),
   `${commentedDoctype.slice(0, commentedDoctypeEnd)}${scriptTag}${commentedDoctype.slice(commentedDoctypeEnd)}`,
   "leading comments stay before the doctype while the inspector remains standards-mode safe",
+);
+const repeatedCommentsDoctype = `${"<!---->".repeat(2_000)}<!DOCTYPE html><main>x</main>`;
+const repeatedCommentsDoctypeEnd = repeatedCommentsDoctype.indexOf(">", repeatedCommentsDoctype.indexOf("<!DOCTYPE")) + 1;
+assert.equal(
+  injectCanvasInspector(repeatedCommentsDoctype),
+  `${repeatedCommentsDoctype.slice(0, repeatedCommentsDoctypeEnd)}${scriptTag}${repeatedCommentsDoctype.slice(repeatedCommentsDoctypeEnd)}`,
+  "many adjacent leading comments are scanned without regex backtracking",
 );
 
 const markerStrings = ["<head>", "</head>", "<body>", "</body>", "<html>", "</html>"];
@@ -177,7 +184,12 @@ const addListener = (scope: string, type: string, listener: Function, options?: 
 };
 const windowObject = {
   parent: parentWindow,
-  CSS: { escape: (value: string) => value.replace(/"/g, '\\"') },
+  CSS: {
+    escape: (value: string) => Array.from(
+      value,
+      (character) => character === "\\" ? "\\\\" : character === '"' ? '\\"' : character,
+    ).join(""),
+  },
   addEventListener(type: string, listener: Function, options?: unknown) {
     addListener("window", type, listener, options);
   },
