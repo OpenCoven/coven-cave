@@ -48,6 +48,12 @@ import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang"
 import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
+import {
+  cacheRenderedMarkdown as renderCacheSet,
+  closeTrailingFence,
+  getRenderedMarkdown as renderCacheGet,
+  scanFenceFilenames,
+} from "@/lib/message-markdown-stream";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -388,33 +394,6 @@ function escHtml(s: string): string {
 // Render markdown to HTML (async, Shiki per code block)
 // ---------------------------------------------------------------------------
 
-/**
- * renderCache LRU — keyed by the FULL markdown string. Capped (CHAT-D3-03):
- * an unbounded Map keyed by entire messages grows for the whole session.
- * Map iteration order is insertion order, so refreshing recency on get and
- * evicting the first key on overflow gives a small LRU for free.
- */
-const RENDER_CACHE_MAX = 200;
-const renderCache = new Map<string, string>();
-
-function renderCacheGet(key: string): string | undefined {
-  const value = renderCache.get(key);
-  if (value !== undefined) {
-    renderCache.delete(key);
-    renderCache.set(key, value);
-  }
-  return value;
-}
-
-function renderCacheSet(key: string, value: string) {
-  if (renderCache.has(key)) renderCache.delete(key);
-  renderCache.set(key, value);
-  if (renderCache.size > RENDER_CACHE_MAX) {
-    const oldest = renderCache.keys().next().value;
-    if (oldest !== undefined) renderCache.delete(oldest);
-  }
-}
-
 /** Streaming markdown re-renders at most once per this many ms (trailing). */
 const STREAM_RENDER_INTERVAL_MS = 200;
 
@@ -425,35 +404,6 @@ const STREAM_RENDER_INTERVAL_MS = 200;
  * block. Only applied to transient streaming snapshots — the final settled
  * render gets the text verbatim.
  */
-function closeTrailingFence(markdown: string): string {
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (/^\s*```/.test(line)) inFence = !inFence;
-  }
-  return inFence ? `${markdown}\n\`\`\`` : markdown;
-}
-
-/**
- * Scan markdown for fence openers in order, returning the filename suffix for
- * each (or null when the fence had no `:filename`). Used to re-attach filename
- * labels after we strip them so @create-markdown/core can parse the fence.
- */
-function scanFenceFilenames(markdown: string): Array<string | null> {
-  const filenames: Array<string | null> = [];
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (!/^\s*```/.test(line)) continue;
-    if (inFence) {
-      inFence = false;
-      continue;
-    }
-    const m = /^\s*```\s*[\w+.-]*(?::(\S+))?\s*$/.exec(line);
-    filenames.push(m?.[1] ?? null);
-    inFence = true;
-  }
-  return filenames;
-}
-
 function coalesceAdjacentNumberedLists(blocks: Block[]): Block[] {
   const coalesced: Block[] = [];
   for (const block of blocks) {

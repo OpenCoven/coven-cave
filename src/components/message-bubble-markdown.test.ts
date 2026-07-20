@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts", import.meta.url), "utf8");
 
 // StrictMode regression guard: a ref-based "same text" check poisons itself
 // when the first (dev double-invoke) effect run is cancelled — run 2 then
@@ -176,12 +177,12 @@ assert.match(
 // add an entry per throttle tick. Guards: (1) transient streaming renders
 // skip cache writes entirely, (2) the cache is a small LRU with a hard cap.
 assert.match(
-  source,
+  markdownStream,
   /const RENDER_CACHE_MAX = \d+/,
   "renderCache has a named size cap",
 );
 assert.match(
-  source,
+  markdownStream,
   /if \(renderCache\.size > RENDER_CACHE_MAX\) \{\s*const oldest = renderCache\.keys\(\)\.next\(\)\.value;/,
   "On overflow the least-recently-used entry is evicted",
 );
