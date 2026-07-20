@@ -22,6 +22,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
+pub use tauri_setup::run;
 #[cfg(all(desktop, target_os = "windows"))]
 use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, WAIT_OBJECT_0, WPARAM},
@@ -33,4 +34,3 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{SC_CLOSE, WM_CLOSE, WM_NCDESTROY, WM_SYSCOMMAND},
     },
 };
-pub use tauri_setup::run;
