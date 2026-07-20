@@ -5,10 +5,12 @@ import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 import { useTauriPlatform } from "@/lib/tauri-platform";
+import { withNativeBrowserSequence } from "@/lib/native-browser-lifecycle";
 import {
-  deactivateAllNativeBrowserWebviews,
-  withNativeBrowserSequence,
-} from "@/lib/native-browser-lifecycle";
+  deactivateNativeBrowserTabs,
+  loadTauriBrowserBridge,
+  type TauriBrowserBridge,
+} from "@/lib/browser-native-bridge";
 import {
   createExpectedBrowserNavigation,
   decideBrowserNavigationEvent,
@@ -40,28 +42,6 @@ export type { BrowserTab } from "./browser-tab-state";
 // Tab design:
 // - Pinned tabs persisted in localStorage (user-customizable)
 // - Each tab uses a separate native webview label: `<paneLabel>-tab-<id>`
-
-type TauriBridge = {
-  invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-  listen: <T = unknown>(event: string, cb: (e: { payload: T }) => void) => Promise<() => void>;
-};
-
-async function loadTauri(): Promise<TauriBridge | null> {
-  if (typeof window === "undefined") return null;
-  // @ts-expect-error Tauri runtime
-  if (!window.__TAURI_INTERNALS__) return null;
-  const { invoke } = await import("@tauri-apps/api/core");
-  const { listen } = await import("@tauri-apps/api/event");
-  return { invoke, listen };
-}
-
-function invokeNativeBrowserDeactivateAll(bridge: TauriBridge | null, label: string): void {
-  if (bridge) {
-    void bridge.invoke("browser_deactivate_all", withNativeBrowserSequence({ label }));
-    return;
-  }
-  deactivateAllNativeBrowserWebviews(label);
-}
 
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
 
@@ -149,7 +129,7 @@ export type BrowserPaneHandle = {
 export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
-  const [bridge, setBridge] = useState<TauriBridge | null>(null);
+  const [bridge, setBridge] = useState<TauriBrowserBridge | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const platform = useTauriPlatform();
   const nativeBrowserAvailable = platform === "desktop";
@@ -233,7 +213,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     }
     let cancelled = false;
     void (async () => {
-      const b = await loadTauri();
+      const b = await loadTauriBrowserBridge();
       if (cancelled) return;
       if (!b) setUnavailable(true);
       else setBridge(b);
@@ -246,11 +226,11 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // Hide its OS-level WebViews before the React surface leaves, but retain
   // them so re-entry cannot race an asynchronous close still present in
   // Tauri's WebView registry. bridge arrives asynchronously, hence the ref.
-  const bridgeRef = useRef<TauriBridge | null>(null);
+  const bridgeRef = useRef<TauriBrowserBridge | null>(null);
   bridgeRef.current = bridge;
   useEffect(() => {
     return () => {
-      invokeNativeBrowserDeactivateAll(bridgeRef.current, label);
+      deactivateNativeBrowserTabs(bridgeRef.current, label);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -260,7 +240,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // cover visible controls elsewhere in the app.
   useEffect(() => {
     if (active) return;
-    invokeNativeBrowserDeactivateAll(bridge, label);
+    deactivateNativeBrowserTabs(bridge, label);
   }, [active, bridge, label]);
 
   // ── Page-load + title events ──────────────────────────────────────
@@ -366,7 +346,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // 120-150ms shell and rail transitions that can move the surface.
   useEffect(() => {
     if (!active || !bridge || !nativeBrowserAvailable) {
-      if (!active) invokeNativeBrowserDeactivateAll(bridge, label);
+      if (!active) deactivateNativeBrowserTabs(bridge, label);
       return;
     }
     const surface = surfaceRef.current;

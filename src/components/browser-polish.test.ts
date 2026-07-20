@@ -9,6 +9,7 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
 const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
+const nativeBridge = await readFile(new URL("../lib/browser-native-bridge.ts", import.meta.url), "utf8");
 const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
@@ -160,13 +161,13 @@ assert.match(
 // rapid re-entry against Tauri's asynchronous registry removal and can reuse a
 // closing WebView2 as a black, invisible input layer.
 assert.match(
-  pane,
-  /function invokeNativeBrowserDeactivateAll\(bridge: TauriBridge \| null, label: string\): void/,
+  nativeBridge,
+  /function deactivateNativeBrowserTabs\(bridge: TauriBrowserBridge \| null, label: string\): void/,
   "BrowserPane has a direct native-webview deactivation helper",
 );
 assert.match(
   pane,
-  /invokeNativeBrowserDeactivateAll\(bridgeRef\.current, label\);/,
+  /deactivateNativeBrowserTabs\(bridgeRef\.current, label\);/,
   "unmount cleanup deactivates the pane's native webviews",
 );
 assert.match(
@@ -181,7 +182,7 @@ assert.match(
 );
 assert.match(
   pane,
-  /if \(active\) return;[\s\S]{0,120}invokeNativeBrowserDeactivateAll\(bridge, label\);/,
+  /if \(active\) return;[\s\S]{0,120}deactivateNativeBrowserTabs\(bridge, label\);/,
   "inactive BrowserPane instances deactivate their native webviews",
 );
 assert.match(
