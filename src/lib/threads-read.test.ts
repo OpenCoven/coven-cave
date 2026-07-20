@@ -3,6 +3,7 @@
 // R10 live here at the pure-logic layer; adapter-level rules are covered in
 // threads-adapters.test.ts.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 
 import {
@@ -27,6 +28,139 @@ import {
   THREADS_STALE_TTL_MS,
   type TensionView,
 } from "./threads-read.ts";
+import { canonicalProposalRevision, normalizeProposalAuthority } from "./proposal-authority.ts";
+
+function daemonContractFixture() {
+  const familiarUuid = "eeeeeeee-0000-4000-8000-000000000098";
+  const pending = {
+    id: "cccccccc-0001-4001-8001-000000000098",
+    familiar_id: familiarUuid,
+    writer: "familiar:echo",
+    channel: "Mutation",
+    thread_id: "aaaaaaa2-0002-4002-8002-000000000098",
+    fray: { Frayed: { strand: null, channel: "Mutation", reason: "ContentHashMismatch" } },
+    edits: [{ surface: "MEMORY.md", contents: { encoding: "utf8", data: "proposed" } }],
+    staged_at: [2026, 196, 9, 0, 2, 0, 0, 0, 0],
+  };
+  const staged = {
+    schema: "phase5_v1",
+    pending,
+    classification: {
+      proposal_id: pending.id,
+      familiar_id: familiarUuid,
+      channel: "Mutation",
+      affected_surfaces: ["MEMORY.md"],
+      affected_regions: ["memory_conventions"],
+      path_tier_floor: 1,
+      approval_path: { kind: "human_approval" },
+      evidence_replay_hash: Array(32).fill(17),
+      classified_at: pending.staged_at,
+    },
+    materialized_diff: {
+      surfaces: [
+        {
+          surface: "MEMORY.md",
+          before: Array.from(Buffer.from("before")),
+          after: Array.from(Buffer.from("proposed")),
+        },
+      ],
+    },
+    region_evidence: [
+      {
+        region_id: "memory_conventions",
+        affected_surfaces: ["MEMORY.md"],
+        min_path_tier: 1,
+        replay_bytes: [109, 101, 109, 111, 114, 121],
+        rationale: "Touches durable memory conventions",
+      },
+    ],
+    lifecycle: { state: "awaiting_human_approval" },
+    staged_at: pending.staged_at,
+    veto_deadline: null,
+    earliest_close: null,
+  };
+  const daemon = {
+    proposalId: pending.id,
+    familiarId: "echo",
+    familiarUuid,
+    writer: pending.writer,
+    stagedAt: "2026-07-15T09:00:02Z",
+    targets: ["MEMORY.md"],
+    proposalRevision: canonicalProposalRevision(staged),
+    approvalPath: {
+      variant: "human_approval",
+      label: "human_review",
+      veto_deadline: null,
+      affected_surfaces: ["MEMORY.md"],
+    },
+    lifecycle: "awaiting_human_approval",
+    earliestClose: null,
+    affectedRegions: ["memory_conventions"],
+  };
+  return { staged, daemon };
+}
+
+function vetoContractFixture() {
+  const { staged, daemon } = daemonContractFixture();
+  const vetoStaged = {
+    ...staged,
+    classification: {
+      ...staged.classification,
+      approval_path: {
+        kind: "familiar_coherence",
+        veto: {
+          duration: { secs: 1800, nanos: 0 },
+          min_visible: { secs: 300, nanos: 0 },
+        },
+      },
+    },
+    lifecycle: { state: "veto_window_open" },
+    veto_deadline: [2026, 196, 9, 30, 2, 0, 0, 0, 0],
+    earliest_close: [2026, 196, 9, 5, 2, 0, 0, 0, 0],
+  };
+  const vetoDaemon = {
+    ...daemon,
+    proposalRevision: canonicalProposalRevision(vetoStaged),
+    approvalPath: {
+      variant: "familiar_coherence",
+      label: "familiar_review",
+      veto_deadline: "2026-07-15T09:30:02Z",
+      affected_surfaces: ["MEMORY.md"],
+    },
+    lifecycle: "veto_window_open",
+    earliestClose: "2026-07-15T09:05:02Z",
+  };
+  return { staged: vetoStaged, daemon: vetoDaemon };
+}
+
+function omitEnvelopeField<T>(value: T, path: readonly (string | number)[]): T {
+  const copy = structuredClone(value);
+  let cursor: unknown = copy;
+  for (const segment of path.slice(0, -1)) {
+    cursor = Array.isArray(cursor)
+      ? cursor[Number(segment)]
+      : (cursor as Record<string, unknown>)[String(segment)];
+  }
+  delete (cursor as Record<string, unknown>)[String(path.at(-1))];
+  return copy;
+}
+
+function addEnvelopeField<T>(
+  value: T,
+  path: readonly (string | number)[],
+  field: string,
+  fieldValue: unknown,
+): T {
+  const copy = structuredClone(value);
+  let cursor: unknown = copy;
+  for (const segment of path) {
+    cursor = Array.isArray(cursor)
+      ? cursor[Number(segment)]
+      : (cursor as Record<string, unknown>)[String(segment)];
+  }
+  (cursor as Record<string, unknown>)[field] = fieldValue;
+  return copy;
+}
 
 describe("timeArrayToIso", () => {
   it("converts the time crate's 9-element array (2026 day 196 = July 15)", () => {
@@ -365,6 +499,440 @@ describe("normalizeThread", () => {
 });
 
 describe("normalizeProposal (§2.6)", () => {
+  it("canonicalizes proposal authority envelopes with recursive key sorting and top-level-only stripping", () => {
+    const raw = {
+      "\u{10000}": "later-code-point",
+      "\uE000": "earlier-code-point",
+      z: 1,
+      nested: {
+        b: 2,
+        a: 1,
+        keep: [{ z: 2, a: 1 }, { x: 1 }],
+      },
+      proposalRevision: "committed-staged-value",
+      decisionRequest: { ignored: true },
+      decisionState: { ignored: true },
+      inner: {
+        decisionRequest: { still: true },
+        decisionState: { still: true },
+      },
+    };
+
+    const expectedJson = JSON.stringify({
+      inner: {
+        decisionRequest: { still: true },
+        decisionState: { still: true },
+      },
+      nested: {
+        a: 1,
+        b: 2,
+        keep: [{ a: 1, z: 2 }, { x: 1 }],
+      },
+      proposalRevision: "committed-staged-value",
+      z: 1,
+      "\uE000": "earlier-code-point",
+      "\u{10000}": "later-code-point",
+    });
+    const expected = createHash("sha256").update(expectedJson, "utf8").digest("hex");
+    assert.equal(canonicalProposalRevision(raw), expected);
+  });
+
+  it("canonicalizes integer-like object keys in Unicode code-point order", () => {
+    const raw = {
+      2: "two",
+      10: "ten",
+      nested: {
+        2: "nested-two",
+        10: "nested-ten",
+      },
+    };
+    const expectedJson = '{"10":"ten","2":"two","nested":{"10":"nested-ten","2":"nested-two"}}';
+    const expected = createHash("sha256").update(expectedJson, "utf8").digest("hex");
+
+    assert.equal(canonicalProposalRevision(raw), expected);
+  });
+
+  it("verifies the raw accepted envelope while omitting top-level procedural fields from its revision", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const stagedWithDecision = {
+      ...staged,
+      decisionRequest: { decision: "approve" },
+      decisionState: { status: "claimed" },
+    };
+    const summary = {
+      ...daemon,
+      proposalRevision: canonicalProposalRevision(stagedWithDecision),
+    };
+
+    assert.equal(normalizeProposalAuthority(stagedWithDecision, summary).state, "verified");
+  });
+
+  it("rejects incomplete Phase 5 scheduled authority envelopes", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const missingFields = [
+      ["schema"],
+      ["pending", "channel"],
+      ["pending", "fray", "Frayed", "reason"],
+      ["pending", "edits", 0, "contents", "data"],
+      ["classification", "approval_path", "kind"],
+      ["materialized_diff", "surfaces", 0, "before"],
+      ["region_evidence", 0, "rationale"],
+      ["lifecycle", "state"],
+      ["veto_deadline"],
+      ["earliest_close"],
+    ] as const;
+
+    for (const path of missingFields) {
+      const incomplete = omitEnvelopeField(staged, path);
+      const summary = {
+        ...daemon,
+        proposalRevision: canonicalProposalRevision(incomplete),
+      };
+      assert.deepEqual(
+        normalizeProposalAuthority(incomplete, summary),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted envelope missing ${path.join(".")}`,
+      );
+    }
+  });
+
+  it("rejects unknown fields at every Phase 5 scheduled-envelope object boundary", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const unknownFields = [
+      ["root", staged, daemon, [], "client_policy", "auto"],
+      ["pending", staged, daemon, ["pending"], "client_policy", "auto"],
+      ["pending fray payload", staged, daemon, ["pending", "fray", "Frayed"], "client_policy", "auto"],
+      ["pending edit", staged, daemon, ["pending", "edits", 0], "client_policy", "auto"],
+      ["staged contents", staged, daemon, ["pending", "edits", 0, "contents"], "client_policy", "auto"],
+      ["classification", staged, daemon, ["classification"], "client_policy", "auto"],
+      ["approval path", staged, daemon, ["classification", "approval_path"], "veto", null],
+      ["veto window", vetoStaged, vetoDaemon, ["classification", "approval_path", "veto"], "client_policy", "auto"],
+      [
+        "veto duration",
+        vetoStaged,
+        vetoDaemon,
+        ["classification", "approval_path", "veto", "duration"],
+        "client_policy",
+        "auto",
+      ],
+      [
+        "veto minimum visibility",
+        vetoStaged,
+        vetoDaemon,
+        ["classification", "approval_path", "veto", "min_visible"],
+        "client_policy",
+        "auto",
+      ],
+      ["materialized diff", staged, daemon, ["materialized_diff"], "client_policy", "auto"],
+      ["materialized surface", staged, daemon, ["materialized_diff", "surfaces", 0], "client_policy", "auto"],
+      ["region evidence", staged, daemon, ["region_evidence", 0], "client_policy", "auto"],
+      ["lifecycle", staged, daemon, ["lifecycle"], "reason", "forged"],
+    ] as const;
+
+    for (const [label, baseEnvelope, baseDaemon, path, field, fieldValue] of unknownFields) {
+      const invalid = addEnvelopeField(baseEnvelope, path, field, fieldValue);
+      const summary = {
+        ...baseDaemon,
+        proposalRevision: canonicalProposalRevision(invalid),
+      };
+      assert.deepEqual(
+        normalizeProposalAuthority(invalid, summary),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted unknown ${label} field`,
+      );
+    }
+  });
+
+  it("rejects invalid structural values in a Phase 5 scheduled envelope", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const invalidEnvelopes = [
+      [
+        "blank blocked lifecycle reason",
+        { ...staged, lifecycle: { state: "blocked", reason: " " } },
+        { ...daemon, lifecycle: "blocked", blockedReason: "daemon-reported-block", earliestClose: null },
+      ],
+      [
+        "minimum visibility longer than the veto duration",
+        {
+          ...vetoStaged,
+          classification: {
+            ...vetoStaged.classification,
+            approval_path: {
+              ...vetoStaged.classification.approval_path,
+              veto: {
+                duration: { secs: 300, nanos: 0 },
+                min_visible: { secs: 301, nanos: 0 },
+              },
+            },
+          },
+        },
+        vetoDaemon,
+      ],
+    ] as const;
+
+    for (const [label, invalid, baseDaemon] of invalidEnvelopes) {
+      const summary = {
+        ...baseDaemon,
+        proposalRevision: canonicalProposalRevision(invalid),
+      };
+      assert.deepEqual(
+        normalizeProposalAuthority(invalid, summary),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted ${label}`,
+      );
+    }
+  });
+
+  it("rejects Phase 5 classification identity fields that disagree with the staged proposal", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const inconsistentClassifications = [
+      ["proposal_id", "cccccccc-0001-4001-8001-000000000099"],
+      ["familiar_id", "eeeeeeee-0000-4000-8000-000000000099"],
+      ["channel", "Serialization"],
+      ["classified_at", [2026, 196, 9, 0, 3, 0, 0, 0, 0]],
+    ] as const;
+
+    for (const [field, value] of inconsistentClassifications) {
+      const inconsistent = {
+        ...staged,
+        classification: { ...staged.classification, [field]: value },
+      };
+      const summary = {
+        ...daemon,
+        proposalRevision: canonicalProposalRevision(inconsistent),
+      };
+
+      assert.deepEqual(
+        normalizeProposalAuthority(inconsistent, summary),
+        { state: "blocked", why: "daemon-mismatch" },
+        `accepted classification.${field} inconsistent with the staged proposal`,
+      );
+    }
+  });
+
+  it("binds both daemon surface sets to the normalized pending edits, not classification metadata", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const distinctMetadata = {
+      ...staged,
+      pending: {
+        ...staged.pending,
+        edits: [{ surface: "EDIT-SURFACE.md", contents: { encoding: "utf8", data: "proposed" } }],
+      },
+    };
+    const summary = {
+      ...daemon,
+      affectedRegions: ["display-only-region"],
+      proposalRevision: canonicalProposalRevision(distinctMetadata),
+    };
+    const mismatchedView = normalizeProposal("classification-targets.json", distinctMetadata, summary);
+    assert.deepEqual(mismatchedView.payload?.edits, [
+      { surface: "EDIT-SURFACE.md", contents: { encoding: "utf8", data: "proposed" } },
+    ]);
+    assert.deepEqual(mismatchedView.authority, {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+
+    const displayedEditsSummary = {
+      ...summary,
+      targets: ["EDIT-SURFACE.md"],
+      approvalPath: { ...summary.approvalPath, affected_surfaces: ["EDIT-SURFACE.md"] },
+    };
+    const authority = normalizeProposal("displayed-targets.json", distinctMetadata, displayedEditsSummary).authority;
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.deepEqual(authority.approvalPath.affectedSurfaces, ["EDIT-SURFACE.md"]);
+
+    const wrongTargets = { ...displayedEditsSummary, targets: ["MEMORY.md"] };
+    assert.deepEqual(normalizeProposalAuthority(distinctMetadata, wrongTargets), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+
+    const wrongApprovalSurfaces = {
+      ...displayedEditsSummary,
+      approvalPath: { ...displayedEditsSummary.approvalPath, affected_surfaces: ["MEMORY.md"] },
+    };
+    assert.deepEqual(normalizeProposalAuthority(distinctMetadata, wrongApprovalSurfaces), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+  });
+
+  it("matches daemon stagedAt independently to the scheduled envelope timestamp", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const mismatchedEnvelope = {
+      ...staged,
+      staged_at: [2026, 196, 9, 0, 3, 0, 0, 0, 0],
+    };
+    const summary = {
+      ...daemon,
+      proposalRevision: canonicalProposalRevision(mismatchedEnvelope),
+    };
+
+    assert.deepEqual(normalizeProposalAuthority(mismatchedEnvelope, summary), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+  });
+
+  it("binds stagedAt at nanosecond precision without Date truncation", () => {
+    const { staged: fixture, daemon } = daemonContractFixture();
+    const stagedAt = [2026, 196, 9, 0, 2, 123_456_789, 0, 0, 0];
+    const staged = {
+      ...fixture,
+      pending: { ...fixture.pending, staged_at: stagedAt },
+      classification: { ...fixture.classification, classified_at: stagedAt },
+      staged_at: stagedAt,
+    };
+    const exact = {
+      ...daemon,
+      stagedAt: "2026-07-15T09:00:02.123456789Z",
+      proposalRevision: canonicalProposalRevision(staged),
+    };
+
+    assert.equal(normalizeProposalAuthority(staged, exact).state, "verified");
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...exact,
+        stagedAt: "2026-07-15T09:00:02.123456788Z",
+      }),
+      { state: "blocked", why: "daemon-mismatch" },
+    );
+  });
+
+  it("binds the daemon to the staged timestamp's canonical textual representation", () => {
+    const { staged: fixture, daemon } = daemonContractFixture();
+    const stagedAt = [2026, 196, 9, 0, 2, 0, 2, 0, 0];
+    const staged = {
+      ...fixture,
+      pending: { ...fixture.pending, staged_at: stagedAt },
+      classification: { ...fixture.classification, classified_at: stagedAt },
+      staged_at: stagedAt,
+    };
+    const exact = {
+      ...daemon,
+      stagedAt: "2026-07-15T09:00:02+02:00",
+      proposalRevision: canonicalProposalRevision(staged),
+    };
+
+    assert.equal(normalizeProposalAuthority(staged, exact).state, "verified");
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...exact,
+        stagedAt: "2026-07-15T07:00:02Z",
+      }),
+      { state: "blocked", why: "daemon-mismatch" },
+    );
+  });
+
+  it("canonicalizes strict string-form staged timestamps before binding", () => {
+    const { staged: fixture, daemon } = daemonContractFixture();
+    const stagedAt = "2026-07-15T09:00:02.1200+00:00";
+    const staged = {
+      ...fixture,
+      pending: { ...fixture.pending, staged_at: stagedAt },
+      classification: { ...fixture.classification, classified_at: stagedAt },
+      staged_at: stagedAt,
+    };
+    const summary = {
+      ...daemon,
+      stagedAt: "2026-07-15T09:00:02.12Z",
+      proposalRevision: canonicalProposalRevision(staged),
+    };
+
+    assert.equal(normalizeProposalAuthority(staged, summary).state, "verified");
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...summary,
+        stagedAt,
+      }),
+      { state: "blocked", why: "daemon-mismatch" },
+    );
+  });
+
+  it("rejects Date-parseable timestamps that are not strict RFC3339", () => {
+    const { staged, daemon } = daemonContractFixture();
+    for (const malformed of ["2026-07-15 09:00:02Z", "2026-02-30T09:00:02Z"]) {
+      assert.equal(Number.isFinite(Date.parse(malformed)), true);
+      assert.deepEqual(normalizeProposalAuthority(staged, { ...daemon, stagedAt: malformed }), {
+        state: "blocked",
+        why: "daemon-unparseable",
+      });
+    }
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...daemon,
+        approvalPath: {
+          ...daemon.approvalPath,
+          variant: "familiar_coherence",
+          label: "familiar_review",
+          veto_deadline: "2026-07-15 09:30:00Z",
+        },
+        lifecycle: "veto_window_open",
+        earliestClose: "2026-07-15T09:05:00Z",
+      }),
+      { state: "blocked", why: "daemon-unparseable" },
+    );
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...daemon,
+        approvalPath: {
+          ...daemon.approvalPath,
+          variant: "familiar_coherence",
+          label: "familiar_review",
+          veto_deadline: "2026-07-15T09:30:00Z",
+        },
+        lifecycle: "veto_window_open",
+        earliestClose: "July 15, 2026 09:05:00 UTC",
+      }),
+      { state: "blocked", why: "daemon-unparseable" },
+    );
+  });
+
+  it("rejects off-wire daemon summary aliases", () => {
+    const { staged, daemon } = daemonContractFixture();
+    assert.equal(normalizeProposalAuthority(staged, daemon).state, "verified");
+    const aliasSummaries = [
+      {
+        ...daemon,
+        approvalPath: {
+          variant: daemon.approvalPath.variant,
+          label: daemon.approvalPath.label,
+          vetoDeadline: null,
+          affected_surfaces: daemon.approvalPath.affected_surfaces,
+        },
+      },
+      {
+        ...daemon,
+        approvalPath: {
+          variant: daemon.approvalPath.variant,
+          label: daemon.approvalPath.label,
+          veto_deadline: null,
+          affectedSurfaces: daemon.approvalPath.affected_surfaces,
+        },
+      },
+      Object.assign(
+        Object.fromEntries(Object.entries(daemon).filter(([key]) => key !== "stagedAt")),
+        { staged_at: daemon.stagedAt },
+      ),
+      Object.assign(
+        Object.fromEntries(Object.entries(daemon).filter(([key]) => key !== "earliestClose")),
+        { earliest_close: daemon.earliestClose },
+      ),
+      Object.assign(
+        Object.fromEntries(Object.entries(daemon).filter(([key]) => key !== "affectedRegions")),
+        { affected_regions: daemon.affectedRegions },
+      ),
+    ];
+
+    for (const summary of aliasSummaries) {
+      assert.equal(normalizeProposalAuthority(staged, summary).state, "blocked");
+    }
+  });
+
   it("normalizes a staged PendingProposal", () => {
     const view = normalizeProposal("fam-prop.json", {
       id: "cccccccc-0001-4001-8001-000000000001",
@@ -377,12 +945,368 @@ describe("normalizeProposal (§2.6)", () => {
       staged_at: [2026, 196, 9, 0, 2, 0, 0, 0, 0],
     });
     assert.equal(view.parse, "ok");
+    assert.equal(view.authority.state, "legacy");
     assert.equal(view.payload?.channel, "mutation");
     assert.equal(view.payload?.fray.state, "frayed");
     assert.deepEqual(view.payload?.edits, [
       { surface: "MEMORY.md", contents: { encoding: "utf8", data: "proposed" } },
     ]);
     assert.equal(view.payload?.stagedAt, "2026-07-15T09:00:02.000Z");
+  });
+
+  it("keeps a pre-Phase-5 staged file legacy when a modern daemon adds identity and revision fields", () => {
+    const familiarUuid = "eeeeeeee-0000-4000-8000-000000000001";
+    const proposalId = "cccccccc-0001-4001-8001-000000000001";
+    const writer = "familiar:echo";
+    const staged = {
+      id: proposalId,
+      familiar_id: familiarUuid,
+      writer,
+      channel: "Mutation",
+      thread_id: "aaaaaaa2-0002-4002-8002-000000000001",
+      fray: { Frayed: { strand: null, channel: "Mutation", reason: "ContentHashMismatch" } },
+      edits: [{ surface: "MEMORY.md", contents: { encoding: "utf8", data: "proposed" } }],
+      staged_at: [2026, 196, 9, 0, 2, 0, 0, 0, 0],
+    };
+    const legacySummary = {
+      proposalId,
+      familiarId: "echo",
+      writer,
+      stagedAt: "2026-07-15T09:00:02Z",
+      targets: ["MEMORY.md"],
+      reviewKind: "authority",
+      familiarUuid,
+      proposalRevision: "a".repeat(64),
+    };
+
+    assert.deepEqual(normalizeProposalAuthority(staged, legacySummary), {
+      state: "legacy",
+      reviewKind: "authority",
+    });
+  });
+
+  it("blocks a legacy-shaped staged file carrying a partial Phase 5 envelope marker", () => {
+    const staged = {
+      id: "cccccccc-0001-4001-8001-000000000001",
+      familiar_id: "eeeeeeee-0000-4000-8000-000000000001",
+      writer: "familiar:echo",
+      channel: "Mutation",
+      thread_id: "aaaaaaa2-0002-4002-8002-000000000001",
+      fray: { Frayed: { strand: null, channel: "Mutation", reason: "ContentHashMismatch" } },
+      edits: [{ surface: "MEMORY.md", contents: { encoding: "utf8", data: "proposed" } }],
+      staged_at: [2026, 196, 9, 0, 2, 0, 0, 0, 0],
+      schema: "phase5_v1",
+    };
+
+    assert.deepEqual(normalizeProposalAuthority(staged), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
+  });
+
+  it("classifies a Phase 5 summary missing approvalPath as daemon-unparseable", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { approvalPath: _approvalPath, ...missingApprovalPath } = daemon;
+
+    assert.deepEqual(normalizeProposalAuthority(staged, missingApprovalPath), {
+      state: "blocked",
+      why: "daemon-unparseable",
+    });
+  });
+
+  it("reserves unknown-lifecycle for otherwise parseable lifecycle and path values", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { approvalPath: _approvalPath, ...missingApprovalPath } = daemon;
+    const malformed = [
+      { ...missingApprovalPath, lifecycle: "future_lifecycle" },
+      {
+        ...daemon,
+        approvalPath: { ...daemon.approvalPath, variant: "future_path" },
+        affectedRegions: "not-an-array",
+      },
+    ];
+
+    for (const summary of malformed) {
+      assert.deepEqual(normalizeProposalAuthority(staged, summary), {
+        state: "blocked",
+        why: "daemon-unparseable",
+      });
+    }
+  });
+
+  it("accepts explicit null nullable deadlines but rejects malformed values", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const nullable = normalizeProposal("phase5-nullable.json", staged, daemon);
+    assert.equal(nullable.authority.state, "verified");
+    if (nullable.authority.state !== "verified") return;
+    assert.equal(nullable.authority.approvalPath.vetoDeadline, null);
+    assert.equal(nullable.authority.earliestClose, null);
+
+    const malformedVeto = normalizeProposal(
+      "phase5-malformed-veto.json",
+      staged,
+      { ...daemon, approvalPath: { ...daemon.approvalPath, veto_deadline: "not-a-timestamp" } },
+    );
+    assert.equal(malformedVeto.authority.state, "blocked");
+
+    const malformedClose = normalizeProposal(
+      "phase5-malformed-close.json",
+      staged,
+      { ...daemon, earliestClose: "not-a-timestamp" },
+    );
+    assert.equal(malformedClose.authority.state, "blocked");
+  });
+
+  it("uses staged familiar_id as the canonical familiar UUID", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const view = normalizeProposal("phase5-snake-familiar.json", staged, daemon);
+    assert.equal(view.payload?.familiarId, "eeeeeeee-0000-4000-8000-000000000098");
+    assert.equal(view.authority.state, "verified");
+  });
+
+  it("keeps affectedRegions as daemon display metadata", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const view = normalizeProposal("phase5-regions.json", staged, {
+      ...daemon,
+      affectedRegions: ["display-only-region"],
+    });
+    assert.equal(view.authority.state, "verified");
+    if (view.authority.state !== "verified") return;
+    assert.deepEqual(view.authority.affectedRegions, ["display-only-region"]);
+  });
+
+  it("blocks lifecycle and ApprovalPath combinations outside the contract mapping", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const invalid = [
+      {
+        ...daemon,
+        approvalPath: {
+          variant: "auto_regression",
+          label: "auto",
+          veto_deadline: null,
+          affected_surfaces: ["MEMORY.md"],
+        },
+      },
+      {
+        ...daemon,
+        approvalPath: {
+          variant: "familiar_coherence",
+          label: "familiar_review",
+          veto_deadline: null,
+          affected_surfaces: ["MEMORY.md"],
+        },
+        lifecycle: "veto_window_open",
+      },
+    ];
+
+    for (const [index, summary] of invalid.entries()) {
+      assert.deepEqual(normalizeProposal(`phase5-invalid-${index}.json`, staged, summary).authority, {
+        state: "blocked",
+        why: "unknown-lifecycle",
+      });
+    }
+  });
+
+  it("classifies unknown path and lifecycle enum values as unknown-lifecycle", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const unknown = [
+      {
+        ...daemon,
+        approvalPath: { ...daemon.approvalPath, variant: "future_path" },
+      },
+      {
+        ...daemon,
+        lifecycle: "future_lifecycle",
+      },
+      {
+        ...daemon,
+        approvalPath: { ...daemon.approvalPath, variant: "toString" },
+      },
+      {
+        ...daemon,
+        lifecycle: "toString",
+      },
+    ];
+
+    for (const summary of unknown) {
+      assert.deepEqual(normalizeProposalAuthority(staged, summary), {
+        state: "blocked",
+        why: "unknown-lifecycle",
+      });
+    }
+  });
+
+  it("preserves custom approval labels and the rationale-bearing path variant", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const authority = normalizeProposalAuthority(staged, {
+      ...daemon,
+      approvalPath: {
+        ...daemon.approvalPath,
+        variant: "human_approval_with_rationale",
+        label: "Review with your own words",
+      },
+    });
+
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.equal(authority.approvalPath.label, "Review with your own words");
+    assert.equal(authority.approvalPath.variant, "human-approval-with-rationale");
+    assert.deepEqual(authority.availableDecisions, ["approve", "reject"]);
+  });
+
+  it("accepts a nullable blocked reason and exposes no blocked actions", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const authority = normalizeProposalAuthority(staged, {
+      ...daemon,
+      lifecycle: "blocked",
+      blockedReason: null,
+    });
+
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.equal(authority.blockedReason, null);
+    assert.deepEqual(authority.availableDecisions, []);
+  });
+
+  it("accepts ready-for-replay after a veto-bearing path", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const authority = normalizeProposalAuthority(staged, {
+      ...daemon,
+      approvalPath: {
+        ...daemon.approvalPath,
+        variant: "familiar_coherence",
+        label: "Custom coherence review",
+        veto_deadline: "2026-07-15T09:30:00Z",
+      },
+      lifecycle: "ready_for_replay",
+    });
+
+    assert.equal(authority.state, "verified");
+    if (authority.state !== "verified") return;
+    assert.deepEqual(authority.availableDecisions, []);
+  });
+
+  it("treats earliestClose as independent display data", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const summaries = [
+      {
+        ...daemon,
+        earliestClose: "2026-07-15T09:05:00Z",
+      },
+      {
+        ...daemon,
+        approvalPath: {
+          ...daemon.approvalPath,
+          variant: "auto_regression",
+          veto_deadline: "2026-07-15T09:30:00Z",
+        },
+        lifecycle: "veto_window_open",
+        earliestClose: null,
+      },
+    ];
+
+    for (const [index, summary] of summaries.entries()) {
+      assert.equal(
+        normalizeProposal(`phase5-independent-close-${index}.json`, staged, summary).authority.state,
+        "verified",
+        `independent earliestClose case ${index}`,
+      );
+    }
+  });
+
+  it("maps every recognized veto path carrying a deadline to reject only", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const variants = [
+      "auto_regression",
+      "familiar_coherence",
+      "human_approval",
+      "human_approval_with_rationale",
+    ] as const;
+
+    for (const variant of variants) {
+      const authority = normalizeProposalAuthority(staged, {
+        ...daemon,
+        approvalPath: {
+          ...daemon.approvalPath,
+          variant,
+          label: `Custom ${variant}`,
+          veto_deadline: "2026-07-15T09:30:00Z",
+        },
+        lifecycle: "veto_window_open",
+      });
+      assert.equal(authority.state, "verified", variant);
+      if (authority.state !== "verified") continue;
+      assert.deepEqual(authority.availableDecisions, ["reject"], variant);
+    }
+  });
+
+  it("normalizes a Phase 5 raw envelope into verified authority with exact lifecycle mapping", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const summary = {
+      ...daemon,
+      approvalPath: {
+        variant: "human_approval_with_rationale",
+        label: "human_required",
+        veto_deadline: null,
+        affected_surfaces: ["MEMORY.md"],
+      },
+    };
+
+    const authority = normalizeProposalAuthority(staged, summary);
+    assert.deepEqual(authority, {
+      state: "verified",
+      proposalRevision: summary.proposalRevision,
+      familiarUuid: daemon.familiarUuid,
+      approvalPath: {
+        variant: "human-approval-with-rationale",
+        label: "human_required",
+        vetoDeadline: null,
+        affectedSurfaces: ["MEMORY.md"],
+      },
+      lifecycle: "awaiting-human-approval",
+      blockedReason: null,
+      earliestClose: null,
+      affectedRegions: ["memory_conventions"],
+      availableDecisions: ["approve", "reject"],
+    });
+
+    const view = normalizeProposal("phase5.json", staged, summary);
+    assert.equal(view.parse, "ok");
+    assert.equal(view.authority.state, "verified");
+    assert.equal(view.authority.approvalPath.label, "human_required");
+    assert.deepEqual(view.authority.availableDecisions, ["approve", "reject"]);
+  });
+
+  it("maps veto-window-open proposals to reject only", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const summary = {
+      ...daemon,
+      approvalPath: {
+        variant: "familiar_coherence",
+        label: "familiar_review",
+        veto_deadline: "2026-07-15T09:35:00Z",
+        affected_surfaces: ["MEMORY.md"],
+      },
+      lifecycle: "veto_window_open",
+      earliestClose: "2026-07-15T09:05:00Z",
+    };
+
+    const view = normalizeProposal("phase5-veto.json", staged, summary);
+    assert.equal(view.authority.state, "verified");
+    assert.deepEqual(view.authority.availableDecisions, ["reject"]);
+    assert.equal(view.authority.approvalPath.label, "familiar_review");
+  });
+
+  it("blocks mismatched phase 5 authority instead of falling back to legacy", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const summary = {
+      ...daemon,
+      proposalRevision: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    };
+
+    const view = normalizeProposal("phase5-mismatch.json", staged, summary);
+    assert.equal(view.authority.state, "blocked");
+    assert.notEqual(view.authority.state, "legacy");
   });
 
   it("marks structurally invalid payloads corrupt (R6) — no partial salvage", () => {

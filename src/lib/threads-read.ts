@@ -215,6 +215,11 @@ export type AuditEntryView = {
   recordedAt: string;
 };
 
+import {
+  normalizeProposalAuthority,
+  type ProposalAuthorityView,
+} from "./proposal-authority.ts";
+
 export type ProposalView = {
   file: string;
   parse: "ok" | "corrupt";
@@ -228,6 +233,11 @@ export type ProposalView = {
     edits: { surface: string; contents: { encoding: "utf8" | "base64"; data: string } }[];
     stagedAt: string | null;
   } | null;
+  authority?: ProposalAuthorityView;
+};
+
+export type NormalizedProposalView = ProposalView & {
+  authority: ProposalAuthorityView;
 };
 
 // ---------------------------------------------------------------------------
@@ -589,35 +599,53 @@ export function normalizeStrandsOfThread(v: unknown, observed?: ObservedMap): St
 // ---------------------------------------------------------------------------
 // PendingProposal (§2.6)
 
-export function normalizeProposal(fileName: string, raw: unknown): ProposalView {
-  if (!isRecord(raw) || typeof raw.id !== "string" || !Array.isArray(raw.edits)) {
-    return { file: fileName, parse: "corrupt", payload: null };
+export function normalizeProposal(fileName: string, raw: unknown, daemonSummary?: unknown): NormalizedProposalView {
+  const candidate = isRecord(raw) && isRecord(raw.pending) ? raw.pending : raw;
+  if (!isRecord(candidate) || typeof candidate.id !== "string" || !Array.isArray(candidate.edits)) {
+    return {
+      file: fileName,
+      parse: "corrupt",
+      payload: null,
+      authority: normalizeProposalAuthority(raw, daemonSummary, null),
+    };
   }
   const edits: NonNullable<ProposalView["payload"]>["edits"] = [];
-  for (const e of raw.edits) {
+  for (const e of candidate.edits) {
     if (!isRecord(e) || typeof e.surface !== "string" || !isRecord(e.contents)) {
-      return { file: fileName, parse: "corrupt", payload: null };
+      return {
+        file: fileName,
+        parse: "corrupt",
+        payload: null,
+        authority: normalizeProposalAuthority(raw, daemonSummary, null),
+      };
     }
     const encoding = e.contents.encoding;
     const data = e.contents.data;
     if ((encoding !== "utf8" && encoding !== "base64") || typeof data !== "string") {
-      return { file: fileName, parse: "corrupt", payload: null };
+      return {
+        file: fileName,
+        parse: "corrupt",
+        payload: null,
+        authority: normalizeProposalAuthority(raw, daemonSummary, null),
+      };
     }
     edits.push({ surface: e.surface, contents: { encoding, data } });
   }
+  const payload = {
+    id: candidate.id,
+    familiarId: typeof candidate.familiar_id === "string" ? candidate.familiar_id : typeof candidate.familiarId === "string" ? candidate.familiarId : "",
+    writer: typeof candidate.writer === "string" ? candidate.writer : "",
+    channel: normalizeChannel(candidate.channel),
+    threadId: typeof candidate.thread_id === "string" ? candidate.thread_id : typeof candidate.threadId === "string" ? candidate.threadId : "",
+    fray: normalizeTension(candidate.fray),
+    edits,
+    stagedAt: timeArrayToIso(candidate.staged_at ?? candidate.stagedAt),
+  };
   return {
     file: fileName,
     parse: "ok",
-    payload: {
-      id: raw.id,
-      familiarId: typeof raw.familiar_id === "string" ? raw.familiar_id : "",
-      writer: typeof raw.writer === "string" ? raw.writer : "",
-      channel: normalizeChannel(raw.channel),
-      threadId: typeof raw.thread_id === "string" ? raw.thread_id : "",
-      fray: normalizeTension(raw.fray),
-      edits,
-      stagedAt: timeArrayToIso(raw.staged_at),
-    },
+    payload,
+    authority: normalizeProposalAuthority(raw, daemonSummary, payload),
   };
 }
 
