@@ -2,10 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
+const source = readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8");
 const card = source.match(/function FamiliarRosterCard[\s\S]*?\n\}\n/)?.[0] ?? "";
 
-assert.ok(card.length > 0, "FamiliarRosterCard function should be present in familiars-view.tsx");
+assert.ok(card.length > 0, "FamiliarRosterCard function should be present in familiars-view-sections.tsx");
 
 assert.match(card, /aria-label=\{`Open \$\{familiar\.display_name\}`\}/, "Card has accessible label naming the familiar");
 

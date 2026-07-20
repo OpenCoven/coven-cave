@@ -19,7 +19,6 @@ import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
