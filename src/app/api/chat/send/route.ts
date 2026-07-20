@@ -34,7 +34,6 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand } from "@/lib/coven-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -79,7 +78,7 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, covenRunSupportsAddDirFlag, canonicalHarnessId } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -142,6 +141,11 @@ import {
   resolveMentionedFiles,
   writeImageAttachmentsToTemp,
 } from "./chat-send-attachments";
+import {
+  covenRunSupportsAddDir,
+  covenRunSupportsModel,
+  covenRunSupportsPermission,
+} from "./chat-send-capabilities";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -435,146 +439,6 @@ async function maybeQueueOfflineChat(args: {
       connection: "keep-alive",
     },
   });
-}
-
-// Model parity: probe once per process whether the installed `coven run`
-// advertises `--model`. `coven run` rejects unknown flags, so forwarding must be
-// a no-op until the companion CLI change ships. Cached; failures resolve false.
-let covenRunModelFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsModel(): Promise<boolean> {
-  if (!covenRunModelFlagProbe) {
-    covenRunModelFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsModelFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunModelFlagProbe;
-}
-
-// Parallel capability probe for `coven run --permission` (the sandbox flag added
-// in @opencoven/cli). Same shape/caching as the model probe; a CLI that predates
-// the flag rejects unknown flags, so forwarding must stay gated to a no-op.
-let covenRunPermissionFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsPermission(): Promise<boolean> {
-  if (!covenRunPermissionFlagProbe) {
-    covenRunPermissionFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsPermissionFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunPermissionFlagProbe;
-}
-
-// Same gated probe for `coven run --add-dir <DIR>` (repeatable). Granted
-// project roots must be trusted by the spawned harness itself — the
-// runtime-scope preamble only DESCRIBES the grants, and a harness that trusts
-// nothing but its cwd denies every access to them (non-interactive sessions
-// cannot re-request permission mid-turn). Cached; failures resolve false.
-let covenRunAddDirFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsAddDir(): Promise<boolean> {
-  if (!covenRunAddDirFlagProbe) {
-    covenRunAddDirFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const { command, fixedArgs } = covenLaunchCommand();
-        const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: harnessSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsAddDirFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunAddDirFlagProbe;
 }
 
 function resolveSendModelMetadata(args: {
