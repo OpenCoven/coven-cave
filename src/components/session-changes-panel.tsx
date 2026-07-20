@@ -13,6 +13,15 @@ import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
 import { checkpointLabel, formatBytes, splitFilePath } from "@/lib/session-changes-format";
+import {
+  fetchSessionCheckpoints,
+  fetchSessionFileDiff,
+  mutateSessionChanges,
+  type ChangedFile,
+  type CheckpointMeta,
+  type DiffState,
+  type FileStatus,
+} from "@/lib/session-changes-api";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -25,16 +34,6 @@ import { checkpointLabel, formatBytes, splitFilePath } from "@/lib/session-chang
 
 const POLL_MS = 5000;
 
-type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
-
-type ChangedFile = {
-  path: string;
-  status: FileStatus;
-  renamedFrom?: string;
-  insertions?: number;
-  deletions?: number;
-};
-
 type ChangesResponse = {
   ok?: boolean;
   repo?: boolean;
@@ -42,15 +41,6 @@ type ChangesResponse = {
   files?: ChangedFile[];
   error?: string;
 };
-
-type DiffState = {
-  loading: boolean;
-  diff?: string;
-  truncated?: boolean;
-  error?: string;
-};
-
-type CheckpointMeta = { name: string; savedAt: string; bytes: number };
 
 const STATUS_META: Record<FileStatus, { letter: string; label: string; color: string }> = {
   modified: { letter: "M", label: "modified", color: "var(--color-warning)" },
@@ -460,12 +450,7 @@ export function SessionChangesInner({
 
   const loadCheckpoints = useCallback(async () => {
     try {
-      const res = await fetch(
-        `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
-        { cache: "no-store" },
-      );
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; checkpoints?: CheckpointMeta[] };
-      if (json.ok) setCheckpoints(json.checkpoints ?? []);
+      setCheckpoints(await fetchSessionCheckpoints(fetch, projectRoot));
     } catch {
       /* checkpoint list is auxiliary — don't surface as a panel error */
     }
@@ -515,15 +500,10 @@ export function SessionChangesInner({
     async (filePath: string, silent = false) => {
       if (!silent) setDiffs((prev) => ({ ...prev, [filePath]: { loading: true } }));
       try {
-        const res = await fetch(
-          `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&path=${encodeURIComponent(filePath)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as { ok?: boolean; diff?: string; truncated?: boolean; error?: string };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        const json = await fetchSessionFileDiff(fetch, projectRoot, filePath);
         setDiffs((prev) => ({
           ...prev,
-          [filePath]: { loading: false, diff: json.diff ?? "", truncated: json.truncated },
+          [filePath]: { loading: false, diff: json.diff, truncated: json.truncated },
         }));
       } catch (err) {
         if (silent) return; // keep the last good diff on a background refresh
@@ -590,20 +570,11 @@ export function SessionChangesInner({
     setActionError(null);
     setCheckpointMessage(null);
     try {
-      const res = await fetch("/api/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectRoot,
-          action: "checkpoint",
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
+      await mutateSessionChanges<{
         ok?: boolean;
         checkpointPath?: string;
         error?: string;
-      };
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      }>(fetch, projectRoot, "checkpoint");
       setCheckpointMessage("Checkpoint saved.");
       setCheckpointsOpen(true);
       void loadCheckpoints();
@@ -620,13 +591,7 @@ export function SessionChangesInner({
       setActionError(null);
       setCheckpointMessage(null);
       try {
-        const res = await fetch("/api/changes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectRoot, action: "restore-checkpoint", checkpoint: name }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        await mutateSessionChanges(fetch, projectRoot, "restore-checkpoint", { checkpoint: name });
         setCheckpointMessage(`Restored checkpoint ${checkpointLabel(name)}.`);
         setDiffs({});
         await load();
@@ -644,13 +609,7 @@ export function SessionChangesInner({
       setBusyCheckpoint(name);
       setActionError(null);
       try {
-        const res = await fetch("/api/changes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectRoot, action: "delete-checkpoint", checkpoint: name }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        await mutateSessionChanges(fetch, projectRoot, "delete-checkpoint", { checkpoint: name });
         await loadCheckpoints();
       } catch (err) {
         setActionError(err instanceof Error ? err.message : String(err));
@@ -666,24 +625,17 @@ export function SessionChangesInner({
       setRevertingPath(file.path);
       setActionError(null);
       try {
-        const res = await fetch("/api/changes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectRoot,
-            path: file.path,
-            // New files (untracked or staged-new) are deleted on revert; the
-            // confirm step the user just clicked through is the explicit
-            // consent for that.
-            confirmUntracked: file.status === "untracked" || file.status === "added",
-          }),
-        });
-        const json = (await res.json().catch(() => ({}))) as {
+        const json = await mutateSessionChanges<{
           ok?: boolean;
           error?: string;
           checkpointPath?: string;
-        };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        }>(fetch, projectRoot, "revert", {
+          path: file.path,
+          // New files (untracked or staged-new) are deleted on revert; the
+          // confirm step the user just clicked through is the explicit
+          // consent for that.
+          confirmUntracked: file.status === "untracked" || file.status === "added",
+        });
         setDiffs((prev) => {
           const next = { ...prev };
           delete next[file.path];
@@ -713,15 +665,9 @@ export function SessionChangesInner({
     setActionError(null);
     setPrUrl(null);
     try {
-      const res = await fetch("/api/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectRoot, action: "commit", message }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
+      const json = await mutateSessionChanges<{
         ok?: boolean; sha?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
-      };
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      }>(fetch, projectRoot, "commit", { message });
       setPostCommit({ sha: json.sha ?? "", branch: json.branch ?? "", onDefaultBranch: json.onDefaultBranch === true });
       announce("Changes committed.");
       setPrTitle(message.split("\n")[0].slice(0, 72));
@@ -744,13 +690,12 @@ export function SessionChangesInner({
     setCreatingPr(true);
     setActionError(null);
     try {
-      const res = await fetch("/api/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectRoot, action: "create-pr", title, prBody }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      const json = await mutateSessionChanges<{ ok?: boolean; url?: string; error?: string }>(
+        fetch,
+        projectRoot,
+        "create-pr",
+        { title, prBody },
+      );
       setPrUrl(json.url ?? null);
       if (json.url) announce("Pull request opened.");
       setPrOpen(false);
