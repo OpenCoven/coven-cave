@@ -8,17 +8,24 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
+// `sidecar_archive` is itself a file module. Keep the extracted siblings at
+// `src/` so the native-host module layout stays flat on every target.
+#[path = "sidecar_archive_cache.rs"]
 mod sidecar_archive_cache;
+#[path = "sidecar_archive_cleanup.rs"]
 mod sidecar_archive_cleanup;
+#[path = "sidecar_archive_extraction.rs"]
 mod sidecar_archive_extraction;
+#[path = "sidecar_archive_manifest.rs"]
 mod sidecar_archive_manifest;
+#[path = "sidecar_archive_preparation.rs"]
 mod sidecar_archive_preparation;
 
 use sidecar_archive_cache::{
     acquire_cache_lock, cleanup_staging_before_extraction, create_staging_directory,
     remove_cache_path, required_free_space, try_acquire_cache_lock,
 };
-use sidecar_archive_cleanup::cleanup_stale_sidecar_runtimes;
+pub(crate) use sidecar_archive_cleanup::cleanup_stale_sidecar_runtimes;
 use sidecar_archive_extraction::{extract_archive, tree_metrics};
 use sidecar_archive_manifest::{
     cache_key, is_sha256, read_manifest, SidecarArchiveManifest, ARCHIVE_FORMAT,

@@ -51,11 +51,11 @@ pub(super) const SIDECAR_STARTUP_EVENT: &str = "sidecar-startup-progress";
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SidecarStartupStatus {
-    phase: &'static str,
-    progress: u8,
-    message: String,
-    can_retry: bool,
-    can_cancel: bool,
+    pub(super) phase: &'static str,
+    pub(super) progress: u8,
+    pub(super) message: String,
+    pub(super) can_retry: bool,
+    pub(super) can_cancel: bool,
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
