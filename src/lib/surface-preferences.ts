@@ -90,7 +90,14 @@ export function readLegacySurfacePreferences(storage: Pick<Storage, "getItem"> |
   copy("cave:board:viewMode", "board.viewMode");
   copy("cave:board:groupBy", "board.groupBy");
   copy("cave:board:ganttGroup", "board.ganttGroup");
-  copy("cave:agents.lastSelected", "familiars.selectedId");
+  const lastSelectedFamiliar = read("cave:agents.lastSelected");
+  if (lastSelectedFamiliar !== null) {
+    values["familiars.selectedId"] = lastSelectedFamiliar;
+    // The legacy surface opened its detail view whenever it restored a
+    // selection. Preserve that behavior rather than leaving the migrated
+    // selection hidden behind the roster.
+    values["familiars.viewMode"] = "detail";
+  }
   copy("cave:inbox:group-by", "schedules.groupBy");
   const familiarFilter = read("cave:automations:familiar-filter");
   if (familiarFilter) {
@@ -162,6 +169,11 @@ export function useSurfacePreference<T>(spec: SurfacePreferenceSpec<T>): [T, (ne
       const candidate = typeof next === "function" ? (next as (previous: T) => T)(base) : next;
       const normalized = spec.parse(candidate);
       if (normalized === undefined) return current;
+      // A number of consumers synchronize a derived preference from an
+      // effect. Avoid replacing the whole registry with an equivalent value,
+      // which would otherwise change the setter identity and re-run that
+      // effect indefinitely.
+      if (Object.is(currentParsed, normalized)) return current;
       return { ...current, [spec.key]: normalized };
     });
   }, [context, spec]);

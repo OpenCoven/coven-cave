@@ -37,6 +37,7 @@ test("legacy fields migrate without replacing a new preference", () => {
   assert.deepEqual(legacy, {
     "board.viewMode": "table",
     "familiars.selectedId": "familiar-1",
+    "familiars.viewMode": "detail",
     "schedules.familiarFilter": "alpha,beta",
   });
   const newValues = { "board.viewMode": "gantt" };

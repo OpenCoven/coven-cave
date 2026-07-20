@@ -1483,7 +1483,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       // desktop view choice (for example Month) comes back on the next visit.
       setDeepLinkViewMode("agenda");
     }
-  }, [isMobile, mobileRibbonDayOpen, viewMode]);
+    // A responsive mobile override must also yield as soon as this surface is
+    // widened again; otherwise Agenda remains pinned for the rest of the mount
+    // even though the stored desktop choice was never changed.
+    if (!isMobile && deepLinkViewMode === "agenda") setDeepLinkViewMode(null);
+  }, [isMobile, mobileRibbonDayOpen, viewMode, deepLinkViewMode]);
   useEffect(() => {
     if (viewMode !== "day" && mobileRibbonDayOpen) setMobileRibbonDayOpen(false);
   }, [mobileRibbonDayOpen, viewMode]);

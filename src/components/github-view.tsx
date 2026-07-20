@@ -2437,24 +2437,24 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   );
 
   // Organization options come from the kind-filtered set; repository options
-  // narrow to the chosen org so the two selects cascade (org → repo).
+  // narrow to the chosen org so the two selects cascade (org → repo). Keep a
+  // restored scope present even when it has no current activity: this endpoint
+  // only returns the user's open/assigned items, not the account's complete
+  // repository access list.
   const orgOptions = useMemo(
-    () => Array.from(new Set(filtered.map((i) => orgOf(i.repo)))).sort((a, b) => a.localeCompare(b)),
-    [filtered],
+    () => Array.from(new Set([
+      ...filtered.map((i) => orgOf(i.repo)),
+      ...(orgFilter === "all" ? [] : [orgFilter]),
+    ])).sort((a, b) => a.localeCompare(b)),
+    [filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);
-    return Array.from(new Set(base.map((i) => i.repo))).sort((a, b) => a.localeCompare(b));
-  }, [filtered, orgFilter]);
-
-  // Drop a stale org/repo selection when the underlying options change (e.g.
-  // the kind filter or org filter removed the previously-selected value).
-  useEffect(() => {
-    if (orgFilter !== "all" && !orgOptions.includes(orgFilter)) setOrgFilter("all");
-  }, [orgOptions, orgFilter]);
-  useEffect(() => {
-    if (repoFilter !== "all" && !repoOptions.includes(repoFilter)) setRepoFilter("all");
-  }, [repoOptions, repoFilter]);
+    return Array.from(new Set([
+      ...base.map((i) => i.repo),
+      ...(repoFilter === "all" ? [] : [repoFilter]),
+    ])).sort((a, b) => a.localeCompare(b));
+  }, [filtered, orgFilter, repoFilter]);
   // Selecting a repo pins the Org filter to that repo's org (the Org select is
   // disabled while a repo is chosen — clearing the repo re-enables it).
   useEffect(() => {
@@ -2462,21 +2462,6 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     const org = orgOf(repoFilter);
     if (orgFilter !== org) setOrgFilter(org);
   }, [repoFilter, orgFilter]);
-
-  // Stored repository and organization names are meaningful only while the
-  // connected account still exposes them. Clear stale values after a successful
-  // refresh; use the unfiltered feed so changing the activity tab cannot erase
-  // an otherwise valid scope.
-  useEffect(() => {
-    if (loading || error) return;
-    if (repoFilter !== "all" && !items.some((item) => item.repo === repoFilter)) {
-      setRepoFilter("all");
-      return;
-    }
-    if (orgFilter !== "all" && !items.some((item) => orgOf(item.repo) === orgFilter)) {
-      setOrgFilter("all");
-    }
-  }, [items, loading, error, orgFilter, repoFilter, setOrgFilter, setRepoFilter]);
 
   const scoped = useMemo(
     () =>
@@ -2553,13 +2538,20 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     [items],
   );
 
+  const sameSelectedTarget = useCallback((item: GitHubItem) =>
+    selectedTarget !== null &&
+    item.repo === selectedTarget.repo &&
+    item.number === selectedTarget.number &&
+    (item.kind === selectedTarget.kind ||
+      ((item.kind === "pr" || item.kind === "review_request") &&
+        (selectedTarget.kind === "pr" || selectedTarget.kind === "review_request"))),
+  [selectedTarget]);
+
   useEffect(() => {
     if (!selectedTarget || loading || error) return;
-    const exists = items.some((item) =>
-      item.repo === selectedTarget.repo && item.number === selectedTarget.number && item.kind === selectedTarget.kind,
-    );
+    const exists = items.some(sameSelectedTarget);
     if (!exists) setSelectedTarget(null);
-  }, [items, loading, error, selectedTarget, setSelectedTarget]);
+  }, [items, loading, error, selectedTarget, sameSelectedTarget, setSelectedTarget]);
 
   // The deep-linked item may not be in the activity list (old PR, other repo):
   // prefer the live row when present (real title/state, row highlight), else
@@ -2581,10 +2573,8 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [deepLink, sorted]);
 
   const selectedItem = useMemo(
-    () => deepLinkItem ?? sorted.find((item) =>
-      selectedTarget !== null && item.repo === selectedTarget.repo && item.number === selectedTarget.number && item.kind === selectedTarget.kind,
-    ) ?? sorted[0] ?? null,
-    [deepLinkItem, sorted, selectedTarget],
+    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, sameSelectedTarget],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
