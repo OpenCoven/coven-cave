@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen } from "@/lib/parse-when";
 import { describeRecurrence, nextOccurrences } from "@/lib/schedule-plan";
 import { parseCron } from "@/lib/cron";
+import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readDateTimePrefs } from "@/lib/datetime-format";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
@@ -45,6 +46,14 @@ const RECUR_PRESETS: { value: RecurPreset; label: string }[] = [
   { value: "every-weekend", label: "Every weekend (same time)" },
   { value: "cron", label: "Cron expression…" },
 ];
+
+const WHEN_EXAMPLES = [
+  "in 30m",
+  "tomorrow at 9am",
+  "every tuesday 4pm",
+  "jul 20",
+] as const;
+type WhenExample = (typeof WHEN_EXAMPLES)[number];
 
 function recurrenceFor(
   preset: RecurPreset,
@@ -150,6 +159,7 @@ export function NewReminderModal({
   // user retypes the phrase does the parse retake the picker (whenDirty).
   const [whenDirty, setWhenDirty] = useState(false);
   const [link, setLink] = useState<LinkRef | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
@@ -163,11 +173,12 @@ export function NewReminderModal({
       setWhenText(editing.whenText ?? "");
       setManualFireAt(editing.whenText ? "" : toLocalInput(editing.fireAt));
       setFamiliarId(defaultFamiliarId);
-      const { preset, cronExpr: cron, customRec: custom } = presetForRecurrence(editing.recurrence);
-      setRecurPreset(preset);
-      setCronExpr(cron ?? "*/15 * * * *");
-      setCustomRec(custom ?? null);
+      const mapped = presetForRecurrence(editing.recurrence);
+      setRecurPreset(mapped.preset);
+      setCronExpr(mapped.cronExpr ?? "*/15 * * * *");
+      setCustomRec(mapped.customRec ?? null);
       setLink(editing.link ?? null);
+      setDetailsOpen(mapped.preset !== "none" || editing.link != null);
       setWhenDirty(false);
       setError(null);
       return;
@@ -180,6 +191,7 @@ export function NewReminderModal({
     setCronExpr("*/15 * * * *");
     setCustomRec(null);
     setLink(null);
+    setDetailsOpen(false);
     setWhenDirty(false);
     setError(null);
   }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle, editing]);
@@ -232,6 +244,13 @@ export function NewReminderModal({
     if (parsed) return parsed.fireAt;
     return null;
   }, [manualFireAt, parsed, recurPreset, cronNextFire]);
+
+  const selectWhenExample = (example: WhenExample) => {
+    setWhenText(example);
+    setManualFireAt("");
+    setWhenDirty(true);
+    setError(null);
+  };
 
   if (!open) return null;
 
@@ -292,12 +311,31 @@ export function NewReminderModal({
     planRecurrence && planRecurrence.type !== "none"
       ? nextOccurrences(planRecurrence, Date.now(), 3)
       : [];
+  const planSummary = planCadence ?? previewLabel;
+  const planDetail = planCadence
+    ? planUpcoming.length > 0
+      ? `Next: ${planUpcoming
+          .map((isoDate) =>
+            new Date(isoDate).toLocaleString(undefined, {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12,
+            }),
+          )
+          .join(" · ")}`
+      : "Next occurrences are not available yet."
+    : previewLabel
+      ? "Fires once."
+      : null;
 
   return (
     <div
       onClick={onClose}
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
     >
       <div
         ref={dialogRef}
@@ -306,233 +344,343 @@ export function NewReminderModal({
         aria-modal="true"
         aria-labelledby="new-reminder-title"
         tabIndex={-1}
-        className="w-[560px] max-w-[94vw] max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-6 shadow-2xl"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-[560px] max-w-[94vw] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[0_24px_70px_color-mix(in_oklch,var(--bg-base)_72%,transparent)] outline-none"
       >
-        <div className="mb-5 flex items-start justify-between">
-          <div>
-            <h2 id="new-reminder-title" className="text-lg font-semibold text-[var(--text-primary)]">
+        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6">
+          <div className="min-w-0">
+            <h2
+              id="new-reminder-title"
+              className="text-[19px] font-medium leading-tight text-[var(--text-primary)]"
+            >
               {isEditing ? "Edit reminder" : "New reminder"}
             </h2>
             <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              Type a natural phrase like “in 30m” or “every tuesday 4pm” — the plan below shows exactly what will fire.
+              Say when in plain words — the plan below shows exactly what fires.
             </p>
           </div>
           <IconButton
             onClick={onClose}
             icon="ph:x-bold"
             aria-label="Close"
-            className="border border-[var(--border-hairline)]"
+            size="sm"
+            className="shrink-0 border border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
           />
-        </div>
+        </header>
 
-        <Field label="Remind me to">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="check the deploy"
-            autoFocus={!coarse}
-            className="w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
-          />
-        </Field>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">
+          <div className="space-y-4">
+            <FloatingField id="new-reminder-what" label="Remind me to">
+              <input
+                id="new-reminder-what"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="check the deploy"
+                autoFocus={!coarse}
+                className="focus-ring h-11 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-transparent px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              />
+            </FloatingField>
 
-        <Field label="When">
-          <input
-            value={whenText}
-            onChange={(e) => {
-              setWhenText(e.target.value);
-              setWhenDirty(true);
-              if (e.target.value.trim()) setManualFireAt("");
-            }}
-            placeholder="in 30m · tomorrow at 9am · every tuesday 4pm · jul 20"
-            className={`w-full rounded-[var(--radius-control)] border bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
-              whenText && !parsed
-                ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
-                : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
-            }`}
-          />
-          <div
-            aria-live="polite"
-            className="mt-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]"
-          >
-            {whenText && !parsed ? (
-              <span>Couldn't parse — try “in 30m”, “tomorrow at 9am”, “every tuesday 4pm”, or use the picker below.</span>
-            ) : resolvedFireAt ? (
-              <div className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1.5">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="font-semibold uppercase tracking-widest text-[var(--accent-presence)]">
-                    {planCadence ? "Repeats" : "Once"}
-                  </span>
-                  <span className="text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                    {planCadence ?? previewLabel}
-                  </span>
+            <FloatingField id="new-reminder-when" label="When">
+              <input
+                id="new-reminder-when"
+                value={whenText}
+                onChange={(e) => {
+                  setWhenText(e.target.value);
+                  setWhenDirty(true);
+                  if (e.target.value.trim()) setManualFireAt("");
+                }}
+                placeholder="in 30m · tomorrow at 9am · every tuesday 4pm · jul 20"
+                className={`focus-ring h-11 w-full rounded-[var(--radius-control)] border bg-transparent px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] ${
+                  whenText && !parsed
+                    ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
+                    : "border-[var(--border-hairline)]"
+                }`}
+              />
+            </FloatingField>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-0.5 text-[11px] text-[var(--text-muted)]">Try</span>
+              {WHEN_EXAMPLES.map((example) => (
+                <Button
+                  key={example}
+                  variant="secondary"
+                  size="xs"
+                  onClick={() => selectWhenExample(example)}
+                  className="!h-6 !rounded-full !border-[var(--border-hairline)] !bg-transparent !px-2.5 !text-[11px] !font-normal !text-[var(--text-secondary)] hover:!bg-[var(--bg-hover)] hover:!text-[var(--text-primary)]"
+                >
+                  {example}
+                </Button>
+              ))}
+            </div>
+
+            <div aria-live="polite">
+              {whenText && !parsed ? (
+                <div className="rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_42%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_8%,var(--bg-raised))] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Couldn't parse that phrase. Try one of the examples, or open Adjust details
+                  to set an exact date and time.
                 </div>
-                {planUpcoming.length > 0 ? (
-                  <div className="mt-0.5">
-                    Next:{" "}
-                    {planUpcoming
-                      .map((isoDate) =>
-                        new Date(isoDate).toLocaleString(undefined, {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12,
-                        }),
-                      )
-                      .join(" · ")}
+              ) : resolvedFireAt ? (
+                <div
+                  data-reminder-plan="true"
+                  className="relative overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_52%,var(--bg-raised))] py-3 pl-5 pr-4"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-2 left-0 top-2 w-0.5 rounded-full bg-[var(--accent-presence)]"
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-[var(--accent-presence)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--accent-presence-foreground)]">
+                      {planCadence ? "Repeats" : "Once"}
+                    </span>
+                    <p
+                      id="new-reminder-plan-summary"
+                      className="min-w-0 text-[13px] font-medium leading-5 text-[var(--text-primary)]"
+                    >
+                      {planSummary}
+                    </p>
                   </div>
+                  {planDetail ? (
+                    <p className="mt-1 text-[11px] leading-4 text-[var(--text-muted)]">
+                      {planDetail}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Enter a phrase to preview the reminder plan.
+                </p>
+              )}
+            </div>
+
+            <div
+              aria-hidden="true"
+              className="h-px bg-[linear-gradient(90deg,transparent,var(--border-hairline)_18%,var(--border-hairline)_82%,transparent)]"
+            />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-expanded={detailsOpen}
+              aria-controls="new-reminder-details"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="!h-auto !p-0 !text-[12px] !font-medium !text-[var(--text-secondary)] hover:!bg-transparent hover:!text-[var(--text-primary)]"
+            >
+              <Icon
+                name="ph:caret-right"
+                width={12}
+                aria-hidden
+                className={`transition-transform ${detailsOpen ? "rotate-90" : ""}`}
+              />
+              {detailsOpen ? "Hide details" : "Adjust details"}
+            </Button>
+
+            {detailsOpen ? (
+              <div
+                id="new-reminder-details"
+                className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2"
+              >
+                <Field id="new-reminder-exact-date" label="Exact date / time">
+                  <input
+                    id="new-reminder-exact-date"
+                    type="datetime-local"
+                    value={manualFireAt}
+                    onChange={(e) => {
+                      setManualFireAt(e.target.value);
+                      if (e.target.value) setWhenText("");
+                    }}
+                    min={toLocalInput(new Date().toISOString())}
+                    className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-presence)]"
+                  />
+                </Field>
+
+                <Field id="new-reminder-repeat" label="Repeat">
+                  <Select
+                    id="new-reminder-repeat"
+                    label="Repeat"
+                    value={recurPreset}
+                    onChange={(v) => setRecurPreset(v as RecurPreset)}
+                    options={
+                      // "Custom" only exists while a phrase/edit holds an exact
+                      // schedule no named preset represents — never hand-pickable.
+                      recurPreset === "custom"
+                        ? [
+                            {
+                              value: "custom",
+                              label: `Custom — ${describeRecurrence(customRec ?? { type: "none" }, { hour12 }) ?? "from phrase"}`,
+                            },
+                            ...RECUR_PRESETS,
+                          ]
+                        : RECUR_PRESETS
+                    }
+                  />
+                </Field>
+
+                <Field id="new-reminder-familiar" label="Familiar">
+                  <Select
+                    id="new-reminder-familiar"
+                    label="Familiar"
+                    value={familiarId ?? ""}
+                    onChange={(v) => setFamiliarId(v || null)}
+                    options={[
+                      { value: "", label: "No familiar" },
+                      ...familiars.map((f) => ({
+                        value: f.id,
+                        label: `${f.display_name} · ${f.harness ?? "?"}`,
+                      })),
+                    ]}
+                  />
+                </Field>
+
+                <fieldset className="min-w-0 sm:col-span-2">
+                  <legend className="mb-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                    Link (optional)
+                  </legend>
+                  <ReminderLinkField value={link} onChange={setLink} />
+                </fieldset>
+
+                {recurPreset === "cron" ? (
+                  <Field
+                    id="new-reminder-cron"
+                    label="Cron expression (min hour day month weekday)"
+                    className="sm:col-span-2"
+                  >
+                    <input
+                      id="new-reminder-cron"
+                      value={cronExpr}
+                      onChange={(e) => setCronExpr(e.target.value)}
+                      placeholder="*/15 * * * *"
+                      className={`focus-ring h-10 w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)]/40 px-3 font-mono text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] ${
+                        cronExpr && !cronFields
+                          ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
+                          : "border-[var(--border-hairline)]"
+                      }`}
+                    />
+                    <div className="mt-1 text-[10px] leading-4 text-[var(--text-muted)]">
+                      {cronExpr && !cronFields
+                        ? "Invalid cron expression."
+                        : cronNextFire
+                          ? `Next fire → ${new Date(cronNextFire).toLocaleString(undefined, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                              hour12: readDateTimePrefs().clock !== "24h",
+                            })}`
+                          : "Try “0 9 * * 1-5” for weekdays at 9am."}
+                    </div>
+                  </Field>
                 ) : null}
               </div>
-            ) : (
-              <span>Or pick exactly:</span>
-            )}
+            ) : null}
           </div>
-        </Field>
-
-        <Field label="Exact date / time">
-          <input
-            type="datetime-local"
-            value={manualFireAt}
-            onChange={(e) => {
-              setManualFireAt(e.target.value);
-              if (e.target.value) setWhenText("");
-            }}
-            min={toLocalInput(new Date().toISOString())}
-            className="w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-presence)]"
-          />
-        </Field>
-
-        <div className="mb-4 grid grid-cols-2 gap-4">
-          <Field label="Repeat">
-            <Select
-              value={recurPreset}
-              onChange={(v) => setRecurPreset(v as RecurPreset)}
-              options={
-                // "Custom" only exists while a phrase/edit holds an exact
-                // schedule no named preset represents — never hand-pickable.
-                recurPreset === "custom"
-                  ? [
-                      {
-                        value: "custom",
-                        label: `Custom — ${describeRecurrence(customRec ?? { type: "none" }, { hour12 }) ?? "from phrase"}`,
-                      },
-                      ...RECUR_PRESETS,
-                    ]
-                  : RECUR_PRESETS
-              }
-            />
-          </Field>
-          <Field label="Familiar">
-            <Select
-              value={familiarId ?? ""}
-              onChange={(v) => setFamiliarId(v || null)}
-              options={[
-                { value: "", label: "No familiar" },
-                ...familiars.map((f) => ({
-                  value: f.id,
-                  label: `${f.display_name} · ${f.harness ?? "?"}`,
-                })),
-              ]}
-            />
-          </Field>
         </div>
 
-        {recurPreset === "cron" ? (
-          <Field label="Cron expression (min hour day month weekday)">
-            <input
-              value={cronExpr}
-              onChange={(e) => setCronExpr(e.target.value)}
-              placeholder="*/15 * * * *"
-              className={`w-full rounded-[var(--radius-control)] border bg-[var(--bg-raised)]/40 px-3 py-2 font-mono text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
-                cronExpr && !cronFields
-                  ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
-                  : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
-              }`}
-            />
-            <div className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-              {cronExpr && !cronFields
-                ? "Invalid cron expression."
-                : cronNextFire
-                ? `Next fire → ${new Date(cronNextFire).toLocaleString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                    // Match the fire-time preview above — honor the 12h/24h pref.
-                    hour12: readDateTimePrefs().clock !== "24h",
-                  })}`
-                : "Try “0 9 * * 1-5” for weekdays at 9am."}
-            </div>
-          </Field>
-        ) : null}
-
-        <Field label="Link (optional)">
-          <ReminderLinkField value={link} onChange={setLink} />
-        </Field>
-
         {error ? (
-          <div className="mb-3 rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-3 py-1.5 text-xs text-[var(--color-warning)]">
+          <div className="mx-6 mb-2 rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-warning)]">
             {error}
           </div>
         ) : null}
 
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="danger"
-            onClick={create}
-            disabled={!title.trim() || !resolvedFireAt || busy}
-          >
-            {isEditing
-              ? busy
-                ? "Saving…"
-                : "Save"
-              : busy
-              ? "Creating…"
-              : previewLabel
-              ? `Remind ${previewLabel}`
-              : "Create"}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-        </div>
+        <footer className="px-6 pb-5 pt-3">
+          <div
+            aria-hidden="true"
+            className="mb-3 h-px bg-[linear-gradient(90deg,transparent,var(--border-hairline)_18%,var(--border-hairline)_82%,transparent)]"
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={create}
+              disabled={!title.trim() || !resolvedFireAt || busy}
+              className="w-full min-w-24 sm:w-auto !border-[color-mix(in_oklch,var(--accent-presence)_52%,var(--border-strong))] !bg-transparent !whitespace-normal !text-center hover:!bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))]"
+            >
+              {isEditing
+                ? busy
+                  ? "Saving…"
+                  : "Save"
+                : busy
+                  ? "Creating…"
+                  : previewLabel
+                    ? `Remind ${previewLabel}`
+                    : "Create"}
+            </Button>
+          </div>
+        </footer>
       </div>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function FloatingField({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+}) {
   return (
-    <label className="mb-4 block">
-      <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
+    <div className="relative pt-1">
+      <label
+        htmlFor={id}
+        className="absolute left-3 top-1 z-10 -translate-y-1/2 bg-[var(--bg-raised)] px-1 text-[10px] font-medium text-[var(--text-muted)]"
+      >
         {label}
-      </div>
+      </label>
       {children}
-    </label>
+    </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  children,
+  className = "",
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label
+        htmlFor={id}
+        className="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
   );
 }
 
 function Select({
+  id,
+  label,
   value,
   onChange,
   options,
 }: {
+  id: string;
+  label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
 }) {
   return (
     <StandardSelect
-      label="Choose value"
+      id={id}
+      label={label}
       value={value}
       onChange={onChange}
       options={options}
-      className="w-full border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-presence)]"
+      className="h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-presence)]"
     />
   );
 }
