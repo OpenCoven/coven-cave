@@ -1,9 +1,7 @@
 // @ts-nocheck
-// Sidebar open-state memory: the GLOBAL nav panel's open/collapsed state
-// (cave:shell:nav-open) is separate from the persistent Chats list pane.
-// Remembered routes restore that nav state on boot and group switches, while
-// visit-collapsed chat routes temporarily collapse the global nav without
-// overwriting the saved preference or the list pane's own layout.
+// Sidebar open-state memory belongs only to remembered navigation routes.
+// Chat uses a separate contextual sidebar group that opens on entry without
+// reading or overwriting the global cave:shell:nav-open preference.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -18,7 +16,7 @@ assert.match(
 
 assert.match(
   shell,
-  /export type ShellNavPolicy = "remembered" \| "visit-collapsed";/,
+  /export type ShellNavPolicy = "remembered" \| "visit-collapsed" \| "chat-contextual";/,
   "Shell exports the route-scoped nav policy contract",
 );
 
@@ -36,7 +34,7 @@ assert.ok(applyEffect.length > 0, "the nav preference apply effect exists");
 assert.match(
   applyEffect,
   /if \(navPolicy !== "remembered"\) \{\s*navPrefArmedGroupRef\.current = null;\s*return;\s*\}/,
-  "visit-collapsed never arms remembered-preference writes",
+  "visit-collapsed and chat-contextual never arm remembered-preference writes",
 );
 assert.match(
   applyEffect,
@@ -59,19 +57,41 @@ assert.match(
   "the effect arms preference writes for the settled group",
 );
 
-const visitCollapseEffect =
-  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy\]\);/)?.[0] ?? "";
+const routePolicyEffect =
+  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy, defaultLayout\?\.nav\]\);/)?.[0] ?? "";
 assert.ok(
-  visitCollapseEffect.length > 0,
-  "the visit-collapsed layout effect reruns after the real nav panel mounts",
+  routePolicyEffect.length > 0,
+  "the route-policy layout effect reruns after the real nav panel mounts",
 );
 assert.equal(
-  compactWhitespace(visitCollapseEffect),
+  compactWhitespace(routePolicyEffect),
   compactWhitespace(`
     const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
     const visitCollapsedGroupRef = useRef<string | null>(null);
+    const chatContextualGroupRef = useRef<string | null>(null);
     useLayoutEffect(() => {
       if (!mounted) return;
+      if (navPolicy === "chat-contextual") {
+        visitCollapsedGroupRef.current = null;
+        navPrefArmedGroupRef.current = null;
+        if (
+          previousNavPolicyRef.current !== navPolicy ||
+          chatContextualGroupRef.current !== groupId
+        ) {
+          chatContextualGroupRef.current = groupId;
+          const panel = navRef.current;
+          if (panel?.isCollapsed()) {
+            const savedSize = defaultLayout?.nav;
+            panel.resize(
+              typeof savedSize === "number" && savedSize > 0 ? \`\${savedSize}%\` : "260px",
+            );
+          }
+          setNavOpen(true);
+        }
+        previousNavPolicyRef.current = navPolicy;
+        return;
+      }
+      chatContextualGroupRef.current = null;
       if (navPolicy !== "visit-collapsed") {
         visitCollapsedGroupRef.current = null;
         previousNavPolicyRef.current = navPolicy;
@@ -91,9 +111,15 @@ assert.equal(
         setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
-    }, [mounted, groupId, isMobile, navPolicy]);
+    }, [mounted, groupId, isMobile, navPolicy, defaultLayout?.nav]);
   `),
-  "entering visit-collapsed collapses once per desktop visit only after mount, preserves the visit marker across breakpoint round-trips, and resets that marker when leaving Chat",
+  "Chat restores once per contextual group entry without arming memory, while visit-collapsed keeps its desktop-only behavior",
+);
+
+assert.match(
+  shell,
+  /onLayoutChanged=\{\(layout, detail\) => \{[\s\S]{0,240}?if \(!chatContextual \|\| \(layout\.nav \?\? 0\) > 0\) \{\s*onLayoutChanged\(layout, detail\);\s*\}\s*\}\}/,
+  "Chat keeps its last expanded layout instead of persisting the collapsed zero-width layout",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
@@ -115,12 +141,17 @@ assert.match(
 assert.match(
   shell,
   /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/,
-  "hover-to-peek is disabled for visit-collapsed routes",
+  "hover-to-peek is disabled for visit-collapsed and chat-contextual routes",
 );
 assert.match(
   shell,
   /const navPeekVisible = navPeekEnabled && navPeeking;/,
   "peek visibility is synchronously gated so stale state cannot leak onto the first Chat paint",
+);
+assert.match(
+  shell,
+  /className=\{`shell-nav\$\{!isMobile && !chatContextual && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
+  "Chat's zero-width collapsed sidebar never receives remembered navigation rail or peek styling",
 );
 assert.match(
   shell,
@@ -131,6 +162,17 @@ assert.match(
   shell,
   /onMouseLeave=\{navPeekEnabled \? \(\) => setNavPeeking\(false\) : undefined\}/,
   "hover leave only peeks when the remembered nav policy allows it",
+);
+
+assert.match(
+  shell,
+  /aria-label=\{chatContextual\s*\? navOpen\s*\? "Collapse Chat sidebar"\s*: "Expand Chat sidebar"\s*: navOpen\s*\? "Collapse navigation to icons"\s*: "Expand navigation"\}/,
+  "the top-left toggle announces Chat sidebar actions in contextual mode",
+);
+assert.match(
+  shell,
+  /title=\{chatContextual\s*\? navOpen\s*\? `Collapse Chat sidebar \(\$\{leftPanelShortcutLabel\}\)`\s*: `Expand Chat sidebar \(\$\{leftPanelShortcutLabel\}\)`\s*: navOpen\s*\? `Collapse navigation \(\$\{leftPanelShortcutLabel\}\)`\s*: `Expand navigation \(\$\{leftPanelShortcutLabel\}\)`\}/,
+  "the Chat toggle title stays contextual and includes the shortcut",
 );
 
 // Storage access is guarded — strict privacy mode must not crash the shell.
