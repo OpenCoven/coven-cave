@@ -34,6 +34,7 @@ import {
   type ToolEvent,
   type Turn,
 } from "@/lib/chat-turn-state";
+import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
@@ -3452,27 +3453,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // changes — NOT on every composer keystroke / caret move / hover, which all
   // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
   // per render).
-  const { groupedTurns, turnIndexMap } = useMemo(() => {
-    const grouped: TranscriptGroup[] = [];
-    for (const turn of activePath) {
-      if (turn.voiceCallId) {
-        const last = grouped[grouped.length - 1];
-        if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
-          last.turns.push(turn);
-          const firstAt = Date.parse(last.turns[0].createdAt);
-          const lastAt = Date.parse(last.turns[last.turns.length - 1].createdAt);
-          last.durationSec = Math.max(0, Math.floor((lastAt - firstAt) / 1000));
-        } else {
-          grouped.push({ kind: "call", callId: turn.voiceCallId, turns: [turn], durationSec: 0 });
-        }
-      } else {
-        grouped.push({ kind: "single", turn });
-      }
-    }
-    const turnIndexMap = new Map<string, number>();
-    for (let idx = 0; idx < activePath.length; idx++) turnIndexMap.set(activePath[idx].id, idx);
-    return { groupedTurns: grouped, turnIndexMap };
-  }, [activePath]);
+  const { groupedTurns, turnIndexMap } = useMemo(() => groupTranscriptTurns(activePath), [activePath]);
 
   // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
   // @-mention picker re-arms here (same any-edit-brings-it-back contract).
@@ -6289,10 +6270,6 @@ function splitSegmentsForGitHub(
 
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
 // The grouped-turn shapes built by ChatView's `groupedTurns` memo.
-type TranscriptVoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
-type TranscriptSingleItem = { kind: "single"; turn: Turn };
-type TranscriptGroup = TranscriptVoiceGroup | TranscriptSingleItem;
-
 /**
  * Per-row actions the transcript needs from ChatView. Routed through a
  * "latest ref" (`transcriptHandlersRef`, reassigned every ChatView render)

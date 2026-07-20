@@ -13,6 +13,10 @@ const chatViewSource = readFileSync(
   new URL("./chat-view.tsx", import.meta.url),
   "utf8",
 );
+const transcriptGroupsSource = readFileSync(
+  new URL("../lib/chat-transcript-groups.ts", import.meta.url),
+  "utf8",
+);
 
 const messageBubbleSource = readFileSync(
   new URL("./message-bubble.tsx", import.meta.url),
@@ -28,14 +32,14 @@ const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.match(
-  chatViewSource,
-  /const turnIndexMap = new Map(?:<[^>]+>)?\(\);/,
+  transcriptGroupsSource,
+  /turnIndexMap: new Map\(activePath\.map\(/,
   "creates a turnIndexMap Map",
 );
 
 assert.match(
-  chatViewSource,
-  /turnIndexMap\.set\([^;]*\.id,\s*\w+\);/,
+  transcriptGroupsSource,
+  /activePath\.map\(\(turn, index\) => \[turn\.id, index\]\)/,
   "populates turnIndexMap with turn ids and numeric indexes",
 );
 
