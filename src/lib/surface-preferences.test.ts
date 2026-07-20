@@ -66,6 +66,7 @@ test("every remounting surface opts into the registry while searches remain tran
     browser: read("../components/browser-pane.tsx"),
     grimoire: read("../components/grimoire-view.tsx"),
     workspace: read("../app/page.tsx"),
+    workspaceShell: read("../components/workspace.tsx"),
   };
   for (const [name, source] of Object.entries(sources)) {
     assert.match(source, /useSurfacePreference|WorkspaceSurfacePreferencesProvider/, `${name} participates in workspace preferences`);
@@ -75,7 +76,9 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.marketplace, /const \[query, setQuery\] = useState\(""\)/, "Marketplace search stays transient");
   assert.match(sources.github, /\(\) => deepLinkItem \?\? sorted\.find/, "an explicit GitHub deep link wins over restored selection");
   assert.match(sources.board, /const activeTab = deepLinkTab \?\? storedActiveTab/, "an explicit Board deep link wins without replacing the saved tab");
+  assert.match(sources.browser, /if \(transientNavigationUrlRef\.current\) return;/, "a queued Browser URL wins when preferences hydrate after its navigation request");
   assert.match(sources.marketplace, /initialSection === "roles" \|\| initialSection === "capabilities"\s*\? "browse"/, "Marketplace aliases override a saved section for the current visit");
+  assert.match(sources.workspaceShell, /setBoardViewMode\(intent\.view\);[\s\S]{0,120}setMode\("board"\)/, "command-palette board view choices are saved before a fresh BoardView mounts");
   assert.match(sources.grimoire, /useSurfacePreference\(surfacePreferenceSpecs\.grimoire\.selected\)/, "Grimoire restores its durable selected document through the registry");
   assert.match(sources.grimoire, /writeStoredTabs\(/, "Grimoire retains its existing resilient open-tab persistence");
   assert.match(sources.grimoire, /if \(deepLinkActiveRef\.current\) \{\s*deepLinkActiveRef\.current = false;/, "a one-visit Grimoire deep link yields to later user selections");

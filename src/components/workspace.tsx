@@ -314,6 +314,7 @@ export function Workspace() {
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
   const [grimoireView, setGrimoireView] = useSurfacePreference(surfacePreferenceSpecs.grimoire.view);
+  const [, setBoardViewMode] = useSurfacePreference(surfacePreferenceSpecs.board.viewMode);
   // Alias funnel: MODE_ALIASES (src/lib/workspace-mode.ts) is the single
   // source of truth for where every compatibility mode lands. groupchat /
   // journal / flow are rewritten HERE so `mode` never holds them (Group Chat
@@ -2164,6 +2165,7 @@ export function Workspace() {
     if (intent.kind === "set-board-view") {
       // Persist for a fresh mount, navigate to the board, then signal a live
       // switch in case the board is already mounted.
+      setBoardViewMode(intent.view);
       setMode("board");
       window.setTimeout(
         () => window.dispatchEvent(new CustomEvent("cave:board:set-view", { detail: { view: intent.view } })),

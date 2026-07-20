@@ -113,6 +113,10 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
   // only restores which tab was active and its latest committed URL.
   useEffect(() => {
     if (!preferencesHydrated) return;
+    // A queued cross-surface URL may be consumed while the registry is still
+    // hydrating. It is an explicit one-visit destination, so never replace it
+    // with the saved return tab/address on that first hydrated render.
+    if (transientNavigationUrlRef.current) return;
     const restored = tabs.find((tab) => tab.id === storedActiveTabId) ?? tabs[0];
     if (!restored) return;
     setActiveTabId(restored.id);
