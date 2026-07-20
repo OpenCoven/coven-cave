@@ -530,7 +530,13 @@ function ShellInner({
         chatContextualGroupRef.current !== groupId
       ) {
         chatContextualGroupRef.current = groupId;
-        navRef.current?.expand();
+        const panel = navRef.current;
+        if (panel?.isCollapsed()) {
+          const savedSize = defaultLayout?.nav;
+          panel.resize(
+            typeof savedSize === "number" && savedSize > 0 ? `${savedSize}%` : "260px",
+          );
+        }
         setNavOpen(true);
       }
       previousNavPolicyRef.current = navPolicy;
@@ -556,7 +562,7 @@ function ShellInner({
       setNavOpen(false);
     }
     previousNavPolicyRef.current = navPolicy;
-  }, [mounted, groupId, isMobile, navPolicy]);
+  }, [mounted, groupId, isMobile, navPolicy, defaultLayout?.nav]);
   useEffect(() => {
     if (navPolicy !== "remembered") {
       navPrefArmedGroupRef.current = null;
@@ -704,7 +710,13 @@ function ShellInner({
       orientation="horizontal"
       groupRef={groupRef}
       defaultLayout={defaultLayout}
-      onLayoutChanged={onLayoutChanged}
+      onLayoutChanged={(layout, detail) => {
+        // Chat always reopens on entry. Keep the last expanded layout so a
+        // collapsed 0% layout cannot erase the user's width across re-entry.
+        if (!chatContextual || (layout.nav ?? 0) > 0) {
+          onLayoutChanged(layout, detail);
+        }
+      }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
       <Panel

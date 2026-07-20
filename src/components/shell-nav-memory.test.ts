@@ -58,7 +58,7 @@ assert.match(
 );
 
 const routePolicyEffect =
-  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy\]\);/)?.[0] ?? "";
+  shell.match(/const previousNavPolicyRef = useRef<ShellNavPolicy>\("remembered"\);[\s\S]*?\}, \[mounted, groupId, isMobile, navPolicy, defaultLayout\?\.nav\]\);/)?.[0] ?? "";
 assert.ok(
   routePolicyEffect.length > 0,
   "the route-policy layout effect reruns after the real nav panel mounts",
@@ -79,7 +79,13 @@ assert.equal(
           chatContextualGroupRef.current !== groupId
         ) {
           chatContextualGroupRef.current = groupId;
-          navRef.current?.expand();
+          const panel = navRef.current;
+          if (panel?.isCollapsed()) {
+            const savedSize = defaultLayout?.nav;
+            panel.resize(
+              typeof savedSize === "number" && savedSize > 0 ? \`\${savedSize}%\` : "260px",
+            );
+          }
           setNavOpen(true);
         }
         previousNavPolicyRef.current = navPolicy;
@@ -105,9 +111,15 @@ assert.equal(
         setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
-    }, [mounted, groupId, isMobile, navPolicy]);
+    }, [mounted, groupId, isMobile, navPolicy, defaultLayout?.nav]);
   `),
-  "Chat expands once per contextual group entry without arming memory, while visit-collapsed keeps its desktop-only behavior",
+  "Chat restores once per contextual group entry without arming memory, while visit-collapsed keeps its desktop-only behavior",
+);
+
+assert.match(
+  shell,
+  /onLayoutChanged=\{\(layout, detail\) => \{[\s\S]{0,240}?if \(!chatContextual \|\| \(layout\.nav \?\? 0\) > 0\) \{\s*onLayoutChanged\(layout, detail\);\s*\}\s*\}\}/,
+  "Chat keeps its last expanded layout instead of persisting the collapsed zero-width layout",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
