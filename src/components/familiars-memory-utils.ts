@@ -1,7 +1,21 @@
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
 
 export type FileMemoryEntry = {
-  root: string; rootLabel: string; relPath: string; fullPath: string; size: number; modified: string; sourceId: string; sourceKind: "coven-origin" | "external-harness" | "runtime"; sourceKindLabel: string; rootPath: string; origin?: "coven"; harnessId?: string; runtimeId?: string; sourceContext?: string; familiarId?: string;
+  root: string;
+  rootLabel: string;
+  relPath: string;
+  fullPath: string;
+  size: number;
+  modified: string;
+  sourceId: string;
+  sourceKind: "coven-origin" | "external-harness" | "runtime";
+  sourceKindLabel: string;
+  rootPath: string;
+  origin?: "coven";
+  harnessId?: string;
+  runtimeId?: string;
+  sourceContext?: string;
+  familiarId?: string;
 };
 
 export function compactPath(path: string): string {
