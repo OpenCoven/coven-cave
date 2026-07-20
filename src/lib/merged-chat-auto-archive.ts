@@ -7,6 +7,8 @@
 // Safety properties:
 //  - Only fires on a real, lowercased "merged" PR state (server-side
 //    `gh pr view` enrichment) — GitHub-task lifecycle words never match.
+//  - Only fires on branch-attributed PR context: transcript-derived
+//    attribution (chat-pr-link.ts) is badge-only and never sweeps.
 //  - Never touches rows that look like they may still be doing work.
 //  - One-shot per (session, PR): a session the sweep already archived for a
 //    given PR is recorded in cave state (`mergedPrAutoArchived`), so summoning
@@ -71,6 +73,10 @@ export function mergedChatAutoArchiveDecisions(
     if (underExtension(context.extendedUntil, row.id, context.now)) continue;
     const pr = row.pullRequest;
     if (!pr || (pr.state ?? "").toLowerCase() !== "merged") continue;
+    // Transcript-derived attribution is badge-only: a long-lived familiar
+    // chat reports many PRs over its lifetime, and the latest one merging
+    // says nothing about the chat being done (cave-u9wl).
+    if (pr.attribution === "transcript") continue;
     const prKey = mergedPrKey(pr);
     if (!prKey) continue;
     if (handled[row.id] === prKey) continue;

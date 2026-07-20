@@ -83,6 +83,13 @@ export type ConversationFile = {
    * must use it — never the project root's branch at poll time.
    */
   branch?: string;
+  /**
+   * PR URL the chat reported in an assistant reply, snapshotted when a turn
+   * is saved (last reported PR wins; see chat-pr-link.ts). Fallback PR
+   * attribution for chats whose work happens in agent worktrees — badge-only,
+   * never feeds the merged-PR auto-archive sweep.
+   */
+  prUrl?: string;
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
@@ -112,6 +119,7 @@ export type ConversationSummary = {
   title?: string;
   origin?: SessionOrigin;
   branch?: string;
+  prUrl?: string;
   status?: string;
   exitCode?: number | null;
   createdAt?: string;
@@ -286,6 +294,7 @@ async function readConversationSummary(
         title: conv.title,
         origin: conv.origin,
         ...(conv.branch ? { branch: conv.branch } : {}),
+        ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
         status: terminal.status,
         exitCode: terminal.exitCode,
         createdAt: conv.createdAt,

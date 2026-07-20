@@ -22,7 +22,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { branchPrCache, type BranchPrCache } from "./branch-pr-context.ts";
+import { branchPrCache, prUrlCache, type BranchPrCache, type PrUrlCache } from "./branch-pr-context.ts";
 import type { SessionGitContext, SessionRow } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -156,6 +156,7 @@ export async function enrichSessionsWithGitContext(
   sessions: SessionRow[],
   git: GitRunner = defaultGitRunner,
   prCache: BranchPrCache = branchPrCache,
+  urlPrCache: PrUrlCache = prUrlCache,
 ): Promise<SessionRow[]> {
   // Collect unique roots and, per root, the branches sessions sit on — the
   // per-root git work happens once regardless of how many sessions share it.
@@ -198,14 +199,11 @@ export async function enrichSessionsWithGitContext(
 
   return sessions.map((session) => {
     const root = session.project_root?.trim();
-    if (!root) return session;
-    const entry = enrichmentByRoot.get(root);
-    if (!entry) return session;
-
+    const entry = root ? enrichmentByRoot.get(root) : undefined;
     const enriched: SessionRow = { ...session };
-    if (entry.gitContext) enriched.git = entry.gitContext;
-    const branch = entry.gitContext?.branch;
-    const diff = branch ? entry.diffByBranch.get(branch) ?? null : null;
+    if (entry?.gitContext) enriched.git = entry.gitContext;
+    const branch = entry?.gitContext?.branch;
+    const diff = branch ? entry?.diffByBranch.get(branch) ?? null : null;
     if (diff) enriched.diff = diff;
     // PR context for the thread — synchronous read from the stale-while-
     // revalidate cache (never blocks the poll; see branch-pr-context.ts).
@@ -219,10 +217,19 @@ export async function enrichSessionsWithGitContext(
     // without a recorded branch gets no PR context (and is never PR-swept).
     const attributedBranch =
       session.workBranch ??
-      (entry.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null);
-    if (attributedBranch) {
+      (entry?.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null);
+    if (root && attributedBranch) {
       const pr = prCache.get(root, attributedBranch);
       if (pr) enriched.pullRequest = pr;
+    }
+    // Transcript fallback (cave-u9wl): familiar chats do their work in agent
+    // worktrees, so branch attribution finds nothing on the chat's own cwd —
+    // but the chat reported the PR URL in a reply. Resolve it by URL (works
+    // even for rootless chats) and tag the attribution so the merged-PR
+    // auto-archive sweep never archives a long-lived chat over a reported PR.
+    if (!enriched.pullRequest && session.chatPrUrl) {
+      const pr = urlPrCache.get(session.chatPrUrl);
+      if (pr) enriched.pullRequest = { ...pr, attribution: "transcript" };
     }
     return enriched;
   });

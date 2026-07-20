@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createBranchPrCache, parseBranchPr } from "./branch-pr-context.ts";
+import { createBranchPrCache, createPrUrlCache, parseBranchPr } from "./branch-pr-context.ts";
 
 const ghJson = (over = {}) =>
   JSON.stringify({
@@ -99,4 +99,44 @@ test("concurrent refreshes are capped", async () => {
   assert.equal(started, 2);
   release();
   await tick();
+});
+
+// ── URL-keyed cache (transcript-derived attribution, cave-u9wl) ──
+
+test("parseBranchPr without a branch omits the field", () => {
+  const pr = parseBranchPr(ghJson());
+  assert.equal(pr.branch, undefined);
+  assert.equal(pr.repo, "OpenCoven/coven-cave");
+});
+
+test("prUrlCache: first read misses, background fetch keyed on the URL", async () => {
+  const urls = [];
+  const cache = createPrUrlCache({
+    runner: async (url) => {
+      urls.push(url);
+      return ghJson();
+    },
+  });
+  const url = "https://github.com/OpenCoven/coven-cave/pull/42";
+  assert.equal(cache.get(url), undefined);
+  await tick();
+  const pr = cache.get(url);
+  assert.equal(pr?.state, "merged");
+  assert.equal(pr?.branch, undefined, "URL lookups carry no branch");
+  assert.deepEqual(urls, [url]);
+});
+
+test("prUrlCache: failures negative-cache as null", async () => {
+  let calls = 0;
+  const cache = createPrUrlCache({
+    runner: async () => {
+      calls += 1;
+      throw new Error("gh: not found");
+    },
+  });
+  cache.get("https://github.com/o/r/pull/1");
+  await tick();
+  assert.equal(cache.get("https://github.com/o/r/pull/1"), null);
+  await tick();
+  assert.equal(calls, 1, "negative entry served from memory within TTL");
 });

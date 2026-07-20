@@ -695,6 +695,7 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
         updatedAt: "2026-06-08T18:06:00.000Z",
         origin: "chat",
         branch: "feat/fix-flaky-spec",
+        prUrl: "https://github.com/OpenCoven/coven-cave/pull/3249",
       },
       {
         sessionId: "local-branched",
@@ -704,6 +705,7 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
         updatedAt: "2026-06-08T18:07:00.000Z",
         origin: "chat",
         branch: "feat/local-work",
+        prUrl: "https://github.com/OpenCoven/coven-cave/pull/3344",
       },
     ],
     state: bareState,
@@ -712,6 +714,9 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   const byId = new Map(rows.map((r) => [r.id, r]));
   assert.equal(byId.get("branched")?.workBranch, "feat/fix-flaky-spec", "conversation branch surfaces on the merged daemon row");
   assert.equal(byId.get("local-branched")?.workBranch, "feat/local-work", "local-only rows carry their recorded branch too");
+  // Transcript-reported PR URL passthrough (cave-u9wl): both merge paths.
+  assert.equal(byId.get("branched")?.chatPrUrl, "https://github.com/OpenCoven/coven-cave/pull/3249", "conversation prUrl surfaces on the merged daemon row");
+  assert.equal(byId.get("local-branched")?.chatPrUrl, "https://github.com/OpenCoven/coven-cave/pull/3344", "local-only rows carry their reported PR URL too");
 }
 
 // Project backfill (cave-9nj1): sidebar/rail project groups key on

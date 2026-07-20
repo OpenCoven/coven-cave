@@ -3,14 +3,21 @@
 // edge and matching the row's compact icon-button controls. (The right
 // side-panel + expand toggles were removed with the right companion panel.)
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// #3576 decomposed globals.css into @imported sheets under src/styles —
+// pin against the whole global cascade, wherever a rule now lives.
+const stylesDir = new URL("../styles/", import.meta.url);
+const css = [
+  readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ...readdirSync(stylesDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => readFileSync(new URL(f, stylesDir), "utf8")),
+].join("\n");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
-
 assert.match(
   shell,
   /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
@@ -70,8 +77,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Collapse navigation to icons" : "Expand navigation"\}/,
-  "nav toggle label reflects nav state",
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?: navOpen\s*\?\s*"Collapse navigation to icons"\s*:\s*"Expand navigation"\}/,
+  "nav toggle label reflects nav state (and the contextual Chat sidebar variant)",
 );
 assert.match(
   shell,
