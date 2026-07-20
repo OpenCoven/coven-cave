@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import {
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+} from "@/lib/project-root-guidance";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +37,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!isAllowedNewProjectRoot(trimmed)) {
       // Containment first: out-of-workspace paths get a uniform 403 so the
       // existence checks below cannot be used to probe arbitrary filesystem paths.
-      return NextResponse.json({ ok: false, error: "root must be inside an allowed workspace" }, { status: 403 });
+      return NextResponse.json(
+        {
+          ok: false,
+          code: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+          error: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+        },
+        { status: 403 },
+      );
     }
     const validatedRoot = validateCaveProjectRoot(trimmed);
     if (!validatedRoot.ok) {

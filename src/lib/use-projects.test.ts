@@ -166,4 +166,71 @@ assert.match(
   "the hook returns both the nullable and throwing create helpers",
 );
 
+// createProject: server failures/malformed payloads throw, preserving a string
+// server error when present.
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: false,
+      status: 403,
+      json: async () => ({ ok: false, error: "Choose a folder inside a configured Cave workspace." }),
+    },
+  }),
+  /Choose a folder inside a configured Cave workspace\./,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: true,
+      status: 422,
+      json: async () => ({ ok: false, error: "Name is required." }),
+    },
+  }),
+  /Name is required\./,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    },
+  }),
+  /Failed to create project \(200\)/,
+);
+await assert.rejects(
+  runCreateProject({
+    response: {
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error("bad json");
+      },
+    },
+  }),
+  /Failed to create project \(500\)/,
+);
+
+// Success returns the created project, invalidates the list cache, and appends
+// the new row via the shared alphabetical sort.
+{
+  const previousProjects = [
+    { id: "g", name: "Gamma", root: "/gamma" },
+    { id: "a", name: "Alpha", root: "/alpha" },
+  ];
+  const responseProject = { id: "b", name: "Beta", root: "/beta" };
+  const { result, requests, invalidations, updates } = await runCreateProject({
+    previousProjects,
+    response: {
+      ok: true,
+      status: 201,
+      json: async () => ({ ok: true, project: responseProject }),
+    },
+  });
+  assert.deepEqual(result, responseProject);
+  assert.equal(requests[0][0], "/api/projects");
+  assert.equal(invalidations.length, 1);
+  assert.deepEqual(updates, [[previousProjects[1], responseProject, previousProjects[0]]]);
+}
+
 console.log("use-projects.test.ts: ok");

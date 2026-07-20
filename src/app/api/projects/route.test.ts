@@ -5,6 +5,13 @@ import { readFileSync } from "node:fs";
 const listRoute = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const itemRoute = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const seedRoute = readFileSync(new URL("./seed/route.ts", import.meta.url), "utf8");
+const guidanceModuleUrl = new URL("../../../lib/project-root-guidance.ts", import.meta.url);
+const guidanceSource = readFileSync(guidanceModuleUrl, "utf8");
+const {
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  PROJECT_ROOT_WORKSPACE_HELP,
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+} = await import(guidanceModuleUrl.href);
 
 assert.match(listRoute, /seedDefaultProjectsIfEmpty/, "GET /api/projects should seed defaults before listing");
 assert.doesNotMatch(
@@ -19,7 +26,37 @@ assert.match(listRoute, /filterProjectsForFamiliar\(projects, familiarId\)/, "GE
 assert.match(listRoute, /export async function POST\(req: Request\)/, "projects route should expose POST");
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
-assert.match(listRoute, /root must be inside an allowed workspace/, "POST /api/projects should reject unsafe roots");
+assert.equal(
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE",
+  "project root guidance should expose a stable outside-workspace code",
+);
+assert.equal(
+  PROJECT_ROOT_WORKSPACE_HELP,
+  "Project folders must be inside a configured Cave workspace (usually ~/.coven/workspaces) or the workspace running Cave.",
+  "project root guidance should expose stable workspace help text",
+);
+assert.equal(
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+  "Choose a folder inside a configured Cave workspace (usually ~/.coven/workspaces) or the workspace running Cave.",
+  "project root guidance should expose stable outside-workspace error text",
+);
+assert.match(
+  guidanceSource,
+  /export const PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE/,
+  "project root guidance module should define the shared outside-workspace code",
+);
+assert.match(
+  listRoute,
+  /from "@\/lib\/project-root-guidance"/,
+  "POST /api/projects should import shared project-root guidance",
+);
+assert.match(
+  listRoute,
+  /code:\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE[\s\S]*error:\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR/,
+  "POST /api/projects should return the shared outside-workspace contract",
+);
+assert.match(listRoute, /status:\s*403/, "POST /api/projects should reject unsafe roots with 403");
 assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should require existing directory roots before persisting them");
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
 assert.match(
@@ -36,6 +73,17 @@ assert.doesNotMatch(
 assert.match(itemRoute, /export async function PUT/, "project item route should expose PUT");
 assert.match(itemRoute, /export async function DELETE/, "project item route should expose DELETE");
 assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects/[id] should validate root patches before persisting them");
+assert.match(
+  itemRoute,
+  /from "@\/lib\/project-root-guidance"/,
+  "PUT /api/projects/\\[id\\] should import shared project-root guidance",
+);
+assert.match(
+  itemRoute,
+  /code:\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE[\s\S]*error:\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR/,
+  "PUT /api/projects/[id] should return the shared outside-workspace contract",
+);
+assert.match(itemRoute, /status:\s*403/, "PUT /api/projects/[id] should reject unsafe roots with 403");
 assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] should require existing directory roots before persisting them");
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
