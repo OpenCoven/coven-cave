@@ -58,8 +58,7 @@ Expected: FAIL because `WHEN_EXAMPLES`, `detailsOpen`, and the new plan identifi
 
 ```bash
 git add src/components/new-reminder-modal.test.ts src/components/reminder-link-field.test.ts
-git commit -S -m "test(reminders): pin compact modal redesign" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "test(reminders): pin compact modal redesign"
 git push
 ```
 
