@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 const boardView = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
 const boardInspector = readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const taskChatRoute = readFileSync(
@@ -33,7 +34,7 @@ assert.doesNotMatch(
   "The unconditional first-project fallback for existing sessions must stay gone",
 );
 assert.match(
-  chatView,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*?<ProjectPickerPopover[\s\S]*?allowNoProject/,
   "The overflow menu's picker offers an explicit No-project choice so a workspace session can stay (or become) project-less",
 );
@@ -58,7 +59,7 @@ assert.match(
   "The project selector remains editable after the session exists",
 );
 assert.match(
-  chatView,
+  sessionHeader,
   /function SessionOverflowMenu[\s\S]*<ProjectPickerPopover[\s\S]*value=\{projectId\}[\s\S]*onChange=\{onProjectChange\}/,
   "Active chats expose project switching through the shared picker popover in the session overflow menu",
 );

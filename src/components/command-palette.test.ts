@@ -96,7 +96,7 @@ assert.match(
 
 assert.match(
   source,
-  /buildSalemSearchContext\(rows,\s*query\.trim\(\)\)/,
+  /buildSalemSearchContext\(\s*rows\.filter\(isSalemContextRow\),\s*query\.trim\(\),\s*\)/,
   "Salem answer payload should be grounded in the current local search rows",
 );
 

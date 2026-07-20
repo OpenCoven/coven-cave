@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 // (avatar, serif display name, role, presence, runtime) before WHAT it can do
 // (the capability grid), and the grid must earn a wide canvas with two columns.
 
-const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 

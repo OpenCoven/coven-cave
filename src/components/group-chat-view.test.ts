@@ -8,6 +8,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
 
 test("GroupChatView schedules Broadcast and Round robin replies through /api/chat/send", () => {
   assert.match(view, /export function GroupChatView/, "exports GroupChatView");
@@ -269,7 +270,7 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // Thread grouping is a single pass (a Map keyed by replyTo), not a nested
   // filter per user turn — it recomputes on every streaming token.
   assert.match(
-    view,
+    transcript,
     /const repliesByUser = new Map<string, GroupReply\[\]>\(\);/,
     "threads are grouped in one pass over the transcript",
   );

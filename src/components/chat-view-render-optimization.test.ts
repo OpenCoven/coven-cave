@@ -13,9 +13,13 @@ const chatViewSource = readFileSync(
   new URL("./chat-view.tsx", import.meta.url),
   "utf8",
 );
+const transcriptGroupsSource = readFileSync(
+  new URL("../lib/chat-transcript-groups.ts", import.meta.url),
+  "utf8",
+);
 
-const messageBubbleSource = readFileSync(
-  new URL("./message-bubble.tsx", import.meta.url),
+const messageMarkdownStreamSource = readFileSync(
+  new URL("../lib/message-markdown-stream.ts", import.meta.url),
   "utf8",
 );
 
@@ -28,14 +32,14 @@ const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.match(
-  chatViewSource,
-  /const turnIndexMap = new Map(?:<[^>]+>)?\(\);/,
+  transcriptGroupsSource,
+  /turnIndexMap: new Map\(activePath\.map\(/,
   "creates a turnIndexMap Map",
 );
 
 assert.match(
-  chatViewSource,
-  /turnIndexMap\.set\([^;]*\.id,\s*\w+\);/,
+  transcriptGroupsSource,
+  /activePath\.map\(\(turn, index\) => \[turn\.id, index\]\)/,
   "populates turnIndexMap with turn ids and numeric indexes",
 );
 
@@ -58,20 +62,20 @@ assert.equal(
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.match(
-  messageBubbleSource,
+  messageMarkdownStreamSource,
   /const RENDER_CACHE_MAX = 200;/,
   "sets renderCache max to 200 entries",
 );
 
 assert.match(
-  messageBubbleSource,
+  messageMarkdownStreamSource,
   /if \(renderCache\.size > RENDER_CACHE_MAX\) \{\s*const oldest = renderCache\.keys\(\)\.next\(\)\.value;.*?renderCache\.delete\(oldest\);/s,
   "evicts oldest entry when cache exceeds RENDER_CACHE_MAX",
 );
 
 assert.match(
-  messageBubbleSource,
-  /function renderCacheGet\(key: string\): string \| undefined \{.*?renderCache\.delete\(key\);\s*renderCache\.set\(key, value\);/s,
+  messageMarkdownStreamSource,
+  /function getRenderedMarkdown\(key: string\): string \| undefined \{.*?renderCache\.delete\(key\);\s*renderCache\.set\(key, value\);/s,
   "refreshes LRU recency on cache hit (delete then re-set)",
 );
 

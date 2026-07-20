@@ -9,6 +9,7 @@ import type { Familiar } from "@/lib/types";
 import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
+import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
 
 function QuickChatBubble({
   message,
@@ -121,12 +122,7 @@ export function QuickChatThread({
   useEffect(() => { stick(); }, [messages.length, stick]);
   useEffect(() => { schedulePin(); }, [messages.length, lastText, schedulePin]);
 
-  const lastAssistantId = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant" && !messages[i].local) return messages[i].id;
-    }
-    return null;
-  })();
+  const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
 
   return (
     <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">

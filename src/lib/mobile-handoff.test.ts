@@ -259,9 +259,9 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(modal, /chatId \? \{ action: "app-start", chatId \} : \{ action: "app-start" \}/, "the modal forwards its chatId to app-start");
   assert.match(modal, /Scan to continue this conversation on your phone\./, "chat handoff says what the scan does");
 
-  const chatView = read("../components/chat-view.tsx");
-  assert.match(chatView, /cave:continue-on-phone[\s\S]*detail: \{ chatId: sessionId \}/, "chat overflow dispatches the continue-on-phone event with the session id");
-  assert.match(chatView, />\s*Continue on phone\s*</, "the overflow menu offers Continue on phone");
+  const sessionHeader = read("../components/chat-session-header.tsx");
+  assert.match(sessionHeader, /cave:continue-on-phone[\s\S]*detail: \{ chatId: sessionId \}/, "chat overflow dispatches the continue-on-phone event with the session id");
+  assert.match(sessionHeader, />\s*Continue on phone\s*</, "the overflow menu offers Continue on phone");
 
   const workspace = read("../components/workspace.tsx");
   assert.match(workspace, /addEventListener\("cave:continue-on-phone"/, "workspace listens for the handoff event");
