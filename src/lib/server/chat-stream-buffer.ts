@@ -9,6 +9,7 @@
 // (same exposure as chat-stop-registry and the PTY scrollback ring in
 // server.ts).
 
+import type { RunBufferStatus } from "@/lib/chat-stream-health";
 import type { StreamEvent } from "@/lib/stream-events";
 
 export type BufferedStreamEvent = {
@@ -93,10 +94,10 @@ export function openRunBuffer(
         json: JSON.stringify(event),
       };
       buffer.events.push(entry);
-      buffer.bytes += entry.json.length;
+      buffer.bytes += Buffer.byteLength(entry.json, "utf8");
       while (buffer.bytes > RING_MAX_BYTES && buffer.events.length > 1) {
         const dropped = buffer.events.shift();
-        if (dropped) buffer.bytes -= dropped.json.length;
+        if (dropped) buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
       }
       for (const listener of buffer.tailListeners) listener(entry);
       return entry.seq;
@@ -104,6 +105,7 @@ export function openRunBuffer(
     finish: () => {
       if (buffer.done) return;
       buffer.done = true;
+      buffer.liveTails = 0;
       for (const listener of buffer.finishListeners) listener();
       buffer.tailListeners.clear();
       buffer.finishListeners.clear();
@@ -166,6 +168,7 @@ export function subscribeRunStream(
     unsubscribe: () => {
       if (unsubscribed) return;
       unsubscribed = true;
+      if (buffer.done) return;
       buffer.tailListeners.delete(onEvent);
       buffer.finishListeners.delete(onFinish);
       buffer.liveTails -= 1;
@@ -189,4 +192,21 @@ export function resetRunBuffersForTest(): void {
  *  a real 404 for unknown runs before committing to an SSE response. */
 export function hasRunBuffer(key: string): boolean {
   return buffers.has(key);
+}
+
+/** Side-effect-free metadata probe for the debug/status route. */
+export function getRunBufferStatus(key: string): RunBufferStatus | null {
+  const buffer = buffers.get(key);
+  if (!buffer) return null;
+  const oldestRetainedSeq = buffer.events[0]?.seq ?? null;
+  const latestSeq = buffer.nextSeq - 1;
+  return {
+    done: buffer.done,
+    oldestRetainedSeq,
+    latestSeq,
+    retainedEventCount: buffer.events.length,
+    retainedBytes: buffer.bytes,
+    hasEvictedEvents: oldestRetainedSeq !== null && oldestRetainedSeq > 1,
+    liveTails: buffer.liveTails,
+  };
 }

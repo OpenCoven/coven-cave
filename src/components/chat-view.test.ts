@@ -51,8 +51,8 @@ assert.match(
 
 assert.match(
   source,
-  /const message = await chatBridgeFailureMessage\(res\);[\s\S]*setError\(message\);[\s\S]*label: `Chat bridge rejected the request: \$\{message\}`/,
-  "ChatView should surface the server's chat bridge rejection reason in the visible failed turn",
+  /const message = await chatBridgeFailureMessage\(res\);\s+let surfacedMessage = message;[\s\S]*?setError\(surfacedMessage\);[\s\S]*?label: `Chat bridge rejected the request: \$\{message\}`/,
+  "ChatView should surface the actionable error while keeping the original bridge rejection detail in the failed-turn label",
 );
 
 assert.match(

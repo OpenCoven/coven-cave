@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLiveGenerationRegistry } from "./live-chat-generations.ts";
+import {
+  createLiveGenerationRegistry,
+  type LiveGenerationSnapshot,
+} from "./live-chat-generations.ts";
 
 type FakeTurn = { id: string; text: string };
 
 function makeRegistry() {
   return createLiveGenerationRegistry<FakeTurn>((turn) => ({ ...turn }));
+}
+
+type MetadataSnapshot = LiveGenerationSnapshot<FakeTurn> & {
+  runId: string;
+  health: { phase: string; cursor: number };
+};
+
+function makeMetadataRegistry() {
+  return createLiveGenerationRegistry<FakeTurn, MetadataSnapshot>((turn) => ({ ...turn }));
 }
 
 function controller() {
@@ -127,4 +139,63 @@ test("subscribe scopes notifications to the session and unsubscribes cleanly", a
   registry.record({ sessionId: "s1", turns: [], activeLeafId: "", controller: controller(), updatedAt: 2 });
   await flushMicrotasks();
   assert.equal(forS1.length, 1);
+});
+
+test("staged metadata rides the next coalesced turn advance without an extra notification", async () => {
+  const registry = makeMetadataRegistry();
+  const seen: Array<MetadataSnapshot | null> = [];
+  registry.subscribe("s1", (snapshot) => seen.push(snapshot));
+  registry.record({
+    sessionId: "s1",
+    turns: [{ id: "a1", text: "" }],
+    activeLeafId: "a1",
+    controller: controller(),
+    updatedAt: 1,
+    runId: "run-1",
+    health: { phase: "connecting", cursor: 0 },
+  });
+  await flushMicrotasks();
+  assert.equal(seen.length, 1);
+
+  const staged = registry.stage("s1", (snapshot) => ({
+    ...snapshot,
+    health: { phase: "streaming", cursor: 7 },
+  }));
+  await flushMicrotasks();
+  assert.equal(seen.length, 1);
+  assert.equal(staged?.health.cursor, 7);
+
+  const advanced = registry.advance(
+    "s1",
+    (turns) => turns.map((turn) => ({ ...turn, text: "hello" })),
+    "a1",
+  );
+  await flushMicrotasks();
+  assert.equal(seen.length, 2);
+  assert.equal(advanced?.health.phase, "streaming");
+  assert.equal(advanced?.health.cursor, 7);
+  assert.equal(seen[1]?.health.cursor, 7);
+});
+
+test("staging after clear is a null no-op and cannot resurrect metadata", async () => {
+  const registry = makeMetadataRegistry();
+  registry.record({
+    sessionId: "s1",
+    turns: [],
+    activeLeafId: "",
+    controller: controller(),
+    updatedAt: 1,
+    runId: "run-1",
+    health: { phase: "settled", cursor: 9 },
+  });
+  registry.clear("s1");
+
+  const staged = registry.stage("s1", (snapshot) => ({
+    ...snapshot,
+    health: { phase: "streaming", cursor: 10 },
+  }));
+  await flushMicrotasks();
+
+  assert.equal(staged, null);
+  assert.equal(registry.read("s1"), null);
 });

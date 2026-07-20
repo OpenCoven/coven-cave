@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   hasRunBuffer,
+  getRunBufferStatus,
   openRunBuffer,
   resetRunBuffersForTest,
   subscribeRunStream,
 } from "./chat-stream-buffer.ts";
+import type { StreamEvent } from "@/lib/stream-events";
 
 // Per-run stream buffer (cave-h40l): the send route tees every StreamEvent
 // through a bounded ring so GET /api/chat/stream can replay from a cursor and
@@ -102,6 +104,104 @@ test("a follow-up turn owns the shared conversation key; unknown keys return nul
 
   assert.equal(subscribeRunStream("nope", 0, () => {}, () => {}), null, "unknown keys are null — caller resyncs post-hoc");
   assert.equal(hasRunBuffer("nope"), false);
+  resetRunBuffersForTest();
+});
+
+test("getRunBufferStatus returns payload-free metadata without side effects", () => {
+  resetRunBuffersForTest();
+  let attachCount = 0;
+  let detachCount = 0;
+  const handle = openRunBuffer(["run-status", "conv-status"], {
+    attach: () => {
+      attachCount += 1;
+    },
+    detach: () => {
+      detachCount += 1;
+    },
+  });
+  const first = { kind: "user", text: "alpha" } satisfies StreamEvent;
+  const second = { kind: "assistant_chunk", text: "bravo" } satisfies StreamEvent;
+  handle.record(first);
+  handle.record(second);
+
+  const status = getRunBufferStatus("conv-status");
+  assert.deepEqual(status, {
+    done: false,
+    oldestRetainedSeq: 1,
+    latestSeq: 2,
+    retainedEventCount: 2,
+    retainedBytes:
+      Buffer.byteLength(JSON.stringify(first), "utf8") +
+      Buffer.byteLength(JSON.stringify(second), "utf8"),
+    hasEvictedEvents: false,
+    liveTails: 0,
+  });
+  assert.equal(attachCount, 0, "status reads must not invoke hooks");
+  assert.equal(detachCount, 0, "status reads must not invoke hooks");
+  assert.doesNotMatch(JSON.stringify(status), /alpha|bravo|json/i, "serialized status never exposes buffered payload text");
+  assert.equal(getRunBufferStatus("missing"), null, "unknown keys return null");
+  resetRunBuffersForTest();
+});
+
+test("getRunBufferStatus measures retained UTF-8 bytes", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-unicode"]);
+  const event = { kind: "assistant_chunk", text: "🧙漢字" } satisfies StreamEvent;
+  handle.record(event);
+
+  assert.equal(
+    getRunBufferStatus("run-unicode")?.retainedBytes,
+    Buffer.byteLength(JSON.stringify(event), "utf8"),
+  );
+
+  resetRunBuffersForTest();
+});
+
+test("getRunBufferStatus reports an empty buffer without evicting anything", () => {
+  resetRunBuffersForTest();
+  openRunBuffer(["run-empty"]);
+
+  assert.deepEqual(getRunBufferStatus("run-empty"), {
+    done: false,
+    oldestRetainedSeq: null,
+    latestSeq: 0,
+    retainedEventCount: 0,
+    retainedBytes: 0,
+    hasEvictedEvents: false,
+    liveTails: 0,
+  });
+
+  resetRunBuffersForTest();
+});
+
+test("getRunBufferStatus tracks live tails, eviction, and finish", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-health"]);
+  const sub = subscribeRunStream("run-health", 0, () => {}, () => {});
+  assert.ok(sub);
+  assert.equal(getRunBufferStatus("run-health")?.liveTails, 1, "live subscription increments liveTails");
+
+  sub!.unsubscribe();
+  assert.equal(getRunBufferStatus("run-health")?.liveTails, 0, "unsubscribe decrements liveTails");
+
+  const big = "x".repeat(64 * 1024);
+  for (let i = 0; i < 12; i += 1) handle.record({ kind: "assistant_chunk", text: big });
+  const evicted = getRunBufferStatus("run-health");
+  assert.ok(evicted);
+  assert.equal(evicted?.hasEvictedEvents, true, "ring eviction sets hasEvictedEvents");
+
+  const liveAgain = subscribeRunStream("run-health", evicted!.latestSeq, () => {}, () => {});
+  assert.ok(liveAgain);
+  handle.finish();
+  assert.deepEqual(getRunBufferStatus("run-health"), {
+    done: true,
+    oldestRetainedSeq: evicted!.oldestRetainedSeq,
+    latestSeq: evicted!.latestSeq,
+    retainedEventCount: evicted!.retainedEventCount,
+    retainedBytes: evicted!.retainedBytes,
+    hasEvictedEvents: true,
+    liveTails: 0,
+  }, "finish marks the run done and clears live tails");
   resetRunBuffersForTest();
 });
 

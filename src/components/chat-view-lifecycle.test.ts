@@ -60,7 +60,7 @@ assert.match(
 
 assert.match(
   source,
-  /case "progress":[\s\S]*upsertTurnProgress\(assistantId, ev, liveGeneration\.sessionId\)/,
+  /case "progress":[\s\S]*upsertTurnProgress\([\s\S]*?assistantId,[\s\S]*?ev,[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Progress events should update the active assistant turn",
 );
 
@@ -96,7 +96,7 @@ assert.match(
 
 assert.match(
   source,
-  /const applyAssistantChunk = \([\s\S]*?setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
+  /const applyAssistantChunk = \([\s\S]*?setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"streaming",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
 );
 
@@ -108,7 +108,7 @@ assert.match(
 
 assert.match(
   source,
-  /case "tool_use":[\s\S]*setAssistantLifecycle\(assistantId, "tooling", liveGeneration\.sessionId\)/,
+  /case "tool_use":[\s\S]*setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"tooling",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Tool events should move the turn into a tool-use lifecycle",
 );
 
@@ -150,7 +150,7 @@ assert.match(
 
 assert.match(
   turnStateSource,
-  /const liveChatRegistry = createLiveGenerationRegistry<Turn>\(cloneLiveTurn\)/,
+  /const liveChatRegistry = createLiveGenerationRegistry<Turn, LiveChatGenerationSnapshot>\(cloneLiveTurn\)/,
   "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
 );
 
@@ -159,23 +159,43 @@ assert.match(
   /function subscribeLiveChatGeneration\(\s*sessionId: string,\s*listener: \(snapshot: LiveChatGenerationSnapshot \| null\) => void,\s*\)/,
   "ChatView should subscribe to live generation snapshots when returning to a session",
 );
-
 assert.match(
-  source,
-  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
-  "sendRaw should persist the active stream snapshot with its abort controller",
+  turnStateSource,
+  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;/,
+  "Live chat snapshots should persist run ownership and client stream health without widening unrelated registries",
+);
+assert.match(
+  turnStateSource,
+  /function stageLiveChatGenerationMetadata\([\s\S]*liveChatRegistry\.stage/,
+  "Chat-specific metadata should stage onto the registry without notifying separately from turn advances",
+);
+assert.match(
+  turnStateSource,
+  /function advanceLiveChatGeneration\([\s\S]*metadata\?: LiveChatGenerationMetadata[\s\S]*stageLiveChatGenerationMetadata\(sessionId, metadata\)[\s\S]*liveChatRegistry\.advance/,
+  "Every chat turn advance should stage its latest run and health metadata before the coalesced notification",
+);
+assert.match(
+  turnStateSource,
+  /function publishLiveChatGenerationMetadata\([\s\S]*recordLiveChatGeneration\(staged\)/,
+  "Infrequent health transitions should be able to publish a staged chat snapshot",
 );
 
 assert.match(
   source,
-  /readLiveChatGeneration\(sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setActiveLeafId\(live\.activeLeafId\)[\s\S]*?abortRef\.current = live\.controller[\s\S]*?setBusy\(true\)/,
-  "History loading should rehydrate a live generation snapshot for the selected session",
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
+  "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
 );
 
 assert.match(
   source,
-  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setBusy\(true\)[\s\S]*?setBusy\(false\)/,
-  "A remounted ChatView should keep following live generation updates and settle when the stream finishes",
+  /readLiveChatGeneration\(sessionId\)[\s\S]*?adoptLiveGenerationMetadata\(live, sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setActiveLeafId\(live\.activeLeafId\)[\s\S]*?abortRef\.current = live\.controller[\s\S]*?setBusy\(true\)/,
+  "History loading should restore run/health ownership before rehydrating a live generation snapshot",
+);
+
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?adoptLiveGenerationMetadata\(live, sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setBusy\(true\)[\s\S]*?setBusy\(false\)/,
+  "A remounted ChatView should restore ownership before following live generation updates and settle when the stream finishes",
 );
 
 // A live snapshot whose writing component unmounted (or whose stream died
@@ -198,7 +218,7 @@ assert.match(
 
 assert.match(
   source,
-  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\)/,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\)/,
   "The live-generation subscription should gate busy on snapshot liveness",
 );
 
@@ -518,7 +538,7 @@ assert.match(
 // view currently showing that session mirrors the update into setTurns.
 assert.match(
   source,
-  /if \(targetSessionId\) \{[\s\S]*?const stored = advanceLiveChatGeneration\(targetSessionId, updater, nextActiveLeafId\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
+  /if \(targetSessionId\) \{[\s\S]*?const stored = advanceLiveChatGeneration\([\s\S]*?targetSessionId,[\s\S]*?updater,[\s\S]*?nextActiveLeafId,[\s\S]*?metadata,[\s\S]*?\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
   "updateLiveTurns accumulates in the module-scope registry first so unmounted views can't drop chunks, mirroring into setTurns only for the on-screen session",
 );
 // A view that adopted (not started) a stream reconciles from disk on settle —
@@ -571,7 +591,7 @@ assert.match(
 // send — while onSessionStarted still fires so the router can register it.
 assert.match(
   source,
-  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}/,
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,/,
   "each generation records the immutable thread it started on (originSessionId)",
 );
 {

@@ -4,7 +4,7 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
@@ -24,11 +24,14 @@ import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
   mapConversationHistoryTurns,
+  publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
   recordLiveChatGeneration,
+  stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
   type ChatTurnLifecycle,
   type ConversationHistoryPayload,
+  type LiveChatGenerationMetadata,
   type LiveChatGenerationSnapshot,
   type ProgressEvent,
   type ToolEvent,
@@ -175,6 +178,12 @@ import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversat
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
 import { consumeChatSse } from "@/lib/chat-sse";
+import {
+  EMPTY_CHAT_STREAM_CLIENT_HEALTH,
+  chatStreamHealthReducer,
+  type ChatStreamClientHealth,
+  type ChatStreamHealthAction,
+} from "@/lib/chat-stream-health";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
@@ -285,6 +294,19 @@ type FailedSend = {
   mentionedFiles?: string[];
   promptOverride?: string;
 };
+type LiveStreamGeneration = {
+  sessionId: string | null;
+  originSessionId: string | null;
+  controller: AbortController;
+  runId: string;
+  streamHealth: () => ChatStreamClientHealth;
+};
+function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
+  return {
+    runId: liveGeneration.runId,
+    streamHealth: liveGeneration.streamHealth(),
+  };
+}
 type ComposerThinkingEffort = CommandThinkingEffort;
 type ComposerResponseSpeed = CommandResponseSpeed;
 
@@ -1827,6 +1849,17 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
   return detail ? `${base}: ${detail}` : base;
 }
 
+function conciseStreamError(error: unknown, fallback: string): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  const message = raw.replace(/\s+/g, " ").trim() || fallback;
+  return message.length > 240 ? `${message.slice(0, 237)}…` : message;
+}
+
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
@@ -1834,6 +1867,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [streamHealth, dispatchStreamHealth] = useReducer(
+    chatStreamHealthReducer,
+    EMPTY_CHAT_STREAM_CLIENT_HEALTH,
+  );
+  const streamHealthRef = useRef(EMPTY_CHAT_STREAM_CLIENT_HEALTH);
+  function applyStreamHealthAction(action: ChatStreamHealthAction): ChatStreamClientHealth {
+    const next = chatStreamHealthReducer(streamHealthRef.current, action);
+    streamHealthRef.current = next;
+    dispatchStreamHealth(action);
+    return next;
+  }
   const [activeLeafId, setActiveLeafId] = useState<string>("");
   // Branching: undefined = no pending branch; null = branch at the ROOT (the
   // edited/regenerated turn was itself a root, so its sibling is also a root);
@@ -2183,6 +2227,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
+  const streamHealthSessionRef = useRef(sessionId);
+  const currentStreamHealthRunIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previousSessionId = streamHealthSessionRef.current;
+    streamHealthSessionRef.current = sessionId;
+    const isPromotedLiveSession =
+      previousSessionId == null &&
+      sessionId != null &&
+      liveSessionIdRef.current === sessionId &&
+      currentSessionRef.current === sessionId;
+    if (!isPromotedLiveSession) {
+      currentStreamHealthRunIdRef.current = null;
+      applyStreamHealthAction({ type: "reset" });
+    }
+  }, [sessionId]);
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -2438,8 +2497,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   /** Keys for POST /api/chat/stop — a deliberate Stop must be an explicit
    *  server call; a bare fetch abort now reads as a transport drop and the
    *  turn finishes server-side. runId targets a run this instance started
-   *  (works before the server assigns a session id); sessionId covers
-   *  adopted streams (remount mid-generation) where the runId is unknown. */
+   *  or adopted (and works before the server assigns a session id); sessionId
+   *  remains the fallback for legacy snapshots without run metadata. */
   const stopKeysRef = useRef<{ runId: string | null; sessionId: string | null }>({
     runId: null,
     sessionId: null,
@@ -2460,20 +2519,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const skipSettleNotifyRef = useRef(0);
   const keys = useKeySymbols();
 
+  function adoptLiveGenerationMetadata(
+    live: LiveChatGenerationSnapshot,
+    targetSessionId: string,
+  ) {
+    currentStreamHealthRunIdRef.current = live.runId ?? live.streamHealth?.runId ?? null;
+    const restoredHealth = live.streamHealth ?? EMPTY_CHAT_STREAM_CLIENT_HEALTH;
+    applyStreamHealthAction({ type: "hydrate", health: restoredHealth });
+    stopKeysRef.current = {
+      runId: currentStreamHealthRunIdRef.current,
+      sessionId: targetSessionId,
+    };
+  }
+
   function persistLiveTurns(
     nextTurns: Turn[],
     nextActiveLeafId: string,
     controller: AbortController | null = abortRef.current,
     targetSessionId: string | null = currentSessionRef.current,
+    metadata?: LiveChatGenerationMetadata,
   ) {
     const liveSessionId = targetSessionId;
     if (!liveSessionId || !controller) return;
+    const current = readLiveChatGeneration(liveSessionId);
+    if (metadata && current?.runId != null && current.runId !== metadata.runId) return;
     recordLiveChatGeneration({
       sessionId: liveSessionId,
       controller,
       turns: nextTurns,
       activeLeafId: nextActiveLeafId,
       updatedAt: Date.now(),
+      ...metadata,
     });
   }
 
@@ -2482,6 +2558,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     nextActiveLeafId: string,
     controller: AbortController | null = abortRef.current,
     targetSessionId: string | null = currentSessionRef.current,
+    metadata?: LiveChatGenerationMetadata,
   ) {
     // Registry-first (cave-0er): while a generation has a registry snapshot,
     // the registry is the accumulating source of truth — it lives at module
@@ -2491,7 +2568,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // ignores setState on unmounted instances), freezing the snapshot and
     // losing the response.
     if (targetSessionId) {
-      const stored = advanceLiveChatGeneration(targetSessionId, updater, nextActiveLeafId);
+      const current = readLiveChatGeneration(targetSessionId);
+      if (metadata && current?.runId != null && current.runId !== metadata.runId) return;
+      const stored = advanceLiveChatGeneration(
+        targetSessionId,
+        updater,
+        nextActiveLeafId,
+        metadata,
+      );
       if (stored) {
         // Mirror synchronously into THIS view's state when it is showing the
         // streaming session. Reusing the stored array means the microtask
@@ -2514,7 +2598,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setTurns((prev) => {
       const next = updater(prev);
       turnsRef.current = next;
-      persistLiveTurns(next, nextActiveLeafId, controller, targetSessionId);
+      persistLiveTurns(next, nextActiveLeafId, controller, targetSessionId, metadata);
       return next;
     });
   }
@@ -2522,7 +2606,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     if (!sessionId) return;
     return subscribeLiveChatGeneration(sessionId, (live) => {
+      const latest = readLiveChatGeneration(sessionId);
+      if (!live && latest) return;
+      if (live && latest && latest !== live) return;
+      const notificationRunId = live?.runId ?? live?.streamHealth?.runId ?? null;
+      if (
+        live &&
+        !latest &&
+        currentStreamHealthRunIdRef.current != null &&
+        notificationRunId != null &&
+        currentStreamHealthRunIdRef.current !== notificationRunId
+      ) {
+        return;
+      }
       if (live && isLiveSnapshotActive(live, Date.now())) {
+        adoptLiveGenerationMetadata(live, sessionId);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3117,12 +3215,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
+      adoptLiveGenerationMetadata(live, sessionId);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
       setFlowTranscriptFallback(null);
       abortRef.current = live.controller;
-      stopKeysRef.current = { runId: null, sessionId };
       setHistoryState("loaded");
       setBusy(true);
       // Adopting a stream this instance did not start (remount mid-
@@ -3769,20 +3867,81 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
+    const runId = crypto.randomUUID();
+    currentStreamHealthRunIdRef.current = runId;
+    let generationStreamHealth = applyStreamHealthAction({
+      type: "connect",
+      runId,
+      at: new Date().toISOString(),
+    });
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
     // longer owns the displayed view and must not adopt its late session id.
-    const liveGeneration = { sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller };
+    const liveGeneration: LiveStreamGeneration = {
+      sessionId: initialLiveSessionId,
+      originSessionId: initialLiveSessionId,
+      controller,
+      runId,
+      streamHealth: () => generationStreamHealth,
+    };
+    const publishStreamHealth = (
+      action: Exclude<
+        ChatStreamHealthAction,
+        { type: "hydrate" } | { type: "connect" } | { type: "reset" }
+      >,
+    ) => {
+      generationStreamHealth = chatStreamHealthReducer(generationStreamHealth, action);
+      if (liveGeneration.sessionId) {
+        const metadata = {
+          runId,
+          streamHealth: generationStreamHealth,
+        };
+        if (action.type === "event") {
+          stageLiveChatGenerationMetadata(liveGeneration.sessionId, metadata);
+        } else {
+          publishLiveChatGenerationMetadata(liveGeneration.sessionId, metadata);
+        }
+      }
+      if (currentStreamHealthRunIdRef.current !== runId) return;
+      const displayedSessionId = currentSessionRef.current;
+      const generationOwnsDisplayedThread =
+        displayedSessionId === liveGeneration.sessionId ||
+        (liveGeneration.sessionId == null &&
+          displayedSessionId === liveGeneration.originSessionId);
+      if (!generationOwnsDisplayedThread) return;
+      applyStreamHealthAction({
+        type: "hydrate",
+        health: generationStreamHealth,
+      });
+    };
+    let pendingStreamHealthEvent: { cursor: number; at: string } | null = null;
+    const flushPendingStreamHealthEvent = () => {
+      const latest = pendingStreamHealthEvent;
+      pendingStreamHealthEvent = null;
+      if (!latest) return;
+      publishStreamHealth({
+        type: "event",
+        cursor: latest.cursor,
+        at: latest.at,
+      });
+    };
     // Coalesce assistant_chunk frames (~one per token → one React commit per
     // token) into one applyAssistantChunk per CHUNK_FLUSH_MS window. Declared
     // outside the try so the catch (abort/error) can flush buffered text
     // before it derives labels from t.text (cave-w50e).
     const chunkCoalescer = createChunkCoalescer({
       flushMs: CHUNK_FLUSH_MS,
-      apply: (text) => applyAssistantChunk(text, assistantId, liveGeneration),
+      apply: (text) => {
+        flushPendingStreamHealthEvent();
+        applyAssistantChunk(text, assistantId, liveGeneration);
+      },
     });
-    const runId = crypto.randomUUID();
+    const flushStreamUpdates = () => {
+      chunkCoalescer.flush();
+      flushPendingStreamHealthEvent();
+    };
+    let sawDone = false;
     let needsTranscriptResync = false;
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
@@ -3800,10 +3959,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         turns: nextTurns,
         activeLeafId: assistantTurn.id,
         updatedAt: Date.now(),
+        runId,
+        streamHealth: generationStreamHealth,
       });
     }
     try {
-      setAssistantLifecycle(assistantId, "connecting", liveGeneration.sessionId);
+      setAssistantLifecycle(
+        assistantId,
+        "connecting",
+        liveGeneration.sessionId,
+        { runId, streamHealth: generationStreamHealth },
+      );
       // The on-disk conversation is about to change; a cached pre-send payload
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
@@ -3858,7 +4024,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
       if (!res.ok) {
         const message = await chatBridgeFailureMessage(res);
-        setError(message);
+        let surfacedMessage = message;
         setLastFailedSend(request);
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
@@ -3874,19 +4040,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
           const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
           setProjectRootMissing(true);
-          setError(
+          surfacedMessage =
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
-              : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.",
-          );
+              : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
         }
+        setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
           id: "connect",
           label: `Chat bridge rejected the request: ${message}`,
           status: "error",
-        }, liveGeneration.sessionId);
-        markAssistantError(assistantId, liveGeneration.sessionId);
+        }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
+        markAssistantError(
+          assistantId,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
+        publishStreamHealth({
+          type: "degrade",
+          at: new Date().toISOString(),
+          error: conciseStreamError(surfacedMessage, "Chat bridge request failed"),
+        });
         return;
       }
       if (!res.body) {
@@ -3897,9 +4072,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           id: "connect",
           label: message,
           status: "error",
-        }, liveGeneration.sessionId);
-        markAssistantError(assistantId, liveGeneration.sessionId);
+        }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
+        markAssistantError(
+          assistantId,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         raiseDebugError({ turnId: assistantId, code: "NO_STREAM" });
+        publishStreamHealth({
+          type: "degrade",
+          at: new Date().toISOString(),
+          error: message,
+        });
         return;
       }
 
@@ -3907,15 +4091,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         id: "connect",
         label: "Connected to chat bridge",
         status: "done",
-      }, liveGeneration.sessionId);
-      let sawDone = false;
+      }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
-        if (eventCursor != null) cursor = eventCursor;
-        // The resume route emits this marker when the bounded event ring
-        // dropped output before our cursor. We can render the remaining tail,
-        // but must still rehydrate after settle to restore the missing middle.
-        if (ev.kind === "progress" && ev.id === "resume-gap") needsTranscriptResync = true;
+        if (eventCursor != null) {
+          cursor = Math.max(cursor, eventCursor);
+          pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
+        }
+        if (ev.kind === "done") sawDone = true;
         if (ev.kind === "assistant_chunk") {
           // Hot path: buffer instead of committing per token.
           chunkCoalescer.push(ev.text);
@@ -3923,20 +4106,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // Ordering: buffered text must land before any progress /
           // attachment / done record derived from later frames.
           chunkCoalescer.flush();
+          flushPendingStreamHealthEvent();
+          // The resume route emits this marker when the bounded event ring
+          // dropped output before our cursor. We can render the remaining tail,
+          // but must still rehydrate after settle to restore the missing middle.
+          if (ev.kind === "progress" && ev.id === "resume-gap") {
+            needsTranscriptResync = true;
+            publishStreamHealth({ type: "gap", at: new Date().toISOString() });
+          }
           handleEvent(ev, assistantId, request, liveGeneration);
         }
       };
+      let initialStreamError = "Initial stream ended before completion";
       try {
         const initial = await consumeChatSse(res.body, applyStreamEvent);
         cursor = Math.max(cursor, initial.cursor);
-        sawDone = initial.sawDone;
+        sawDone = sawDone || initial.sawDone;
       } catch (error) {
         // The bridge records every event in its run buffer. A dropped native
         // WebView stream is recoverable; only rethrow an intentional Stop.
         if (controller.signal.aborted) throw error;
+        initialStreamError = conciseStreamError(error, "Initial stream failed");
       }
 
+      let recoveryError: string | null = null;
       if (!sawDone && !controller.signal.aborted) {
+        flushStreamUpdates();
+        publishStreamHealth({
+          type: "resume",
+          at: new Date().toISOString(),
+          error: initialStreamError,
+        });
         try {
           const recovery = await fetch(
             `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
@@ -3945,22 +4145,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (recovery.ok && recovery.body) {
             const resumed = await consumeChatSse(recovery.body, applyStreamEvent);
             cursor = Math.max(cursor, resumed.cursor);
-            sawDone = resumed.sawDone;
+            sawDone = sawDone || resumed.sawDone;
+          } else {
+            recoveryError = recovery.ok
+              ? "Recovery stream unavailable (missing response body)"
+              : `Recovery stream unavailable (HTTP ${recovery.status})`;
           }
         } catch (error) {
           if (controller.signal.aborted) throw error;
+          recoveryError = conciseStreamError(error, "Recovery stream failed");
         }
       }
-      chunkCoalescer.flush();
-      // The buffer can have been reaped after the server persisted its reply
-      // (or the server may have restarted). Re-run history loading once this
-      // owner releases its live snapshot so the screen still catches up.
-      if (!sawDone && !controller.signal.aborted) needsTranscriptResync = true;
+      flushStreamUpdates();
+      if (sawDone) {
+        publishStreamHealth({ type: "settle", at: new Date().toISOString() });
+      } else if (!controller.signal.aborted) {
+        // The buffer can have been reaped after the server persisted its reply
+        // (or the server may have restarted). Re-run history loading once this
+        // owner releases its live snapshot so the screen still catches up.
+        needsTranscriptResync = true;
+        publishStreamHealth({
+          type: "degrade",
+          at: new Date().toISOString(),
+          error: recoveryError ?? initialStreamError,
+        });
+      }
     } catch (err) {
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
-      chunkCoalescer.flush();
-      if ((err as Error)?.name === "AbortError") {
+      flushStreamUpdates();
+      if ((err as Error)?.name === "AbortError" && sawDone) {
+        publishStreamHealth({ type: "settle", at: new Date().toISOString() });
+      } else if ((err as Error)?.name === "AbortError") {
+        publishStreamHealth({ type: "stop", at: new Date().toISOString() });
         updateLiveTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
@@ -3983,16 +4200,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           assistantId,
           undefined,
           liveGeneration.sessionId,
+          { runId, streamHealth: generationStreamHealth },
         );
       } else {
-        setError(err instanceof Error ? err.message : "send failed");
+        const message = conciseStreamError(err, "send failed");
+        setError(message);
         setLastFailedSend(request);
-        markAssistantError(assistantId, liveGeneration.sessionId);
+        markAssistantError(
+          assistantId,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         raiseDebugError({ turnId: assistantId });
+        publishStreamHealth({
+          type: "degrade",
+          at: new Date().toISOString(),
+          error: message,
+        });
       }
     } finally {
       // Always retire THIS generation's registry entry (keyed by session).
-      clearLiveChatGeneration(liveGeneration.sessionId);
+      clearLiveChatGeneration(liveGeneration.sessionId, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -4359,9 +4587,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const applyAssistantChunk = (
     text: string,
     assistantId: string,
-    liveGeneration: { sessionId: string | null },
+    liveGeneration: LiveStreamGeneration,
   ) => {
-    setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
+    setAssistantLifecycle(
+      assistantId,
+      "streaming",
+      liveGeneration.sessionId,
+      liveStreamMetadata(liveGeneration),
+    );
     updateLiveTurns((prev) =>
       prev.map((t) =>
         t.id === assistantId
@@ -4385,6 +4618,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       assistantId,
       undefined,
       liveGeneration.sessionId,
+      liveStreamMetadata(liveGeneration),
     );
   };
 
@@ -4392,7 +4626,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     ev: StreamEvent,
     assistantId: string,
     request: FailedSend,
-    liveGeneration: { sessionId: string | null; originSessionId: string | null; controller: AbortController },
+    liveGeneration: LiveStreamGeneration,
   ) => {
     switch (ev.kind) {
       case "session": {
@@ -4420,7 +4654,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setTaskArmed(false);
           void createLinkedTaskCard(ev.sessionId, request.text);
         }
-        persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
+        persistLiveTurns(
+          turnsRef.current,
+          assistantId,
+          liveGeneration.controller,
+          liveGeneration.sessionId,
+          {
+            runId: liveGeneration.runId,
+            streamHealth: liveGeneration.streamHealth(),
+          },
+        );
         return;
       }
       case "assistant_chunk": {
@@ -4442,15 +4685,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           assistantId,
           undefined,
           liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
         );
         return;
       }
       case "progress": {
-        upsertTurnProgress(assistantId, ev, liveGeneration.sessionId);
+        upsertTurnProgress(
+          assistantId,
+          ev,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         return;
       }
       case "tool_use": {
-        setAssistantLifecycle(assistantId, "tooling", liveGeneration.sessionId);
+        setAssistantLifecycle(
+          assistantId,
+          "tooling",
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         const incoming: ToolEvent = {
           id: ev.id ?? crypto.randomUUID(),
           name: ev.name,
@@ -4508,6 +4762,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           assistantId,
           undefined,
           liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
         );
         return;
       }
@@ -4531,6 +4786,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           assistantId,
           undefined,
           liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
         );
         if (ev.isError) {
           setLastFailedSend(request);
@@ -4557,13 +4813,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           onSessionStarted?.(ev.sessionId);
         }
-        persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
+        persistLiveTurns(
+          turnsRef.current,
+          assistantId,
+          liveGeneration.controller,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         return;
       }
       case "error": {
         setError(ev.message);
         setLastFailedSend(request);
-        markAssistantError(assistantId, liveGeneration.sessionId);
+        markAssistantError(
+          assistantId,
+          liveGeneration.sessionId,
+          liveStreamMetadata(liveGeneration),
+        );
         raiseDebugError({ turnId: assistantId, code: ev.code });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
@@ -4571,7 +4837,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  const markAssistantError = (id: string, targetSessionId: string | null = currentSessionRef.current) => {
+  const markAssistantError = (
+    id: string,
+    targetSessionId: string | null = currentSessionRef.current,
+    metadata?: LiveChatGenerationMetadata,
+  ) => {
     updateLiveTurns((prev) =>
       prev.map((t) => (
         t.id === id
@@ -4581,6 +4851,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       id,
       undefined,
       targetSessionId,
+      metadata,
     );
   };
 
@@ -4588,12 +4859,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     id: string,
     lifecycle: ChatTurnLifecycle,
     targetSessionId: string | null = currentSessionRef.current,
+    metadata?: LiveChatGenerationMetadata,
   ) {
     updateLiveTurns((prev) =>
       prev.map((t) => (t.id === id ? { ...t, lifecycle } : t)),
       id,
       undefined,
       targetSessionId,
+      metadata,
     );
   }
 
@@ -4607,12 +4880,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       durationMs?: number;
     },
     targetSessionId: string | null = currentSessionRef.current,
+    metadata?: LiveChatGenerationMetadata,
   ) {
     updateLiveTurns((prev) =>
       prev.map((t) => (t.id === id ? { ...t, progress: upsertProgressEvent(t.progress, event) } : t)),
       id,
       undefined,
       targetSessionId,
+      metadata,
     );
   }
 
@@ -5764,7 +6039,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <div className="h-[60vh] min-h-0">
           {/* This instance's own state — not the global debug store, which a
               sibling split-pane ChatView may have published over. */}
-          <DebugPane sessionId={sessionId} session={session ?? null} familiar={familiar} turns={turns} />
+          <DebugPane
+            sessionId={sessionId}
+            session={session ?? null}
+            familiar={familiar}
+            turns={turns}
+            streamHealth={streamHealth}
+          />
         </div>
       </Modal>
     </section>

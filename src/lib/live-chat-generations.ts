@@ -25,15 +25,21 @@ export type LiveGenerationSnapshot<T> = {
   updatedAt: number;
 };
 
-export type LiveGenerationListener<T> = (snapshot: LiveGenerationSnapshot<T> | null) => void;
+export type LiveGenerationListener<S> = (snapshot: S | null) => void;
 
-export type LiveGenerationRegistry<T> = {
-  read(sessionId: string): LiveGenerationSnapshot<T> | null;
+export type LiveGenerationRegistry<
+  T,
+  S extends LiveGenerationSnapshot<T> = LiveGenerationSnapshot<T>,
+> = {
+  read(sessionId: string): S | null;
   /** Store a snapshot (turns are defensively cloned). Returns the stored
    *  snapshot — the same object listeners receive — so a caller can mirror
    *  it into component state without triggering a second render when its
    *  own notification arrives. */
-  record(snapshot: LiveGenerationSnapshot<T>): LiveGenerationSnapshot<T>;
+  record(snapshot: S): S;
+  /** Replace a stored snapshot without notifying listeners. The next turn
+   *  advance publishes the staged fields with its normal coalesced update. */
+  stage(sessionId: string, updater: (snapshot: S) => S): S | null;
   /** Apply `updater` to the session's snapshot turns and stamp `updatedAt`.
    *  Returns the stored snapshot, or null when the stream already settled /
    *  the snapshot was evicted. */
@@ -41,28 +47,31 @@ export type LiveGenerationRegistry<T> = {
     sessionId: string,
     updater: (prev: T[]) => T[],
     nextActiveLeafId: string,
-  ): LiveGenerationSnapshot<T> | null;
+  ): S | null;
   clear(sessionId: string | null | undefined): void;
   /** Listen for snapshot updates (record/advance) and settle (clear → null).
    *  Notifications are delivered on a microtask. Returns an unsubscriber. */
-  subscribe(sessionId: string, listener: LiveGenerationListener<T>): () => void;
+  subscribe(sessionId: string, listener: LiveGenerationListener<S>): () => void;
 };
 
-export function createLiveGenerationRegistry<T>(cloneTurn: (turn: T) => T): LiveGenerationRegistry<T> {
-  const snapshots = new Map<string, LiveGenerationSnapshot<T>>();
-  const listeners = new Map<string, Set<LiveGenerationListener<T>>>();
+export function createLiveGenerationRegistry<
+  T,
+  S extends LiveGenerationSnapshot<T> = LiveGenerationSnapshot<T>,
+>(cloneTurn: (turn: T) => T): LiveGenerationRegistry<T, S> {
+  const snapshots = new Map<string, S>();
+  const listeners = new Map<string, Set<LiveGenerationListener<S>>>();
 
-  function notify(sessionId: string, snapshot: LiveGenerationSnapshot<T> | null) {
+  function notify(sessionId: string, snapshot: S | null) {
     const set = listeners.get(sessionId);
     if (!set?.size) return;
     for (const listener of set) listener(snapshot);
   }
 
-  function record(snapshot: LiveGenerationSnapshot<T>): LiveGenerationSnapshot<T> {
+  function record(snapshot: S): S {
     const next = {
       ...snapshot,
       turns: snapshot.turns.map(cloneTurn),
-    };
+    } as S;
     snapshots.set(snapshot.sessionId, next);
     queueMicrotask(() => notify(snapshot.sessionId, next));
     return next;
@@ -73,6 +82,13 @@ export function createLiveGenerationRegistry<T>(cloneTurn: (turn: T) => T): Live
       return snapshots.get(sessionId) ?? null;
     },
     record,
+    stage(sessionId, updater) {
+      const snapshot = snapshots.get(sessionId);
+      if (!snapshot) return null;
+      const next = updater(snapshot);
+      snapshots.set(sessionId, next);
+      return next;
+    },
     advance(sessionId, updater, nextActiveLeafId) {
       const snap = snapshots.get(sessionId);
       if (!snap) return null; // stream already settled / snapshot evicted
@@ -81,7 +97,7 @@ export function createLiveGenerationRegistry<T>(cloneTurn: (turn: T) => T): Live
         turns: updater(snap.turns),
         activeLeafId: nextActiveLeafId,
         updatedAt: Date.now(),
-      });
+      } as S);
     },
     clear(sessionId) {
       if (!sessionId) return;
@@ -93,7 +109,7 @@ export function createLiveGenerationRegistry<T>(cloneTurn: (turn: T) => T): Live
       queueMicrotask(() => notify(sessionId, null));
     },
     subscribe(sessionId, listener) {
-      const set = listeners.get(sessionId) ?? new Set<LiveGenerationListener<T>>();
+      const set = listeners.get(sessionId) ?? new Set<LiveGenerationListener<S>>();
       set.add(listener);
       listeners.set(sessionId, set);
       return () => {

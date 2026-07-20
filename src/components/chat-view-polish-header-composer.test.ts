@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   attachmentsLib,
   attachStagingHook,
+  chatDebugStoreSource,
   emptyStateSource,
   globalsSrc,
   menusHookSource,
@@ -411,10 +412,241 @@ assert.match(
   /consumeChatSse\(res\.body, applyStreamEvent\)[\s\S]*\/api\/chat\/stream\?runId=\$\{encodeURIComponent\(runId\)\}&cursor=\$\{cursor\}/,
   "A chat stream that ends without done reattaches through the buffered stream endpoint",
 );
+
+const initialStreamSection =
+  source.match(/let initialStreamError = "Initial stream ended before completion";[\s\S]*?let recoveryError: string \| null = null;/)?.[0] ?? "";
+assert.match(
+  initialStreamSection,
+  /if \(controller\.signal\.aborted\) throw error;/,
+  "An aborted initial consumeChatSse read must rethrow the original error",
+);
+assert.match(
+  initialStreamSection,
+  /initialStreamError = conciseStreamError\(error, "Initial stream failed"\);/,
+  "A non-aborted initial consumeChatSse failure should store the concise initialStreamError",
+);
+
+const recoverySection =
+  source.match(/let recoveryError: string \| null = null;[\s\S]*?if \(sawDone\) \{/)?.[0] ?? "";
+assert.equal(
+  (recoverySection.match(/publishStreamHealth\(\{\s*type: "resume"/g) ?? []).length,
+  1,
+  "Resume health should publish exactly once",
+);
+const resumeDispatchIndex = recoverySection.indexOf('type: "resume"');
+const recoveryFetchIndex = recoverySection.indexOf("/api/chat/stream?runId=");
+assert.ok(
+  resumeDispatchIndex !== -1 && recoveryFetchIndex !== -1 && resumeDispatchIndex < recoveryFetchIndex,
+  "Resume dispatch must appear before the recovery fetch",
+);
+assert.match(
+  recoverySection,
+  /recoveryError = recovery\.ok\s*\?\s*"Recovery stream unavailable \(missing response body\)"\s*:\s*`Recovery stream unavailable \(HTTP \$\{recovery\.status\}\)`;/,
+  "Recovery errors should preserve the exact concise wording for missing bodies and non-OK responses",
+);
+
 assert.match(
   source,
-  /ev\.kind === "progress" && ev\.id === "resume-gap"\)[\s\S]{0,100}?needsTranscriptResync = true/,
-  "An evicted replay gap must rehydrate the persisted transcript after the resumed stream settles",
+  /useReducer\(\s*chatStreamHealthReducer,\s*EMPTY_CHAT_STREAM_CLIENT_HEALTH,\s*\)/,
+  "Each ChatView owns its stream-health state instead of reading a global last-writer snapshot",
+);
+assert.match(
+  source,
+  /const streamHealthRef = useRef\(EMPTY_CHAT_STREAM_CLIENT_HEALTH\);[\s\S]*?streamHealthRef\.current = next;[\s\S]*?dispatchStreamHealth\(action\)/,
+  "A mutable stream-health ref should advance synchronously with every reducer action",
+);
+assert.match(
+  source,
+  /const runId = crypto\.randomUUID\(\);[\s\S]*?currentStreamHealthRunIdRef\.current = runId;[\s\S]*?applyStreamHealthAction\(\{\s*type: "connect",\s*runId,\s*at: new Date\(\)\.toISOString\(\),?\s*\}\)/,
+  "A send claims stream-health ownership before starting its client-health record",
+);
+
+const streamHealthPublisher =
+  source.match(/const publishStreamHealth = \([\s\S]*?\n    \};/)?.[0] ?? "";
+assert.match(
+  streamHealthPublisher,
+  /currentStreamHealthRunIdRef\.current !== runId/,
+  "Only the currently displayed run may publish stream health",
+);
+assert.match(
+  streamHealthPublisher,
+  /const displayedSessionId = currentSessionRef\.current;[\s\S]*?displayedSessionId === liveGeneration\.sessionId[\s\S]*?liveGeneration\.sessionId == null[\s\S]*?displayedSessionId === liveGeneration\.originSessionId/,
+  "Health publishing verifies that the generation still owns the displayed thread",
+);
+assert.match(
+  streamHealthPublisher,
+  /applyStreamHealthAction\(\{\s*type: "hydrate",\s*health: generationStreamHealth/,
+  "Owned stream-health actions reach the per-pane reducer",
+);
+
+const sendStreamHealthSection =
+  source.match(/const runId = crypto\.randomUUID\(\);[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
+assert.equal(
+  (sendStreamHealthSection.match(/applyStreamHealthAction\(\{\s*type: "connect"/g) ?? []).length,
+  1,
+  "Only connect dispatches directly; later run actions must pass ownership checks",
+);
+
+const pendingHealthSection =
+  source.match(/let pendingStreamHealthEvent:[\s\S]*?const chunkCoalescer = createChunkCoalescer\(\{[\s\S]*?\n    \}\);/)?.[0] ?? "";
+assert.match(
+  pendingHealthSection,
+  /const flushPendingStreamHealthEvent = \(\) => \{[\s\S]*?publishStreamHealth\(\{\s*type: "event",[\s\S]*?cursor: latest\.cursor,[\s\S]*?at: latest\.at/,
+  "The latest valid event cursor is published by a coalesced flush helper",
+);
+assert.match(
+  pendingHealthSection,
+  /apply: \(text\) => \{\s*flushPendingStreamHealthEvent\(\);\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\}/,
+  "Health cursor publication shares the assistant chunk coalescer cadence",
+);
+
+const applyStreamEventSection =
+  source.match(/const applyStreamEvent = \(ev: StreamEvent, eventCursor: number \| null\) => \{[\s\S]*?\n      \};/)?.[0] ?? "";
+assert.match(
+  applyStreamEventSection,
+  /if \(eventCursor != null\) \{[\s\S]*?cursor = Math\.max\(cursor, eventCursor\);[\s\S]*?pendingStreamHealthEvent = \{ cursor, at: new Date\(\)\.toISOString\(\) \};/,
+  "Valid SSE cursors are recorded locally instead of dispatching React state per token",
+);
+assert.doesNotMatch(
+  applyStreamEventSection,
+  /dispatchStreamHealth|type: "event"/,
+  "The per-event hot path must not dispatch stream-health React state",
+);
+assert.match(
+  applyStreamEventSection,
+  /if \(ev\.kind === "done"\) sawDone = true;[\s\S]*?if \(ev\.kind === "assistant_chunk"\)/,
+  "A parsed done event is observed immediately before any later reader failure",
+);
+assert.match(
+  applyStreamEventSection,
+  /else \{[\s\S]{0,300}?chunkCoalescer\.flush\(\);\s*flushPendingStreamHealthEvent\(\);[\s\S]*?handleEvent\(ev, assistantId, request, liveGeneration\);/,
+  "Non-chunk events publish the latest health cursor before lifecycle handling",
+);
+assert.match(
+  source,
+  /sawDone = sawDone \|\| initial\.sawDone;[\s\S]*?sawDone = sawDone \|\| resumed\.sawDone;/,
+  "Reader results cannot downgrade a done event already observed by the callback",
+);
+assert.match(
+  recoverySection,
+  /flushStreamUpdates\(\);[\s\S]*?publishStreamHealth\(\{\s*type: "resume",[\s\S]{0,180}?error: initialStreamError/,
+  "A recovery attempt records the initial transport error in stream health",
+);
+assert.match(
+  source,
+  /ev\.kind === "progress" && ev\.id === "resume-gap"\) \{[\s\S]{0,180}?needsTranscriptResync = true;[\s\S]{0,180}?publishStreamHealth\(\{\s*type: "gap"/,
+  "An evicted replay gap must record health degradation and rehydrate the persisted transcript",
+);
+assert.match(
+  source,
+  /flushStreamUpdates\(\);\s*if \(sawDone\) \{[\s\S]{0,180}?publishStreamHealth\(\{\s*type: "settle"[\s\S]{0,240}?else if \(!controller\.signal\.aborted\) \{[\s\S]{0,700}?needsTranscriptResync = true;[\s\S]{0,240}?publishStreamHealth\(\{\s*type: "degrade"/,
+  "A completed stream settles health while an incomplete non-aborted stream degrades and resyncs",
+);
+assert.match(
+  source,
+  /flushStreamUpdates\(\);\s*if \(\(err as Error\)\?\.name === "AbortError" && sawDone\) \{[\s\S]*?\} else if \(\(err as Error\)\?\.name === "AbortError"\) \{[\s\S]{0,180}?publishStreamHealth\(\{\s*type: "stop"/,
+  "An intentional AbortError records a stopped stream",
+);
+assert.match(
+  source,
+  /let sawDone = false;[\s\S]*?\n    try \{[\s\S]*?\} catch \(err\) \{[\s\S]*?if \(\(err as Error\)\?\.name === "AbortError" && sawDone\) \{[\s\S]*?type: "settle"[\s\S]*?\} else if \(\(err as Error\)\?\.name === "AbortError"\) \{[\s\S]*?type: "stop"[\s\S]*?lifecycle: "cancelled"/,
+  "A parsed done event must settle instead of being overwritten by a later AbortError, while a pre-done abort remains cancelled",
+);
+
+const earlyHttpFailureSection =
+  source.match(/const message = await chatBridgeFailureMessage\(res\);[\s\S]*?\n        return;\n      \}/)?.[0] ?? "";
+assert.match(
+  earlyHttpFailureSection,
+  /error: conciseStreamError\(surfacedMessage, "Chat bridge request failed"\)/,
+  "Dynamic HTTP response text is bounded before stream health stores it",
+);
+const outerSendCatch =
+  source.match(/\} catch \(err\) \{\n      \/\/ Apply any buffered streamed text FIRST[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
+assert.match(
+  outerSendCatch,
+  /const message = conciseStreamError\(err, "send failed"\);[\s\S]*?error: message/,
+  "The outer send failure is bounded before stream health stores it",
+);
+
+const navigationHealthSection =
+  source.match(/const streamHealthSessionRef = useRef\(sessionId\);[\s\S]*?\}, \[sessionId\]\);/)?.[0] ?? "";
+assert.match(
+  navigationHealthSection,
+  /previousSessionId == null[\s\S]*?sessionId != null[\s\S]*?liveSessionIdRef\.current === sessionId[\s\S]*?currentSessionRef\.current === sessionId/,
+  "Null-to-assigned health preservation requires the exact promoted live session identity",
+);
+assert.doesNotMatch(
+  navigationHealthSection,
+  /streamHealth\.phase/,
+  "Session promotion identity must not be inferred from a generic active phase",
+);
+assert.match(
+  navigationHealthSection,
+  /currentStreamHealthRunIdRef\.current = null;[\s\S]*?applyStreamHealthAction\(\{ type: "reset" \}\)/,
+  "Actual navigation retires the current health run before resetting its state",
+);
+assert.match(
+  source,
+  /function adoptLiveGenerationMetadata\([\s\S]*?currentStreamHealthRunIdRef\.current = live\.runId \?\? live\.streamHealth\?\.runId \?\? null;[\s\S]*?applyStreamHealthAction\(\{ type: "hydrate", health: restoredHealth \}\);[\s\S]*?stopKeysRef\.current = \{[\s\S]*?runId: currentStreamHealthRunIdRef\.current,[\s\S]*?sessionId: targetSessionId/,
+  "Adoption should restore run ownership, reducer health, and run-keyed stop/debug lookup state",
+);
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?const latest = readLiveChatGeneration\(sessionId\);[\s\S]*?if \(!live && latest\) return;[\s\S]*?if \(live && latest && latest !== live\) return;[\s\S]*?currentStreamHealthRunIdRef\.current !== notificationRunId[\s\S]*?return;/,
+  "Queued older snapshots and stale settle notifications must not steal ownership from a newer run",
+);
+assert.match(
+  source,
+  /recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
+  "Existing-session sends should persist run ID and current health in their initial live snapshot",
+);
+assert.match(
+  source,
+  /case "session":[\s\S]*?persistLiveTurns\([\s\S]*?runId: liveGeneration\.runId,[\s\S]*?streamHealth: liveGeneration\.streamHealth\(\)/,
+  "Brand-new chats should persist run-keyed health when the session event creates the registry snapshot",
+);
+assert.match(
+  source,
+  /clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
+  "A settling older run must not clear a newer run's registry snapshot",
+);
+
+assert.match(
+  source,
+  /import \{ DebugPane \} from "@\/components\/debug-pane"/,
+  "ChatView imports the real DebugPane once its props accept stream health",
+);
+assert.doesNotMatch(
+  source,
+  /DebugPaneBase|function DebugPane\(/,
+  "The temporary local forwarding wrapper must be removed",
+);
+assert.doesNotMatch(
+  source,
+  /type ChatDebugSnapshot/,
+  "The wrapper-only debug snapshot prop type should leave ChatView after direct DebugPane integration",
+);
+assert.match(
+  source,
+  /<DebugPane[\s\S]{0,300}?streamHealth=\{streamHealth\}/,
+  "The owning ChatView passes its own stream health directly to DebugPane",
+);
+const debugPublishCall = source.match(/publishChatDebugState\(debugToken, \{[\s\S]*?\}\);/)?.[0] ?? "";
+assert.match(
+  debugPublishCall,
+  /publishChatDebugState\(debugToken, \{\s*sessionId,\s*session: session \?\? null,\s*familiar,\s*turns\s*\}\);/,
+  "The shared debug snapshot should stay limited to session, familiar, and turns",
+);
+assert.doesNotMatch(
+  debugPublishCall,
+  /streamHealth/,
+  "The shared debug snapshot must not carry streamHealth",
+);
+const chatDebugSnapshotType = chatDebugStoreSource.match(/export type ChatDebugSnapshot = \{[\s\S]*?\n\};/)?.[0] ?? "";
+assert.doesNotMatch(
+  chatDebugSnapshotType,
+  /streamHealth/,
+  "ChatDebugSnapshot should not define streamHealth",
 );
 assert.match(
   source,

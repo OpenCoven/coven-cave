@@ -91,7 +91,7 @@ assert.doesNotMatch(
 const chatView = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 assert.match(
   chatView,
-  /<DebugPane sessionId=\{sessionId\} session=\{session \?\? null\} familiar=\{familiar\} turns=\{turns\} \/>/,
+  /<DebugPane[\s\S]*sessionId=\{sessionId\}[\s\S]*session=\{session \?\? null\}[\s\S]*familiar=\{familiar\}[\s\S]*turns=\{turns\}[\s\S]*streamHealth=\{streamHealth\}[\s\S]*\/>/,
   "ChatView hands its own live state to the DebugPane in its modal",
 );
 assert.match(

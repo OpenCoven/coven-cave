@@ -2,6 +2,7 @@ import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
+import type { ChatStreamClientHealth, RunBufferStatus } from "./chat-stream-health.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -79,8 +80,15 @@ export type DebugBundle = {
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  streamHealth: DebugStreamHealth;
   /** Repro context for bug-report bundles: which build exported this, when. */
   environment: { appVersion: string; exportedAt: string };
+};
+
+export type DebugStreamHealth = {
+  client: ChatStreamClientHealth;
+  server: RunBufferStatus | null;
+  serverStatusError: string | null;
 };
 
 /** Append a poll page onto the accumulated tail: dedupe by seq, keep ascending
@@ -153,12 +161,14 @@ export function exportDebugTurn(turn: DebugTurn): DebugTurn {
  *  the explicit field-pick strips everything but {id, harness, model} from
  *  the export. Turns are preview-stripped via {@link exportDebugTurn}
  *  (reference-stable when no turn has attachments); events are passed by
- *  reference (snapshot at call time). */
+ *  reference (snapshot at call time), as is the assembled stream-health
+ *  snapshot. */
 export function buildDebugBundle(args: {
   session: SessionRow | null;
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  streamHealth: DebugStreamHealth;
   environment: { appVersion: string; exportedAt: string };
 }): DebugBundle {
   const anyAttachments = args.turns.some((turn) => turn.attachments?.length);
@@ -169,6 +179,7 @@ export function buildDebugBundle(args: {
       : null,
     turns: anyAttachments ? args.turns.map(exportDebugTurn) : args.turns,
     events: args.events,
+    streamHealth: args.streamHealth,
     environment: args.environment,
   };
 }

@@ -82,25 +82,58 @@ assert.ok(
 
 // buildDebugBundle: shape + familiar narrowed to {id, harness, model}
 const env = { appVersion: "0.1.2-test", exportedAt: "2026-07-17T12:00:00Z" };
+const streamHealth = {
+  client: {
+    phase: "streaming",
+    runId: "run-1",
+    cursor: 7,
+    resumeAttempts: 1,
+    gapDetected: false,
+    needsTranscriptResync: false,
+    lastEventAt: "2026-07-17T11:59:59Z",
+    lastErrorAt: null,
+    lastError: null,
+  },
+  server: {
+    done: false,
+    oldestRetainedSeq: 2,
+    latestSeq: 7,
+    retainedEventCount: 6,
+    retainedBytes: 4096,
+    hasEvictedEvents: true,
+    liveTails: 1,
+  },
+  serverStatusError: null,
+};
 const bundle = buildDebugBundle({
   session: { id: "s1", status: "completed" },
   familiar: { id: "f1", display_name: "Nova", role: "dev", harness: "claude", model: "opus" },
   turns: [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }],
   events: [ev(1)],
+  streamHealth,
   environment: env,
 });
 assert.equal(bundle.session.id, "s1");
 assert.deepEqual(bundle.familiar, { id: "f1", harness: "claude", model: "opus" });
 assert.equal(bundle.turns.length, 1);
 assert.equal(bundle.events.length, 1);
+assert.equal(bundle.streamHealth, streamHealth, "bundle carries the exact stream-health snapshot reference");
 assert.deepEqual(bundle.environment, env, "bundle carries the repro environment block verbatim");
 assert.equal(
-  buildDebugBundle({ session: null, familiar: null, turns: [], events: [], environment: env }).familiar,
+  buildDebugBundle({ session: null, familiar: null, turns: [], events: [], streamHealth, environment: env })
+    .familiar,
   null,
 );
 const turnsRef = [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }];
 assert.equal(
-  buildDebugBundle({ session: null, familiar: null, turns: turnsRef, events: [], environment: env }).turns,
+  buildDebugBundle({
+    session: null,
+    familiar: null,
+    turns: turnsRef,
+    events: [],
+    streamHealth,
+    environment: env,
+  }).turns,
   turnsRef,
   "attachment-free turns are passed by reference, not cloned",
 );
@@ -133,6 +166,7 @@ const strippedBundle = buildDebugBundle({
   familiar: null,
   turns: [attachedTurn],
   events: [],
+  streamHealth,
   environment: env,
 });
 assert.equal(

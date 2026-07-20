@@ -9,6 +9,7 @@ export const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cav
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 export const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+export const chatDebugStoreSource = readFileSync(new URL("../lib/chat-debug-store.ts", import.meta.url), "utf8");
 export const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 export const attachStagingHook = readFileSync(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 export const menusHookSource = readFileSync(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
