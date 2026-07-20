@@ -672,10 +672,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                     setCreateError(null);
                     setProjectError(null);
                   }}
-                  placeholder="/absolute/path/to/project"
-                  aria-invalid={Boolean(createError)}
-                  aria-describedby="project-root-help project-root-error"
-                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                  aria-describedby={createError ? "project-root-help project-root-error" : "project-root-help"}
                 />
                 <Button
                   variant="secondary"
