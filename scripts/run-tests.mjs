@@ -782,6 +782,7 @@ export const SUITES = {
     "src/components/quick-chat-polish.test.ts",
     "src/components/notch-quick-chat.test.ts",
     "src/components/quick-chat-controls.test.ts",
+    "src/lib/quick-chat-thread-state.test.ts",
     "src/components/familiar-quick-switch.test.ts",
     "src/lib/salem/happy-paths.test.ts",
     "src/lib/salem/pathfinder-match.test.ts",
