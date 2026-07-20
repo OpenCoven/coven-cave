@@ -54,8 +54,18 @@ assert.match(
 );
 assert.match(
   helper,
-  /export function projectPermissionSurfaceForRequest\([\s\S]*MOBILE_ACCESS_HEADER[\s\S]*return "mobile"/,
-  "project API helper should map verified mobile requests to the mobile audit/check surface",
+  /const MOBILE_READ_FALLBACK_SURFACES:[\s\S]*"file-browse",[\s\S]*"file-read",[\s\S]*"project-api",/,
+  "project API helper should only map verified mobile read-capable fallbacks to the mobile audit/check surface",
+);
+assert.match(
+  helper,
+  /req\.headers\.get\(MOBILE_ACCESS_HEADER\) === "1" &&[\s\S]*MOBILE_READ_FALLBACK_SURFACES\.has\(fallback\)[\s\S]*return "mobile"/,
+  "project API helper should preserve write-capable fallback surfaces for verified mobile requests",
+);
+assert.doesNotMatch(
+  helper,
+  /MOBILE_READ_FALLBACK_SURFACES:[\s\S]*"file-write"/,
+  "mobile project API writes must keep the file-write surface so read-only grants cannot mutate files",
 );
 
 for (const [name, source] of [

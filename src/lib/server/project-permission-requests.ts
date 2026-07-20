@@ -48,8 +48,10 @@ const LOCAL_HUMAN_READ_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set
  * True when this is the human operator reading (not a familiar, not a write).
  * Two shapes:
  *   - their own desktop on a loopback origin, for the read surfaces above;
- *   - the same human on their own phone — the native app sends the mobile header
- *     (→ surface "mobile") and only ever GETs to read. The request already
+ *   - the same human on their own phone — the native app sends the mobile header,
+ *     and read fallbacks are remapped to surface "mobile"; non-read surfaces keep
+ *     their fallback (e.g., file-write). The app only ever GETs to read. The
+ *     request already
  *     cleared the server's front gate (token / same-origin / tailnet-trust) to
  *     reach this route, so a mobile GET is the trusted human; writes (POST) still
  *     fall through to the familiar requirement.
@@ -102,11 +104,22 @@ export async function assertProjectApiAccess(args: {
   await assertProjectAccess({ familiarId }, project.id, surface);
 }
 
+const MOBILE_READ_FALLBACK_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set([
+  "file-browse",
+  "file-read",
+  "project-api",
+]);
+
 export function projectPermissionSurfaceForRequest(
   req: Request,
   fallback: ProjectPermissionSurface,
 ): ProjectPermissionSurface {
-  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return "mobile";
+  if (
+    req.headers.get(MOBILE_ACCESS_HEADER) === "1" &&
+    MOBILE_READ_FALLBACK_SURFACES.has(fallback)
+  ) {
+    return "mobile";
+  }
   return fallback;
 }
 
