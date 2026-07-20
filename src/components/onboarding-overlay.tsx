@@ -1002,7 +1002,8 @@ export function OnboardingOverlay({
               Follow the numbered steps. Each one carries its own instructions,
               a one-click action where Cave can do the work for you, and the
               exact command if you&rsquo;d rather use a terminal. Finished
-              steps tick themselves — status re-checks every 2 seconds.
+              steps tick themselves while setup is in progress — status
+              re-checks every 2 seconds until everything is ready.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
