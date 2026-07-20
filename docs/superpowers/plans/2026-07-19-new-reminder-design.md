@@ -142,8 +142,7 @@ Expected: both tests pass, codemod reports no remaining drift after rewrites, li
 git add src/components/new-reminder-modal.tsx \
   src/components/new-reminder-modal.test.ts \
   src/components/reminder-link-field.test.ts
-git commit -S -m "feat(reminders): redesign new reminder modal" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "feat(reminders): redesign new reminder modal"
 git push
 ```
 
