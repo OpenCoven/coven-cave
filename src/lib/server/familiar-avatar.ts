@@ -20,13 +20,12 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
-  ".svg": "image/svg+xml",
   ".avif": "image/avif",
 };
 
 // Preference order when several images exist and none matches `<id>.<ext>` —
-// also the tiebreak order for the exact-id match (png first, vector last).
-const EXT_PRIORITY = [".png", ".webp", ".jpg", ".jpeg", ".avif", ".gif", ".svg"];
+// also the tiebreak order for the exact-id match (png first).
+const EXT_PRIORITY = [".png", ".webp", ".jpg", ".jpeg", ".avif", ".gif"];
 
 export function isImageFile(name: string): boolean {
   return path.extname(name).toLowerCase() in CONTENT_TYPE_BY_EXT;

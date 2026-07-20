@@ -51,10 +51,11 @@ function cacheSet(key: string, value: RenderedAvatar): void {
  * Serve a familiar's avatar image from its workspace:
  *   ~/.coven/workspaces/familiars/<id>/avatars/<image>.<ext>
  *
- * Raster avatars are downscaled to <=256px and re-encoded as PNG so a 30MB
+ * Avatars are downscaled to <=256px and re-encoded as PNG so a 30MB
  * source doesn't ship for a 48px avatar while still rendering in desktop
- * WebViews that lack WebP codec support; SVGs are served as-is (already small,
- * and vector). The `id` segment (the only user input) is slug-guarded, and the
+ * WebViews that lack WebP codec support. SVGs are intentionally unsupported:
+ * serving workspace-controlled active content from this same-origin API would
+ * create an XSS primitive. The `id` segment (the only user input) is slug-guarded, and the
  * served filename is chosen from the directory listing — never from the request
  * — so this can't read outside the avatars dir. 404 when the familiar has no
  * avatar; the UI then falls back to the glyph.
@@ -95,21 +96,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   let rendered: RenderedAvatar;
-  if (avatar.contentType === "image/svg+xml") {
-    // Vector source — already tiny; serve verbatim rather than rasterizing.
-    rendered = { body: new Uint8Array(bytes), contentType: "image/svg+xml" };
-  } else {
-    try {
-      const png = await sharp(bytes)
-        .rotate() // honor EXIF orientation before resizing
-        .resize(AVATAR_MAX_DIM, AVATAR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
-        .png({ compressionLevel: 9, adaptiveFiltering: true })
-        .toBuffer();
-      rendered = { body: new Uint8Array(png), contentType: "image/png" };
-    } catch {
-      // Not a decodable raster image — treat as missing rather than 500.
-      return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });
-    }
+  try {
+    const png = await sharp(bytes)
+      .rotate() // honor EXIF orientation before resizing
+      .resize(AVATAR_MAX_DIM, AVATAR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toBuffer();
+    rendered = { body: new Uint8Array(png), contentType: "image/png" };
+  } catch {
+    // Not a decodable supported image — treat as missing rather than 500.
+    return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });
   }
 
   cacheSet(cacheKey, rendered);
