@@ -183,5 +183,7 @@ assert.match(view, /setNarrowPane\(w > 0 && w < 560\)/, "the fallback keys on co
 assert.match(view, /\{effectiveView === "week" && \(/, "the render switch reads the effective view");
 assert.match(view, /if \(effectiveView === "week"\) return addDays\(prev, dir \* 7\)/, "navigate steps by the VISIBLE unit");
 assert.match(view, /aria-pressed=\{viewMode === id\}/, "the view toggle still reflects the user's stored choice");
+assert.match(view, /if \(isMobile && viewMode !== "agenda"[\s\S]{0,360}setDeepLinkViewMode\("agenda"\)/, "mobile Agenda is a transient viewport override, not a saved preference");
+assert.doesNotMatch(view, /if \(isMobile && viewMode !== "agenda"[\s\S]{0,360}setViewMode\("agenda"\)/, "mobile layout must not replace a desktop calendar preference");
 
 console.log("calendar-actions.test.ts: ok");

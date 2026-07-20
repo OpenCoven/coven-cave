@@ -76,4 +76,7 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.board, /const activeTab = deepLinkTab \?\? storedActiveTab/, "an explicit Board deep link wins without replacing the saved tab");
   assert.match(sources.grimoire, /useSurfacePreference\(surfacePreferenceSpecs\.grimoire\.selected\)/, "Grimoire restores its durable selected document through the registry");
   assert.match(sources.grimoire, /writeStoredTabs\(/, "Grimoire retains its existing resilient open-tab persistence");
+  assert.match(sources.grimoire, /if \(deepLinkActiveRef\.current\) \{\s*deepLinkActiveRef\.current = false;/, "a one-visit Grimoire deep link yields to later user selections");
+  assert.match(sources.grimoire, /restoredSelectionPendingRef\.current = true;/, "Grimoire marks a restored selection before persistence runs");
+  assert.match(sources.grimoire, /if \(restoredSelectionPendingRef\.current\)/, "Grimoire waits to persist until a restored selection has been applied");
 });

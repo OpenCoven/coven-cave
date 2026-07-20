@@ -754,6 +754,8 @@ export function GrimoireView({
   // The hash is a one-visit route target. Keep it separate from the durable
   // preference so a linked document never replaces the person's return tab.
   const deepLinkActiveRef = useRef(false);
+  const preferenceRestoreAppliedRef = useRef(false);
+  const restoredSelectionPendingRef = useRef(false);
   const [{ openTabs, selection }, setTabState] = useState<{
     openTabs: GrimoireSelection[];
     selection: GrimoireSelection | null;
@@ -775,10 +777,13 @@ export function GrimoireView({
   });
 
   useEffect(() => {
-    if (!preferencesHydrated || deepLinkActiveRef.current || !storedSelectionKey) return;
+    if (!preferencesHydrated || deepLinkActiveRef.current || preferenceRestoreAppliedRef.current) return;
+    preferenceRestoreAppliedRef.current = true;
+    if (!storedSelectionKey) return;
     setTabState((current) => {
       const restored = current.openTabs.find((tab) => selectionKey(tab) === storedSelectionKey) ?? null;
       if (!restored || (current.selection && selectionKey(current.selection) === selectionKey(restored))) return current;
+      restoredSelectionPendingRef.current = true;
       return { ...current, selection: restored };
     });
   }, [preferencesHydrated, storedSelectionKey]);
@@ -893,8 +898,20 @@ export function GrimoireView({
 
   useEffect(() => {
     writeStoredTabs(openTabs, selection ? selectionKey(selection) : null);
-    if (!deepLinkActiveRef.current) setStoredSelectionKey(selection ? selectionKey(selection) : null);
-  }, [openTabs, selection, setStoredSelectionKey]);
+    if (!preferencesHydrated) return;
+    // The initial hash target is intentionally one-visit only. Once hydration
+    // has had its chance to keep that target ahead of the saved return tab,
+    // release the guard so a later user selection becomes the new preference.
+    if (deepLinkActiveRef.current) {
+      deepLinkActiveRef.current = false;
+      return;
+    }
+    if (restoredSelectionPendingRef.current) {
+      if ((selection ? selectionKey(selection) : null) !== storedSelectionKey) return;
+      restoredSelectionPendingRef.current = false;
+    }
+    setStoredSelectionKey(selection ? selectionKey(selection) : null);
+  }, [openTabs, preferencesHydrated, selection, setStoredSelectionKey, storedSelectionKey]);
 
   const load = useCallback(async () => {
     setLoadError(null);

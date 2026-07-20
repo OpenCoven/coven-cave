@@ -1478,7 +1478,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   useEffect(() => {
     if (isMobile && viewMode !== "agenda" && !(mobileRibbonDayOpen && viewMode === "day")) {
       setMobileRibbonDayOpen(false);
-      setViewMode("agenda");
+      // Phone layout must use Agenda, but that is a viewport constraint rather
+      // than a user preference. Keep it out of the durable registry so a
+      // desktop view choice (for example Month) comes back on the next visit.
+      setDeepLinkViewMode("agenda");
     }
   }, [isMobile, mobileRibbonDayOpen, viewMode]);
   useEffect(() => {
