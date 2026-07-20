@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { formatRuntime } from "../lib/chat-response-metadata.ts";
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const chatModels = await readFile(new URL("../app/api/chat/send/chat-send-models.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const chatTurnState = await readFile(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const conversations = await readFile(new URL("../lib/cave-conversations.ts", import.meta.url), "utf8");
@@ -63,12 +64,12 @@ assert.match(
   "Response metadata should carry desired model separately from confirmed model",
 );
 assert.match(
-  chatRoute,
+  chatModels,
   /const desiredModel = modelState\.effectiveModel === "unknown" \? args\.binding\.model : modelState\.effectiveModel;/,
   "Desired model should come from resolved model state so source and model cannot diverge",
 );
 assert.match(
-  chatRoute,
+  chatModels,
   /const sessionModel =[\s\S]*args\.body\.modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null;/,
   "Session-scoped send overrides should flow through the same model-state source as desiredModel",
 );
