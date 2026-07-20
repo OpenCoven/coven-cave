@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./openclaw-conversation.ts", import.meta.url), "utf8");
 const caveConversations = await readFile(new URL("./cave-conversations.ts", import.meta.url), "utf8");
-const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+const chatTurnState = await readFile(new URL("./chat-turn-state.ts", import.meta.url), "utf8");
 
 assert.match(
   caveConversations,
@@ -31,13 +31,13 @@ assert.match(
 );
 
 assert.match(
-  chatView,
-  /tools: t\.tools/,
-  "ChatView should preserve saved tool metadata when loading history",
+  chatTurnState,
+  /tools: turn\.tools/,
+  "Chat turn state should preserve saved tool metadata when loading history",
 );
 
 assert.match(
-  chatView,
-  /reasoning: t\.reasoning/,
-  "ChatView should preserve saved reasoning metadata when loading history",
+  chatTurnState,
+  /reasoning: turn\.reasoning/,
+  "Chat turn state should preserve saved reasoning metadata when loading history",
 );

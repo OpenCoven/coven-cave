@@ -129,6 +129,7 @@ const changesPanel = await readFile(
   new URL("./session-changes-panel.tsx", import.meta.url),
   "utf8",
 );
+const changesFormat = await readFile(new URL("../lib/session-changes-format.ts", import.meta.url), "utf8");
 
 assert.match(
   changesPanel,
@@ -191,7 +192,7 @@ assert.match(
   "Changes table should expose File and Diff columns like the task tables",
 );
 assert.match(
-  changesPanel,
+  changesFormat,
   /function splitFilePath[\s\S]*?basename[\s\S]*?dirname/,
   "Changes rows should split basename and parent path so narrow rails preserve the useful file name",
 );
