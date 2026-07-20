@@ -120,10 +120,9 @@ function markShellMinimizeApplied(id: string): void {
 
 // Cross-surface, cross-launch sidebar memory: the nav's open/collapsed state
 // is ONE user preference, persisted globally. The panel library already
-// persists per-GROUP layouts, but the two-pane Home shell and the three-pane
-// Chat shell are separate groups whose layouts never see each other — so a
-// sidebar collapsed on one surface came back open when the next launch (or a
-// surface switch) landed on the other. Boot and group switches re-apply the
+// persists per-GROUP layouts, but route-specific groups never see each other —
+// so a sidebar collapsed on one surface came back open when the next launch (or
+// a surface switch) landed on another. Boot and group switches re-apply the
 // preference; only user-driven resizes write it (the code-rail auto
 // collapse/restore coupling and programmatic group-swap layout churn don't).
 const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
@@ -168,7 +167,7 @@ export type ShellHandle = {
   dismissListMobile: () => void;
 };
 
-export type ShellNavPolicy = "remembered" | "visit-collapsed";
+export type ShellNavPolicy = "remembered" | "visit-collapsed" | "chat-contextual";
 export type ShellListPolicy = "collapsible" | "persistent";
 
 type ShellMobileChromeState = {
@@ -221,7 +220,7 @@ function ShellInner({
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
-  // opens we soft-collapse the nav to its icon rail and remember that WE did it
+  // opens we collapse the nav and remember that WE did it
   // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
   // re-expanded the nav in the meantime (userOverrodeNavRef), in which case
   // their intent wins and we leave the nav alone.
@@ -242,10 +241,9 @@ function ShellInner({
 
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
-  // a layout that's no longer in mobile mode. On mobile, if the Chats list
-  // slot disappears under an open list drawer (e.g. a keyboard surface switch
-  // out of Chat), clear only that stale list drawer so the backdrop/body lock
-  // releases without unnecessarily closing an open nav drawer.
+  // a layout that's no longer in mobile mode. On mobile, if a list slot
+  // disappears under an open list drawer, clear only that stale drawer so the
+  // backdrop/body lock releases without unnecessarily closing an open nav drawer.
   useEffect(() => {
     if (!isMobile) {
       setMobileDrawer(null);
@@ -339,7 +337,14 @@ function ShellInner({
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : listPolicy === "persistent" ? `${SHELL_GROUP_ID}.persistent-list` : SHELL_GROUP_ID;
+  const chatContextual = navPolicy === "chat-contextual";
+  const groupId = chatContextual
+    ? `${SHELL_GROUP_ID}.chat-contextual`
+    : twoPane
+      ? `${SHELL_GROUP_ID}.two-pane`
+      : listPolicy === "persistent"
+        ? `${SHELL_GROUP_ID}.persistent-list`
+        : SHELL_GROUP_ID;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -480,20 +485,15 @@ function ShellInner({
     return () => window.clearTimeout(t);
   }, [mounted]);
 
-  // Minimize the sidebar by default, on every surface. Once the group has settled
-  // (the library has applied its initial open layout), replace the WHOLE layout
-  // with one where the nav is at its rail width and the freed width goes to the
-  // detail pane, via the group-level setLayout. Once per fresh groupId; a group
-  // the user has resized (a saved layout) is respected.
-  //
-  // NOTE: on multi-pane surfaces (chat: nav · session-list · detail · code-rail)
-  // the panel solver squeezes the session list when the nav is at the rail — a
-  // known trade-off of minimizing globally. Chat's visit-collapsed policy keeps
-  // that rail closed for the visit and disables hover-peek; other remembered
-  // groups can still restore the nav from the global shortcut / hover-peek.
+  // Minimize remembered and visit-collapsed navigation by default. Once the group
+  // has settled (the library has applied its initial open layout), replace the
+  // WHOLE layout with one where the nav is at its rail width and the freed width
+  // goes to the detail pane, via the group-level setLayout. Once per fresh
+  // groupId; a group the user has resized (a saved layout) is respected. Chat's
+  // contextual sidebar opens at its dedicated list-like width instead.
   const minimizedGroupsRef = useRef(new Set<string>());
   useEffect(() => {
-    if (!settled || isMobile) return;
+    if (!settled || isMobile || chatContextual) return;
     if (minimizedGroupsRef.current.has(groupId) || shellMinimizeApplied(groupId)) return;
     const group = groupRef.current;
     if (!group) return;
@@ -505,22 +505,38 @@ function ShellInner({
     minimizedGroupsRef.current.add(groupId);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
-  }, [settled, isMobile, groupId]);
+  }, [settled, isMobile, groupId, chatContextual]);
 
   // Apply the remembered sidebar state on boot and on every panel-group switch
-  // (Home's two-pane shell and the non-Chat remembered groups persist their
-  // layouts separately, so without this the OTHER group's stale width wins).
+  // (two-pane and other remembered groups persist their layouts separately, so
+  // without this the OTHER group's stale width wins).
   // Runs after the minimize-by-default effect above so a saved preference beats
-  // the first-run rail. Chat's visit-collapsed visits skip this effect entirely
-  // (they stay collapsed for that visit and do not consult or overwrite the
-  // global nav-open preference). onResize only writes the preference once this
-  // effect has armed the CURRENT group — the layout churn a group swap fires
-  // must never clobber the user's choice with the incoming group's stale width.
+  // the first-run rail. Non-remembered policies skip this effect entirely and do
+  // not consult or overwrite the global nav-open preference. onResize only writes
+  // the preference once this effect has armed the CURRENT group — the layout
+  // churn a group swap fires must never clobber the user's choice with the
+  // incoming group's stale width.
   const navPrefArmedGroupRef = useRef<string | null>(null);
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
+  const chatContextualGroupRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!mounted) return;
+    if (navPolicy === "chat-contextual") {
+      visitCollapsedGroupRef.current = null;
+      navPrefArmedGroupRef.current = null;
+      if (
+        previousNavPolicyRef.current !== navPolicy ||
+        chatContextualGroupRef.current !== groupId
+      ) {
+        chatContextualGroupRef.current = groupId;
+        navRef.current?.expand();
+        setNavOpen(true);
+      }
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    chatContextualGroupRef.current = null;
     if (navPolicy !== "visit-collapsed") {
       visitCollapsedGroupRef.current = null;
       previousNavPolicyRef.current = navPolicy;
@@ -593,8 +609,8 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
-    // Symmetric hook for the left nav panel — lets a collapsed-rail label (e.g.
-    // the Code sidebar's "Sessions" rail) reopen the panel without a panel ref.
+    // Symmetric hook for sidebar content that needs to reopen the left panel
+    // without owning its panel ref.
     const onToggleLeft = () => {
       if (isMobile) toggleDrawerSlot("nav");
       else togglePanel(navRef.current);
@@ -610,9 +626,9 @@ function ShellInner({
   }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
-  // drawer, so this must never touch it). When the rail opens we soft-collapse
-  // the nav to its icon rail so chat stays centered; when it closes we restore
-  // the nav UNLESS the user re-expanded it while the rail was open.
+  // drawer, so this must never touch it). When the rail opens we collapse the
+  // nav to preserve detail space; when it closes we restore the nav UNLESS the
+  // user re-expanded it while the rail was open.
   useEffect(() => {
     const onRailVisibility = (e: Event) => {
       const open = (e as CustomEvent<{ open?: boolean }>).detail?.open ?? false;
@@ -694,17 +710,15 @@ function ShellInner({
       <Panel
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
-        // Open width (NAV_OPEN_PX) and the ⌘B / hover-peek expand target. The
-        // minimized-by-default rail is applied via the group's setLayout (see the
-        // minimize effect above), not a rail-sized defaultSize here — a rail-sized
-        // default made the solver squeeze the sibling list/code-rail panels.
-        defaultSize="240px"
-        minSize="200px"
+        // Chat uses list-like sizing for contextual workspace/session content.
+        // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
+        defaultSize={chatContextual ? "260px" : "240px"}
+        minSize={chatContextual ? "220px" : "200px"}
         maxSize="420px"
         collapsible
-        // Desktop collapses to an icons-only rail; mobile uses the slide-in
-        // drawer (position is CSS-overridden there), so it still collapses to 0.
-        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
+        // Contextual Chat and mobile drawers close fully; normal desktop
+        // navigation collapses to its icons-only rail.
+        collapsedSize={isMobile || chatContextual ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
           const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
@@ -726,7 +740,7 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !chatContextual && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
           onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
           onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
@@ -803,9 +817,21 @@ function ShellInner({
     <button
       type="button"
       className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
-      aria-label={navOpen ? "Collapse navigation to icons" : "Expand navigation"}
+      aria-label={chatContextual
+        ? navOpen
+          ? "Collapse Chat sidebar"
+          : "Expand Chat sidebar"
+        : navOpen
+          ? "Collapse navigation to icons"
+          : "Expand navigation"}
       aria-expanded={navOpen}
-      title={navOpen ? `Collapse navigation (${leftPanelShortcutLabel})` : `Expand navigation (${leftPanelShortcutLabel})`}
+      title={chatContextual
+        ? navOpen
+          ? `Collapse Chat sidebar (${leftPanelShortcutLabel})`
+          : `Expand Chat sidebar (${leftPanelShortcutLabel})`
+        : navOpen
+          ? `Collapse navigation (${leftPanelShortcutLabel})`
+          : `Expand navigation (${leftPanelShortcutLabel})`}
       onClick={toggleNavPanel}
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />

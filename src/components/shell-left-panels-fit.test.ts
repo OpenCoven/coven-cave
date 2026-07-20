@@ -3,18 +3,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const foundations = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
 // a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
-// The nav panel keeps its 240px default (so the group's layout solver leaves
-// the sibling list panel at its own default); "minimized by default" is done by
-// collapsing after mount, not by a rail-sized default that squeezed the list.
+// Normal navigation keeps its 240px default, while Chat's contextual sidebar
+// gets the wider list-like sizing it needs for workspace/session content.
 assert.match(
   shell,
-  /id="nav"[\s\S]{0,600}?defaultSize="240px"[\s\S]{0,90}?minSize="200px"[\s\S]{0,60}?maxSize="420px"/,
-  "Shell nav panel keeps its 240px default, drag-resizable within a 200–420px band",
+  /id="nav"[\s\S]{0,700}?defaultSize=\{chatContextual \? "260px" : "240px"\}[\s\S]{0,120}?minSize=\{chatContextual \? "220px" : "200px"\}[\s\S]{0,60}?maxSize="420px"/,
+  "Chat's contextual nav defaults to 260px within a 220–420px band while normal nav keeps 240/200 sizing",
 );
 // Minimized by default via the group's setLayout (sets ALL panels at once) —
 // NOT a single-panel collapse(). Applied ONCE per group per browser via a
@@ -33,6 +32,16 @@ assert.match(
   shell,
   /if \(minimizedGroupsRef\.current\.has\(groupId\) \|\| shellMinimizeApplied\(groupId\)\) return;[\s\S]{0,500}?markShellMinimizeApplied\(groupId\);/,
   "minimize applies once per browser per group; subsequent loads defer to the library's saved layout",
+);
+assert.match(
+  shell,
+  /if \(!settled \|\| isMobile \|\| chatContextual\) return;/,
+  "Chat's contextual sidebar skips the startup icon-rail minimization",
+);
+assert.match(
+  shell,
+  /\}, \[settled, isMobile, groupId, chatContextual\]\);/,
+  "startup minimization reacts to the contextual policy",
 );
 assert.match(
   shell,
@@ -65,15 +74,15 @@ assert.match(
 );
 assert.match(
   shell,
-  /const groupId = twoPane \? `\$\{SHELL_GROUP_ID\}\.two-pane` : listPolicy === "persistent" \? `\$\{SHELL_GROUP_ID\}\.persistent-list` : SHELL_GROUP_ID;/,
-  "persistent list layouts use a fresh group id suffix so stale collapsible layouts cannot hide Chats",
+  /const chatContextual = navPolicy === "chat-contextual";\s*const groupId = chatContextual\s*\? `\$\{SHELL_GROUP_ID\}\.chat-contextual`\s*: twoPane\s*\? `\$\{SHELL_GROUP_ID\}\.two-pane`\s*: listPolicy === "persistent"\s*\? `\$\{SHELL_GROUP_ID\}\.persistent-list`\s*: SHELL_GROUP_ID;/,
+  "Chat contextual layouts have a separate group while existing two-pane and list policies retain their groups",
 );
 
 // Collapse-to-rail must survive the px conversion.
 assert.match(
   shell,
-  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
-  "Nav should still collapse to the icons-only rail on desktop (0 on mobile)",
+  /collapsedSize=\{isMobile \|\| chatContextual \? 0 : NAV_RAIL_PX\}/,
+  "Chat and mobile nav collapse fully while normal desktop nav keeps the icon rail",
 );
 assert.match(
   shell,
@@ -98,7 +107,7 @@ assert.match(
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —
 // if one side changes, this keeps the other honest.
-assert.match(globals, /--shell-nav-width:\s*240px/, "--shell-nav-width mirrors the nav's expanded width (rail is NAV_RAIL_PX)");
-assert.match(globals, /--shell-list-width:\s*260px/, "--shell-list-width should match the list panel default");
+assert.match(foundations, /--shell-nav-width:\s*240px/, "--shell-nav-width mirrors the nav's expanded width (rail is NAV_RAIL_PX)");
+assert.match(foundations, /--shell-list-width:\s*260px/, "--shell-list-width should match the list panel default");
 
 console.log("shell-left-panels-fit.test.ts OK");
