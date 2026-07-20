@@ -60,6 +60,36 @@ assert.match(
   "Native chat should reject bundled adapters that opt out of native chat",
 );
 
+assert.match(
+  chatRoute,
+  /const hermesDirect = !sshRuntime && binding\.harness === "hermes"/,
+  "local Hermes chats should use its documented direct one-shot command instead of a POSIX-only Coven shim",
+);
+
+assert.match(
+  chatRoute,
+  /const a = \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
+  "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /const hermesModel = cleanModelId\(desiredModel\);/,
+  "Hermes does not advertise a model flag, so a custom Cave model must not become invalid CLI args",
+);
+
+assert.match(
+  chatRoute,
+  /captureHermesSessionFromStderr[\s\S]*session_id:\\s\*\(\\S\+\)/,
+  "Hermes quiet mode must capture its resumable session id from stderr",
+);
+
+assert.match(
+  chatRoute,
+  /command: process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
+  "Hermes direct chat must use the Windows executable name on Windows",
+);
+
 assert.doesNotMatch(
   chatRoute,
   /const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*binding\.harness === "openclaw"/,
@@ -1254,8 +1284,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: covenLaunchCommand\(\);/,
-  "Copilot stream turns spawn the adapter binary directly; everything else spawns coven",
+  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
+  "Copilot and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 
 assert.match(
