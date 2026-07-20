@@ -42,8 +42,11 @@ assert.doesNotMatch(field, /rounded-md/, "link controls should not hard-code Tai
 
 // ── Wired into the modal ─────────────────────────────────────────────────────
 assert.match(modal, /import \{ ReminderLinkField \}/, "modal should import the link field");
-assert.match(modal, /<Field label="Link \(optional\)">/, "modal should render a Link field");
-assert.match(modal, /<ReminderLinkField value=\{link\} onChange=\{setLink\}/, "modal should wire the link field to local state");
+assert.match(
+  modal,
+  /<fieldset\b[\s\S]*?<legend\b[^>]*>\s*Link \(optional\)\s*<\/legend>[\s\S]*?<ReminderLinkField\b[^>]*value=\{link\}[^>]*onChange=\{setLink\}[^>]*\/>[\s\S]*?<\/fieldset>/,
+  "modal should wrap the link field in a labeled fieldset and wire it to local state",
+);
 assert.match(modal, /link\?: LinkRef \| null;/, "NewReminderDraft should carry an optional link");
 
 console.log("reminder-link-field.test.ts: ok");
