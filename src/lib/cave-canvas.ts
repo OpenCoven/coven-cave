@@ -171,11 +171,11 @@ export type CanvasAnnotationResolutionToken = {
 export function nextCanvasArtifactUpdatedAt(
   incumbentUpdatedAt: string,
   nowMs = Date.now(),
-): string {
+): string | null {
   const incumbentMs = Date.parse(incumbentUpdatedAt);
-  return new Date(
-    Number.isFinite(incumbentMs) ? Math.max(nowMs, incumbentMs + 1) : nowMs,
-  ).toISOString();
+  const nextMs = Number.isFinite(incumbentMs) ? Math.max(nowMs, incumbentMs + 1) : nowMs;
+  const next = new Date(nextMs);
+  return Number.isFinite(next.getTime()) ? next.toISOString() : null;
 }
 
 function parseResolvedAnnotations(value: unknown): CanvasAnnotationResolutionToken[] | null {
@@ -203,9 +203,16 @@ function parseResolvedAnnotations(value: unknown): CanvasAnnotationResolutionTok
 
 export async function upsertCanvasArtifact(
   artifact: CanvasArtifact,
-  options: { expectedUpdatedAt?: string; resolvedAnnotations?: unknown } = {},
+  options: {
+    expectedUpdatedAt?: string;
+    expectedAbsent?: boolean;
+    resolvedAnnotations?: unknown;
+  } = {},
 ): Promise<CanvasArtifactUpsertResult> {
-  const guardedRevision = options.expectedUpdatedAt !== undefined;
+  if (options.expectedUpdatedAt !== undefined && options.expectedAbsent) {
+    return { status: "invalid" };
+  }
+  const guardedRevision = options.expectedUpdatedAt !== undefined || options.expectedAbsent === true;
   if (!guardedRevision && options.resolvedAnnotations !== undefined) {
     return { status: "invalid" };
   }
@@ -230,9 +237,40 @@ export async function upsertCanvasArtifact(
   return withLock(async () => {
     const current = await loadCanvas();
     const incumbent = current.artifacts.find((a) => a.id === clean.id);
+    const incumbentMatchesRevision = incumbent
+      && incumbent.id === clean.id
+      && incumbent.title === clean.title
+      && incumbent.prompt === clean.prompt
+      && incumbent.code === clean.code
+      && incumbent.kind === clean.kind
+      && incumbent.createdAt === clean.createdAt;
+    if (options.expectedAbsent && incumbent) {
+      if (incumbentMatchesRevision) {
+        return {
+          status: "saved",
+          file: current,
+          savedId: incumbent.id,
+          artifact: incumbent,
+        };
+      }
+      return {
+        status: "conflict",
+        file: current,
+        savedId: null,
+        currentUpdatedAt: incumbent.updatedAt,
+      };
+    }
     if (options.expectedUpdatedAt !== undefined) {
       if (!incumbent) return { status: "not_found", file: current, savedId: null };
       if (incumbent.updatedAt !== options.expectedUpdatedAt) {
+        if (incumbentMatchesRevision) {
+          return {
+            status: "saved",
+            file: current,
+            savedId: incumbent.id,
+            artifact: incumbent,
+          };
+        }
         return {
           status: "conflict",
           file: current,
@@ -259,6 +297,15 @@ export async function upsertCanvasArtifact(
         ? { ...clean, annotations: incumbent.annotations }
         : clean;
     if (guardedRevision && incumbent) {
+      const nextUpdatedAt = nextCanvasArtifactUpdatedAt(incumbent.updatedAt);
+      if (!nextUpdatedAt) {
+        return {
+          status: "conflict",
+          file: current,
+          savedId: null,
+          currentUpdatedAt: incumbent.updatedAt,
+        };
+      }
       const remainingAnnotations = (incumbent.annotations ?? []).filter(
         (annotation) => !resolvedAnnotations.some(
           (token) => token.id === annotation.id && token.updatedAt === annotation.updatedAt,
@@ -266,7 +313,7 @@ export async function upsertCanvasArtifact(
       );
       settled = {
         ...clean,
-        updatedAt: nextCanvasArtifactUpdatedAt(incumbent.updatedAt),
+        updatedAt: nextUpdatedAt,
       };
       if (remainingAnnotations.length > 0) settled.annotations = remainingAnnotations;
       else delete settled.annotations;

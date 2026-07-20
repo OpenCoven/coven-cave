@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   consumeCanvasGeneration,
+  CanvasGenerationSaveError,
   getCanvasGenerationSnapshot,
   resetCanvasGenerationRegistryForTests,
+  retryCanvasGenerationSave,
   startCanvasGeneration,
   stopCanvasGeneration,
   subscribeCanvasGeneration,
@@ -26,7 +28,7 @@ function deferred<T>() {
 function startInput(runId: string): CanvasGenerationStart {
   return {
     runId,
-    identity,
+    identity: { ...identity },
     familiarId: "familiar-1",
     purpose: "create",
     prompt: "A pricing page",
@@ -209,4 +211,137 @@ test("executor failure becomes a replayable error with original prompt context",
   assert.equal(snapshot.prompt, "A pricing page");
   assert.equal(snapshot.title, "Pricing page");
   assert.equal(snapshot.originalIntent, "A pricing page");
+});
+
+test("a failed save retains the exact generated artifact and retries without regenerating", async () => {
+  const generated = terminalResult().artifact;
+  let generationCalls = 0;
+  const input = {
+    ...startInput("run-save"),
+    purpose: "refine" as const,
+    expectedUpdatedAt: "2026-07-20T12:00:30.000Z",
+  };
+  startCanvasGeneration(input, async () => {
+    generationCalls += 1;
+    throw new CanvasGenerationSaveError(
+      "Couldn’t confirm this preview was saved.",
+      generated,
+      "canvas-session",
+    );
+  });
+  await flush();
+
+  const failed = getCanvasGenerationSnapshot();
+  assert.equal(failed.phase, "error");
+  assert.deepEqual(failed.artifact, generated, "the generated preview survives an ambiguous save response");
+  assert.equal(failed.identity?.id, generated.id, "the retry keeps stable artifact identity");
+  assert.equal(failed.expectedUpdatedAt, input.expectedUpdatedAt, "the guarded revision survives for retry");
+
+  let saveCalls = 0;
+  assert.equal(retryCanvasGenerationSave("run-save", async (artifact, expectedUpdatedAt, expectedAbsent) => {
+    saveCalls += 1;
+    assert.deepEqual(artifact, generated, "retry sends the exact generated revision");
+    assert.equal(expectedUpdatedAt, input.expectedUpdatedAt);
+    assert.equal(expectedAbsent, false);
+    return terminalResult();
+  }), true);
+  await flush();
+
+  assert.equal(generationCalls, 1, "save retry never invokes the generation executor again");
+  assert.equal(saveCalls, 1);
+  assert.equal(getCanvasGenerationSnapshot().phase, "complete");
+});
+
+test("an ambiguous create retries with an expected-absent precondition", async () => {
+  const generated = terminalResult().artifact;
+  startCanvasGeneration(startInput("run-create-save"), async () => {
+    throw new CanvasGenerationSaveError("response lost", generated);
+  });
+  await flush();
+
+  assert.equal(getCanvasGenerationSnapshot().expectedAbsent, true);
+  assert.equal(retryCanvasGenerationSave(
+    "run-create-save",
+    async (artifact, expectedUpdatedAt, expectedAbsent) => {
+      assert.deepEqual(artifact, generated);
+      assert.equal(expectedUpdatedAt, undefined);
+      assert.equal(expectedAbsent, true);
+      return terminalResult();
+    },
+  ), true);
+  await flush();
+  assert.equal(getCanvasGenerationSnapshot().phase, "complete");
+});
+
+test("save conflicts remain explicit and retain the generated preview", async () => {
+  const generated = terminalResult().artifact;
+  startCanvasGeneration(startInput("run-conflict"), async () => {
+    throw new CanvasGenerationSaveError(
+      "This preview changed before the refinement could be saved.",
+      generated,
+      null,
+      "conflict",
+    );
+  });
+  await flush();
+
+  assert.equal(getCanvasGenerationSnapshot().saveFailure, "conflict");
+  assert.deepEqual(getCanvasGenerationSnapshot().artifact, generated);
+});
+
+test("an incomplete save response stays ambiguous instead of claiming success", async () => {
+  const generated = terminalResult().artifact;
+  startCanvasGeneration(startInput("run-incomplete"), async () => {
+    throw new CanvasGenerationSaveError("response lost", generated);
+  });
+  await flush();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({}), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+  try {
+    assert.equal(retryCanvasGenerationSave("run-incomplete"), true);
+    await flush();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(getCanvasGenerationSnapshot().phase, "error");
+  assert.equal(getCanvasGenerationSnapshot().saveFailure, "ambiguous");
+  assert.deepEqual(getCanvasGenerationSnapshot().artifact, generated);
+});
+
+test("guarded save retries surface 404 and 409 without changing the artifact", async () => {
+  const generated = terminalResult().artifact;
+  const expectedUpdatedAt = "2026-07-20T12:00:30.000Z";
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [status, failure] of [[404, "not_found"], [409, "conflict"]] as const) {
+      resetCanvasGenerationRegistryForTests();
+      startCanvasGeneration({
+        ...startInput(`run-${status}`),
+        purpose: "refine",
+        expectedUpdatedAt,
+      }, async () => {
+        throw new CanvasGenerationSaveError("response lost", generated);
+      });
+      await flush();
+
+      let requestBody: unknown;
+      globalThis.fetch = async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(null, { status });
+      };
+      assert.equal(retryCanvasGenerationSave(`run-${status}`), true);
+      await flush();
+
+      assert.deepEqual(requestBody, { artifact: generated, expectedUpdatedAt });
+      assert.equal(getCanvasGenerationSnapshot().saveFailure, failure);
+      assert.deepEqual(getCanvasGenerationSnapshot().artifact, generated);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

@@ -127,8 +127,8 @@ assert.equal(
         excerpt: " Save changes ",
       },
       note: " Make this more prominent ",
-      createdAt: "2026-07-20T01:00:00Z",
-      updatedAt: "2026-07-20T02:00:00Z",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T02:00:00.000Z",
     }],
   }]);
   assert.deepEqual(
@@ -141,8 +141,8 @@ assert.equal(
         excerpt: "Save changes",
       },
       note: "Make this more prominent",
-      createdAt: "2026-07-20T01:00:00Z",
-      updatedAt: "2026-07-20T02:00:00Z",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T02:00:00.000Z",
     }],
     "valid annotations survive with every string trimmed",
   );
@@ -207,9 +207,18 @@ assert.equal(
   }]);
   assert.equal(
     fallbackDate.updatedAt,
-    "2026-07-20T01:00:00Z",
+    "2026-07-20T01:00:00.000Z",
     "invalid annotation updatedAt falls back to a valid createdAt",
   );
+  const [canonical] = sanitizeAnnotations([{
+    id: "canonical-date",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "2026-07-17T00:00:00Z",
+    updatedAt: "2026-07-17T00:00:00Z",
+  }]);
+  assert.equal(canonical.createdAt, "2026-07-17T00:00:00.000Z");
+  assert.equal(canonical.updatedAt, "2026-07-17T00:00:00.000Z");
 
   const [absent] = sanitizeArtifacts([{ id: "absent", prompt: "p" }]);
   const [empty] = sanitizeArtifacts([{ id: "empty", prompt: "p", annotations: [] }]);
@@ -256,14 +265,22 @@ import { MAX_ARTIFACT_PROMPT_CHARS } from "./canvas-artifacts.ts";
   ]);
   assert.equal(
     fallback.updatedAt,
-    "2026-07-18T00:00:00Z",
+    "2026-07-18T00:00:00.000Z",
     "a garbage updatedAt falls back to the valid createdAt",
   );
 
   const [kept] = sanitizeArtifacts([
     { id: "k", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "2026-07-18T01:00:00Z" },
   ]);
-  assert.equal(kept.updatedAt, "2026-07-18T01:00:00Z", "valid timestamps pass through untouched");
+  assert.equal(kept.updatedAt, "2026-07-18T01:00:00.000Z", "valid timestamps are canonicalized");
+  const [offset] = sanitizeArtifacts([{
+    id: "offset",
+    prompt: "p",
+    createdAt: "2026-07-20T12:00:00+05:00",
+    updatedAt: "2026-07-20T12:30:00+05:00",
+  }]);
+  assert.equal(offset.createdAt, "2026-07-20T07:00:00.000Z");
+  assert.equal(offset.updatedAt, "2026-07-20T07:30:00.000Z");
 }
 
 // ── extractArtifact: classify React vs HTML ────────────────────────────────

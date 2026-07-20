@@ -51,6 +51,7 @@ export async function POST(req: Request) {
   let body: {
     artifact?: CanvasArtifact;
     expectedUpdatedAt?: unknown;
+    expectedAbsent?: unknown;
     resolvedAnnotations?: unknown;
   };
   try {
@@ -67,9 +68,16 @@ export async function POST(req: Request) {
   ) {
     return NextResponse.json({ ok: false, error: "invalid expectedUpdatedAt" }, { status: 400 });
   }
+  if (body.expectedAbsent !== undefined && typeof body.expectedAbsent !== "boolean") {
+    return NextResponse.json({ ok: false, error: "invalid expectedAbsent" }, { status: 400 });
+  }
+  if (body.expectedUpdatedAt !== undefined && body.expectedAbsent === true) {
+    return NextResponse.json({ ok: false, error: "conflicting save preconditions" }, { status: 400 });
+  }
   try {
     const result = await upsertCanvasArtifact(body.artifact, {
       expectedUpdatedAt: body.expectedUpdatedAt as string | undefined,
+      expectedAbsent: body.expectedAbsent as boolean | undefined,
       resolvedAnnotations: body.resolvedAnnotations,
     });
     if (result.status === "invalid") {

@@ -17,7 +17,9 @@ import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import {
   formatArtifactWhen,
   isCanvasGalleryLoadCurrent,
+  mergeCanvasArtifactSnapshot,
   sortArtifactsForGallery,
+  type CanvasArtifactSnapshotMutation,
 } from "@/lib/canvas-gallery";
 
 // The Canvas tab: the gallery for sketches saved from chat ("Save to Canvas"
@@ -38,23 +40,37 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const confirm = useConfirm();
   const artifactVersionRef = useRef(0);
   const loadRequestTokenRef = useRef(0);
+  const deletedArtifactIdsRef = useRef(new Set<string>());
 
   // The id a just-kept sketch settles in with — drives a one-shot highlight.
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
-  const acceptArtifacts = useCallback((next: CanvasArtifact[]) => {
+  const acceptArtifacts = useCallback((
+    next: CanvasArtifact[],
+    mutation: CanvasArtifactSnapshotMutation,
+  ) => {
     artifactVersionRef.current += 1;
-    setArtifacts(sortArtifactsForGallery(next));
+    if (mutation.kind === "delete") deletedArtifactIdsRef.current.add(mutation.deletedId);
+    const sequencedMutation: CanvasArtifactSnapshotMutation = mutation.kind === "upsert"
+      ? {
+          kind: "upsert",
+          changedId: mutation.changedId,
+          deletedIds: new Set(deletedArtifactIdsRef.current),
+        }
+      : mutation;
+    setArtifacts((current) => sortArtifactsForGallery(
+      mergeCanvasArtifactSnapshot(current, next, sequencedMutation),
+    ));
     setState("ready");
   }, []);
   const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
-    acceptArtifacts(next);
+    acceptArtifacts(next, { kind: "upsert", changedId: savedId });
     setJustSavedId(savedId);
     // One-shot: clear after the highlight animation finishes. A stale clear
     // after unmount is harmless.
     setTimeout(() => setJustSavedId((cur) => (cur === savedId ? null : cur)), 2000);
   }, [acceptArtifacts]);
-  const handleArtifactUpdated = useCallback((_updated: CanvasArtifact, next: CanvasArtifact[]) => {
-    acceptArtifacts(next);
+  const handleArtifactUpdated = useCallback((updated: CanvasArtifact, next: CanvasArtifact[]) => {
+    acceptArtifacts(next, { kind: "upsert", changedId: updated.id });
   }, [acceptArtifacts]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -109,7 +125,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
-        acceptArtifacts(data.artifacts ?? []);
+        acceptArtifacts(data.artifacts ?? [], { kind: "delete", deletedId: artifact.id });
         setOpenId((current) => (current === artifact.id ? null : current));
       } catch {
         // Keep the card; a transient failure shouldn't silently drop it from

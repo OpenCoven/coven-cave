@@ -138,7 +138,7 @@ const operationId = (operation: CanvasAnnotationOperation) => (
 
 {
   const valid = annotation("valid", "  bounded note  ");
-  const oversized = Array.from({ length: 105 }, (_, index) => annotation(`a-${index}`, `${index}`));
+  const oversized = Array.from({ length: 205 }, (_, index) => annotation(`a-${index}`, `${index}`));
   const storage = {
     getItem: () => JSON.stringify({
       version: 1,
@@ -154,7 +154,7 @@ const operationId = (operation: CanvasAnnotationOperation) => (
   };
 
   const restored = readCanvasAnnotationOperations(storage, "artifact-1");
-  assert.equal(restored.length, 100, "stored queues are capped at 100 valid operations");
+  assert.equal(restored.length, 200, "stored queues are capped at one complete 100-to-100 transition");
   assert.deepEqual(restored[0], oversized[0], "invalid and cross-artifact records are discarded");
   assert.doesNotThrow(
     () => writeCanvasAnnotationOperations(storage, "artifact-1", restored),
@@ -164,6 +164,20 @@ const operationId = (operation: CanvasAnnotationOperation) => (
     readCanvasAnnotationOperations({ ...storage, getItem: () => "{broken" }, "artifact-1"),
     [],
     "corrupt storage is ignored",
+  );
+}
+
+{
+  const removals = Array.from({ length: 100 }, (_, index) => remove(`old-${index}`));
+  const additions = Array.from({ length: 100 }, (_, index) => annotation(`new-${index}`, "replacement"));
+  const queue = new CanvasAnnotationOperationQueue();
+  for (const operation of [...removals, ...additions]) queue.enqueue(operation);
+
+  assert.equal(queue.size, 200, "the bounded queue retains 100 removals plus 100 distinct additions");
+  assert.deepEqual(
+    queue.pending().map(operationId),
+    [...removals, ...additions].map(operationId),
+    "a complete transition between two legal 100-annotation states is never truncated",
   );
 }
 

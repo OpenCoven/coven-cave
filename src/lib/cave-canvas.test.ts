@@ -75,8 +75,8 @@ const art = (id, code, extra = {}) => ({
   prompt: `p-${id}`,
   code,
   kind: "html",
-  createdAt: "2026-07-17T00:00:00Z",
-  updatedAt: "2026-07-17T00:00:00Z",
+  createdAt: "2026-07-17T00:00:00.000Z",
+  updatedAt: "2026-07-17T00:00:00.000Z",
   ...extra,
 });
 
@@ -95,7 +95,7 @@ const art = (id, code, extra = {}) => ({
           excerpt: " Save ",
         },
         note: " Increase contrast ",
-        createdAt: "2026-07-17T00:00:00Z",
+        createdAt: "2026-07-17T00:00:00.000Z",
         updatedAt: "not-a-date",
       },
       {
@@ -113,8 +113,8 @@ const art = (id, code, extra = {}) => ({
       id: "comment-1",
       target: { selector: "main > button", label: "Primary action", excerpt: "Save" },
       note: "Increase contrast",
-      createdAt: "2026-07-17T00:00:00Z",
-      updatedAt: "2026-07-17T00:00:00Z",
+      createdAt: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:00.000Z",
     }],
     "upsert sanitizes annotations before returning the persisted file",
   );
@@ -176,13 +176,13 @@ const art = (id, code, extra = {}) => ({
   const resave = await upsertCanvasArtifact(
     art("art-two", "<!doctype html>same", {
       title: "renamed",
-      updatedAt: "2026-07-17T01:00:00Z",
+      updatedAt: "2026-07-17T01:00:00.000Z",
       annotations: [{
         id: "deduped-comment",
         target: { selector: "button", label: "Button", excerpt: "Save" },
         note: "Keep this comment",
-        createdAt: "2026-07-17T00:30:00Z",
-        updatedAt: "2026-07-17T00:30:00Z",
+        createdAt: "2026-07-17T00:30:00.000Z",
+        updatedAt: "2026-07-17T00:30:00.000Z",
       }],
     }),
   );
@@ -190,15 +190,15 @@ const art = (id, code, extra = {}) => ({
   assert.equal(resave.savedId, "art-one", "the save settles into the incumbent's id");
   const settled = resave.file.artifacts.find((artifact) => artifact.id === "art-one");
   assert.equal(settled.id, "art-one", "incumbent id survives (saved position stays keyed to it)");
-  assert.equal(settled.createdAt, "2026-07-17T00:00:00Z", "incumbent createdAt survives");
-  assert.equal(settled.updatedAt, "2026-07-17T01:00:00Z", "caller's updatedAt is taken");
+  assert.equal(settled.createdAt, "2026-07-17T00:00:00.000Z", "incumbent createdAt survives");
+  assert.equal(settled.updatedAt, "2026-07-17T01:00:00.000Z", "caller's updatedAt is taken");
   assert.equal(settled.title, "renamed", "caller's title is taken");
   assert.equal(settled.annotations?.[0]?.id, "deduped-comment", "annotations survive content dedupe");
 
   const annotationPreservingResave = await upsertCanvasArtifact(
     art("art-two-without-annotations", "<!doctype html>same", {
       title: "renamed again",
-      updatedAt: "2026-07-17T02:00:00Z",
+      updatedAt: "2026-07-17T02:00:00.000Z",
     }),
   );
   assert.equal(annotationPreservingResave.savedId, "art-one");
@@ -254,15 +254,15 @@ const art = (id, code, extra = {}) => ({
       excerpt: `<div>${index}</div>`,
     },
     note: `Note ${index}`,
-    createdAt: "2026-07-20T00:00:00Z",
-    updatedAt: "2026-07-20T00:00:00Z",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
   }));
   await upsertCanvasArtifact(art("annotation-target", "<main>newer code</main>", {
     title: "Server title",
     prompt: "Server prompt",
     kind: "react",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-07-20T00:00:00Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
     annotations: initialAnnotations,
   }));
 
@@ -276,8 +276,8 @@ const art = (id, code, extra = {}) => ({
         excerpt: ` ${"E".repeat(1_100)} `,
       },
       note: ` ${"N".repeat(4_100)} `,
-      createdAt: "2026-07-20T00:00:00Z",
-      updatedAt: "2026-07-20T01:00:00Z",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T01:00:00.000Z",
     },
   });
   assert.equal(boundedUpdate.status, "updated");
@@ -293,8 +293,8 @@ const art = (id, code, extra = {}) => ({
       id: "annotation-over-cap",
       target: { selector: "#over-cap", label: "Over cap", excerpt: "<div />" },
       note: "Do not insert",
-      createdAt: "2026-07-20T00:00:00Z",
-      updatedAt: "2026-07-20T00:00:00Z",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
     },
   });
   assert.equal(cappedInsert.status, "updated");
@@ -310,8 +310,8 @@ const art = (id, code, extra = {}) => ({
       id: "replacement-id",
       target: { selector: "#target-98", label: "Replaced by selector", excerpt: "<button />" },
       note: "Updated",
-      createdAt: "2026-07-20T00:00:00Z",
-      updatedAt: "2026-07-20T02:00:00Z",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T02:00:00.000Z",
     },
   });
   assert.equal(selectorUpdate.artifact?.annotations?.length, 100);
@@ -335,8 +335,8 @@ const art = (id, code, extra = {}) => ({
       id: "fresh",
       target: { selector: "#fresh", label: "Fresh", excerpt: "<div />" },
       note: "Fresh note",
-      createdAt: "2026-07-20T00:00:00Z",
-      updatedAt: "2026-07-20T03:00:00Z",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T03:00:00.000Z",
     },
   });
   assert.equal(added.status, "updated");
@@ -352,16 +352,16 @@ const art = (id, code, extra = {}) => ({
       id: "fresh",
       target: { selector: "#fresh", label: "Concurrent", excerpt: "<div />" },
       note: "Keep",
-      createdAt: "2026-07-20T00:00:00Z",
-      updatedAt: "2026-07-20T04:00:00Z",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T04:00:00.000Z",
     },
   });
   const concurrentRevision = upsertCanvasArtifact(art("annotation-target", "<main>newest code</main>", {
     title: "Newest title",
     prompt: "Newest prompt",
     kind: "html",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-07-20T05:00:00Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-07-20T05:00:00.000Z",
   }));
   await Promise.all([concurrentMutation, concurrentRevision]);
   const newest = (await loadCanvas()).artifacts.find((entry) => entry.id === "annotation-target");
@@ -404,7 +404,7 @@ const art = (id, code, extra = {}) => ({
 // ── Optimistic content revisions ─────────────────────────────────────────────
 
 {
-  const originalUpdatedAt = "2026-07-20T06:00:00Z";
+  const originalUpdatedAt = "2026-07-20T06:00:00.000Z";
   const clientUpdatedAt = "2099-07-20T07:00:00Z";
   await upsertCanvasArtifact(art("revision-target", "<main>original</main>", {
     updatedAt: originalUpdatedAt,
@@ -424,7 +424,7 @@ const art = (id, code, extra = {}) => ({
       target: { selector: "main", label: "Main", excerpt: "<main />" },
       note: "Change this safely",
       createdAt: originalUpdatedAt,
-      updatedAt: "2026-07-20T06:30:00Z",
+      updatedAt: "2026-07-20T06:30:00.000Z",
     },
   });
   assert.equal(annotationOnly.status, "updated");
@@ -449,11 +449,27 @@ const art = (id, code, extra = {}) => ({
     clientUpdatedAt,
     "a guarded save does not trust the client-submitted revision",
   );
+  const beforeIdempotentRetry = readFileSync(path.join(tmpHome, "canvas.json"), "utf8");
+  const idempotentRetry = await upsertCanvasArtifact(
+    art("revision-target", "<main>revised</main>", { updatedAt: clientUpdatedAt }),
+    { expectedUpdatedAt: originalUpdatedAt },
+  );
+  assert.equal(idempotentRetry.status, "saved", "retrying an already-committed revision is idempotent");
+  assert.equal(
+    idempotentRetry.artifact.updatedAt,
+    exact.artifact.updatedAt,
+    "an idempotent retry returns the server-confirmed revision",
+  );
+  assert.equal(
+    readFileSync(path.join(tmpHome, "canvas.json"), "utf8"),
+    beforeIdempotentRetry,
+    "an idempotent retry does not rewrite the store",
+  );
 
   const beforeConflict = readFileSync(path.join(tmpHome, "canvas.json"), "utf8");
   const conflict = await upsertCanvasArtifact(
     art("revision-target", "<main>stale overwrite</main>", {
-      updatedAt: "2026-07-20T08:00:00Z",
+      updatedAt: "2026-07-20T08:00:00.000Z",
     }),
     { expectedUpdatedAt: originalUpdatedAt, resolvedAnnotations: [] },
   );
@@ -465,7 +481,7 @@ const art = (id, code, extra = {}) => ({
   const beforeMissing = readFileSync(path.join(tmpHome, "canvas.json"), "utf8");
   const missing = await upsertCanvasArtifact(
     art("revision-target", "<main>must not resurrect</main>", {
-      updatedAt: "2026-07-20T09:00:00Z",
+      updatedAt: "2026-07-20T09:00:00.000Z",
     }),
     { expectedUpdatedAt: exact.artifact.updatedAt, resolvedAnnotations: [] },
   );
@@ -479,10 +495,33 @@ const art = (id, code, extra = {}) => ({
   const unguardedCreate = await upsertCanvasArtifact(art("unguarded-create", "<main>new</main>"));
   assert.equal(unguardedCreate.status, "saved", "new creates remain unaffected without a precondition");
   const unguardedDedupe = await upsertCanvasArtifact(
-    art("unguarded-twin", "<main>new</main>", { updatedAt: "2026-07-20T10:00:00Z" }),
+    art("unguarded-twin", "<main>new</main>", { updatedAt: "2026-07-20T10:00:00.000Z" }),
   );
   assert.equal(unguardedDedupe.status, "saved", "content dedupe remains unaffected without a precondition");
   assert.equal(unguardedDedupe.savedId, "unguarded-create");
+}
+
+{
+  const create = art("expected-absent", "<main>created</main>", {
+    updatedAt: "2026-07-20T10:30:00.000Z",
+  });
+  const first = await upsertCanvasArtifact(create, { expectedAbsent: true });
+  assert.equal(first.status, "saved", "an unused create id satisfies expected-absent");
+  const beforeRetry = readFileSync(path.join(tmpHome, "canvas.json"), "utf8");
+  const retry = await upsertCanvasArtifact(create, { expectedAbsent: true });
+  assert.equal(retry.status, "saved", "an identical committed create retries idempotently");
+  assert.equal(readFileSync(path.join(tmpHome, "canvas.json"), "utf8"), beforeRetry);
+  const changed = await upsertCanvasArtifact(
+    art("expected-absent", "<main>newer elsewhere</main>", {
+      updatedAt: "2026-07-20T10:31:00.000Z",
+    }),
+    { expectedAbsent: true },
+  );
+  assert.equal(changed.status, "conflict", "expected-absent cannot overwrite a different same-id artifact");
+  assert.equal(
+    (await loadCanvas()).artifacts.find((entry) => entry.id === "expected-absent")?.code,
+    "<main>created</main>",
+  );
 }
 
 {
@@ -502,6 +541,11 @@ const art = (id, code, extra = {}) => ({
     nextCanvasArtifactUpdatedAt(incumbent, incumbentMs + 60_000),
     "2026-07-20T06:01:00.123Z",
     "the helper uses and normalizes a newer server clock",
+  );
+  assert.equal(
+    nextCanvasArtifactUpdatedAt("+275760-09-13T00:00:00.000Z"),
+    null,
+    "an unadvanceable maximum timestamp is rejected without throwing",
   );
 }
 

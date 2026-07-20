@@ -119,6 +119,11 @@ assert.match(src, /if \(e\.source !== frameRef\.current\?\.contentWindow\) retur
 assert.doesNotMatch(src, /e\.origin !== window\.location\.origin/, "no origin-equality check (opaque-origin messages carry origin 'null')");
 assert.match(src, /useLayoutEffect\(\(\) => \{[\s\S]*CANVAS_INSPECTOR_READY_MESSAGE_TYPE/, "bootstrap listener is installed in layout effect");
 assert.match(src, /createCanvasInspectorChannel/, "viewer delegates first-port and loaded-handshake lifecycle to the channel controller");
+assert.match(
+  src,
+  /useLayoutEffect\(\(\) => \{[\s\S]{0,300}?if \(tab !== "canvas"\) return;[\s\S]{0,1600}?\}, \[acceptInspectorSelection, inspectorGeneration, tab\]\)/,
+  "leaving Canvas disposes its inspector effect and returning creates a channel for the replacement iframe",
+);
 assert.doesNotMatch(src, /new MessageChannel\(\)/, "the parent no longer creates the inspector channel");
 assert.doesNotMatch(src, /CANVAS_INSPECTOR_CONNECT_MESSAGE_TYPE/, "the parent no longer transfers a port into the child");
 assert.match(src, /disabled=\{applyingComments \|\| !inspectorLoaded\}/, "comment mode stays disabled until authenticated load");

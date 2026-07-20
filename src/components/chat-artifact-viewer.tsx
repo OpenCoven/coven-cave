@@ -372,6 +372,7 @@ export function ChatArtifactViewer({
     setInspectorLoaded(false);
     commentModeRef.current = false;
     setCommentMode(false);
+    if (tab !== "canvas") return;
     const channel = createCanvasInspectorChannel({
       onLoaded: () => {
         if (inspectorLoadTimerRef.current) clearTimeout(inspectorLoadTimerRef.current);
@@ -402,7 +403,7 @@ export function ChatArtifactViewer({
       channel.dispose();
       if (inspectorChannelRef.current === channel) inspectorChannelRef.current = null;
     };
-  }, [acceptInspectorSelection, inspectorGeneration]);
+  }, [acceptInspectorSelection, inspectorGeneration, tab]);
 
   const handlePreviewLoad = useCallback(() => {
     const channel = inspectorChannelRef.current;

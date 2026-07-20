@@ -34,6 +34,7 @@ export type AddTileState = {
   result: AddTileResult | null;
   /** Last revision confirmed in the store; refine failures never replace it. */
   persistedResult: AddTileResult | null;
+  persistedUpdatedAt: string | null;
   identity: ArtifactIdentity | null;
   revision: number;
   saveState: AddTileSaveState;
@@ -56,7 +57,13 @@ export type AddTileEvent =
   | { type: "generated"; runId: string; code: string; kind: ArtifactKind; sessionId: string | null; revision: number }
   | { type: "generation-failed"; runId: string; message: string; kind: "format" | "generation" }
   | { type: "save-started"; revision: number }
-  | { type: "save-succeeded"; revision: number; savedId?: string; savedCreatedAt?: string }
+  | {
+      type: "save-succeeded";
+      revision: number;
+      savedId?: string;
+      savedCreatedAt?: string;
+      savedUpdatedAt?: string;
+    }
   | { type: "save-failed"; revision: number }
   | { type: "edit-description" }
   | { type: "discard-local" }
@@ -71,6 +78,7 @@ export const INITIAL_ADD_TILE_STATE: AddTileState = {
   pastedTitle: "",
   result: null,
   persistedResult: null,
+  persistedUpdatedAt: null,
   identity: null,
   revision: 0,
   saveState: "idle",
@@ -206,6 +214,7 @@ export function addTileReducer(state: AddTileState, event: AddTileEvent): AddTil
               : state.identity,
             saveState: "saved",
             persistedResult: state.result,
+            persistedUpdatedAt: event.savedUpdatedAt ?? state.persistedUpdatedAt,
             activeRunId: null,
             generationPurpose: null,
           };

@@ -24,6 +24,7 @@ import {
 import {
   consumeCanvasGeneration,
   getCanvasGenerationSnapshot,
+  retryCanvasGenerationSave,
   startCanvasGeneration,
   stopCanvasGeneration,
   subscribeCanvasGeneration,
@@ -147,6 +148,7 @@ export function CanvasAddTile({
   }, [previewSrc]);
 
   const handledTerminalRunRef = useRef<string | null>(null);
+  const handledSaveFailureRunRef = useRef<string | null>(null);
   useEffect(() => {
     if (
       generation.phase !== "complete" ||
@@ -174,6 +176,7 @@ export function CanvasAddTile({
         revision,
         savedId: generation.savedId,
         savedCreatedAt,
+        savedUpdatedAt: generation.artifact.updatedAt,
       });
       setResultTab("canvas");
       setRefineText("");
@@ -184,6 +187,28 @@ export function CanvasAddTile({
     announce(`Saved '${generation.artifact.title}' to Canvas.`);
     consumeCanvasGeneration(generation.runId);
   }, [announce, generation, onArtifactsChanged]);
+
+  useEffect(() => {
+    if (
+      generation.phase !== "error"
+      || !generation.saveFailure
+      || !generation.runId
+      || !generation.artifact
+      || handledSaveFailureRunRef.current === generation.runId
+    ) return;
+    const revision = ownedRunsRef.current.get(generation.runId);
+    if (revision === undefined) return;
+    handledSaveFailureRunRef.current = generation.runId;
+    dispatch({
+      type: "generated",
+      runId: generation.runId,
+      code: generation.artifact.code,
+      kind: generation.artifact.kind ?? "html",
+      sessionId: generation.sessionId,
+      revision,
+    });
+    dispatch({ type: "save-failed", revision });
+  }, [generation]);
 
   const createPreview = useCallback(() => {
     if (!state.prompt.trim() || !activeFamiliar) return;
@@ -224,13 +249,23 @@ export function CanvasAddTile({
       generationPrompt: buildRefinePrompt(state.result.code, ask, state.result.kind),
       originalIntent: ask,
       expectedKind: state.result.kind,
+      expectedUpdatedAt: state.persistedUpdatedAt ?? undefined,
       sessionId: state.result.sessionId,
     });
     if (started.runId !== runId) return;
     ownedRunsRef.current.set(runId, revision);
     setHiddenRunId(null);
     dispatch({ type: "begin-refine", runId });
-  }, [activeFamiliar, refineText, state.identity, state.phase, state.prompt, state.result, state.revision]);
+  }, [
+    activeFamiliar,
+    refineText,
+    state.identity,
+    state.persistedUpdatedAt,
+    state.phase,
+    state.prompt,
+    state.result,
+    state.revision,
+  ]);
 
   const stop = useCallback(() => {
     if (!generation.runId || !stopCanvasGeneration(generation.runId)) return;
@@ -266,6 +301,7 @@ export function CanvasAddTile({
       generationPrompt: failed.generationPrompt,
       originalIntent: failed.originalIntent,
       expectedKind: failed.expectedKind ?? undefined,
+      expectedUpdatedAt: failed.expectedUpdatedAt ?? undefined,
       sessionId: failed.sessionId,
     });
     if (started.runId !== runId) return;
@@ -278,6 +314,13 @@ export function CanvasAddTile({
       dispatch({ type: "begin-generation", runId, identity: { ...failed.identity } });
     }
   }, [state.identity, state.prompt, state.result, state.revision]);
+
+  const retrySave = useCallback((failed: CanvasGenerationSnapshot) => {
+    if (!failed.runId || failed.saveFailure !== "ambiguous") return;
+    if (retryCanvasGenerationSave(failed.runId)) {
+      announce("Retrying the same preview save.");
+    }
+  }, [announce]);
 
   const dismissGeneration = useCallback(() => {
     if (!generation.runId) return;
@@ -441,6 +484,17 @@ export function CanvasAddTile({
           </>
         ) : generationFailed ? (
           <>
+            {generation.artifact ? (
+              <div className="chat-canvas-add__preview">
+                <iframe
+                  title="Generated sketch preview"
+                  sandbox="allow-scripts"
+                  srcDoc={generation.artifact.kind === "react"
+                    ? buildReactSrcDoc(generation.artifact.code)
+                    : buildPreviewSrcDoc(generation.artifact.code)}
+                />
+              </div>
+            ) : null}
             <div className="chat-canvas-add__error" role="alert">
               {generation.phase === "cancelled"
                 ? "Preview creation stopped."
@@ -454,14 +508,25 @@ export function CanvasAddTile({
                 Dismiss
               </button>
               <span className="chat-canvas-add__spacer" />
-              <button
-                ref={retryRef}
-                type="button"
-                className="chat-canvas-add__go focus-ring"
-                onClick={() => retryGeneration(generation)}
-              >
-                Try again
-              </button>
+              {generation.saveFailure === "ambiguous" ? (
+                <button
+                  ref={retryRef}
+                  type="button"
+                  className="chat-canvas-add__go focus-ring"
+                  onClick={() => retrySave(generation)}
+                >
+                  Retry save
+                </button>
+              ) : generation.artifact ? null : (
+                <button
+                  ref={retryRef}
+                  type="button"
+                  className="chat-canvas-add__go focus-ring"
+                  onClick={() => retryGeneration(generation)}
+                >
+                  Try again
+                </button>
+              )}
             </div>
           </>
         ) : state.phase === "error" ? (

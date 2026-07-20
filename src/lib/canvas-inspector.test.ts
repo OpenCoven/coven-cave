@@ -290,6 +290,7 @@ function dispatchDocument(type: string, target: FakeElement, key?: string) {
   const event = {
     target,
     key,
+    isTrusted: true,
     preventDefault: () => calls.push("preventDefault"),
     stopPropagation: () => calls.push("stopPropagation"),
     stopImmediatePropagation: () => calls.push("stopImmediatePropagation"),
@@ -310,11 +311,16 @@ assert.equal(paragraph.getAttribute("tabindex"), "0", "paragraphs remain keyboar
 assert.equal(leafText.getAttribute("tabindex"), "0", "leaf-level visible text remains keyboard selectable");
 assert.equal(emptyLeaf.getAttribute("tabindex"), null, "empty generic leaves are skipped");
 assert.equal(labelledWrapper.getAttribute("tabindex"), "0", "explicit aria-labelled targets remain selectable");
+const originalPostMessage = FakePort.prototype.postMessage;
+FakePort.prototype.postMessage = function monkeypatchedPostMessage(message: unknown) {
+  this.posted.push({ monkeypatched: message });
+};
 assert.deepEqual(
   dispatchDocument("click", button),
   ["preventDefault", "stopPropagation", "stopImmediatePropagation"],
   "enabled inspection blocks artifact click handlers",
 );
+FakePort.prototype.postMessage = originalPostMessage;
 assert.equal(button.style.outline, "2px solid #8b5cf6", "selected element is highlighted");
 const selected = parentMessages.at(-1) as {
   type: string;
@@ -325,6 +331,23 @@ assert.equal(selected.target.selector, "div > div > button", "an oversized id fa
 assert.ok(selected.target.selector.length <= 500, "selector matches the sanitizer bound");
 assert.ok(selected.target.label.length <= 200, "label matches the sanitizer bound");
 assert.ok(selected.target.excerpt.length <= 1_000, "excerpt matches the sanitizer bound");
+const selectedMessageCount = parentMessages.length;
+for (const { listener } of listeners.get("document:click") ?? []) {
+  listener({
+    target: button,
+    isTrusted: false,
+    preventDefault() {
+      throw new Error("synthetic clicks must not be intercepted");
+    },
+    stopPropagation() {
+      throw new Error("synthetic clicks must not be intercepted");
+    },
+    stopImmediatePropagation() {
+      throw new Error("synthetic clicks must not be intercepted");
+    },
+  });
+}
+assert.equal(parentMessages.length, selectedMessageCount, "synthetic clicks cannot forge component selection");
 
 dispatchDocument("focusin", staticCard);
 assert.equal(staticCard.style.outline, "2px solid #8b5cf6", "keyboard focus uses the same highlight");
@@ -336,6 +359,17 @@ assert.deepEqual(
 assert.equal((parentMessages.at(-1) as { target: { selector: string } }).target.selector, "p");
 dispatchDocument("keydown", staticCard, " ");
 assert.equal(parentMessages.length, 4, "Space also selects over the authenticated port");
+for (const { listener } of listeners.get("document:keydown") ?? []) {
+  listener({
+    target: staticCard,
+    key: "Enter",
+    isTrusted: false,
+    preventDefault() {
+      throw new Error("synthetic keydowns must not be intercepted");
+    },
+  });
+}
+assert.equal(parentMessages.length, 4, "synthetic keydowns cannot forge component selection");
 
 transferredPort!.postMessage({ type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled: false });
 assert.equal(staticCard.getAttribute("tabindex"), "-1", "disabling restores the candidate's prior tabindex");

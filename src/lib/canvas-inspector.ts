@@ -152,6 +152,7 @@ function inspectorSource(generation: string): string {
   let previousOutlineOffset = "";
   const channel = new MessageChannel();
   const port = channel.port1;
+  const postPortMessage = port.postMessage.bind(port);
   const restoredTabIndexes = new Map();
 
   port.onmessage = (portEvent) => {
@@ -167,7 +168,7 @@ function inspectorSource(generation: string): string {
   port.start();
   window.parent.postMessage({ type: READY_TYPE, generation: GENERATION }, "*", [channel.port2]);
   window.addEventListener("load", () => {
-    port.postMessage({ type: LOADED_TYPE });
+    postPortMessage({ type: LOADED_TYPE });
   }, { once: true });
 
   const clamp = (value, limit) => String(value || "").slice(0, limit);
@@ -307,7 +308,7 @@ function inspectorSource(generation: string): string {
     }
     highlight(element);
     if (!port) return;
-    port.postMessage({
+    postPortMessage({
       type: SELECTED_TYPE,
       target: {
         selector,
@@ -318,7 +319,7 @@ function inspectorSource(generation: string): string {
   };
 
   document.addEventListener("click", (event) => {
-    if (!enabled) return;
+    if (!event.isTrusted || !enabled) return;
     const element = event.target;
     if (!element || element.nodeType !== 1) return;
     event.preventDefault();
@@ -335,7 +336,7 @@ function inspectorSource(generation: string): string {
   }, true);
 
   document.addEventListener("keydown", (event) => {
-    if (!enabled || (event.key !== "Enter" && event.key !== " ")) return;
+    if (!event.isTrusted || !enabled || (event.key !== "Enter" && event.key !== " ")) return;
     const element = event.target;
     if (!element || element.nodeType !== 1 || !isMeaningfulCandidate(element)) return;
     event.preventDefault();

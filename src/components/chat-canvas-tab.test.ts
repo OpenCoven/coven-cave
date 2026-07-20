@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 import * as canvasGallery from "../lib/canvas-gallery.ts";
 
-const { formatArtifactWhen, sortArtifactsForGallery } = canvasGallery;
+const { formatArtifactWhen, mergeCanvasArtifactSnapshot, sortArtifactsForGallery } = canvasGallery;
 
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./chat-canvas-view.tsx", import.meta.url), "utf8");
@@ -41,6 +41,88 @@ assert.match(
   /confirm\(\{\s*title: "Delete sketch\?"/,
   "delete is guarded by the in-app confirm dialog",
 );
+
+{
+  const existing = {
+    id: "existing",
+    title: "Existing",
+    prompt: "",
+    code: "new",
+    kind: "html" as const,
+    createdAt: "2026-07-20T10:00:00.000Z",
+    updatedAt: "2026-07-20T12:00:00.000Z",
+  };
+  const generated = {
+    ...existing,
+    id: "generated",
+    title: "Generated",
+    createdAt: "2026-07-20T12:01:00.000Z",
+    updatedAt: "2026-07-20T12:01:00.000Z",
+  };
+  const staleAnnotationSnapshot = [{ ...existing, code: "old", updatedAt: "2026-07-20T11:00:00.000Z" }];
+  assert.deepEqual(
+    mergeCanvasArtifactSnapshot([existing, generated], staleAnnotationSnapshot, {
+      kind: "upsert",
+      changedId: existing.id,
+    }),
+    [existing, generated],
+    "an annotation response arriving after generation cannot regress or drop gallery artifacts",
+  );
+  const newerAnnotations = {
+    ...existing,
+    annotations: [{
+      id: "annotation-new",
+      target: { selector: "main", label: "Main", excerpt: "<main>" },
+      note: "new",
+      createdAt: existing.updatedAt,
+      updatedAt: existing.updatedAt,
+    }],
+  };
+  const staleEqualRevision = {
+    ...existing,
+    annotations: [{
+      id: "annotation-old",
+      target: { selector: "main", label: "Main", excerpt: "<main>" },
+      note: "old",
+      createdAt: existing.updatedAt,
+      updatedAt: existing.updatedAt,
+    }],
+  };
+  assert.deepEqual(
+    mergeCanvasArtifactSnapshot([newerAnnotations, generated], [staleEqualRevision, generated], {
+      kind: "upsert",
+      changedId: generated.id,
+    }),
+    [newerAnnotations, generated],
+    "equal-revision collateral data cannot regress another artifact's annotations",
+  );
+  assert.deepEqual(
+    mergeCanvasArtifactSnapshot([staleEqualRevision, generated], [newerAnnotations, generated], {
+      kind: "upsert",
+      changedId: existing.id,
+    }),
+    [newerAnnotations, generated],
+    "equal-revision data remains authoritative for the artifact the mutation changed",
+  );
+  const afterDelete = mergeCanvasArtifactSnapshot([existing, generated], [existing], {
+      kind: "delete",
+      deletedId: generated.id,
+    });
+  assert.deepEqual(
+    afterDelete,
+    [existing],
+    "an explicit deletion response removes its artifact",
+  );
+  assert.deepEqual(
+    mergeCanvasArtifactSnapshot(afterDelete, [existing, generated], {
+      kind: "upsert",
+      changedId: existing.id,
+      deletedIds: new Set([generated.id]),
+    }),
+    [existing],
+    "an older annotation response cannot resurrect an explicitly deleted artifact",
+  );
+}
 assert.match(
   view,
   /sandbox="allow-scripts"/,
@@ -65,7 +147,7 @@ assert.match(
 );
 assert.match(
   view,
-  /setArtifacts\(sortArtifactsForGallery\(next\)\)/,
+  /setArtifacts\(\(current\) => sortArtifactsForGallery\([\s\S]{0,120}?mergeCanvasArtifactSnapshot\(current, next, sequencedMutation\)/,
   "artifact update callbacks preserve gallery ordering",
 );
 assert.doesNotMatch(
@@ -80,8 +162,8 @@ assert.match(
 );
 assert.match(
   view,
-  /const acceptArtifacts = useCallback\([\s\S]{0,300}?artifactVersionRef\.current \+= 1;[\s\S]{0,200}?setArtifacts\(sortArtifactsForGallery\(next\)\)/,
-  "every accepted server mutation advances the artifact version before replacing gallery state",
+  /const acceptArtifacts = useCallback\([\s\S]{0,400}?artifactVersionRef\.current \+= 1;[\s\S]{0,600}?mergeCanvasArtifactSnapshot/,
+  "every accepted server mutation advances the artifact version before merging gallery state",
 );
 assert.match(
   view,
@@ -95,12 +177,12 @@ assert.match(
 );
 assert.match(
   view,
-  /handleSaved[\s\S]{0,180}?acceptArtifacts\(next\)[\s\S]{0,300}?handleArtifactUpdated[\s\S]{0,180}?acceptArtifacts\(next\)/,
+  /handleSaved[\s\S]{0,220}?acceptArtifacts\(next, \{ kind: "upsert", changedId: savedId \}\)[\s\S]{0,300}?handleArtifactUpdated[\s\S]{0,220}?acceptArtifacts\(next, \{ kind: "upsert", changedId: updated\.id \}\)/,
   "terminal generation adoption and viewer mutations invalidate older GET loads",
 );
 assert.match(
   view,
-  /method: "DELETE"[\s\S]{0,350}?acceptArtifacts\(data\.artifacts \?\? \[\]\)/,
+  /method: "DELETE"[\s\S]{0,400}?acceptArtifacts\(data\.artifacts \?\? \[\], \{ kind: "delete", deletedId: artifact\.id \}\)/,
   "accepted deletes invalidate older GET loads",
 );
 
@@ -438,13 +520,29 @@ assert.match(addTile, /Blank React component/, "explicit blank React remains ava
 assert.doesNotMatch(addTile, /const MODES/, "equal-weight implementation mode switcher is removed");
 assert.match(
   generationRegistry,
-  /method: "POST",[\s\S]{0,200}?body: JSON\.stringify\(\{ artifact \}\)/,
+  /method: "POST",[\s\S]{0,400}?body: JSON\.stringify\(\{[\s\S]{0,120}?artifact,[\s\S]{0,120}?expectedUpdatedAt[\s\S]{0,120}?expectedAbsent/,
   "the registry-owned executor autosaves to the existing canvas store route",
 );
 assert.match(
   generationRegistry,
-  /const savedArtifact = data\.artifacts\?\.find\(\(entry\) => entry\.id === savedId\) \?\? artifact/,
+  /expectedAbsent: input\.expectedAbsent \?\? input\.purpose === "create"/,
+  "new artifact saves retain an expected-absent precondition across retries",
+);
+assert.match(
+  addTile,
+  /purpose: "refine"[\s\S]{0,300}?expectedUpdatedAt: state\.persistedUpdatedAt/,
+  "background refinements carry the last server-confirmed artifact revision",
+);
+assert.match(addTile, /retryCanvasGenerationSave/, "ambiguous saves expose a save-only retry path");
+assert.match(
+  generationRegistry,
+  /const savedArtifact = data\.artifact[\s\S]{0,120}?data\.artifacts\?\.find\(\(entry\) => entry\.id === savedId\)/,
   "terminal replay carries the server-settled artifact when dedupe adopts another id",
+);
+assert.match(
+  generationRegistry,
+  /if \(!savedId \|\| !savedArtifact \|\| !Array\.isArray\(data\.artifacts\)\) \{[\s\S]{0,200}?CanvasGenerationSaveError/,
+  "an incomplete response remains an explicit ambiguous save instead of claiming success",
 );
 assert.doesNotMatch(addTile, />\s*Keep\s*</, "generated previews no longer require an ambiguous Keep action");
 assert.match(view, /artifact\.id !== activeComposerId/, "the active autosaved artifact is hidden from gallery cards to prevent duplicates");

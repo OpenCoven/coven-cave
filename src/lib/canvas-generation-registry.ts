@@ -26,8 +26,14 @@ export type CanvasGenerationStart = {
   generationPrompt: string;
   originalIntent: string;
   expectedKind?: ArtifactKind;
+  /** Last server-confirmed revision. Required for refine saves, absent for creates. */
+  expectedUpdatedAt?: string;
+  /** New creates require that their stable id is still unused. */
+  expectedAbsent?: boolean;
   sessionId?: string | null;
 };
+
+export type CanvasGenerationSaveFailure = "ambiguous" | "not_found" | "conflict";
 
 export type CanvasGenerationSnapshot = {
   runId: string | null;
@@ -41,6 +47,8 @@ export type CanvasGenerationSnapshot = {
   generationPrompt: string;
   familiarId: string | null;
   expectedKind: ArtifactKind | null;
+  expectedUpdatedAt: string | null;
+  expectedAbsent: boolean;
   sessionId: string | null;
   startedAt: number | null;
   updatedAt: number | null;
@@ -48,6 +56,7 @@ export type CanvasGenerationSnapshot = {
   artifacts: readonly Readonly<CanvasArtifact>[] | null;
   savedId: string | null;
   error: string | null;
+  saveFailure: CanvasGenerationSaveFailure | null;
 };
 
 export type CanvasGenerationProgress = {
@@ -68,6 +77,32 @@ export type CanvasGenerationExecutor = (context: {
   progress: (progress: CanvasGenerationProgress) => void;
 }) => Promise<CanvasGenerationExecutorResult>;
 
+export type CanvasGenerationSaveExecutor = (
+  artifact: Readonly<CanvasArtifact>,
+  expectedUpdatedAt: string | undefined,
+  expectedAbsent: boolean,
+  signal: AbortSignal,
+) => Promise<CanvasGenerationExecutorResult>;
+
+export class CanvasGenerationSaveError extends Error {
+  readonly artifact: CanvasArtifact;
+  readonly sessionId: string | null;
+  readonly failure: CanvasGenerationSaveFailure;
+
+  constructor(
+    message: string,
+    artifact: CanvasArtifact,
+    sessionId: string | null = null,
+    failure: CanvasGenerationSaveFailure = "ambiguous",
+  ) {
+    super(message);
+    this.name = "CanvasGenerationSaveError";
+    this.artifact = cloneArtifact(artifact);
+    this.sessionId = sessionId;
+    this.failure = failure;
+  }
+}
+
 type Listener = () => void;
 
 const EMPTY_SNAPSHOT: CanvasGenerationSnapshot = Object.freeze({
@@ -82,6 +117,8 @@ const EMPTY_SNAPSHOT: CanvasGenerationSnapshot = Object.freeze({
   generationPrompt: "",
   familiarId: null,
   expectedKind: null,
+  expectedUpdatedAt: null,
+  expectedAbsent: false,
   sessionId: null,
   startedAt: null,
   updatedAt: null,
@@ -89,6 +126,7 @@ const EMPTY_SNAPSHOT: CanvasGenerationSnapshot = Object.freeze({
   artifacts: null,
   savedId: null,
   error: null,
+  saveFailure: null,
 });
 
 let snapshot = EMPTY_SNAPSHOT;
@@ -99,10 +137,14 @@ const listeners = new Set<Listener>();
 function cloneArtifact(artifact: CanvasArtifact): CanvasArtifact {
   return {
     ...artifact,
-    annotations: artifact.annotations?.map((annotation) => ({
-      ...annotation,
-      target: { ...annotation.target },
-    })),
+    ...(artifact.annotations
+      ? {
+          annotations: artifact.annotations.map((annotation) => ({
+            ...annotation,
+            target: { ...annotation.target },
+          })),
+        }
+      : {}),
   };
 }
 
@@ -125,6 +167,88 @@ function isActivePhase(phase: CanvasGenerationPhase | null): boolean {
 
 function isCancellablePhase(phase: CanvasGenerationPhase | null): boolean {
   return phase === "generating" || phase === "repairing";
+}
+
+async function saveCanvasArtifactRevision(
+  artifact: Readonly<CanvasArtifact>,
+  expectedUpdatedAt: string | undefined,
+  expectedAbsent: boolean,
+  signal: AbortSignal,
+  sessionId: string | null = null,
+): Promise<CanvasGenerationExecutorResult> {
+  let response: Response;
+  try {
+    response = await fetch("/api/canvas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        artifact,
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+        ...(expectedAbsent ? { expectedAbsent: true } : {}),
+      }),
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new CanvasGenerationSaveError(
+      "Couldn’t confirm this preview was saved. Retry saving without regenerating it.",
+      artifact as CanvasArtifact,
+      sessionId,
+    );
+  }
+  if (response.status === 404) {
+    throw new CanvasGenerationSaveError(
+      "This preview was deleted before the refinement could be saved.",
+      artifact as CanvasArtifact,
+      sessionId,
+      "not_found",
+    );
+  }
+  if (response.status === 409) {
+    throw new CanvasGenerationSaveError(
+      "This preview changed before the refinement could be saved.",
+      artifact as CanvasArtifact,
+      sessionId,
+      "conflict",
+    );
+  }
+  if (!response.ok) {
+    throw new CanvasGenerationSaveError(
+      "Couldn’t confirm this preview was saved. Retry saving without regenerating it.",
+      artifact as CanvasArtifact,
+      sessionId,
+    );
+  }
+  let data: {
+    artifact?: CanvasArtifact;
+    artifacts?: CanvasArtifact[];
+    savedId?: string | null;
+  };
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    throw new CanvasGenerationSaveError(
+      "Couldn’t confirm this preview was saved. Retry saving without regenerating it.",
+      artifact as CanvasArtifact,
+      sessionId,
+    );
+  }
+  const savedId = data.savedId;
+  const savedArtifact = data.artifact
+    ?? data.artifacts?.find((entry) => entry.id === savedId);
+  if (!savedId || !savedArtifact || !Array.isArray(data.artifacts)) {
+    throw new CanvasGenerationSaveError(
+      "Couldn’t confirm this preview was saved. Retry saving without regenerating it.",
+      artifact as CanvasArtifact,
+      sessionId,
+    );
+  }
+  return {
+    artifact: savedArtifact,
+    artifacts: data.artifacts ?? [],
+    savedId,
+    sessionId,
+  };
 }
 
 async function executeCanvasGeneration(
@@ -174,25 +298,13 @@ async function executeCanvasGeneration(
     updatedAt: new Date().toISOString(),
   });
   progress({ phase: "saving", streamChars: result.text.length });
-  const response = await fetch("/api/canvas", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ artifact }),
+  return saveCanvasArtifactRevision(
+    artifact,
+    start.expectedUpdatedAt,
+    start.expectedAbsent === true,
     signal,
-  });
-  if (!response.ok) throw new Error("Couldn’t save this preview.");
-  const data = (await response.json()) as {
-    artifacts?: CanvasArtifact[];
-    savedId?: string | null;
-  };
-  const savedId = data.savedId ?? artifact.id;
-  const savedArtifact = data.artifacts?.find((entry) => entry.id === savedId) ?? artifact;
-  return {
-    artifact: savedArtifact,
-    artifacts: data.artifacts ?? [],
-    savedId,
-    sessionId: result.sessionId,
-  };
+    result.sessionId,
+  );
 }
 
 export function getCanvasGenerationSnapshot(): CanvasGenerationSnapshot {
@@ -214,6 +326,8 @@ export function startCanvasGeneration(
     ...input,
     identity: { ...input.identity },
     expectedKind: input.expectedKind ?? undefined,
+    expectedUpdatedAt: input.expectedUpdatedAt ?? undefined,
+    expectedAbsent: input.expectedAbsent ?? input.purpose === "create",
     sessionId: input.sessionId ?? null,
   });
   const controller = new AbortController();
@@ -232,6 +346,8 @@ export function startCanvasGeneration(
     generationPrompt: start.generationPrompt,
     familiarId: start.familiarId,
     expectedKind: start.expectedKind ?? null,
+    expectedUpdatedAt: start.expectedUpdatedAt ?? null,
+    expectedAbsent: start.expectedAbsent,
     sessionId: start.sessionId,
     startedAt: now,
     updatedAt: now,
@@ -239,6 +355,7 @@ export function startCanvasGeneration(
     artifacts: null,
     savedId: null,
     error: null,
+    saveFailure: null,
   });
 
   const progress = (update: CanvasGenerationProgress) => {
@@ -274,6 +391,7 @@ export function startCanvasGeneration(
         savedId: result.savedId,
         sessionId: result.sessionId ?? snapshot.sessionId,
         error: null,
+        saveFailure: null,
       });
     },
     (error: unknown) => {
@@ -284,15 +402,92 @@ export function startCanvasGeneration(
         !isActivePhase(snapshot.phase)
       ) return;
       activeController = null;
+      const saveError = error instanceof CanvasGenerationSaveError ? error : null;
       publish({
         ...snapshot,
         phase: "error",
         updatedAt: Date.now(),
+        artifact: saveError ? cloneArtifact(saveError.artifact) : snapshot.artifact,
+        sessionId: saveError?.sessionId ?? snapshot.sessionId,
         error: error instanceof Error ? error.message : "Canvas generation failed.",
+        saveFailure: saveError?.failure ?? null,
       });
     },
   );
   return started;
+}
+
+export function retryCanvasGenerationSave(
+  runId: string,
+  save: CanvasGenerationSaveExecutor = saveCanvasArtifactRevision,
+): boolean {
+  if (
+    snapshot.runId !== runId
+    || snapshot.phase !== "error"
+    || !snapshot.artifact
+    || !snapshot.saveFailure
+  ) {
+    return false;
+  }
+
+  const artifact = cloneArtifact(snapshot.artifact as CanvasArtifact);
+  const expectedUpdatedAt = snapshot.expectedUpdatedAt ?? undefined;
+  const expectedAbsent = snapshot.expectedAbsent;
+  const controller = new AbortController();
+  activeController = controller;
+  const token = ++executorToken;
+  publish({
+    ...snapshot,
+    phase: "saving",
+    updatedAt: Date.now(),
+    error: null,
+    saveFailure: null,
+  });
+
+  void save(artifact, expectedUpdatedAt, expectedAbsent, controller.signal).then(
+    (result) => {
+      if (
+        token !== executorToken
+        || snapshot.runId !== runId
+        || controller.signal.aborted
+        || snapshot.phase !== "saving"
+      ) return;
+      activeController = null;
+      publish({
+        ...snapshot,
+        phase: "complete",
+        updatedAt: Date.now(),
+        artifact: cloneArtifact(result.artifact),
+        artifacts: result.artifacts.map(cloneArtifact),
+        savedId: result.savedId,
+        sessionId: result.sessionId ?? snapshot.sessionId,
+        error: null,
+        saveFailure: null,
+      });
+    },
+    (error: unknown) => {
+      if (
+        token !== executorToken
+        || snapshot.runId !== runId
+        || controller.signal.aborted
+        || snapshot.phase !== "saving"
+      ) return;
+      activeController = null;
+      const saveError = error instanceof CanvasGenerationSaveError ? error : null;
+      publish({
+        ...snapshot,
+        phase: "error",
+        updatedAt: Date.now(),
+        artifact: saveError ? cloneArtifact(saveError.artifact) : artifact,
+        sessionId: saveError?.sessionId ?? snapshot.sessionId,
+        error: error instanceof Error
+          ? error.message
+          : "Couldn’t confirm this preview was saved. Retry saving without regenerating it.",
+        saveFailure: saveError?.failure ?? "ambiguous",
+      });
+    },
+  );
+  return true;
 }
 
 export function stopCanvasGeneration(runId: string): boolean {

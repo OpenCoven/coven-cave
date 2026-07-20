@@ -14,7 +14,7 @@ type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const STORAGE_PREFIX = "cave:canvas-annotation-operations:v1:";
 const STORAGE_VERSION = 1;
-const MAX_STORED_OPERATIONS = 100;
+const MAX_STORED_OPERATIONS = 200;
 
 function operationAnnotationId(operation: CanvasAnnotationOperation): string {
   return "annotation" in operation ? operation.annotation.id : operation.removeAnnotationId;

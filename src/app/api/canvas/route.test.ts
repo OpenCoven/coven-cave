@@ -51,15 +51,17 @@ test("POST enforces exact content revisions and maps typed failures", async () =
 
   const created = await POST(request("POST", { artifact: artifact("<main>original</main>", originalUpdatedAt) }));
   assert.equal(created.status, 200, "unguarded creates keep their existing behavior");
+  const createdBody = await created.json();
+  const originalRevision = createdBody.artifact.updatedAt;
 
   const exact = await POST(request("POST", {
     artifact: artifact("<main>revised</main>", clientUpdatedAt),
-    expectedUpdatedAt: originalUpdatedAt,
+    expectedUpdatedAt: originalRevision,
   }));
   assert.equal(exact.status, 200, "an exact same-id revision succeeds");
   const exactBody = await exact.json();
   assert.ok(
-    Date.parse(exactBody.artifact.updatedAt) > Date.parse(originalUpdatedAt),
+    Date.parse(exactBody.artifact.updatedAt) > Date.parse(originalRevision),
     "the route returns a revision newer than the incumbent",
   );
   assert.notEqual(
@@ -70,7 +72,7 @@ test("POST enforces exact content revisions and maps typed failures", async () =
 
   const stale = await POST(request("POST", {
     artifact: artifact("<main>stale</main>", "2026-07-20T08:00:00Z"),
-    expectedUpdatedAt: originalUpdatedAt,
+    expectedUpdatedAt: originalRevision,
   }));
   assert.equal(stale.status, 409, "a stale revision maps to HTTP 409");
   assert.equal((await stale.json()).error, "artifact changed");
@@ -176,4 +178,28 @@ test("POST validates resolution tokens before writing and retains guarded failur
     resolvedAnnotations: [{ id: "applied", updatedAt: "2026-07-20T12:01:00.000Z" }],
   }));
   assert.equal(missing.status, 404, "deleted content still returns 404 with resolution tokens");
+});
+
+test("POST protects ambiguous create retries with expected-absent", async () => {
+  const createdAt = "2026-07-20T15:00:00.000Z";
+  const original = {
+    ...artifact("<main>created</main>", createdAt),
+    id: "route-expected-absent",
+    createdAt,
+  };
+  const created = await POST(request("POST", { artifact: original, expectedAbsent: true }));
+  assert.equal(created.status, 200);
+  const retry = await POST(request("POST", { artifact: original, expectedAbsent: true }));
+  assert.equal(retry.status, 200, "an identical create retry is idempotent");
+  const conflicting = await POST(request("POST", {
+    artifact: { ...original, code: "<main>changed elsewhere</main>" },
+    expectedAbsent: true,
+  }));
+  assert.equal(conflicting.status, 409, "a create retry cannot overwrite newer same-id content");
+  const invalid = await POST(request("POST", {
+    artifact: original,
+    expectedAbsent: true,
+    expectedUpdatedAt: createdAt,
+  }));
+  assert.equal(invalid.status, 400, "create and revision preconditions are mutually exclusive");
 });

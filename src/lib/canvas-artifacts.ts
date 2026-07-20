@@ -342,10 +342,10 @@ export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
   if (!id || id.length > MAX_ANNOTATION_ID_CHARS) return null;
 
   const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
-    ? v.createdAt
+    ? new Date(v.createdAt).toISOString()
     : "";
   const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt))
-    ? v.updatedAt
+    ? new Date(v.updatedAt).toISOString()
     : createdAt;
   return {
     id,
@@ -381,8 +381,12 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   // Timestamps feed the gallery's lexicographic recency sort and the card's
   // date label — garbage strings sort a sketch as if newest forever. Coerce
   // unparseable values to "" (renders dateless, sorts last).
-  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
-  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
+    ? new Date(v.createdAt).toISOString()
+    : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt))
+    ? new Date(v.updatedAt).toISOString()
+    : createdAt;
   const annotations = sanitizeAnnotations(v.annotations);
   return {
     id,
