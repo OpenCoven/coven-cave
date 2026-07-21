@@ -162,7 +162,7 @@ assert.doesNotMatch(
 // the overview's management mode.
 assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/, "Rituals exposes Overview, Calendar and Crons modes");
 assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
-assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "overview"/, "Overview is the default landing mode; calendar/crons deep links still win");
+assert.match(source, /const \[deepLinkTab, setDeepLinkTab\] = useState<AutomationTab \| null>/, "Calendar and Crons deep links override the saved tab for one visit");
 assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
 assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
 assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
@@ -179,7 +179,7 @@ assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the 
 // Grouping is deliberately behind the overflow menu in the minimalist shell.
 assert.match(source, /INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \([\s\S]{0,420}Group selection by \{option\.label\.toLowerCase\(\)\}/, "group-by remains reachable from the overview options menu");
 assert.doesNotMatch(source, /<StandardSelect[\s\S]{0,120}label="Group inbox by"/, "the group-by dropdown is gone");
-assert.match(source, /cave:inbox:group-by/, "the group-by choice persists per install");
+assert.match(source, /useSurfacePreference\(surfacePreferenceSpecs\.schedules\.groupBy\)/, "the group-by choice persists through the shared workspace preference registry");
 assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
 assert.match(source, /<SelectionToolbar/, "inbox select mode uses the shared bulk toolbar");
 assert.match(
@@ -216,6 +216,11 @@ assert.match(source, /const loadReqRef = useRef\(0\)/, "load() tracks its own re
 assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load() bumps the request id");
 assert.match(source, /const live = \(\) => reqId === loadReqRef\.current && mountedRef\.current/, "load() writes only while it's the newest load and still mounted");
 assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its writes");
+assert.match(
+  source,
+  /const reloadAfterMutation = useCallback\(async \(\) => \{\s*invalidateSurfaceResources\("schedules:inbox", "schedules:automations"\);\s*await load\(true\);/,
+  "a completed Schedules mutation invalidates both shared landing resources before it reloads",
+);
 
 // ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
@@ -269,7 +274,9 @@ console.log("automations-view.test.ts: ok");
 assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
 assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
 assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
-assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook");
+assert.match(source, /usePausablePoll\(\(\) => \{ void load\(true\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook and bypasses a warm cache");
+assert.match(source, /const onSchedulesReload = \(\) => \{ void reloadAfterMutation\(\); \};[\s\S]{0,220}addEventListener\("cave:schedules:reload", onSchedulesReload\)/, "workspace inbox writes force a mounted Schedules surface to replace an invalidated warm read");
+assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retry/, "the error retry bypasses a fresh warm cache");
 // Selected-detail syncs only adopt content changes — a new-but-identical
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");

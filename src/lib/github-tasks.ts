@@ -1,6 +1,7 @@
 // ── GitHub item context (for attaching to board / chat / familiar) ───────────
 
 import type { CardGitHubLink } from "@/lib/cave-board-types";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   mergeLinksWithGitHub,
   mergeTaskGitHubLinks,
@@ -76,6 +77,7 @@ export async function createBoardCardFromGitHubItem(
     if (!res.ok || !data?.ok) {
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
+    publishBoardChanged();
     return { ok: true, cardId: data.card?.id as string | undefined };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
@@ -115,6 +117,7 @@ export async function attachGitHubItemToCard(
     if (!res.ok || !data?.ok) {
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
+    publishBoardChanged();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };

@@ -201,23 +201,12 @@
 }
 
 /* ────────────────────────────────────────────────
-   Chat · Familiar tab (identity hero + capability grid)
+   Chat · Familiar tab (scope overview; the roster-rail + detail-card styles
+   live in src/styles/familiar-tab.css, imported by the component)
    ──────────────────────────────────────────────── */
-
-/* The tab is a first-class surface, not a 320px sidepanel: the panel measures
-   its own inline size so the capability grid can go two-column when the chat
-   canvas is wide enough, independent of the viewport. */
-.familiar-tab {
-  container-type: inline-size;
-}
 
 .chat-familiar-view {
   -webkit-overflow-scrolling: touch;
-  scroll-padding-top: 112px;
-}
-
-.chat-familiar-view :is(a, button, [tabindex]):focus {
-  scroll-margin-top: 112px;
 }
 
 .familiar-scope-overview__header,
@@ -270,90 +259,6 @@
 
   .familiar-scope-overview__metrics {
     gap: var(--space-1) var(--space-2);
-  }
-}
-
-.familiar-tab__hero {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-inline: -16px;
-  padding: var(--space-3) 18px var(--space-4);
-  border-bottom: 1px solid var(--border-hairline);
-  background: var(--glass-raised);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-}
-
-.familiar-tab__avatar {
-  display: inline-flex;
-  flex-shrink: 0;
-  border-radius: var(--radius-card);
-  /* Soft inset hairline behind transparent avatar corners — same wash idiom
-     as the roster cards, no hard border. */
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
-}
-
-/* Identity moment: the display name is the one serif element on the tab
-   (--font-serif is the display / hero / identity face). */
-.familiar-tab__name {
-  font-family: var(--font-serif, ui-serif, serif);
-  font-size: clamp(22px, 3.2cqi, 30px);
-  font-weight: 500;
-  line-height: 1.1;
-  color: var(--text-primary);
-}
-
-.familiar-tab__presence {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* One column by default; two balanced columns once the tab itself is wide
-   enough to earn it (~900px of usable canvas). */
-.familiar-tab__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2) var(--space-5);
-}
-
-@container (min-width: 900px) {
-  .familiar-tab__grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    align-items: start;
-  }
-}
-
-/* De-boxed capability lists (facelift language): one wash + soft inset
-   hairline per group, hairline dividers between rows — no per-row boxes, no
-   accent tints on metadata. Accent stays reserved for presence. */
-.familiar-tab__list {
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
-}
-
-.familiar-tab__rows > li + li {
-  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
-}
-
-/* Coarse pointers: the hero's quiet links/actions and the group toggles are
-   10-11px targets tuned for a cursor — grow their hit areas on touch without
-   changing the pointer-fine rhythm. */
-@media (pointer: coarse) {
-  .familiar-tab__links a,
-  .familiar-tab__links button {
-    padding-block: 6px;
-  }
-  .familiar-tab__list > button {
-    padding-block: 10px;
-  }
-  .familiar-tab__cta {
-    padding-block: var(--space-2);
   }
 }
 

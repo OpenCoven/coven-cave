@@ -7,8 +7,8 @@ const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", impor
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
-// ── Chat-mode shell wiring: global nav stays in nav; Chats lives in the shell's
-//    persistent list pane on desktop (and the list drawer on mobile). ───────────
+// ── Chat-mode shell wiring: Chats replaces the global nav in the primary shell
+//    nav slot, including the mobile nav drawer. ────────────────────────────────
 assert.match(
   workspace,
   /const chatSidebar =\s*\(\s*<WorkspaceSidebar/,
@@ -16,23 +16,34 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const list = mode === "chat" \? chatSidebar : undefined;/,
-  "workspace should mount Chats as the list pane only in chat mode",
+  /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/,
+  "workspace should select Chats as the primary nav only in chat mode",
 );
+assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/);
 assert.match(
   workspace,
-  /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/,
-  "chat visits should start with the global nav collapsed",
+  /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/,
+  "chat mode should activate the contextual nav policy",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
   /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/,
-  "chat mode should keep the Chats list persistent on desktop",
+  "chat mode should not reserve a persistent list pane",
 );
 assert.match(
   workspace,
-  /nav=\{sidebar\}\s*list=\{list\}/,
-  "workspace should keep SidebarMinimal in nav and pass Chats separately as list content",
+  /nav=\{contextualNav\}\s*list=\{undefined\}/,
+  "workspace should pass contextual navigation and no list content",
+);
+assert.match(workspace, /topBar=\{\(\{ navDrawerOpen \}\) =>/, "top bar should only receive nav drawer state");
+assert.match(workspace, /onToggleList=\{undefined\}/, "top bar should expose no list drawer toggle");
+assert.match(workspace, /listDrawerOpen=\{false\}/, "top bar should report no list drawer");
+const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
+assert.ok(chatSidebarBlock, "workspace should keep a distinct chatSidebar block");
+assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
+assert.ok(
+  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6,
+  "chat sidebar actions should dismiss the mobile nav drawer",
 );
 assert.match(
   workspaceSidebar,
@@ -50,7 +61,7 @@ assert.doesNotMatch(workspace, /const exitChatMode = useCallback/, "workspace sh
 assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track a stale prior-surface contract");
 
 // ── Subpanel removal: the in-surface thread rail is dropped in chat mode,
-//    because the outer WorkspaceSidebar already owns the project-grouped list. ─
+//    because the contextual WorkspaceSidebar already owns the grouped threads. ─
 assert.match(
   workspace,
   /hideThreadRail/,
@@ -62,7 +73,11 @@ assert.match(
   /const compactRail = hideThreadRail/,
   "ChatSurface should fold hideThreadRail into the compact rail flag",
 );
-assert.match(chatSurface, /compact=\{compactRail\}/, "ChatRouter should receive the combined compact flag");
+assert.match(
+  chatSurface,
+  /hideRail=\{compactRail\}/,
+  "ChatRouter should receive the rail-only flag — the outer sidebar owns chats, but the full-width toolbar must stay (hideRail, not compact)",
+);
 
 // ── Recreated sidepanel: project-grouped threads + register-as-project. ───────
 assert.match(

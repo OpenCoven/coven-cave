@@ -480,6 +480,7 @@ function SummoningRite({
       clearSummoningDraft();
       setSummoned({ id: newId, name: name.trim() });
       setSubmitting(false);
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
       onCreated(newId);
       announce(`${name.trim()} has answered the summons.`, "polite");
     } catch (err) {

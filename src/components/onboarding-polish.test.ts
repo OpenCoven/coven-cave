@@ -78,6 +78,35 @@ assert.match(
   "both error responses and network throws count toward the give-up budget",
 );
 
+// cave-0hhd: the 2s status/npm-lane heartbeat stops once every required step
+// is confirmed and nothing is running — a completed, idle wizard must not
+// keep re-probing the CLI install forever.
+assert.match(
+  source,
+  /const heartbeatIdle =\s*\n\s*\(status\?\.complete \?\? false\) &&/,
+  "the heartbeat idles only when the server says setup is complete",
+);
+assert.match(
+  source,
+  /heartbeatIdle[\s\S]{0,700}npmLane === null[\s\S]{0,700}installQueue\.length === 0[\s\S]{0,700}job\.status === "running"/,
+  "a busy npm lane, a queued install, or a running job keeps the heartbeat alive",
+);
+assert.match(
+  source,
+  /if \(!open \|\| heartbeatIdle\) return;[\s\S]{0,400}setInterval\(\(\) => \{\s*\n\s*void refresh\(\);\s*\n\s*void refreshNpmLane\(\);/,
+  "the recurring status/npm-lane interval is gated on the idle check",
+);
+assert.match(
+  source,
+  /const npmLaneRefreshInFlightRef = useRef\(false\)/,
+  "overlapping open-time and heartbeat npm-lane probes share an in-flight guard",
+);
+assert.match(
+  source,
+  /const refreshNpmLane = useCallback\(async \(\) => \{\s*if \(npmLaneRefreshInFlightRef\.current\) return;\s*npmLaneRefreshInFlightRef\.current = true;[\s\S]{0,1400}finally \{\s*npmLaneRefreshInFlightRef\.current = false;/,
+  "the npm-lane in-flight guard is released after every response outcome",
+);
+
 // Finishing setup must record the dismissal exactly like "Skip for now" —
 // otherwise the workspace auto-open relaunches the whole wizard for a
 // finished user whenever the daemon happens to be down (complete flips false).

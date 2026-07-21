@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
@@ -87,7 +88,10 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
       const ok = res.ok && data.ok !== false;
-      if (ok) void recordFeedback({ pathId: card.recommendedPathId, mode: card.mode, savedToBoard: true });
+      if (ok) {
+        publishBoardChanged();
+        void recordFeedback({ pathId: card.recommendedPathId, mode: card.mode, savedToBoard: true });
+      }
       return ok;
     } catch {
       return false;

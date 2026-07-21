@@ -10,6 +10,7 @@ import {
   setGroupSession,
   setGroupParticipants,
   setGroupResponseMode,
+  setGroupDetails,
   orderRoundRobinFamiliarIds,
   nextRoundRobinLeadId,
   parseMentions,
@@ -22,6 +23,7 @@ import {
   renderCovenContext,
   runCovenReplySchedule,
   loadGroups,
+  saveGroups,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -213,6 +215,74 @@ test("loadGroups: legacy groups default to broadcast without losing session pins
     assert.equal(loaded.responseMode, "broadcast");
     assert.equal(loaded.nextRoundRobinLeadId, "a");
     assert.equal(loaded.sessions.a, "sess-a");
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
+// --- details drawer (subject / summary) ------------------------------------
+
+test("setGroupDetails: sets subject/summary and bumps updatedAt; no-op returns the same object", () => {
+  const g = makeGroup("X", ["a"], "2026-06-24T00:00:00.000Z", "g1");
+  const withSubject = setGroupDetails(g, { subject: "Memory system" }, "2026-06-24T01:00:00.000Z");
+  assert.equal(withSubject.subject, "Memory system");
+  assert.equal(withSubject.summary, undefined);
+  assert.equal(withSubject.updatedAt, "2026-06-24T01:00:00.000Z");
+  const withBoth = setGroupDetails(withSubject, { summary: "Short recap" }, "2026-06-24T02:00:00.000Z");
+  assert.equal(withBoth.subject, "Memory system");
+  assert.equal(withBoth.summary, "Short recap");
+  // A no-change commit (blur without edits) returns the identical object so
+  // callers can skip the persist/reorder entirely.
+  assert.equal(setGroupDetails(withBoth, { subject: "Memory system" }, "2026-06-24T03:00:00.000Z"), withBoth);
+  assert.equal(setGroupDetails(withBoth, {}, "2026-06-24T03:00:00.000Z"), withBoth);
+});
+
+test("group details round-trip through save/load; legacy groups without them still load", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    },
+  });
+  try {
+    const detailed = setGroupDetails(
+      makeGroup("Echo & Sage", ["echo", "sage"], "2026-06-24T00:00:00.000Z", "g1"),
+      { subject: "New memory system", summary: "Consolidation gaps; decay-weighted pruning favored." },
+      "2026-06-24T01:00:00.000Z",
+    );
+    const legacy = {
+      // A pre-details stored group (no subject/summary keys at all).
+      id: "legacy",
+      name: "Legacy coven",
+      familiarIds: ["a"],
+      sessions: {},
+      createdAt: "t1",
+      updatedAt: "t2",
+    };
+    const garbage = {
+      // Non-string details garbage must be dropped, not crash the drawer.
+      id: "garbage",
+      name: "Odd coven",
+      familiarIds: ["a"],
+      sessions: {},
+      subject: 42,
+      summary: { nested: true },
+      createdAt: "t1",
+      updatedAt: "t1",
+    };
+    saveGroups([detailed, legacy as never, garbage as never]);
+    const loaded = loadGroups();
+    const byId = new Map(loaded.map((g) => [g.id, g]));
+    assert.equal(byId.get("g1")?.subject, "New memory system");
+    assert.equal(byId.get("g1")?.summary, "Consolidation gaps; decay-weighted pruning favored.");
+    assert.equal(byId.get("legacy")?.subject, undefined);
+    assert.equal(byId.get("legacy")?.summary, undefined);
+    assert.equal(byId.get("garbage")?.subject, undefined);
+    assert.equal(byId.get("garbage")?.summary, undefined);
   } finally {
     if (previous) Object.defineProperty(globalThis, "localStorage", previous);
     else delete (globalThis as { localStorage?: unknown }).localStorage;

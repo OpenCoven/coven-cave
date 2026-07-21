@@ -5,6 +5,7 @@ import {
   invalidShapeResponse,
   memberIdsInput,
   projectGrantsInput,
+  requireLocalHumanGrantMutation,
 } from "./access-groups-route-shared";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const blocked = requireLocalHumanGrantMutation(req);
+  if (blocked) return blocked;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;
   const rejected = rejectRelayedApproval(payload);

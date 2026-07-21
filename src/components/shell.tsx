@@ -26,6 +26,13 @@ import {
   matchesPanelShortcut,
   type PanelShortcutBindings,
 } from "@/lib/panel-shortcuts";
+import {
+  isShellNavCollapsedLayout,
+  resolveShellDestinationLayout,
+  resolveShellLayoutPersistence,
+  resolveShellNavOpenPreference,
+  type ShellPanelLayout,
+} from "./shell-layout";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -93,13 +100,19 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
+function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
+  if (!panel || panel.isCollapsed() === !open) return;
+  if (open) panel.expand();
+  else panel.collapse();
+}
+
 // The minimized-by-default nav is applied exactly ONCE per group per browser,
 // tracked by this flag (the panel library persists layouts under its own
 // `react-resizable-panels:*` keys, so we can't reuse those; a self-owned flag is
 // simpler and lets tests opt out by pre-seeding it). After the first minimize the
-// library's own persistence takes over — a user who later expands the nav keeps
-// it, because we no longer re-minimize. Returns true on the server / when storage
-// is unreadable, i.e. "already applied" → don't minimize.
+// library's expanded-layout persistence and the separate open preference take
+// over, because we no longer re-minimize. Returns true on the server / when
+// storage is unreadable, i.e. "already applied" → don't minimize.
 const SHELL_MIN_APPLIED_PREFIX = "cave:shell:min-applied:";
 function shellMinimizeApplied(id: string): boolean {
   if (typeof window === "undefined") return true;
@@ -142,6 +155,11 @@ function writeNavOpenPref(open: boolean): void {
   } catch {
     /* ignore — strict privacy mode or quota */
   }
+}
+function seedNavOpenPref(defaultOpen: boolean): boolean {
+  const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  return resolved.open;
 }
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
@@ -353,6 +371,7 @@ function ShellInner({
   });
 
   const groupRef = useRef<GroupImperativeHandle | null>(null);
+  const groupElementRef = useRef<HTMLDivElement | null>(null);
 
   const [navOpen, setNavOpen] = useState(() => {
     // Mobile keeps its drawer. On desktop, start closed so the rail content paints
@@ -503,20 +522,87 @@ function ShellInner({
     const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
+    seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
   }, [settled, isMobile, groupId, chatContextual]);
 
-  // Apply the remembered sidebar state on boot and on every panel-group switch
-  // (two-pane and other remembered groups persist their layouts separately, so
-  // without this the OTHER group's stale width wins).
-  // Runs after the minimize-by-default effect above so a saved preference beats
-  // the first-run rail. Non-remembered policies skip this effect entirely and do
-  // not consult or overwrite the global nav-open preference. onResize only writes
-  // the preference once this effect has armed the CURRENT group — the layout
-  // churn a group swap fires must never clobber the user's choice with the
-  // incoming group's stale width.
+  // The library retains an in-memory layout by panel-id set when Group's id
+  // changes. Restore the destination group's complete saved/default layout
+  // before applying its open/collapsed policy so widths cannot cross groups.
   const navPrefArmedGroupRef = useRef<string | null>(null);
+  const layoutPersistenceGroupRef = useRef<string | null>(null);
+  const expandedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
+  const collapsedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
+  const restoredGroupRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted || isMobile) {
+      if (isMobile) {
+        layoutPersistenceGroupRef.current = null;
+        expandedLayoutRef.current = null;
+        collapsedLayoutRef.current = null;
+        restoredGroupRef.current = null;
+      }
+      return;
+    }
+    if (restoredGroupRef.current === groupId) return;
+    navPrefArmedGroupRef.current = null;
+
+    const group = groupRef.current;
+    const groupElement = groupElementRef.current;
+    if (!group || !groupElement) return;
+
+    // react-resizable-panels measures the sum of panel widths, excluding its
+    // separators, when converting pixel defaults to percentages.
+    const groupSize = Array.from(groupElement.children).reduce(
+      (size, child) =>
+        size +
+        (child instanceof HTMLElement && child.hasAttribute("data-panel")
+          ? child.offsetWidth
+          : 0),
+      0,
+    );
+    if (
+      !chatContextual &&
+      isShellNavCollapsedLayout({
+        layout: defaultLayout,
+        panelIds,
+        groupSize,
+        collapsedNavPixels: NAV_RAIL_PX,
+      })
+    ) {
+      seedNavOpenPref(false);
+    }
+    const rememberedNavOpen =
+      navPolicy === "remembered" ? seedNavOpenPref(false) : null;
+    const destinationLayout = resolveShellDestinationLayout({
+      panelIds,
+      savedLayout: defaultLayout,
+      groupSize,
+      defaultPanelPixels: { nav: chatContextual ? 260 : NAV_OPEN_PX, ...(!twoPane && { list: 260 }) },
+      collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
+      isMobile,
+    });
+    if (!destinationLayout) return;
+
+    // Group keeps an in-memory layout keyed only by panel ids, even after its
+    // id changes. Arm persistence immediately before replacing that stale
+    // source layout so transition churn cannot overwrite the destination.
+    expandedLayoutRef.current = { groupId, layout: destinationLayout };
+    collapsedLayoutRef.current = null;
+    layoutPersistenceGroupRef.current = groupId;
+    restoredGroupRef.current = groupId;
+    group.setLayout(destinationLayout);
+    if (rememberedNavOpen !== null) {
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+      applyPanelOpenState(navRef.current, rememberedNavOpen);
+      setNavOpen(rememberedNavOpen);
+      minimizedGroupsRef.current.add(groupId);
+      markShellMinimizeApplied(groupId);
+    }
+  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
+
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
   const chatContextualGroupRef = useRef<string | null>(null);
@@ -530,13 +616,6 @@ function ShellInner({
         chatContextualGroupRef.current !== groupId
       ) {
         chatContextualGroupRef.current = groupId;
-        const panel = navRef.current;
-        if (panel?.isCollapsed()) {
-          const savedSize = defaultLayout?.nav;
-          panel.resize(
-            typeof savedSize === "number" && savedSize > 0 ? `${savedSize}%` : "260px",
-          );
-        }
         setNavOpen(true);
       }
       previousNavPolicyRef.current = navPolicy;
@@ -562,16 +641,20 @@ function ShellInner({
       setNavOpen(false);
     }
     previousNavPolicyRef.current = navPolicy;
-  }, [mounted, groupId, isMobile, navPolicy, defaultLayout?.nav]);
+  }, [mounted, groupId, isMobile, navPolicy]);
+
+  // Apply the remembered sidebar state on boot and after the destination layout
+  // is restored. Non-remembered policies neither consult nor overwrite the
+  // global preference. Writes stay disarmed throughout group-swap layout churn.
   useEffect(() => {
     if (navPolicy !== "remembered") {
       navPrefArmedGroupRef.current = null;
       return;
     }
     if (!settled || isMobile) return;
-    const pref = readNavOpenPref();
+    const pref = seedNavOpenPref(false);
     const panel = navRef.current;
-    if (panel && pref !== null && !railAutoCollapsedNavRef.current) {
+    if (panel && !railAutoCollapsedNavRef.current) {
       if (pref && panel.isCollapsed()) {
         panel.expand();
         setNavOpen(true);
@@ -709,13 +792,28 @@ function ShellInner({
       className="shell-root flex-1 min-h-0"
       orientation="horizontal"
       groupRef={groupRef}
-      defaultLayout={defaultLayout}
+      elementRef={groupElementRef}
+      defaultLayout={isMobile ? undefined : defaultLayout}
       onLayoutChanged={(layout, detail) => {
-        // Chat always reopens on entry. Keep the last expanded layout so a
-        // collapsed 0% layout cannot erase the user's width across re-entry.
-        if (!chatContextual || (layout.nav ?? 0) > 0) {
-          onLayoutChanged(layout, detail);
-        }
+        if (layoutPersistenceGroupRef.current !== groupId) return;
+        const navCollapsed = navRef.current?.isCollapsed() ?? true;
+        const persistedLayout = resolveShellLayoutPersistence({
+          isMobile,
+          navCollapsed,
+          layout,
+          savedExpandedLayout:
+            expandedLayoutRef.current?.groupId === groupId
+              ? expandedLayoutRef.current.layout
+              : undefined,
+          previousCollapsedLayout:
+            collapsedLayoutRef.current?.groupId === groupId
+              ? collapsedLayoutRef.current.layout
+              : undefined,
+        });
+        if (!persistedLayout) return;
+        collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
+        expandedLayoutRef.current = { groupId, layout: persistedLayout };
+        onLayoutChanged(persistedLayout, detail);
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >

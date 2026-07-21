@@ -3,14 +3,21 @@
 // edge and matching the row's compact icon-button controls. (The right
 // side-panel + expand toggles were removed with the right companion panel.)
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
+// #3576 decomposed globals.css into @imported sheets under src/styles —
+// pin against the whole global cascade, wherever a rule now lives.
+const stylesDir = new URL("../styles/", import.meta.url);
+const css = [
+  readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ...readdirSync(stylesDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => readFileSync(new URL(f, stylesDir), "utf8")),
+].join("\n");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
-
 assert.match(
   shell,
   /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
@@ -70,8 +77,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual\s*\? navOpen\s*\? "Collapse Chat sidebar"\s*: "Expand Chat sidebar"\s*: navOpen\s*\? "Collapse navigation to icons"\s*: "Expand navigation"\}/,
-  "nav toggle label reflects nav state, including contextual Chat-sidebar copy",
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Collapse navigation to icons"[\s\S]*?: "Expand navigation"\}/,
+  "nav toggle label reflects both contextual Chat and normal navigation state",
 );
 assert.match(
   shell,
@@ -200,10 +207,13 @@ assert.doesNotMatch(
   /familiarPanelRail=/,
   "workspace no longer passes a right edge-rail tab toggle to the shell",
 );
+// The chat projects rail migrated onto the shared SurfaceRail (Sessions
+// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
+// so the bespoke edge-rail reopen chip is gone from this sidebar.
 assert.match(
   projectSidebar,
-  /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
-  "collapsed projects sidebar reopen tab uses the pressable chip",
+  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
+  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
 );
 
 assert.match(

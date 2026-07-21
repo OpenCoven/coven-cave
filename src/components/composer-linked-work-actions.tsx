@@ -6,6 +6,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
 import { createSmartTaskFromChat } from "@/lib/chat-task-autofill";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
@@ -88,6 +89,7 @@ export function ComposerLinkedWorkActions({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.ok === false) throw new Error(String(json.error ?? res.status));
+      publishBoardChanged();
       const done = (x: NonNullable<ChatLinkedContext["task"]>) =>
         x.id === t.id ? { ...x, status: "done" as const, lifecycle: "completed" as const } : x;
       onLinkedContextChange?.((prev) =>

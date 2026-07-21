@@ -91,6 +91,10 @@ export type SessionRow = {
    * "this session's branch").
    */
   workBranch?: string | null;
+  /** PR URL the chat itself reported in an assistant reply (transcript
+   *  snapshot; see chat-pr-link.ts) — fallback PR attribution for chats whose
+   *  work happens in agent worktrees rather than their own cwd. */
+  chatPrUrl?: string | null;
   pullRequest?: SessionPullRequestContext | null;
   /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
   diff?: { additions: number; deletions: number } | null;
@@ -113,6 +117,12 @@ export type SessionPullRequestContext = {
   state?: string;
   branch?: string;
   draft?: boolean;
+  /** How the PR was attributed to the session. Absent/"branch" = resolved
+   *  from the session's own work branch (authoritative — feeds the merged-PR
+   *  auto-archive sweep). "transcript" = derived from a PR URL the chat
+   *  reported in a reply — badge-only, never swept (long-lived familiar chats
+   *  report many PRs over their lifetime). */
+  attribution?: "branch" | "transcript";
 };
 
 export type SessionOrigin =

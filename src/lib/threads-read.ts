@@ -215,6 +215,8 @@ export type AuditEntryView = {
   recordedAt: string;
 };
 
+import type { ProposalAuthorityView } from "./proposal-authority.ts";
+
 export type ProposalView = {
   file: string;
   parse: "ok" | "corrupt";
@@ -228,6 +230,11 @@ export type ProposalView = {
     edits: { surface: string; contents: { encoding: "utf8" | "base64"; data: string } }[];
     stagedAt: string | null;
   } | null;
+  authority?: ProposalAuthorityView;
+};
+
+export type NormalizedProposalView = ProposalView & {
+  authority: ProposalAuthorityView;
 };
 
 // ---------------------------------------------------------------------------
@@ -239,7 +246,7 @@ export type ProposalView = {
 
 type Raw = Record<string, unknown>;
 
-function isRecord(v: unknown): v is Raw {
+export function isRecord(v: unknown): v is Raw {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
@@ -584,41 +591,6 @@ export function normalizeStrandsOfThread(v: unknown, observed?: ObservedMap): St
   return v.strands
     .map((s) => normalizeStrand(s, observed))
     .filter((s): s is StrandView => s !== null);
-}
-
-// ---------------------------------------------------------------------------
-// PendingProposal (§2.6)
-
-export function normalizeProposal(fileName: string, raw: unknown): ProposalView {
-  if (!isRecord(raw) || typeof raw.id !== "string" || !Array.isArray(raw.edits)) {
-    return { file: fileName, parse: "corrupt", payload: null };
-  }
-  const edits: NonNullable<ProposalView["payload"]>["edits"] = [];
-  for (const e of raw.edits) {
-    if (!isRecord(e) || typeof e.surface !== "string" || !isRecord(e.contents)) {
-      return { file: fileName, parse: "corrupt", payload: null };
-    }
-    const encoding = e.contents.encoding;
-    const data = e.contents.data;
-    if ((encoding !== "utf8" && encoding !== "base64") || typeof data !== "string") {
-      return { file: fileName, parse: "corrupt", payload: null };
-    }
-    edits.push({ surface: e.surface, contents: { encoding, data } });
-  }
-  return {
-    file: fileName,
-    parse: "ok",
-    payload: {
-      id: raw.id,
-      familiarId: typeof raw.familiar_id === "string" ? raw.familiar_id : "",
-      writer: typeof raw.writer === "string" ? raw.writer : "",
-      channel: normalizeChannel(raw.channel),
-      threadId: typeof raw.thread_id === "string" ? raw.thread_id : "",
-      fray: normalizeTension(raw.fray),
-      edits,
-      stagedAt: timeArrayToIso(raw.staged_at),
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------

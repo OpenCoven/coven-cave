@@ -406,6 +406,7 @@ test("acceptance: no terminal mission ever renders a running or pending phase", 
 // --- researchBoundReadings: over/met bound states must be legible ---
 
 function meterMission(overrides: {
+  status?: "running" | "checkpoint" | "paused" | "completed" | "failed" | "archived";
   startedAt?: string;
   finishedAt?: string;
   sources?: number;
@@ -413,6 +414,7 @@ function meterMission(overrides: {
   bounds?: Partial<{ wallClockMinutes: number; sourceTarget: number; maxSpendUsd: number; checkpointEvery: number }>;
 }) {
   return {
+    status: overrides.status ?? "completed",
     bounds: {
       maxIterations: 1,
       wallClockMinutes: 20,
@@ -438,8 +440,8 @@ function meterMission(overrides: {
   } as Parameters<typeof researchBoundReadings>[0];
 }
 
-function reading(mission: Parameters<typeof researchBoundReadings>[0], id: string) {
-  const found = researchBoundReadings(mission).find((item) => item.id === id);
+function reading(mission: Parameters<typeof researchBoundReadings>[0], id: string, nowMs?: number) {
+  const found = researchBoundReadings(mission, nowMs).find((item) => item.id === id);
   assert.ok(found, `missing ${id} reading`);
   return found;
 }
@@ -500,6 +502,34 @@ test("in-budget readings stay neutral with no badges", () => {
   );
   assert.equal(justOver.value, "20/20 min");
   assert.equal(justOver.tone, "over");
+});
+
+test("an unfinished mission's clock ticks against now, not the last row write", () => {
+  // updatedAt is an hour past start (stale poll write), but only 9.5 real
+  // minutes have elapsed — the live clock must read now - startedAt.
+  const running = meterMission({ status: "running", startedAt: "2026-07-15T00:00:00Z" });
+  assert.equal(reading(running, "time", Date.parse("2026-07-15T00:09:30Z")).value, "10/20 min");
+  // Checkpoint/paused missions still burn wall clock — the stop gate compares
+  // against now regardless of why the run is waiting (stopBeforeNextIteration).
+  const waiting = meterMission({ status: "checkpoint", startedAt: "2026-07-15T00:00:00Z" });
+  assert.equal(reading(waiting, "time", Date.parse("2026-07-15T00:14:00Z")).value, "14/20 min");
+  // Crossing the budget flips to over live, without waiting for a data refresh.
+  const over = reading(running, "time", Date.parse("2026-07-15T00:20:01Z"));
+  assert.equal(over.tone, "over");
+  assert.equal(over.badge, "over");
+});
+
+test("a settled mission's clock freezes even when finishedAt was never recorded", () => {
+  // meterMission pins updatedAt to 01:00Z when finishedAt is absent.
+  const archived = meterMission({ status: "archived", startedAt: "2026-07-15T00:00:00Z" });
+  assert.equal(reading(archived, "time", Date.parse("2026-07-16T12:00:00Z")).value, "60/20 min");
+  // And finishedAt always wins over the live clock.
+  const finished = meterMission({
+    status: "completed",
+    startedAt: "2026-07-15T00:00:00Z",
+    finishedAt: "2026-07-15T00:12:00Z",
+  });
+  assert.equal(reading(finished, "time", Date.parse("2026-07-16T12:00:00Z")).value, "12/20 min");
 });
 
 test("spend reads over only past the cap and stays honest without one", () => {

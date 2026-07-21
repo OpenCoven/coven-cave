@@ -50,16 +50,27 @@ assert.match(
 // The Inspector/Debug/Changes right sidebar is retired — the code rail is the
 // only right sidepanel, and mobile-code-rail.test.ts owns its narrow-layout
 // sheet pins. What remains here: the pane-width heuristic that decides the
-// inline-vs-sheet presentation for the code rail.
+// inline-vs-sheet presentation for the code rail. The heuristic itself lives
+// in the shared rail controller (extracted for the task cockpit); ChatSurface
+// must still consume it rather than growing its own copy.
 assert.doesNotMatch(
   source,
   /chat-right-sheet|rightPanel/,
   "the retired session-panel sheet must not come back",
 );
+const railController = readFileSync(
+  new URL("../lib/use-workspace-rail-controller.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  source,
+  railController,
   /const paneNarrow = paneWidth === null \? isMobile : paneWidth < 680/,
   "paneNarrow falls back to the viewport heuristic until the first ResizeObserver measurement",
+);
+assert.match(
+  source,
+  /useWorkspaceRailController\(/,
+  "ChatSurface consumes the shared rail controller instead of forking the pane-width heuristic",
 );
 
 console.log("chat-surface-mobile-command-center.test.ts: ok");

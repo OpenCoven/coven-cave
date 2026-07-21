@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { relativeTime } from "@/lib/relative-time";
 import { countWords, deskSummary, parseTags, readingTimeLabel, type ScribeDraft } from "./scribe-craft";
@@ -174,6 +175,10 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
       if (!json?.ok || !json.entry?.id) {
         throw new Error(`status ${res.status}`);
       }
+      // A post-launch warm may still hold the Grimoire landing list. Publishing
+      // here happens outside GrimoireView, so discard that snapshot before a
+      // later sidebar navigation can consume it as fresh.
+      invalidateIfDefined("grimoire:knowledge", "grimoire:collections");
       updateSelected({ publishedId: json.entry.id });
       await loadWorks();
     } catch {

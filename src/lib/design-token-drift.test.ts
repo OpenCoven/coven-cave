@@ -42,10 +42,10 @@ import {
 // Current counts as of the P3 codemod PR. Only lower these (banking progress)
 // or raise them with an explicit justification in your PR.
 const BASELINES = {
-  offScaleFontSizePx: 163, // 10.5px/11.5px/… — need per-case renormalization to the type scale (+2: chat revamp 1d's typing hint + "+"-menu shortcut hints are 10.5px mono whispers per the composer spec, same voice as the existing 10.5px hint family)
-  offScaleSpacingPx: 1349, // off-4px-grid pad/margin/gap components (2px/6px/10px/…) — +4: the chat composer footer band copies the home hc-footer-band metrics verbatim (6px 10px pad, 6px gap, 11px chip pad) for cross-composer parity
-  offScaleRadiusPx: 212, // 4px/6px/10px/14px/… radii between the sanctioned steps
-  hexOutsideDefinitions: 155, // hex in render CSS (token definitions excluded)
+  offScaleFontSizePx: 157, // 10.5px/11.5px/… — need per-case renormalization to the type scale (banked: canvas-editor.css on the type scale; familiar-tab retokenized the old hero/section styles; research-desk tabs shipped fully on the type scale, -3)
+  offScaleSpacingPx: 1466, // off-4px-grid pad/margin/gap components — banked: canvas-editor.css on the space scale (-1) + familiar-tab snapped to the 4px grid (-5). +123: research-desk redesign (cave-dl74) — the five tab sheets keep the design's compact even 2px-offset rhythm (6/10/14/18/22px gaps and paddings, same family the surface it replaced used); odd values were snapped to the grid in the same PR
+  offScaleRadiusPx: 216, // 4px/6px/10px/14px/… radii between the sanctioned steps. +5: research-desk 2px/4px accent-mark radii (short solid marks, not container corners)
+  hexOutsideDefinitions: 156, // hex in render CSS (token definitions excluded) — +1: canvas-editor.css sketch-frame #fff ground, sketch CONTENT not interface color, same precedent as chat-canvas.css's thumbnail #fff
   inlineTsxStyles: 500, // style={{…}} in TSX; many are legit dynamic values
 };
 

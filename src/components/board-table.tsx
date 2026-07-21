@@ -114,6 +114,9 @@ type Props = {
   familiars: Familiar[];
   projects: CaveProject[];
   groupBy: GroupBy;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSortChange: (key: SortKey, direction: SortDir) => void;
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   /** Bulk-select mode: clicking a row toggles its checkbox instead of opening. */
@@ -123,9 +126,7 @@ type Props = {
   onPatch: (id: string, patch: Partial<Card>) => void;
 };
 
-export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortDir, onSortChange, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
 
   // Which group holds the current selection (null when nothing is selected).
   const selectedGroupKey = useMemo(() => {
@@ -276,8 +277,8 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
   }, [onSelect]);
 
   const handleCol = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
+    if (sortKey === key) onSortChange(key, sortDir === "asc" ? "desc" : "asc");
+    else onSortChange(key, "asc");
   };
 
   const toggleGroup = (key: string) =>
@@ -433,11 +434,20 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                   <tr key={card.id}
                     data-board-row="true"
                     data-card-id={card.id}
-                    role={selectMode ? "checkbox" : undefined}
-                    aria-checked={selectMode ? rowChecked : undefined}
-                    aria-label={selectMode ? `${card.title}${rowChecked ? ", selected" : ""}. Space to toggle selection.` : undefined}
+                    tabIndex={0}
+                    aria-selected={isSel}
+                    aria-label={selectMode ? `${card.title}${rowChecked ? ", selected" : ""}. Space to toggle selection.` : `Open task ${card.title}`}
                     className={`${isSel ? "selected" : ""}${rowIdx % 2 === 1 ? " board-table-row--alt" : ""}`.trim()}
-                    onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}>
+                    onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}
+                    onKeyDown={(event) => {
+                      // Keys bubbling from interactive children (selects,
+                      // buttons) must not toggle/open the row.
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      if (selectMode) onToggleSelect?.(card.id);
+                      else onSelect(card.id);
+                    }}>
                     {orderedCols.map((col) => {
                       let content: React.ReactNode = null;
                       switch (col.key) {

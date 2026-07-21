@@ -63,9 +63,14 @@ const generated = addTileReducer(creating, {
 });
 assert.equal(generated.phase, "result");
 assert.equal(generated.saveState, "saving");
-const saved = addTileReducer(generated, { type: "save-succeeded", revision: 1 });
+const saved = addTileReducer(generated, {
+  type: "save-succeeded",
+  revision: 1,
+  savedUpdatedAt: "2026-07-20T12:01:00.000Z",
+});
 assert.equal(saved.saveState, "saved");
 assert.equal(saved.result.sessionId, "canvas-session");
+assert.equal(saved.persistedUpdatedAt, "2026-07-20T12:01:00.000Z");
 const deduped = addTileReducer(generated, {
   type: "save-succeeded",
   revision: 1,
@@ -78,6 +83,7 @@ assert.deepEqual(saved.persistedResult, saved.result);
 const refining = addTileReducer(saved, { type: "begin-refine", runId: "run-2" });
 assert.equal(refining.generationPurpose, "refine");
 assert.deepEqual(refining.identity, identity);
+assert.equal(refining.persistedUpdatedAt, saved.persistedUpdatedAt, "refine retains the guarded saved revision");
 const refined = addTileReducer(refining, {
   type: "generated",
   runId: "run-2",

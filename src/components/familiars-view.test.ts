@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = [
   readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8"),
 ].join("\n");
 
 assert.match(source, /export function FamiliarsView/, "FamiliarsView must be exported");
@@ -29,31 +30,30 @@ assert.match(
 
 assert.match(
   source,
-  /const LAST_SELECTED_KEY = "cave:agents\.lastSelected"/,
-  "Selection persistence uses cave:agents.lastSelected localStorage key",
+  /useSurfacePreference\(surfacePreferenceSpecs\.familiars\.selectedId\)/,
+  "Selection persistence uses the shared workspace preference registry",
 );
 
 assert.match(
   source,
-  /window\.localStorage\.getItem\(LAST_SELECTED_KEY\)/,
-  "Initial selectedFamiliarId reads from localStorage",
+  /useSurfacePreference\(surfacePreferenceSpecs\.familiars\.viewMode\)/,
+  "The roster/detail preference is restored through the same registry",
 );
 
 assert.match(
   source,
-  /window\.localStorage\.getItem\(LAST_SELECTED_KEY\) \? "detail" : "roster"/,
-  "Initial viewMode boots into detail when a selection is persisted, else roster",
+  /readSurfaceResource<CovenMemoryResponse>\("agents:coven-memory", force\)[\s\S]*readSurfaceResource<FileMemoryResponse>\("memory:list", force\)/,
+  "Memory landing data consumes the shared warm cache",
+);
+assert.match(
+  source,
+  /defineResource\("agents:coven-memory", \(signal\) => json\(signal, "\/api\/coven-memory"\)/,
+  "The shared registry owns the Coven-memory landing endpoint",
 );
 
 assert.match(
   source,
-  /fetch\("\/api\/coven-memory"[\s\S]*fetch\("\/api\/memory"/,
-  "Memory data is fetched from /api/coven-memory and /api/memory",
-);
-
-assert.match(
-  source,
-  /usePausablePoll\(\(\) => void loadMemory\(\), 30_000\)/,
+  /usePausablePoll\(\(\) => void loadMemory\(true\), 30_000\)/,
   "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
 );
 
@@ -68,8 +68,8 @@ assert.match(
 );
 assert.match(
   source,
-  /reload: loadMemory,/,
-  "the feed exposes the parent's loader as reload",
+  /reload: \(\) => loadMemory\(true\),/,
+  "the feed exposes a cache-bypassing reload for user-triggered refreshes",
 );
 assert.ok(
   (source.match(/feed=\{memoryFeed\}/g) ?? []).length >= 2,

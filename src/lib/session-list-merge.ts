@@ -24,6 +24,8 @@ export type LocalConversationSummary = {
   origin?: SessionOrigin;
   /** Work-branch snapshot recorded from the chat's cwd at its last turn. */
   branch?: string;
+  /** PR URL the chat reported in an assistant reply (transcript snapshot). */
+  prUrl?: string;
 };
 
 type MergeOptions = {
@@ -87,6 +89,7 @@ function localConversationToSession(
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
     ...(conv.branch ? { workBranch: conv.branch } : {}),
+    ...(conv.prUrl ? { chatPrUrl: conv.prUrl } : {}),
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
     ...(keep ? { keep: true } : {}),
     ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
@@ -171,7 +174,10 @@ export function mergeSessionRows({
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       ...(localIsNewer && !daemonStatusIsAuthoritative && local?.status ? { status: local.status } : {}),
-      ...(localIsNewer && !daemonStatusIsAuthoritative && local ? { exit_code: local.exitCode ?? 0 } : {}),
+      // A local summary with no status (a first-turn stub whose reply is still
+      // streaming) must contribute neither status nor exit_code — the daemon's
+      // live "running" row stays untouched.
+      ...(localIsNewer && !daemonStatusIsAuthoritative && local?.status ? { exit_code: local.exitCode ?? 0 } : {}),
       // Daemon titles derive from the harness prompt, which the chat route
       // prefixes with the identity canon — sanitize so the preamble never
       // surfaces as a session title.
@@ -186,6 +192,9 @@ export function mergeSessionRows({
       // Per-session branch snapshot (chat's own cwd at its last saved turn).
       // PR attribution must key off this — never the root's current branch.
       ...(local?.branch ? { workBranch: local.branch } : {}),
+      // Transcript-reported PR URL — badge fallback when the chat's own cwd
+      // never sat on the PR branch (familiar chats working via worktrees).
+      ...(local?.prUrl ? { chatPrUrl: local.prUrl } : {}),
       // No conversation + nothing better than the inferred-"chat" default =
       // a run some generator spawned (journal narrative, flow, automation,
       // CLI), not something a person typed into a chat surface.

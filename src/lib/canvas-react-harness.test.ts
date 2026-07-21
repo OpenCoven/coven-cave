@@ -29,12 +29,22 @@ assert.ok(doc.includes(`<script src="${SANDBOX_RUNTIME_SRC}">`), "loads the offl
 assert.equal(SANDBOX_RUNTIME_SRC, "/sandbox/react-runtime.js", "runtime path matches the built asset");
 assert.ok(doc.includes(`<script src="${SANDBOX_TAILWIND_SRC}">`), "loads the offline Tailwind engine");
 assert.equal(SANDBOX_TAILWIND_SRC, "/sandbox/tailwind.js", "tailwind path matches the built asset");
+assert.match(doc, /cave-canvas-inspector/, "React previews include the inspector script");
 // Tailwind's observer must be live before the component mounts → its script
 // precedes the jsx + runtime scripts.
 assert.ok(
   doc.indexOf(SANDBOX_TAILWIND_SRC) < doc.indexOf('type="text/jsx"'),
   "tailwind loads before the component so its observer catches React's output",
 );
+assert.ok(
+  doc.indexOf('type="text/jsx"') < doc.indexOf(SANDBOX_RUNTIME_SRC),
+  "the existing Tailwind, JSX, and React runtime order is preserved",
+);
+assert.ok(
+  doc.indexOf("cave-canvas-inspector") < doc.indexOf(SANDBOX_TAILWIND_SRC),
+  "the inspector executes before Tailwind, JSX, and the React runtime",
+);
+assert.doesNotMatch(doc, /allow-same-origin/, "the inspector does not weaken the opaque-origin sandbox");
 
 // Escaping is applied through the builder.
 const malicious = buildReactSrcDoc('const x = "</script><script>steal()</script>";');

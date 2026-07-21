@@ -891,17 +891,8 @@
 }
 
 @media (max-width: 720px) {
-  .cave-group-chat-shell {
-    flex-direction: column;
-  }
-
-  .cave-group-chat-rail {
-    width: 100%;
-    max-height: 156px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-hairline);
-  }
-
+  /* The coven list is the shared SurfaceRail now — it collapses to an icon
+     rail on narrow widths instead of stacking above the thread. */
   .cave-group-chat-main {
     min-height: 0;
   }

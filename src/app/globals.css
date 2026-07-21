@@ -19,3 +19,5 @@
 @import "../styles/globals/surface-chat-overlays.css";
 @import "../styles/globals/surface-marketplace.css";
 @import "../styles/globals/surface-role-workspaces.css";
+/* The five surface-research-*.css sheets are imported by researcher-surface.tsx
+ * so they code-split with the mode-gated Research Desk (#3264 pattern). */

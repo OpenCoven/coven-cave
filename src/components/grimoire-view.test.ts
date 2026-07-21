@@ -9,6 +9,7 @@ const view = [
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
@@ -24,9 +25,12 @@ assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sideb
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 
 assert.match(view, /export function GrimoireView\(/, "GrimoireView must be exported");
-assert.match(view, /fetch\("\/api\/knowledge"/, "navigator lists the knowledge vault");
-assert.match(view, /fetch\("\/api\/memory"/, "navigator lists memory files");
-assert.match(view, /fetch\("\/api\/journal"/, "navigator lists journal days");
+assert.match(view, /readSurfaceResource<[^>]+>\("grimoire:knowledge", force\)/, "navigator consumes the shared knowledge cache");
+assert.match(view, /readSurfaceResource<[^>]+>\("memory:list", force\)/, "navigator consumes the shared memory cache");
+assert.match(view, /readSurfaceResource<[^>]+>\("grimoire:journal", force\)/, "navigator consumes the shared journal cache");
+assert.match(warmupRegistry, /defineResource\("grimoire:knowledge",[^\n]+"\/api\/knowledge"/, "knowledge cache loads the vault endpoint");
+assert.match(warmupRegistry, /defineResource\("memory:list",[^\n]+"\/api\/memory"/, "memory cache loads memory files");
+assert.match(warmupRegistry, /defineResource\("grimoire:journal",[^\n]+"\/api\/journal"/, "journal cache loads journal days");
 assert.match(view, /aria-label="Search grimoire documents"/, "doc search is labelled");
 // cave-zqhr: the doc search moved OUT of the navigator rail into the compact
 // header beside the Knowledge/Journal/Relations tabs. It must be the shared
@@ -146,7 +150,16 @@ assert.match(view, /\/api\/knowledge\?id=\$\{encodeURIComponent\(selection\.id\)
 assert.match(view, /\/api\/journal\?date=\$\{encodeURIComponent\(selection\.date\)\}/, "journal reflections delete through their API");
 assert.match(view, /Move to trash/, "memory delete is labelled as restorable trash");
 assert.match(view, /danger: true/, "the confirm renders its destructive style");
-assert.match(view, /closeTab\(selectionKey\(selection\)\);\s*void load\(\)/, "a successful delete closes the doc's tab and reloads the navigator");
+assert.match(
+  view,
+  /function invalidateGrimoireLanding\(\): void \{\s*invalidateSurfaceResources\("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"\);/,
+  "the shared landing cache has one invalidation boundary",
+);
+assert.match(
+  view,
+  /closeTab\(selectionKey\(selection\)\);\s*invalidateGrimoireLanding\(\);\s*void load\(true\)/,
+  "a successful delete invalidates and reloads the navigator",
+);
 assert.match(view, /deleteError \? \(\s*<span role="alert"/, "delete failures are announced");
 // (cave-mglw) successful deletes are announced too — the row vanishing was the
 // only confirmation, silent to screen readers.
@@ -193,7 +206,8 @@ assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the ch
 
 // ── Knowledge collections + continuity flags ────────────────────────────────
 assert.match(view, /"cave:grimoire:stitch-groups-collapsed"/, "stitch collection collapse overrides persist");
-assert.match(view, /fetch\("\/api\/knowledge\/collections"/, "collection metadata loads alongside knowledge");
+assert.match(view, /readSurfaceResource<[^>]+>\("grimoire:collections", force\)/, "collection metadata consumes the shared cache");
+assert.match(warmupRegistry, /defineResource\("grimoire:collections",[^\n]+"\/api\/knowledge\/collections"/, "collection metadata cache loads alongside knowledge");
 assert.match(view, /groupKnowledgeByCollection\(visibleKnowledge, collections \?\? \[\]\)/, "stitches group by collection metadata");
 assert.match(view, /knowledgeDocKey\(entry\.id, entry\.collection\)/, "knowledge row keys include collection identity");
 assert.match(view, /knowledgeEntryFlags\(entry\)/, "continuity flags are surfaced for open and rail entries");

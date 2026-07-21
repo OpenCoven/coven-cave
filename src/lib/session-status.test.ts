@@ -30,7 +30,7 @@ assert.match(
   /board-kanban-card-chip--chat-\$\{sessionStatusTone\(session\.status\)\}/,
   "kanban chat chip is toned by the linked session's live status",
 );
-assert.match(kanban, /Chat · \{sessionStatusWord\(session\.status\)\}/, "kanban chip pairs the dot with the word");
+assert.match(kanban, /Work · \{sessionStatusWord\(session\.status\)\}/, "kanban work chip pairs the dot with the word");
 assert.match(
   inspector,
   /board-drawer-chat-status-dot--\$\{sessionStatusTone\(session\.status\)\}/,
@@ -38,7 +38,7 @@ assert.match(
 );
 assert.match(
   inspector,
-  /\{sessionStatusWord\(session\.status\)\} · open conversation/,
+  /\{sessionStatusWord\(session\.status\)\} · open work/,
   "inspector desc pairs the dot with the word",
 );
 for (const tone of ["done", "failed", "idle"]) {

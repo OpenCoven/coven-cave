@@ -34,6 +34,9 @@ import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import {
   emptyStats,
   FamiliarsEmptyState,
@@ -53,8 +56,6 @@ type FileMemoryResponse =
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
 
 type ViewMode = "roster" | "detail" | "agent-memory";
-
-const LAST_SELECTED_KEY = "cave:agents.lastSelected";
 
 type AgentsViewProps = {
   familiars: Familiar[];
@@ -131,25 +132,8 @@ export function FamiliarsView({
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
-  const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(LAST_SELECTED_KEY);
-  });
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "roster";
-    return window.localStorage.getItem(LAST_SELECTED_KEY) ? "detail" : "roster";
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (selectedFamiliarId) window.localStorage.setItem(LAST_SELECTED_KEY, selectedFamiliarId);
-      else window.localStorage.removeItem(LAST_SELECTED_KEY);
-    } catch {
-      // Full localStorage must not crash the surface; the selection just
-      // won't persist across reloads.
-    }
-  }, [selectedFamiliarId]);
+  const [selectedFamiliarId, setSelectedFamiliarId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
+  const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
 
   // "/" jumps to the search (GitHub-style) while this surface is shown — but
   // never when the user is already typing in a field or holding a modifier.
@@ -167,14 +151,14 @@ export function FamiliarsView({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const loadMemory = useCallback(async () => {
+  const loadMemory = useCallback(async (force = false) => {
     try {
-      const [covenRes, fileRes] = await Promise.all([
-        fetch("/api/coven-memory", { cache: "no-store" }),
-        fetch("/api/memory", { cache: "no-store" }),
+      const [covenResult, fileResult] = await Promise.all([
+        readSurfaceResource<CovenMemoryResponse>("agents:coven-memory", force),
+        readSurfaceResource<FileMemoryResponse>("memory:list", force),
       ]);
-      const covenJson = (await covenRes.json()) as CovenMemoryResponse;
-      const fileJson = (await fileRes.json()) as FileMemoryResponse;
+      const covenJson = covenResult.data;
+      const fileJson = fileResult.data;
       if (covenJson.ok) setCovenEntries(covenJson.entries ?? []);
       if (fileJson.ok) setFileEntries(fileJson.entries ?? []);
       const errors = [
@@ -194,7 +178,7 @@ export function FamiliarsView({
     void loadMemory();
   }, [loadMemory]);
   // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void loadMemory(), 30_000);
+  usePausablePoll(() => void loadMemory(true), 30_000);
 
   // Single source of truth for the memory endpoints: the embedded
   // FamiliarsMemoryView mounts consume this instead of running their own
@@ -206,7 +190,7 @@ export function FamiliarsView({
       error: memoryError,
       loaded: memoryLoaded,
       lastLoadedAt: memoryLoadedAt,
-      reload: loadMemory,
+      reload: () => loadMemory(true),
     }),
     [covenEntries, fileEntries, memoryError, memoryLoaded, memoryLoadedAt, loadMemory],
   );
@@ -281,7 +265,7 @@ export function FamiliarsView({
             </button>
             <button
               type="button"
-              onClick={() => void loadMemory()}
+              onClick={() => void loadMemory(true)}
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               <Icon name="ph:arrows-clockwise" width={12} />
@@ -326,7 +310,7 @@ export function FamiliarsView({
               Memory feed unavailable
               <button
                 type="button"
-                onClick={() => void loadMemory()}
+                onClick={() => void loadMemory(true)}
                 className="ml-1 underline underline-offset-2"
               >
                 Refresh

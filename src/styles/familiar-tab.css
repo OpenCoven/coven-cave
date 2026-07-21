@@ -1,0 +1,414 @@
+/* ────────────────────────────────────────────────
+   Chat · Familiar tab — roster rail + identity detail
+   (design-handoff redesign: SurfaceRail roster on the left, identity header
+   + Roles/Skills/Runtime/Capabilities cards on the right. The `.familiar-tab`
+   root class is load-bearing for backdrop glass — see backdrop.css.)
+   ──────────────────────────────────────────────── */
+
+/* Roster rail rows (rendered inside SurfaceRail's content slot). */
+.familiar-tab__rail-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.familiar-tab__rail-row:hover {
+  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+}
+
+/* Selected row = surface bg. */
+.familiar-tab__rail-row[aria-current="true"] {
+  background: var(--bg-raised);
+}
+
+/* Collapsed rail: avatar-only square buttons. */
+.surface-rail[data-open="false"] .familiar-tab__rail-row {
+  width: auto;
+  justify-content: center;
+}
+
+.familiar-tab__rail-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.familiar-tab__rail-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.familiar-tab__rail-role {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Detail pane: the main column measures its own inline size so the card grid
+   goes two-column when the pane (not the viewport) is wide enough. */
+.familiar-tab__main {
+  container-type: inline-size;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5) var(--space-6) var(--space-4);
+}
+
+/* ── Identity header ── */
+
+.familiar-tab__hero {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.familiar-tab__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-card);
+  /* Soft inset hairline behind transparent avatar corners — same wash idiom
+     as the roster cards, no hard border. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+/* Identity moment: the display name is the one serif element on the tab
+   (--font-serif is the display / hero / identity face). */
+.familiar-tab__name {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: clamp(22px, 3.2cqi, 30px);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+/* Presence chip: hairline pill, accent-tinted while the daemon is reachable
+   (accent = presence, per the design language — not the mock's green). */
+.familiar-tab__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.familiar-tab__presence[data-online="true"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+}
+
+/* Chip row: runtime/model metadata pills (mono) + surface link pills. */
+.familiar-tab__pill {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.familiar-tab__links-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--space-1);
+  background: var(--border-hairline);
+}
+
+.familiar-tab__link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--accent-presence);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-tab__link-pill:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+/* ── Card grid: 1.5fr/1fr on a wide pane, stacked (and page-scrolled) below ── */
+
+.familiar-tab__grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.familiar-tab__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+@container (min-width: 840px) {
+  .familiar-tab__grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: stretch;
+    overflow: visible;
+  }
+
+  /* Wide pane: the header stays put and each column owns its own scroll. */
+  .familiar-tab__col {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* ── Cards ── */
+
+.familiar-tab__card {
+  flex: none;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  overflow: hidden;
+}
+
+/* The Skills card absorbs leftover column height and scrolls internally. */
+.familiar-tab__card--fill {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.familiar-tab__card-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.familiar-tab__card-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.familiar-tab__card-title {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.familiar-tab__count {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.familiar-tab__card-note {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* ── Card rows ── */
+
+.familiar-tab__rows {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+/* Expandable role rows: chevron + name + meta, description when open. */
+.familiar-tab__row-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.familiar-tab__row-toggle:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.familiar-tab__row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.familiar-tab__row-meta {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.familiar-tab__row-desc {
+  padding: 0 var(--space-2) var(--space-2) var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Skill group headers reuse the row-toggle geometry (CollapsibleSection). */
+.familiar-tab__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.familiar-tab__group-toggle:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.familiar-tab__skill-row {
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
+  border-radius: var(--radius-sm);
+}
+
+.familiar-tab__skill-row:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.familiar-tab__more {
+  border: none;
+  background: transparent;
+  padding: var(--space-1) var(--space-2) var(--space-2) var(--space-6);
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.familiar-tab__more:hover {
+  color: var(--accent-presence);
+}
+
+/* Dashed empty rows = invitation (design language: dashed means "something
+   can happen here"). */
+.familiar-tab__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.familiar-tab__empty--indent {
+  margin-left: var(--space-6);
+}
+
+.familiar-tab__empty > p {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Runtime facts: fixed muted label + value. */
+.familiar-tab__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.familiar-tab__facts > li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.familiar-tab__fact-label {
+  flex: none;
+  width: 64px;
+  color: var(--text-muted);
+}
+
+/* Coarse pointers: the pill links and group toggles are compact targets tuned
+   for a cursor — grow their hit areas on touch. */
+@media (pointer: coarse) {
+  .familiar-tab__links a,
+  .familiar-tab__links button {
+    min-height: 32px;
+    padding-block: var(--space-1);
+  }
+
+  .familiar-tab__group-toggle,
+  .familiar-tab__row-toggle {
+    padding-block: var(--space-3);
+  }
+
+  .familiar-tab__cta {
+    padding-block: var(--space-2);
+  }
+}

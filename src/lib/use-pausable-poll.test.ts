@@ -24,6 +24,16 @@ assert.match(
 );
 assert.match(
   src,
+  /if \(typeof window === "undefined" \|\| !window\.matchMedia\(COARSE_POINTER_QUERY\)\.matches\) \{\s*return false;\s*\}/,
+  "the input pause only applies on coarse-pointer (touch) devices — on desktop the always-focused chat composer must not starve polls (cave-i7nz)",
+);
+assert.match(
+  src,
+  /const COARSE_POINTER_QUERY = "\(pointer: coarse\)";/,
+  "the touch gate uses the standard coarse-pointer media query",
+);
+assert.match(
+  src,
   /active instanceof HTMLTextAreaElement[\s\S]*active instanceof HTMLInputElement[\s\S]*active instanceof HTMLSelectElement[\s\S]*active\.isContentEditable/,
   "active text fields, selects, and contentEditable elements can pause nonessential polls",
 );

@@ -1,6 +1,6 @@
-import fs from "node:fs";
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
+import { realpathOrResolve } from "@/lib/server/canonical-path";
 
 /**
  * Trusted project roots for the working-tree Changes panel (/api/changes).
@@ -20,15 +20,6 @@ import { callDaemon } from "@/lib/coven-daemon";
  */
 
 type DaemonSession = { project_root?: string };
-
-function realpathOrResolve(value: string): string {
-  const resolved = path.resolve(value);
-  try {
-    return fs.realpathSync(resolved);
-  } catch {
-    return resolved;
-  }
-}
 
 function isWithinRoot(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);

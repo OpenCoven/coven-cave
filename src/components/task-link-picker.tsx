@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Card } from "@/lib/cave-board-types";
 import { createTaskFromChat, type ChatHandoffContext } from "@/lib/chat-task-handoff";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 
 /**
  * Popover for linking an existing board task to the current chat. Lists the
@@ -113,6 +114,7 @@ export function TaskLinkPicker({
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to link task");
+      publishBoardChanged();
       onAssigned(json.card as Card);
       onClose();
     } catch (err) {

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState, type CaveState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
+import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import {
   sweepAutoArchive,
   sweepMergedPrAutoArchive,
@@ -12,7 +13,12 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
-import { createSwrCache } from "@/lib/swr-cache";
+import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
+import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
+import {
+  sessionsListCache,
+  type SessionsListResult,
+} from "@/lib/server/sessions-list-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
@@ -34,39 +40,10 @@ type DaemonSession = {
   initiator?: SessionInitiator;
 };
 
-type SessionsListPayload =
-  | {
-      ok: true;
-      degraded?: boolean;
-      error?: string;
-      sessions: SessionRow[];
-    }
-  | {
-      ok: false;
-      error: string;
-      sessions: [];
-    };
-
-type SessionsListResult = {
-  payload: SessionsListPayload;
-  init?: ResponseInit;
-};
-
-// Stale-while-revalidate cache (cave-5m1c). The old plain 2s TTL sat under
-// the workspace's 4s poll, so effectively EVERY poll missed and paid the full
-// daemon + git + archive-sweep recompute on the response path. Now a poll
-// inside the fresh window is a pure cache hit; a poll after it is served the
-// previous payload instantly while one background recompute refreshes it —
-// steady-state pollers never wait on the compute. Error payloads are never
-// served stale (a transient daemon failure must not pin a 503 for the whole
-// stale window), and concurrent callers still share one in-flight compute.
-const SESSIONS_LIST_CACHE_MS = 2000;
-const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
-const sessionsListCache = createSwrCache<SessionsListResult>({
-  ttlMs: SESSIONS_LIST_CACHE_MS,
-  staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
-  canServeStale: (result) => result.payload.ok,
-});
+// Stale-while-revalidate cache (cave-5m1c) + mutation invalidation
+// (cave-53yx) live in @/lib/server/sessions-list-cache — a route file may
+// only export handlers, and session mutators must be able to bust the cache
+// so post-mutation refreshes never serve the pre-mutation list.
 
 function isTrueProjectCwd(projectRoot: string): boolean {
   const trimmed = projectRoot.trim();
@@ -156,16 +133,47 @@ async function applyAutoArchiveSweep(
   );
 }
 
+/**
+ * Apply the opt-in familiar-workspace collapse to an already-scoped list.
+ * Pulled out so both the happy path and the degraded (daemon-down, local-only)
+ * path enforce the same opt-in contract — otherwise a local chat created under
+ * a familiar-workspace root would leak into the unscoped view while the daemon
+ * is unavailable. No-op (and no FS read) when the flag is off.
+ */
+async function applyFamiliarWorkspaceCollapse(
+  sessions: SessionRow[],
+  collapseFamiliarWorkspace: boolean,
+): Promise<SessionRow[]> {
+  if (!collapseFamiliarWorkspace) return sessions;
+  return collapseFamiliarWorkspaceSessions(
+    sessions,
+    familiarWorkspacesRoot(),
+    Array.from((await readFamiliarWorkspaces()).values()),
+  );
+}
+
 async function computeSessionsList(
   includeArchived: boolean,
   familiarId: string | null,
+  collapseFamiliarWorkspace: boolean,
 ): Promise<SessionsListResult> {
   const [res, state, projects] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadState(),
     loadProjects(),
   ]);
-  const localConversations = await listConversations();
+  const localConversations = (await listConversations()).map((conv) => {
+    // First-turn stubs (cave-0g2x) are statusless; resolve them against the
+    // in-process run registry. Run in flight → an honest `running` row (a
+    // conversation-only row would otherwise default to "completed"). No run →
+    // the server died mid-first-turn: `failed`, not a phantom completion.
+    // Registry-truth is process-local, which matches how chat runs live and
+    // die with this server process.
+    if (!conv.pending) return conv;
+    return hasActiveChatRun(conv.sessionId)
+      ? { ...conv, status: "running", exitCode: 0 }
+      : { ...conv, status: "failed", exitCode: 1 };
+  });
   // Backfill for local-only chat rows (UI chats the daemon never sees):
   // map the conversation's recorded cwd to its registered project root so
   // the sidebar's project groups pick new chats up immediately.
@@ -184,7 +192,10 @@ async function computeSessionsList(
           error: res.error ?? `daemon http ${res.status}`,
           sessions: await applyMergedPrAutoArchive(
             await enrichSessionsWithGitContext(
-              await scopeForFamiliar(localSessions, projects, familiarId),
+              await applyFamiliarWorkspaceCollapse(
+                await scopeForFamiliar(localSessions, projects, familiarId),
+                collapseFamiliarWorkspace,
+              ),
             ),
             state,
             includeArchived,
@@ -217,11 +228,12 @@ async function computeSessionsList(
   );
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
+  const visible = await applyFamiliarWorkspaceCollapse(scoped, collapseFamiliarWorkspace);
   return {
     payload: {
       ok: true,
       sessions: await applyMergedPrAutoArchive(
-        await enrichSessionsWithGitContext(scoped),
+        await enrichSessionsWithGitContext(visible),
         state,
         includeArchived,
       ),
@@ -233,13 +245,17 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
   const familiarId = url.searchParams.get("familiarId")?.trim() || null;
+  const collapseFamiliarWorkspace =
+    url.searchParams.get("collapseFamiliarWorkspace") === "1";
   if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
   }
-  // Cache per (archived, familiar) — scoped views differ by grant set.
-  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}`;
+  // Cache per (archived, familiar, collapse) — each view differs by its result set.
+  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
+    collapseFamiliarWorkspace ? "collapse" : "full"
+  }`;
   const result = await sessionsListCache.get(cacheKey, () =>
-    computeSessionsList(includeArchived, familiarId),
+    computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace),
   );
   return NextResponse.json(result.payload, result.init);
 }

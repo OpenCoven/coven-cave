@@ -207,7 +207,7 @@ function BoardCardStackRow({
           {!card.projectId && !card.cwd && (
             <span
               className="board-card-stack__row-no-project"
-              title="No project set — pick one in the card's Project field so task chats open in the right place"
+              title="No project set — pick one in the card's Project field so task work opens in the right place"
             >
               No project
             </span>
@@ -278,8 +278,8 @@ function BoardCardStackRow({
               type="button"
               className="board-card-stack__row-action board-card-stack__row-action--chat"
               disabled={chatLinking}
-              title="Start chat"
-              aria-label={`Start a chat for ${card.title}`}
+              title="Start work"
+              aria-label={`Start work for ${card.title}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!chatLinking) void onOpenTaskChat?.(card.id);

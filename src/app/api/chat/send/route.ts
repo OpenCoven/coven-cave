@@ -56,6 +56,7 @@ import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
   registerChatRun,
   unregisterChatRun,
+  addChatRunKeys,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
@@ -76,13 +77,16 @@ import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters
 import {
   type ConversationFile,
   type ChatTurn,
+  createConversationStub,
   loadConversation,
   saveConversation,
+  stripConversationStubTurn,
 } from "@/lib/cave-conversations";
 import {
   captureWorkBranch,
   cwdFromConversationRuntime,
 } from "@/lib/server/chat-work-branch";
+import { latestPrUrlFromText } from "@/lib/chat-pr-link";
 import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
@@ -526,6 +530,31 @@ function openClawChatResponse(args: {
       const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
 
+      // First-turn visibility (cave-0g2x): the OpenClaw path knows its
+      // conversation id up front, so persist the stub (and the default title)
+      // as soon as the bridge is running — the sessions list can surface the
+      // chat during its entire first turn. Best-effort; a no-op for resumed
+      // chats. The close handler strips the stub turn and re-appends the
+      // authoritative one under the same id.
+      const pendingUserTurnId = crypto.randomUUID();
+      const stubTitle =
+        chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
+      void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+      const stubWrite = createConversationStub({
+        sessionId: conversationId,
+        familiarId: args.body.familiarId,
+        harness: "openclaw",
+        ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+        ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+        title: stubTitle,
+        ...(args.body.origin ? { origin: args.body.origin } : {}),
+        userTurn: {
+          id: pendingUserTurnId,
+          text: args.promptText,
+          ...(args.attachments.length ? { attachments: args.attachments } : {}),
+        },
+      }).catch(() => undefined);
+
       child.stdout.on("data", (data: Buffer) => {
         stdout += data.toString("utf8");
       });
@@ -622,9 +651,18 @@ function openClawChatResponse(args: {
         if (sessionId) {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(sessionId, args.body.familiarId);
+          // Settle the spawn-time stub write first so it can never race (and
+          // clobber) the authoritative transcript saved below.
+          await stubWrite;
           const existing = await loadConversation(sessionId);
+          // First-turn visibility (cave-0g2x): drop the spawn-time stub turn
+          // so the authoritative user turn below re-lands under the same id.
+          const hadFirstTurnStub = existing
+            ? stripConversationStubTurn(existing, pendingUserTurnId)
+            : false;
+          const isFirstExchange = !existing || hadFirstTurnStub;
           const now = new Date().toISOString();
-          const userTurnId = crypto.randomUUID();
+          const userTurnId = pendingUserTurnId;
           const assistantTurnId = crypto.randomUUID();
           const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
           if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
@@ -655,6 +693,10 @@ function openClawChatResponse(args: {
           // failed capture keeps the previous snapshot.
           const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
           if (workBranch) conv.branch = workBranch;
+          // Transcript PR snapshot: the reply's last reported PR URL (fallback
+          // attribution for chats whose work happens in agent worktrees).
+          const reportedPrUrl = latestPrUrlFromText(assistantText);
+          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
           conv.turns.push(
             {
               id: userTurnId,
@@ -678,7 +720,7 @@ function openClawChatResponse(args: {
           );
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
-          if (!existing && !isError) {
+          if (isFirstExchange && !isError) {
             await autoNameSessionFromFirstExchange(sessionId, args.promptText);
           }
           pushProgress("save-transcript", "Transcript saved", "done");
@@ -1198,6 +1240,13 @@ export async function POST(req: Request) {
       push({ kind: "user", text: promptText });
 
       let sessionId: string | null = body.sessionId ?? null;
+      // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
+      // minted up front so the announce-time stub conversation and the
+      // end-of-stream authoritative save agree on the turn's identity.
+      const pendingUserTurnId = crypto.randomUUID();
+      // The pending stub write; the end-of-stream save awaits it so a
+      // late-settling stub can never clobber the authoritative transcript.
+      let stubWrite: Promise<unknown> | null = null;
       // The AssistantFilter's suppressions all key on codex/claude output
       // shapes (marker lines, startup banners, exec echoes). External manifest
       // adapters (copilot, opencode, hermes, …) pipe the CLI's raw stdout with
@@ -1266,7 +1315,33 @@ export async function POST(req: Request) {
         // turns the harness mints a fresh internal id, which must not
         // leak out as a "new session" (it fragmented every continued
         // chat into one sidebar entry per turn).
-        const announcedId = body.sessionId ?? id;
+        const announcedId = body.sessionId ?? sessionId;
+        // A new chat registered with only the client runId (body.sessionId is
+        // null until the harness mints the id) — late-key the run so
+        // /api/chat/stop and the sessions-list liveness probe reach it by
+        // conversation id. runHandle is declared later in this scope but is
+        // always initialized before the stream handlers that call announce.
+        addChatRunKeys(runHandle, [announcedId]);
+        // First-turn visibility (cave-0g2x): persist a stub conversation with
+        // the pending user turn as soon as the id exists, so the sessions
+        // list can surface this chat during its entire first turn (and after
+        // a mid-turn crash). Best-effort and a no-op for resumed chats; the
+        // end-of-stream save strips the stub turn and re-appends the
+        // authoritative one under the same id.
+        stubWrite = createConversationStub({
+          sessionId: announcedId,
+          familiarId: body.familiarId,
+          harness: binding.harness,
+          ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+          ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+          title: chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+          ...(body.origin ? { origin: body.origin } : {}),
+          userTurn: {
+            id: pendingUserTurnId,
+            text: promptText,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+          },
+        }).catch(() => undefined);
         push({ kind: "session", sessionId: announcedId });
         // Title the session from the user's prompt as soon as the id
         // exists. The daemon's own title derives from the harness
@@ -1429,21 +1504,9 @@ export async function POST(req: Request) {
               if (echoed) confirmedModel = echoed;
             }
             if (ev.session_id && !sessionId) {
-              sessionId = ev.session_id;
-              // The client tracks the STABLE conversation id — on resumed
-              // turns the harness mints a fresh internal id, which must not
-              // leak out as a "new session" (it fragmented every continued
-              // chat into one sidebar entry per turn).
-              const announcedId = body.sessionId ?? sessionId;
-              push({ kind: "session", sessionId: announcedId });
-              // Title the session from the user's prompt as soon as the id
-              // exists. The daemon's own title derives from the harness
-              // prompt — i.e. the identity-canon preamble — and is what the
-              // UI would otherwise show until the transcript save runs.
-              void setDefaultSessionTitleIfMissing(
-                announcedId,
-                chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
-              ).catch(() => undefined);
+              // Same contract as announceSession (stable-id announce, default
+              // title, first-turn stub) for the stream-json protocol path.
+              announceSession(ev.session_id);
             }
             if (ev.type === "result") {
               // The result event also carries token usage and total cost
@@ -1896,9 +1959,20 @@ export async function POST(req: Request) {
       if (finalSessionId) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
+        // Settle any in-flight stub write first so it can never race (and
+        // clobber) the authoritative transcript saved below.
+        if (stubWrite) await stubWrite;
         const existing = await loadConversation(finalSessionId);
+        // First-turn visibility (cave-0g2x): drop the announce-time stub turn
+        // so the authoritative user turn below re-lands under the same id.
+        // True only when this run's stub created the conversation, which keeps
+        // first-exchange behaviors (auto-naming) firing for new chats.
+        const hadFirstTurnStub = existing
+          ? stripConversationStubTurn(existing, pendingUserTurnId)
+          : false;
+        const isFirstExchange = !existing || hadFirstTurnStub;
         const now = new Date().toISOString();
-        const userTurnId = crypto.randomUUID();
+        const userTurnId = pendingUserTurnId;
         const assistantTurnId = crypto.randomUUID();
         const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
         if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
@@ -1959,11 +2033,15 @@ export async function POST(req: Request) {
         // failed capture keeps the previous snapshot.
         const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
         if (workBranch) conv.branch = workBranch;
+        // Transcript PR snapshot: the reply's last reported PR URL (fallback
+        // attribution for chats whose work happens in agent worktrees).
+        const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+        if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
-        if (!existing && !result.is_error && !cancelledByUser) {
+        if (isFirstExchange && !result.is_error && !cancelledByUser) {
           await autoNameSessionFromFirstExchange(finalSessionId, promptText);
         }
         pushProgress("save-transcript", "Transcript saved", "done");

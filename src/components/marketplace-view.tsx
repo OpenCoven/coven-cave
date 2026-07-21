@@ -45,6 +45,7 @@ import {
   sortPlugins,
   countByKind,
   groupPluginsByCategory,
+  normalizeMarketplaceScope,
   resolveCollection,
   COLLECTIONS,
   type KindFilter,
@@ -60,6 +61,9 @@ import {
   toSkillDetail,
   type MarketplaceSection,
 } from "@/components/marketplace/marketplace-view-model";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
@@ -87,9 +91,16 @@ export function MarketplaceViewSurface({
   familiars = [],
 }: Props = {}) {
   // Roles and Capabilities are hidden: their deep links land on Browse.
-  const [section, setSection] = useState<MarketplaceSection>(
-    initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection,
+  const [storedSection, setStoredSection] = useSurfacePreference(surfacePreferenceSpecs.marketplace.section);
+  // Alias links are a one-visit destination, not a replacement for a normal
+  // return preference.
+  const initialDestination = initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection;
+  const [deepLinkSection, setDeepLinkSection] = useState<MarketplaceSection | null>(
+    initialSection === "roles" || initialSection === "capabilities"
+      ? "browse"
+      : initialDestination === "browse" ? null : initialDestination,
   );
+  const section = deepLinkSection ?? storedSection;
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -97,10 +108,10 @@ export function MarketplaceViewSurface({
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState("All");
-  const [kind, setKind] = useState<KindFilter>("all");
-  const [sort, setSort] = useState<SortKey>("recommended");
-  const [collectionId, setCollectionId] = useState<string | null>(null);
+  const [category, setCategory] = useSurfacePreference(surfacePreferenceSpecs.marketplace.category);
+  const [kind, setKind] = useSurfacePreference(surfacePreferenceSpecs.marketplace.kind);
+  const [sort, setSort] = useSurfacePreference(surfacePreferenceSpecs.marketplace.sort);
+  const [collectionId, setCollectionId] = useSurfacePreference(surfacePreferenceSpecs.marketplace.collection);
   const [selected, setSelected] = useState<string | null>(null);
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
@@ -145,16 +156,15 @@ export function MarketplaceViewSurface({
   // shared live region — otherwise these core actions are silent to AT.
   const { announce } = useAnnouncer();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     loadCtl.current?.abort();
     const ctl = new AbortController();
     loadCtl.current = ctl;
     setLoaded(false);
     try {
-      const res = await fetch("/api/marketplace", { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as { ok?: boolean; plugins?: MarketplacePlugin[]; error?: string };
+      const { data: json } = await readSurfaceResource<{ ok?: boolean; plugins?: MarketplacePlugin[]; error?: string }>("marketplace:catalog", force);
       if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `marketplace http ${res.status}`);
+      if (!json.ok) throw new Error(json.error ?? "marketplace unavailable");
       // A reload can land while an install/uninstall is still writing (e.g.
       // the configure dialog fires onChanged → load()). For those ids, keep
       // the optimistic `installed` — the response was snapshotted before the
@@ -196,7 +206,8 @@ export function MarketplaceViewSurface({
         clearCraftArrivalWatch();
         setCraftWatch(null);
         announce("Your familiar's Craft draft arrived", "polite");
-        void load().then(() => setSelected(arrived));
+        invalidateSurfaceResources("marketplace:catalog");
+        void load(true).then(() => setSelected(arrived));
       }
     } catch {
       // Local API — the next tick retries.
@@ -213,9 +224,9 @@ export function MarketplaceViewSurface({
     setSkillsLoaded(false);
     try {
       const trimmed = search.trim();
-      const url = trimmed ? `/api/skills/directory?q=${encodeURIComponent(trimmed)}` : "/api/skills/directory";
-      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as {
+      const json = (trimmed
+        ? await fetch(`/api/skills/directory?q=${encodeURIComponent(trimmed)}`, { cache: "no-store", signal: ctl.signal }).then((res) => res.json())
+        : (await readSurfaceResource("marketplace:skills")).data) as {
         ok?: boolean;
         entries?: SkillBrowserEntry[];
         error?: string;
@@ -223,7 +234,7 @@ export function MarketplaceViewSurface({
         fetchedAt?: string;
       };
       if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `skills http ${res.status}`);
+      if (!json.ok) throw new Error(json.error ?? "skills unavailable");
       setSkills(json.entries ?? []);
       setSkillsError(null);
     } catch (err) {
@@ -270,9 +281,10 @@ export function MarketplaceViewSurface({
   // Switch sections (clearing the per-section search). Shared by the tab
   // buttons, the tablist's arrow-key navigation, and cross-section CTAs.
   const selectSection = useCallback((next: MarketplaceSection) => {
-    setSection(next);
+    setDeepLinkSection(null);
+    setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
     setQuery("");
-  }, []);
+  }, [setStoredSection]);
 
   const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
   const categoryCounts = useMemo(() => {
@@ -304,6 +316,15 @@ export function MarketplaceViewSurface({
     () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
     [collectionId],
   );
+  // Catalog categories are data-driven, so a choice can disappear between
+  // visits. Keep durable filters truthful by dropping only the invalid scope
+  // after the first catalog response has established the available options.
+  useEffect(() => {
+    if (!loaded) return;
+    const normalized = normalizeMarketplaceScope(categories, category, collectionId);
+    if (normalized.category !== category) setCategory(normalized.category);
+    if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
+  }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
   const collectionIds = useMemo(
     () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
     [plugins, activeCollection],
@@ -410,6 +431,7 @@ export function MarketplaceViewSurface({
       } else {
         announce("Added to your setup", "polite");
       }
+      invalidateSurfaceResources("marketplace:catalog");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "install failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -477,6 +499,7 @@ export function MarketplaceViewSurface({
         setInstalled(id, false);
         announce("Removed from your setup", "polite");
       }
+      invalidateSurfaceResources("marketplace:catalog");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "uninstall failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -906,7 +929,10 @@ export function MarketplaceViewSurface({
             query={query}
             onClearQuery={() => setQuery("")}
             onCreateSkill={() => selectSection("build")}
-            onChanged={() => void loadSkills(query)}
+            onChanged={() => {
+              invalidateSurfaceResources("marketplace:skills");
+              void loadSkills(query);
+            }}
           />
         </div>
       ) : (
@@ -919,7 +945,10 @@ export function MarketplaceViewSurface({
         >
           <SkillBuilder
             familiars={familiars}
-            onSaved={() => void loadSkills("")}
+            onSaved={() => {
+              invalidateSurfaceResources("marketplace:skills");
+              void loadSkills("");
+            }}
             onViewSkills={() => selectSection("skills")}
           />
         </div>
@@ -940,7 +969,8 @@ export function MarketplaceViewSurface({
           onRemove={() => void remove(selectedPlugin.id)}
           onDraftDeleted={() => {
             setSelected(null);
-            void load();
+            invalidateSurfaceResources("marketplace:catalog");
+            void load(true);
           }}
           onAdjustRoles={(seed) => {
             setSelected(null);
@@ -956,7 +986,7 @@ export function MarketplaceViewSurface({
           displayName={configuringPlugin.displayName}
           open={true}
           onClose={() => setConfiguringId(null)}
-          onChanged={() => void load()}
+          onChanged={() => { invalidateSurfaceResources("marketplace:catalog"); void load(true); }}
         />
       ) : null}
 
@@ -970,7 +1000,8 @@ export function MarketplaceViewSurface({
         onCreated={(id) => {
           setCreatingCraft(false);
           setCraftSeed(null);
-          void load().then(() => setSelected(id));
+          invalidateSurfaceResources("marketplace:catalog");
+          void load(true).then(() => setSelected(id));
           announce("Craft draft saved", "polite");
         }}
       />

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const agentsMemoryView = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -185,8 +186,8 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?compact=\{compactRail\}/,
-  "ChatSurface should suppress the in-chat project sidebar via compact when chat-mode ChatSidebar owns threads",
+  /<ChatRouter[\s\S]*?hideRail=\{compactRail\}/,
+  "ChatSurface should suppress only the in-chat project rail (hideRail) when chat-mode ChatSidebar owns threads — the full-width toolbar stays",
 );
 
 assert.match(
@@ -249,8 +250,8 @@ assert.match(
   "cave:inspector-open routes to the promoted Familiar tab",
 );
 assert.match(
-  chatSurface,
-  /const onChangesOpen = \(\) => \{[\s\S]*?rail\.reopen\(\);\s*rail\.setActiveTab\("changes"\)/,
+  railController,
+  /const openChanges = useCallback\(\(\) => \{[\s\S]*?rail\.reopen\(\);\s*rail\.setActiveTab\("changes"\)/,
   "cave:changes-open routes to the code rail's Changes tab",
 );
 
@@ -311,12 +312,12 @@ assert.match(
 // root's still-in-flight fetch (which left the badge showing a stale count), and
 // the count resets on a real root change.
 assert.match(
-  chatSurface,
+  railController,
   /let inFlight = false;[\s\S]*?const load = async \(opts\?: \{ force\?: boolean \}\) => \{\s*\n\s*if \(inFlight\) return;/,
   "change-count fetch dedupe is scoped per effect-run, not a cross-run ref",
 );
 assert.match(
-  chatSurface,
+  railController,
   /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
   "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
 );

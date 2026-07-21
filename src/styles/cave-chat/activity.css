@@ -699,20 +699,21 @@ details[open] > .cave-tool-summary::before {
 }
 
 /* Chat-revamp 1b: the header's ghost session-lifecycle action (the design's
-   "Mark done" slot — this app's honest verb is Archive). Text button, always
-   visible (exempt from the hover-quiet collapse below). */
+   "Mark done" slot — this app's honest verb is Archive). Icon-only button,
+   always visible (exempt from the hover-quiet collapse below); the verb
+   lives in its aria-label/tooltip. */
 .cave-chat-session-actions > .cave-chat-archive-btn {
-  display: inline-flex;
-  align-items: center;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
   height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   flex: 0 0 auto;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 0 var(--space-2);
   background: transparent;
   color: var(--text-secondary);
-  font-size: var(--text-sm);
-  white-space: nowrap;
   transition:
     background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),

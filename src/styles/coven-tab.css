@@ -1,0 +1,404 @@
+/* ────────────────────────────────────────────────
+   Chat · Group ("coven") tab — design-handoff redesign.
+   SurfaceRail coven list on the left; header with inline rename, member
+   chips, dashed "+ Add" pill and the response-mode toggle; a collapsible
+   Details strip (subject / running summary); restyled thread + composer.
+   Transcript row grammar (.cave-group-chat-*) stays in cave-chat/transcript.css.
+   ──────────────────────────────────────────────── */
+
+/* ── Coven rail (rendered inside the shared SurfaceRail) ─────────────────── */
+
+.coven-tab__rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coven-tab__rail-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coven-tab__rail-row:hover {
+  background: color-mix(in oklch, var(--text-primary) 5%, transparent);
+}
+
+/* Selected row = surface bg + a quiet accent spine. */
+.coven-tab__rail-row[aria-current="true"] {
+  background: var(--bg-raised);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
+/* Accent-tinted rounded-square glyph tile. */
+.coven-tab__rail-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--accent-presence);
+}
+
+.coven-tab__rail-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.coven-tab__rail-name {
+  overflow: hidden;
+  font-size: var(--text-base);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coven-tab__rail-meta {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed rail: glyph-only tiles, centered. */
+.surface-rail[data-open="false"] .coven-tab__rail-row {
+  width: auto;
+  justify-content: center;
+}
+
+/* The header "+ New coven" action reads accent (creation affordance). */
+.coven-tab__rail-add {
+  color: var(--accent-presence);
+}
+
+.surface-rail__header-row .coven-tab__rail-add:hover {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.coven-tab__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.coven-tab__title {
+  flex: none;
+  max-width: 18rem;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.coven-tab__title-input {
+  flex: none;
+  width: 14rem;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: 500;
+  outline: none;
+}
+
+.coven-tab__members {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Member chip: avatar + name in a 28px hairline pill. */
+.coven-tab__member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* Dashed accent pill = invitation to grow the roster. */
+.coven-tab__add-member {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent-presence);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.coven-tab__add-member:hover {
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.coven-tab__mode {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.coven-tab__status {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Details strip ───────────────────────────────────────────────────────── */
+
+.coven-tab__details-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-bottom: 1px solid var(--border-hairline);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.coven-tab__details-toggle:hover {
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.coven-tab__details-chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.coven-tab__details-toggle[aria-expanded="true"] .coven-tab__details-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coven-tab__details-chevron {
+    transition: none;
+  }
+}
+
+.coven-tab__details-kicker {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.coven-tab__details-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coven-tab__details {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.coven-tab__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.coven-tab__field-label {
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.coven-tab__field-input {
+  width: 100%;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  outline: none;
+}
+
+textarea.coven-tab__field-input {
+  min-height: 56px;
+  resize: vertical;
+}
+
+.coven-tab__field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.coven-tab__details-meta {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Threads: per-participant pinned sessions with a Debug jump-off. */
+.coven-tab__threads {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.coven-tab__threads-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coven-tab__thread-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.coven-tab__thread-name {
+  overflow: hidden;
+  max-width: 12rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coven-tab__thread-debug {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.coven-tab__thread-debug:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-presence);
+}
+
+/* ── Thread extras ───────────────────────────────────────────────────────── */
+
+/* "…replying" line, aligned with message bodies (same grid as a turn row). */
+.coven-tab__typing {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.coven-tab__typing::before {
+  content: "";
+}
+
+@media (max-width: 720px) {
+  /* Track the narrower mobile turn grid (38px avatars). */
+  .coven-tab__typing {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+}
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+
+/* Stop keeps the mock's accent stop mark on a quiet secondary button. */
+.coven-tab__stop svg {
+  color: var(--accent-presence);
+}
+
+.coven-tab__mention-kicker {
+  display: block;
+  padding: var(--space-1) var(--space-2) 0;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.coven-tab__mention-empty {
+  margin: 0;
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

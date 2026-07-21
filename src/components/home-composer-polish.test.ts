@@ -144,7 +144,31 @@ assert.match(
 assert.match(
   css,
   /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone composer keeps thumb-sized home-only controls (destination pills)",
+  "phone composer keeps thumb-sized home-only controls (destination tabs)",
+);
+
+// ── Chat/Task destinations render as flat inline field tabs ──
+// The boxed segmented pill treatment (bordered container, solid accent-filled
+// active pill) was retired for quiet inline tabs with an accent underline.
+assert.match(
+  css,
+  /\.hc-dest-pill \{[^}]*border-bottom: 2px solid transparent;/,
+  "every destination tab reserves the 2px underline slot so activation can't shift the row",
+);
+assert.match(
+  css,
+  /\.hc-dest-pill\.active \{[^}]*border-bottom-color: var\(--accent-presence\);/,
+  "the active destination tab is marked by an accent underline, not a solid fill",
+);
+assert.doesNotMatch(
+  css,
+  /\.hc-dest-pills \{[^}]*border: 1px solid/,
+  "the destination tab group is flat — no boxed segmented container",
+);
+assert.doesNotMatch(
+  css,
+  /\.hc-dest-pill\.active \{[^}]*background: var\(--accent-presence\)/,
+  "the solid accent-filled active pill treatment is retired",
 );
 
 // ── "Jump back in" recent-chats strip REMOVED ──

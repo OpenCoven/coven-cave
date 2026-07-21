@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -169,6 +169,35 @@ try {
     null,
     "OpenClaw workspace roots are not globally allowed for generic project file/tree APIs",
   );
+
+  // cave-s2l8: nonexistent candidates must canonicalize like the roots do.
+  // With WORKSPACE_ROOT reached via a symlink (the shape of macOS's
+  // /var -> /private/var tmpdir), a missing subpath used to fall back to a
+  // lexical resolve, miss the realpathed root, and 403 before routes could
+  // answer 404 "does not exist".
+  const symlinkedWorkspaceTarget = path.join(tmp, "ws-target");
+  await mkdir(symlinkedWorkspaceTarget, { recursive: true });
+  const symlinkedWorkspace = path.join(tmp, "ws-link");
+  await symlink(symlinkedWorkspaceTarget, symlinkedWorkspace, "junction");
+  process.env.WORKSPACE_ROOT = symlinkedWorkspace;
+  try {
+    assert.equal(
+      resolveAllowedProjectPath(path.join(symlinkedWorkspace, "missing", "sub")),
+      path.join(await realpath(symlinkedWorkspaceTarget), "missing", "sub"),
+      "a nonexistent subpath of a symlinked allowed root resolves canonically instead of failing containment",
+    );
+    // Tightening: a missing tail under a symlink escaping the root must not
+    // lexically pass containment.
+    await mkdir(path.join(tmp, "outside-home"), { recursive: true });
+    await symlink(path.join(tmp, "outside-home"), path.join(symlinkedWorkspaceTarget, "escape"), "junction");
+    assert.equal(
+      resolveAllowedProjectPath(path.join(symlinkedWorkspace, "escape", "missing")),
+      null,
+      "a nonexistent tail under an escaping symlink is rejected, not lexically contained",
+    );
+  } finally {
+    delete process.env.WORKSPACE_ROOT;
+  }
 } finally {
   restoreEnv();
   await rm(tmp, { recursive: true, force: true });

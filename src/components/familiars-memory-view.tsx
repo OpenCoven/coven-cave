@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -40,6 +41,8 @@ import {
   SourceFilterChip,
 } from "@/components/familiars-memory-files";
 import { compactPath, fileBase, fileDir, formatBytes, memoryMatches, type FileMemoryEntry } from "@/components/familiars-memory-utils";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export type { FileMemoryEntry } from "@/components/familiars-memory-utils";
 
@@ -86,12 +89,13 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
-  const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
+  const [storedFamiliarFilter, setFamiliarFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.familiarId);
+  const familiarFilter = storedFamiliarFilter || activeFamiliar?.id || familiars[0]?.id || "";
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
-  const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
-  const [groupMode, setGroupMode] = useState<GroupBy>("none");
-  const [staleOnly, setStaleOnly] = useState(false);
+  const [sourceFilter, setSourceFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.source);
+  const [sortMode, setSortMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.sort);
+  const [groupMode, setGroupMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.group);
+  const [staleOnly, setStaleOnly] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.staleOnly);
   const [expandRow, setExpandRow] = useState<MemoryRow | null>(null);
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
   // The real DELETE is deferred 4s for undo, but the 30s poll / on-focus refresh
@@ -178,11 +182,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
       else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
       scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
-        await fetch("/api/memory/delete", {
+        const response = await fetch("/api/memory/delete", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ path }),
         });
+        if (response.ok) invalidateIfDefined("agents:coven-memory", "memory:list");
         // Delete committed server-side; stop filtering (unless a newer delete
         // has already claimed the slot).
         if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;
@@ -208,10 +213,6 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   // parent-fed mode — the parent's single poll covers both components
   // (cave-5dnw: this used to double-fetch /api/coven-memory + /api/memory).
   usePausablePoll(() => void load(), 30_000, { enabled: !feed });
-
-  useEffect(() => {
-    if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
-  }, [activeFamiliar?.id]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const effectiveFamiliarFilter = lockToFamiliar && activeFamiliar?.id ? activeFamiliar.id : familiarFilter;
@@ -319,24 +320,26 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }), [familiarScopedFiles]);
 
   useEffect(() => {
+    if (lockToFamiliar) return;
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
-    if (activeFamiliar?.id && familiarIds.has(activeFamiliar.id)) {
-      if (activeFamiliar.id !== familiarFilter) setFamiliarFilter(activeFamiliar.id);
-      return;
-    }
-
+    // A valid restored selection is the user's return preference. The active
+    // workspace familiar is only a fallback for an empty or stale preference;
+    // otherwise every remount would immediately overwrite the remembered
+    // Memory filter with whichever familiar happens to be active in Chat.
     const memoryFamiliarIds = new Set(covenEntries.map((entry) => entry.familiar_id));
     if (
-      familiarFilter &&
-      familiarIds.has(familiarFilter) &&
-      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(familiarFilter))
+      storedFamiliarFilter &&
+      familiarIds.has(storedFamiliarFilter) &&
+      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(storedFamiliarFilter))
     ) {
       return;
     }
 
-    const next = familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
-    if (next && next !== familiarFilter) setFamiliarFilter(next);
-  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
+    const next = activeFamiliar?.id && familiarIds.has(activeFamiliar.id)
+      ? activeFamiliar.id
+      : familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
+    if (next && next !== storedFamiliarFilter) setFamiliarFilter(next);
+  }, [activeFamiliar?.id, covenEntries, familiars, lockToFamiliar, setFamiliarFilter, storedFamiliarFilter]);
 
   const selectedFamiliar =
     familiarById.get(effectiveFamiliarFilter) ??

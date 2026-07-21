@@ -37,6 +37,7 @@ import {
 } from "@/lib/datetime-format";
 import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -69,6 +70,8 @@ import {
   writeStoredTabs,
   type GrimoireSelection,
 } from "./grimoire-nav-state";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export { MAX_OPEN_TABS } from "./grimoire-nav-state";
 export type { GrimoireSelection } from "./grimoire-nav-state";
@@ -693,6 +696,10 @@ function GrimoireDocLinks({
 
 export type GrimoireViewKind = "docs" | "graph" | "journal";
 
+function invalidateGrimoireLanding(): void {
+  invalidateSurfaceResources("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal");
+}
+
 export function GrimoireView({
   view: controlledView,
   onViewChange,
@@ -748,6 +755,12 @@ export function GrimoireView({
   const [deleting, setDeleting] = useState(false);
   // Open tabs + the active one. A #grimoire: deep link wins over the restored
   // active tab and is merged into the restored tab set.
+  const [storedSelectionKey, setStoredSelectionKey, preferencesHydrated] = useSurfacePreference(surfacePreferenceSpecs.grimoire.selected);
+  // The hash is a one-visit route target. Keep it separate from the durable
+  // preference so a linked document never replaces the person's return tab.
+  const deepLinkActiveRef = useRef(false);
+  const preferenceRestoreAppliedRef = useRef(false);
+  const restoredSelectionPendingRef = useRef(false);
   const [{ openTabs, selection }, setTabState] = useState<{
     openTabs: GrimoireSelection[];
     selection: GrimoireSelection | null;
@@ -755,6 +768,7 @@ export function GrimoireView({
     const stored = readStoredTabs();
     const fromHash = readGrimoireHash();
     if (fromHash) {
+      deepLinkActiveRef.current = true;
       const key = selectionKey(fromHash);
       const tabs = stored.tabs.some((t) => selectionKey(t) === key)
         ? stored.tabs
@@ -766,6 +780,18 @@ export function GrimoireView({
       : null;
     return { openTabs: stored.tabs, selection: active };
   });
+
+  useEffect(() => {
+    if (!preferencesHydrated || deepLinkActiveRef.current || preferenceRestoreAppliedRef.current) return;
+    preferenceRestoreAppliedRef.current = true;
+    if (!storedSelectionKey) return;
+    setTabState((current) => {
+      const restored = current.openTabs.find((tab) => selectionKey(tab) === storedSelectionKey) ?? null;
+      if (!restored || (current.selection && selectionKey(current.selection) === selectionKey(restored))) return current;
+      restoredSelectionPendingRef.current = true;
+      return { ...current, selection: restored };
+    });
+  }, [preferencesHydrated, storedSelectionKey]);
 
   /** Open (or focus) a document tab. */
   // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
@@ -877,9 +903,22 @@ export function GrimoireView({
 
   useEffect(() => {
     writeStoredTabs(openTabs, selection ? selectionKey(selection) : null);
-  }, [openTabs, selection]);
+    if (!preferencesHydrated) return;
+    // The initial hash target is intentionally one-visit only. Once hydration
+    // has had its chance to keep that target ahead of the saved return tab,
+    // release the guard so a later user selection becomes the new preference.
+    if (deepLinkActiveRef.current) {
+      deepLinkActiveRef.current = false;
+      return;
+    }
+    if (restoredSelectionPendingRef.current) {
+      if ((selection ? selectionKey(selection) : null) !== storedSelectionKey) return;
+      restoredSelectionPendingRef.current = false;
+    }
+    setStoredSelectionKey(selection ? selectionKey(selection) : null);
+  }, [openTabs, preferencesHydrated, selection, setStoredSelectionKey, storedSelectionKey]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoadError(null);
     // The doc graph is derived from the same corpus — refresh it whenever the
     // lists refresh after a save/delete (the scan hook already fetched on
@@ -887,13 +926,13 @@ export function GrimoireView({
     if (firstLoadDoneRef.current) refreshGraph();
     firstLoadDoneRef.current = true;
     try {
-      const [kRes, cRes, mRes, jRes] = await Promise.all([
-        fetch("/api/knowledge", { cache: "no-store" }),
-        fetch("/api/knowledge/collections", { cache: "no-store" }),
-        fetch("/api/memory", { cache: "no-store" }),
-        fetch("/api/journal", { cache: "no-store" }),
+      const [kResult, cResult, mResult, jResult] = await Promise.all([
+        readSurfaceResource<{ ok?: boolean; entries?: GrimoireKnowledgeEntry[] }>("grimoire:knowledge", force),
+        readSurfaceResource<{ ok?: boolean; collections?: KnowledgeCollectionSummary[] }>("grimoire:collections", force),
+        readSurfaceResource<{ ok?: boolean; entries?: MemoryEntry[] }>("memory:list", force),
+        readSurfaceResource<{ ok?: boolean; days?: JournalSummary[] }>("grimoire:journal", force),
       ]);
-      const [k, c, m, j] = await Promise.all([kRes.json(), cRes.json(), mRes.json(), jRes.json()]);
+      const [k, c, m, j] = [kResult.data, cResult.data, mResult.data, jResult.data];
       setKnowledge(k.ok && Array.isArray(k.entries) ? k.entries : []);
       setCollections(c.ok && Array.isArray(c.collections) ? c.collections : []);
       setMemory(m.ok && Array.isArray(m.entries) ? m.entries : []);
@@ -959,7 +998,8 @@ export function GrimoireView({
       }
       // A deleted document's tab closes with it.
       closeTab(selectionKey(selection));
-      void load();
+      invalidateGrimoireLanding();
+      void load(true);
       // The row disappearing is the only visual confirmation — say it too.
       announce(
         selection.kind === "memory"
@@ -1179,7 +1219,10 @@ export function GrimoireView({
       return (
         <JournalMdEditor
           date={tab.date}
-          onSaved={() => void load()}
+          onSaved={() => {
+            invalidateGrimoireLanding();
+            void load(true);
+          }}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
@@ -1192,7 +1235,8 @@ export function GrimoireView({
           initialPatternId={stitchPrefill.patternId ?? null}
           onSewn={(entryId) => {
             replaceTab(key, { kind: "knowledge", id: entryId });
-            void load();
+            invalidateGrimoireLanding();
+            void load(true);
           }}
         />
       );
@@ -1223,7 +1267,8 @@ export function GrimoireView({
             entry={entry}
             onSaved={(saved) => {
               replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
-              void load();
+              invalidateGrimoireLanding();
+              void load(true);
             }}
             onCancel={() => closeTab(key)}
             onDirtyChange={(dirty) => setTabDirty(key, dirty)}
@@ -1332,7 +1377,8 @@ export function GrimoireView({
             backlinks={backlinks}
             onOpen={openDoc}
             onCreated={() => {
-              void load();
+              invalidateGrimoireLanding();
+              void load(true);
               refreshGraph();
             }}
           />

@@ -4,10 +4,26 @@
 // preview, and persist it. Everything here is framework-/fs-free so it can be
 // unit-tested without a DOM, a daemon, or React Flow.
 
+import { injectCanvasInspector } from "./canvas-inspector.ts";
+
 // An artifact is either a self-contained HTML document or a single React
 // component (transpiled + rendered by the sandbox runtime). Older records
 // (pre-React) have no `kind` and are treated as "html".
 export type ArtifactKind = "html" | "react";
+
+export type CanvasComponentTarget = {
+  selector: string;
+  label: string;
+  excerpt: string;
+};
+
+export type CanvasAnnotation = {
+  id: string;
+  target: CanvasComponentTarget;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type CanvasArtifact = {
   id: string;
@@ -19,6 +35,7 @@ export type CanvasArtifact = {
   code: string;
   /** How `code` should be previewed. Absent ⇒ "html" (back-compat). */
   kind?: ArtifactKind;
+  annotations?: CanvasAnnotation[];
   createdAt: string;
   updatedAt: string;
 };
@@ -33,6 +50,12 @@ export const MAX_ARTIFACT_PROMPT_CHARS = 4_000;
 // Ids are client-minted (`art-<uuid>`, ghreview slugs); anything this long is
 // garbage and would pollute the positions map keyed by it.
 const MAX_ARTIFACT_ID_CHARS = 200;
+const MAX_ANNOTATIONS = 100;
+const MAX_ANNOTATION_ID_CHARS = 200;
+const MAX_ANNOTATION_SELECTOR_CHARS = 500;
+const MAX_ANNOTATION_LABEL_CHARS = 200;
+const MAX_ANNOTATION_EXCERPT_CHARS = 1_000;
+const MAX_ANNOTATION_NOTE_CHARS = 4_000;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -136,10 +159,10 @@ export function isFullDocument(code: string): boolean {
  * runs under `sandbox="allow-scripts"` (no same-origin) — isolation comes from
  * the sandbox, so we intentionally do NOT strip scripts here.
  */
-export function buildPreviewSrcDoc(code: string): string {
+export function buildPreviewSrcDoc(code: string, inspectorGeneration = ""): string {
   const src = typeof code === "string" ? code : "";
-  if (isFullDocument(src)) return src;
-  return [
+  if (isFullDocument(src)) return injectCanvasInspector(src, inspectorGeneration);
+  return injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
@@ -152,7 +175,7 @@ export function buildPreviewSrcDoc(code: string): string {
     "</head>",
     `<body>${src}</body>`,
     "</html>",
-  ].join("\n");
+  ].join("\n"), inspectorGeneration);
 }
 
 /** A compact title from a prompt: first line, collapsed, clamped. */
@@ -287,6 +310,64 @@ export const STARTER_ARTIFACT_REACT = [
   "}",
 ].join("\n");
 
+/** Validate and bound a component target received from the preview sandbox. */
+export function sanitizeCanvasComponentTarget(value: unknown): CanvasComponentTarget | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const target = value as Record<string, unknown>;
+  if (
+    typeof target.selector !== "string"
+    || typeof target.label !== "string"
+    || typeof target.excerpt !== "string"
+  ) {
+    return null;
+  }
+
+  const selector = target.selector.trim();
+  if (!selector) return null;
+  return {
+    selector: selector.slice(0, MAX_ANNOTATION_SELECTOR_CHARS),
+    label: target.label.trim().slice(0, MAX_ANNOTATION_LABEL_CHARS),
+    excerpt: target.excerpt.trim().slice(0, MAX_ANNOTATION_EXCERPT_CHARS),
+  };
+}
+
+/** Validate and bound one persisted component annotation. */
+export function sanitizeAnnotation(value: unknown): CanvasAnnotation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const target = sanitizeCanvasComponentTarget(v.target);
+  if (typeof v.id !== "string" || !target || typeof v.note !== "string") return null;
+
+  const id = v.id.trim();
+  if (!id || id.length > MAX_ANNOTATION_ID_CHARS) return null;
+
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
+    ? new Date(v.createdAt).toISOString()
+    : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt))
+    ? new Date(v.updatedAt).toISOString()
+    : createdAt;
+  return {
+    id,
+    target,
+    note: v.note.trim().slice(0, MAX_ANNOTATION_NOTE_CHARS),
+    createdAt,
+    updatedAt,
+  };
+}
+
+/** Sanitize an annotation list, preserving the first 100 usable records. */
+export function sanitizeAnnotations(raw: unknown): CanvasAnnotation[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CanvasAnnotation[] = [];
+  for (const entry of raw) {
+    const annotation = sanitizeAnnotation(entry);
+    if (annotation) out.push(annotation);
+    if (out.length === MAX_ANNOTATIONS) break;
+  }
+  return out;
+}
+
 /** Validate/normalize a raw artifact record from disk or a request body. */
 export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   if (!value || typeof value !== "object") return null;
@@ -300,9 +381,23 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   // Timestamps feed the gallery's lexicographic recency sort and the card's
   // date label — garbage strings sort a sketch as if newest forever. Coerce
   // unparseable values to "" (renders dateless, sorts last).
-  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : "";
-  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt)) ? v.updatedAt : createdAt;
-  return { id, title, prompt, code, kind, createdAt, updatedAt };
+  const createdAt = typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt))
+    ? new Date(v.createdAt).toISOString()
+    : "";
+  const updatedAt = typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt))
+    ? new Date(v.updatedAt).toISOString()
+    : createdAt;
+  const annotations = sanitizeAnnotations(v.annotations);
+  return {
+    id,
+    title,
+    prompt,
+    code,
+    kind,
+    ...(annotations.length > 0 ? { annotations } : {}),
+    createdAt,
+    updatedAt,
+  };
 }
 
 /** Sanitize an array of artifact records, dropping any that are unusable. */

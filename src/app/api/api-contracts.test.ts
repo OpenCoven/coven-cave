@@ -12,6 +12,7 @@ type RouteContract = {
   kind: "json" | "stream";
   readsJson?: boolean;
   invalidJson?: "guarded" | "fallback-empty" | "legacy-unhandled";
+  optionalJsonBody?: boolean;
   pathGuard?: boolean;
   localOriginGuard?: boolean;
 };
@@ -32,7 +33,7 @@ const contracts: RouteContract[] = [
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/canvas", methods: ["GET", "PUT", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/canvas", methods: ["GET", "PUT", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -173,11 +174,12 @@ const contracts: RouteContract[] = [
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/proposals", methods: ["GET"], kind: "json" },
-  { route: "/proposals/[id]/approve", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/proposals/[id]/reject", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/proposals/[id]/approve", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", optionalJsonBody: true, localOriginGuard: true },
+  { route: "/proposals/[id]/reject", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", optionalJsonBody: true, localOriginGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/research/generations", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
@@ -288,8 +290,10 @@ for (const contract of contracts) {
   assert.deepEqual(exportedMethods(source), contract.methods, `${contract.route} HTTP method exports changed`);
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);
 
-  const readsJson = /req\.json\(\)|readJsonBody[<(]/.test(effectiveSource);
-  assert.equal(readsJson, contract.readsJson === true, `${contract.route} req.json() contract changed`);
+  const readsJson = contract.optionalJsonBody
+    ? /await req\.text\(\)/.test(effectiveSource) && /JSON\.parse\(/.test(effectiveSource)
+    : /req\.json\(\)|readJsonBody[<(]/.test(effectiveSource);
+  assert.equal(readsJson, contract.readsJson === true, `${contract.route} JSON body contract changed`);
 
   if (contract.invalidJson === "guarded") {
     assert.match(effectiveSource, /invalid json|invalid JSON|readJsonBody/, `${contract.route} must preserve invalid-JSON handling`);
@@ -300,6 +304,9 @@ for (const contract of contracts) {
   }
   if (contract.invalidJson === "legacy-unhandled") {
     assert.doesNotMatch(source, /invalid json|invalid JSON/, `${contract.route} legacy invalid-JSON behavior changed`);
+  }
+  if (contract.optionalJsonBody) {
+    assert.match(source, /rawBody\.trim\(\)/, `${contract.route} must accept a missing request body`);
   }
   if (contract.pathGuard) {
     assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);
@@ -514,18 +521,32 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /const sessionsListCache = createSwrCache<SessionsListResult>\(/,
-    "/sessions/list: repeated callers should share a stale-while-revalidate cached response",
+    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
+    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+  );
+  const sessionsListCacheSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),
+    "utf8",
   );
   assert.match(
-    sessionsListSource,
+    sessionsListCacheSource,
+    /export const sessionsListCache = createSwrCache<SessionsListResult>\(/,
+    "sessions-list-cache: the shared cache instance is a stale-while-revalidate cache",
+  );
+  assert.match(
+    sessionsListCacheSource,
     /canServeStale: \(result\) => result\.payload\.ok/,
-    "/sessions/list: error payloads must never be served stale (no pinned 503s)",
+    "sessions-list-cache: error payloads must never be served stale (no pinned 503s)",
   );
   assert.match(
-    sessionsListSource,
+    sessionsListCacheSource,
     /SESSIONS_LIST_STALE_SERVE_MS = 30_000/,
-    "/sessions/list: stale serve window covers the poll cadence so polls never block on recompute",
+    "sessions-list-cache: stale serve window covers the poll cadence so polls never block on recompute",
+  );
+  assert.match(
+    sessionsListCacheSource,
+    /export function invalidateSessionsListCache\(\): void \{\s*\n\s*sessionsListCache\.clear\(\);/,
+    "sessions-list-cache: mutation paths can bust every cached view (cave-53yx)",
   );
 
   const swrCacheSource = readFileSync(

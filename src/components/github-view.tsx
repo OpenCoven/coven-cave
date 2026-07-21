@@ -60,6 +60,9 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
@@ -75,6 +78,8 @@ type Props = {
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
 };
+
+type ActivityPayload = ActivityResult | { ok: false; error?: string };
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
@@ -140,6 +145,7 @@ function PatSetupModal({
         setError(data?.error ?? "Failed to save. Check that your PAT has read:user and repo scopes.");
         return;
       }
+      invalidateSurfaceResources("github:pat", "github:activity");
       onSaved(data.login ?? trimmedUser, !!trimmedPat);
     } catch {
       setError("Network error — please try again.");
@@ -267,6 +273,7 @@ function PatSetupModal({
                         setError(data?.error ?? "Couldn't remove the token.");
                         return;
                       }
+                      invalidateSurfaceResources("github:pat", "github:activity");
                       onSaved(usernameInput.trim() || username || "", false);
                     } catch {
                       setError("Network error — please try again.");
@@ -2282,16 +2289,19 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [orgFilter, setOrgFilter] = useState<string>("all");
-  const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
+  const [orgFilter, setOrgFilter] = useSurfacePreference(surfacePreferenceSpecs.github.organization);
+  const [repoFilter, setRepoFilter] = useSurfacePreference(surfacePreferenceSpecs.github.repository);
   const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
   const [showSubsModal, setShowSubsModal] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
+  const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
+  const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
+  // Notifications without a PR/issue number cannot be restored semantically,
+  // but still need to remain selected for the current visit.
+  const [transientSelectedItemId, setTransientSelectedItemId] = useState<string | null>(null);
   // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
   // user picks a row themselves — from then on selection owns the detail.
   const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
@@ -2300,8 +2310,15 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [initialTarget]);
   const selectRow = useCallback((id: string) => {
     setDeepLink(null);
-    setSelectedItemId(id);
-  }, []);
+    setTransientSelectedItemId(id);
+    const item = activity?.items.find((candidate) => candidate.id === id);
+    // The durable selection is a semantic GitHub identity, not the API row id.
+    // Notifications without a PR/issue number continue to open for the current
+    // visit but are intentionally not persisted.
+    setSelectedTarget(item && typeof item.number === "number"
+      ? { repo: item.repo, number: item.number, kind: item.kind }
+      : null);
+  }, [activity?.items, setSelectedTarget]);
   const timerRef = useRef<number | null>(null);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
@@ -2324,8 +2341,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
 
   async function fetchPatStatus() {
     try {
-      const res = await fetch("/api/github/pat");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<PatStatus>("github:pat");
       if (data) setPatStatus(data as PatStatus);
     } catch { /* non-fatal */ }
   }
@@ -2335,33 +2351,27 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // visibilitychange effect refetches (and reschedules) on return.
   function schedulePoll(ms: number) {
     if (typeof document !== "undefined" && document.hidden) return;
-    timerRef.current = window.setTimeout(() => void fetchActivity(true), ms);
+    timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
   }
 
-  async function fetchActivity(silent = false) {
+  async function fetchActivity(silent = false, force = false) {
     // Skeleton only on the first load — a manual refresh with data already on
     // screen must not unmount the list (and any open composer draft with it).
     if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/github/activity");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
-
-      if (res.status === 401 && data?.error === "no_user") {
-        setError("no_user");
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? `GitHub error (${res.status})`);
-        setLoading(false);
+      if (!data.ok) {
+        if (data.error === "no_user") {
+          setError("no_user");
+          return;
+        }
+        setError(data.error ?? "GitHub activity unavailable");
         schedulePoll(60_000);
         return;
       }
-
-      const nextActivity = data as ActivityResult;
+      const nextActivity = data;
       setActivity((prev) =>
         prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
@@ -2382,7 +2392,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
   function refreshActivity() {
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
-    void fetchActivity();
+    void fetchActivity(false, true);
   }
 
   useEffect(() => {
@@ -2398,7 +2408,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
       if (document.hidden) {
         if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       } else {
-        void fetchActivity(true);
+        void fetchActivity(true, true);
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -2429,24 +2439,24 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   );
 
   // Organization options come from the kind-filtered set; repository options
-  // narrow to the chosen org so the two selects cascade (org → repo).
+  // narrow to the chosen org so the two selects cascade (org → repo). Keep a
+  // restored scope present even when it has no current activity: this endpoint
+  // only returns the user's open/assigned items, not the account's complete
+  // repository access list.
   const orgOptions = useMemo(
-    () => Array.from(new Set(filtered.map((i) => orgOf(i.repo)))).sort((a, b) => a.localeCompare(b)),
-    [filtered],
+    () => Array.from(new Set([
+      ...filtered.map((i) => orgOf(i.repo)),
+      ...(orgFilter === "all" ? [] : [orgFilter]),
+    ])).sort((a, b) => a.localeCompare(b)),
+    [filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);
-    return Array.from(new Set(base.map((i) => i.repo))).sort((a, b) => a.localeCompare(b));
-  }, [filtered, orgFilter]);
-
-  // Drop a stale org/repo selection when the underlying options change (e.g.
-  // the kind filter or org filter removed the previously-selected value).
-  useEffect(() => {
-    if (orgFilter !== "all" && !orgOptions.includes(orgFilter)) setOrgFilter("all");
-  }, [orgOptions, orgFilter]);
-  useEffect(() => {
-    if (repoFilter !== "all" && !repoOptions.includes(repoFilter)) setRepoFilter("all");
-  }, [repoOptions, repoFilter]);
+    return Array.from(new Set([
+      ...base.map((i) => i.repo),
+      ...(repoFilter === "all" ? [] : [repoFilter]),
+    ])).sort((a, b) => a.localeCompare(b));
+  }, [filtered, orgFilter, repoFilter]);
   // Selecting a repo pins the Org filter to that repo's org (the Org select is
   // disabled while a repo is chosen — clearing the repo re-enables it).
   useEffect(() => {
@@ -2530,15 +2540,20 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     [items],
   );
 
+  const sameSelectedTarget = useCallback((item: GitHubItem) =>
+    selectedTarget !== null &&
+    item.repo === selectedTarget.repo &&
+    item.number === selectedTarget.number &&
+    (item.kind === selectedTarget.kind ||
+      ((item.kind === "pr" || item.kind === "review_request") &&
+        (selectedTarget.kind === "pr" || selectedTarget.kind === "review_request"))),
+  [selectedTarget]);
+
   useEffect(() => {
-    if (sorted.length === 0) {
-      if (selectedItemId !== null) setSelectedItemId(null);
-      return;
-    }
-    if (!selectedItemId || !sorted.some((item) => item.id === selectedItemId)) {
-      setSelectedItemId(sorted[0].id);
-    }
-  }, [sorted, selectedItemId]);
+    if (!selectedTarget || loading || error) return;
+    const exists = items.some(sameSelectedTarget);
+    if (!exists) setSelectedTarget(null);
+  }, [items, loading, error, selectedTarget, sameSelectedTarget, setSelectedTarget]);
 
   // The deep-linked item may not be in the activity list (old PR, other repo):
   // prefer the live row when present (real title/state, row highlight), else
@@ -2560,8 +2575,8 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   }, [deepLink, sorted]);
 
   const selectedItem = useMemo(
-    () => deepLinkItem ?? sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
-    [deepLinkItem, sorted, selectedItemId],
+    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted.find((item) => item.id === transientSelectedItemId) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, sameSelectedTarget, transientSelectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
@@ -2626,6 +2641,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
           onSaved={(login, hasPat) => {
+            invalidateSurfaceResources("github:pat", "github:activity");
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
             refreshActivity();

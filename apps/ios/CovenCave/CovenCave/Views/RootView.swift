@@ -132,14 +132,17 @@ struct MainTabView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Tab order, used to map ⌘1–6 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .tasks, .calendar, .dev, .settings, .search]
+    /// Tab order, used to map ⌘1–7 to the right tab.
+    private let tabOrder: [AppTab] = [.chats, .canvas, .tasks, .calendar, .dev, .settings, .search]
 
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
+            }
+            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
+                CanvasView()
             }
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
