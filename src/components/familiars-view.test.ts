@@ -68,8 +68,8 @@ assert.match(
 );
 assert.match(
   source,
-  /reload: loadMemory,/,
-  "the feed exposes the parent's loader as reload",
+  /reload: \(\) => loadMemory\(true\),/,
+  "the feed exposes a cache-bypassing reload for user-triggered refreshes",
 );
 assert.ok(
   (source.match(/feed=\{memoryFeed\}/g) ?? []).length >= 2,

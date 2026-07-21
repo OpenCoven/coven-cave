@@ -987,7 +987,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
           </span>
-          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
             Retry
           </Button>
         </div>
@@ -1001,7 +1001,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:clock-countdown" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">Refresh is failing — showing earlier data.</span>
           </span>
-          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
             Retry
           </Button>
         </div>

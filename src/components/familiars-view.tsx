@@ -190,7 +190,7 @@ export function FamiliarsView({
       error: memoryError,
       loaded: memoryLoaded,
       lastLoadedAt: memoryLoadedAt,
-      reload: loadMemory,
+      reload: () => loadMemory(true),
     }),
     [covenEntries, fileEntries, memoryError, memoryLoaded, memoryLoadedAt, loadMemory],
   );
@@ -265,7 +265,7 @@ export function FamiliarsView({
             </button>
             <button
               type="button"
-              onClick={() => void loadMemory()}
+              onClick={() => void loadMemory(true)}
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               <Icon name="ph:arrows-clockwise" width={12} />
@@ -310,7 +310,7 @@ export function FamiliarsView({
               Memory feed unavailable
               <button
                 type="button"
-                onClick={() => void loadMemory()}
+                onClick={() => void loadMemory(true)}
                 className="ml-1 underline underline-offset-2"
               >
                 Refresh

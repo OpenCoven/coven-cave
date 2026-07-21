@@ -994,7 +994,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <span className="min-w-0 flex-1 truncate">{error}</span>
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void load(true)}
               className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             >
               Retry

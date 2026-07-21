@@ -32,6 +32,12 @@ assert.match(clearFn, /await load\(\{ force: true \}\)/, "failure path bypasses 
 assert.match(clearFn, /setActionError\(/, "failure path surfaces the action banner");
 assert.match(clearFn, /setClearedBanner\(/, "success path shows the undo banner");
 
+assert.match(
+  source,
+  /onClick=\{\(\) => void load\(\{ force: true \}\)\}>\s*Retry/,
+  "Board retry actions bypass a fresh warm-cache entry",
+);
+
 // handleUndoClear: re-create via POST.
 const undoFn = source.match(/const handleUndoClear = async[\s\S]*?\n {2}\};/)?.[0] ?? "";
 assert.match(undoFn, /"\/api\/board", \{[\s\S]*?method: "POST"/, "undo re-creates cards via POST /api/board");
