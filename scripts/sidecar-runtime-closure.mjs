@@ -85,7 +85,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Windows. CI measured 5,547; keep the exact maximum.
   // 2026-07-21 (Sessions redesign): the chat-session-grouping chunk adds one
   // traced file on Windows. CI measured 5,548; keep the exact maximum.
-  fileCount: 5_548,
+  // 2026-07-21 (sessions-list cache invalidation): the shared
+  // sessions-list-cache module adds one traced file on Windows atop the
+  // Sessions redesign; keep the exact maximum.
+  fileCount: 5_549,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
