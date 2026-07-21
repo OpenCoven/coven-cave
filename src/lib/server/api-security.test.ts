@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
-import { rejectNonLocalRequest } from "./api-security.ts";
+import { readJsonBody, rejectNonLocalRequest } from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
 
@@ -52,6 +52,37 @@ test("accepts valid loopback plus sidecar token requests", () => {
   );
 
   assert.equal(res, null);
+});
+
+function jsonBodyRequest(raw: string) {
+  return new Request("http://x/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: raw,
+  });
+}
+
+test("readJsonBody rejects a literal JSON null root with 400", async () => {
+  const result = await readJsonBody(jsonBodyRequest("null"), 1024);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(await result.response.json(), { ok: false, error: "invalid json body" });
+});
+
+test("readJsonBody rejects primitive and array roots with 400", async () => {
+  for (const raw of ["42", '"hello"', "true", "[1,2,3]"]) {
+    const result = await readJsonBody(jsonBodyRequest(raw), 1024);
+    assert.equal(result.ok, false, `expected ${raw} to be rejected`);
+    assert.equal(result.response.status, 400);
+  }
+});
+
+test("readJsonBody accepts an object root", async () => {
+  const result = await readJsonBody(jsonBodyRequest('{"field":"value"}'), 1024);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.body, { field: "value" });
 });
 
 console.log("api-security.test.ts: ok");

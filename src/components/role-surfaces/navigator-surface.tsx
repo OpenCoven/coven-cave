@@ -20,6 +20,7 @@ import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import { relativeTime } from "@/lib/relative-time";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   COURSE_LANES,
   cardProgress,
@@ -128,6 +129,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         body: JSON.stringify({ title, familiarId, status: "backlog" }),
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
+      publishBoardChanged();
       setDraftTitle("");
       await loadBoard();
     } catch {
@@ -149,6 +151,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         body: JSON.stringify({ status }),
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
+      publishBoardChanged();
       await loadBoard();
     } catch {
       setActionError("Move failed — the board didn't accept the change.");

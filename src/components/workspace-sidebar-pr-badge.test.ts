@@ -76,8 +76,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]*?onOpenUrl=\{\(url\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/,
-  "workspace wraps chat-sidebar PR opens so the mobile Chats drawer dismisses before the GitHub-aware app opener runs",
+  /<WorkspaceSidebar[\s\S]*?onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/,
+  "workspace wraps chat-sidebar PR opens so the mobile contextual nav dismisses before the GitHub-aware app opener runs",
 );
 
 // ── Styling: GitHub's state colors + gutter alignment ────────────────────────

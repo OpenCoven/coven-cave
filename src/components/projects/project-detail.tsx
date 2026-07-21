@@ -7,6 +7,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { Modal } from "@/components/ui/modal";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import {
@@ -17,17 +18,25 @@ import {
 } from "@/lib/cave-project-images";
 import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
 import { relativeTime } from "@/lib/relative-time";
+import { useChangesSummary } from "@/lib/use-changes-summary";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card } from "@/lib/cave-board-types";
 import { disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { deriveProjectStatus } from "@/lib/project-status";
-import { projectStats } from "@/lib/projects/project-stats";
+import { deriveStatStrip, openTaskCount } from "@/lib/projects/detail-stats";
 import { projectTint } from "@/lib/comux-projects";
 
 import { ProjectChatRow } from "./session-row";
-import { GitSection, TasksSection, GrantsSection } from "./detail-sections";
+import {
+  DetailCard,
+  GrantsSection,
+  TasksSection,
+  cardsForProject,
+  useProjectGrants,
+} from "./detail-sections";
 import {
   CHAT_CAP,
   PROJECT_COLOR_SWATCHES,
@@ -38,19 +47,21 @@ import {
   type MoveTarget,
 } from "./projects-shared";
 
-// The hub's detail pane: everything about the selected project. The header
-// keeps ≤2 always-visible actions (New chat, Board) plus one overflow menu
-// (design language §8); rename/root/color/image/delete all live behind it or
-// inline edits. Sessions render below with bulk-select and the CHAT_CAP.
+// The hub's detail pane, reorganized to the design-handoff mock: identity
+// header (44px avatar, click-to-rename title, New chat / Open board / Remove),
+// a chip row (status · git branch+state · copyable path), a four-cell stat
+// strip bound to already-loaded data, then the collapsible Tasks / Sessions /
+// Access cards. The header keeps ≤3 always-visible actions plus one overflow
+// menu (design language §8); folder/color/image edits live behind it.
 
 type ProjectDetailProps = {
   project: CaveProject;
   chats: SessionRow[];
   allProjects: CaveProject[];
   /** Board cards (all of them, fetched once by the shell) — filtered to this
-   *  project client-side by the Tasks section. */
+   *  project client-side. */
   boardCards: Card[];
-  /** Familiar roster for the Grants section's chips. */
+  /** Familiar roster for the Access card's rows. */
   familiars: Familiar[];
   onRename: (id: string, name: string) => Promise<boolean>;
   onUpdateRoot: (id: string, root: string) => Promise<boolean>;
@@ -86,10 +97,9 @@ export function ProjectDetail({
   onBack,
 }: ProjectDetailProps) {
   const rootKey = normalizeProjectRoot(project.root);
-  // Identity edits (rename/root/color/image/copy/delete) resolve visually —
+  // Identity edits (rename/root/color/image/copy/remove) resolve visually —
   // announce their outcomes so they aren't silent to assistive tech.
   const { announce } = useAnnouncer();
-  const stats = projectStats(chats);
   const projectStatus = deriveProjectStatus(chats);
   const statusText =
     projectStatus === "running"
@@ -103,15 +113,29 @@ export function ProjectDetail({
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeTime(lastActiveIso);
   // Fallback branch from the most recent session's git context (populated by
-  // /api/sessions/list) — the Git section shows it until its authoritative
-  // /api/changes response lands.
-  const branch = useMemo(() => {
+  // /api/sessions/list) — shown until the authoritative /api/changes response
+  // lands. Exactly one component polls git: this one, for the selected root.
+  const sessionBranch = useMemo(() => {
     let latest: SessionRow | null = null;
     for (const s of chats) {
       if (s.git?.branch && (!latest || s.updated_at > latest.updated_at)) latest = s;
     }
     return latest?.git?.branch ?? null;
   }, [chats]);
+  const changes = useChangesSummary(project.root, true);
+  const branch = changes.branch ?? sessionBranch;
+  const [copiedBranch, setCopiedBranch] = useState(false);
+  const copyBranch = async () => {
+    if (!branch) return;
+    try {
+      await navigator.clipboard.writeText(branch);
+      setCopiedBranch(true);
+      window.setTimeout(() => setCopiedBranch(false), 1600);
+      announce("Branch name copied.");
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — no-op.
+    }
+  };
 
   // Other projects this project's chats can be moved into (normalized roots).
   const moveTargets = useMemo<MoveTarget[]>(
@@ -121,6 +145,66 @@ export function ProjectDetail({
         .map((p) => ({ id: p.id, name: p.name, root: normalizeProjectRoot(p.root) })),
     [allProjects, rootKey],
   );
+
+  // ── Grants (lifted: stat strip + Access card + Remove dialog share it) ─────
+  const grants = useProjectGrants(project);
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const grantedCount = useMemo(
+    () =>
+      resolvedFamiliars.reduce(
+        (n, f) => n + (f.id === grants.supremeFamiliarId || grants.grantedIds.has(f.id) ? 1 : 0),
+        0,
+      ),
+    [resolvedFamiliars, grants.supremeFamiliarId, grants.grantedIds],
+  );
+
+  // ── Tasks (quick-add lifted so the stat strip sees optimistic adds) ────────
+  // The server derives cwd from projectId (never client-supplied); the created
+  // card is appended locally so it shows instantly, and cave:board:reload
+  // nudges the shell's board fetch for everyone else.
+  const [createdCards, setCreatedCards] = useState<Card[]>([]);
+  const [creatingTask, setCreatingTask] = useState(false);
+  useEffect(() => {
+    setCreatedCards([]);
+  }, [project.id]);
+  const createTask = async (title: string): Promise<boolean> => {
+    setCreatingTask(true);
+    try {
+      const res = await fetch("/api/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, projectId: project.id }),
+      });
+      const json = await res.json();
+      if (!json?.ok || !json.card) throw new Error(json?.error ?? "create failed");
+      setCreatedCards((prev) => [json.card as Card, ...prev]);
+      announce(`Task added to ${project.name}.`);
+      window.dispatchEvent(new Event("cave:board:reload"));
+      return true;
+    } catch {
+      announce("Couldn't add the task.", "assertive");
+      return false;
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+  const mergedCards = useMemo(() => {
+    const seen = new Set(boardCards.map((c) => c.id));
+    return [...createdCards.filter((c) => !seen.has(c.id)), ...boardCards];
+  }, [boardCards, createdCards]);
+  const projectCards = useMemo(() => cardsForProject(mergedCards, project), [mergedCards, project]);
+  const openCards = useMemo(() => projectCards.filter((c) => c.status !== "done"), [projectCards]);
+  const doneCount = projectCards.length - openCards.length;
+  const runningCount = openCards.filter((c) => c.status === "running").length;
+
+  // ── Stat strip: every cell binds to data this pane already loads ───────────
+  const statStrip = deriveStatStrip({
+    sessionCount: chats.length,
+    openTasks: openTaskCount(projectCards),
+    grantedCount,
+    rosterCount: resolvedFamiliars.length,
+    lastActiveLabel,
+  });
 
   // ── Identity edits (name / root / color / image) ───────────────────────────
   const [editingName, setEditingName] = useState(false);
@@ -148,6 +232,32 @@ export function ProjectDetail({
   const pickImage = () => {
     setImageStatus(null);
     imageInputRef.current?.click();
+  };
+
+  // Mock parity: click = upload, double-click = generate. The single click is
+  // deferred just long enough (260ms) for a double-click to cancel it, so a
+  // generate never also opens the file picker. The generator is the existing
+  // /api/projects/icon flow — the same action stays in the overflow menu.
+  const avatarClickTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (avatarClickTimer.current) window.clearTimeout(avatarClickTimer.current);
+    },
+    [],
+  );
+  const onAvatarClick = () => {
+    if (avatarClickTimer.current) window.clearTimeout(avatarClickTimer.current);
+    avatarClickTimer.current = window.setTimeout(() => {
+      avatarClickTimer.current = null;
+      pickImage();
+    }, 260);
+  };
+  const onAvatarDoubleClick = () => {
+    if (avatarClickTimer.current) {
+      window.clearTimeout(avatarClickTimer.current);
+      avatarClickTimer.current = null;
+    }
+    if (busy !== "icon") void generateIcon();
   };
 
   // AI-generated icon: the server builds a distinct per-project prompt
@@ -235,13 +345,30 @@ export function ProjectDetail({
     setEditingRoot(false);
   };
 
+  // Remove = registry delete: the folder and its git history stay on disk.
+  // Grants are revoked first (best-effort) so the dialog's promise holds —
+  // each revoke is the same real DELETE /api/project-grants mutation the
+  // Access card drives.
   const deleteProject = async () => {
     setBusy("delete");
+    const revokeIds = resolvedFamiliars
+      .filter((f) => f.id !== grants.supremeFamiliarId && grants.grantedIds.has(f.id))
+      .map((f) => f.id);
+    await Promise.allSettled(
+      revokeIds.map((familiarId) =>
+        fetch("/api/project-grants", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetFamiliarId: familiarId, projectId: project.id }),
+        }),
+      ),
+    );
     const ok = await onDelete(project.id);
     if (ok) void clearProjectImage(project.root);
     setBusy(null);
-    if (ok) announce(`Deleted project ${project.name}.`);
-    else announce("Couldn't delete the project.", "assertive");
+    setConfirmDelete(false);
+    if (ok) announce(`Removed project ${project.name}.`);
+    else announce("Couldn't remove the project.", "assertive");
   };
 
   const setColor = async (color: string | null) => {
@@ -301,6 +428,9 @@ export function ProjectDetail({
     exitSelect();
   };
 
+  const sessionsSummary =
+    chats.length === 0 ? "None yet" : lastActiveLabel ? `Latest ${lastActiveLabel}` : null;
+
   return (
     <div className="projects-detail-head">
       <div className="projects-detail-head__row">
@@ -314,12 +444,13 @@ export function ProjectDetail({
         <Button
           variant="ghost"
           size="xs"
-          onClick={pickImage}
-          className="relative h-auto w-auto shrink-0 rounded-[var(--radius-control)] p-0"
-          title={imageStatus ?? (hasImage ? "Change project image" : "Set project image")}
+          onClick={onAvatarClick}
+          onDoubleClick={onAvatarDoubleClick}
+          className="projects-detail-head__avatar relative h-auto w-auto shrink-0 rounded-[var(--radius-control)] p-0"
+          title={imageStatus ?? "Click to upload an image · double-click to generate one"}
           aria-label={`${hasImage ? "Change" : "Set"} image for ${project.name}`}
         >
-          <ProjectAvatar name={project.name} root={project.root} color={project.color} size="lg" />
+          <ProjectAvatar name={project.name} root={project.root} color={project.color} size="xl" />
         </Button>
         <input
           ref={imageInputRef}
@@ -362,29 +493,42 @@ export function ProjectDetail({
             }}
             disabled={busy === "name"}
             aria-label={`Rename ${project.name}`}
-            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
+            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]"
           />
         ) : (
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => {
-              setNameDraft(project.name);
-              setEditingName(true);
-            }}
-            className="projects-detail-head__title h-auto justify-start rounded-[var(--radius-control)] px-1 py-0.5 text-left"
-            title={`Rename ${project.name}`}
-          >
-            {project.name}
-          </Button>
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                setNameDraft(project.name);
+                setEditingName(true);
+              }}
+              className="projects-detail-head__title h-auto min-w-0 justify-start rounded-[var(--radius-control)] px-1 py-0.5 text-left"
+              title={`Rename ${project.name}`}
+            >
+              {project.name}
+            </Button>
+            <IconButton
+              icon="ph:pencil-simple"
+              size="xs"
+              onClick={() => {
+                setNameDraft(project.name);
+                setEditingName(true);
+              }}
+              className="projects-detail-head__rename shrink-0 text-[var(--text-muted)] hover:text-[var(--accent-presence)]"
+              title="Rename project"
+              aria-label="Rename project"
+            />
+          </span>
         )}
         <div className="flex shrink-0 items-center gap-1.5">
           {onNewChat ? (
             <Button
-              variant="primary"
+              variant="ghost"
               size="sm"
               onClick={() => onNewChat?.(project.root)}
-              className="h-8 rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] font-medium"
+              className="projects-newchat h-8 rounded-[var(--radius-control)] px-3 text-[length:var(--text-sm)] font-medium"
               leadingIcon="ph:chat-circle-dots-bold"
               aria-label={`New session in ${project.name}`}
             >
@@ -400,9 +544,19 @@ export function ProjectDetail({
               leadingIcon="ph:kanban"
               title="Open the Tasks board"
             >
-              Tasks
+              Open board
             </Button>
           ) : null}
+          <span className="projects-head-divider" aria-hidden />
+          <IconButton
+            icon="ph:trash-bold"
+            size="sm"
+            danger
+            onClick={() => setConfirmDelete(true)}
+            className="h-8 w-8 shrink-0"
+            title="Remove project from list"
+            aria-label="Remove project from list"
+          />
           <OverflowMenu ariaLabel={`More actions for ${project.name}`} size="sm">
             <PopoverItem
               icon="ph:pencil-simple-bold"
@@ -520,16 +674,18 @@ export function ProjectDetail({
             </div>
             <PopoverSeparator />
             <PopoverItem icon="ph:trash-bold" danger onSelect={() => setConfirmDelete(true)}>
-              Delete project…
+              Remove project…
             </PopoverItem>
           </OverflowMenu>
         </div>
       </div>
 
-      {/* Path row — click to edit inline, copy stays one keystroke away. */}
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon name="ph:folder-simple-dashed" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        {editingRoot ? (
+      {/* ── Chip row: status · git branch+state · copyable path ──────────────
+          The folder stays editable via the overflow's "Change folder…"; while
+          editing, the inline input replaces the chips. */}
+      {editingRoot ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon name="ph:folder-simple-dashed" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
           <input
             autoFocus
             value={rootDraft}
@@ -546,65 +702,60 @@ export function ProjectDetail({
             aria-label={`Project folder for ${project.name}`}
             className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"
           />
-        ) : (
+        </div>
+      ) : (
+        <div className="projects-detail-chips">
+          <span
+            className="projects-chip"
+            title="Project state, derived from its latest sessions"
+          >
+            {projectStatus ? (
+              <span className={`projects-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
+            ) : (
+              <span className="projects-status-dot bg-[var(--text-muted)]" aria-hidden />
+            )}
+            <span>{statusText}</span>
+          </span>
+          {changes.loaded && changes.notARepo ? null : branch ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void copyBranch()}
+              className="projects-chip projects-chip--action h-auto"
+              title={copiedBranch ? "Copied" : `Copy branch name: ${branch}`}
+              aria-label={`Copy branch name ${branch}`}
+            >
+              <Icon name={copiedBranch ? "ph:check" : "ph:git-branch-bold"} width={11} aria-hidden />
+              <span className="projects-chip__mono">{branch}</span>
+              <span className="projects-chip__sep" aria-hidden>·</span>
+              {!changes.loaded ? (
+                <span>checking…</span>
+              ) : changes.count > 0 ? (
+                <span
+                  className="projects-chip__state projects-chip__state--dirty"
+                  title={`${changes.count} ${changes.count === 1 ? "file" : "files"} with uncommitted changes in the working tree`}
+                >
+                  {changes.count} uncommitted
+                </span>
+              ) : (
+                <span className="projects-chip__state">clean</span>
+              )}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => {
-              setRootDraft(project.root);
-              setEditingRoot(true);
-            }}
-            className="min-w-0 flex-1 justify-start truncate rounded-[var(--radius-control)] px-1 py-0.5 text-left font-mono text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-            title={project.root}
-          >
-            {shortRoot(project.root)}
-          </Button>
-        )}
-        {!editingRoot && (
-          <IconButton
-            icon={copiedRoot ? "ph:check" : "ph:copy"}
-            size="xs"
-            onClick={copyRoot}
-            className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-            title={copiedRoot ? "Copied" : "Copy path"}
+            onClick={() => void copyRoot()}
+            className="projects-chip projects-chip--action h-auto"
+            title={copiedRoot ? "Copied" : `Copy path: ${project.root}`}
             aria-label={`Copy path ${project.root}`}
-          />
-        )}
-      </div>
-
-      {/* Status line: state in words + stats chips + branch + recency. */}
-      <div className="projects-detail-head__meta">
-        <span
-          className="inline-flex items-center gap-1.5"
-          title="Project state, derived from its latest sessions"
-        >
-          {projectStatus ? (
-            <span className={`projects-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
-          ) : null}
-          <span>{statusText}</span>
-        </span>
-        <span
-          className="projects-session-count"
-          aria-label={`${chats.length} ${chats.length === 1 ? "session" : "sessions"}`}
-          title={`${chats.length} ${chats.length === 1 ? "session" : "sessions"} in this project`}
-        >
-          <Icon name="ph:chats-circle" width={12} aria-hidden />
-          {chats.length}
-        </span>
-        {stats.running > 0 ? (
-          <span className="projects-session-chip projects-session-chip--running" title={`${stats.running} running`}>
-            <Icon name="ph:circle-notch-bold" width={9} className="animate-spin" aria-hidden />
-            {stats.running}
-          </span>
-        ) : null}
-        {stats.tasks > 0 ? (
-          <span className="projects-session-chip" title={`${stats.tasks} ${stats.tasks === 1 ? "task" : "tasks"}`}>
-            <Icon name="ph:check-square" width={10} aria-hidden />
-            {stats.tasks}
-          </span>
-        ) : null}
-        {lastActiveLabel ? <span title={`Last active ${lastActiveLabel}`}>{lastActiveLabel}</span> : null}
-      </div>
+          >
+            <Icon name={copiedRoot ? "ph:check" : "ph:folder-simple-dashed"} width={11} aria-hidden />
+            <span className="projects-chip__mono" title={project.root}>{shortRoot(project.root)}</span>
+            <span className="projects-chip__hint">{copiedRoot ? "Copied" : "Copy"}</span>
+          </Button>
+        </div>
+      )}
 
       {imageStatus ? (
         <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
@@ -612,64 +763,108 @@ export function ProjectDetail({
         </p>
       ) : null}
 
-      {confirmDelete ? (
-        <div
-          role="alertdialog"
-          aria-label={`Delete ${project.name}?`}
-          className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)]"
-        >
-          <span className="min-w-0 truncate text-[var(--color-danger)]">
-            Delete {project.name}? Chats keep their history; only the project entry goes away.
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => setConfirmDelete(false)}
-              className="h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] text-[var(--text-muted)]"
-            >
+      {/* ── Stat strip: four cells, all bound to already-loaded data ────────── */}
+      <div className="projects-stat-strip" role="group" aria-label={`Stats for ${project.name}`}>
+        <span className="projects-stat-strip__cell">
+          <span className="projects-stat-strip__value">{statStrip.sessions}</span>
+          <span className="projects-stat-strip__label">Sessions</span>
+        </span>
+        <span className="projects-stat-strip__cell">
+          <span className="projects-stat-strip__value">{statStrip.openTasks}</span>
+          <span className="projects-stat-strip__label">Open tasks</span>
+        </span>
+        <span className="projects-stat-strip__cell">
+          <span className="projects-stat-strip__value">{statStrip.familiars}</span>
+          <span className="projects-stat-strip__label">Familiars</span>
+        </span>
+        <span className="projects-stat-strip__cell">
+          <span className="projects-stat-strip__value">{statStrip.lastActive}</span>
+          <span className="projects-stat-strip__label">Last active</span>
+        </span>
+      </div>
+
+      {/* ── Remove confirm: facts first, then the consequence, then the verb ── */}
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        ariaLabel={`Remove ${project.name}?`}
+        footerActions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
             <Button
-              variant="danger-ghost"
-              size="xs"
+              variant="danger"
               onClick={() => void deleteProject()}
               disabled={busy === "delete"}
               aria-label={`Delete ${project.name}`}
-              className="h-7 rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-2 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
             >
-              Delete
+              {busy === "delete" ? "Removing…" : "Remove project"}
             </Button>
-          </span>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <p className="m-0 text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
+            Remove “{project.name}”?
+          </p>
+          <div className="projects-remove-facts">
+            <span className="projects-remove-facts__key">Folder</span>
+            <span className="projects-remove-facts__value font-mono">{project.root}</span>
+            <span className="projects-remove-facts__key">Open tasks</span>
+            <span className="projects-remove-facts__value">{statStrip.openTasks}</span>
+            <span className="projects-remove-facts__key">Sessions</span>
+            <span className="projects-remove-facts__value">{statStrip.sessions}</span>
+            <span className="projects-remove-facts__key">Access</span>
+            <span className="projects-remove-facts__value">{statStrip.familiars} familiars</span>
+          </div>
+          <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            This removes the project from your list and revokes familiar grants. Chats keep their
+            history, and the folder and its git history stay on disk untouched.
+          </p>
         </div>
-      ) : null}
+      </Modal>
 
+      {/* ── Tasks ────────────────────────────────────────────────────────────── */}
+      <TasksSection
+        project={project}
+        openCards={openCards}
+        doneCount={doneCount}
+        runningCount={runningCount}
+        creatingTask={creatingTask}
+        onCreateTask={createTask}
+        onOpenBoard={onOpenBoard}
+      />
 
       {/* ── Sessions ─────────────────────────────────────────────────────────── */}
-      <section className="projects-detail-section" aria-label={`Sessions in ${project.name}`}>
-        <div className="projects-detail-section__title">
-          <span>Sessions</span>
-          {chats.length > 0 ? <span className="projects-list-row__count">{chats.length}</span> : null}
-          <span className="ml-auto">
-            {chats.length > 0 ? (
-              selectMode ? (
+      <DetailCard
+        card="sessions"
+        ariaLabel={`Sessions in ${project.name}`}
+        title="Sessions"
+        countTag={chats.length > 0 ? chats.length : null}
+        summary={sessionsSummary}
+      >
+        {chats.length > 0 ? (
+          <>
+            <div className="mb-1 flex items-center justify-end gap-1 px-1">
+              {selectMode ? (
                 <span className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="xs"
                     onClick={toggleSelectAllVisible}
-                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   >
                     {allVisibleSelected ? "Clear" : "Select all"}
                   </Button>
-                  <span className="text-[length:var(--text-xs)] font-normal normal-case tracking-normal text-[var(--text-muted)]">
+                  <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
                     {selectedIds.size} selected
                   </span>
                   <Button
                     variant="ghost"
                     size="xs"
                     onClick={exitSelect}
-                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] normal-case tracking-normal text-[var(--text-muted)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
                   >
                     Cancel
                   </Button>
@@ -679,7 +874,7 @@ export function ProjectDetail({
                     disabled={bulkDeleting || selectedIds.size === 0}
                     onClick={() => void deleteSelected()}
                     leadingIcon="ph:trash-bold"
-                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[length:var(--text-xs)] normal-case tracking-normal text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
                   >
                     {bulkDeleting ? "Deleting…" : `Delete${selectedIds.size ? ` ${selectedIds.size}` : ""}`}
                   </Button>
@@ -690,16 +885,12 @@ export function ProjectDetail({
                   size="xs"
                   onClick={() => setSelectMode(true)}
                   leadingIcon="ph:list-checks-bold"
-                  className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium normal-case tracking-normal text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 >
                   Select
                 </Button>
-              )
-            ) : null}
-          </span>
-        </div>
-        {chats.length > 0 ? (
-          <>
+              )}
+            </div>
             <ul className="-mx-2 flex flex-col gap-0.5">
               {visibleChats.map((session) => (
                 <ProjectChatRow
@@ -722,33 +913,32 @@ export function ProjectDetail({
                 size="xs"
                 onClick={() => setShowAllChats((value) => !value)}
                 aria-expanded={showAllChats}
-                className="mt-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                className="projects-more-btn mt-1"
               >
-                {showAllChats ? "Show less" : `Show all ${chats.length} sessions`}
+                {showAllChats ? "Show fewer" : `Show all ${chats.length} sessions`}
               </Button>
             ) : null}
           </>
         ) : (
           <div className="projects-detail-empty">
-            No sessions yet — start one and it'll show up here.
-            {onNewChat ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => onNewChat?.(project.root)}
-                className="ml-2 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence)]"
-              >
-                New chat
-              </Button>
-            ) : null}
+            No sessions yet — start one and it&apos;ll show up here.
           </div>
         )}
-      </section>
+        {onNewChat ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onNewChat?.(project.root)}
+            leadingIcon="ph:plus-bold"
+            className="mt-2 w-full justify-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+          >
+            New chat
+          </Button>
+        ) : null}
+      </DetailCard>
 
-      {/* ── Git · Tasks · Grants (PR2 sections) ──────────────────────────────── */}
-      <GitSection projectRoot={project.root} sessionBranch={branch} />
-      <TasksSection project={project} cards={boardCards} onOpenBoard={onOpenBoard} />
-      <GrantsSection project={project} familiars={familiars} />
+      {/* ── Access (familiar grants) ─────────────────────────────────────────── */}
+      <GrantsSection project={project} familiars={resolvedFamiliars} grants={grants} />
     </div>
   );
 }

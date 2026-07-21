@@ -2,8 +2,8 @@
 // Chat → Canvas tab: the saved-sketch gallery. "Save to Canvas" in the inline
 // artifact viewer persists to /api/canvas, but after the standalone Canvas
 // page retired those saves had no surface. The tab closes the loop: the chat
-// scope tabs gain Canvas, backed by ChatCanvasView (fetch, sandboxed
-// thumbnails, reopen-in-viewer, delete).
+// scope tabs gain Canvas, backed by ChatCanvasView (fetch, toolbar search +
+// kind filter, sandboxed thumbnails, preview modal → CanvasEditor, delete).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -128,18 +128,48 @@ assert.match(
   /sandbox="allow-scripts"/,
   "thumbnails render in an opaque-origin sandbox without popups/modals",
 );
-assert.match(view, /<ChatArtifactViewer/, "opening a card reuses the full inline artifact viewer");
+
+// ── Preview modal → editor hand-off ─────────────────────────────────────────
+// Clicking a card opens a non-interactive preview dialog, not the editor.
+assert.match(view, /onClick=\{\(\) => setPreviewId\(artifact\.id\)\}/, "card click opens the preview modal");
 assert.match(
   view,
-  /key=\{opened\.id\}/,
-  "viewer remounts per artifact so state never leaks between sketches",
+  /className="chat-canvas-preview"[\s\S]{0,200}?role="dialog"[\s\S]{0,120}?aria-modal="true"/,
+  "the preview is an accessible modal dialog",
 );
 assert.match(
   view,
-  /sourcePrompt=\{opened\.prompt\}/,
-  "reopened sketches keep their original prompt for refine/save",
+  /useFocusTrap\(preview !== null, previewDialogRef/,
+  "the preview dialog traps focus and closes on Escape per app convention",
 );
-assert.match(view, /artifact=\{opened\}/, "reopened persisted sketches opt into comment mode");
+assert.match(
+  view,
+  /className="chat-canvas-preview-backdrop"[\s\S]{0,120}?onClick=\{\(\) => setPreviewId\(null\)\}/,
+  "backdrop click dismisses the preview",
+);
+assert.match(
+  view,
+  /onClick=\{\(event\) => event\.stopPropagation\(\)\}/,
+  "clicks inside the dialog never fall through to the backdrop dismiss",
+);
+assert.match(
+  view,
+  /chat-canvas-preview__frame"[\s\S]{0,200}?sandbox="allow-scripts"/,
+  "the live preview keeps the opaque-origin sandbox",
+);
+assert.match(
+  view,
+  /setEditorId\(preview\.id\);\s*setPreviewId\(null\);/,
+  "Open in editor closes the preview and enters the editor",
+);
+assert.match(view, /chat-canvas-card--selected/, "the previewed card gets the selected treatment");
+// The editor is a full-surface takeover with the agreed prop contract.
+assert.match(
+  view,
+  /<CanvasEditor\s+artifact=\{editing\}\s+familiarId=\{familiarId\}\s+onClose=\{\(\) => setEditorId\(null\)\}\s+onArtifactUpdated=\{handleArtifactUpdated\}/,
+  "the editor takeover receives the artifact, familiar, close, and update contract",
+);
+assert.doesNotMatch(view, /<ChatArtifactViewer/, "the old viewer-in-Modal path is fully replaced");
 assert.match(
   view,
   /onArtifactUpdated=\{handleArtifactUpdated\}/,
@@ -152,8 +182,8 @@ assert.match(
 );
 assert.doesNotMatch(
   view,
-  /handleArtifactUpdated[\s\S]{0,200}?setOpenId/,
-  "background annotation flushes never reopen or replace the active modal",
+  /handleArtifactUpdated[\s\S]{0,200}?set(?:PreviewId|EditorId)/,
+  "background artifact updates never reopen or replace the active preview/editor",
 );
 assert.match(
   view,
@@ -393,6 +423,11 @@ assert.match(
   /\.chat-canvas-card__frame[\s\S]{0,300}?pointer-events: none/,
   "thumbnail iframe never captures pointer input",
 );
+assert.match(
+  css,
+  /\.chat-canvas-preview__frame[\s\S]{0,200}?pointer-events: none/,
+  "the preview-modal sketch renders live but never captures pointer input",
+);
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 const sorted = sortArtifactsForGallery([
@@ -460,7 +495,47 @@ assert.doesNotMatch(view, /<CanvasAddTile hero familiarId/, "no second, remount-
 assert.doesNotMatch(view, /No saved sketches yet/, "the old leave-for-chat empty state is gone");
 assert.match(view, /chat-canvas-card--new/, "a kept sketch settles in with a one-shot highlight");
 
+// ── Toolbar: search · kind filter · count · New sketch ──────────────────────
+assert.match(view, /placeholder="Search sketches…"/, "toolbar search uses the canonical placeholder grammar");
+assert.match(
+  view,
+  /filterCanvasArtifacts\(galleryArtifacts, q, kindFilter\)/,
+  "the grid renders through the pure search+filter helper",
+);
+assert.match(
+  view,
+  /aria-pressed=\{kindFilter === f\.id\}/,
+  "segmented filter buttons expose their pressed state",
+);
+assert.match(
+  view,
+  /\{filteredArtifacts\.length\} of \{galleryArtifacts\.length\} sketches/,
+  "the count line reports shown-of-total",
+);
+const addTileMount = view.indexOf("<CanvasAddTile");
+const filteredMap = view.indexOf("filteredArtifacts.map");
+assert.ok(
+  addTileMount >= 0 && filteredMap > addTileMount,
+  "the add tile always leads the grid regardless of the active filter",
+);
+assert.match(
+  view,
+  /setAddExpandRequest\(\(n\) => n \+ 1\)/,
+  "the toolbar New sketch button expands the add tile via the counter prop",
+);
+assert.match(
+  view,
+  /No sketches match &ldquo;\{trimmedQuery\}&rdquo;/,
+  "a filtered-empty gallery names the query instead of looking empty",
+);
+
 assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
+assert.match(addTile, /expandRequest\?: number/, "the tile accepts the toolbar's expand-request counter");
+assert.match(
+  addTile,
+  /if \(state\.phase === "collapsed" && !generationVisible\) \{\s*dispatch\(\{ type: "expand" \}\);/,
+  "a new expand request opens the collapsed composer via the same action as the ghost click",
+);
 assert.match(addTile, /startCanvasGeneration\(\{/, "describe starts the navigation-safe Canvas generation owner");
 assert.match(addTile, /What would you like to create\?/, "default path asks for intent, not an implementation mode");
 assert.match(addTile, /Create preview/, "primary action creates a preview");

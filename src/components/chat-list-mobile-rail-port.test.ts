@@ -36,11 +36,17 @@ assert.match(
 // Headers are placed by first-member index so order/interleaving can't dupe them.
 assert.match(source, /const firstPinnedIdx = pinnedFlags\.indexOf\(true\)/, "PINNED header anchors to the first pinned row");
 assert.match(source, /const firstRestIdx = pinnedFlags\.indexOf\(false\)/, "SESSIONS header anchors to the first non-pinned row");
-// Section headers only split the flat (null-project) list, not scoped folders.
+// Section headers only split the flat ungrouped (null-project) list, not
+// scoped folders or the project/date grouping modes.
 assert.match(
   source,
-  /projectRoot === null && idx === firstPinnedIdx/,
-  "Sections only apply to the flat all-chats list",
+  /const sectioned = projectRoot === null && groupBy === "none";/,
+  "Sections only apply to the flat ungrouped all-chats list",
+);
+assert.match(
+  source,
+  /sectioned && idx === firstPinnedIdx/,
+  "The PINNED header anchors through the sectioned flag",
 );
 
 // ── Preserved: existing rows still sortable by session id ────────────────────

@@ -434,11 +434,20 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                   <tr key={card.id}
                     data-board-row="true"
                     data-card-id={card.id}
-                    role={selectMode ? "checkbox" : undefined}
-                    aria-checked={selectMode ? rowChecked : undefined}
-                    aria-label={selectMode ? `${card.title}${rowChecked ? ", selected" : ""}. Space to toggle selection.` : undefined}
+                    tabIndex={0}
+                    aria-selected={isSel}
+                    aria-label={selectMode ? `${card.title}${rowChecked ? ", selected" : ""}. Space to toggle selection.` : `Open task ${card.title}`}
                     className={`${isSel ? "selected" : ""}${rowIdx % 2 === 1 ? " board-table-row--alt" : ""}`.trim()}
-                    onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}>
+                    onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}
+                    onKeyDown={(event) => {
+                      // Keys bubbling from interactive children (selects,
+                      // buttons) must not toggle/open the row.
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      if (selectMode) onToggleSelect?.(card.id);
+                      else onSelect(card.id);
+                    }}>
                     {orderedCols.map((col) => {
                       let content: React.ReactNode = null;
                       switch (col.key) {

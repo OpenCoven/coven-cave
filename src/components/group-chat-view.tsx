@@ -3,6 +3,7 @@
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
+import "@/styles/coven-tab.css";
 
 /**
  * GroupChatView — the "coven" group-chat surface.
@@ -29,6 +30,8 @@ import { parseHarnessFailure } from "@/lib/harness-failure";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
+import { SearchInput } from "@/components/ui/search-input";
+import { SurfaceRail } from "@/components/ui/surface-rail";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useStickToBottom } from "@/lib/use-stick-to-bottom";
@@ -56,6 +59,7 @@ import {
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   setGroupResponseMode,
+  setGroupDetails,
   orderRoundRobinFamiliarIds,
   nextRoundRobinLeadId,
   renderCovenRoundtablePrompt,
@@ -86,9 +90,12 @@ type Props = {
    *  refresh its session list and surface the new threads elsewhere. */
   onSessionStarted?: (sessionId: string) => void;
   onOpenUrl?: (url: string) => void;
+  /** Opens a participant's pinned session as a regular conversation with the
+   *  debug modal latched — the coven tab itself has no DebugPane host. */
+  onDebugSession?: (sessionId: string, familiarId: string) => void;
 };
 
-export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props) {
+export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugSession }: Props) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
   const [groups, setGroups] = useState<CovenGroup[]>([]);
@@ -98,6 +105,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  // Rail search query + the Details drawer disclosure (session-local UI state).
+  const [railQuery, setRailQuery] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   // @mention autocomplete in the composer.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -391,6 +401,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       );
     },
     [persistGroups],
+  );
+
+  // Details drawer: subject/summary commit on blur through the same
+  // saveGroups path as every other group mutation. setGroupDetails returns
+  // the identical object on a no-op commit, so an untouched blur neither
+  // persists nor reorders the rail.
+  const commitDetails = useCallback(
+    (patch: { subject?: string; summary?: string }) => {
+      const group = activeGroupRef.current;
+      if (!group) return;
+      const next = setGroupDetails(group, patch, nowIso());
+      if (next === group) return;
+      persistGroups(upsertGroup(groupsRef.current, next));
+      announce("Coven details saved.");
+    },
+    [persistGroups, announce],
   );
 
   const changeResponseMode = useCallback(
@@ -816,7 +842,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     () => (mention ? matchMentions(mention.query, mentionable) : []),
     [mention, mentionable],
   );
-  const mentionOpen = mention !== null && mentionMatches.length > 0;
+  // Open whenever an @token is being typed (a no-match query shows the
+  // "No matching familiar in this coven" empty state instead of vanishing);
+  // key navigation below only engages while there are matches.
+  const mentionOpen = mention !== null && mentionable.length > 0;
 
   // Recompute the active mention token from the textarea's current caret.
   const syncMention = useCallback(() => {
@@ -846,6 +875,39 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     return groupChatTranscriptThreads(transcript);
   }, [transcript]);
 
+  // Rail rows: "N familiars · last activity". Last activity prefers the
+  // stored transcript's newest turn and falls back to the group's updatedAt.
+  // Recomputed when the groups list changes (create/rename/roster/session
+  // record), never per streaming token — the OPEN coven's recency instead
+  // reads the live in-memory transcript at render.
+  const lastActivityByGroup = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of groups) {
+      const turns = loadTranscript(g.id);
+      m.set(g.id, turns[turns.length - 1]?.createdAt ?? g.updatedAt);
+    }
+    return m;
+  }, [groups]);
+  const liveLastTurnAt = transcript.length > 0 ? transcript[transcript.length - 1].createdAt : null;
+
+  const railNeedle = railQuery.trim().toLowerCase();
+  const filteredGroups = railNeedle
+    ? groups.filter((g) => g.name.toLowerCase().includes(railNeedle))
+    : groups;
+
+  // Names for the "… replying" typing line — replies still in flight this turn.
+  const replyingNames = useMemo(() => {
+    if (!busy) return [];
+    const names: string[] = [];
+    for (const t of transcript) {
+      if (t.role !== "assistant") continue;
+      if (t.status !== "queued" && t.status !== "streaming") continue;
+      const name = byId.get(t.familiarId)?.display_name ?? t.familiarId;
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
+  }, [busy, transcript, byId]);
+
   const participants = activeGroup
     ? activeGroup.familiarIds.map((id) => byId.get(id)).filter(Boolean as unknown as (f: ResolvedFamiliar | undefined) => f is ResolvedFamiliar)
     : [];
@@ -856,73 +918,95 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // --- render --------------------------------------------------------------
   return (
     <div className="cave-group-chat-shell flex h-full min-h-0 w-full min-w-0 flex-1">
-      {/* Coven list rail */}
-      <aside className="cave-group-chat-rail flex w-56 shrink-0 flex-col border-r [border-color:var(--border-hairline)]!">
-        <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-          <span className="text-[length:var(--text-sm)] font-semibold uppercase tracking-wide [color:var(--text-muted)]!">
-            Covens
-          </span>
-          <Button size="xs" variant="ghost" leadingIcon="ph:plus-bold" onClick={createGroup}>
-            New
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {groups.length === 0 ? (
-            <p className="px-2 py-3 text-[length:var(--text-sm)] leading-relaxed [color:var(--text-muted)]!">
-              A coven is a group of familiars you talk to together. Create one to choose how they take turns responding.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-0.5">
-              {groups.map((g) => {
-                const members = g.familiarIds.map((id) => byId.get(id)).filter(Boolean) as ResolvedFamiliar[];
-                const isActive = g.id === activeId;
-                return (
-                  // Row = a real button (keyboard + roving focus). The delete
-                  // control is a sibling overlay, not a nested button (which is
-                  // invalid HTML and traps keyboard focus).
-                  <li key={g.id} className="group/coven relative">
-                    <button
-                      type="button"
-                      className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-[var(--bg-raised)]"
-                      aria-current={isActive ? "true" : undefined}
-                      style={isActive ? { background: "var(--bg-raised)" } : undefined}
-                      onClick={() => setActiveId(g.id)}
-                    >
-                      <div className="flex -space-x-1.5">
-                        {members.slice(0, 3).map((m) => (
-                          <FamiliarAvatar key={m.id} familiar={m} size="sm" className="rounded-full ring-1 ring-[var(--bg-base)] object-cover" />
-                        ))}
-                        {members.length === 0 && (
-                          <span className="grid h-4 w-4 place-items-center rounded-full [background:var(--bg-raised)]!">
-                            <Icon name="ph:users-three" width={11} height={11} />
+      {/* Coven list rail — the shared SurfaceRail (persisted width/collapse). */}
+      <SurfaceRail
+        storageKey="cave:coven:rail"
+        title="Covens"
+        ariaLabel="Covens"
+        actions={
+          <button
+            type="button"
+            className="coven-tab__rail-add focus-ring"
+            title="New coven"
+            aria-label="New coven"
+            onClick={createGroup}
+          >
+            <Icon name="ph:plus-bold" width={15} aria-hidden />
+          </button>
+        }
+        search={
+          <SearchInput
+            value={railQuery}
+            onValueChange={setRailQuery}
+            onClear={() => setRailQuery("")}
+            placeholder="Search covens…"
+            aria-label="Search covens"
+          />
+        }
+      >
+        {(open) => (
+          <>
+            {groups.length === 0 ? (
+              <p className="px-2 py-3 text-[length:var(--text-sm)] leading-relaxed [color:var(--text-muted)]!">
+                A coven is a group of familiars you talk to together. Create one to choose how they take turns responding.
+              </p>
+            ) : filteredGroups.length === 0 ? (
+              <p className="px-2 py-1.5 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
+                No covens match &ldquo;{railQuery.trim()}&rdquo;.
+              </p>
+            ) : (
+              <ul className="coven-tab__rail-list">
+                {filteredGroups.map((g) => {
+                  const memberCount = g.familiarIds.filter((id) => byId.has(id)).length;
+                  const isActive = g.id === activeId;
+                  const lastActivity =
+                    (isActive && liveLastTurnAt) || lastActivityByGroup.get(g.id) || g.updatedAt;
+                  return (
+                    // Row = a real button (keyboard + roving focus). The delete
+                    // control is a sibling overlay, not a nested button (which is
+                    // invalid HTML and traps keyboard focus).
+                    <li key={g.id} className="group/coven relative">
+                      <button
+                        type="button"
+                        className="coven-tab__rail-row focus-ring"
+                        aria-current={isActive ? "true" : undefined}
+                        title={open ? undefined : g.name}
+                        aria-label={open ? undefined : g.name}
+                        onClick={() => setActiveId(g.id)}
+                      >
+                        <span className="coven-tab__rail-glyph" aria-hidden>
+                          <Icon name="ph:users-three" width={13} height={13} />
+                        </span>
+                        {open ? (
+                          <span className="coven-tab__rail-text">
+                            <span className="coven-tab__rail-name" title={g.name}>
+                              {g.name}
+                            </span>
+                            <span className="coven-tab__rail-meta">
+                              {memberCount} familiar{memberCount === 1 ? "" : "s"} · <RelativeTime iso={lastActivity} />
+                            </span>
                           </span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[length:var(--text-base)] [color:var(--text-primary)]!" title={g.name}>
-                          {g.name}
-                        </div>
-                        <div className="text-[length:var(--text-xs)] [color:var(--text-muted)]!">
-                          {members.length} familiar{members.length === 1 ? "" : "s"} · <RelativeTime iso={g.updatedAt} />
-                        </div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="focus-ring touch-always-visible absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
-                      title="Delete coven — removes this group chat only"
-                      aria-label={`Delete ${g.name}`}
-                      onClick={() => void requestDeleteGroup(g.id, g.name)}
-                    >
-                      <Icon name="ph:trash" width={14} height={14} />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </aside>
+                        ) : null}
+                      </button>
+                      {open ? (
+                        <button
+                          type="button"
+                          className="focus-ring touch-always-visible absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
+                          title="Delete coven — removes this group chat only"
+                          aria-label={`Delete ${g.name}`}
+                          onClick={() => void requestDeleteGroup(g.id, g.name)}
+                        >
+                          <Icon name="ph:trash" width={14} height={14} />
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
+      </SurfaceRail>
 
       {/* Active coven */}
       <section className="cave-group-chat-main flex min-w-0 flex-1 flex-col">
@@ -942,80 +1026,89 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         ) : (
           <>
             {/* Header */}
-            <header className="flex items-center gap-3 border-b px-4 py-2.5 [border-color:var(--border-hairline)]!">
-              <div className="min-w-0 flex-1">
-                {renaming ? (
-                  <input
-                    autoFocus
-                    defaultValue={activeGroup.name}
-                    aria-label="Coven name — Enter saves, Escape cancels"
-                    className="focus-ring-inset w-full rounded bg-transparent text-[length:var(--text-md)] font-semibold outline-none [color:var(--text-primary)]!"
-                    onBlur={(e) => {
-                      renameGroup(e.target.value);
-                      setRenaming(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.nativeEvent.isComposing) return;
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      if (e.key === "Escape") setRenaming(false);
-                    }}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="focus-ring truncate text-[length:var(--text-md)] font-semibold [color:var(--text-primary)]!"
-                    title="Rename coven"
-                    aria-label={`Rename coven: ${activeGroup.name}`}
-                    onClick={() => setRenaming(true)}
-                  >
-                    {activeGroup.name}
-                  </button>
-                )}
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {participants.length === 0 ? (
-                    <span className="text-[length:var(--text-sm)] [color:var(--text-muted)]!">
-                      No familiars yet — add some to start
-                    </span>
-                  ) : (
-                    participants.map((f) => (
-                      <span key={f.id} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[length:var(--text-xs)] [background:var(--bg-raised)]! [color:var(--text-secondary)]!">
-                        <FamiliarAvatar familiar={f} size="sm" className="rounded-full object-cover" />
-                        {f.display_name}
-                      </span>
-                    ))
-                  )}
-                </div>
+            <header className="coven-tab__header">
+              {renaming ? (
+                <input
+                  autoFocus
+                  defaultValue={activeGroup.name}
+                  aria-label="Coven name — Enter saves, Escape cancels"
+                  className="coven-tab__title-input focus-ring-inset"
+                  onBlur={(e) => {
+                    renameGroup(e.target.value);
+                    setRenaming(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return;
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="coven-tab__title focus-ring"
+                  title="Double-click to rename"
+                  aria-label={`Rename coven: ${activeGroup.name}`}
+                  onDoubleClick={() => setRenaming(true)}
+                  onKeyDown={(e) => {
+                    // Pointer rename is double-click (per the handoff mock);
+                    // keyboard rename stays single-keystroke on the button.
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setRenaming(true);
+                    }
+                  }}
+                >
+                  {activeGroup.name}
+                </button>
+              )}
+              <div className="coven-tab__members">
+                {participants.map((f) => (
+                  <span key={f.id} className="coven-tab__member-chip">
+                    <FamiliarAvatar familiar={f} size="sm" className="rounded-full object-cover" />
+                    {f.display_name}
+                  </span>
+                ))}
+                <button
+                  ref={addBtnRef}
+                  type="button"
+                  className="coven-tab__add-member focus-ring"
+                  aria-label="Add familiars to this coven"
+                  aria-haspopup="dialog"
+                  aria-expanded={pickerOpen}
+                  onClick={() => setPickerOpen((v) => !v)}
+                >
+                  + Add
+                </button>
               </div>
-              <div className="flex flex-col items-end gap-1">
+              <div className="coven-tab__mode">
                 <fieldset disabled={busy} className="disabled:opacity-60">
                   <Segmented
                     options={COVEN_RESPONSE_MODES}
                     value={activeGroup.responseMode}
                     onChange={changeResponseMode}
                     getLabel={(mode) => mode === "broadcast" ? "Broadcast" : "Round robin"}
+                    getTitle={(mode) =>
+                      mode === "broadcast"
+                        ? "Everyone responds at once"
+                        : "One familiar at a time, in turn"
+                    }
                     ariaLabel="Coven response mode"
                   />
                 </fieldset>
-                <span className="text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
+                {/* The surface's status line: roster size + how it responds. */}
+                <span className="coven-tab__status">
+                  {participants.length} familiar{participants.length === 1 ? "" : "s"} ·{" "}
                   {activeGroup.responseMode === "broadcast"
-                    ? "Everyone responds at once"
+                    ? "broadcast"
                     : `${nextRoundRobinLead?.display_name ?? "First familiar"} leads next`}
                 </span>
               </div>
-              <Button
-                ref={addBtnRef}
-                size="sm"
-                variant="secondary"
-                leadingIcon="ph:plus-bold"
-                onClick={() => setPickerOpen((v) => !v)}
-              >
-                Add
-              </Button>
               <Popover
                 open={pickerOpen}
                 onOpenChange={setPickerOpen}
                 anchorRef={addBtnRef}
-                placement="bottom-end"
+                placement="bottom-start"
                 ariaLabel="Choose familiars"
                 minWidth={240}
               >
@@ -1053,6 +1146,81 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
               </Popover>
             </header>
 
+            {/* Details drawer — subject + running summary, saved on blur. */}
+            <button
+              type="button"
+              className="coven-tab__details-toggle focus-ring-inset"
+              aria-expanded={detailsOpen}
+              onClick={() => setDetailsOpen((v) => !v)}
+            >
+              <Icon name="ph:caret-right" width={11} height={11} className="coven-tab__details-chevron" aria-hidden />
+              <span className="coven-tab__details-kicker">Details</span>
+              <span className="coven-tab__details-preview">
+                {activeGroup.subject || activeGroup.summary || "Add a subject and summary"}
+              </span>
+            </button>
+            {detailsOpen ? (
+              <div className="coven-tab__details">
+                <label className="coven-tab__field">
+                  <span className="coven-tab__field-label">Subject</span>
+                  {/* key: re-seed the uncontrolled draft when the coven changes. */}
+                  <input
+                    key={`${activeGroup.id}:subject`}
+                    type="text"
+                    defaultValue={activeGroup.subject ?? ""}
+                    placeholder="What is this coven about?"
+                    className="coven-tab__field-input focus-ring-inset"
+                    onBlur={(e) => commitDetails({ subject: e.target.value })}
+                  />
+                </label>
+                <label className="coven-tab__field">
+                  <span className="coven-tab__field-label">Summary</span>
+                  <textarea
+                    key={`${activeGroup.id}:summary`}
+                    rows={2}
+                    defaultValue={activeGroup.summary ?? ""}
+                    placeholder="Short running summary of the conversation…"
+                    className="coven-tab__field-input focus-ring-inset"
+                    onBlur={(e) => commitDetails({ summary: e.target.value })}
+                  />
+                </label>
+                <span className="coven-tab__details-meta">
+                  Created <RelativeTime iso={activeGroup.createdAt} /> · updated{" "}
+                  <RelativeTime iso={activeGroup.updatedAt} />
+                </span>
+                {/* Threads: each participant answers in its own resumable daemon
+                    session (group-chat.ts sessions map). Debug jumps to that
+                    session as a regular conversation with the debug modal
+                    latched — the coven tab has no DebugPane of its own. */}
+                {onDebugSession && participants.some((f) => activeGroup.sessions[f.id]) ? (
+                  <div className="coven-tab__threads">
+                    <span className="coven-tab__field-label">Threads</span>
+                    <ul className="coven-tab__threads-list">
+                      {participants.map((f) => {
+                        const sessionId = activeGroup.sessions[f.id];
+                        if (!sessionId) return null;
+                        return (
+                          <li key={f.id} className="coven-tab__thread-row">
+                            <FamiliarAvatar familiar={f} size="sm" />
+                            <span className="coven-tab__thread-name">{f.display_name}</span>
+                            <button
+                              type="button"
+                              className="coven-tab__thread-debug focus-ring"
+                              title={`Debug ${f.display_name}'s session`}
+                              onClick={() => onDebugSession(sessionId, f.id)}
+                            >
+                              <Icon name="ph:bug-bold" width={12} height={12} aria-hidden />
+                              Debug
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Transcript */}
             <div className="relative min-h-0 flex-1">
             <div
@@ -1060,19 +1228,26 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
               role="log"
               aria-label="Coven transcript"
               aria-live="off"
-              className="h-full overflow-y-auto px-4 py-4"
+              className="h-full overflow-y-auto px-6 py-5"
             >
               {threads.length === 0 ? (
                 <div className="grid h-full place-items-center">
                   <EmptyState
                     icon="ph:chats-circle"
-                      headline={participants.length === 0 ? "Add familiars to begin" : "Start the conversation"}
+                    headline={participants.length === 0 ? "Add familiars to begin" : "Start the conversation"}
                     subtitle={
                       participants.length === 0
-                        ? "Use Add to pick the familiars in this coven."
+                        ? "A coven is a group chat — pick who's in it."
                         : activeGroup.responseMode === "broadcast"
                           ? "Every familiar responds at once in its own thread."
                           : "Familiars respond in turn and see earlier replies."
+                    }
+                    actions={
+                      participants.length === 0 ? (
+                        <Button variant="primary" leadingIcon="ph:plus-bold" onClick={() => setPickerOpen(true)}>
+                          Add familiars
+                        </Button>
+                      ) : undefined
                     }
                     compact
                   />
@@ -1217,6 +1392,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     </div>
                     );
                   })}
+                  {/* Typing line: who is still replying this turn (the bubbles
+                      above carry the detailed queued/streaming affordances). */}
+                  {replyingNames.length > 0 ? (
+                    <div className="coven-tab__typing">
+                      <span>{replyingNames.join(", ")} replying…</span>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -1235,7 +1417,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             </div>
 
             {/* Composer */}
-            <div className="border-t px-4 py-3 [border-color:var(--border-hairline)]!">
+            <div className="border-t px-5 py-3.5 [border-color:var(--border-hairline)]!">
               <div ref={composerRef} className="mx-auto flex max-w-3xl items-end gap-2">
                 <textarea
                   ref={textareaRef}
@@ -1254,17 +1436,17 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     // draft. Mirrors ChatView's composer guard.
                     if (e.nativeEvent.isComposing) return;
                     if (mentionOpen) {
-                      if (e.key === "ArrowDown") {
+                      if (e.key === "ArrowDown" && mentionMatches.length > 0) {
                         e.preventDefault();
                         setMentionIndex((i) => (i + 1) % mentionMatches.length);
                         return;
                       }
-                      if (e.key === "ArrowUp") {
+                      if (e.key === "ArrowUp" && mentionMatches.length > 0) {
                         e.preventDefault();
                         setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
                         return;
                       }
-                      if (e.key === "Enter" || e.key === "Tab") {
+                      if ((e.key === "Enter" || e.key === "Tab") && mentionMatches.length > 0) {
                         e.preventDefault();
                         chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
                         return;
@@ -1288,7 +1470,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                       : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}… (@ to tag one)`
                   }
                   disabled={participants.length === 0}
-                  className="max-h-40 min-h-[var(--space-10)] flex-1 resize-none rounded-lg border px-3 py-2 text-[length:var(--text-md)] outline-none disabled:opacity-50 [border-color:var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-primary)]!"
+                  className="max-h-40 min-h-[var(--space-10)] flex-1 resize-none rounded-lg border px-3 py-2 text-[length:var(--text-md)] outline-none disabled:opacity-50 [border-color:var(--border-hairline)]! [background:color-mix(in_oklch,var(--bg-raised)_70%,transparent)]! [color:var(--text-primary)]!"
                 />
                 <Popover
                   open={mentionOpen}
@@ -1301,6 +1483,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   minWidth={220}
                 >
                   <div className="max-h-64 overflow-y-auto p-1">
+                    <span className="coven-tab__mention-kicker">Tag a familiar</span>
+                    {mentionMatches.length === 0 ? (
+                      <p className="coven-tab__mention-empty">No matching familiar in this coven</p>
+                    ) : null}
                     {mentionMatches.map((f, i) => {
                       const resolved = byId.get(f.id);
                       return (
@@ -1336,7 +1522,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   </div>
                 </Popover>
                 {busy ? (
-                  <Button variant="danger-ghost" leadingIcon="ph:stop-fill" onClick={stop}>
+                  <Button variant="secondary" className="coven-tab__stop" leadingIcon="ph:stop-fill" onClick={stop}>
                     Stop
                   </Button>
                 ) : (

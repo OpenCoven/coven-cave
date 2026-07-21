@@ -4,22 +4,31 @@ import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const kanban = await readFile(new URL("./board-kanban.tsx", import.meta.url), "utf8");
-const styles = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
+const styles = (await Promise.all([
+  "../styles/board.css",
+  "../styles/board/chrome-table.css",
+  "../styles/board/kanban-inspector.css",
+  "../styles/board/github-list.css",
+  "../styles/board/github-detail.css",
+  "../styles/board/mobile-card-stack.css",
+  "../styles/board/gantt-fallbacks.css",
+].map((path) => readFile(new URL(path, import.meta.url), "utf8")))).join("\n");
 
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");
 assert.match(view, /finally\s*\{\s*if \(!ctl\.signal\.aborted\) setHasLoaded\(true\);/, "load() must set hasLoaded in finally (skipping a superseded/aborted load)");
 assert.match(view, /!hasLoaded && !error \?/, "A loading branch must precede the empty-state branch");
 assert.match(view, /role="status" aria-label="Loading tasks"/, "Loading state must be announced");
+assert.match(view, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\)\)/, "board refocus bypasses a fresh warm cache");
 
 // ───────── Failed mutations surface (no silent revert) ─────────
 assert.match(view, /const \[actionError, setActionError\] = useState<string \| null>\(null\)/, "BoardView must track actionError");
 assert.match(
   view,
-  /if \(!json\.ok\) \{[\s\S]*?setActionError\([\s\S]*?await load\(\);/,
+  /if \(!json\.ok\) \{[\s\S]*?setActionError\([\s\S]*?await load\(\{ force: true \}\);/,
   "patchCard must surface an error (not silently revert) on a failed mutation",
 );
-assert.match(view, /catch \{\s*setActionError\([\s\S]*?await load\(\);/, "patchCard must handle network failure with feedback + revert");
+assert.match(view, /catch \{\s*setActionError\([\s\S]*?await load\(\{ force: true \}\);/, "patchCard must handle network failure with feedback + revert");
 assert.match(view, /\{actionError && \(/, "actionError must render a banner");
 
 // ───────── Desktop board toolbar stays one row ─────────
@@ -276,7 +285,7 @@ assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tra
 assert.match(view, /inFlightPatchesRef\.current \+= 1/, "every patch enters the in-flight counter");
 assert.match(
   view,
-  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\);/,
+  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\{ force: true \}\);/,
   "the reconciling reload waits for the whole batch and runs once",
 );
 assert.doesNotMatch(

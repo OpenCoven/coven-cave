@@ -216,6 +216,11 @@ assert.match(source, /const loadReqRef = useRef\(0\)/, "load() tracks its own re
 assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load() bumps the request id");
 assert.match(source, /const live = \(\) => reqId === loadReqRef\.current && mountedRef\.current/, "load() writes only while it's the newest load and still mounted");
 assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its writes");
+assert.match(
+  source,
+  /const reloadAfterMutation = useCallback\(async \(\) => \{\s*invalidateSurfaceResources\("schedules:inbox", "schedules:automations"\);\s*await load\(true\);/,
+  "a completed Schedules mutation invalidates both shared landing resources before it reloads",
+);
 
 // ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
@@ -269,7 +274,9 @@ console.log("automations-view.test.ts: ok");
 assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
 assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
 assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
-assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook");
+assert.match(source, /usePausablePoll\(\(\) => \{ void load\(true\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook and bypasses a warm cache");
+assert.match(source, /const onSchedulesReload = \(\) => \{ void reloadAfterMutation\(\); \};[\s\S]{0,220}addEventListener\("cave:schedules:reload", onSchedulesReload\)/, "workspace inbox writes force a mounted Schedules surface to replace an invalidated warm read");
+assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retry/, "the error retry bypasses a fresh warm cache");
 // Selected-detail syncs only adopt content changes — a new-but-identical
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");

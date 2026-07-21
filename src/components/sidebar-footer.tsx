@@ -6,10 +6,10 @@ import { APP_VERSION } from "@/lib/app-version";
 /**
  * The left side-panel footer — Dashboard + Settings, then the app-version line.
  *
- * Extracted so it renders identically in BOTH hosts: the global-nav
- * `SidebarMinimal` and Chat's independent `WorkspaceSidebar` thread list.
- * Without this, the Chats list could drift from the global nav footer or lose
- * its Dashboard / Settings / version row entirely. Styles (`.sidebar-foot*`,
+ * Extracted so it renders identically through whichever primary sidebar host is
+ * active: `SidebarMinimal` normally, or `WorkspaceSidebar` while Chat replaces
+ * it. This keeps Dashboard / Settings / version available across the host swap.
+ * Styles (`.sidebar-foot*`,
  * `.sidebar-version`) live in sidebar-minimal.css, which globals.css imports
  * app-wide, so they apply here regardless of host.
  */

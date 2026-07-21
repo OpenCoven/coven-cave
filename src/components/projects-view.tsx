@@ -41,6 +41,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Modal } from "@/components/ui/modal";
+import { SurfaceRail } from "@/components/ui/surface-rail";
 
 import { ProjectList } from "./projects/project-list";
 import { ProjectDetail } from "./projects/project-detail";
@@ -121,6 +124,27 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   // DELETEs fire only after the undo window, and Undo restores the batch.
   const { pending: deletePending, scheduleDelete: scheduleSessionDelete, undo: undoSessionDelete, commit: commitSessionDelete } = useUndoDelete<SessionRow[]>();
   const projectOverrides = useProjectOverrides();
+
+  // ── Narrow single-pane collapse ─────────────────────────────────────────────
+  // The hub pages between rail and detail below 640px of ITS OWN width (split
+  // tiles can be phone-narrow on a desktop viewport). The paging itself stays
+  // CSS-driven (@container projects), but the SurfaceRail needs the same
+  // boolean in React to switch into its forceOpen layout override — narrow
+  // panes must never show a 56px collapsed strip as the whole list "page".
+  const shellRef = useRef<HTMLElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = (width: number) => setNarrow(width <= 640);
+    update(el.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      update(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // ── Master-detail selection ─────────────────────────────────────────────────
   // The selected project id persists across reloads; when nothing (valid) is
@@ -512,159 +536,119 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     window.requestAnimationFrame(() => document.getElementById(`pcard-el:${rootKey}`)?.focus());
   };
 
+  // ── Rail chrome (design-handoff): header actions + filter/sort controls ────
+  const railActions = (
+    <>
+      <IconButton
+        icon="ph:arrows-clockwise-bold"
+        size="sm"
+        onClick={() => void reload()}
+        disabled={loading}
+        aria-label="Refresh projects"
+        title="Refresh projects"
+        className="projects-rail-action"
+      />
+      <IconButton
+        icon="ph:plus-bold"
+        size="sm"
+        onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
+        aria-label="New project"
+        title="New project"
+        className="projects-rail-action projects-rail-action--new"
+      />
+    </>
+  );
+
+  const railSearch = (
+    <div className="projects-rail-controls">
+      <div className="projects-rail-search">
+        <Icon name="ph:magnifying-glass" width={13} className="projects-rail-search__icon" aria-hidden />
+        <input
+          ref={searchRef}
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && query) {
+              event.preventDefault();
+              setQuery("");
+            }
+          }}
+          placeholder="Filter projects…"
+          aria-label="Filter projects"
+          className="focus-ring projects-rail-search__input"
+        />
+        {!query && (
+          <kbd aria-hidden className="projects-rail-search__kbd">
+            /
+          </kbd>
+        )}
+      </div>
+      <div className="projects-rail-filterrow">
+        {/* Opt-in Active filter — narrows without reordering. */}
+        <div role="group" aria-label="Filter by activity" className="flex min-w-0 items-center gap-1">
+          {([
+            { value: "all", label: "All" },
+            { value: "active", label: `Active ${activeCount}` },
+          ] as const).map((opt) => (
+            <Button
+              key={opt.value}
+              variant="ghost"
+              size="xs"
+              onClick={() => setStatusFilter(opt.value)}
+              aria-pressed={statusFilter === opt.value}
+              className={`h-6 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
+                statusFilter === opt.value
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => changeSortMode(sortMode === "az" ? "recent" : "az")}
+          aria-label="Sort projects"
+          title={
+            sortMode === "az"
+              ? "Alphabetical — switch to most recently active first"
+              : "Most recently active first — switch to alphabetical"
+          }
+          leadingIcon="ph:sort-ascending"
+          className="ml-auto h-6 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+        >
+          {sortMode === "az" ? "A–Z" : "Recent"}
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="projects-view flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <header className="projects-toolbar shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
-        <div className="projects-toolbar__row flex items-center justify-between gap-3">
-          <div className="projects-toolbar__controls flex min-w-0 items-center gap-2.5">
-            <span className="shrink-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              {query.trim() && visibleProjects.length !== projects.length ? (
-                `${visibleProjects.length} of ${projects.length} projects`
-              ) : statusFilter === "active" ? (
-                `${activeCount} active project${activeCount === 1 ? "" : "s"}`
-              ) : (
-                <>
-                  {projects.length} {projects.length === 1 ? "project" : "projects"}
-                  {activeCount > 0 ? (
-                    <span className="text-[var(--accent-presence)]"> · {activeCount} active</span>
-                  ) : null}
-                </>
-              )}
-            </span>
-            {/* Opt-in Active filter — only useful (and shown) when there's a mix
-                of active and idle projects. Narrows without reordering. */}
-            {statusFilter === "active" || (projects.length > 1 && activeCount > 0 && activeCount < projects.length) ? (
-              <div
-                role="group"
-                aria-label="Filter by activity"
-                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
-              >
-                {([
-                  { value: "all", label: "All" },
-                  { value: "active", label: "Active" },
-                ] as const).map((opt) => (
-                  <Button
-                    key={opt.value}
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setStatusFilter(opt.value)}
-                    aria-pressed={statusFilter === opt.value}
-                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
-                      statusFilter === opt.value
-                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    }`}
-                  >
-                    {opt.value === "active" ? `Active ${activeCount}` : opt.label}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-            {projects.length > 1 ? (
-              <div
-                role="group"
-                aria-label="Sort projects"
-                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
-              >
-                {([
-                  { value: "az", label: "A–Z", help: "Alphabetical" },
-                  { value: "recent", label: "Recent", help: "Most recently active first" },
-                ] as const).map((opt) => (
-                  <Button
-                    key={opt.value}
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => changeSortMode(opt.value)}
-                    aria-pressed={sortMode === opt.value}
-                    title={opt.help}
-                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
-                      sortMode === opt.value
-                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    }`}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="projects-toolbar__actions flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void reload()}
-              disabled={loading}
-              aria-label="Refresh projects"
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
-            >
-              <Icon name="ph:arrows-clockwise-bold" width={12} className={loading ? "animate-spin" : undefined} aria-hidden />
-              Refresh
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
-              leadingIcon="ph:plus-bold"
-            >
-              New project
-            </Button>
-          </div>
-        </div>
-        {projects.length > 1 ? (
-          <div className="relative mt-2">
-            <Icon
-              name="ph:magnifying-glass"
-              width={13}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-              aria-hidden
-            />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  setQuery("");
-                }
-              }}
-              placeholder="Filter projects by name or path…"
-              aria-label="Filter projects"
-              className="focus-ring h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-            />
-            {!query && (
-              <kbd
-                aria-hidden
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]"
-              >
-                /
-              </kbd>
-            )}
-          </div>
-        ) : null}
-      </header>
-
-      {showForm ? (
+      <Modal open={showForm} onClose={() => setShowForm(false)} breadcrumb={["Projects", "New project"]}>
         <form
           onSubmit={handleCreate}
           onKeyDown={(event) => {
             if (event.key === "Escape") setShowForm(false);
           }}
-          className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-4 py-3 sm:px-6"
+          className="flex min-w-0 flex-col gap-3"
         >
-          <div className="grid gap-2 @min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
+          <label className="flex flex-col gap-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
+            Name
             <input
-              autoFocus
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
-              placeholder="Project name"
-              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              placeholder="e.g., Coven Scrolls"
+              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-base)] font-normal text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
+          </label>
+          <div className="space-y-1">
+            <label className="flex flex-col gap-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
+              Folder
+              <span className="flex items-center gap-2">
                 <input
                   ref={rootInputRef}
                   value={rootDraft}
@@ -676,7 +660,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                   placeholder="/absolute/path/to/project"
                   aria-invalid={Boolean(createError)}
                   aria-describedby={createError ? "project-root-help project-root-error" : "project-root-help"}
-                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] font-normal text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
                 />
                 <Button
                   variant="secondary"
@@ -688,38 +672,38 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                 >
                   Browse
                 </Button>
-              </div>
-              <p id="project-root-help" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                {PROJECT_ROOT_WORKSPACE_HELP}
+              </span>
+            </label>
+            <p id="project-root-help" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              {PROJECT_ROOT_WORKSPACE_HELP}
+            </p>
+            {createError ? (
+              <p id="project-root-error" role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
+                {createError}
               </p>
-              {createError ? (
-                <p id="project-root-error" role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
-                  {createError}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                disabled={creating || !nameDraft.trim() || !rootDraft.trim()}
-                className="h-9 rounded-[var(--radius-control)] px-3 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
-              >
-                {creating ? "Creating" : "Create"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowForm(false)}
-                className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-              >
-                Cancel
-              </Button>
-            </div>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowForm(false)}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={creating || !nameDraft.trim() || !rootDraft.trim()}
+              className="h-9 rounded-[var(--radius-control)] px-3 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
+            >
+              {creating ? "Creating…" : "Create project"}
+            </Button>
           </div>
         </form>
-      ) : null}
+      </Modal>
 
       <DirectoryPickerModal
         open={pickerOpen}
@@ -783,7 +767,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
         </div>
       ) : null}
 
-      <main className="projects-shell">
+      <main ref={shellRef} className="projects-shell">
         {error && projects.length === 0 ? (
           <ErrorState
             icon="ph:warning"
@@ -837,24 +821,38 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           />
         ) : (
           <div className="projects-hub" data-pane={pane}>
-            <div ref={listRef} className="projects-hub__list">
-              {visibleProjects.length === 0 ? (
-                <p className="px-2 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                  {query.trim()
-                    ? `No projects match “${query.trim()}”.`
-                    : "No active projects right now."}
-                </p>
-              ) : (
-                <ProjectList
-                  projects={visibleProjects}
-                  chatsByRoot={chatsByRoot}
-                  selectedId={selectedProjectId}
-                  onSelect={selectProject}
-                  onEnterDetail={focusDetailPane}
-                  onNewChat={onNewChat}
-                />
+            <SurfaceRail
+              storageKey="cave:projects:rail"
+              title="Projects"
+              ariaLabel="Projects"
+              actions={railActions}
+              search={railSearch}
+              forceOpen={narrow}
+            >
+              {(railOpen) => (
+                <div ref={listRef} className="projects-hub__list">
+                  {visibleProjects.length === 0 ? (
+                    railOpen ? (
+                      <p className="px-2 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                        {query.trim()
+                          ? `No projects match “${query.trim()}”.`
+                          : "No active projects right now."}
+                      </p>
+                    ) : null
+                  ) : (
+                    <ProjectList
+                      projects={visibleProjects}
+                      chatsByRoot={chatsByRoot}
+                      selectedId={selectedProjectId}
+                      railOpen={railOpen}
+                      onSelect={selectProject}
+                      onEnterDetail={focusDetailPane}
+                      onNewChat={onNewChat}
+                    />
+                  )}
+                </div>
               )}
-            </div>
+            </SurfaceRail>
             <div
               ref={detailRef}
               tabIndex={-1}

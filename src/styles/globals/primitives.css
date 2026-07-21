@@ -1451,6 +1451,19 @@ html[data-backdrop-on] .glass-overlay {
   content-visibility: auto;
   contain-intrinsic-size: auto 32px;
 }
+/* Debug pane: render-virtualize off-screen event rows (same content-visibility
+   strategy as chat turns and projects rows). A 10k-event session otherwise
+   lays out and paints every row on each 2s live-tail append. The row's only
+   descendants are its toggle button and the inline expanded JSON block — no
+   fixed/portaled children — so layout/paint containment is safe. The auto
+   intrinsic-size caches each row's real height after first paint (collapsed
+   ~30px, expanded rows keep their measured height), so follow-scroll and the
+   resume pill never jump. Rows stay in the DOM (vs JS windowing), preserving
+   the S4 filter, find-in-page, and the aria-expanded toggles. */
+.debug-event-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
+}
 .ui-popover-body {
   padding: 6px;
 }

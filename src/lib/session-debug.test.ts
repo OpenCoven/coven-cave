@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   appendEvents,
   nextAfterSeq,
+  isDebugSessionLive,
   shouldPollEvents,
   formatEventPayload,
   buildDebugBundle,
@@ -38,11 +39,56 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// isDebugSessionLive: any witness saying "live" wins — sessions-list status,
+// client transport phase, or the server run buffer (done: false)
+{
+  const idle = { status: null, clientPhase: "idle", serverStatus: null };
+  const buffer = (done) => ({
+    done,
+    oldestRetainedSeq: 1,
+    latestSeq: 5,
+    retainedEventCount: 5,
+    retainedBytes: 100,
+    hasEvictedEvents: false,
+    liveTails: 0,
+  });
+  assert.equal(isDebugSessionLive(idle), false, "no witness => not live");
+  assert.equal(isDebugSessionLive({ ...idle, status: "running" }), true, "sessions-list row wins");
+  for (const clientPhase of ["connecting", "streaming", "resuming"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      true,
+      `client ${clientPhase} phase wins without a sessions-list row (poll lag / missing row)`,
+    );
+  }
+  for (const clientPhase of ["settled", "degraded", "stopped"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      false,
+      `terminal client ${clientPhase} phase is not a live witness`,
+    );
+  }
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(false) }),
+    true,
+    "an undone server run buffer self-detects runs this pane didn't start",
+  );
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(true) }),
+    false,
+    "a finished buffer is not a live witness",
+  );
+  assert.equal(
+    isDebugSessionLive({ status: "completed", clientPhase: "settled", serverStatus: buffer(true) }),
+    false,
+    "all witnesses terminal => not live",
+  );
+}
+
+// shouldPollEvents: only while live and visible
+assert.equal(shouldPollEvents({ live: true, visible: true }), true);
+assert.equal(shouldPollEvents({ live: true, visible: false }), false);
+assert.equal(shouldPollEvents({ live: false, visible: true }), false);
 
 // filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
 import { filterEvents } from "./session-debug.ts";
@@ -178,6 +224,45 @@ assert.equal(
 // debugFileName
 assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
+
+// ── per-session debug events cache: reopen restores the drained tail (A2) ───
+import {
+  clearDebugEventsCacheForTest,
+  readDebugEventsCache,
+  writeDebugEventsCache,
+} from "./session-debug.ts";
+
+{
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s1"), null, "cold cache → null (pane starts from seq 0)");
+
+  const tail = { events: [ev(1), ev(2)], cursor: 2, tailCapped: false };
+  writeDebugEventsCache("s1", tail);
+  assert.equal(readDebugEventsCache("s1"), tail, "hit returns the exact stored snapshot");
+
+  const capped = { events: [ev(1), ev(2), ev(3)], cursor: 3, tailCapped: true };
+  writeDebugEventsCache("s1", capped);
+  assert.equal(readDebugEventsCache("s1"), capped, "rewrite replaces the snapshot for the key");
+  assert.equal(
+    readDebugEventsCache("s1").tailCapped,
+    true,
+    "tailCapped survives the round-trip so the Load-more notice reappears on reopen",
+  );
+
+  // LRU bound: writing beyond the cap evicts the least recently touched key.
+  clearDebugEventsCacheForTest();
+  for (let i = 0; i < 8; i++) {
+    writeDebugEventsCache(`s${i}`, { events: [ev(1)], cursor: 1, tailCapped: false });
+  }
+  readDebugEventsCache("s0"); // touch s0 so s1 is now the oldest
+  writeDebugEventsCache("s8", { events: [ev(1)], cursor: 1, tailCapped: false });
+  assert.notEqual(readDebugEventsCache("s0"), null, "recently read key survives eviction");
+  assert.equal(readDebugEventsCache("s1"), null, "least recently touched key is evicted at the cap");
+  assert.notEqual(readDebugEventsCache("s8"), null, "newest write is retained");
+
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s8"), null, "test hook clears the cache");
+}
 
 // ── turnActualModel / turnMetaSummary: served-model + usage meta (S2) ───────
 import { turnActualModel, turnMetaSummary } from "./session-debug.ts";

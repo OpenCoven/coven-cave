@@ -8,6 +8,7 @@ import { ProjectPicker } from "@/components/project-picker";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { buildSeedRequest, summarizeSeedResult, validateSubfolderInput } from "@/lib/knowledge-pack-ui";
 import type { KnowledgePackManifest, KnowledgePackSeedResult } from "@/lib/knowledge-pack-types";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 
 export type SkillInstallResult = {
   skillId: string;
@@ -122,6 +123,10 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
           ? buildSeedRequest(manifest.id, "vault")
           : buildSeedRequest(manifest.id, "project", selectedProject?.root, subfolder);
         seed = await postJson<KnowledgePackSeedResult>("/api/knowledge/packs/seed", request);
+        // Vault seeds create collection metadata and knowledge entries outside
+        // GrimoireView. Discard its post-launch landing snapshot so a later
+        // navigation cannot display the pre-seed vault until the TTL expires.
+        if (target === "vault") invalidateIfDefined("grimoire:knowledge", "grimoire:collections");
         setSeedResult(seed);
       } catch (error) {
         throw { step: "Seed folders", message: error instanceof Error ? error.message : "Seed failed" };

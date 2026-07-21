@@ -9,7 +9,7 @@ const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", im
 const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const composerContext = await readFile(new URL("../lib/home-composer-context.ts", import.meta.url), "utf8");
-const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/home-composer/landing-composer.css", import.meta.url), "utf8");
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 
 assert.match(
@@ -204,8 +204,8 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\); \}/,
-  "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
+  /if \(json\.ok\) \{[\s\S]{0,700}?publishBoardChanged\(\)[\s\S]{0,700}?setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\);/,
+  "HomeComposer should invalidate warmed tasks and clear staged attachments after creating a board card",
 );
 
 // ── Familiar selector removed from home ──────────────────────────────────────

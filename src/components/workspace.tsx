@@ -51,6 +51,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -159,6 +160,7 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
@@ -232,6 +234,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 export function Workspace() {
+  useSurfaceWarmup();
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -360,9 +363,8 @@ export function Workspace() {
     }
     setModeRaw(next);
   }, []);
-  // Chat mode keeps the global nav in the nav pane and mounts the project-
-  // grouped Chats list beside it. The Chats header button explicitly routes
-  // back Home rather than restoring a prior surface.
+  // Chat mode replaces the global nav with the project-grouped Chats sidebar.
+  // Its Home button exits Chat, restoring the normal navigation.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -995,8 +997,15 @@ export function Workspace() {
       try {
         // Scope the session list to the active familiar's granted projects so
         // every surface fed by `sessions` enforces the familiar→projects map.
-        // With "All familiars" (activeId null) the unscoped list is returned.
-        const scope = activeId ? `?familiarId=${encodeURIComponent(activeId)}` : "";
+        // With "All familiars" (activeId null) the unscoped list is returned,
+        // but we collapse the per-familiar workspace auto-journal/reflection
+        // runs there: they'd otherwise flood the global list and make it look
+        // contradictory versus the clean project-scoped familiar homes. Scoped
+        // views already drop them via project-grant scoping, so collapse is only
+        // applied to the unscoped view.
+        const scope = activeId
+          ? `?familiarId=${encodeURIComponent(activeId)}`
+          : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
         if (!isCurrent()) return; // superseded by a newer load / scope change
@@ -1155,6 +1164,10 @@ export function Workspace() {
         | { type: "created"; item: InboxItem }
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
+      // Schedules consumes the same inbox data through a warmed, point-in-time
+      // landing cache. Every authoritative stream event can make that cache
+      // stale, even when Schedules itself is unmounted.
+      publishSchedulesChanged();
       if (e.type === "snapshot") {
         // Reconnect snapshots usually carry what we already have — keep the
         // reference so inboxItemsWithEphemeral consumers don't re-render
@@ -2573,7 +2586,7 @@ export function Workspace() {
       }}
       onOpenSession={(id) => {
         openFamiliarSession(id);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}
@@ -2601,7 +2614,7 @@ export function Workspace() {
       onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onOpenSessionInSplit={(session) => {
         // Open beside the current chat: same pending-action pipeline as a
@@ -2610,15 +2623,15 @@ export function Workspace() {
         // active familiar is left alone — the pane carries its own.
         setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
         setMode("chat");
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onNewChat={(projectRoot) => {
         startFamiliarChat(activeId, projectRoot);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onNavigate={(nextMode) => {
         setMode(nextMode);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
@@ -2630,18 +2643,18 @@ export function Workspace() {
         handleSessionsDeleted([session.id]);
       }}
       onOpenUrl={(url) => {
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
         openUrlInApp(url);
       }}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
       }}
     />
   );
 
-  const list = mode === "chat" ? chatSidebar : undefined;
+  const contextualNav = mode === "chat" ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -2722,6 +2735,11 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliarId={activeId}
         scopeFamiliarIds={scopeIds}
+        daemonRunning={daemonRunning}
+        onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
+        onSlashFromChat={handleSlashIntent}
+        onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlInAppBrowser}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);
@@ -2970,9 +2988,8 @@ export function Workspace() {
         onCloseSplitTile={closeSplitTile}
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
-        navPolicy={mode === "chat" ? "visit-collapsed" : "remembered"}
-        listPolicy={mode === "chat" ? "persistent" : "collapsible"}
-        topBar={({ navDrawerOpen, listDrawerOpen }) => (
+        navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
+        topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
@@ -3047,14 +3064,14 @@ export function Workspace() {
               }}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
-              onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
+              onToggleList={undefined}
               navDrawerOpen={navDrawerOpen}
-            listDrawerOpen={listDrawerOpen}
-          />
+              listDrawerOpen={false}
+            />
           </>
         )}
-        nav={sidebar}
-        list={list}
+        nav={contextualNav}
+        list={undefined}
         detail={detail}
       />
 

@@ -31,6 +31,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
+import { TaskWorkCockpit } from "@/components/task-work-cockpit";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
@@ -40,6 +41,7 @@ import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { BoardKanbanSkeleton, type ViewMode } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
 type Props = {
@@ -56,10 +58,29 @@ type Props = {
    *  the union; `activeFamiliarId` stays the single-primary for chrome. */
   scopeFamiliarIds?: ReadonlySet<string>;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+  daemonRunning: boolean;
+  onSessionsChanged: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
+  onSlashFromChat?: (command: string, args: string) => boolean;
+  onOpenOnboarding?: () => void;
   onOpenUrl?: (url: string) => void;
 };
 
-export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl, queueSlot, initialTab }: Props) {
+export function BoardView({
+  familiars,
+  sessions,
+  activeFamiliarId,
+  scopeFamiliarIds,
+  onJumpToSession,
+  daemonRunning,
+  onSessionsChanged,
+  onSessionsDeleted,
+  onSlashFromChat,
+  onOpenOnboarding,
+  onOpenUrl,
+  queueSlot,
+  initialTab,
+}: Props) {
   const isMobile = useIsMobile();
   const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.board.activeTab);
   // Alias navigation is an explicit, one-visit destination. It wins over the
@@ -106,6 +127,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [workCardId, setWorkCardId] = useState<string | null>(null);
+  const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
@@ -148,14 +171,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // response, so only the latest load ever touches state (mirrors
   // capabilities-view / marketplace-configure).
   const loadCtlRef = useRef<AbortController | null>(null);
-  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+  const load = useCallback(async (opts?: { quiet?: boolean; force?: boolean }) => {
     const quiet = opts?.quiet === true;
     loadCtlRef.current?.abort();
     const ctl = new AbortController();
     loadCtlRef.current = ctl;
     try {
-      const res = await fetch("/api/board", { cache: "no-store", signal: ctl.signal });
-      const json = await res.json();
+      const { data: json } = await readSurfaceResource<{ ok?: boolean; cards?: Card[]; error?: string }>("board:cards", opts?.force === true);
       if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       if (json.ok) {
         const loaded = json.cards as Card[];
@@ -224,7 +246,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
   useEffect(() => {
-    const onReload = () => { void load(); };
+  const onReload = () => { invalidateSurfaceResources("board:cards", "tasks:queue"); void load(); };
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
@@ -233,7 +255,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // change made while the window was in the background) doesn't sit stale until
   // a manual reload — most visibly in the installed desktop app, where the OS
   // window manager doesn't fire the web visibility events that browser tabs do.
-  useRefreshOnFocus(load);
+  useRefreshOnFocus(() => load({ force: true }));
 
   // Light background poll so a card that flips status (e.g. a familiar moving a
   // task running -> done) reflects without a manual reload while the board is
@@ -249,7 +271,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     rescheduleUndo !== null ||
     (deletePending?.item?.length ?? 0) > 0;
   usePausablePoll(
-    () => { void load({ quiet: true }); },
+    () => { void load({ quiet: true, force: true }); },
     15_000,
     { enabled: !interacting, pauseWhileInputActive: true },
   );
@@ -318,6 +340,27 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const showGroupToggle = !isMobile;
 
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedCardId) ?? null, [cards, selectedCardId]);
+  const workCard = useMemo(() => cards.find((c) => c.id === workCardId) ?? null, [cards, workCardId]);
+  const viewAreaRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (workCardId !== null) return;
+    const cardId = pendingWorkFocusIdRef.current;
+    if (!cardId) return;
+    pendingWorkFocusIdRef.current = null;
+    let attempts = 0;
+    let frame = requestAnimationFrame(function restore() {
+      const element = viewAreaRef.current?.querySelector<HTMLElement>(
+        `[data-card-id="${CSS.escape(cardId)}"]`,
+      );
+      if (element) {
+        element.focus();
+        return;
+      }
+      if (attempts++ === 0) frame = requestAnimationFrame(restore);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [workCardId]);
 
   useEffect(() => {
     if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) setSelectedCardId(null);
@@ -328,7 +371,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // still-selected card the open inspector describes can sit far off-screen.
   // After the new view commits, bring it back into view. Scroll only, no
   // focus steal — the user's focus belongs on the toggle they just clicked.
-  const viewAreaRef = useRef<HTMLDivElement | null>(null);
   const prevViewModeRef = useRef(viewMode);
   useEffect(() => {
     const switched = prevViewModeRef.current !== viewMode;
@@ -364,6 +406,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const reloadWhenPatchesSettleRef = useRef(false);
 
   const patchCard = async (id: string, patch: CardPatch, armUndo = true) => {
+    let saved = false;
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
     // A date-only patch is a gantt reschedule — snapshot the prior dates so it
     // can be undone in one click (skipped when the patch IS an undo).
@@ -406,6 +449,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
         reloadWhenPatchesSettleRef.current = true;
       } else {
+        invalidateSurfaceResources("board:cards", "tasks:queue");
+        saved = true;
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
@@ -422,9 +467,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       inFlightPatchesRef.current -= 1;
       if (inFlightPatchesRef.current === 0 && reloadWhenPatchesSettleRef.current) {
         reloadWhenPatchesSettleRef.current = false;
-        await load();
+        await load({ force: true });
       }
     }
+    return saved;
   };
 
   const moveCardToStatus = (id: string, status: CardStatus) => {
@@ -454,6 +500,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       // silently dropping the failure).
       const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
       if (!json.ok) throw new Error(json.error ?? "create failed");
+      invalidateSurfaceResources("board:cards", "tasks:queue");
       setActionError(null);
       announce(`Created task '${draft.title.trim()}'.`);
       await load();
@@ -507,6 +554,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       async () => {
         // Commit: drop from local state, then fire the DELETEs. Both the unhide
         // (pending → null) and this removal batch, so the cards never flash back.
+        invalidateSurfaceResources("board:cards", "tasks:queue");
         setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
         const results = await Promise.all(
           toRemove.map(async (c) => {
@@ -519,7 +567,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         const failed = results.filter((ok) => !ok).length;
         if (failed > 0) {
           setActionError(`Couldn't delete ${failed} of ${toRemove.length} task${toRemove.length === 1 ? "" : "s"} — reverted those.`);
-          await load();
+          await load({ force: true });
         } else {
           setActionError(null);
         }
@@ -608,6 +656,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     setClearConfirm(false);
     if (snapshot.length === 0) return;
     const ids = new Set(snapshot.map((c) => c.id));
+    invalidateSurfaceResources("board:cards", "tasks:queue");
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
@@ -631,7 +680,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       setActionError(
         `Couldn't clear ${failed.length} of ${snapshot.length} done task${snapshot.length === 1 ? "" : "s"} — reverted those.`,
       );
-      await load();
+      await load({ force: true });
     } else {
       setActionError(null);
     }
@@ -675,7 +724,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     } catch {
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
-    await load();
+    invalidateSurfaceResources("board:cards", "tasks:queue");
+    await load({ force: true });
   };
 
   // Revert a gantt reschedule to its snapshotted dates (without re-arming undo).
@@ -687,7 +737,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     void patchCard(u.id, u.prev, false);
   };
 
-  const startTaskChat = async (id: string, projectRoot?: string) => {
+  const startTaskChat = async (
+    id: string,
+    projectRoot?: string,
+  ): Promise<{ sessionId: string; familiarId: string | null } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
@@ -702,32 +755,61 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           ...(projectRoot ? { projectRoot } : {}),
         }),
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "failed to open task chat");
-      if (json.card) {
-        setCards((prev) => prev.map((candidate) => candidate.id === id ? json.card : candidate));
+      const json = await res.json() as {
+        ok?: boolean;
+        error?: string;
+        card?: Card;
+        sessionId?: string;
+        familiarId?: string | null;
+      };
+      if (!res.ok || !json.ok || !json.sessionId) {
+        throw new Error(json.error ?? "failed to open task work");
       }
-      onJumpToSession?.(json.sessionId, json.familiarId);
+      const updatedCard = json.card;
+      if (updatedCard) {
+        setCards((prev) => prev.map((candidate) => candidate.id === id ? updatedCard : candidate));
+      }
+      onSessionsChanged();
+      return { sessionId: json.sessionId, familiarId: json.familiarId ?? null };
     } catch (err) {
-      setChatLinkError(err instanceof Error ? err.message : "failed to open task chat");
+      setChatLinkError(err instanceof Error ? err.message : "failed to open task work");
       setChatLinkErrorCardId(id);
+      return null;
     } finally {
       setChatLinkingId(null);
     }
   };
 
-  const onOpenTaskChat = async (id: string) => {
+  const openTaskWork = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
+    if (!card) return;
+    if (card.sessionId) {
+      if (isMobile) {
+        const linkedSession = sessions.find((session) => session.id === card.sessionId);
+        onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
+        return;
+      }
+      setSelectedCardId(null);
+      pendingWorkFocusIdRef.current = id;
+      setWorkCardId(id);
+      return;
+    }
+
     const project = card?.projectId ? chatProjectById(card.projectId, projects) : null;
-    if (project) {
-      await startTaskChat(id, project.root);
+    if (!project && !card.cwd) {
+      setChatLinkError("Choose a project for this task before starting work, or open Projects to create one.");
       return;
     }
-    if (card && !card.sessionId && !card.cwd) {
-      setChatLinkError("Choose a project for this task before starting chat, or open Projects to create one.");
+
+    const started = await startTaskChat(id, project?.root);
+    if (!started) return;
+    if (isMobile) {
+      onJumpToSession?.(started.sessionId, started.familiarId);
       return;
     }
-    await startTaskChat(id);
+    setSelectedCardId(null);
+    pendingWorkFocusIdRef.current = id;
+    setWorkCardId(id);
   };
 
   // Recovery for a harness/runtime failure while starting a task chat: rebind
@@ -752,12 +834,46 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         return;
       }
       window.dispatchEvent(new Event("cave:familiars-refresh"));
-      await onOpenTaskChat(id);
+      await openTaskWork(id);
     } catch {
       setChatLinkError("Could not switch harness.");
     }
   };
   const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
+  const workSession = workCard?.sessionId
+    ? sessions.find((session) => session.id === workCard.sessionId) ?? null
+    : null;
+  const workFamiliar = workCard
+    ? familiars.find((familiar) => familiar.id === (workSession?.familiarId ?? workCard.familiarId)) ?? null
+    : null;
+
+  if (workCard) {
+    return (
+      <TaskWorkCockpit
+        card={workCard}
+        familiar={workFamiliar}
+        sessions={sessions}
+        daemonRunning={daemonRunning}
+        onClose={() => setWorkCardId(null)}
+        onOpenDetails={() => {
+          pendingWorkFocusIdRef.current = null;
+          setWorkCardId(null);
+          setSelectedCardId(workCard.id);
+        }}
+        onRefreshSessions={onSessionsChanged}
+        onSessionsDeleted={onSessionsDeleted}
+        onSessionDeleted={() => {
+          setCards((previous) => previous.map((card) =>
+            card.id === workCard.id ? { ...card, sessionId: null } : card));
+          setWorkCardId(null);
+        }}
+        onUnlinkSession={() => patchCard(workCard.id, { sessionId: null })}
+        onSlashCommand={onSlashFromChat}
+        onOpenOnboarding={onOpenOnboarding}
+        onOpenUrl={onOpenUrl}
+      />
+    );
+  }
 
   return (
     <section className="board-shell">
@@ -982,7 +1098,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
           </span>
-          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
             Retry
           </Button>
         </div>
@@ -996,7 +1112,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:clock-countdown" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">Refresh is failing — showing earlier data.</span>
           </span>
-          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
             Retry
           </Button>
         </div>
@@ -1228,7 +1344,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onMoveStatus={moveCardToStatus}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
             onJumpToSession={onJumpToSession}
-            onOpenTaskChat={onOpenTaskChat}
+            onOpenTaskChat={openTaskWork}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
@@ -1239,8 +1355,15 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             rewardCardId={rewardCardId}
             wipLimits={wipLimits} onSetWipLimit={setWipLimitFor}
             onQuickAdd={quickAdd}
-            onJumpToSession={onJumpToSession}
-            onOpenTaskChat={onOpenTaskChat}
+            onJumpToSession={(sessionId, familiarId) => {
+              const task = cards.find((card) => card.sessionId === sessionId);
+              if (task) {
+                void openTaskWork(task.id);
+                return;
+              }
+              onJumpToSession?.(sessionId, familiarId);
+            }}
+            onOpenTaskChat={openTaskWork}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "gantt" ? (
           <BoardGantt cards={filtered} familiars={familiars} projects={projects}
@@ -1272,8 +1395,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           onMoveStatus={moveCardToStatus}
           onDelete={removeCard}
           onCardReplaced={(next) => setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)))}
-          onJumpToSession={onJumpToSession}
-          onOpenTaskChat={onOpenTaskChat}
+          onOpenTaskWork={openTaskWork}
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}

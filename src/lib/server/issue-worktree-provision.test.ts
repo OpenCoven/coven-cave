@@ -7,7 +7,14 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 const exec = promisify(execFile);
-const root = await mkdtemp(path.join(tmpdir(), "cave-repo-root-"));
+// Canonicalize the scratch root up front: macOS tmpdir() lives behind the
+// /var → /private/var symlink, and the allow-list check compares realpath'd
+// WORKSPACE_ROOT against candidates canonicalized via nearest-existing-ancestor
+// walks. Seeding an already-canonical root keeps both sides identical even if
+// a realpath call degrades (observed once locally as 403 path-not-allowed
+// where the 404 branch was expected — cave-01mq). Same convention as
+// project-paths.test.ts.
+const root = await realpath(await mkdtemp(path.join(tmpdir(), "cave-repo-root-")));
 const originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
 process.env.WORKSPACE_ROOT = root;
 

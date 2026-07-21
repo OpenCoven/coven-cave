@@ -73,6 +73,22 @@ test("stable selection survives polling and active states are explicit", () => {
   assert.equal(isActiveResearchMission(missions[1]), false);
 });
 
+test("fallback selection skips archived missions unless nothing else exists", () => {
+  const missions = [
+    mission("old", "archived"),
+    mission("fresh", "completed"),
+    mission("older", "archived"),
+  ];
+  // No selection → first unarchived mission wins even when archived rows sort first.
+  assert.equal(selectStableMission(null, missions), "fresh");
+  assert.equal(selectStableMission("missing", missions), "fresh");
+  // A deliberate archived selection remains stable.
+  assert.equal(selectStableMission("old", missions), "old");
+  // All-archived ledgers still select something rather than nothing.
+  assert.equal(selectStableMission(null, [mission("only", "archived")]), "only");
+  assert.equal(selectStableMission(null, []), null);
+});
+
 test("actions post to the encoded mission endpoint", async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];
@@ -92,11 +108,14 @@ test("actions post to the encoded mission endpoint", async () => {
 
 test("schedule and standard Automation controls use their owning APIs", async () => {
   const originalFetch = globalThis.fetch;
+  const priorWindow = globalThis.window;
+  const events: string[] = [];
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];
   globalThis.fetch = (async (input, init) => {
     requests.push({ input: String(input), method: init?.method, body: init?.body });
     return Response.json({ ok: true, mission: mission("m/1", "checkpoint") });
   }) as typeof fetch;
+  globalThis.window = { dispatchEvent: (event: Event) => events.push(event.type) } as unknown as Window & typeof globalThis;
   try {
     await scheduleResearchMission("m/1", {
       rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
@@ -109,7 +128,9 @@ test("schedule and standard Automation controls use their owning APIs", async ()
       ["/api/codex-automations/auto%2F1/run", "POST"],
     ]);
     assert.deepEqual(JSON.parse(String(requests[1]?.body)), { status: "ACTIVE" });
+    assert.deepEqual(events, ["cave:schedules:reload", "cave:schedules:reload"]);
   } finally {
     globalThis.fetch = originalFetch;
+    globalThis.window = priorWindow;
   }
 });

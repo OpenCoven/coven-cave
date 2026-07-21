@@ -527,12 +527,21 @@ export type ResearchBoundReading = {
  * boundary is already explained by the mission's decision banner.
  */
 export function researchBoundReadings(
-  mission: Pick<ResearchMission, "bounds" | "sources" | "iterations" | "startedAt" | "finishedAt" | "updatedAt">,
+  mission: Pick<ResearchMission, "status" | "bounds" | "sources" | "iterations" | "startedAt" | "finishedAt" | "updatedAt">,
+  nowMs: number = Date.now(),
 ): ResearchBoundReading[] {
   const { bounds } = mission;
-  const elapsedMs = mission.startedAt
-    ? Math.max(0, Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt))
-    : 0;
+  // The wall-clock stop gate compares now - startedAt (stopBeforeNextIteration),
+  // so an unfinished mission's clock keeps running between data refreshes:
+  // measure it against now, and freeze at finishedAt (or the last write, for
+  // settled missions that never recorded one) only once the run is over.
+  const settled = ["completed", "failed", "cancelled", "archived"].includes(mission.status);
+  const clockEndMs = mission.finishedAt
+    ? Date.parse(mission.finishedAt)
+    : settled
+      ? Date.parse(mission.updatedAt)
+      : nowMs;
+  const elapsedMs = mission.startedAt ? Math.max(0, clockEndMs - Date.parse(mission.startedAt)) : 0;
   const elapsedMinutes = Math.round(elapsedMs / 60_000);
   const timeOver = elapsedMs > bounds.wallClockMinutes * 60_000;
   const sourcesMet = mission.sources.length >= bounds.sourceTarget;

@@ -4,15 +4,23 @@ import {
   selectionKey,
   projectSelectionKeys,
   applyProjectScope,
+  autoExpandKeysForNewSessions,
   normalizeSelection,
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
 } from "./chat-project-selection.ts";
 
-const group = (projectId, projectRoot, n = 1) => ({
+const T0 = Date.parse("2026-06-11T12:00:00Z"); // baseline capture instant
+const RECENT = "2026-06-11T12:30:00Z"; // created after the baseline
+const OLD = "2026-06-01T00:00:00Z"; // created long before the baseline
+
+const group = (projectId, projectRoot, n = 1, createdAt = RECENT) => ({
   projectId,
   projectRoot,
-  sessions: Array.from({ length: n }, (_, i) => ({ id: `${projectId ?? "none"}-${i}` })),
+  sessions: Array.from({ length: n }, (_, i) => ({
+    id: `${projectId ?? "none"}-${i}`,
+    created_at: createdAt,
+  })),
   defaultFamiliarId: null,
   updatedAt: "2026-06-11T00:00:00Z",
 });
@@ -56,5 +64,119 @@ assert.deepEqual(readPersisted("cave:test:key", []), []);
 assert.equal(PROJECT_SIDEBAR_KEYS.open, "cave:chat:project-sidebar-open");
 assert.equal(PROJECT_SIDEBAR_KEYS.expanded, "cave:chat:project-sidebar-expanded");
 assert.equal(PROJECT_SIDEBAR_KEYS.selected, "cave:chat:project-selected");
+
+// ── autoExpandKeysForNewSessions (cave-mllp, recency guard cave-a9w9) ────────
+
+// first chat in a fresh project folder: new key + first-seen recent session →
+// expand
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a"), group("b", "/b")],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  ["b"],
+);
+
+// root-fallback keys expand under their root-scoped key
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group(null, "/orphan/root")],
+    knownSessionIds: new Set(),
+    knownGroupKeys: new Set(),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  ["root:/orphan/root"],
+);
+
+// filter reveal (familiar switch): new key but every session already known →
+// the user's collapsed state wins
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("b", "/b")],
+    knownSessionIds: new Set(["b-0"]),
+    knownGroupKeys: new Set(),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  [],
+);
+
+// recovery/backfill/scope reveal (cave-a9w9): unseen key, first-seen session,
+// but the chat predates the baseline → it's old, not new — stay collapsed
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("b", "/b", 1, OLD)],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  [],
+);
+
+// unparsable created_at fails closed for the new-folder path
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("b", "/b", 1, "not-a-date")],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  [],
+);
+
+// the ACTIVE chat bypasses recency: end-of-stream persistence can land its
+// row (with an older created_at) well after the chat began
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("b", "/b", 1, OLD)],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: "b-0",
+    newSinceMs: T0,
+  }),
+  ["b"],
+);
+
+// background session landing in an existing collapsed folder: don't force open
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a", 2)], // a-0 known, a-1 fresh
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+    newSinceMs: T0,
+  }),
+  [],
+);
+
+// …unless the fresh session is the active one (this surface just started it)
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a", 2)],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: "a-1",
+    newSinceMs: T0,
+  }),
+  ["a"],
+);
+
+// an already-known active session never re-expands a collapsed folder
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a")],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: "a-0",
+    newSinceMs: T0,
+  }),
+  [],
+);
 
 console.log("chat-project-selection tests passed");

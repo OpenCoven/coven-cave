@@ -531,4 +531,188 @@ console.log("cave-conversations.test.ts: ok");
     "plain writeFile on a conversation path would reintroduce torn writes",
   );
 }
+
+// ── First-turn visibility stubs (cave-0g2x) ──────────────────────────────────
+// A new chat must exist in the conversation store from the moment its session
+// id is announced — not only at end-of-stream — so /api/sessions/list can
+// surface it during the entire first turn, and a mid-turn crash leaves a
+// listed chat holding the user's message.
+{
+  const { createConversationStub, stripConversationStubTurn } = await import(
+    "./cave-conversations.ts"
+  );
+
+  const created = await createConversationStub({
+    sessionId: "stub-first-turn",
+    familiarId: "charm",
+    harness: "claude",
+    model: "claude-4",
+    runtime: "local:/tmp/project",
+    title: "Fix the flaky test",
+    userTurn: { id: "pending-user-turn", text: "fix the flaky test please" },
+  });
+  assert.equal(created, true, "a brand-new chat gets a stub conversation");
+
+  const stub = await loadConversation("stub-first-turn");
+  assert.equal(stub?.turns.length, 1, "stub holds only the pending user turn");
+  assert.equal(stub?.turns[0]?.id, "pending-user-turn");
+  assert.equal(stub?.turns[0]?.role, "user");
+  assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
+  assert.equal(stub?.activeLeafId, "pending-user-turn");
+  assert.equal(stub?.title, "Fix the flaky test");
+
+  // The stub's summary must NOT infer a terminal status from the missing
+  // assistant turn — the session-list merge would otherwise override a live
+  // daemon "running" with "completed".
+  const summaries = await listConversations();
+  const stubSummary = summaries.find((s) => s.sessionId === "stub-first-turn");
+  assert.ok(stubSummary, "stub appears in the conversation list");
+  assert.equal(stubSummary.status, undefined, "pending first reply ⇒ no terminal status");
+  assert.equal(stubSummary.exitCode, undefined, "pending first reply ⇒ no exit code");
+
+  // Resumed turns must never be clobbered: a second stub attempt is a no-op.
+  const again = await createConversationStub({
+    sessionId: "stub-first-turn",
+    familiarId: "other",
+    harness: "codex",
+    userTurn: { id: "other-turn", text: "clobber attempt" },
+  });
+  assert.equal(again, false, "stub creation no-ops when the conversation exists");
+  const untouched = await loadConversation("stub-first-turn");
+  assert.equal(untouched?.familiarId, "charm", "existing conversation is not clobbered");
+  assert.equal(untouched?.turns[0]?.text, "fix the flaky test please");
+
+  // End-of-stream: strip the stub turn and re-append the authoritative pair
+  // under the same user-turn id (mirrors the send route's save).
+  const conv = await loadConversation("stub-first-turn");
+  const hadStub = stripConversationStubTurn(conv, "pending-user-turn");
+  assert.equal(hadStub, true, "strip reports the conversation was stub-only");
+  assert.equal(conv.turns.length, 0, "stub turn is removed");
+  assert.equal(conv.activeLeafId, undefined, "active leaf reverts to the stub's parent");
+  const branchParentId = conv.activeLeafId ?? null;
+  assert.equal(branchParentId, null, "re-appended turn must not self-parent");
+  conv.turns.push(
+    {
+      id: "pending-user-turn",
+      role: "user",
+      text: "fix the flaky test please",
+      createdAt: "2026-07-21T00:00:01.000Z",
+      parentId: branchParentId,
+    },
+    {
+      id: "assistant-turn",
+      role: "assistant",
+      text: "done",
+      createdAt: "2026-07-21T00:00:02.000Z",
+      isError: false,
+      parentId: "pending-user-turn",
+    },
+  );
+  conv.activeLeafId = "assistant-turn";
+  await saveConversation(conv);
+
+  const finished = await loadConversation("stub-first-turn");
+  assert.equal(finished?.turns.length, 2, "authoritative save replaces the stub turn");
+  assert.equal(finished?.turns[0]?.id, "pending-user-turn", "user turn keeps its stub-era id");
+  const finishedSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-first-turn",
+  );
+  assert.equal(finishedSummary?.status, "completed", "finished chat reports terminal status");
+  assert.equal(finishedSummary?.exitCode, 0);
+
+  // Resumed-chat path: stripping a turn id that never was a stub is a no-op.
+  const notStub = await loadConversation("stub-first-turn");
+  const turnCountBefore = notStub.turns.length;
+  assert.equal(stripConversationStubTurn(notStub, "never-existed"), false);
+  assert.equal(notStub.turns.length, turnCountBefore, "no-op strip leaves turns alone");
+  assert.equal(stripConversationStubTurn(notStub, undefined), false, "no id ⇒ no-op");
+
+  // Defensive re-parenting: children of the stripped stub turn re-point at the
+  // stub's parent, so no dangling parentId survives.
+  const branched = {
+    sessionId: "stub-branched",
+    familiarId: "charm",
+    harness: "claude",
+    createdAt: "2026-07-21T01:00:00.000Z",
+    updatedAt: "2026-07-21T01:00:00.000Z",
+    turns: [
+      { id: "stub-turn", role: "user", text: "hi", createdAt: "2026-07-21T01:00:00.000Z", parentId: null },
+      { id: "child-turn", role: "assistant", text: "…", createdAt: "2026-07-21T01:00:01.000Z", parentId: "stub-turn" },
+    ],
+    activeLeafId: "child-turn",
+  };
+  assert.equal(stripConversationStubTurn(branched, "stub-turn"), true);
+  assert.equal(branched.turns.length, 1);
+  assert.equal(branched.turns[0]?.parentId, null, "orphaned child re-points at stub's parent");
+  assert.equal(branched.activeLeafId, "child-turn", "active leaf off the stub is untouched");
+}
 console.log("cave-conversations cache test OK");
+
+// ── First-turn stub pending marker (cave-0g2x crash truth) ───────────────────
+// The stub write stamps pendingUserTurnId on the file and `pending` on the
+// summary; the sessions list resolves pending rows against the live run
+// registry (running vs failed) instead of letting a crashed first turn read
+// as a phantom "completed". Any end-of-stream save settles the marker.
+{
+  const { createConversationStub, stripConversationStubTurn } = await import(
+    "./cave-conversations.ts"
+  );
+
+  await createConversationStub({
+    sessionId: "stub-pending-marker",
+    familiarId: "charm",
+    harness: "codex",
+    userTurn: { id: "pending-turn", text: "long first prompt" },
+  });
+  const stub = await loadConversation("stub-pending-marker");
+  assert.equal(stub?.pendingUserTurnId, "pending-turn", "stub write stamps the pending marker");
+  const pendingSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(pendingSummary?.pending, true, "summary carries the pending flag");
+  assert.equal(pendingSummary?.status, undefined, "pending stays statusless (merge honesty)");
+
+  // Normal settle: the same process strips its own stub turn — marker gone.
+  const settled = await loadConversation("stub-pending-marker");
+  assert.equal(stripConversationStubTurn(settled, "pending-turn"), true);
+  assert.equal(settled.pendingUserTurnId, undefined, "strip clears the pending marker");
+  settled.turns.push(
+    { id: "pending-turn", role: "user", text: "long first prompt", createdAt: "2026-07-21T02:00:00.000Z", parentId: null },
+    { id: "reply", role: "assistant", text: "ok", createdAt: "2026-07-21T02:00:01.000Z", isError: false, parentId: "pending-turn" },
+  );
+  settled.activeLeafId = "reply";
+  await saveConversation(settled);
+  const settledSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(settledSummary?.pending, undefined, "settled conversation drops the flag");
+  assert.equal(settledSummary?.status, "completed");
+
+  // Crash-then-resume: a NEW server process saves a later turn without the
+  // crashed run's in-memory stub id. The marker must still clear — while the
+  // stubbed user turn deliberately stays as the record of the lost prompt.
+  await createConversationStub({
+    sessionId: "stub-crashed",
+    familiarId: "charm",
+    harness: "claude",
+    userTurn: { id: "lost-prompt", text: "prompt the crash orphaned" },
+  });
+  const crashed = await loadConversation("stub-crashed");
+  assert.equal(crashed?.pendingUserTurnId, "lost-prompt");
+  assert.equal(
+    stripConversationStubTurn(crashed, null),
+    false,
+    "a resumed save has no stub id to strip",
+  );
+  assert.equal(crashed.pendingUserTurnId, undefined, "…but the marker still settles");
+  assert.equal(crashed.turns.length, 1, "the orphaned prompt stays in the tree");
+  await saveConversation(crashed);
+  const recoveredSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-crashed",
+  );
+  assert.equal(recoveredSummary?.pending, undefined, "recovered chat is no longer pending");
+
+  await deleteConversation("stub-pending-marker");
+  await deleteConversation("stub-crashed");
+}
+console.log("cave-conversations pending-marker test OK");

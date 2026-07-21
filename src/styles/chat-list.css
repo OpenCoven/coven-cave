@@ -64,3 +64,33 @@
   color: var(--text-primary);
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
+
+/* Expandable-row detail strip (Sessions redesign): the disclosure target under
+   a clicked row fades in on motion tokens; reduced motion renders it static. */
+@keyframes chat-list-detail-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.chat-list-row-detail {
+  animation: chat-list-detail-fade var(--duration-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-list-row-detail {
+    animation: none;
+  }
+}
+
+/* Footer keyboard hints (↵ open · / search) — hairline kbd chips. */
+.chat-list-kbd {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  line-height: 16px;
+  color: var(--text-secondary);
+}

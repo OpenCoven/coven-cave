@@ -77,8 +77,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?: navOpen\s*\?\s*"Collapse navigation to icons"\s*:\s*"Expand navigation"\}/,
-  "nav toggle label reflects nav state (and the contextual Chat sidebar variant)",
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Collapse navigation to icons"[\s\S]*?: "Expand navigation"\}/,
+  "nav toggle label reflects both contextual Chat and normal navigation state",
 );
 assert.match(
   shell,
@@ -207,10 +207,13 @@ assert.doesNotMatch(
   /familiarPanelRail=/,
   "workspace no longer passes a right edge-rail tab toggle to the shell",
 );
+// The chat projects rail migrated onto the shared SurfaceRail (Sessions
+// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
+// so the bespoke edge-rail reopen chip is gone from this sidebar.
 assert.match(
   projectSidebar,
-  /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
-  "collapsed projects sidebar reopen tab uses the pressable chip",
+  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
+  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
 );
 
 assert.match(

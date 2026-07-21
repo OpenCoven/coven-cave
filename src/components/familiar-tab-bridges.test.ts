@@ -3,15 +3,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Familiar tab bridges + ergonomics (cave-aovo). The tab must not dead-end:
-// from the hero you can reach the familiar's memory, its Studio editor, its
-// profile card / analytics (pinned in familiar-tab-hero.test.ts), and start a
-// fresh chat. Touch targets grow on coarse pointers, and the pane is a
-// labelled landmark.
+// Familiar tab bridges + ergonomics (cave-aovo, redesigned by the design
+// handoff into the header's pill row). The tab must not dead-end: from the
+// header you can reach the familiar's memory, its Studio editor, its profile
+// card / analytics (pinned in familiar-tab-hero.test.ts), and start a fresh
+// chat. Touch targets grow on coarse pointers, and the pane is a labelled
+// landmark.
 
 const src = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/familiar-tab.css", import.meta.url), "utf8");
 
 test("memory bridge: the sibling pane's content is reachable via the Studio memory tab", () => {
   assert.match(
@@ -21,20 +22,20 @@ test("memory bridge: the sibling pane's content is reachable via the Studio memo
   );
   assert.match(
     src,
-    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("memory", familiar\.id\)\}[\s\S]{0,300}?Memory →/,
-    "Memory → opens the Studio memory tab for this familiar",
+    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("memory", familiar\.id\)\}[\s\S]{0,300}?>\s*Memory\s*</,
+    "Memory pill opens the Studio memory tab for this familiar",
   );
 });
 
 test("studio bridge: Edit in Studio preselects this familiar's identity tab", () => {
   assert.match(
     src,
-    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("identity", familiar\.id\)\}[\s\S]{0,300}?Edit in Studio →/,
-    "Edit in Studio → opens the Studio identity tab",
+    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("identity", familiar\.id\)\}[\s\S]{0,300}?>\s*Edit in Studio\s*</,
+    "Edit in Studio pill opens the Studio identity tab",
   );
 });
 
-test("new chat is the hero's primary action — the one filled-accent control", () => {
+test("new chat is the header's primary action — the one filled-accent control", () => {
   assert.match(src, /onStartChat\?: \(familiarId: string\) => void/, "typed callback seam");
   assert.match(
     src,
@@ -85,8 +86,8 @@ test("voice bridge: a configured speaking voice is shown and opens the Studio Br
 });
 
 test("coarse pointers get honest touch targets without changing pointer-fine rhythm", () => {
-  assert.match(css, /@media \(pointer: coarse\) \{[\s\S]{0,600}?\.familiar-tab__links a,\s*\.familiar-tab__links button \{[^}]*padding-block/, "hero links grow");
-  assert.match(css, /@media \(pointer: coarse\) \{[\s\S]{0,900}?\.familiar-tab__list > button \{[^}]*padding-block/, "group toggles grow");
+  assert.match(css, /@media \(pointer: coarse\) \{[\s\S]{0,600}?\.familiar-tab__links a,\s*\.familiar-tab__links button \{[^}]*min-height: 32px/, "header pills grow");
+  assert.match(css, /@media \(pointer: coarse\) \{[\s\S]{0,900}?\.familiar-tab__group-toggle,\s*\.familiar-tab__row-toggle \{[^}]*padding-block/, "group and role toggles grow");
   assert.match(css, /@media \(pointer: coarse\) \{[\s\S]{0,1200}?\.familiar-tab__cta \{[^}]*padding-block/, "teach CTAs grow");
-  assert.match(src, /className="familiar-tab__links mt-2/, "hero links row carries the coarse-pointer hook");
+  assert.match(src, /className="familiar-tab__links mt-2/, "header pill row carries the coarse-pointer hook");
 });

@@ -41,7 +41,7 @@ const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 // ── wiring: chat dispatches, code rail handles, workspace bridges ────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
-const chatSurface = await readFile(new URL("../components/chat-surface.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("./use-workspace-rail-controller.ts", import.meta.url), "utf8");
 
 assert.match(
   chatView,
@@ -64,9 +64,9 @@ assert.match(
   "workspace preserves file-open event detail while switching into chat",
 );
 assert.match(
-  chatSurface,
-  /addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"[\s\S]*openCodeRailTarget/,
-  "chat surface routes file and diff open events into the code rail",
+  railController,
+  /addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"[\s\S]*openTarget/,
+  "the shared rail controller routes file and diff open events into the code rail",
 );
 
 console.log("tool-target-file.test.ts: ok");

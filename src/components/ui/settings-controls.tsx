@@ -42,6 +42,7 @@ export function Segmented<T extends string>({
   value,
   onChange,
   getLabel,
+  getTitle,
   ariaLabel,
   equalWidth = false,
 }: {
@@ -49,6 +50,8 @@ export function Segmented<T extends string>({
   value: T;
   onChange: (next: T) => void;
   getLabel: (option: T) => string;
+  /** Optional per-option tooltip explaining what picking it does. */
+  getTitle?: (option: T) => string;
   ariaLabel: string;
   /** Force every segment to the same min width (good for short numeric labels). */
   equalWidth?: boolean;
@@ -67,6 +70,7 @@ export function Segmented<T extends string>({
             type="button"
             aria-pressed={active}
             aria-label={`${ariaLabel}: ${getLabel(option)}`}
+            title={getTitle?.(option)}
             onClick={() => onChange(option)}
             className={`focus-ring rounded-[var(--radius-control)] px-2.5 py-1.5 text-[length:var(--text-xs)] font-medium transition-colors ${
               equalWidth ? "min-w-12 text-center" : ""

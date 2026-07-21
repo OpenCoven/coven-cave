@@ -14,6 +14,11 @@ import { useShellBanners } from "@/lib/shell-banners";
 
 const PREFERENCES_BANNER_ID = "preferences-bootstrap";
 const PREFERENCES_SLOW_MS = 2_000;
+// Bounded auto-retry so a silent cold-start reconciliation stall (e.g. slow
+// IndexedDB with no online/visibility/subscription event to nudge it) self-
+// heals instead of leaving the "still reconciling" warning parked until the
+// user clicks Retry. Backs off, then gives up and lets the manual CTA stand.
+const PREFERENCES_AUTO_RETRY_MS = [5_000, 10_000, 20_000] as const;
 
 function mark(name: string, startTime?: number): void {
   try {
@@ -28,6 +33,8 @@ function mark(name: string, startTime?: number): void {
 export function PreferencesBootstrapController() {
   const { pushBanner, dismissBanner } = useShellBanners();
   const mounted = useRef(false);
+  const autoRetryTimer = useRef<number | null>(null);
+  const autoRetryAttempt = useRef(0);
 
   const bootstrap = useCallback(async () => {
     const slowTimer = window.setTimeout(() => {
@@ -44,10 +51,16 @@ export function PreferencesBootstrapController() {
       const preferences = await initializeAppPreferences();
       if (!mounted.current) return preferences;
       if (preferences.initialized) {
+        if (autoRetryTimer.current !== null) {
+          window.clearTimeout(autoRetryTimer.current);
+          autoRetryTimer.current = null;
+        }
+        autoRetryAttempt.current = 0;
         dismissBanner(PREFERENCES_BANNER_ID);
         mark("reconciliation-settled");
         await migrateLegacyBackdropImage();
       } else {
+        scheduleAutoRetry();
         pushBanner({
           id: PREFERENCES_BANNER_ID,
           severity: "error",
@@ -58,6 +71,7 @@ export function PreferencesBootstrapController() {
       return preferences;
     } catch {
       if (mounted.current) {
+        scheduleAutoRetry();
         pushBanner({
           id: PREFERENCES_BANNER_ID,
           severity: "error",
@@ -68,6 +82,19 @@ export function PreferencesBootstrapController() {
       return readAppPreferences();
     } finally {
       window.clearTimeout(slowTimer);
+    }
+
+    function scheduleAutoRetry(): void {
+      if (!mounted.current) return;
+      if (autoRetryTimer.current !== null) return; // one pending retry at a time
+      const attempt = autoRetryAttempt.current;
+      if (attempt >= PREFERENCES_AUTO_RETRY_MS.length) return; // give up; manual CTA stands
+      const delay = PREFERENCES_AUTO_RETRY_MS[attempt];
+      autoRetryAttempt.current = attempt + 1;
+      autoRetryTimer.current = window.setTimeout(() => {
+        autoRetryTimer.current = null;
+        if (mounted.current) void bootstrap();
+      }, delay);
     }
   }, [dismissBanner, pushBanner]);
 
@@ -109,6 +136,10 @@ export function PreferencesBootstrapController() {
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       mounted.current = false;
+      if (autoRetryTimer.current !== null) {
+        window.clearTimeout(autoRetryTimer.current);
+        autoRetryTimer.current = null;
+      }
       unsubscribe();
       dismissBanner(PREFERENCES_BANNER_ID);
       window.removeEventListener("pagehide", flush);

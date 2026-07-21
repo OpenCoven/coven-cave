@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const pendingChatActionLib = await readFile(new URL("../lib/pending-chat-action.ts", import.meta.url), "utf8");
 const pendingCodeRailOpenLib = await readFile(new URL("../lib/pending-code-rail-open.ts", import.meta.url), "utf8");
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
@@ -161,14 +162,14 @@ assert.match(
   "ChatSurface should accept pending code-rail open actions",
 );
 assert.match(
-  chatSurface,
-  /openCodeRailTarget[\s\S]*rail\.reopen\(\)[\s\S]*rail\.setActiveTab\(target\.kind === "changes" \? "changes" : "files"\)[\s\S]*setCodeRailFocus/,
-  "ChatSurface should reopen the code rail, select Files/Changes, and store the focused path",
+  railController,
+  /openTarget[\s\S]*rail\.reopen\(\)[\s\S]*rail\.setActiveTab\(target\.kind === "changes" \? "changes" : "files"\)[\s\S]*setFocus/,
+  "The shared rail controller should reopen the code rail, select Files/Changes, and store the focused path",
 );
 assert.match(
-  chatSurface,
-  /onOpenProjectFile[\s\S]*openCodeRailTarget\(\{ kind: "files"[\s\S]*onOpenFileDiff[\s\S]*openCodeRailTarget\(\{ kind: "changes"[\s\S]*addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"/,
-  "ChatSurface should directly consume file and diff events while mounted",
+  railController,
+  /openProjectFile[\s\S]*openTarget\(\{ kind: "files"[\s\S]*openFileDiff[\s\S]*openTarget\(\{ kind: "changes"[\s\S]*addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"/,
+  "The shared rail controller should directly consume file and diff events while mounted",
 );
 assert.match(
   chatSurface,
@@ -196,19 +197,19 @@ assert.match(
   "Workspace preserves the browse root and switches to chat",
 );
 assert.match(
-  chatSurface,
-  /onBrowseProjectFiles[\s\S]*if \(!detail\?\.root\) return;[\s\S]*openCodeRailTarget\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)/,
-  "ChatSurface directly consumes the browse-files event when already mounted",
+  railController,
+  /browseProjectFiles[\s\S]*if \(detail\?\.root\) openTarget\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)/,
+  "The shared rail controller directly consumes the browse-files event when already mounted",
 );
 assert.match(
-  chatSurface,
-  /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
-  "ChatSurface listens for the browse-files event",
+  railController,
+  /window\.addEventListener\("cave:browse-project-files", browseProjectFiles as EventListener\)/,
+  "The shared rail controller listens for the browse-files event",
 );
 assert.match(
-  chatSurface,
+  railController,
   /setBrowseRootOverride\(target\.kind === "files" \? \(target\.root \?\? null\) : null\)/,
-  "openCodeRailTarget arms the browse override from a files target's root and clears it otherwise",
+  "openTarget arms the browse override from a files target's root and clears it otherwise",
 );
 assert.match(
   chatSurface,

@@ -39,6 +39,10 @@ export type CovenGroup = {
   responseMode: CovenResponseMode;
   /** Familiar that should lead the next multi-recipient round-robin turn. */
   nextRoundRobinLeadId?: string;
+  /** Optional one-line "what is this coven about?" (details drawer). */
+  subject?: string;
+  /** Optional short running summary of the conversation (details drawer). */
+  summary?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -445,6 +449,22 @@ export function setGroupResponseMode(
   };
 }
 
+/**
+ * Update the optional details-drawer fields (subject / running summary).
+ * Returns the SAME object when nothing changed so callers can skip a persist
+ * (and the updatedAt-driven rail reorder) on a no-op blur commit.
+ */
+export function setGroupDetails(
+  group: CovenGroup,
+  details: { subject?: string; summary?: string },
+  now: string,
+): CovenGroup {
+  const subject = details.subject !== undefined ? details.subject : group.subject;
+  const summary = details.summary !== undefined ? details.summary : group.summary;
+  if (subject === group.subject && summary === group.summary) return group;
+  return { ...group, subject, summary, updatedAt: now };
+}
+
 /** Rotate selected recipients around the persisted Coven lead. */
 export function orderRoundRobinFamiliarIds(
   familiarIds: string[],
@@ -796,5 +816,10 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
     responseMode,
     nextRoundRobinLeadId:
       nextLead && group.familiarIds.includes(nextLead) ? nextLead : group.familiarIds[0],
+    // Details fields are optional and later additions: absent on legacy groups
+    // (stays undefined), and non-string garbage is dropped rather than crashing
+    // the details drawer.
+    subject: typeof group.subject === "string" ? group.subject : undefined,
+    summary: typeof group.summary === "string" ? group.summary : undefined,
   };
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
-import { formatClock, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
+import { formatClock, formatTimestamp, useDateTimePrefs, type DateTimePrefs } from "@/lib/datetime-format";
 import { formatRuntime } from "@/lib/chat-response-metadata";
 import { usageBreakdown } from "@/lib/usage-format";
 import { APP_VERSION } from "@/lib/app-version";
@@ -22,9 +22,12 @@ import {
   exportDebugTurn,
   filterEvents,
   formatEventPayload,
+  isDebugSessionLive,
   nextAfterSeq,
+  readDebugEventsCache,
   shouldPollEvents,
   turnMetaSummary,
+  writeDebugEventsCache,
   type CovenEvent,
   type DebugStreamHealth,
   type DebugTurn,
@@ -243,10 +246,15 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
   );
 }
 
-function EventRow({ event }: { event: CovenEvent }) {
+// Memoized: the 2s live-tail append changes only the tail of visibleEvents
+// (appendEvents keeps existing item references stable), so a 10k-event session
+// re-renders just the new rows, not every row per poll. Off-screen rows skip
+// layout/paint via .debug-event-row containment (C2). Clock prefs come in as a
+// prop so a prefs change still re-renders memoized rows.
+const EventRow = memo(function EventRow({ event, dtPrefs }: { event: CovenEvent; dtPrefs: DateTimePrefs }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-md border border-[var(--border-hairline)]">
+    <div className="debug-event-row rounded-md border border-[var(--border-hairline)]">
       <button
         type="button"
         className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--text-2xs)]"
@@ -256,7 +264,7 @@ function EventRow({ event }: { event: CovenEvent }) {
         <span className="w-10 shrink-0 font-mono text-[var(--text-muted)]">{event.seq}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-secondary)]">{event.kind}</span>
         <span className="shrink-0 font-mono text-[var(--text-muted)]">
-          {formatClock(event.created_at, undefined, { seconds: true })}
+          {formatClock(event.created_at, dtPrefs, { seconds: true })}
         </span>
       </button>
       {open ? (
@@ -269,11 +277,11 @@ function EventRow({ event }: { event: CovenEvent }) {
       ) : null}
     </div>
   );
-}
+});
 
 // ── Pane ──────────────────────────────────────────────────────────────────────
 
-function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
+function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: DebugPaneProps }) {
   const { sessionId, session, familiar, turns, streamHealth } = snapshot;
   const streamStatusRunId = streamHealth.runId?.trim() ?? "";
   const streamStatusSessionId = sessionId?.trim() ?? "";
@@ -286,18 +294,17 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   const dtPrefs = useDateTimePrefs();
   const cwd = formatRuntime(session?.runtime);
   const streamSummary = useMemo(() => streamHealthSummary(streamHealth), [streamHealth]);
-  const streamStatusActive =
-    status === "running" ||
-    streamHealth.phase === "connecting" ||
-    streamHealth.phase === "streaming" ||
-    streamHealth.phase === "resuming";
   const lastEventLabel = streamHealth.lastEventAt
     ? formatTimestamp(streamHealth.lastEventAt, dtPrefs) || streamHealth.lastEventAt
     : "—";
   const lastErrorLabel = streamHealth.lastErrorAt
     ? formatTimestamp(streamHealth.lastErrorAt, dtPrefs) || streamHealth.lastErrorAt
     : "—";
-  const [events, setEvents] = useState<CovenEvent[]>([]);
+  // The modal unmounts this pane when closed, so the fetched tail + cursor are
+  // seeded from the per-session cache — a reopen renders the drained tail
+  // instantly and the mount fetch resumes from the cursor instead of seq 0.
+  const [cachedSnapshot] = useState(() => readDebugEventsCache(paneKey));
+  const [events, setEvents] = useState<CovenEvent[]>(cachedSnapshot?.events ?? []);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<RunBufferStatus | null>(null);
   const [streamStatusLoaded, setStreamStatusLoaded] = useState(false);
@@ -305,10 +312,21 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   const [eventQuery, setEventQuery] = useState("");
   const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
   const { announce } = useAnnouncer();
+  // Composite liveness: the polled sessions list alone is lagged (and blind to
+  // sessions it has no row for), so the pane's own transport phase and the
+  // server run buffer also witness a live run — either can start the tail.
+  const sessionLive = isDebugSessionLive({
+    status,
+    clientPhase: streamHealth.phase,
+    serverStatus: streamStatus,
+  });
   // Tail-follow only makes sense while events are streaming in; opening a
-  // finished session shouldn't jump past the Session section.
-  const [follow, setFollow] = useState(status === "running");
-  const cursorRef = useRef(0);
+  // finished session shouldn't jump past the Session section. At mount the
+  // server witness hasn't loaded yet, so seed from the client-side witnesses.
+  const [follow, setFollow] = useState(() =>
+    isDebugSessionLive({ status, clientPhase: streamHealth.phase, serverStatus: null }),
+  );
+  const cursorRef = useRef(cachedSnapshot?.cursor ?? 0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetchInFlightRef = useRef(false);
@@ -320,7 +338,14 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   const streamStatusRequestKeyRef = useRef<string | null>(null);
   // True when a drain stopped at the page cap with a full final page — more
   // events likely remain server-side and the list is silently incomplete.
-  const [tailCapped, setTailCapped] = useState(false);
+  const [tailCapped, setTailCapped] = useState(cachedSnapshot?.tailCapped ?? false);
+
+  // Write-through: keep the cache current so closing the modal loses nothing.
+  // Empty panes are skipped so untouched chats don't evict real tails.
+  useEffect(() => {
+    if (events.length === 0 && cursorRef.current === 0) return;
+    writeDebugEventsCache(paneKey, { events, cursor: cursorRef.current, tailCapped });
+  }, [paneKey, events, tailCapped]);
 
   useEffect(() => {
     streamStatusLifecycleRef.current = true;
@@ -478,40 +503,37 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
     void fetchStreamStatus();
   }, [fetchStreamStatus]);
 
-  // Live tail while the session is running and the tab is visible.
+  // Live tail while the session is live (any witness) and the tab is visible.
   useEffect(() => {
-    if (status !== "running") return;
+    if (!sessionLive) return;
     const id = window.setInterval(() => {
-      if (shouldPollEvents({ status, visible: document.visibilityState === "visible" })) {
+      if (shouldPollEvents({ live: sessionLive, visible: document.visibilityState === "visible" })) {
         void fetchEvents();
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [fetchEvents, status]);
+  }, [fetchEvents, sessionLive]);
   useEffect(() => {
-    if (!streamStatusActive) return;
+    if (!sessionLive) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void fetchStreamStatus();
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [fetchStreamStatus, streamStatusActive]);
+  }, [fetchStreamStatus, sessionLive]);
 
-  // One-shot catch-up when the session leaves "running", so events emitted in
-  // the final poll window aren't dropped.
-  const prevStatusRef = useRef(status);
+  // One-shot catch-up when every liveness witness goes quiet, so events
+  // emitted in the final poll window aren't dropped and the terminal buffer
+  // state (done/evicted counts) is captured.
+  const prevLiveRef = useRef(sessionLive);
   useEffect(() => {
-    if (prevStatusRef.current === "running" && status !== "running") void fetchEvents();
-    prevStatusRef.current = status;
-  }, [fetchEvents, status]);
-  const prevStreamStatusActiveRef = useRef(streamStatusActive);
-  useEffect(() => {
-    if (prevStreamStatusActiveRef.current && !streamStatusActive) {
+    if (prevLiveRef.current && !sessionLive) {
+      void fetchEvents();
       void fetchStreamStatus();
     }
-    prevStreamStatusActiveRef.current = streamStatusActive;
-  }, [fetchStreamStatus, streamStatusActive]);
+    prevLiveRef.current = sessionLive;
+  }, [fetchEvents, fetchStreamStatus, sessionLive]);
 
   // Auto-follow: stick to the bottom while new events stream in; scrolling
   // up pauses, the pill below resumes.
@@ -622,7 +644,7 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
 
         <Section
           title="Stream health"
-          defaultOpen={streamStatusActive || streamSummary.tone !== "healthy"}
+          defaultOpen={sessionLive || streamSummary.tone !== "healthy"}
         >
           <KVRow k="overall">
             <span className="inline-flex items-center gap-1.5">
@@ -757,7 +779,7 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
           ) : (
             <div className="flex flex-col gap-1">
               {visibleEvents.map((event) => (
-                <EventRow key={event.seq} event={event} />
+                <EventRow key={event.seq} event={event} dtPrefs={dtPrefs} />
               ))}
             </div>
           )}
@@ -815,5 +837,5 @@ export function DebugPane(snapshot: DebugPaneProps) {
   }
   // New chats key by run until promotion; established chats remain session-keyed.
   const paneKey = snapshot.sessionId ?? `run:${snapshot.streamHealth.runId!.trim()}`;
-  return <DebugPaneInner key={paneKey} snapshot={snapshot} />;
+  return <DebugPaneInner key={paneKey} paneKey={paneKey} snapshot={snapshot} />;
 }

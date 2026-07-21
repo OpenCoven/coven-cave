@@ -211,15 +211,25 @@ export function normalizeLinkUrl(rawUrl: string): string {
   return out;
 }
 
+/**
+ * Meta for a category, tolerating unknown values. The links store is shared
+ * across app versions (chat /save, desk, future writers) — an unrecognized
+ * category must degrade to "Other", never crash a surface.
+ */
+export function linkCategoryMeta(category: string): { label: string; icon: IconName } {
+  return LINK_CATEGORY_META[category as LinkCategory] ?? LINK_CATEGORY_META.other;
+}
+
 /** Group saved links into ordered category shelves (empty groups omitted). */
 export function groupSavedLinks(
   links: SavedLink[],
 ): { category: LinkCategory; label: string; icon: IconName; links: SavedLink[] }[] {
   const byCategory = new Map<LinkCategory, SavedLink[]>();
   for (const link of links) {
-    const bucket = byCategory.get(link.category) ?? [];
+    const category = LINK_CATEGORY_META[link.category] ? link.category : "other";
+    const bucket = byCategory.get(category) ?? [];
     bucket.push(link);
-    byCategory.set(link.category, bucket);
+    byCategory.set(category, bucket);
   }
   return LINK_CATEGORY_ORDER.filter((category) => byCategory.has(category)).map((category) => ({
     category,

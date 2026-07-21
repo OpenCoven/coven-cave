@@ -9,6 +9,7 @@ import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -84,8 +85,7 @@ type Props = {
   onMoveStatus: (id: string, status: CardStatus) => void;
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
-  onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
-  onOpenTaskChat?: (id: string) => Promise<void>;
+  onOpenTaskWork?: (id: string) => Promise<void>;
   onOpenUrl?: (url: string) => void;
   chatLinking?: boolean;
   /** Surfaces an in-drawer error when /api/board/:id/chat fails (typically
@@ -1102,7 +1102,7 @@ function StepsSection({
 }
 
 
-export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
+export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1151,6 +1151,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
       });
       const json = await res.json();
       if (!json.ok) { setLifecycleErr(json.error ?? "failed"); return; }
+      publishBoardChanged();
       onCardReplaced(json.card as Card);
     } catch (err) {
       setLifecycleErr(err instanceof Error ? err.message : "failed");
@@ -1311,7 +1312,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
               ) : null}
               {projects.length > 0 && !card.projectId && !card.cwd ? (
                 <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
-                  No project set — task chats can't start, and linked chats won't open in the
+                  No project set — task work can't start, and linked sessions won't open in the
                   right project, until you pick one.
                 </p>
               ) : null}
@@ -1319,13 +1320,13 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           </div>
 
           <div className="board-drawer-field">
-            <div className="board-drawer-field-label">Chat</div>
+            <div className="board-drawer-field-label">Work</div>
             {session ? (
               <div className="board-drawer-chat-linked-row">
                 <button
                   type="button"
                   className="board-drawer-chat-card board-drawer-chat-card--linked"
-                  onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}
+                  onClick={() => void onOpenTaskWork?.(card.id)}
                 >
                   <span className="board-drawer-chat-icon" aria-hidden>
                     <Icon name="ph:chat-circle-dots" width={14} />
@@ -1339,16 +1340,16 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                         className={`board-drawer-chat-status-dot board-drawer-chat-status-dot--${sessionStatusTone(session.status)}`}
                         aria-hidden
                       />
-                      {sessionStatusWord(session.status)} · open conversation
+                      {sessionStatusWord(session.status)} · open work
                     </span>
                   </span>
-                  <Icon name="ph:arrow-square-out" width={12} className="board-drawer-chat-trail" />
+                  <Icon name="ph:arrow-right-bold" width={12} className="board-drawer-chat-trail" />
                 </button>
                 <button
                   type="button"
                   className="board-drawer-chat-unlink"
-                  title="Unlink chat"
-                  aria-label="Unlink chat"
+                  title="Unlink work session"
+                  aria-label="Unlink work session"
                   onClick={() => onPatch(card.id, { sessionId: null })}
                 >
                   <Icon name="ph:x" width={13} />
@@ -1361,12 +1362,12 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 </span>
                 <span className="board-drawer-chat-body">
                   <span className="board-drawer-chat-title">
-                    {chatLinkError ? "Couldn't start chat" : "No chat linked"}
+                    {chatLinkError ? "Couldn't start work" : "No work session"}
                   </span>
                   <span className="board-drawer-chat-desc">
                     {chatLinkError
                       ? chatLinkError
-                      : "Start a conversation with this card's familiar."}
+                      : "Start focused work with this task's familiar."}
                   </span>
                   {(() => {
                     const failure =
@@ -1386,10 +1387,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     type="button"
                     className="board-drawer-chat-cta"
                     disabled={chatLinking}
-                    title="Start chat"
-                    onClick={() => void onOpenTaskChat?.(card.id)}
+                    title="Start work"
+                    onClick={() => void onOpenTaskWork?.(card.id)}
                   >
-                    {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start"}
+                    {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start work"}
                     <Icon name="ph:arrow-right-bold" width={11} />
                   </button>
                   {fleetEnabled ? (

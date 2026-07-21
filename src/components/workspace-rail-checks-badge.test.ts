@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 const header = readFileSync(new URL("./chat-stage-header.tsx", import.meta.url), "utf8");
 const rail = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const controller = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const hook = readFileSync(new URL("../lib/use-stage-checks-badge.ts", import.meta.url), "utf8");
 const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
@@ -33,7 +34,7 @@ assert.match(hook, /function normalizeRoot/, "roots normalize on both sides so d
 assert.match(rail, /useStageChecksBadge\(projectRoot\)/, "rail reads the badge signal");
 assert.match(rail, /workspace-rail__badge--alert/, "rail renders the alert dot");
 assert.match(rail, /"Changes — PR checks failing"/, "changes tab announces the failing state");
-assert.match(surface, /useStageChecksBadge\(railProjectRoot\)/, "collapsed reopen strip keys on the session root (cave-r0gt)");
+assert.match(controller, /useStageChecksBadge\(projectRoot\)/, "collapsed reopen strip keys on the session root (cave-r0gt)");
 assert.match(surface, /"Show code rail — PR checks failing"/, "reopen strip announces the failing state");
 assert.match(css, /\.workspace-rail__badge--alert \{/, "alert dot styled");
 
