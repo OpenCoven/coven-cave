@@ -5,7 +5,7 @@ import { useProjectImages } from "@/lib/cave-project-images";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { projectMonogram, projectTint } from "@/lib/comux-projects";
 
-const PX = { sm: 16, md: 20, lg: 28 } as const;
+const PX = { sm: 16, md: 20, lg: 28, xl: 44 } as const;
 
 /**
  * A project's visual identity: the user-uploaded image when one is set,

@@ -10,9 +10,12 @@ const projectsViewSource = readFileSync(new URL("./projects-view.tsx", import.me
 const projectListSource = readFileSync(new URL("./projects/project-list.tsx", import.meta.url), "utf8");
 const projectDetailSource = readFileSync(new URL("./projects/project-detail.tsx", import.meta.url), "utf8");
 const sessionRowSource = readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8");
-const projectsViewToolbar = projectsViewSource.slice(
-  projectsViewSource.indexOf("<header"),
-  projectsViewSource.indexOf("<main"),
+// The list-pane chrome (Refresh / New project / filter / All-Active / sort)
+// lives in the shared SurfaceRail now — slice the rail-chrome JSX so the
+// control pins keep pointing at the right block.
+const projectsViewRail = projectsViewSource.slice(
+  projectsViewSource.indexOf("const railActions"),
+  projectsViewSource.indexOf("\n  return ("),
 );
 const projectsView = [
   projectsViewSource,
@@ -27,7 +30,9 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
-const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// globals.css is a stable entry stub now — the primitive rules live in the
+// split module sheets, so the render-virtualization pin reads primitives.css.
+const globalsCss = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
@@ -99,22 +104,32 @@ assert.doesNotMatch(projectsViewSource, /styles\/board\.css/, "Projects no longe
 assert.match(projectsViewSource, /<div className="projects-hub" data-pane=\{pane\}>/, "the hub renders list + detail panes, with data-pane driving the narrow collapse");
 assert.match(projectsCss, /container:\s*projects \/ inline-size/, "the hub is a size container so the collapse follows the pane, not the viewport");
 assert.match(projectsCss, /@container projects \(max-width: 640px\)/, "narrow hubs collapse to a single pane");
-assert.match(projectsCss, /\.projects-hub\[data-pane="detail"\] \.projects-hub__list \{ display: none; \}/, "in detail pane mode the list hides");
+assert.match(projectsCss, /\.projects-hub\[data-pane="detail"\] \.surface-rail \{ display: none; \}/, "in detail pane mode the rail (list pane) hides");
 assert.match(projectDetailSource, /aria-label="Back to project list"/, "the narrow detail pane has a labeled back affordance");
 assert.match(projectsView, /onBack=\{\(\) => setPane\("list"\)\}/, "back returns to the list pane");
 
-// The Projects header must respond to its actual pane width: split tiles can
-// be phone-narrow even inside a desktop viewport. Compact panes stack the
-// summary/sort row above the actions instead of letting the two groups overlap.
+// The list-pane chrome rides the shared SurfaceRail: persisted width/collapse
+// under "cave:projects:rail", header actions (Refresh + accent New project),
+// and the filter/sort controls in the rail's search slot. Narrow panes flip
+// the rail into forceOpen so the single-pane "list page" is never a 56px
+// collapsed strip.
 assert.match(projectsViewSource, /className="projects-view flex h-full min-w-0 flex-col/, "the full Projects surface owns a named size container");
-assert.match(projectsViewToolbar, /className="projects-toolbar__row flex items-center justify-between gap-3"/, "the toolbar row exposes a stable responsive hook");
-assert.match(projectsViewToolbar, /className="projects-toolbar__controls flex min-w-0 items-center gap-2\.5"/, "summary and sort controls expose a responsive group hook");
-assert.match(projectsViewToolbar, /className="projects-toolbar__actions flex items-center gap-2"/, "Refresh and New project expose a responsive action-group hook");
+assert.match(projectsViewSource, /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/, "the list pane reuses the shared SurfaceRail primitive");
+assert.match(projectsViewSource, /storageKey="cave:projects:rail"/, "rail width/collapse persist under the projects rail key");
+assert.match(projectsViewSource, /<SurfaceRail\s[\s\S]{0,240}?title="Projects"/, "the rail titles itself Projects");
+assert.match(projectsViewSource, /forceOpen=\{narrow\}/, "narrow panes force the rail open (no 56px list page)");
+assert.match(projectsViewSource, /new ResizeObserver/, "the shell mirrors the 640px container query in React for the rail override");
+assert.match(projectsViewSource, /setNarrow\(width <= 640\)/, "the React narrow flag matches the CSS collapse breakpoint");
+assert.match(projectsViewRail, /aria-label="Refresh projects"/, "the rail header keeps the Refresh action");
+assert.match(projectsViewRail, /aria-label="New project"/, "the rail header keeps the New project action");
+assert.match(projectsViewRail, /projects-rail-action--new/, "New project wears the accent treatment");
+assert.match(projectsViewRail, /placeholder="Filter projects…"/, "the rail filter uses the canonical Filter placeholder");
+assert.match(projectsViewRail, /projects-rail-search__kbd/, 'the filter shows its "/" shortcut hint');
 assert.match(projectsCss, /\.projects-view\s*\{[^}]*container:\s*projects-view \/ inline-size;/, "the whole surface queries its pane width, not the viewport");
 assert.match(
   projectsCss,
-  /@container projects-view \(max-width: 640px\)\s*\{[\s\S]*\.projects-toolbar__row\s*\{[^}]*flex-wrap:\s*wrap;[\s\S]*\.projects-toolbar__controls\s*\{[^}]*flex:\s*1 1 100%;[^}]*flex-wrap:\s*wrap;[\s\S]*\.projects-toolbar__actions\s*\{[^}]*flex:\s*1 1 100%;[^}]*justify-content:\s*flex-end;/,
-  "compact Projects panes stack toolbar groups while keeping actions trailing-aligned",
+  /@container projects \(max-width: 640px\)\s*\{[\s\S]*?\.projects-hub \.surface-rail \{ width: auto; border-right: 0; \}/,
+  "narrow panes stretch the forced-open rail to the single grid column",
 );
 
 // ── List pane rows ───────────────────────────────────────────────────────────
@@ -260,12 +275,12 @@ assert.match(
   /onSubmit=\{handleCreate\}[\s\S]{0,200}?onKeyDown[\s\S]{0,120}?"Escape"[\s\S]{0,80}?setShowForm\(false\)/,
   "new-project form closes on Escape",
 );
-assert.match(projectsViewSource, /import \{ Button \}/, "Projects toolbar/form actions use the shared Button primitive");
-assert.doesNotMatch(projectsViewToolbar, /<button\b/, "Projects toolbar/form should not hand-roll button controls");
+assert.match(projectsViewSource, /import \{ Button \}/, "Projects rail/form actions use the shared Button primitive");
+assert.doesNotMatch(projectsViewRail, /<button\b/, "Projects rail/form should not hand-roll button controls");
 assert.doesNotMatch(
-  projectsViewToolbar,
+  projectsViewRail,
   /rounded-md|rounded-lg|rounded(?=\s|")/,
-  "Projects toolbar/form controls should use radius tokens instead of hard-coded radii",
+  "Projects rail/form controls should use radius tokens instead of hard-coded radii",
 );
 assert.doesNotMatch(projectsViewSource, /<button\b/, "ProjectsView container should not hand-roll button controls");
 assert.doesNotMatch(
@@ -326,18 +341,23 @@ assert.match(
   /statusFilter === "active"[\s\S]{0,160}?activeRoots\.has\(normalizeProjectRoot\(p\.root\)\)/,
   "the Active filter narrows visibleProjects to active roots",
 );
-assert.match(projectsViewToolbar, /aria-label="Filter by activity"/, "the header exposes a labeled activity filter control");
-assert.match(projectsViewToolbar, /aria-pressed=\{statusFilter === opt\.value\}/, "the activity filter reflects the active option");
-// The header summary surfaces how many projects are currently active.
-assert.match(projectsViewToolbar, /\{activeCount\} active/, "the header summarizes the active-project count");
+assert.match(projectsViewRail, /aria-label="Filter by activity"/, "the rail exposes a labeled activity filter control");
+assert.match(projectsViewRail, /aria-pressed=\{statusFilter === opt\.value\}/, "the activity filter reflects the active option");
+// The Active option carries the live count in its label.
+assert.match(projectsViewRail, /`Active \$\{activeCount\}`/, "the Active filter surfaces the active-project count");
 
-// The detail head carries a glanceable, accessible sessions count.
-assert.match(projectsView, /className="projects-session-count"/, "the sessions stat uses the glanceable treatment");
+// The detail head carries the four-cell stat strip, every cell bound to data
+// the pane already loads (sessions, board cards, grants, recency).
+assert.match(projectsView, /className="projects-stat-strip"/, "the detail renders the stat strip");
 assert.match(
   projectsView,
-  /aria-label=\{`\$\{chats\.length\} \$\{chats\.length === 1 \? "session" : "sessions"\}`\}/,
-  "the sessions count keeps a full accessible label",
+  /aria-label=\{`Stats for \$\{project\.name\}`\}/,
+  "the stat strip is a named group",
 );
+assert.match(projectsView, /import \{ deriveStatStrip, openTaskCount \} from "@\/lib\/projects\/detail-stats"/, "stat derivation is the pure lib helper");
+for (const label of ["Sessions", "Open tasks", "Familiars", "Last active"]) {
+  assert.match(projectsView, new RegExp(`>${label}<`), `the strip labels the ${label} cell`);
+}
 
 // Project rows and the detail head carry a glanceable status dot: accent when
 // a session is running, danger when the most-recent session failed.
@@ -367,12 +387,13 @@ assert.match(projectsView, /<RelativeTime iso=\{session\.updated_at\}/, "every s
 assert.match(projectsView, /import \{ modelIcon, modelLabel \} from "@\/lib\/model-label"/, "rows render a model chip via the shared model-label helper");
 assert.match(projectsView, /modelLabel\(session\.model\)/, "the model chip shows the shortened model label");
 
-// The detail head carries a glanceable stat line (running · tasks · sessions)
-// derived from the pure projectStats helper.
-assert.match(projectsView, /import \{ projectStats \} from "@\/lib\/projects\/project-stats"/, "the detail head uses the pure stats helper");
-assert.match(projectsView, /const stats = projectStats\(chats\)/, "the detail head derives running/task counts");
-assert.match(projectsView, /stats\.running > 0 \?/, "the stat line shows a running count when any session is running");
-assert.match(projectsView, /stats\.tasks > 0 \?/, "the stat line shows a task count when the project has tasks");
+// The chip row: status word + dot, git branch+state, copyable path. Status
+// still derives from the shared helper; git state comes from the single
+// /api/changes poll — never fabricated.
+assert.match(projectsView, /className=\{`projects-status-dot \$\{chatDotClass\(projectStatus\)\}`\}/, "the status chip pairs its dot with the derived status");
+assert.match(projectsView, /aria-label=\{`Copy path \$\{project\.root\}`\}/, "the path chip copies with a named action");
+assert.match(projectsView, /\{copiedRoot \? "Copied" : "Copy"\}/, "the path chip shows a transient Copied label");
+assert.match(projectsView, /changes\.loaded && changes\.notARepo \? null/, "non-repos render no git chip instead of fabricated state");
 
 // The project identity tile is the shared ProjectAvatar (uploaded image or
 // monogram), tinted by the project's color when set.
@@ -426,8 +447,9 @@ assert.ok(
 );
 assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project row has a context menu");
 assert.doesNotMatch(projectsView, /openTerminalHere/, "the project menu stays focused on project actions");
-assert.match(projectsView, /Delete project…/, "the detail overflow offers delete (routes through the inline confirm)");
-assert.match(projectsView, /onSelect=\{\(\) => setConfirmDelete\(true\)\}/, "menu delete shows the two-step confirm");
+assert.match(projectsView, /Remove project…/, "the detail overflow offers remove (routes through the confirm dialog)");
+assert.match(projectsView, /onSelect=\{\(\) => setConfirmDelete\(true\)\}/, "menu remove shows the two-step confirm");
+assert.match(projectsView, /aria-label="Remove project from list"/, "the header trash action names its consequence");
 assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
 assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
 assert.match(

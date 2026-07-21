@@ -31,8 +31,13 @@ for (const cls of [
   "projects-detail-empty",
   "projects-detail-back",
   "projects-status-dot",
-  "projects-session-count",
   "projects-session-chip",
+  "projects-card",
+  "projects-stat-strip",
+  "projects-detail-chips",
+  "projects-more-btn",
+  "projects-access-row",
+  "projects-remove-facts",
 ]) {
   assert.match(css, new RegExp(`\\.${cls.replace(/([[\]().*+?^$|\\])/g, "\\$1")}\\b`), `projects.css defines .${cls}`);
 }
@@ -59,6 +64,10 @@ assert.match(detail, /const commitRoot = async/, "inline root edit survives in t
 assert.match(detail, /moveProjectImage\(project\.root, next\)/, "changing the root re-keys the avatar image");
 assert.match(detail, /clearProjectImage\(project\.root\)/, "deleting the project clears its avatar image");
 assert.match(detail, /setProjectImage\(project\.root, prepared\)/, "the avatar button uploads through the shared image pipeline");
+// Mock parity: click uploads (deferred 260ms), double-click generates via the
+// existing /api/projects/icon flow — the delay keeps them from both firing.
+assert.match(detail, /onDoubleClick=\{onAvatarDoubleClick\}/, "avatar double-click generates an icon");
+assert.match(detail, /window\.setTimeout\(\(\) => \{\s*\n\s*avatarClickTimer\.current = null;\s*\n\s*pickImage\(\);\s*\n\s*\}, 260\)/, "the single-click upload defers so a double-click can cancel it");
 assert.match(detail, /PROJECT_COLOR_SWATCHES\.map/, "the color swatches render in the detail pane");
 assert.match(shared, /export const PROJECT_COLOR_SWATCHES/, "the swatch palette lives in projects-shared");
 assert.match(detail, /projectTint\(project\.root\)/, "the auto swatch previews the root-hash tint");
@@ -66,7 +75,7 @@ assert.match(detail, /aria-pressed=\{!project\.color\}/, "the auto swatch report
 // Chrome budget (§8): ≤2 always-visible header actions + one overflow menu.
 assert.match(detail, /import \{ OverflowMenu \} from "@\/components\/ui\/overflow-menu"/, "secondary actions live in the shared OverflowMenu");
 assert.match(detail, /OverflowMenu ariaLabel=\{`More actions for \$\{project\.name\}`\}/, "the overflow trigger is named per project");
-for (const item of ["Rename", "Change folder…", "Copy path", "Browse files", "Delete project…"]) {
+for (const item of ["Rename", "Change folder…", "Copy path", "Browse files", "Remove project…"]) {
   assert.match(detail, new RegExp(item), `overflow offers ${item}`);
 }
 // cave-z44: "Browse files" drills into the project's tree via the code rail by
@@ -77,8 +86,25 @@ assert.match(
   /new CustomEvent\("cave:browse-project-files", \{ detail: \{ root: project\.root \} \}\)/,
   "Browse files dispatches the browse event with the project root",
 );
-// Delete is a two-step confirm with an accessible container.
-assert.match(detail, /role="alertdialog"[\s\S]{0,80}?aria-label=\{`Delete \$\{project\.name\}\?`\}/, "delete confirm is an alertdialog");
+// Remove is a two-step confirm dialog (shared Modal, focus-trapped) that
+// shows the real facts (folder / open tasks / sessions / access) before the
+// destructive verb, and its consequence copy tells the truth: grants are
+// revoked through the same real /api/project-grants DELETE the Access card
+// drives, and the folder stays on disk (the API only deletes the registry
+// entry).
+assert.match(detail, /import \{ Modal \} from "@\/components\/ui\/modal"/, "the remove confirm uses the shared Modal");
+assert.match(detail, /ariaLabel=\{`Remove \$\{project\.name\}\?`\}/, "the dialog is named with the project");
+assert.match(detail, /projects-remove-facts/, "the dialog leads with the facts table");
+for (const key of ["Folder", "Open tasks", "Sessions", "Access"]) {
+  assert.match(detail, new RegExp(`projects-remove-facts__key">${key}<`), `the facts table names ${key}`);
+}
+assert.match(detail, /folder and its git history stay on disk untouched/, "the consequence copy says the folder survives");
+assert.match(
+  detail,
+  /revokeIds\.map\(\(familiarId\) =>[\s\S]{0,200}?method: "DELETE"/,
+  "remove revokes the project's grants via the real grants API before deleting",
+);
+assert.match(detail, /aria-label=\{`Delete \$\{project\.name\}`\}/, "the destructive button is named per project");
 // Switching projects resets edit drafts/confirms (no leakage across selections).
 assert.match(detail, /useEffect\(\(\) => \{[\s\S]{0,240}?setConfirmDelete\(false\);[\s\S]{0,120}?\}, \[project\.id, project\.name, project\.root\]\)/, "drafts and confirms reset when the selection changes");
 
@@ -88,9 +114,12 @@ assert.match(detail, /s\.git\?\.branch/, "the detail derives a fallback branch f
 assert.doesNotMatch(list, /fetch\(/, "the list pane performs no fetches — status derives from sessions already in memory");
 assert.doesNotMatch(list, /\/api\/changes/, "the list pane never polls git changes");
 
-// ── List rows ────────────────────────────────────────────────────────────────
+// ── List rows (rail grammar: avatar · name+time · meta · git indicator) ─────
 assert.match(list, /import \{ RelativeTime \} from "@\/components\/ui\/relative-time"/, "list rows show recency via the shared primitive");
-assert.match(list, /projects-list-row__count/, "list rows show a session-count pill");
+assert.match(list, /railRowMeta\(chats\.length, branch\)/, "the meta line derives purely from real chats + session-git data");
+assert.match(list, /function latestSessionBranch/, "the row branch comes from session git context, not a fetch");
+assert.match(list, /aria-label=\{`On branch \$\{branch\}`\}/, "the git indicator is named for AT");
+assert.match(list, /railOpen \? \(/, "collapsed rails shrink rows to avatar tiles");
 assert.match(list, /tabIndex=\{selected \? 0 : -1\}/, "the selected row is the natural tab stop (roving pattern)");
 assert.match(list, /animate-pulse/, "a running project's dot pulses");
 assert.match(list, /aria-label=\{`\$\{project\.name\}\$\{statusLabel\}`\}/, "row labels carry the status in words — color never stands alone");
@@ -102,57 +131,85 @@ assert.doesNotMatch(sessionRow, /density/, "session rows have one density — me
 assert.match(sessionRow, /modelLabel\(session\.model\)/, "the model chip always renders when known");
 
 
-// ── PR2: Git / Tasks / Grants detail sections ────────────────────────────────
+// ── Git / Tasks / Grants detail sections ─────────────────────────────────────
 // Polling gate: exactly ONE useChangesSummary call in the whole hub, fed the
-// SELECTED project's root — list rows must never poll git.
+// SELECTED project's root (it powers the detail head's git chip) — list rows
+// must never poll git.
 assert.equal(
   ([shell, list, detail, sections, sessionRow].join("\n").match(/useChangesSummary\(/g) ?? []).length,
   1,
   "exactly one component calls useChangesSummary",
 );
-assert.match(sections, /useChangesSummary\(projectRoot, true\)/, "the Git section polls only the selected root");
-assert.match(sections, /changes\.branch \?\? sessionBranch/, "the authoritative branch wins over the session-git fallback");
-assert.match(detail, /<GitSection projectRoot=\{project\.root\} sessionBranch=\{branch\}/, "the detail pane mounts the Git section");
+assert.match(detail, /useChangesSummary\(project\.root, true\)/, "the git chip polls only the selected root");
+assert.match(detail, /changes\.branch \?\? sessionBranch/, "the authoritative branch wins over the session-git fallback");
 
 // Tasks: one board fetch in the SHELL (not per selection — the detail remounts
-// on every switch), refetched on window refocus, filtered client-side.
+// on every switch), refetched on window refocus, filtered client-side. The
+// quick-add POST lives in the detail so the stat strip sees the optimistic
+// list; the Tasks card itself performs no fetches.
 assert.equal((shell.match(/fetch\("\/api\/board"/g) ?? []).length, 1, "the shell fetches the board exactly once per mount");
 assert.equal(
-  (sections.match(/fetch\("\/api\/board"/g) ?? []).length,
-  1,
-  "the Tasks section touches /api/board exactly once",
+  (sections.match(/fetch\("\/api\/project-grants"/g) ?? []).length,
+  2,
+  "detail-sections fetches only through the grants hook (load + toggle)",
 );
+assert.equal((sections.match(/fetch\(/g) ?? []).length, 2, "…and nothing else");
 assert.match(
-  sections,
+  detail,
   /fetch\("\/api\/board", \{\s*\n\s*method: "POST"/,
-  "…and that one call is the quick-add create (a mutation) — card READS still arrive from the shell",
+  "the detail's one /api/board call is the quick-add create (a mutation) — card READS still arrive from the shell",
 );
+assert.equal((detail.match(/fetch\("\/api\/board"/g) ?? []).length, 1, "the detail touches /api/board exactly once");
 assert.match(shell, /useRefreshOnFocus\(loadBoardCards\)/, "board cards refetch on window refocus (throttled)");
 assert.match(
   sections,
   /card\.projectId === project\.id \|\|[\s\S]{0,120}?normalizeProjectRoot\(card\.cwd \?\? ""\) === rootKey/,
   "cards match by stable projectId with a normalized-cwd fallback",
 );
-assert.match(sections, /const TASK_CAP = 5/, "the Tasks section caps the inline list");
-assert.match(sections, /Open board/, "the Tasks section drills through to the board");
+assert.match(sections, /const TASK_CAP = 6/, "the Tasks card caps the inline list at the mock's ~6");
+assert.match(sections, /Open board/, "the Tasks card drills through to the board");
+
+// Collapsible cards: shared DetailCard chrome, chevron toggle with
+// aria-expanded, and per-card open state persisted through the pure helpers.
+assert.match(sections, /export function DetailCard/, "the card chrome is shared");
+assert.match(sections, /readDetailCardOpen\(localStorageOrNull\(\), card\)/, "card open state hydrates from localStorage");
+assert.match(sections, /writeDetailCardOpen\(localStorageOrNull\(\), card, open\)/, "card open state persists per card");
+assert.match(sections, /aria-expanded=\{open\}/, "the card toggle announces its state");
+assert.match(detail, /<DetailCard\s+card="sessions"/, "Sessions renders inside the card chrome");
+assert.match(sections, /card="tasks"/, "Tasks renders inside the card chrome");
+assert.match(sections, /card="access"/, "Access renders inside the card chrome");
+assert.match(sections, /export function ShowMoreButton/, "the dashed show-more toggle is shared");
 
 // Grants: optimistic toggle with revert, supreme-familiar read-only, announced.
+// The Access card's grant model is BINARY — the segmented control is
+// None/Granted, never invented permission levels the backend lacks.
 assert.match(sections, /method: next \? "POST" : "DELETE"/, "grant/revoke drive /api/project-grants");
 assert.match(sections, /targetFamiliarId: familiarId, projectId: project\.id/, "the grant body names the familiar and project");
 assert.match(sections, /\/\/ Revert on failure\./, "a failed mutation reverts the optimistic state");
 assert.match(sections, /familiar\.id === supremeFamiliarId/, "the supreme familiar renders as always-granted");
-assert.match(sections, /disabled=\{busy \|\| isSupremeFamiliar\}/, "supreme access can't be toggled off");
+assert.match(sections, /supreme familiar — access to every project/, "supreme access explains itself instead of offering a toggle");
 assert.match(sections, /useAnnouncer\(\)/, "grant changes are announced to assistive tech");
 assert.match(sections, /announce\(`\$\{next \? "Granted" : "Revoked"\}/, "the announcement names the action");
-assert.match(detail, /<GrantsSection project=\{project\} familiars=\{familiars\}/, "the detail pane mounts the Grants section");
+assert.match(sections, /export function useProjectGrants/, "grants are lifted into a hook the detail shares with the stat strip");
+assert.match(detail, /const grants = useProjectGrants\(project\)/, "the detail owns the grants state");
+assert.match(detail, /<GrantsSection project=\{project\} familiars=\{resolvedFamiliars\} grants=\{grants\}/, "the detail pane mounts the Access card with the shared state");
 assert.match(shell, /familiars=\{familiars\}/, "the shell threads the familiar roster down");
+// Bulk operations run through the pure helper (no-ops and the supreme
+// familiar are skipped) and the same real toggle mutation.
+assert.match(sections, /bulkGrantOps\(\[\.\.\.selected\], grantedIds, supremeFamiliarId, action\)/, "bulk actions derive their ops purely");
+assert.match(sections, /\{selected\.size\} selected/, "the bulk bar shows the selection count");
+for (const label of ["Grant access", "Revoke", "Clear", "Select all"]) {
+  assert.match(sections, new RegExp(label), `the Access card offers ${label}`);
+}
+assert.match(sections, /aria-checked=\{isSelected\}/, "row selection is a real checkbox for AT");
+assert.match(sections, /role="group" aria-label=\{`Access for \$\{familiar\.display_name\}`\}/, "the segmented control is a named group");
 
 // ── PR3: announcer coverage, arrow-key pane hand-off, dead-code stays dead ───
 // Every identity mutation announces its outcome; failures speak assertively.
 assert.match(detail, /useAnnouncer\(\)/, "the detail pane announces its mutations");
 assert.match(detail, /announce\(`Renamed to \$\{next\}\.`\)/, "rename success is announced");
 assert.match(detail, /announce\("Project folder updated\."\)/, "root change success is announced");
-assert.match(detail, /announce\(`Deleted project \$\{project\.name\}\.`\)/, "project delete is announced");
+assert.match(detail, /announce\(`Removed project \$\{project\.name\}\.`\)/, "project remove is announced");
 assert.match(detail, /announce\("Path copied\."\)/, "copy path is announced");
 assert.match(detail, /Color set to/, "color changes are announced by swatch name");
 assert.equal(
@@ -192,16 +249,16 @@ for (const dead of ["../../lib/projects/projects-ui-state.ts", "../../lib/projec
 // Tasks quick-add: optimistic local append + a board-reload nudge for the rest
 // of the app; the created card comes back from the server (cwd derived from
 // projectId server-side, never client-supplied).
-assert.match(sections, /JSON\.stringify\(\{ title, projectId: project\.id \}\)/, "quick-add sends title + projectId only");
-assert.match(sections, /setCreatedCards\(\(prev\) => \[json\.card as Card, \.\.\.prev\]\)/, "the created card appends optimistically");
-assert.match(sections, /window\.dispatchEvent\(new Event\("cave:board:reload"\)\)/, "creation nudges the app-wide board reload");
+assert.match(detail, /JSON\.stringify\(\{ title, projectId: project\.id \}\)/, "quick-add sends title + projectId only");
+assert.match(detail, /setCreatedCards\(\(prev\) => \[json\.card as Card, \.\.\.prev\]\)/, "the created card appends optimistically");
+assert.match(detail, /window\.dispatchEvent\(new Event\("cave:board:reload"\)\)/, "creation nudges the app-wide board reload");
 assert.match(sections, /aria-label=\{`Add a task to \$\{project\.name\}`\}/, "the quick-add input is named for AT");
 
 // Git: a dirty tree is status, not activity — the chip must not pulse; the
 // branch is click-to-copy.
-assert.doesNotMatch(sections, /projects-session-chip--running"\s*\n?\s*title=\{`\$\{changes\.count\}/, "the changed-files chip does not wear the running pulse");
-assert.match(sections, /uncommitted changes in the working tree/, "the chip says what the count actually is");
-assert.match(sections, /aria-label=\{`Copy branch name \$\{branch\}`\}/, "the branch is a copy button");
+assert.doesNotMatch(detail, /projects-session-chip--running"\s*\n?\s*title=\{`\$\{changes\.count\}/, "the changed-files state does not wear the running pulse");
+assert.match(detail, /uncommitted changes in the working tree/, "the chip says what the count actually is");
+assert.match(detail, /aria-label=\{`Copy branch name \$\{branch\}`\}/, "the branch chip is a copy button");
 
 // List sort: alphabetical or most-recent-first, persisted per machine.
 assert.match(shell, /"cave:projects:sort"/, "the sort choice persists to localStorage");
@@ -210,10 +267,14 @@ assert.match(shell, /lastActiveByRootKey\.get\(normalizeProjectRoot\(b\.root\)\)
 
 // Meta-row comprehension: the status word and session count explain themselves.
 assert.match(detail, /title="Project state, derived from its latest sessions"/, "the status word carries its derivation");
-assert.match(detail, /\} in this project`\}/, "the session count chip is titled");
+assert.match(detail, /aria-label=\{`Stats for \$\{project\.name\}`\}/, "the stat strip explains itself as a named group");
 
 // Grants explain themselves where the chips are.
-assert.match(sections, /dashed means no access yet/, "the grants section says what a chip click does");
+assert.match(
+  sections,
+  /Grant familiars access to this project&apos;s folder so they can work in it\./,
+  "the Access card says what granting does",
+);
 
 // ── Hub round 2 (cave-dn9w): deep-links · reveal · demoted color row ─────────
 assert.match(sections, /window\.location\.hash = `card-\$\{card\.id\}`/, "task rows deep-link to their board card");
