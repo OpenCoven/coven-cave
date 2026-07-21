@@ -4,7 +4,15 @@ import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const kanban = await readFile(new URL("./board-kanban.tsx", import.meta.url), "utf8");
-const styles = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
+const styles = (await Promise.all([
+  "../styles/board.css",
+  "../styles/board/chrome-table.css",
+  "../styles/board/kanban-inspector.css",
+  "../styles/board/github-list.css",
+  "../styles/board/github-detail.css",
+  "../styles/board/mobile-card-stack.css",
+  "../styles/board/gantt-fallbacks.css",
+].map((path) => readFile(new URL(path, import.meta.url), "utf8")))).join("\n");
 
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");

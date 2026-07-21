@@ -23,7 +23,7 @@ import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversati
 import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
+import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
@@ -42,6 +42,7 @@ import {
   PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import {
   isSessionPinned,
   sortPinnedFirst,
@@ -72,6 +73,13 @@ import {
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
 import { chatListCandidates, filterChatListRows, sortChatRowsByRecency } from "@/lib/chat-list-model";
+import {
+  CHAT_GROUP_BY_KEY,
+  deriveChatDaySections,
+  normalizeChatGroupBy,
+  sessionCountLine,
+  type ChatSessionGroupBy,
+} from "@/lib/chat-session-grouping";
 
 type Props = {
   familiar: Familiar | null;
@@ -95,8 +103,12 @@ type Props = {
    *  not evidence there are no chats (cave-x6k5). */
   sessionsError?: boolean;
   /** When true, hides the project sidebar rail so the list fits in a narrow
-   *  companion panel (e.g. the Browser right-rail). */
+   *  companion panel (e.g. the Browser right-rail). Also drops the toolbar
+   *  (All/Active, group-by, count) — a companion panel has no width for it. */
   compact?: boolean;
+  /** Hides only the in-surface project rail (the outer WorkspaceSidebar owns
+   *  chats beside the surface) while the full-width toolbar stays. */
+  hideRail?: boolean;
 };
 
 function chatDate(iso: string, prefs: DateTimePrefs): string {
@@ -139,7 +151,7 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false, hideRail = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
@@ -188,7 +200,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [contentHits, setContentHits] = useState<ContentSearchHit[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Toolbar group-by (none / project / date), persisted as a plain string.
+  const [groupBy, setGroupBy] = useState<ChatSessionGroupBy>("none");
+  // Expandable-row disclosure: a single click opens an inline detail strip
+  // (Resume/Open + Archive); double-click and Enter keep the fast open path.
+  // Mobile keeps tap = open (messengers' convention; double-tap is awkward on
+  // touch) — the disclosure is a desktop affordance.
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  useEffect(() => { setExpandedRowId(null); }, [familiar?.id]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
@@ -272,6 +291,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
         e.preventDefault();
         searchRef.current?.focus();
+        return;
+      }
+      // Escape collapses the expanded row first (mock behavior); anything that
+      // already consumed the key (popovers, modals) wins.
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        setExpandedRowId((cur) => (cur ? null : cur));
       }
     };
     window.addEventListener("keydown", handler);
@@ -284,7 +309,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
-    setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
+    try {
+      setGroupBy(normalizeChatGroupBy(window.localStorage.getItem(CHAT_GROUP_BY_KEY)));
+    } catch {
+      // storage unavailable — default grouping stands
+    }
     const hasStoredExpanded =
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
     sidebarDefaultExpandedRef.current = !hasStoredExpanded;
@@ -304,14 +333,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     setExpandedKeys(projectSelectionKeys(sidebarGroups));
   }, [sidebarHydrated, sidebarGroups]);
   useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
-  }, [sidebarHydrated, sidebarOpen]);
+    if (!sidebarHydrated) return;
+    try {
+      window.localStorage.setItem(CHAT_GROUP_BY_KEY, groupBy);
+    } catch {
+      // persistence is best-effort
+    }
+  }, [sidebarHydrated, groupBy]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
   }, [sidebarHydrated, expandedKeys]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  // First chat in a fresh project folder (or this surface's just-started
+  // chat) must not hide inside a collapsed group (cave-mllp).
+  useAutoExpandNewGroups({
+    hydrated: sidebarHydrated,
+    sessions,
+    groups: sidebarGroups,
+    activeSessionId: activeId,
+    setExpandedKeys,
+  });
 
   // Archived sessions only load while the toggle is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change.
@@ -374,7 +417,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [search]);
 
   const displayGroups = useMemo(() => {
-    if (effectiveSelection === "all") {
+    // "Group by project" reuses the per-project grouped path even in the flat
+    // "All" scope; "none" and "date" keep the flat single-group view (date
+    // headers are painted over the flat rows without re-sorting them).
+    if (effectiveSelection === "all" && groupBy !== "project") {
       let rows = scopedGroups.flatMap((group) => group.sessions);
       rows = sessionOrder.length === 0
         ? partitionPinnedFirst(sortChatRowsByRecency(rows), pinnedIds)
@@ -398,7 +444,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return { ...group, sessions: ordered };
     });
     return changed ? next : scopedGroups;
-  }, [effectiveSelection, scopedGroups, sessionOrder, pinnedIds, fallbackFamiliarId]);
+  }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, pinnedIds, fallbackFamiliarId]);
+  // Calendar-day sections for the "Group by date" mode: header metadata keyed
+  // by the first row index of each local day (Today / Yesterday / formatted).
+  const daySectionsByIndex = useMemo(() => {
+    if (groupBy !== "date" || effectiveSelection !== "all") return null;
+    const rows = displayGroups[0]?.sessions ?? [];
+    const sections = deriveChatDaySections(rows, Date.now(), (iso) => formatDate(iso, dtPrefs));
+    return new Map(sections.map((section) => [section.startIndex, section]));
+  }, [groupBy, effectiveSelection, displayGroups, dtPrefs]);
   const displayIds = useMemo(
     () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
     [displayGroups],
@@ -410,11 +464,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // exist in the flat "All" view; there a row is hidden when its section is
   // collapsed. Mirrors the per-row `rowCollapsed` computed during render.
   const visibleIds = useMemo(() => {
-    if (effectiveSelection !== "all" || collapsedSections.size === 0) return displayIds;
+    // The collapsible Pinned/Sessions sections only exist in the flat
+    // ungrouped view — project/date grouping renders every row, so nothing is
+    // hidden and displayIds is already the visible set.
+    if (effectiveSelection !== "all" || groupBy !== "none" || collapsedSections.size === 0) return displayIds;
     return displayIds.filter(
       (id) => !collapsedSections.has(isSessionPinned(pinnedIds, id) ? "pinned" : "sessions"),
     );
-  }, [displayIds, effectiveSelection, collapsedSections, pinnedIds]);
+  }, [displayIds, effectiveSelection, groupBy, collapsedSections, pinnedIds]);
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -639,14 +696,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && sidebarOpen && (
+      {!compact && !hideRail && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
         expandedKeys={expandedKeys}
-        open={sidebarOpen}
         activeSessionId={activeId}
-        onSetOpen={setSidebarOpen}
         onSelect={setSelection}
         onToggleExpanded={(key) => {
           sidebarDefaultExpandedRef.current = false;
@@ -730,19 +785,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
-          {!compact && !sidebarOpen && (
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              title="Show sessions"
-              aria-label="Show sessions"
-              aria-expanded={false}
-              className="chat-list-reopen-rail focus-ring hidden h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)] lg:grid"
-            >
-              <Icon name="ph:sidebar-simple" width={14} aria-hidden />
-            </button>
-          )}
-          <label className="chat-list-search-control flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
+          <label className="chat-list-search-control flex h-8 min-w-0 max-w-[520px] flex-1 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
             <input
               ref={searchRef}
@@ -750,7 +793,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Escape" && search) {
+                if (e.key !== "Escape") return;
+                // Escape collapses an expanded row first, then clears search.
+                if (expandedRowId) {
+                  e.preventDefault();
+                  setExpandedRowId(null);
+                  return;
+                }
+                if (search) {
                   e.preventDefault();
                   setSearch("");
                 }
@@ -777,6 +827,58 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </button>
             )}
           </label>
+
+          {!compact && (
+            <>
+              {/* All / Active segmented filter — same state as the dot toggle
+                  below (active = status running). */}
+              <div
+                role="group"
+                aria-label="Filter sessions by activity"
+                className="chat-list-activity-filter flex h-7 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)]"
+              >
+                <button
+                  type="button"
+                  aria-pressed={!unreadsOnly}
+                  onClick={() => setUnreadsOnly(false)}
+                  className={[
+                    "focus-ring-inset px-3 text-[length:var(--text-xs)] transition-colors",
+                    !unreadsOnly
+                      ? "bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] font-medium text-[var(--accent-presence)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--accent-presence)_38%,transparent)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ].join(" ")}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={unreadsOnly}
+                  onClick={() => setUnreadsOnly(true)}
+                  className={[
+                    "focus-ring-inset px-3 text-[length:var(--text-xs)] transition-colors",
+                    unreadsOnly
+                      ? "bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] font-medium text-[var(--accent-presence)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--accent-presence)_38%,transparent)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ].join(" ")}
+                >
+                  Active
+                </button>
+              </div>
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))}
+                aria-label="Group sessions by"
+                className="chat-list-group-select focus-ring h-7 shrink-0 cursor-pointer rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
+              >
+                <option value="none">No grouping</option>
+                <option value="project">Group by project</option>
+                <option value="date">Group by date</option>
+              </select>
+              <span className="chat-list-count-line ml-auto hidden shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] min-[900px]:inline">
+                {sessionCountLine(visibleRows, mine.length)}
+              </span>
+            </>
+          )}
 
           <button
             type="button"
@@ -938,7 +1040,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Icon name="ph:magnifying-glass" width={20} className="text-[var(--text-muted)]" />
             <p className="text-sm text-[var(--text-muted)]">
-              {search.trim() ? `No results for "${search}"` : "No sessions match the current filters"}
+              {search.trim() ? `No sessions match “${search}”` : "No sessions match the current filters"}
             </p>
             <button
               type="button"
@@ -1013,22 +1115,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               const firstRestIdx = pinnedFlags.indexOf(false);
               return (
               <li key={projectRoot ?? "__none__"}>
-                {/* Project group header */}
-                {projectRoot !== null && effectiveSelection === "all" && (
-                  <div className="group relative flex items-center gap-1.5 px-4 py-2 bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] border-b border-[var(--border-hairline)]">
-                    <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-secondary)]" />
-                    <span className="truncate text-[length:var(--text-sm)] font-bold text-[var(--text-primary)] uppercase tracking-wide">
-                      {repoName(projectRoot)}
+                {/* Project group header — uppercase label + count + fading rule
+                    (rendered for every group in the "Group by project" mode,
+                    including the no-project bucket). */}
+                {effectiveSelection === "all" && (projectRoot !== null || groupBy === "project") && (
+                  <div className="chat-list-group-header group relative flex items-center gap-2 px-4 pb-1 pt-3">
+                    <span className="truncate text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      {projectRoot ? repoName(projectRoot) : "No project"}
                     </span>
-                    <span className="font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)] opacity-80">{rows.length}</span>
+                    <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{rows.length}</span>
+                    <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />
                     <button
-                      className="chat-list-group-new touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                      className="chat-list-group-new touch-always-visible flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNewChat(projectRoot, defaultFamiliarId ?? fallbackFamiliarId);
+                        onNewChat(projectRoot ?? undefined, defaultFamiliarId ?? fallbackFamiliarId);
                       }}
-                      title={`New session in ${repoName(projectRoot)}`}
-                      aria-label={`New session in ${repoName(projectRoot)}`}
+                      title={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}
+                      aria-label={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}
                     >
                       <Icon name="ph:plus" width="0.7rem" height="0.7rem" />
                     </button>
@@ -1044,14 +1148,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
                     const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
                     const pinned = isSessionPinned(pinnedIds, s.id);
-                    const sectioned = projectRoot === null;
+                    // Pinned/Sessions sections only split the flat ungrouped
+                    // list; project/date grouping owns its own headers.
+                    const sectioned = projectRoot === null && groupBy === "none";
                     const rowCollapsed =
                       sectioned && (pinned ? collapsedSections.has("pinned") : collapsedSections.has("sessions"));
                     const rowName = s.title || s.id;
+                    const daySection = daySectionsByIndex?.get(idx) ?? null;
+                    const isExpanded = !selectMode && expandedRowId === s.id;
+                    const detailId = `chat-list-row-detail-${s.id}`;
 
                     return (
                       <Fragment key={s.id}>
-                      {projectRoot === null && idx === firstPinnedIdx ? (
+                      {daySection ? (
+                        <li className="chat-list-date-header flex items-center gap-2 px-4 pb-1 pt-3">
+                          <span className="truncate text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                            {daySection.label}
+                          </span>
+                          <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{daySection.count}</span>
+                          <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />
+                        </li>
+                      ) : null}
+                      {sectioned && idx === firstPinnedIdx ? (
                         <ChatListSection
                           label="Pinned"
                           count={pinnedCount}
@@ -1059,7 +1177,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           onToggle={() => toggleSection("pinned")}
                         />
                       ) : null}
-                      {projectRoot === null && idx === firstRestIdx ? (
+                      {sectioned && idx === firstRestIdx ? (
                         <ChatListSection
                           label="Sessions"
                           count={restCount}
@@ -1070,12 +1188,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       {!rowCollapsed && (
                       <SortableChatListItem id={s.id}>
                         {({ attributes, listeners }) => (
+                        <>
                         <div
                           role={selectMode ? "checkbox" : "button"}
                           aria-checked={selectMode ? selectedIds.has(s.id) : undefined}
                           aria-current={!selectMode && isActive ? "true" : undefined}
+                          aria-expanded={selectMode ? undefined : isExpanded}
+                          aria-controls={isExpanded ? detailId : undefined}
                           tabIndex={0}
-                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
+                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } if (isMobile) { setActiveId(s.id); onOpen(s.id, s.familiarId); return; } setExpandedRowId((cur) => (cur === s.id ? null : s.id)); }}
+                          onDoubleClick={() => { if (selectMode) return; setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onMouseLeave={cancelHoverPrefetch}
                           onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
@@ -1085,16 +1207,26 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               e.preventDefault();
                               if (selectMode) { toggleSelect(s.id); return; }
                               setActiveId(s.id); onOpen(s.id, s.familiarId);
+                              return;
+                            }
+                            // Space toggles the inline detail disclosure —
+                            // Enter stays the fast open path.
+                            if (e.key === " ") {
+                              e.preventDefault();
+                              setExpandedRowId((cur) => (cur === s.id ? null : s.id));
                             }
                           }}
                           data-selected={selectMode && selectedIds.has(s.id) ? "true" : undefined}
                           data-status={st.label}
                           data-active={isActive ? "true" : undefined}
+                          data-expanded={isExpanded ? "true" : undefined}
                           className={[
                             "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
-                              : "hover:bg-[var(--bg-raised)]/50",
+                              : isExpanded
+                                ? "bg-[var(--bg-raised)]/60"
+                                : "hover:bg-[var(--bg-raised)]/50",
                             selectMode && selectedIds.has(s.id) ? "bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]" : "",
                           ].join(" ")}
                         >
@@ -1161,55 +1293,60 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
                           {/* Content */}
                           <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">
-                            {/* Row 1: familiar/project name + timestamp */}
-                            <span className="chat-list-row-meta flex items-baseline justify-between gap-2">
-                              <span className="chat-list-row-tags flex items-center gap-1.5 min-w-0">
-                                <span className="truncate text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
-                                  {project || rowFamiliarName}
+                            {/* Row 1: session title (bold subject line) + a
+                                neutral project tag + the relative-age column.
+                                Running sessions get full white; others are
+                                slightly muted — mirrors the unread/read
+                                convention in email clients. */}
+                            <span className="chat-list-row-meta flex items-center justify-between gap-2">
+                              <span className="chat-list-row-title flex min-w-0 flex-1 items-center gap-1.5">
+                                {pinned && (
+                                  <Icon
+                                    name="ph:bookmark-simple-fill"
+                                    width={11}
+                                    className="shrink-0 text-[var(--accent-presence)]"
+                                    aria-hidden
+                                  />
+                                )}
+                                <span className={[
+                                  "truncate text-[length:var(--text-md)] font-semibold",
+                                  s.status === "running"
+                                    ? "text-white"
+                                    : "text-[var(--text-primary)]",
+                                ].join(" ")}>
+                                  {stripLeadingTrailingEmoji((sessionTitles.get(s.id) ?? s.title) || "(untitled chat)")}
                                 </span>
-                                {s.origin ? <OriginChip origin={s.origin} /> : null}
-                                <SessionInitiatorChip initiator={s.initiator} />
-                                {s.model ? (
-                                  <span
-                                    className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
-                                    title={`Model: ${s.model}`}
-                                  >
-                                    <Icon name={modelIcon(s.model)} width={10} aria-hidden />
-                                    <span className="truncate">{modelLabel(s.model)}</span>
-                                  </span>
-                                ) : null}
                               </span>
-                              <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                                <span>{chatDate(s.updated_at, dtPrefs)}</span>
-                                {isRelativePhrase(rel) ? (
-                                  <>
-                                    <span aria-hidden>·</span>
-                                    <span>{rel}</span>
-                                  </>
-                                ) : null}
+                              {project ? (
+                                <span className="chat-list-row-project-tag hidden shrink-0 items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-1.5 py-px text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:inline-flex">
+                                  {project}
+                                </span>
+                              ) : null}
+                              <span className="chat-list-row-time w-[88px] shrink-0 text-right text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                                {rel}
                               </span>
                             </span>
 
-                            {/* Row 2: session title (bold subject line)
-                           Running sessions get full white; others are slightly muted
-                           — mirrors the unread/read convention in email clients. */}
-                            <span className="chat-list-row-title flex min-w-0 items-center gap-1.5">
-                              {pinned && (
-                                <Icon
-                                  name="ph:bookmark-simple-fill"
-                                  width={11}
-                                  className="shrink-0 text-[var(--accent-presence)]"
-                                  aria-hidden
-                                />
-                              )}
-                              <span className={[
-                                "truncate text-[length:var(--text-base)] font-semibold",
-                                s.status === "running"
-                                  ? "text-white"
-                                  : "text-[var(--text-primary)]",
-                              ].join(" ")}>
-                                {stripLeadingTrailingEmoji((sessionTitles.get(s.id) ?? s.title) || "(untitled chat)")}
+                            {/* Row 2: familiar · project · date, plus the
+                                origin/initiator/model chips */}
+                            <span className="chat-list-row-tags flex min-w-0 items-center gap-1.5">
+                              <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                                {rowFamiliarName}
+                                {project ? ` · ${project}` : ""}
+                                {" · "}
+                                {chatDate(s.updated_at, dtPrefs)}
                               </span>
+                              {s.origin ? <OriginChip origin={s.origin} /> : null}
+                              <SessionInitiatorChip initiator={s.initiator} />
+                              {s.model ? (
+                                <span
+                                  className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
+                                  title={`Model: ${s.model}`}
+                                >
+                                  <Icon name={modelIcon(s.model)} width={10} aria-hidden />
+                                  <span className="truncate">{modelLabel(s.model)}</span>
+                                </span>
+                              ) : null}
                             </span>
 
                             {/* Row 3: status preview */}
@@ -1394,6 +1531,45 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
                           ))}
                         </div>
+                        {/* Inline detail strip — the row's disclosure target.
+                            Resume/Open is the existing open-session action;
+                            Archive reuses the undo-safe archive PATCH. */}
+                        {isExpanded && (
+                          <div
+                            id={detailId}
+                            className="chat-list-row-detail mb-2 ml-[26px] mr-4 mt-1 flex items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3.5 py-2.5"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                              {rowFamiliarName}
+                              {" · "}
+                              {project || "no project"}
+                              {" · "}
+                              {s.status === "running" ? "running now" : "idle"}
+                              {" · last activity "}
+                              {rel}
+                            </span>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveId(s.id);
+                                onOpen(s.id, s.familiarId);
+                              }}
+                            >
+                              {s.status === "running" ? "Resume" : "Open"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={archivingId !== null}
+                              onClick={(e) => void setSessionArchived(e, s.id, !s.archived_at)}
+                            >
+                              {s.archived_at ? "Unarchive" : "Archive"}
+                            </Button>
+                          </div>
+                        )}
+                        </>
                         )}
                       </SortableChatListItem>
                       )}
@@ -1465,8 +1641,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       </div>
 
       {/* ── Footer ── */}
-      <footer className="chat-list-footer border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-        {keys.enter} open · {keys.mod}K palette · / commands in chat
+      <footer className="chat-list-footer flex flex-none items-center gap-1.5 border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+        <kbd className="chat-list-kbd">{keys.enter}</kbd> open
+        <span aria-hidden>·</span>
+        <kbd className="chat-list-kbd">/</kbd> search
+        <span aria-hidden>·</span>
+        <kbd className="chat-list-kbd">{keys.mod}K</kbd> palette
       </footer>
       </section>
       {deletePending ? (

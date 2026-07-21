@@ -50,8 +50,13 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label="Chat projects header"[\s\S]*Projects[\s\S]*aria-label="Hide sessions"/,
-  "Projects lives in the same top row as the collapse toggle",
+  /<SurfaceRail\s*\n\s*storageKey="cave:chat:rail"\s*\n\s*title="Chats"/,
+  "The rail rides the shared SurfaceRail primitive (persisted width/open under cave:chat:rail)",
+);
+assert.match(
+  source,
+  /aria-label="New chat"[\s\S]{0,500}aria-label="Open Projects tab"/,
+  "New chat and the Projects-tab jump live in the SurfaceRail header actions",
 );
 assert.doesNotMatch(source, /<RailSection\s+label="Projects"/, "Projects is not repeated as a separate section row");
 assert.doesNotMatch(source, /Pin a session to keep it here/, "Pinned hints are gone with the permanent flat list");
@@ -60,7 +65,7 @@ assert.doesNotMatch(source, /chat-thread-filters/, "All/Active/Tasks/Pinned tabs
 // ── Familiar selection lives in the page header, not this rail ───────────────
 assert.doesNotMatch(source, /function RailFamiliarStrip/, "Rail no longer carries a duplicate familiar-avatar strip");
 assert.doesNotMatch(source, /<FamiliarAvatar familiar=\{f\} size="sm"/, "Familiar chips moved out of the session rail");
-assert.match(source, /placeholder="Search sessions…"/, "Rail search uses session language");
+assert.match(source, /placeholder="Search chats…"/, "Rail search uses chat language (§10: chats are what people open)");
 assert.match(source, /aria-label="Familiar sessions"/, "Rail names the region as familiar sessions");
 
 // ── Ops footer (Git / Inspect / Debug) is preserved ─────────────────────────

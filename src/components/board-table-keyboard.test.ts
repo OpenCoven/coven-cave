@@ -34,6 +34,11 @@ assert.match(
   /data-card-id=/,
   "card rows expose data-card-id",
 );
+assert.doesNotMatch(
+  source,
+  /role=\{selectMode \? "checkbox" : "button"\}/,
+  "card rows preserve native table-row semantics",
+);
 
 // Sortable headers: keyboard-operable <button> + aria-sort state announced.
 assert.match(source, /aria-sort=\{sortKey === col\.key/, "th announces aria-sort");

@@ -99,7 +99,7 @@ assert.match(
 );
 assert.match(
   listRoute,
-  /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(scoped\),/,
+  /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(visible\),/,
   "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
 const sweepModule = readFileSync(

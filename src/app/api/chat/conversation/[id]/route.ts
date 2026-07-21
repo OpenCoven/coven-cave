@@ -14,6 +14,7 @@ import {
   type ConversationFile,
 } from "@/lib/cave-conversations";
 import { linkedContextForSession } from "@/lib/chat-linked-context";
+import { unlinkSessionFromCards } from "@/lib/cave-board";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
@@ -343,5 +344,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // session the user deliberately removed — other callers depend on this.
   const deleted = await deleteConversation(id);
   const sacrificedAt = await sacrificeSessionLocal(id);
-  return NextResponse.json({ ok: true, deleted, sacrificedAt });
+  const unlinkedCards = await unlinkSessionFromCards(id);
+  return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });
 }

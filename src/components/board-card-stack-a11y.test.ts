@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   src,
-  /<button\s+type="button"\s+className="board-card-stack__row-action board-card-stack__row-action--chat"\s+disabled=\{chatLinking\}[\s\S]*?aria-label=\{`Start a chat/,
-  "the Start-chat action is a real labelled button that disables while linking",
+  /<button\s+type="button"\s+className="board-card-stack__row-action board-card-stack__row-action--chat"\s+disabled=\{chatLinking\}[\s\S]*?aria-label=\{`Start work/,
+  "the Start-work action is a real labelled button that disables while linking",
 );
 
 console.log("board-card-stack-a11y.test.ts: ok");

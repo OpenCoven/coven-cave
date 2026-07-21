@@ -124,8 +124,8 @@ assert.match(
 );
 assert.match(
   boardView,
-  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,180}await startTaskChat\(id, project\.root\);/,
-  "Starting a task chat for a card with projectId should use the project's root without a follow-up dialog",
+  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,420}await startTaskChat\(id, project\?\.root\);/,
+  "Starting task work for a card with projectId should use the project's root without a follow-up dialog",
 );
 assert.match(
   boardInspector,
@@ -149,8 +149,8 @@ assert.doesNotMatch(
 );
 assert.match(
   boardView,
-  /Choose a project for this task before starting chat, or open Projects to create one\./,
-  "CWD-less task chat starts should direct the user to the task Project field and the project creation surface",
+  /Choose a project for this task before starting work, or open Projects to create one\./,
+  "Projectless task work starts should direct the user to the task Project field and the project creation surface",
 );
 assert.match(
   boardInspector,

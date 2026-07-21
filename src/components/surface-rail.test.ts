@@ -165,11 +165,11 @@ test("component: resize handle is an accessible splitter (separator + arrows + d
   );
 });
 
-test("component: children render-prop receives open so rows can collapse to icons", () => {
+test("component: children render-prop receives open + setOpen so rows can collapse to icons and re-expand the rail", () => {
   assert.match(
     src,
-    /typeof children === "function" \? children\(open\) : children/,
-    "render-prop children get the open flag",
+    /typeof children === "function" \? children\(open, setOpen\) : children/,
+    "render-prop children get the open flag and the setter",
   );
 });
 

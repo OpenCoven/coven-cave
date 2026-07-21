@@ -42,7 +42,7 @@ assert.match(
 );
 
 // ── Search only; no mode filters (All / Active / Tasks / Pinned) ─────────────
-assert.match(source, /placeholder="Search sessions…"/, "Rail offers inline session search");
+assert.match(source, /placeholder="Search chats…"/, "Rail offers inline chat search");
 assert.doesNotMatch(source, /type ChatFilter =/, "Rail no longer owns filter tab state");
 assert.doesNotMatch(source, /role="tablist"/, "All/Active/Tasks/Pinned tablist is removed");
 assert.doesNotMatch(source, /s\.origin === "board"/, "Tasks filtering is gone from this simplified rail");
@@ -111,20 +111,21 @@ assert.match(
 );
 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 // The inspector right panel is retired: Git/Changes lands on the code rail's
 // Changes tab, Inspect lands on the promoted Familiar chat tab, and Debug is
 // owned by ChatView's modal (chat-view.tsx listens for cave:debug-open).
 assert.match(
-  chatSurface,
-  /const onChangesOpen = \(\) => \{[\s\S]*?rail\.setActiveTab\("changes"\)/,
-  "ChatSurface maps changes-open to the code rail's Changes tab",
+  railController,
+  /const openChanges = useCallback\(\(\) => \{[\s\S]*?rail\.setActiveTab\("changes"\)/,
+  "The shared rail controller maps changes-open to the code rail's Changes tab",
 );
 assert.match(
-  chatSurface,
-  /addEventListener\("cave:changes-open", onChangesOpen\)/,
-  "ChatSurface listens for the rail's cave:changes-open event",
+  railController,
+  /addEventListener\("cave:changes-open", openChanges\)/,
+  "The shared rail controller listens for cave:changes-open",
 );
 assert.match(
   chatSurface,
@@ -179,20 +180,34 @@ assert.match(
   /className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5/,
   "Project folder plus buttons should overlay at the right edge instead of reducing the label row width",
 );
+// Collapsed rail (SurfaceRail, 56px): project identity tiles remain, and
+// activating one re-expands the rail and opens that group.
 assert.match(
   source,
-  /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
-  "Collapsed rail keeps the pressable reopen chip",
+  /\{!open && groups\.length > 0 \?[\s\S]{0,700}setOpen\(true\);\s*\n\s*onSelect\(key\);\s*\n\s*if \(!expandedKeys\.includes\(key\)\) onToggleExpanded\(key\);/,
+  "Collapsed rail renders group tiles that expand the rail and open the group",
 );
 assert.match(
   source,
-  /aria-label="Chat projects header"[\s\S]*onSelect\("all"\)[\s\S]*aria-label="Hide sessions"/,
-  "Projects header keeps All sessions and the collapse toggle in one compact top row",
+  /onClick=\{\(\) => onSelect\("all"\)\}\s*\n\s*aria-current=\{selection === "all" \? "true" : undefined\}/,
+  "The All sessions unscope affordance survives the SurfaceRail migration",
 );
 assert.match(
   source,
-  /className="px-2 pb-2 pt-0 border-b border-\[var\(--border-hairline\)\]"/,
-  "Search sits directly under the header and separates the project tree with a hairline",
+  /search=\{\s*\n\s*<SearchInput/,
+  "Search renders through SurfaceRail's under-header search slot",
+);
+// By project / Recent mini toggle: aria-pressed buttons (not a tablist),
+// persisted under cave:chat:rail:mode via the pure normalize helper.
+assert.match(
+  source,
+  /aria-pressed=\{railMode === "projects"\}[\s\S]{0,220}By project[\s\S]{0,700}aria-pressed=\{railMode === "recent"\}[\s\S]{0,220}Recent/,
+  "The rail exposes the By project / Recent view toggle",
+);
+assert.match(
+  source,
+  /normalizeChatRailMode\(window\.localStorage\.getItem\(CHAT_RAIL_MODE_KEY\)\)/,
+  "The rail mode hydrates from its persisted key",
 );
 
 // The open conversation row announces itself to assistive tech (was visual-only:

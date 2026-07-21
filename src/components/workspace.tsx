@@ -998,8 +998,15 @@ export function Workspace() {
       try {
         // Scope the session list to the active familiar's granted projects so
         // every surface fed by `sessions` enforces the familiar→projects map.
-        // With "All familiars" (activeId null) the unscoped list is returned.
-        const scope = activeId ? `?familiarId=${encodeURIComponent(activeId)}` : "";
+        // With "All familiars" (activeId null) the unscoped list is returned,
+        // but we collapse the per-familiar workspace auto-journal/reflection
+        // runs there: they'd otherwise flood the global list and make it look
+        // contradictory versus the clean project-scoped familiar homes. Scoped
+        // views already drop them via project-grant scoping, so collapse is only
+        // applied to the unscoped view.
+        const scope = activeId
+          ? `?familiarId=${encodeURIComponent(activeId)}`
+          : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
         if (!isCurrent()) return; // superseded by a newer load / scope change
@@ -2729,6 +2736,11 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliarId={activeId}
         scopeFamiliarIds={scopeIds}
+        daemonRunning={daemonRunning}
+        onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
+        onSlashFromChat={handleSlashIntent}
+        onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlInAppBrowser}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);

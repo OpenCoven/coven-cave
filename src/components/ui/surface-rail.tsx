@@ -34,16 +34,26 @@ export function SurfaceRail(props: {
   actions?: ReactNode;
   /** Rendered under the header row only while the rail is open. */
   search?: ReactNode;
-  children: ReactNode | ((open: boolean) => ReactNode);
+  /**
+   * Layout override for narrow single-pane hosts (e.g. the Projects hub's
+   * container-query collapse): the rail renders open at the host's width —
+   * no inline width, no collapse toggle, no resize handle — and the
+   * persisted open pref is left untouched.
+   */
+  forceOpen?: boolean;
+  /** Render-prop children receive the open flag plus a setter so collapsed
+   *  content (e.g. avatar-only rows) can expand the rail on activation. */
+  children: ReactNode | ((open: boolean, setOpen: (open: boolean) => void) => ReactNode);
   ariaLabel: string;
 }): React.JSX.Element {
-  const { storageKey, title, actions, search, children, ariaLabel } = props;
+  const { storageKey, title, actions, search, children, ariaLabel, forceOpen = false } = props;
   const defaultWidth = clampSurfaceRailWidth(props.defaultWidth ?? SURFACE_RAIL_DEFAULT_WIDTH);
 
   // Read persisted prefs lazily on first render (storage failures → defaults).
   const [initial] = useState(() => readSurfaceRailPrefs(localStorageOrNull(), storageKey, defaultWidth));
   const [width, setWidth] = useState(initial.width);
-  const [open, setOpen] = useState(initial.open);
+  const [storedOpen, setOpen] = useState(initial.open);
+  const open = forceOpen ? true : storedOpen;
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
 
@@ -51,8 +61,9 @@ export function SurfaceRail(props: {
     writeSurfaceRailWidth(localStorageOrNull(), storageKey, width);
   }, [storageKey, width]);
   useEffect(() => {
+    if (forceOpen) return; // layout override, not a user choice — don't persist
     writeSurfaceRailOpen(localStorageOrNull(), storageKey, open);
-  }, [storageKey, open]);
+  }, [storageKey, open, forceOpen]);
 
   const toggleLabel = open ? "Collapse sidebar" : "Expand sidebar";
 
@@ -61,30 +72,33 @@ export function SurfaceRail(props: {
       className="surface-rail"
       aria-label={ariaLabel}
       data-open={open ? "true" : "false"}
+      data-force-open={forceOpen ? "true" : undefined}
       data-dragging={dragging ? "true" : "false"}
-      style={open ? { width } : undefined}
+      style={open && !forceOpen ? { width } : undefined}
     >
       <div className="surface-rail__header">
         <div className="surface-rail__header-row">
           {title && open ? <span className="surface-rail__title">{title}</span> : null}
           {actions}
-          <button
-            type="button"
-            className="surface-rail__toggle focus-ring"
-            aria-expanded={open}
-            title={toggleLabel}
-            aria-label={toggleLabel}
-            onClick={() => setOpen((value) => !value)}
-          >
-            <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-          </button>
+          {!forceOpen ? (
+            <button
+              type="button"
+              className="surface-rail__toggle focus-ring"
+              aria-expanded={open}
+              title={toggleLabel}
+              aria-label={toggleLabel}
+              onClick={() => setOpen((value) => !value)}
+            >
+              <Icon name="ph:sidebar-simple" width={15} aria-hidden />
+            </button>
+          ) : null}
         </div>
         {open && search ? <div className="surface-rail__search">{search}</div> : null}
       </div>
       <div className="surface-rail__content">
-        {typeof children === "function" ? children(open) : children}
+        {typeof children === "function" ? children(open, setOpen) : children}
       </div>
-      {open ? (
+      {open && !forceOpen ? (
         <div
           role="separator"
           aria-orientation="vertical"

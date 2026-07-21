@@ -9,15 +9,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
-// (a) chat-surface dispatches cave:code-rail-visibility with detail:{open:showCodeRail}
-//     from an effect keyed on showCodeRail.
+// (a) the shared rail controller dispatches cave:code-rail-visibility with
+//     detail:{open:showInline} from an effect keyed on showInline.
 assert.match(
-  chatSurface,
-  /useEffect\(\(\)\s*=>\s*\{[\s\S]*?dispatchEvent\([\s\S]*?new CustomEvent\(\s*"cave:code-rail-visibility"\s*,\s*\{\s*detail:\s*\{\s*open:\s*showCodeRail\s*\}\s*\}\s*,?\s*\)[\s\S]*?\},\s*\[showCodeRail\]\)/,
-  "chat-surface dispatches cave:code-rail-visibility { open: showCodeRail } from an effect keyed on showCodeRail",
+  railController,
+  /useEffect\(\(\)\s*=>\s*\{[\s\S]*?new CustomEvent\("cave:code-rail-visibility", \{ detail: \{ open: showInline \} \}\)[\s\S]*?\}, \[showInline\]\)/,
+  "the shared controller dispatches cave:code-rail-visibility { open: showInline }",
+);
+assert.match(
+  railController,
+  /useEffect\(\(\) => \(\) => \{[\s\S]*?new CustomEvent\("cave:code-rail-visibility", \{ detail: \{ open: false \} \}\)/,
+  "the shared controller restores shell navigation when its rail unmounts",
 );
 
 // (b) shell.tsx listens for the cave:code-rail-visibility event.

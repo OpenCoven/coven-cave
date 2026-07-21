@@ -3,6 +3,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { SessionOrigin } from "./types.ts";
@@ -99,14 +100,28 @@ export type ConversationFile = {
   /** Branching lineage (set by fork-to-new-thread in a later PR). */
   parentSessionId?: string;
   branchedFromTurnId?: string;
+  /**
+   * First-turn stub marker (cave-0g2x): id of the pending user turn written by
+   * createConversationStub, cleared by the first end-of-stream save
+   * (stripConversationStubTurn). Still set on a conversation whose run is not
+   * live in the run registry = the server died mid-first-turn; the sessions
+   * list uses that to report `failed` instead of a phantom `completed`.
+   */
+  pendingUserTurnId?: string;
 };
 
-function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } {
+function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } | null {
   const turns = conv.activeLeafId
     ? resolveActivePath(conv.turns, conv.activeLeafId)
     : conv.turns;
   const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
-  if (latestAssistant?.isError) return { status: "failed", exitCode: 1 };
+  // No reply on the active path yet — a first-turn stub whose assistant reply
+  // is still streaming (or never arrived; see createConversationStub). There
+  // is no terminal status to report: callers fall back to their own default,
+  // and the session-list merge must never override a live daemon status with
+  // one inferred from a pending stub.
+  if (!latestAssistant) return null;
+  if (latestAssistant.isError) return { status: "failed", exitCode: 1 };
   return { status: "completed", exitCode: 0 };
 }
 
@@ -122,6 +137,11 @@ export type ConversationSummary = {
   prUrl?: string;
   status?: string;
   exitCode?: number | null;
+  /** True while the first-turn stub marker is set (see
+   *  ConversationFile.pendingUserTurnId): the first reply is still streaming,
+   *  or its server died mid-turn. The sessions list disambiguates via the
+   *  in-process run registry. */
+  pending?: boolean;
   createdAt?: string;
   updatedAt: string;
 };
@@ -221,6 +241,10 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   // torn half-JSON that loadConversation silently drops.
   await writeJsonAtomic(pathFor(conv.sessionId), conv);
   conversationSummaryCache.delete(pathFor(conv.sessionId));
+  // Bust the sessions-list SWR cache (cave-53yx): a new or updated
+  // conversation must be visible to the event-driven list refresh that fires
+  // right after the save, not 1-2 polls later.
+  invalidateSessionsListCache();
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
@@ -230,11 +254,105 @@ export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<voi
   await saveConversation(conv);
 }
 
+export type ConversationStubSeed = {
+  sessionId: string;
+  familiarId: string;
+  harness: string;
+  model?: string;
+  runtime?: string;
+  title?: string;
+  origin?: SessionOrigin;
+  /** The in-flight user turn. Its id must be reused by the end-of-stream save
+   *  (after stripConversationStubTurn) so the turn identity is stable across
+   *  the stub → authoritative transition. */
+  userTurn: {
+    id: string;
+    text: string;
+    attachments?: import("./chat-attachments").ChatAttachment[];
+  };
+};
+
+/**
+ * First-turn visibility (cave-0g2x): persist a stub conversation the moment a
+ * new chat's session id is announced, so /api/sessions/list can surface the
+ * chat during its entire first turn — and so a mid-turn crash leaves a listed
+ * chat with the user's message instead of nothing. No-op when a conversation
+ * already exists (resumed turns must never be clobbered). Returns true when
+ * the stub was created.
+ *
+ * The stub deliberately has no assistant turn, so its summary carries no
+ * terminal status (see conversationTerminalStatus) — the session-list merge
+ * then leaves any live daemon status untouched.
+ */
+export async function createConversationStub(seed: ConversationStubSeed): Promise<boolean> {
+  if (await loadConversation(seed.sessionId)) return false;
+  const now = new Date().toISOString();
+  await saveConversation({
+    sessionId: seed.sessionId,
+    familiarId: seed.familiarId,
+    harness: seed.harness,
+    ...(seed.model ? { model: seed.model } : {}),
+    ...(seed.runtime ? { runtime: seed.runtime } : {}),
+    ...(seed.title ? { title: seed.title } : {}),
+    ...(seed.origin ? { origin: seed.origin } : {}),
+    createdAt: now,
+    updatedAt: now,
+    turns: [
+      {
+        id: seed.userTurn.id,
+        role: "user",
+        text: seed.userTurn.text,
+        ...(seed.userTurn.attachments?.length
+          ? { attachments: seed.userTurn.attachments }
+          : {}),
+        createdAt: now,
+        parentId: null,
+      },
+    ],
+    activeLeafId: seed.userTurn.id,
+    pendingUserTurnId: seed.userTurn.id,
+  });
+  return true;
+}
+
+/**
+ * Remove a pending stub turn (createConversationStub) from a loaded
+ * conversation before the end-of-stream save re-appends the authoritative
+ * user turn under the same id. Re-points the active leaf (and, defensively,
+ * any child turns) at the stub's parent so branch-parent derivation never
+ * self-parents the re-appended turn. Returns true when a stub turn was
+ * removed — i.e. the conversation only exists because of this run's stub,
+ * which callers use to keep first-exchange behaviors (auto-naming) firing.
+ */
+export function stripConversationStubTurn(
+  conv: ConversationFile,
+  stubTurnId: string | null | undefined,
+): boolean {
+  // Any end-of-stream save settles the pending state — including a resumed
+  // turn saved by a NEW server process after a crash (its in-memory stub id
+  // is long gone, and the crashed turn's stub deliberately stays in the tree
+  // as the record of the lost prompt).
+  delete conv.pendingUserTurnId;
+  if (!stubTurnId) return false;
+  const stub = conv.turns.find((turn) => turn.id === stubTurnId);
+  if (!stub) return false;
+  const parentId = stub.parentId ?? null;
+  conv.turns = conv.turns.filter((turn) => turn.id !== stubTurnId);
+  for (const turn of conv.turns) {
+    if (turn.parentId === stubTurnId) turn.parentId = parentId;
+  }
+  if (conv.activeLeafId === stubTurnId) {
+    conv.activeLeafId = parentId ?? undefined;
+  }
+  return true;
+}
+
 export async function deleteConversation(sessionId: string): Promise<boolean> {
   try {
     const file = pathFor(sessionId);
     await unlink(file);
     conversationSummaryCache.delete(file);
+    invalidateSessionsListCache();
     return true;
   } catch {
     return false;
@@ -295,8 +413,8 @@ async function readConversationSummary(
         origin: conv.origin,
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
-        status: terminal.status,
-        exitCode: terminal.exitCode,
+        ...(terminal ? { status: terminal.status, exitCode: terminal.exitCode } : {}),
+        ...(conv.pendingUserTurnId ? { pending: true } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

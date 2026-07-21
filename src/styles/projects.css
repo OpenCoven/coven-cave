@@ -1,7 +1,9 @@
 /* Projects hub — master-detail styling. Imported directly by projects-view.tsx
    so the surface is styled straight from Chat → Projects on first paint; this
    file is the Projects surface's only stylesheet (it no longer leans on
-   board.css). */
+   board.css). The list pane rides the shared SurfaceRail primitive
+   (surface-rail.css owns the rail chrome; this file owns the rows and the
+   Projects-specific controls inside it). */
 
 /* container: projects — the narrow-layout rules below query the surface's own
    width, not the viewport, so the single-pane collapse also fires when the
@@ -26,26 +28,83 @@
 .projects-hub {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
 
-/* ── List pane ─────────────────────────────────────────────────────────────── */
+/* ── List pane (inside the SurfaceRail's scrollable content slot) ─────────── */
 .projects-hub__list {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-2);
-  border-right: 1px solid var(--border-hairline);
+}
+
+/* Rail header controls: Refresh stays quiet, New project wears the accent
+   (presence of the primary create verb, not a CTA banner). */
+.projects-rail-action--new {
+  color: var(--accent-presence);
+}
+.projects-rail-action--new:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* Filter input + All/Active + sort row, in the rail's search slot. */
+.projects-rail-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.projects-rail-search {
+  position: relative;
+}
+.projects-rail-search__icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.projects-rail-search__input {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-6) 0 calc(var(--space-6) + var(--space-1));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+.projects-rail-search__input::placeholder {
+  color: var(--text-muted);
+}
+.projects-rail-search__kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 16px;
+}
+.projects-rail-filterrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 /* Motion audit: the only transitions on this surface are color-only (no
-   movement), and globals.css collapses every transition/animation duration
-   under prefers-reduced-motion; scrolling goes through smoothScrollBehavior().
-   Nothing here needs its own reduced-motion override. */
+   movement) plus the card chevron rotation below, and globals.css collapses
+   every transition/animation duration under prefers-reduced-motion; scrolling
+   goes through smoothScrollBehavior(). */
 .projects-list-row {
   display: flex;
   align-items: center;
@@ -64,7 +123,24 @@
 .projects-list-row[aria-selected="true"] {
   background: var(--bg-hover);
   border-color: var(--border-hairline);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
   color: var(--text-primary);
+}
+/* Collapsed rail: avatar tiles only, centered. */
+.projects-list-row[data-rail-open="false"] {
+  justify-content: center;
+  padding: var(--space-1);
+}
+.projects-list-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.projects-list-row__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 .projects-list-row__name {
   flex: 1;
@@ -72,16 +148,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   font-weight: 500;
 }
-.projects-list-row__meta {
-  display: inline-flex;
+.projects-list-row__time {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.projects-list-row__sub {
+  display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.projects-list-row__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projects-list-row__git {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-muted);
 }
 .projects-list-row__count {
@@ -110,38 +203,205 @@
   padding: var(--space-4) var(--space-5) var(--space-6);
 }
 
-.projects-detail-head { display: flex; flex-direction: column; gap: 10px; }
+.projects-detail-head { display: flex; flex-direction: column; gap: 12px; }
 .projects-detail-head__row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .projects-detail-head__title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: var(--text-primary);
 }
-.projects-detail-head__meta {
+.projects-head-divider {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  margin: 0 var(--space-1);
+  background: var(--border-hairline);
+}
+
+/* "New chat": quiet at rest with a dashed inner ring (dashed = invitation);
+   hover firms up into a solid accent outline — same grammar as the canvas
+   toolbar's "New sketch". */
+.projects-newchat {
+  position: relative;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+}
+.projects-newchat::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: calc(var(--radius-control) - 3px);
+  pointer-events: none;
+}
+.projects-newchat:hover {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* ── Chip row: status · git · path (999px pills, hairline-bordered) ────────── */
+.projects-detail-chips {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.projects-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
   font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.projects-chip--action {
+  background: transparent;
+  cursor: pointer;
+}
+.projects-chip--action:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  color: var(--text-primary);
+}
+.projects-chip__mono {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.projects-chip__sep { color: var(--text-muted); }
+.projects-chip__state { color: var(--text-muted); }
+.projects-chip__state--dirty { color: var(--color-warning); }
+.projects-chip__hint { font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* ── Stat strip: 4 bordered cells over the translucent raised surface ─────── */
+.projects-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  overflow: hidden;
+}
+.projects-stat-strip__cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.projects-stat-strip__cell + .projects-stat-strip__cell {
+  border-left: 1px solid var(--border-hairline);
+}
+.projects-stat-strip__value {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.projects-stat-strip__label {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.projects-detail-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-hairline); }
-.projects-detail-section__title {
+/* ── Collapsible cards (Tasks / Sessions / Access) ─────────────────────────── */
+.projects-detail-section { margin-top: var(--space-2); }
+.projects-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  overflow: hidden;
+}
+.projects-card__header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: var(--space-2);
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.projects-card__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: calc(var(--space-1) * -1);
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.projects-card__toggle:hover { color: var(--text-primary); }
+.projects-card__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.projects-card__toggle[aria-expanded="true"] .projects-card__chevron {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .projects-card__chevron { transition: none; }
+}
+.projects-card__title {
   font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+.projects-card__summary {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.projects-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2) var(--space-2);
+}
+.projects-card__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* Dashed accent show-more (dashed = invitation; hover firms up solid). */
+.projects-more-btn {
+  width: 100%;
+  justify-content: center;
+  padding: var(--space-1) var(--space-2);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.projects-more-btn:hover {
+  border-style: solid;
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
 }
 
 /* Dashed = invitation (design language §3): empty sections invite the next
@@ -154,40 +414,118 @@
   font-size: 11.5px;
 }
 
+/* ── Access card: stacked avatars, selectable rows, binary segmented control ── */
+.projects-access-stack { display: inline-flex; align-items: center; }
+.projects-access-stack__item {
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 1.5px var(--bg-base);
+}
+.projects-access-stack__item + .projects-access-stack__item { margin-left: -6px; }
+.projects-access-bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+.projects-access-bulk__count { font-size: var(--text-xs); color: var(--text-primary); }
+.projects-access-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+.projects-access-row:hover { background: var(--bg-hover); }
+.projects-access-row[data-selected="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+}
+.projects-access-row__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--bg-base);
+  cursor: pointer;
+}
+.projects-access-row__check[data-checked="true"] {
+  border-color: var(--accent-presence);
+  background: var(--accent-presence);
+}
+/* Supreme-familiar rows keep the column alignment without a checkbox. */
+.projects-access-row__check[aria-hidden="true"] {
+  border-color: transparent;
+  cursor: default;
+}
+.projects-access-seg {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.projects-access-seg__btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-2xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.projects-access-seg__btn + .projects-access-seg__btn {
+  border-left: 1px solid var(--border-hairline);
+}
+.projects-access-seg__btn[aria-pressed="true"] {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+.projects-access-seg__btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Remove-project confirm: facts table ───────────────────────────────────── */
+.projects-remove-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+}
+.projects-remove-facts__key { color: var(--text-muted); }
+.projects-remove-facts__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 /* Back to the list — only exists under the narrow single-pane collapse. */
 .projects-detail-back { display: none; }
 
-/* The toolbar responds to the Projects pane itself, not the window: split
-   tiles can be phone-narrow on a desktop viewport. Give summary/sort and the
-   action pair separate rows before either group can compress or overlap. */
-@container projects-view (max-width: 640px) {
-  .projects-toolbar__row {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .projects-toolbar__controls {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-  .projects-toolbar__actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-  }
-}
-
-/* ── Session chips (shared with the old table; canonical home is now here) ── */
-.projects-session-count { display: inline-flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; }
-.projects-session-count > svg { color: var(--text-muted); }
+/* ── Session chips (Tasks card header reuses the running treatment) ────────── */
 .projects-session-chip { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 1px 6px; border-radius: 999px; white-space: nowrap; background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .projects-session-chip--running { color: var(--accent-presence); background: color-mix(in oklch, var(--accent-presence) 12%, transparent); font-weight: 600; }
 
-/* ── Narrow collapse: one pane at a time, driven by data-pane ─────────────── */
+/* ── Narrow collapse: one pane at a time, driven by data-pane ───────────────
+   Deliberate choice (documented): the SurfaceRail stays mounted in narrow
+   panes — projects-view.tsx flips it into forceOpen (no collapse toggle, no
+   resize handle, no inline width), and these rules stretch it to the single
+   grid column. The existing data-pane paging (list ↔ detail) is unchanged. */
 @container projects (max-width: 640px) {
   .projects-hub { grid-template-columns: minmax(0, 1fr); }
-  .projects-hub__list { border-right: 0; }
-  .projects-hub[data-pane="detail"] .projects-hub__list { display: none; }
+  .projects-hub .surface-rail { width: auto; border-right: 0; }
+  .projects-hub[data-pane="detail"] .surface-rail { display: none; }
   .projects-hub[data-pane="list"] .projects-hub__detail { display: none; }
   .projects-detail-back { display: inline-flex; }
   /* The head row wraps so the action cluster drops below the title instead of
@@ -200,8 +538,10 @@
 
 /* Sidebar-band widths: the chat split can pinch this surface to ~200–480px.
    Only one pane shows down here (the 640px collapse already fired), so give
-   its content the chrome's padding back. */
+   its content the chrome's padding back, and let the stat strip wrap 2×2. */
 @container projects (max-width: 420px) {
-  .projects-hub__list { padding: 6px; }
   .projects-hub__detail { padding: 12px 12px 20px; }
+  .projects-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .projects-stat-strip__cell:nth-child(odd) { border-left: 0; }
+  .projects-stat-strip__cell:nth-child(n + 3) { border-top: 1px solid var(--border-hairline); }
 }

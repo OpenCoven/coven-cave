@@ -190,6 +190,44 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
 });
 
+test("Group surface follows the design handoff: SurfaceRail covens + details drawer", () => {
+  // The coven list is the shared SurfaceRail primitive (persisted width /
+  // collapse, search slot) instead of a bespoke fixed-width aside.
+  assert.match(
+    view,
+    /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
+    "rail comes from the shared SurfaceRail primitive",
+  );
+  assert.match(view, /storageKey="cave:coven:rail"/, "rail prefs persist under the coven rail key");
+  assert.match(view, /placeholder="Search covens…"/, "rail search filters covens by name");
+  assert.match(view, /aria-label="New coven"/, "the rail header keeps the create-coven action");
+  assert.match(view, /requestDeleteGroup\(g\.id, g\.name\)/, "rows keep the confirmed delete affordance");
+
+  // Details drawer: subject + running summary on the local group model,
+  // committed on blur through the same saveGroups path as other mutations.
+  assert.match(view, /setGroupDetails\(group, patch, nowIso\(\)\)/, "details commits go through the pure helper");
+  assert.match(view, /if \(next === group\) return;/, "an untouched blur neither persists nor reorders the rail");
+  assert.match(view, /placeholder="What is this coven about\?"/, "subject field uses the handoff placeholder");
+  assert.match(
+    view,
+    /placeholder="Short running summary of the conversation…"/,
+    "summary field uses the handoff placeholder",
+  );
+  assert.match(view, /aria-expanded=\{detailsOpen\}/, "the details strip is a disclosure button");
+
+  // Header grammar: double-click rename (keyboard parity kept), member chips
+  // + dashed "+ Add" pill anchoring the existing roster picker.
+  assert.match(view, /onDoubleClick=\{\(\) => setRenaming\(true\)\}/, "pointer rename is double-click");
+  assert.match(view, /coven-tab__member-chip/, "members render as header chips");
+  assert.match(view, /coven-tab__add-member/, "the dashed add pill opens the roster picker");
+
+  // Composer affordances from the mock: mention kicker + explicit empty state,
+  // and a typing line while replies are in flight.
+  assert.match(view, /coven-tab__mention-kicker">Tag a familiar</, "mention popover keeps its kicker");
+  assert.match(view, /No matching familiar in this coven/, "mention popover has an explicit empty state");
+  assert.match(view, /replyingNames\.join\(", "\)\} replying…/, "in-flight replies surface the typing line");
+});
+
 test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // Smart autoscroll (cave-o8si): intent-based release via the shared hook —
   // scrolling up detaches, only the true bottom re-attaches. No position

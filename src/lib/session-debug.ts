@@ -111,6 +111,51 @@ export function shouldPollEvents(args: { status: string | null; visible: boolean
   return args.status === "running" && args.visible;
 }
 
+/** Snapshot of one pane's fetched event tail, kept across modal close/reopen. */
+export type DebugEventsSnapshot = {
+  events: CovenEvent[];
+  /** Next ?afterSeq= cursor — resuming from here skips the already-drained tail. */
+  cursor: number;
+  /** Whether the last drain stopped at the page cap (more events server-side). */
+  tailCapped: boolean;
+};
+
+/** Most recently touched pane keys, newest last. Bounded so long sessions
+ *  browsing many chats don't accumulate unbounded event tails in memory. */
+const DEBUG_EVENTS_CACHE_LIMIT = 8;
+const debugEventsCache = new Map<string, DebugEventsSnapshot>();
+
+/** Module-level cache of fetched debug event tails, keyed by pane key
+ *  (session id, or run id for pre-promotion chats). The debug modal unmounts
+ *  its pane when closed (ui/modal.tsx returns null), which used to discard the
+ *  drained tail and afterSeq cursor — every reopen refetched from seq 0. The
+ *  pane seeds its state from here on mount and writes through on change, so a
+ *  reopen renders the cached tail instantly and resumes fetching from the
+ *  cursor. LRU-bounded; read/write only from the client pane. */
+export function readDebugEventsCache(paneKey: string): DebugEventsSnapshot | null {
+  const hit = debugEventsCache.get(paneKey);
+  if (!hit) return null;
+  // Refresh recency so an actively viewed pane isn't the one evicted.
+  debugEventsCache.delete(paneKey);
+  debugEventsCache.set(paneKey, hit);
+  return hit;
+}
+
+export function writeDebugEventsCache(paneKey: string, snapshot: DebugEventsSnapshot): void {
+  debugEventsCache.delete(paneKey);
+  debugEventsCache.set(paneKey, snapshot);
+  while (debugEventsCache.size > DEBUG_EVENTS_CACHE_LIMIT) {
+    const oldest = debugEventsCache.keys().next().value;
+    if (oldest === undefined) break;
+    debugEventsCache.delete(oldest);
+  }
+}
+
+/** Test hook: reset the module-level cache between assertions. */
+export function clearDebugEventsCacheForTest(): void {
+  debugEventsCache.clear();
+}
+
 /** Case-insensitive substring filter over the event tail: matches kind or the
  *  raw payload JSON (so ids, paths, and error text inside payloads hit without
  *  a parse). Reference-stable on a blank query so React memos can bail. */
