@@ -1,10 +1,10 @@
 // @ts-nocheck
-// Source pins for the chat composer's context grammar (chat revamp 1d,
-// superseding the cave-8eo2 band layout): the session's project · runtime/
-// model · git context collapsed into ONE quiet context pill in the control
-// row, the utility cluster collapsed into ONE "+" menu, and the footer band
-// now carries only the linked-work strip (tasks · GitHub · link/create). The
-// write surface stays minimal: textarea + "+" · pill · circular send.
+// Source pins for the chat composer's context grammar (2026-07-21 wide-column
+// pass, superseding chat revamp 1d's control-row pill): the session's project ·
+// runtime/model · git context stays ONE quiet context pill, but it lives in
+// the footer band alongside the linked-work strip (tasks · GitHub ·
+// link/create). The utility cluster stays collapsed into ONE "+" menu, and
+// the write surface stays minimal: textarea + "+" · circular send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -21,11 +21,11 @@ assert.match(
   "the footer band renders after the composer controls, inside the panel",
 );
 
-// ── Band contents: the linked-work strip only ───────────────────────────────
+// ── Band contents: the context pill + the linked-work strip ─────────────────
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\{linkedContextRow\}\s*\n\s*<\/div>/,
-  "the band carries the linked-context strip (tasks · GitHub · link/create) alone",
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill[\s\S]*?\{linkedContextRow\}\s*\n\s*<\/div>/,
+  "the band leads with the context pill, then the linked-context strip (tasks · GitHub · link/create)",
 );
 
 // ── The context pill replaces the band's picker cluster ─────────────────────
@@ -57,15 +57,20 @@ assert.match(
   "the Branch section elides for git-less composers (home, no-project chats)",
 );
 
-// ── The utility row is just "+" then the pill ───────────────────────────────
+// ── The utility row is just "+" — the pill lives in the band ────────────────
 const utilityRow = source.match(
   /className="cave-composer-utility-row">[\s\S]*?<div className="cave-composer-submit-row">/,
 )?.[0] ?? "";
 assert.ok(utilityRow, "chat composer utility row is present");
 assert.match(
   utilityRow,
-  /<ComposerPlusMenu[\s\S]*<ComposerContextPill/,
-  "the utility row leads with the + menu, then the context pill",
+  /<ComposerPlusMenu/,
+  "the utility row leads with the + menu",
+);
+assert.doesNotMatch(
+  utilityRow,
+  /<ComposerContextPill/,
+  "the context pill moved down to the footer band (2026-07-21 wide-column pass)",
 );
 
 // ── The header no longer hosts the linked-context strip ─────────────────────
@@ -105,15 +110,13 @@ assert.match(
   /\.cave-composer-send\[data-typing="true"\] \{\s*\n\s*background: color-mix\(in oklch, var\(--accent-presence\) 18%, transparent\);/,
   "typing adds the ~18% accent tint fill to send",
 );
-assert.match(
-  css,
-  /\.cave-composer-typing-hint \{[\s\S]*?font-family: var\(--font-mono\);[\s\S]*?font-size: 10\.5px;/,
-  "the enter-to-send hint is the 10.5px mono whisper inside the input area",
-);
-assert.match(
-  css,
-  /@media \(max-width: 767px\) \{[\s\S]*?\.cave-composer-typing-hint \{\s*\n\s*display: none;/,
-  "phone widths skip the typing hint",
+// The "↵ send · ⇧↵ newline" typing hint is gone from the chat composer
+// (2026-07-21): the tinted send button already signals sendability. The
+// home composer keeps its own hint, so the shared CSS class stays.
+assert.doesNotMatch(
+  source,
+  /cave-composer-typing-hint/,
+  "the enter-to-send typing hint no longer renders in the chat composer",
 );
 
 // ── Reveal + mobile behavior ─────────────────────────────────────────────────

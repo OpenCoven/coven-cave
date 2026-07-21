@@ -5805,14 +5805,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
-            {/* Typing hint (chat revamp 1d): appears with the first character,
-                inside the input area — not persistent chrome. Hidden on
-                phone widths (CSS). */}
-            {input.trim() && !busy ? (
-              <span className="cave-composer-typing-hint" aria-hidden>
-                ↵ send · ⇧↵ newline
-              </span>
-            ) : null}
             </div>
             {/* Enhance status strip (shared): streaming preview, apply/dismiss
                 for late arrivals, one-tap revert after an in-place apply. */}
@@ -5882,26 +5874,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       loading: promptEnhance.state.phase === "loading",
                     }}
                     onOpenModelTuning={() => setComposerOptionsOpen(true)}
-                  />
-                  {/* One quiet context pill — Project · Model · branch —
-                      replacing the footer band's picker row; every picker
-                      opens from it. */}
-                  <ComposerContextPill
-                    projects={projects}
-                    projectValue={resolvedProjectId}
-                    onProjectChange={setProjectIdDraft}
-                    allowNoProject
-                    familiarId={familiar.id ?? null}
-                    createProject={createProject}
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    modelDisabled={busy}
-                    projectRoot={activeProjectRoot}
-                    onOpenUrl={onOpenUrl}
-                    ariaLabel="Chat context: project, model, and branch"
                   />
                   <ComposerOptionsMenu
                     open={composerOptionsOpen}
@@ -5982,11 +5954,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
             {/* Footer band — the darker strip attached to the panel's
-                underside now carries only the linked-work strip (tasks ·
-                GitHub · link/create). The project · runtime/model · git
-                pickers it used to host collapsed into the context pill in
-                the control row above (chat revamp 1d). */}
+                underside carries the context pill (Project · Model/runtime ·
+                branch; every picker opens from it) on the left and the
+                linked-work strip (tasks · GitHub · link/create) on the
+                right. The pill moved down from the control row (2026-07-21
+                wide-column pass) so the write surface above stays minimal. */}
             <div className="cave-composer-footer-band">
+              <ComposerContextPill
+                projects={projects}
+                projectValue={resolvedProjectId}
+                onProjectChange={setProjectIdDraft}
+                allowNoProject
+                familiarId={familiar.id ?? null}
+                createProject={createProject}
+                runtime={modelHarness}
+                modelValue={composerModelValue}
+                modelOptions={composerModelOptions}
+                onPickRuntime={handleSelectRuntime}
+                onPickModel={handleSelectModel}
+                modelDisabled={busy}
+                projectRoot={activeProjectRoot}
+                onOpenUrl={onOpenUrl}
+                ariaLabel="Chat context: project, model, and branch"
+              />
               {linkedContextRow}
             </div>
           </div>
