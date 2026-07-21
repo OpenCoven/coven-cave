@@ -85,12 +85,25 @@ export async function readJsonBody<T>(req: Request, maxBytes: number): Promise<J
   }
 
   const raw = new TextDecoder().decode(Buffer.concat(chunks));
+  let parsed: unknown;
   try {
-    return { ok: true, body: JSON.parse(raw) as T };
+    parsed = JSON.parse(raw);
   } catch {
     return {
       ok: false,
       response: NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 }),
     };
   }
+
+  // Guarded routes read `parsed.body.field`; a non-object root (JSON null,
+  // primitive, or array) would throw a TypeError → Next 500. Reject it here so
+  // callers get a clean 400 instead.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      response: NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 }),
+    };
+  }
+
+  return { ok: true, body: parsed as T };
 }
