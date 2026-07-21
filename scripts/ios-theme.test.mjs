@@ -82,11 +82,27 @@ assert.match(
   /func loadTheme\(\) async \{[\s\S]*client\.fetchTheme\(\)[\s\S]*ChromePalette\(snapshot: snapshot\)/,
   "AppModel.loadTheme should fetch and adopt the desktop palette",
 );
+// Connect no longer sequences loadFamiliars() → loadTheme(); the concurrent
+// bootstrap fetches familiars + theme + profile together and adopts the theme.
 assert.match(
   model,
-  /await loadFamiliars\(\)\s*\n\s*await loadTheme\(\)/,
-  "refreshConnection should load the theme on connect",
+  /private func loadCoreResources\(\) async \{[\s\S]*ConnectionBootstrap\.load\(using: client\)[\s\S]*if case \.success\(let snapshot\) = payload\.theme \{ adopt\(snapshot\) \}/,
+  "connect bootstrap should fetch and adopt the desktop theme",
 );
+// Anchored inside the refreshConnection body (start of the func declaration to
+// its member-indent closing brace) so the pin fails if the bootstrap call moves
+// out of the connect path rather than matching a stray call anywhere in the file.
+{
+  const start = model.indexOf("func refreshConnection(");
+  assert.ok(start >= 0, "AppModel should define refreshConnection");
+  const end = model.indexOf("\n    }", start);
+  assert.ok(end > start, "refreshConnection body should close at member indent");
+  assert.match(
+    model.slice(start, end),
+    /await loadCoreResources\(\)/,
+    "refreshConnection should run the core-resource bootstrap on connect",
+  );
+}
 
 // --- App chrome applies accent, mode, and propagates the palette ------------
 

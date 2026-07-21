@@ -45,6 +45,10 @@ final class AppModel {
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
+    /// Single-flight for `refreshConnection`: overlapping reconnect signals
+    /// (foreground probe, path monitor, pill tap, retry tickers) collapse
+    /// into one discovery sweep instead of stacking probes.
+    @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
 
     var familiars: [Familiar] = []
     var familiarsError: String?
@@ -262,7 +266,8 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
-        loadThreads()
+        // Threads hydrate off-main via the store — no file I/O in init.
+        Task { await self.hydrateThreads() }
         loadCardLinks()
         loadFamiliarOrder()
         loadFamiliarViews()
@@ -642,7 +647,12 @@ final class AppModel {
             canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
             canvasError = nil
         } catch {
-            canvasError = error.localizedDescription
+            // Shared surface-error path: an auth failure routes to pairing
+            // guidance, and a failure while "connected" schedules the auto
+            // recover — whose surface reload includes canvas (below), so a
+            // transient first-load error heals instead of leaving the gallery
+            // permanently empty behind the view's one-shot load guard.
+            canvasError = handleSurfaceError(error)
         }
         canvasLoaded = true
     }
@@ -903,6 +913,9 @@ final class AppModel {
 
         connection = conn
         conn.save()
+        // A probe of the previous endpoint must not be joined as this
+        // configuration's outcome.
+        await refreshCoordinator.cancelActiveRefresh()
         await refreshConnection()
     }
 
@@ -931,6 +944,11 @@ final class AppModel {
     }
 
     func disconnect() {
+        // An in-flight probe's outcome is moot once the endpoint is gone; the
+        // post-probe `connection != nil` guard in refreshConnection catches
+        // any that already resolved.
+        let coordinator = refreshCoordinator
+        Task { await coordinator.cancelActiveRefresh() }
         CaveConnection.clear()
         connection = nil
         familiars = []
@@ -962,7 +980,7 @@ final class AppModel {
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
-        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
+        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded || canvasLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
@@ -1020,15 +1038,41 @@ final class AppModel {
         await connectWithRetry()
     }
 
+    /// Familiars + theme + profile fetched concurrently, each applied
+    /// independently — one failing resource must not discard the others.
+    /// Mirrors the semantics of `loadFamiliars`/`loadTheme`/`loadOperatorProfile`.
+    private func loadCoreResources() async {
+        guard let client else { return }
+        let payload = await ConnectionBootstrap.load(using: client)
+        switch payload.familiars {
+        case .success(let loaded):
+            familiars = applyFamiliarOrder(loaded)
+            seedFamiliarViews(familiars.map(\.id))
+            familiarsError = nil
+        case .failure(let error):
+            familiarsError = handleSurfaceError(error)
+        }
+        // Theme and profile stay best-effort: on failure the last snapshot
+        // stands (no flash back to the fallback chrome / "You").
+        if case .success(let snapshot) = payload.theme { adopt(snapshot) }
+        if case .success(let profile) = payload.profile, operatorProfile != profile {
+            operatorProfile = profile
+        }
+    }
+
+    /// Each loader owns disjoint state and applies on the main actor, so they
+    /// can overlap their network waits — wall time tracks the slowest surface
+    /// rather than the sum of all of them.
     private func refreshLoadedSurfaces() async {
-        await loadFamiliars()
-        if sessionsLoaded { await loadSessions() }
-        if tasksLoaded { await loadTasks() }
-        if remindersLoaded { await loadReminders() }
-        if projectsLoaded { await loadProjects() }
-        if journalLoaded { await loadJournal() }
-        await loadTheme()
-        await loadOperatorProfile()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.loadCoreResources() }
+            if sessionsLoaded { group.addTask { await self.loadSessions() } }
+            if tasksLoaded { group.addTask { await self.loadTasks() } }
+            if remindersLoaded { group.addTask { await self.loadReminders() } }
+            if projectsLoaded { group.addTask { await self.loadProjects() } }
+            if journalLoaded { group.addTask { await self.loadJournal() } }
+            if canvasLoaded { group.addTask { await self.loadCanvas() } }
+        }
     }
 
     /// `quiet` probes without first flipping the state to `.checking`, so a
@@ -1039,12 +1083,46 @@ final class AppModel {
         guard let connection else { connectionState = .unconfigured; return }
         if !quiet { connectionState = .checking }
 
-        // Try the configured endpoint first, then auto-relocate to a working
-        // port (e.g. the user typed a `.ts.net` host without `:8443`).
-        let configured = connection.baseURL
-        switch await Self.discoverBaseURL(connection.candidateBaseURLs) {
+        // Single-flight the transport decision: concurrent callers join the
+        // in-flight probe, and only the launching caller applies the outcome
+        // (state + loads must run once, not per caller). A joiner's
+        // surface-reload intent is OR-merged onto the probe so the launcher
+        // applies it — the joiner returning early must not drop it.
+        let candidates = connection.candidateBaseURLs
+        // Identity of the endpoint this probe describes. `configure()` cancels
+        // the in-flight probe, but a launcher that already passed its
+        // `Task.isCancelled` check races that cancel — without this capture it
+        // would compare its stale outcome against the user's just-entered
+        // endpoint, "relocate", and persist the old one back.
+        let probedBaseURL = connection.baseURL
+        let refresh = await refreshCoordinator.refresh(requestSurfaceReload: reloadLoadedSurfaces) {
+            // Try the configured endpoint first, then auto-relocate to a
+            // working port (e.g. a `.ts.net` host typed without `:8443`).
+            let outcome = await Self.discoverBaseURL(candidates)
+            guard !Task.isCancelled else { return .cancelled }
+            switch outcome {
+            case .found(let url): return .found(url)
+            case .unauthorized: return .unauthorized
+            case .none: return .unreachable
+            }
+        }
+        guard refresh.launched else { return }
+        // The user may have disconnected while the probe ran; its outcome no
+        // longer describes anything configured.
+        guard self.connection != nil else { connectionState = .unconfigured; return }
+        // Superseded mid-flight: the endpoint was reconfigured after this
+        // probe slipped past its cancellation check. Its outcome describes the
+        // old endpoint — applying it would silently revert the user's new one.
+        // The replacing configuration's own refresh owns the state.
+        guard self.connection?.baseURL == probedBaseURL else { return }
+
+        switch refresh.result {
+        case .cancelled:
+            // Superseded (endpoint reconfigured mid-probe): the replacing
+            // refresh owns the state.
+            return
         case .found(let working):
-            if working != configured {
+            if working != self.connection?.baseURL {
                 // Relocate: persist the working endpoint so future launches
                 // connect directly. Stored as bare `host:port` when the
                 // default scheme derivation reproduces the URL — a bare host
@@ -1061,16 +1139,15 @@ final class AppModel {
             connectionState = .connected
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
-            if reloadLoadedSurfaces {
+            // OR of this launcher's own flag and any joiner's merged intent.
+            if refresh.surfaceReloadRequested {
                 await refreshLoadedSurfaces()
             } else {
-                await loadFamiliars()
-                await loadTheme()
-                await loadOperatorProfile()
+                await loadCoreResources()
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
-        case .none:
+        case .unreachable:
             connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
         }
     }
@@ -1743,14 +1820,25 @@ final class AppModel {
 
     // MARK: - Persistence
 
-    private var threadsFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("cave-threads.json")
+    private static var threadsFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("cave-threads.json")
     }
+
+    /// Owns all thread-file I/O (reads, JSON coding, atomic writes) off the
+    /// main actor.
+    @ObservationIgnored private let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
 
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
+
+    /// Guards against saving before the async `hydrateThreads()` restore has
+    /// settled. Without it, a background/flush that fires before hydration
+    /// publishes would snapshot the not-yet-hydrated (possibly empty) `threads`
+    /// array and overwrite the user's snapshot file with nothing. Set true once
+    /// the load settles — including the load-failure/empty path, where later
+    /// saves are legitimate.
+    @ObservationIgnored private var threadsHydrated = false
 
     func persistThreads() {
         // Debounce: many call sites (message send/receive, edits, archive,
@@ -1766,32 +1854,36 @@ final class AppModel {
         }
     }
 
-    /// Snapshot on the main actor (cheap value-type map), then encode + write
-    /// off-main. Call directly when a synchronous flush is required (e.g. app
-    /// moving to the background).
+    /// Snapshot on the main actor (cheap value-type map), then hand the encode
+    /// + atomic write to the store actor. Call directly when an immediate flush
+    /// is required (e.g. app moving to the background).
     func flushThreads() {
+        // Never persist before hydration settles — see `threadsHydrated`.
+        guard threadsHydrated else { return }
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
-        let url = threadsFileURL
-        Task.detached(priority: .utility) {
-            do {
-                let data = try JSONEncoder().encode(snapshots)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                // Non-fatal: persistence is best-effort.
-            }
+        Task.detached(priority: .utility) { [threadStore] in
+            // Non-fatal: persistence is best-effort.
+            try? await threadStore.save(snapshots)
         }
     }
 
-    private func loadThreads() {
-        guard let data = try? Data(contentsOf: threadsFileURL),
-              let snapshots = try? JSONDecoder().decode([ThreadSnapshot].self, from: data) else {
-            return
-        }
-        threads = snapshots
-            .sorted { $0.updatedAt > $1.updatedAt }
+    /// One-shot restore at launch: load off-main via the store and publish the
+    /// decoded threads in a single assignment. Threads created before the load
+    /// lands (unlikely, launch-fast) are kept — restored ones merge in by id.
+    private func hydrateThreads() async {
+        let snapshots = (try? await threadStore.load()) ?? []
+        // The load has settled: from here on saves can no longer clobber an
+        // unread snapshot file, so flushes are safe even if we restored nothing.
+        defer { threadsHydrated = true }
+        guard !snapshots.isEmpty else { return }
+        let existing = Set(threads.map(\.id))
+        let restored = snapshots
+            .filter { !existing.contains($0.id) }
             .map { ChatThread(snapshot: $0) }
+        guard !restored.isEmpty else { return }
+        threads = (threads + restored).sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var cardLinksFileURL: URL {

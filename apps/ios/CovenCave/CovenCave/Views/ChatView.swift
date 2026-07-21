@@ -36,6 +36,9 @@ struct ChatView: View {
     @State private var modelPickerCurrent = ""
     @State private var showTasks = false
     @State private var atBottom = true
+    /// Coalesces streaming auto-scroll: several text flushes can land inside
+    /// one display frame (group fan-out, resume replay) — issue one scrollTo.
+    @State private var streamScroll = ScrollCoalescer()
     @State private var dictation = SpeechDictation()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
@@ -55,16 +58,6 @@ struct ChatView: View {
 
     /// Per-thread key for the persisted unsent draft.
     private var draftKey: String { "cave.chat.draft.\(thread.id)" }
-
-    /// True when the message at `index` opens a new calendar day (or is the very
-    /// first message) — drives the date dividers in the transcript.
-    private func shouldShowDaySeparator(at index: Int) -> Bool {
-        let messages = thread.messages
-        guard index >= 0, index < messages.count else { return false }
-        if index == 0 { return true }
-        return !Calendar.current.isDate(messages[index].createdAt,
-                                        inSameDayAs: messages[index - 1].createdAt)
-    }
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -262,31 +255,37 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(Array(thread.messages.enumerated()), id: \.element.id) { index, message in
-                        if shouldShowDaySeparator(at: index) {
-                            DaySeparator(date: message.createdAt)
+                    // Rows come pre-derived from the thread (day dividers
+                    // interleaved with messages), so separator placement isn't
+                    // recomputed — and no `enumerated()` array is allocated —
+                    // on every body evaluation.
+                    ForEach(thread.transcriptRows) { row in
+                        switch row {
+                        case .day(_, let date):
+                            DaySeparator(date: date)
+                        case .message(let message):
+                            MessageBubble(message: message,
+                                          isGroup: thread.isGroup,
+                                          familiar: message.familiarId.flatMap(app.familiar),
+                                          isLast: message.id == thread.messages.last?.id,
+                                          onDelete: { deleteMessage(message) },
+                                          onSuggestion: { sendSuggestion($0) },
+                                          onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
+                                          onForward: { beginForward($0) },
+                                          onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
+                                          onReply: { beginReply($0) },
+                                          operatorName: app.operatorDisplayName,
+                                          operatorAvatarURL: app.operatorAvatarURL)
+                            .equatable()
+                            .id(message.id)
+                            // New bubbles settle in with a soft rise-and-fade
+                            // (native Messages behaviour) instead of popping;
+                            // deletions fade out. Driven by the count-keyed
+                            // animation below; Reduce Motion turns it off.
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                                removal: .opacity))
                         }
-                        MessageBubble(message: message,
-                                      isGroup: thread.isGroup,
-                                      familiar: message.familiarId.flatMap(app.familiar),
-                                      isLast: message.id == thread.messages.last?.id,
-                                      onDelete: { deleteMessage(message) },
-                                      onSuggestion: { sendSuggestion($0) },
-                                      onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
-                                      onForward: { beginForward($0) },
-                                      onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
-                                      onReply: { beginReply($0) },
-                                      operatorName: app.operatorDisplayName,
-                                      operatorAvatarURL: app.operatorAvatarURL)
-                        .equatable()
-                        .id(message.id)
-                        // New bubbles settle in with a soft rise-and-fade
-                        // (native Messages behaviour) instead of popping;
-                        // deletions fade out. Driven by the count-keyed
-                        // animation below; Reduce Motion turns it off.
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
-                            removal: .opacity))
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -349,10 +348,14 @@ struct ChatView: View {
             // Scrolling up to reread must never be yanked back down by each
             // arriving token — the native Messages contract; returning to the
             // bottom re-engages following via `atBottom`.
+            // Coalesced to display cadence: the trailing-edge fire means the
+            // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard atBottom else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                streamScroll.request {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
             }
             // A new message reveals itself when it's the user's own send (you
@@ -1053,6 +1056,31 @@ struct ChatView: View {
         Forwarded message:
         \(message.text)
         """
+    }
+}
+
+/// Bounds auto-scroll work to display cadence: the FIRST requested closure is
+/// fired one frame (~16ms) later; closures requested while one is pending are
+/// DROPPED entirely (first-wins, not latest-wins). That's fine here because
+/// every request does the same idempotent "scroll to bottom" — do not reuse
+/// this for non-idempotent work that expects the latest closure to run.
+///
+/// Lifecycle: there is deliberately no `deinit` (a nonisolated deinit can't
+/// touch @MainActor state under strict concurrency). The pending task holds
+/// `self` weakly and guards liveness before scrolling; a task that dangles
+/// past dealloc fires once ≤16ms later and does nothing.
+@MainActor
+final class ScrollCoalescer {
+    private var pending: Task<Void, Never>?
+
+    func request(_ scroll: @escaping @MainActor () -> Void) {
+        guard pending == nil else { return }
+        pending = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(16))
+            guard let self, !Task.isCancelled else { return }
+            self.pending = nil
+            scroll()
+        }
     }
 }
 

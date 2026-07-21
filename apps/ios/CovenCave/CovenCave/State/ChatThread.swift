@@ -24,7 +24,7 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
-struct ThreadSnapshot: Codable, Identifiable {
+struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var id: String
     var title: String
     var familiarIds: [String]
@@ -53,7 +53,19 @@ final class ChatThread: Identifiable, Hashable {
     var title: String
     var familiarIds: [String]
     var sessionIds: [String: String]
-    var messages: [DisplayMessage]
+    /// Structural changes (append/insert/remove/replace — here or from
+    /// AppModel) re-derive the transcript rows and id index. Streamed text
+    /// deltas go through `mutate`, which updates one row in place instead.
+    var messages: [DisplayMessage] {
+        didSet {
+            guard !inPlaceMutation else { return }
+            rebuildTranscript()
+        }
+    }
+    /// Derived render model for the transcript: day dividers interleaved with
+    /// messages. `ChatView` renders this directly, so separator placement is
+    /// computed once per structural change, not once per body evaluation.
+    private(set) var transcriptRows: [TranscriptRow] = []
     var updatedAt: Date
     var archived: Bool = false
     var pinned: Bool = false
@@ -74,6 +86,7 @@ final class ChatThread: Identifiable, Hashable {
         self.sessionIds = sessionIds
         self.messages = messages
         self.updatedAt = Date()
+        rebuildTranscript()  // didSet doesn't fire during init
     }
 
     convenience init(snapshot s: ThreadSnapshot) {
@@ -247,6 +260,27 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private var replayingQueued = false
+
+    /// O(1) id → `messages` position for the stream's hot mutation path.
+    @ObservationIgnored private var transcriptIndex = TranscriptIndex()
+    /// id → `transcriptRows` position, so a text delta patches its row in place.
+    @ObservationIgnored private var rowPositionByMessageID: [String: Int] = [:]
+    /// Set while `mutate` writes `messages[idx]` so the `didSet` doesn't
+    /// re-derive rows for a text-only change.
+    @ObservationIgnored private var inPlaceMutation = false
+
+    /// Re-derive rows + indexes after a structural change. `Calendar.current`
+    /// matches the day-divider semantics the view previously computed.
+    private func rebuildTranscript() {
+        transcriptIndex.rebuild(messages: messages)
+        let rows = TranscriptRow.rows(for: messages)
+        var rowPositions = [String: Int](minimumCapacity: messages.count)
+        for (position, row) in rows.enumerated() {
+            if case .message(let message) = row { rowPositions[message.id] = position }
+        }
+        transcriptRows = rows
+        rowPositionByMessageID = rowPositions
+    }
 
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
@@ -476,11 +510,23 @@ final class ChatThread: Identifiable, Hashable {
         }
     }
 
+    /// In-place update of one message — the stream's hot path (every coalesced
+    /// text flush lands here). O(1) via the transcript index instead of an
+    /// O(n) scan, and patches the matching row without re-deriving separators
+    /// (a mutate never changes `createdAt`, so separators can't move).
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {
-        guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        guard let idx = transcriptIndex.position(of: messageId),
+              idx < messages.count, messages[idx].id == messageId else { return }
         var message = messages[idx]
         body(&message)
+        assert(message.createdAt == messages[idx].createdAt,
+               "mutate must not change createdAt — separators are not re-derived on this path")
+        inPlaceMutation = true
         messages[idx] = message
+        inPlaceMutation = false
+        if let rowIdx = rowPositionByMessageID[messageId] {
+            transcriptRows[rowIdx] = .message(message)
+        }
     }
 }
 

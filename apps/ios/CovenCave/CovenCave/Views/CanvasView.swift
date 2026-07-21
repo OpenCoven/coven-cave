@@ -41,10 +41,13 @@ struct CanvasView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .task { if !app.canvasLoaded { await app.loadCanvas() } }
+            // One scene-aware load task: fires on appear (the scene is already
+            // active) and again if the gallery still hasn't loaded when the app
+            // returns to the foreground. Manual refresh stays unconditional via
+            // `.refreshable` — this guard only stops duplicate automatic loads.
             .task(id: scenePhase) {
-                guard scenePhase == .active, !app.isGeneratingCanvas else { return }
-                await app.loadCanvas()
+                guard scenePhase == .active else { return }
+                if !app.canvasLoaded { await app.loadCanvas() }
             }
             .onAppear { if selectedFamiliarId == nil { selectedFamiliarId = app.familiars.first?.id } }
             .navigationDestination(item: $detail) { artifact in

@@ -44,9 +44,18 @@ assert.match(model, /var operatorProfile: OperatorProfile\?/, "AppModel holds th
 assert.match(model, /var operatorDisplayName: String \{ operatorProfile\?\.displayName \?\? "You" \}/, "display-name helper");
 assert.match(model, /func loadOperatorProfile\(\) async/, "load method exists");
 assert.match(model, /if operatorProfile != profile \{ operatorProfile = profile \}/, "assign-on-change (no needless invalidation)");
-// Hydrated on the connect path, on a full surface refresh, and on foreground.
-const loadCalls = model.match(/await loadOperatorProfile\(\)/g) ?? [];
-assert.ok(loadCalls.length >= 3, `loadOperatorProfile is called on connect, refresh, and foreground (found ${loadCalls.length})`);
+// Hydrated on foreground revalidation directly, and on connect / full surface
+// refresh through the concurrent bootstrap (profile beside familiars + theme).
+assert.match(
+  model,
+  /func validateConnectionOnForeground\(\) async \{[\s\S]*?await loadOperatorProfile\(\)/,
+  "foreground revalidation reloads the operator profile",
+);
+assert.match(
+  model,
+  /if case \.success\(let profile\) = payload\.profile, operatorProfile != profile \{/,
+  "connect/refresh bootstrap adopts the fetched operator profile",
+);
 
 // --- Chat: "You" author labels route through the operator name ---------------
 assert.match(

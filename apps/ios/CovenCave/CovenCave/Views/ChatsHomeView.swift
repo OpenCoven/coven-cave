@@ -79,7 +79,9 @@ struct ChatsHomeView: View {
                 await app.loadFamiliars()
                 await app.loadSessions()
             }
-            .task { await app.loadSessions() }
+            // Sessions load once; reconnects and pull-to-refresh handle
+            // subsequent reloads, so re-appearing tabs don't refetch the list.
+            .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
                 openDeepLinkedThread()
                 openRequestedFamiliar()
