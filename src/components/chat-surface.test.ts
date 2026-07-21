@@ -185,8 +185,8 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?compact=\{compactRail\}/,
-  "ChatSurface should suppress the in-chat project sidebar via compact when chat-mode ChatSidebar owns threads",
+  /<ChatRouter[\s\S]*?hideRail=\{compactRail\}/,
+  "ChatSurface should suppress only the in-chat project rail (hideRail) when chat-mode ChatSidebar owns threads — the full-width toolbar stays",
 );
 
 assert.match(

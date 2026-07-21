@@ -62,7 +62,11 @@ assert.match(
   /const compactRail = hideThreadRail/,
   "ChatSurface should fold hideThreadRail into the compact rail flag",
 );
-assert.match(chatSurface, /compact=\{compactRail\}/, "ChatRouter should receive the combined compact flag");
+assert.match(
+  chatSurface,
+  /hideRail=\{compactRail\}/,
+  "ChatRouter should receive the rail-only flag — the outer sidebar owns chats, but the full-width toolbar must stay (hideRail, not compact)",
+);
 
 // ── Recreated sidepanel: project-grouped threads + register-as-project. ───────
 assert.match(

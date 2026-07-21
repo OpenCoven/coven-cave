@@ -21,8 +21,8 @@ assert.match(src, /!rowCollapsed && \(/, "collapsed section's rows are not rende
 // "Select all" + Delete can never remove chats hidden in a collapsed section.
 assert.match(
   src,
-  /const visibleIds = useMemo\(\(\) => \{\s*\n\s*if \(effectiveSelection !== "all" \|\| collapsedSections\.size === 0\) return displayIds;\s*\n\s*return displayIds\.filter\(\s*\n\s*\(id\) => !collapsedSections\.has\(isSessionPinned\(pinnedIds, id\) \? "pinned" : "sessions"\),/,
-  "visibleIds excludes rows in a collapsed section",
+  /const visibleIds = useMemo\(\(\) => \{[\s\S]{0,320}?if \(effectiveSelection !== "all" \|\| groupBy !== "none" \|\| collapsedSections\.size === 0\) return displayIds;\s*\n\s*return displayIds\.filter\(\s*\n\s*\(id\) => !collapsedSections\.has\(isSessionPinned\(pinnedIds, id\) \? "pinned" : "sessions"\),/,
+  "visibleIds excludes rows in a collapsed section (sections exist only in the flat ungrouped view)",
 );
 assert.doesNotMatch(
   src,
