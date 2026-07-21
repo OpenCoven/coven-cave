@@ -929,7 +929,10 @@ export function MarketplaceViewSurface({
             query={query}
             onClearQuery={() => setQuery("")}
             onCreateSkill={() => selectSection("build")}
-            onChanged={() => void loadSkills(query)}
+            onChanged={() => {
+              invalidateSurfaceResources("marketplace:skills");
+              void loadSkills(query);
+            }}
           />
         </div>
       ) : (
@@ -942,7 +945,10 @@ export function MarketplaceViewSurface({
         >
           <SkillBuilder
             familiars={familiars}
-            onSaved={() => void loadSkills("")}
+            onSaved={() => {
+              invalidateSurfaceResources("marketplace:skills");
+              void loadSkills("");
+            }}
             onViewSkills={() => selectSection("skills")}
           />
         </div>
