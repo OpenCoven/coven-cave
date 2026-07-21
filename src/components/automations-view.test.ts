@@ -269,7 +269,7 @@ console.log("automations-view.test.ts: ok");
 assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
 assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
 assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
-assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook");
+assert.match(source, /usePausablePoll\(\(\) => \{ void load\(true\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook and bypasses a warm cache");
 // Selected-detail syncs only adopt content changes — a new-but-identical
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
