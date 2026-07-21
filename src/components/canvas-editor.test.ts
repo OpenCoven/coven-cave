@@ -320,6 +320,23 @@ assert.match(
   "the keydown handler reads native fullscreen from the DOM at event time",
 );
 
+const editorCss = readFileSync(new URL("../styles/canvas-editor.css", import.meta.url), "utf8");
+assert.match(
+  editorCss,
+  /\.canvas-editor--expanded \.canvas-editor__aside \{\s*display: none;/,
+  "expanding hides the inspector/design-chat aside",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor--expanded \.canvas-editor__frame-shell \{[^}]*width: 100%;/,
+  "expanding removes the 900px frame cap",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor__frame-shell:fullscreen \{/,
+  "native fullscreen strips the frame chrome",
+);
+
 // ── Escape precedence: native fullscreen → field → selection → expand ───────
 assert.equal(
   resolveEscapeAction({ nativeFullscreen: true, fieldHasContent: true, hasSelection: true, expanded: true }),
