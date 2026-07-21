@@ -42,7 +42,36 @@ for (const [name, source] of [["list", listRoute], ["item", itemRoute]]) {
     /payload\.familiarId != null[\s\S]*payload\.proposedBy != null[\s\S]*payload\.claimedHumanApproval === true/,
     `${name} route relayed-approval guard should reject familiar identity and relayed approval claims`,
   );
+  assert.match(
+    source,
+    /requireLocalHumanGrantMutation\(req\)/,
+    `${name} route mutations should require a local human request, mirroring direct project grants (PR #3306)`,
+  );
 }
+assert.match(
+  shared,
+  /export function requireLocalHumanGrantMutation\(req: Request\)[\s\S]*isLocalOrigin\(req\)/,
+  "the shared local-origin gate should delegate to the centralized isLocalOrigin guard",
+);
+const listMutations = listRoute.match(/export async function POST\(/g) ?? [];
+const itemMutations = itemRoute.match(/export async function (PATCH|DELETE)\(/g) ?? [];
+const listGates = listRoute.match(/requireLocalHumanGrantMutation\(req\)/g) ?? [];
+const itemGates = itemRoute.match(/requireLocalHumanGrantMutation\(req\)/g) ?? [];
+assert.equal(
+  listGates.length,
+  listMutations.length,
+  "every list-route mutation handler should carry the local-origin gate",
+);
+assert.equal(
+  itemGates.length,
+  itemMutations.length,
+  "every item-route mutation handler should carry the local-origin gate",
+);
+assert.doesNotMatch(
+  listRoute.split("export async function GET")[1].split("export async function")[0],
+  /requireLocalHumanGrantMutation/,
+  "GET must stay ungated — mobile clients legitimately read access groups",
+);
 assert.match(
   shared,
   /access !== "read" && access !== "write"/,
