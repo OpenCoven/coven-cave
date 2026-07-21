@@ -767,4 +767,80 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   );
 }
 
+// ── First-turn stubs in the merge (cave-0g2x) ────────────────────────────────
+// A stub conversation (pending first reply ⇒ summary has NO status) must
+// (a) list as a local-only row so brand-new chats appear immediately, and
+// (b) never override a live daemon row's "running" status/exit_code even
+// when the local summary is newer.
+{
+  const bareState = {
+    sessionFamiliar: {},
+    sessionTitles: {},
+    sessionArchived: {},
+    sessionSacrificed: {},
+  };
+  const stubConv = {
+    sessionId: "stub-new-chat",
+    familiarId: "nova",
+    harness: "claude",
+    title: "Fix the flaky test",
+    createdAt: "2026-07-21T00:00:00.000Z",
+    updatedAt: "2026-07-21T00:00:00.000Z",
+    // No status/exitCode: conversationTerminalStatus returns null while the
+    // first assistant reply is pending.
+  };
+
+  const localOnly = mergeSessionRows({
+    daemonSessions: [],
+    localConversations: [stubConv],
+    state: bareState,
+    includeArchived: false,
+  });
+  assert.equal(localOnly.length, 1, "a stub-only chat lists immediately");
+  assert.equal(localOnly[0]?.id, "stub-new-chat");
+  assert.equal(localOnly[0]?.title, "Fix the flaky test");
+  assert.equal(localOnly[0]?.status, "completed", "statusless local-only rows fall back safely");
+  assert.equal(
+    filterVisibleChatSessions(localOnly, null).length,
+    1,
+    "the stub row survives the chat-rail visibility filter",
+  );
+
+  const withDaemon = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "stub-new-chat",
+        project_root: "/repo",
+        harness: "claude",
+        title: "Fix the flaky test",
+        status: "running",
+        exit_code: null,
+        archived_at: null,
+        created_at: "2026-07-21T00:00:00.000Z",
+        // Daemon row is OLDER than the local stub write.
+        updated_at: "2026-07-20T23:59:00.000Z",
+      },
+    ],
+    localConversations: [stubConv],
+    state: bareState,
+    includeArchived: false,
+  });
+  assert.equal(withDaemon.length, 1);
+  assert.equal(
+    withDaemon[0]?.status,
+    "running",
+    "a newer statusless stub must not flip a live daemon status",
+  );
+  assert.equal(
+    withDaemon[0]?.exit_code,
+    null,
+    "a newer statusless stub must not fabricate an exit code",
+  );
+  assert.equal(
+    withDaemon[0]?.updated_at,
+    "2026-07-21T00:00:00.000Z",
+    "message-authoritative local timestamp still wins for ordering",
+  );
+}
+
 console.log("session-list-merge.test.ts: ok");
