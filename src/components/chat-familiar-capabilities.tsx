@@ -3,13 +3,14 @@
 /**
  * ChatFamiliarView — the chat surface's Familiar tab.
  *
- * A purpose-built "who am I chatting with?" surface: identity hero first
- * (avatar, serif name, presence, runtime), then the capability grid (roles,
- * skills, plugins, runtime, MCP servers, warnings). Extracted from the
- * retired inspector sidepanel's pane so the tab owns its own landmark,
- * scroll region, and empty state instead of re-hosting a rail component
- * (cave-yqrx); the visual design carries over from cave-7e1l/cave-aovo/
- * cave-w3us unchanged.
+ * Design-handoff redesign: a shared SurfaceRail roster on the left (search,
+ * collapse, resize — local selection only, never the app-wide scope) and an
+ * identity detail on the right: header (avatar, serif name, presence chip,
+ * runtime/model pills, Profile/Analytics/Memory links, New chat) over a
+ * 1.5fr/1fr card grid (Roles · Skills | Runtime · Capabilities · Warnings).
+ * Capability data still flows through useCapabilitySnapshot (/api/roles,
+ * /api/skills/local, /api/capabilities?harness=, /api/harnesses); the
+ * lifecycle/scope state machine (deriveFamiliarTabState) is unchanged.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +19,8 @@ import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { SurfaceRail } from "@/components/ui/surface-rail";
+import { SearchInput } from "@/components/ui/search-input";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { deriveFamiliarTabState } from "@/lib/familiar-tab-state";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
@@ -28,57 +31,9 @@ import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import { relativeTime } from "@/lib/relative-time";
 import { navigateFamiliarSurface } from "@/lib/familiar-surface-navigation";
+import "@/styles/familiar-tab.css";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
-
-function CapSection({
-  title,
-  scope,
-  empty,
-  emptyText,
-  children,
-}: {
-  title: string;
-  scope?: string;
-  empty?: boolean;
-  emptyText?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <section>
-      <header className="mb-1.5 flex items-baseline justify-between">
-        <h3 className="text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
-          {title}
-        </h3>
-        {scope ? (
-          <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{scope}</span>
-        ) : null}
-      </header>
-      {empty ? (
-        <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
-          {emptyText ?? "Nothing here."}
-        </p>
-      ) : (
-        children
-      )}
-    </section>
-  );
-}
-
-function CapRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <li className="flex items-baseline justify-between gap-2">
-      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)]">
-        {label}
-      </span>
-      <span
-        className={`truncate text-[var(--text-primary)] ${mono ? "font-mono text-[length:var(--text-xs)]" : ""}`}
-      >
-        {value}
-      </span>
-    </li>
-  );
-}
 
 /** Neutral kind marker — the kind is metadata, not a status: one quiet style
  *  for every kind (the old per-kind color map was accent soup on every row). */
@@ -90,9 +45,6 @@ function KindBadge({ kind }: { kind: string }) {
   );
 }
 
-/** Navigate the workspace to a management surface (Roles / Capabilities /
- *  Marketplace hub) through the same `cave:navigate-mode` bridge every other
- *  cross-surface link uses. */
 /** Teach-state CTA — every empty state gets a real affordance, not a
  *  dead-end sentence naming a page. */
 function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
@@ -100,15 +52,15 @@ function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="familiar-tab__cta focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+      className="familiar-tab__cta focus-ring inline-flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
     >
       {label}
     </button>
   );
 }
 
-/** One de-boxed skill row, shared by all three provenance groups: quiet name
- *  + kind, one-line description, neutral tag chips — and the source path
+/** One skill row, shared by all three provenance groups: mono name + quiet
+ *  kind badge, one-line description, neutral tag chips — the source path
  *  demoted from body copy to a hover/focus tooltip. */
 function SkillItem({
   name,
@@ -124,13 +76,13 @@ function SkillItem({
   sourcePath?: string;
 }) {
   return (
-    <li className="px-2 py-1.5" title={sourcePath}>
-      <div className="flex items-center gap-1.5">
-        <span className="font-medium text-[var(--text-primary)]">{name}</span>
+    <li className="familiar-tab__skill-row" title={sourcePath}>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{name}</span>
         <KindBadge kind={kind} />
       </div>
       {description ? (
-        <p className="mt-0.5 line-clamp-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>
+        <p className="mt-0.5 line-clamp-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">{description}</p>
       ) : null}
       {tags && tags.length > 0 ? (
         <div className="mt-0.5 flex flex-wrap gap-1">
@@ -148,6 +100,49 @@ function SkillItem({
   );
 }
 
+type SkillRowData = {
+  key: string;
+  name: string;
+  kind: string;
+  description?: string;
+  tags?: string[];
+  sourcePath?: string;
+};
+
+/** Groups preview a handful of rows; the rest sit behind "Show N more". */
+const SKILL_GROUP_PREVIEW = 6;
+
+function SkillRows({ rows }: { rows: SkillRowData[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const hiddenCount = rows.length - SKILL_GROUP_PREVIEW;
+  const visible = showAll || hiddenCount <= 0 ? rows : rows.slice(0, SKILL_GROUP_PREVIEW);
+  return (
+    <>
+      <ul className="familiar-tab__rows pt-1">
+        {visible.map((row) => (
+          <SkillItem
+            key={row.key}
+            name={row.name}
+            kind={row.kind}
+            description={row.description}
+            tags={row.tags}
+            sourcePath={row.sourcePath}
+          />
+        ))}
+      </ul>
+      {hiddenCount > 0 ? (
+        <button
+          type="button"
+          className="familiar-tab__more focus-ring"
+          onClick={() => setShowAll((value) => !value)}
+        >
+          {showAll ? "Show fewer" : `Show ${hiddenCount} more`}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function CollapsibleSection({
   title,
   badge,
@@ -162,29 +157,51 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="familiar-tab__list">
+    <div>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="focus-ring flex w-full items-center gap-1.5 rounded-[inherit] px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]/40"
+        className="familiar-tab__group-toggle focus-ring"
       >
         <Icon
           name={open ? "ph:caret-down" : "ph:caret-right"}
           width={10}
           className="shrink-0 text-[var(--text-muted)]"
         />
-        <span className="text-[length:var(--text-xs)] uppercase tracking-widest text-[var(--text-secondary)]">
+        <span className="flex-1 text-[length:var(--text-xs)] uppercase tracking-widest text-[var(--text-secondary)]">
           {title}
         </span>
-        {badge ? (
-          <span className="ml-auto rounded bg-[var(--bg-raised)] px-1 py-px text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            {badge}
-          </span>
-        ) : null}
+        {badge ? <span className="familiar-tab__count">{badge}</span> : null}
       </button>
-      {open ? <div className="px-2 pb-2">{children}</div> : null}
+      {open ? <div>{children}</div> : null}
     </div>
+  );
+}
+
+/** Bordered translucent panel with the shared uppercase-title header row. */
+function CapCard({
+  title,
+  count,
+  note,
+  fill,
+  children,
+}: {
+  title: string;
+  count?: string;
+  note?: React.ReactNode;
+  fill?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={fill ? "familiar-tab__card familiar-tab__card--fill" : "familiar-tab__card"}>
+      <header className="familiar-tab__card-head">
+        <h3 className="familiar-tab__card-title">{title}</h3>
+        {count != null ? <span className="familiar-tab__count">{count}</span> : null}
+        {note ? <span className="familiar-tab__card-note">{note}</span> : null}
+      </header>
+      {children}
+    </section>
   );
 }
 
@@ -215,7 +232,6 @@ function FamiliarIdentityHero({
   const roleLine = [resolved?.role || familiar.role, familiar.pronouns]
     .filter(Boolean)
     .join(" · ");
-  const runtimeLine = [familiar.harness, familiar.model].filter(Boolean).join(" · ");
   // The familiar's speaking voice (bound in the Studio's Brain tab), labelled
   // by the canonical voice-provider registry. Silent familiars add no noise —
   // the line only renders when a provider is set.
@@ -239,9 +255,9 @@ function FamiliarIdentityHero({
         </span>
       ) : null}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <h2 className="familiar-tab__name">{resolved?.display_name ?? familiar.display_name}</h2>
-          <span className="familiar-tab__presence text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          <span className="familiar-tab__presence" data-online={daemonRunning ? "true" : "false"}>
             <span
               aria-hidden="true"
               className={`inline-flex h-1.5 w-1.5 rounded-full ${
@@ -255,12 +271,12 @@ function FamiliarIdentityHero({
                 <time dateTime={familiar.last_seen ?? undefined}>{lastSeen}</time>
               </>
             ) : null}
-            {activeSessions > 0 ? (
-              <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence)]">
-                {activeSessions} active session{activeSessions === 1 ? "" : "s"}
-              </span>
-            ) : null}
           </span>
+          {activeSessions > 0 ? (
+            <span className="rounded-[var(--radius-pill)] bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence)]">
+              {activeSessions} active session{activeSessions === 1 ? "" : "s"}
+            </span>
+          ) : null}
         </div>
         {roleLine ? (
           <p className="mt-0.5 truncate text-[length:var(--text-xs)] uppercase tracking-widest text-[var(--text-secondary)]">
@@ -272,10 +288,15 @@ function FamiliarIdentityHero({
             {familiar.description}
           </p>
         ) : null}
-        <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--text-xs)]">
-          {runtimeLine ? (
-            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]" title="Harness · model">
-              {runtimeLine}
+        <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-1.5">
+          {familiar.harness ? (
+            <span className="familiar-tab__pill font-mono" title="Runtime">
+              {familiar.harness}
+            </span>
+          ) : null}
+          {familiar.model ? (
+            <span className="familiar-tab__pill font-mono" title="Model">
+              {familiar.model}
             </span>
           ) : null}
           {voiceLine ? (
@@ -284,47 +305,46 @@ function FamiliarIdentityHero({
               onClick={() => openFamiliarStudioSettingsTab("brain", familiar.id)}
               aria-label={`Voice settings for ${resolved?.display_name ?? familiar.display_name} — ${voiceLine}`}
               title="Speaking voice — manage in the Studio's Brain tab"
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] font-mono text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="familiar-tab__pill focus-ring gap-1.5 font-mono transition-colors hover:text-[var(--accent-presence)]"
             >
               <Icon name="ph:waveform-bold" width={11} aria-hidden />
               {voiceLine}
             </button>
           ) : null}
-          <span className="flex flex-wrap items-center gap-3">
-            <Link
-              href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
-              aria-label={`Open profile card for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
-            >
-              Profile →
-            </Link>
-            <Link
-              href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
-              aria-label={`Open analytics for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
-            >
-              Analytics →
-            </Link>
-            {/* The retired sidepanel's memory pane isn't reachable from this
-                tab — bridge to the Studio's per-familiar Memory tab, its
-                managed home. */}
-            <button
-              type="button"
-              onClick={() => openFamiliarStudioSettingsTab("memory", familiar.id)}
-              aria-label={`Open memory for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
-            >
-              Memory →
-            </button>
-            <button
-              type="button"
-              onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
-              aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[length:var(--text-xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
-            >
-              Edit in Studio →
-            </button>
-          </span>
+          <span className="familiar-tab__links-divider" aria-hidden="true" />
+          <Link
+            href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
+            aria-label={`Open profile card for ${familiar.display_name}`}
+            className="familiar-tab__link-pill focus-ring"
+          >
+            Profile
+          </Link>
+          <Link
+            href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+            aria-label={`Open analytics for ${familiar.display_name}`}
+            className="familiar-tab__link-pill focus-ring"
+          >
+            Analytics
+          </Link>
+          {/* The retired sidepanel's memory pane isn't reachable from this
+              tab — bridge to the Studio's per-familiar Memory tab, its
+              managed home. */}
+          <button
+            type="button"
+            onClick={() => openFamiliarStudioSettingsTab("memory", familiar.id)}
+            aria-label={`Open memory for ${familiar.display_name}`}
+            className="familiar-tab__link-pill focus-ring"
+          >
+            Memory
+          </button>
+          <button
+            type="button"
+            onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
+            aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
+            className="familiar-tab__link-pill focus-ring"
+          >
+            Edit in Studio
+          </button>
         </div>
       </div>
       {onStartChat ? (
@@ -334,7 +354,7 @@ function FamiliarIdentityHero({
           <button
             type="button"
             onClick={() => onStartChat(familiar.id)}
-            className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[length:var(--text-xs)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90"
+            className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90"
           >
             <Icon name="ph:chat-circle-dots" width={13} aria-hidden />
             New chat
@@ -553,10 +573,11 @@ function FamiliarCapabilityPanel({
   daemonRunning?: boolean;
   onStartChat?: (familiarId: string) => void;
 }) {
-  // Collapsible state per sub-group
+  // Collapsible state per skills sub-group + per expandable role row
   const [skillsRoleOpen, setSkillsRoleOpen] = useState(true);
   const [skillsFamiliarOpen, setSkillsFamiliarOpen] = useState(true);
   const [skillsGlobalOpen, setSkillsGlobalOpen] = useState(true);
+  const [openRoleIds, setOpenRoleIds] = useState<Record<string, boolean>>({});
 
   const harnessId = familiar.harness ?? "codex";
   const { roles, localSkills, harnessCapabilities, harnesses, loading, errors } = useCapabilitySnapshot(harnessId);
@@ -566,7 +587,7 @@ function FamiliarCapabilityPanel({
   // like the grid it resolves into.
   if (loading) {
     return (
-      <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
+      <div className="familiar-tab__main">
         <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} onStartChat={onStartChat} />
         <div className="familiar-tab__grid" aria-hidden>
           <SkeletonRows count={5} className="p-3" />
@@ -608,8 +629,36 @@ function FamiliarCapabilityPanel({
     ...Array.from(roleGrantedSkillIds),
   ]);
 
+  const roleGrantedRows: SkillRowData[] = Array.from(roleGrantedSkillIds).map((sid) => {
+    const skill = localSkills.find((s) => s.id === sid);
+    return {
+      key: sid,
+      name: skill?.name ?? sid,
+      kind: skill?.kind ?? "agent",
+      description: skill?.description,
+      tags: skill?.tags,
+      sourcePath: "Granted by an active role",
+    };
+  });
+  const familiarRows: SkillRowData[] = familiarSkills.map((s) => ({
+    key: s.path,
+    name: s.name,
+    kind: s.kind ?? "agent",
+    description: s.description,
+    tags: s.tags,
+    sourcePath: s.path,
+  }));
+  const globalRows: SkillRowData[] = globalSkills.map((s) => ({
+    key: s.path,
+    name: s.name,
+    kind: s.kind ?? "agent",
+    description: s.description,
+    tags: s.tags,
+    sourcePath: s.path,
+  }));
+
   return (
-    <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
+    <div className="familiar-tab__main">
 
       {/* ── Identity hero ─────────────────────────────────────────────────── */}
       <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} onStartChat={onStartChat} />
@@ -629,77 +678,65 @@ function FamiliarCapabilityPanel({
         </div>
       ) : null}
 
-      {/* ── Capability grid: two columns on a wide canvas, one below ─────── */}
+      {/* ── Card grid: 1.5fr/1fr on a wide pane, stacked below ────────────── */}
       <div className="familiar-tab__grid">
-      <div className="familiar-tab__col flex min-w-0 flex-col gap-2">
+      <div className="familiar-tab__col">
 
-      {/* ── Section 1: Roles ──────────────────────────────────────────────── */}
-      <CapSection title="Roles" scope={`active: ${activeRoles.length}`}>
+      {/* ── Roles card ────────────────────────────────────────────────────── */}
+      <CapCard title="Roles" count={String(activeRoles.length)} note={`active: ${activeRoles.length}`}>
         {activeRoles.length === 0 ? (
-          <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
+          <div className="familiar-tab__empty">
             <p>No roles active for this familiar.</p>
-            <CapCta label="Open Roles →" onClick={() => navigateFamiliarSurface("roles")} />
+            <CapCta label="Open roles →" onClick={() => navigateFamiliarSurface("roles")} />
           </div>
         ) : (
-          <div className="familiar-tab__list">
-            <ul className="familiar-tab__rows">
-              {activeRoles.map((role) => (
-                <li
-                  key={`${role.familiar}:${role.id}`}
-                  className="px-3 py-2"
-                  title={`Inherited from roles/${role.id}/ROLE.md`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
-                    <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
-                    <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                      {role.familiar}
+          <ul className="familiar-tab__rows">
+            {activeRoles.map((role) => {
+              const roleKey = `${role.familiar}:${role.id}`;
+              const open = !!openRoleIds[roleKey];
+              return (
+                <li key={roleKey}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpenRoleIds((current) => ({ ...current, [roleKey]: !open }))}
+                    className="familiar-tab__row-toggle focus-ring"
+                    title={`Inherited from roles/${role.id}/ROLE.md`}
+                  >
+                    <Icon
+                      name={open ? "ph:caret-down" : "ph:caret-right"}
+                      width={10}
+                      className="shrink-0 text-[var(--text-muted)]"
+                      aria-hidden
+                    />
+                    <span className="familiar-tab__row-name">{role.name}</span>
+                    <span className="familiar-tab__row-meta">
+                      {role.familiar} · {role.skills.length} skill{role.skills.length === 1 ? "" : "s"}
                     </span>
-                    {role.skills.length > 0 ? (
-                      <span className="rounded bg-[var(--bg-raised)] px-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                        {role.skills.length} skill{role.skills.length === 1 ? "" : "s"}
-                      </span>
-                    ) : null}
-                  </div>
-                  {role.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                      {role.description}
-                    </p>
+                  </button>
+                  {open && role.description ? (
+                    <p className="familiar-tab__row-desc">{role.description}</p>
                   ) : null}
                 </li>
-              ))}
-            </ul>
-          </div>
+              );
+            })}
+          </ul>
         )}
-      </CapSection>
+      </CapCard>
 
-      {/* ── Section 2: Skills (3 sub-groups) ──────────────────────────────── */}
-      <CapSection title="Skills" scope={`${allSkillIds.size} total`}>
-        <div className="flex flex-col gap-1.5">
+      {/* ── Skills card (3 provenance groups) ─────────────────────────────── */}
+      <CapCard title="Skills" count={String(allSkillIds.size)} fill>
+        <div className="familiar-tab__card-scroll flex flex-col gap-1">
 
           {/* Role-granted */}
-          {roleGrantedSkillIds.size > 0 ? (
+          {roleGrantedRows.length > 0 ? (
             <CollapsibleSection
               title="Role-granted"
-              badge={`${roleGrantedSkillIds.size} via active roles`}
+              badge={`${roleGrantedRows.length} via active roles`}
               open={skillsRoleOpen}
               onToggle={() => setSkillsRoleOpen((v) => !v)}
             >
-              <ul className="familiar-tab__rows pt-1">
-                {Array.from(roleGrantedSkillIds).map((sid) => {
-                  const skill = localSkills.find((s) => s.id === sid);
-                  return (
-                    <SkillItem
-                      key={sid}
-                      name={skill?.name ?? sid}
-                      kind={skill?.kind ?? "agent"}
-                      description={skill?.description}
-                      tags={skill?.tags}
-                      sourcePath="Granted by an active role"
-                    />
-                  );
-                })}
-              </ul>
+              <SkillRows rows={roleGrantedRows} />
             </CollapsibleSection>
           ) : null}
 
@@ -711,23 +748,12 @@ function FamiliarCapabilityPanel({
             onToggle={() => setSkillsFamiliarOpen((v) => !v)}
           >
             {familiarSkills.length === 0 ? (
-              <div className="px-1 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+              <div className="familiar-tab__empty familiar-tab__empty--indent">
                 <p>No skills installed for this familiar yet.</p>
-                <CapCta label="Browse Marketplace →" onClick={() => navigateFamiliarSurface("marketplace")} />
+                <CapCta label="Browse marketplace →" onClick={() => navigateFamiliarSurface("marketplace")} />
               </div>
             ) : (
-              <ul className="familiar-tab__rows pt-1">
-                {familiarSkills.map((s) => (
-                  <SkillItem
-                    key={s.path}
-                    name={s.name}
-                    kind={s.kind ?? "agent"}
-                    description={s.description}
-                    tags={s.tags}
-                    sourcePath={s.path}
-                  />
-                ))}
-              </ul>
+              <SkillRows rows={familiarRows} />
             )}
           </CollapsibleSection>
 
@@ -739,119 +765,109 @@ function FamiliarCapabilityPanel({
             onToggle={() => setSkillsGlobalOpen((v) => !v)}
           >
             {globalSkills.length === 0 ? (
-              <p className="px-1 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+              <p className="px-2 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                 No global workspace skills.
               </p>
             ) : (
-              <ul className="familiar-tab__rows pt-1">
-                {globalSkills.map((s) => (
-                  <SkillItem
-                    key={s.path}
-                    name={s.name}
-                    kind={s.kind ?? "agent"}
-                    description={s.description}
-                    tags={s.tags}
-                    sourcePath={s.path}
-                  />
-                ))}
-              </ul>
+              <SkillRows rows={globalRows} />
             )}
           </CollapsibleSection>
         </div>
-      </CapSection>
+      </CapCard>
 
       </div>{/* end left column */}
-      <div className="familiar-tab__col flex min-w-0 flex-col gap-2">
+      <div className="familiar-tab__col">
 
-      {/* ── Section 3: Plugins ────────────────────────────────────────────── */}
-      <CapSection title="Plugins" scope={`${nonMcpPlugins.length} from runtime`}>
-        {nonMcpPlugins.length === 0 ? (
-          <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
-            <p>No plugins in the latest runtime capability scan.</p>
-            <CapCta label="Open Capabilities →" onClick={() => navigateFamiliarSurface("capabilities")} />
-          </div>
-        ) : (
-          <div className="familiar-tab__list">
-            <ul className="familiar-tab__rows">
-              {nonMcpPlugins.map((p) => (
-                <li key={p.id} className={`px-3 py-2 ${p.enabled ? "" : "opacity-60"}`}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                    <KindBadge kind={p.kind} />
-                    {/* Chip diet: enabled is the expected state — only the
-                        exception (disabled) earns a marker. */}
-                    {p.enabled ? null : (
-                      <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
-                        disabled
-                      </span>
-                    )}
-                  </div>
-                  {p.command ? (
-                    <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{p.command}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CapSection>
-
-      {/* ── Section 4: Runtime ───────────────────────────────────────────── */}
-      <CapSection
+      {/* ── Runtime card ──────────────────────────────────────────────────── */}
+      <CapCard
         title="Runtime"
-        scope={
-          harnessReport
-            ? `${harnessReport.label} ${harnessReport.version ?? ""}`.trim()
-            : harnessId
+        note={
+          harnessManifest?.scanned_at
+            ? `scanned ${relativeTime(harnessManifest.scanned_at) || "just now"}`
+            : undefined
         }
       >
-        <ul className="space-y-1">
-          <CapRow label="binary" value={harnessReport?.binary ?? "—"} />
-          <CapRow label="path" value={harnessReport?.path ?? "—"} mono />
-          <CapRow label="version" value={harnessReport?.version ?? "—"} />
-          <CapRow label="model" value={familiar.model ?? "—"} />
-          {harnessManifest?.scanned_at ? (
-            <CapRow label="scanned" value={relativeTime(harnessManifest.scanned_at) || "just now"} />
-          ) : null}
+        <ul className="familiar-tab__facts">
+          <li>
+            <span className="familiar-tab__fact-label">Runtime</span>
+            <span className="text-[var(--text-primary)]">
+              {harnessReport ? `${harnessReport.label} ${harnessReport.version ?? ""}`.trim() : harnessId}
+            </span>
+          </li>
+          <li>
+            <span className="familiar-tab__fact-label">Model</span>
+            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
+              {familiar.model ?? "—"}
+            </span>
+          </li>
+          <li>
+            <span className="familiar-tab__fact-label">Binary</span>
+            <span
+              className="min-w-0 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]"
+              title={harnessReport?.path ?? undefined}
+            >
+              {harnessReport?.path ?? harnessReport?.binary ?? "—"}
+            </span>
+          </li>
         </ul>
-      </CapSection>
+      </CapCard>
 
-      {/* ── Section 5: MCP Servers ───────────────────────────────────────── */}
-      <CapSection title="MCP Servers" scope={`${mcpPlugins.length} discovered`}>
-        {mcpPlugins.length === 0 ? (
-          <p className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
-            No MCP servers in the capability scan.
-          </p>
-        ) : (
-          <div className="familiar-tab__list">
-            <ul className="familiar-tab__rows">
-              {mcpPlugins.map((p) => (
-                <li key={p.id} className={`px-3 py-2 ${p.enabled ? "" : "opacity-60"}`}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                    <KindBadge kind="mcp" />
-                    {p.enabled ? null : (
-                      <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
-                        disabled
-                      </span>
-                    )}
-                  </div>
-                  {p.command ? (
-                    <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={[p.command, ...(p.args ?? [])].join(" ")}>
-                      {[p.command, ...(p.args ?? [])].join(" ")}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+      {/* ── Capabilities card (plugins + MCP servers from the scan) ───────── */}
+      <CapCard
+        title="Capabilities"
+        note={`${nonMcpPlugins.length} plugin${nonMcpPlugins.length === 1 ? "" : "s"} · ${mcpPlugins.length} MCP`}
+      >
+        {harnessPlugins.length === 0 ? (
+          <div className="familiar-tab__empty">
+            <p>No plugins or MCP servers in the latest capability scan.</p>
+            <CapCta label="Open capabilities →" onClick={() => navigateFamiliarSurface("capabilities")} />
           </div>
+        ) : (
+          <ul className="familiar-tab__rows">
+            {nonMcpPlugins.map((p) => (
+              <li key={p.id} className={`px-2 py-1.5 ${p.enabled ? "" : "opacity-60"}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                  <KindBadge kind={p.kind} />
+                  {/* Chip diet: enabled is the expected state — only the
+                      exception (disabled) earns a marker. */}
+                  {p.enabled ? null : (
+                    <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
+                      disabled
+                    </span>
+                  )}
+                </div>
+                {p.command ? (
+                  <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{p.command}</p>
+                ) : null}
+              </li>
+            ))}
+            {mcpPlugins.map((p) => (
+              <li key={p.id} className={`px-2 py-1.5 ${p.enabled ? "" : "opacity-60"}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                  <KindBadge kind="mcp" />
+                  {p.enabled ? null : (
+                    <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
+                      disabled
+                    </span>
+                  )}
+                </div>
+                {p.command ? (
+                  <p className="mt-0.5 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={[p.command, ...(p.args ?? [])].join(" ")}>
+                    {[p.command, ...(p.args ?? [])].join(" ")}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         )}
-      </CapSection>
+      </CapCard>
 
-      {/* ── Section 6: Warnings ─────────────────────────────────────────── */}
+      {/* ── Warnings card ─────────────────────────────────────────────────── */}
       {warnings.length > 0 ? (
-        <CapSection title="Warnings" scope={String(warnings.length)}>
-          <ul className="space-y-1">
+        <CapCard title="Warnings" count={String(warnings.length)}>
+          <ul className="familiar-tab__rows gap-1">
             {warnings.map((w, i) => (
               <li
                 key={i}
@@ -865,22 +881,93 @@ function FamiliarCapabilityPanel({
               </li>
             ))}
           </ul>
-        </CapSection>
+        </CapCard>
       ) : null}
 
       </div>{/* end right column */}
-      </div>{/* end capability grid */}
+      </div>{/* end card grid */}
 
     </div>
   );
 }
 
-// ── Surface ──────────────────────────────────────────────────────────────────
+// ── Roster rail ──────────────────────────────────────────────────────────────
 
 /**
- * The tab owns its landmark, scroll region, and empty state — it is a
- * first-class chat surface, not a re-hosted inspector pane.
+ * The left-hand roster: a SurfaceRail listing every selectable familiar.
+ * Selection here switches the DETAIL only (local state in the surface) — it
+ * never mutates the app-wide familiar scope.
  */
+function FamiliarRosterRail({
+  familiars,
+  selectedId,
+  query,
+  onQueryChange,
+  onSelect,
+}: {
+  familiars: ResolvedFamiliar[];
+  selectedId: string;
+  query: string;
+  onQueryChange: (next: string) => void;
+  onSelect: (id: string) => void;
+}) {
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? familiars.filter(
+        (item) =>
+          item.display_name.toLowerCase().includes(needle) ||
+          (item.role ?? "").toLowerCase().includes(needle),
+      )
+    : familiars;
+  return (
+    <SurfaceRail
+      storageKey="cave:familiar-tab:rail"
+      title="Familiars"
+      ariaLabel="Familiars"
+      search={
+        <SearchInput
+          value={query}
+          onValueChange={onQueryChange}
+          onClear={() => onQueryChange("")}
+          placeholder="Search familiars…"
+          aria-label="Search familiars"
+        />
+      }
+    >
+      {(open) => (
+        <>
+          {filtered.length === 0 ? (
+            <p className="px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              No familiars match &ldquo;{query.trim()}&rdquo;.
+            </p>
+          ) : null}
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="familiar-tab__rail-row focus-ring"
+              aria-current={item.id === selectedId ? "true" : undefined}
+              title={open ? undefined : item.display_name}
+              aria-label={open ? undefined : item.display_name}
+              onClick={() => onSelect(item.id)}
+            >
+              <FamiliarAvatar familiar={item} size="md" />
+              {open ? (
+                <span className="familiar-tab__rail-text">
+                  <span className="familiar-tab__rail-name">{item.display_name}</span>
+                  <span className="familiar-tab__rail-role">{item.role || "No role"}</span>
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </>
+      )}
+    </SurfaceRail>
+  );
+}
+
+// ── Surface ──────────────────────────────────────────────────────────────────
+
 /**
  * Capability data, identity, and section rendering for the chat Familiar
  * surface. The public ChatFamiliarView module keeps the historic import path
@@ -916,6 +1003,17 @@ export function ChatFamiliarCapabilities({
   const selectedFamiliar = familiar
     ? resolvedFamiliars.find((item) => item.id === familiar.id) ?? null
     : null;
+
+  // Rail-local detail selection: browsing the roster switches the detail pane
+  // only; the app-wide active familiar (and saved scope) never changes from
+  // here. A new app-wide selection re-anchors the detail.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [railQuery, setRailQuery] = useState("");
+  const activeFamiliarId = familiar?.id ?? null;
+  useEffect(() => {
+    setDetailId(null);
+  }, [activeFamiliarId]);
+
   const state = deriveFamiliarTabState({
     familiars: selectableFamiliars,
     selectedIds: selectedFamiliarIds,
@@ -1014,18 +1112,30 @@ export function ChatFamiliarCapabilities({
     );
   }
 
+  const detailFamiliar =
+    (detailId ? selectableFamiliars.find((item) => item.id === detailId) : null) ?? state.familiar;
+
   return (
     <section
-      className="chat-familiar-view flex h-full min-h-0 flex-col overflow-y-auto"
+      className="chat-familiar-view familiar-tab flex h-full min-h-0 flex-row"
       aria-label="Familiar profile"
     >
-      {state.rosterWarning ? <FamiliarRosterWarning message={state.rosterWarning} onRetry={onRetryFamiliars} /> : null}
-      <FamiliarCapabilityPanel
-        key={state.familiar.id}
-        familiar={state.familiar}
-        daemonRunning={daemonRunning}
-        onStartChat={onStartChat}
+      <FamiliarRosterRail
+        familiars={selectableFamiliars}
+        selectedId={detailFamiliar.id}
+        query={railQuery}
+        onQueryChange={setRailQuery}
+        onSelect={setDetailId}
       />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {state.rosterWarning ? <FamiliarRosterWarning message={state.rosterWarning} onRetry={onRetryFamiliars} /> : null}
+        <FamiliarCapabilityPanel
+          key={detailFamiliar.id}
+          familiar={detailFamiliar}
+          daemonRunning={daemonRunning}
+          onStartChat={onStartChat}
+        />
+      </div>
     </section>
   );
 }
