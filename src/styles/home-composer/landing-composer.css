@@ -369,23 +369,21 @@
 /* The standalone footer project chip retired with the band (chat revamp 1d);
  * project selection opens from the composer context pill. */
 
-/* Destination pills — a segmented toggle for Chat vs Task. */
+/* Destination tabs — Chat vs Task as flat inline field tabs: quiet text
+ * sitting directly in the control row (no segmented box), with a 2px accent
+ * underline marking the active destination. */
 .hc-dest-pills {
   display: inline-flex;
-  gap: 2px;
+  align-items: stretch;
+  gap: 10px;
   flex: 0 0 auto;
   min-width: 0;
-  padding: 3px;
-  border-radius: var(--radius-control);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
 }
 
-/* Inline placement (reference layout): the pills sit inside the card's
+/* Inline placement (reference layout): the tabs sit inside the card's
  * control row next to the + attach button — compact, no outer margin. */
 .hc-dest-pills--inline {
   position: relative;
-  padding: 2px;
 }
 
 .hc-dest-pill {
@@ -395,26 +393,29 @@
   min-height: 28px;
   box-sizing: border-box;
   font-size: var(--text-sm);
-  /* Inactive tabs recede: lighter weight + faded label so the solid-accent
+  /* Inactive tabs recede: lighter weight + faded label so the underlined
    * active tab is unmistakably the selected one. Hover/active brighten. */
   font-weight: 450;
-  padding: var(--space-1) 14px;
-  border-radius: var(--radius-control);
-  border: 1px solid transparent;
+  padding: var(--space-1);
+  border: none;
+  /* Reserve the indicator height on every tab so activation can't shift
+   * the row; only the colour changes. */
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: transparent;
   color: color-mix(in oklch, var(--text-muted) 68%, transparent);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
 }
 
 /* The inactive icon fades further than its label so the tab reads as dormant. */
 .hc-dest-pill svg {
   opacity: 0.55;
+  transition: opacity 0.12s ease;
 }
 
 .hc-dest-pill:hover {
-  background: var(--bg-raised);
   color: var(--text-secondary);
 }
 
@@ -423,30 +424,27 @@
 }
 
 .hc-dest-pill.active {
-  background: var(--accent-presence);
-  border-color: var(--accent-presence);
-  color: var(--accent-presence-foreground);
+  color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 2px 8px color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  border-bottom-color: var(--accent-presence);
 }
 
-/* Label and icon sit on the solid accent fill, so both take the on-accent
- * foreground colour at full strength for legibility. */
+/* The active icon takes the accent so the tab reads as selected even before
+ * the underline registers; the label stays primary-text for legibility. */
 .hc-dest-pill.active svg {
-  color: var(--accent-presence-foreground);
+  color: var(--accent-presence);
   opacity: 1;
 }
 
 /* ── Phone-width composer (container query on the card wrap) ─────────────────
  * The shared cave-composer footer rules (cave-chat.css) already adapt the icon
- * buttons on small screens; the home-only destination pills also need
+ * buttons on small screens; the home-only destination tabs stay flat but need
  * thumb-sized touch targets. */
 @container (max-width: 620px) {
   .hc-dest-pill {
     min-height: var(--touch-target);
     justify-content: center;
-    border-color: var(--border-hairline);
-    background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+    padding-inline: 10px;
   }
 }
 
