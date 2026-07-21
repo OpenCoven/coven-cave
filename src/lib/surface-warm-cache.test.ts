@@ -111,6 +111,25 @@ test("invalidation and abort prevent an old request from repopulating the cache"
   assert.equal(cache.snapshot().counters.aborts, 2);
 });
 
+test("an invalidation immediately starts a replacement request", async () => {
+  const first = deferred();
+  let calls = 0;
+  const cache = createSurfaceWarmCache();
+  cache.defineResource("board", () => {
+    calls += 1;
+    return calls === 1 ? first.promise : "fresh";
+  }, 1_000);
+
+  const staleRequest = cache.warm("board");
+  cache.invalidate("board");
+  const replacement = cache.read("board", { force: true });
+
+  assert.equal(calls, 2, "the replacement must not join the aborted request");
+  assert.equal((await replacement).data, "fresh");
+  first.resolve("stale");
+  await assert.rejects(staleRequest, { name: "AbortError" });
+});
+
 test("pausing background work does not abort a navigation that joined it", async () => {
   const pending = deferred();
   const cache = createSurfaceWarmCache();

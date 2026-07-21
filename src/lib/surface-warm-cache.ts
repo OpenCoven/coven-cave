@@ -78,6 +78,7 @@ type Resource = {
   inFlight?: Promise<SurfaceWarmCacheRead<unknown>>;
   controller?: AbortController;
   warmInFlight?: boolean;
+  warmRequest?: Promise<SurfaceWarmCacheRead<unknown>>;
   directConsumers: number;
 };
 
@@ -136,6 +137,20 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
 
   function result<T>(resource: Resource, source: SurfaceWarmCacheRead<unknown>["cache"]["source"]): SurfaceWarmCacheRead<T> {
     return { data: resource.value as T, cache: metadata(resource, source) };
+  }
+
+  function cancelRequest(resource: Resource): boolean {
+    if (!resource.controller || resource.controller.signal.aborted) return false;
+    counters.aborts += 1;
+    resource.controller.abort();
+    // Abort rejection is asynchronous. Clear these synchronously so an
+    // invalidation or resume can start its replacement request instead of
+    // coalescing onto the request that was just cancelled.
+    resource.inFlight = undefined;
+    resource.controller = undefined;
+    resource.warmInFlight = false;
+    resource.warmRequest = undefined;
+    return true;
   }
 
   function load<T>(resource: Resource): Promise<SurfaceWarmCacheRead<T>> {
@@ -210,10 +225,7 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
     if (existing) {
       // HMR and tests may re-register a key. Treat a new definition as an
       // invalidation so an old loader's late result cannot win.
-      if (existing.controller) {
-        counters.aborts += 1;
-        existing.controller.abort();
-      }
+      cancelRequest(existing);
       existing.generation += 1;
       existing.loader = loader as SurfaceResourceLoader<unknown>;
       existing.ttlMs = ttlMs;
@@ -266,7 +278,13 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
     }
     resource.warmInFlight = true;
     const request = load<T>(resource);
-    void request.finally(() => { resource.warmInFlight = false; }).catch(() => {});
+    resource.warmRequest = request as Promise<SurfaceWarmCacheRead<unknown>>;
+    void request.finally(() => {
+      if (resource.warmRequest === request) {
+        resource.warmInFlight = false;
+        resource.warmRequest = undefined;
+      }
+    }).catch(() => {});
     return request;
   }
 
@@ -279,26 +297,20 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
     resource.fetchedAt = undefined;
     resource.lastError = undefined;
     resource.erroredAt = undefined;
-    if (resource.controller) {
-      counters.aborts += 1;
-      resource.controller.abort();
-    }
+    cancelRequest(resource);
   }
 
   function abort(key?: string | "all"): void {
     const targets = key === undefined || key === "all" ? resources.values() : [resourceFor(key)];
     for (const resource of targets) {
-      if (!resource.controller || resource.controller.signal.aborted) continue;
-      counters.aborts += 1;
-      resource.controller.abort();
+      cancelRequest(resource);
     }
   }
 
   function abortWarm(): void {
     for (const resource of resources.values()) {
       if (!resource.warmInFlight || resource.directConsumers > 0 || !resource.controller || resource.controller.signal.aborted) continue;
-      counters.aborts += 1;
-      resource.controller.abort();
+      cancelRequest(resource);
     }
   }
 
