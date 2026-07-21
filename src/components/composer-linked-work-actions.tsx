@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { PopoverItem, type PopoverItemSemantic } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
@@ -75,7 +75,7 @@ function useLinkedWorkController({
   const github = linkedContext?.github ?? [];
   const canLink = Boolean(sessionId && onLinkedContextChange);
 
-  const linkedIds = new Set(tasks.map((t) => t.id));
+  const linkedIds = useMemo(() => new Set(tasks.map((t) => t.id)), [tasks]);
 
   const markDone = async (t: (typeof tasks)[number]) => {
     setMarkingId(t.id);
