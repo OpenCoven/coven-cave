@@ -61,6 +61,7 @@ import { GithubSubscriptionsModal } from "@/components/github-subscriptions-moda
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useSurfacePreference } from "@/lib/surface-preferences";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
@@ -77,6 +78,8 @@ type Props = {
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
 };
+
+type ActivityPayload = ActivityResult | { ok: false; error?: string };
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +145,7 @@ function PatSetupModal({
         setError(data?.error ?? "Failed to save. Check that your PAT has read:user and repo scopes.");
         return;
       }
+      invalidateSurfaceResources("github:pat", "github:activity");
       onSaved(data.login ?? trimmedUser, !!trimmedPat);
     } catch {
       setError("Network error — please try again.");
@@ -269,6 +273,7 @@ function PatSetupModal({
                         setError(data?.error ?? "Couldn't remove the token.");
                         return;
                       }
+                      invalidateSurfaceResources("github:pat", "github:activity");
                       onSaved(usernameInput.trim() || username || "", false);
                     } catch {
                       setError("Network error — please try again.");
@@ -2336,8 +2341,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
 
   async function fetchPatStatus() {
     try {
-      const res = await fetch("/api/github/pat");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<PatStatus>("github:pat");
       if (data) setPatStatus(data as PatStatus);
     } catch { /* non-fatal */ }
   }
@@ -2347,33 +2351,27 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // visibilitychange effect refetches (and reschedules) on return.
   function schedulePoll(ms: number) {
     if (typeof document !== "undefined" && document.hidden) return;
-    timerRef.current = window.setTimeout(() => void fetchActivity(true), ms);
+    timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
   }
 
-  async function fetchActivity(silent = false) {
+  async function fetchActivity(silent = false, force = false) {
     // Skeleton only on the first load — a manual refresh with data already on
     // screen must not unmount the list (and any open composer draft with it).
     if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/github/activity");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
-
-      if (res.status === 401 && data?.error === "no_user") {
-        setError("no_user");
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? `GitHub error (${res.status})`);
-        setLoading(false);
+      if (!data.ok) {
+        if (data.error === "no_user") {
+          setError("no_user");
+          return;
+        }
+        setError(data.error ?? "GitHub activity unavailable");
         schedulePoll(60_000);
         return;
       }
-
-      const nextActivity = data as ActivityResult;
+      const nextActivity = data;
       setActivity((prev) =>
         prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
@@ -2394,7 +2392,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
   function refreshActivity() {
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
-    void fetchActivity();
+    void fetchActivity(false, true);
   }
 
   useEffect(() => {
@@ -2410,7 +2408,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
       if (document.hidden) {
         if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       } else {
-        void fetchActivity(true);
+        void fetchActivity(true, true);
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -2643,6 +2641,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
           onSaved={(login, hasPat) => {
+            invalidateSurfaceResources("github:pat", "github:activity");
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
             refreshActivity();

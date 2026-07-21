@@ -20,6 +20,7 @@ import { segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
@@ -1511,6 +1512,7 @@ function LinkedContextRow({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.ok === false) throw new Error(String(json.error ?? res.status));
+      publishBoardChanged();
       const done = (x: NonNullable<ChatLinkedContext["task"]>) =>
         x.id === t.id ? { ...x, status: "done" as const, lifecycle: "completed" as const } : x;
       onLinkedContextChange?.((prev) =>
@@ -4554,6 +4556,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
       const json = await res.json();
       if (!res.ok || !json.ok || !json.card) throw new Error(json.error ?? "failed to create task card");
+      publishBoardChanged();
       const card = json.card as Card;
       const task = {
         id: card.id,

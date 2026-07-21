@@ -213,7 +213,11 @@ assert.match(hub, /import \{ SkillBrowser, type SkillBrowserEntry \}/, "the Mark
 assert.match(hub, /<SkillBrowser\s+skills=\{skills\}/, "the Skills section renders SkillBrowser with the full skill list");
 assert.match(hub, /`\/api\/skills\/directory\?q=\$\{encodeURIComponent\(trimmed\)\}`/, "Skills search reloads through the registry search endpoint");
 assert.match(hub, /window\.setTimeout\(\(\) => \{[\s\S]*?void loadSkills\(query\);[\s\S]*?\}, query\.trim\(\) \? 250 : 0\)/, "Skills search uses a small debounce before reloading remote results");
-assert.match(hub, /onChanged=\{\(\) => void loadSkills\(query\)\}/, "the Skills section re-scans the current query after mutations");
+assert.match(
+  hub,
+  /onChanged=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(query\);\s*\}\}/,
+  "the Skills section invalidates the warm list before re-scanning after mutations",
+);
 assert.doesNotMatch(hub, /import \{ SkillCard \}/, "the old flat SkillCard list stays retired");
 // The Skills section is full-bleed so the browser owns per-column scrolling.
 assert.match(

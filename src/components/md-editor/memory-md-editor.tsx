@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -140,6 +141,9 @@ export function MemoryMdEditor({
         baselineRef.current = raw;
         draftRef.current = raw;
         setDiskChanged(false);
+        // This editor is also used from Agents. A successful write there must
+        // not leave Grimoire's post-launch memory landing snapshot fresh.
+        invalidateIfDefined("memory:list");
         onSaved?.(raw);
         return { ok: true };
       } catch (err) {

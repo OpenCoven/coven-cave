@@ -51,6 +51,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -159,6 +160,7 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
@@ -232,6 +234,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 export function Workspace() {
+  useSurfaceWarmup();
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -1161,6 +1164,10 @@ export function Workspace() {
         | { type: "created"; item: InboxItem }
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
+      // Schedules consumes the same inbox data through a warmed, point-in-time
+      // landing cache. Every authoritative stream event can make that cache
+      // stale, even when Schedules itself is unmounted.
+      publishSchedulesChanged();
       if (e.type === "snapshot") {
         // Reconnect snapshots usually carry what we already have — keep the
         // reference so inboxItemsWithEphemeral consumers don't re-render

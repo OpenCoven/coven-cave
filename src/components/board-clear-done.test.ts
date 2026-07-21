@@ -28,9 +28,15 @@ assert.match(source, /Clear \{doneCards\.length\} done/, "confirm names the coun
 const clearFn = source.match(/const handleClearDone = async[\s\S]*?\n {2}\};/)?.[0] ?? "";
 assert.match(clearFn, /setCards\(\(prev\) => prev\.filter\(/, "optimistically removes the done cards");
 assert.match(clearFn, /`\/api\/board\/\$\{[^}]+\}`, \{ method: "DELETE" \}/, "fires DELETE per done card");
-assert.match(clearFn, /await load\(\)/, "failure path resyncs from the server");
+assert.match(clearFn, /await load\(\{ force: true \}\)/, "failure path bypasses the cache to resync from the server");
 assert.match(clearFn, /setActionError\(/, "failure path surfaces the action banner");
 assert.match(clearFn, /setClearedBanner\(/, "success path shows the undo banner");
+
+assert.match(
+  source,
+  /onClick=\{\(\) => void load\(\{ force: true \}\)\}>\s*Retry/,
+  "Board retry actions bypass a fresh warm-cache entry",
+);
 
 // handleUndoClear: re-create via POST.
 const undoFn = source.match(/const handleUndoClear = async[\s\S]*?\n {2}\};/)?.[0] ?? "";

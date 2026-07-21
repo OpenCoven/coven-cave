@@ -67,6 +67,7 @@ import {
 } from "@/lib/automations/automation-entry";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -188,17 +189,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     return () => { mountedRef.current = false; };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     const reqId = ++loadReqRef.current;
     // Live only while this is still the newest load AND the view is mounted; a
     // superseded (or unmounted) load drops all its writes.
     const live = () => reqId === loadReqRef.current && mountedRef.current;
     try {
-      const [inboxRes, codexRes] = await Promise.all([
-        fetch("/api/inbox", { cache: "no-store" }),
-        fetch("/api/codex-automations", { cache: "no-store" }),
+      const [inboxResult, codexResult] = await Promise.all([
+        readSurfaceResource<{ ok?: boolean; items?: InboxItem[]; error?: string }>("schedules:inbox", force),
+        readSurfaceResource<{ ok?: boolean; automations?: CodexAutomation[]; error?: string }>("schedules:automations", force),
       ]);
-      const inboxJson = await inboxRes.json();
+      const inboxJson = inboxResult.data;
       if (!live()) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
       // Content-equality guards (codebase convention — see board-view/workspace):
@@ -207,7 +208,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       // stay quiet instead of re-firing every 15s.
       const nextItems = inboxJson.items ?? [];
       setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
-      const codexJson = await codexRes.json();
+      const codexJson = codexResult.data;
       if (!live()) return;
       if (codexJson.ok) {
         const nextAutos = codexJson.automations ?? [];
@@ -220,6 +221,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (live()) setInitialLoadDone(true);
     }
   }, []);
+
+  // A mutation can finish while a warm-up or poll request is still in flight.
+  // Drop that request before the forced reload so its pre-mutation response
+  // cannot win the cache coalescing race and restore the old list.
+  const reloadAfterMutation = useCallback(async () => {
+    invalidateSurfaceResources("schedules:inbox", "schedules:automations");
+    await load(true);
+  }, [load]);
 
   const refreshRuns = useCallback(async (id: string) => {
     const reqId = ++runsReqRef.current;
@@ -278,7 +287,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // hitting /api/inbox + /api/codex-automations every 15s with nobody looking.
   // A refetch on return brings it current immediately.
   useEffect(() => { void load(); }, [load]);
-  usePausablePoll(() => { void load(); }, 15_000, { pauseWhileInputActive: true });
+  usePausablePoll(() => { void load(true); }, 15_000, { pauseWhileInputActive: true });
+
+  // Workspace publishes this after inbox SSE writes, including writes initiated
+  // outside this surface. Besides keeping the visible list current, this makes
+  // an in-flight cache read stale via the request-id guard rather than surfacing
+  // its intentional AbortError as a failed Schedules load.
+  useEffect(() => {
+    const onSchedulesReload = () => { void reloadAfterMutation(); };
+    window.addEventListener("cave:schedules:reload", onSchedulesReload);
+    return () => window.removeEventListener("cave:schedules:reload", onSchedulesReload);
+  }, [reloadAfterMutation]);
 
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.
@@ -356,11 +375,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "patch failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const actItem = useCallback(async (id: string, path: string, body?: object) => {
     if (id.startsWith("eph:")) return;
@@ -372,11 +391,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const removeItem = useCallback((id: string) => {
     if (id.startsWith("eph:")) return;
@@ -398,9 +417,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "delete failed");
-      } finally { await load(); }
+      } finally { await reloadAfterMutation(); }
     });
-  }, [items, scheduleDelete, load]);
+  }, [items, scheduleDelete, reloadAfterMutation]);
 
   // Confirm before firing — crons and flows already do, and the identical Run
   // buttons on the All tab must not behave differently per type.
@@ -472,11 +491,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(action === "read" ? `Marked '${item.title}' as read.` : `Marked '${item.title}' as unread.`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
-  }, [load, announce]);
+  }, [reloadAfterMutation, announce]);
 
   const openSubscriptions = useCallback(async () => {
     // The modal renders a connect hint without a PAT — resolve the live
@@ -529,13 +548,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex patch failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
     setBusyId(auto.id);
@@ -549,13 +568,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       if (json.automation) setSelectedCodex(json.automation);
       announce(`Saved '${patch.name ?? auto.name}'.`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex save failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
@@ -568,9 +587,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
-      } finally { await load(); }
+      } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, load]);
+  }, [scheduleDelete, reloadAfterMutation]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -598,12 +617,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
       announce(`Created cron '${input.name}'.`);
-      await load();
+      await reloadAfterMutation();
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   // "Open" routes to each type's dedicated editor surface.
   const openEntry = useCallback((entry: AutomationEntry) => {
@@ -735,7 +754,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "bulk action failed");
     } finally {
@@ -761,7 +780,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "bulk delete failed");
-      } finally { await load(); }
+      } finally { await reloadAfterMutation(); }
     });
   };
   const automationsEmpty = codexAutos.length === 0;
@@ -985,7 +1004,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <span className="min-w-0 flex-1 truncate">{error}</span>
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void load(true)}
               className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             >
               Retry

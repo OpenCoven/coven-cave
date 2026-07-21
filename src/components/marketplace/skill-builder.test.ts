@@ -20,7 +20,11 @@ assert.match(view, /aria-labelledby="marketplace-tab-build"/, "Build tabpanel is
 assert.match(model, /build: "Author a new skill/, "Build has a section hint (tab tooltip)");
 assert.match(view, /section !== "capabilities" && section !== "build"/, "the hub search hides on the Build section");
 assert.match(view, /<SkillBuilder\s/, "the Build panel hosts the SkillBuilder surface");
-assert.match(view, /onSaved=\{\(\) => void loadSkills\(""\)\}/, "a saved skill refreshes the Skills list and tab count");
+assert.match(
+  view,
+  /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(""\);\s*\}\}/,
+  "a saved skill invalidates the warm list before refreshing the Skills list and tab count",
+);
 assert.match(view, /onViewSkills=\{\(\) => selectSection\("skills"\)\}/, "the success panel can jump to the Skills tab");
 assert.match(view, /label="Build a skill"[\s\S]{0,80}selectSection\("build"\)/, "the Browse setup rail links to Build");
 

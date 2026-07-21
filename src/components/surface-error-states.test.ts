@@ -10,15 +10,15 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const board = read("./board-view.tsx");
 assert.match(
   board,
-  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(\)[\s\S]*?Retry/,
-  "Board load-failure banner has icon + Retry wired to load()",
+  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(\{ force: true \}\)[\s\S]*?Retry/,
+  "Board load-failure banner has icon + Retry wired to a forced reload",
 );
 
 const inbox = read("./automations-view.tsx");
 assert.match(
   inbox,
-  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(\)[\s\S]*?Retry/,
-  "Inbox/automations load-failure banner has icon + Retry wired to load()",
+  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(true\)[\s\S]*?Retry/,
+  "Inbox/automations load-failure banner has icon + Retry wired to a forced reload",
 );
 
 const chatList = read("./chat-list.tsx");
