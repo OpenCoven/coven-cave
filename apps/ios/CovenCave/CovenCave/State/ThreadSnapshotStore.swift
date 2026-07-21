@@ -26,6 +26,8 @@ actor ThreadSnapshotStore {
         } catch let error as NSError
             where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             return []
+        } catch {
+            throw StoreError.corruptSnapshot(underlying: error)
         }
         do {
             return try JSONDecoder().decode([ThreadSnapshot].self, from: data)
