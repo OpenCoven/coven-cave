@@ -42,6 +42,7 @@ import {
   PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import {
   isSessionPinned,
   sortPinnedFirst,
@@ -312,6 +313,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  // First chat in a fresh project folder (or this surface's just-started
+  // chat) must not hide inside a collapsed group (cave-mllp).
+  useAutoExpandNewGroups({
+    hydrated: sidebarHydrated,
+    sessions,
+    groups: sidebarGroups,
+    activeSessionId: activeId,
+    setExpandedKeys,
+  });
 
   // Archived sessions only load while the toggle is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change.

@@ -4,6 +4,7 @@ import {
   selectionKey,
   projectSelectionKeys,
   applyProjectScope,
+  autoExpandKeysForNewSessions,
   normalizeSelection,
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
@@ -56,5 +57,74 @@ assert.deepEqual(readPersisted("cave:test:key", []), []);
 assert.equal(PROJECT_SIDEBAR_KEYS.open, "cave:chat:project-sidebar-open");
 assert.equal(PROJECT_SIDEBAR_KEYS.expanded, "cave:chat:project-sidebar-expanded");
 assert.equal(PROJECT_SIDEBAR_KEYS.selected, "cave:chat:project-selected");
+
+// ── autoExpandKeysForNewSessions (cave-mllp) ─────────────────────────────────
+
+// first chat in a fresh project folder: new key + first-seen session → expand
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a"), group("b", "/b")],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+  }),
+  ["b"],
+);
+
+// root-fallback keys expand under their root-scoped key
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group(null, "/orphan/root")],
+    knownSessionIds: new Set(),
+    knownGroupKeys: new Set(),
+    activeSessionId: null,
+  }),
+  ["root:/orphan/root"],
+);
+
+// filter reveal (familiar switch): new key but every session already known →
+// the user's collapsed state wins
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("b", "/b")],
+    knownSessionIds: new Set(["b-0"]),
+    knownGroupKeys: new Set(),
+    activeSessionId: null,
+  }),
+  [],
+);
+
+// background session landing in an existing collapsed folder: don't force open
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a", 2)], // a-0 known, a-1 fresh
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: null,
+  }),
+  [],
+);
+
+// …unless the fresh session is the active one (this surface just started it)
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a", 2)],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: "a-1",
+  }),
+  ["a"],
+);
+
+// an already-known active session never re-expands a collapsed folder
+assert.deepEqual(
+  autoExpandKeysForNewSessions({
+    groups: [group("a", "/a")],
+    knownSessionIds: new Set(["a-0"]),
+    knownGroupKeys: new Set(["a"]),
+    activeSessionId: "a-0",
+  }),
+  [],
+);
 
 console.log("chat-project-selection tests passed");

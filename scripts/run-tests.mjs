@@ -144,6 +144,7 @@ export const SUITES = {
     "src/lib/chat-sse.test.ts",
     "src/lib/chat-stream-health.test.ts",
     "src/lib/chat-project-selection.test.ts",
+    "src/lib/use-auto-expand-new-groups.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
