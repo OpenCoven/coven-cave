@@ -33,8 +33,9 @@ export function useSurfaceWarmup(): void {
     let cancelIdle = () => {};
     let cursor = 0;
     let active = false;
+    let backpressured = false;
 
-    const runnable = () => !cancelled && !document.hidden && navigator.onLine !== false;
+    const runnable = () => !cancelled && !backpressured && !document.hidden && navigator.onLine !== false;
     const runNext = () => {
       if (!runnable() || cursor >= ORDER.length) return;
       const surface = ORDER[cursor++];
@@ -43,6 +44,11 @@ export function useSurfaceWarmup(): void {
       // Keep the coordinator and its lazy-surface imports out of the initial
       // shell/sidecar trace. It is only needed after first interactive paint.
       void import("@/lib/surface-warmup-registry").then(({ warmSurface }) => warmSurface(surface))
+        .then((result) => {
+          if (!result.backpressured) return;
+          backpressured = true;
+          performance.mark("cave:surface-warmup:backpressure");
+        })
         .catch(() => {
           // A failed warm is deliberately non-fatal; navigation keeps its
           // normal truthful loading/error path and a later resume retries.

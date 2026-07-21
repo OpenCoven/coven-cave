@@ -4,6 +4,9 @@ import { preloadSidebarSurface, type WarmableSidebarSurface } from "@/components
 import { defineResource, invalidate, read, warm, type SurfaceWarmCacheRead } from "@/lib/surface-warm-cache";
 
 export type SurfaceWarmupSurface = WarmableSidebarSurface;
+export type SurfaceWarmResult = { backpressured: boolean };
+
+const GITHUB_WARMUP_REMAINING_FLOOR = 10;
 
 export const surfaceWarmupResources = {
   github: ["github:pat", "github:activity", "github:familiars", "board:cards"],
@@ -53,9 +56,18 @@ export function invalidateSurfaceResources(...keys: string[]): void {
 }
 
 /** Warm a complete canonical landing surface without rendering it. */
-export async function warmSurface(surface: SurfaceWarmupSurface): Promise<void> {
+export async function warmSurface(surface: SurfaceWarmupSurface): Promise<SurfaceWarmResult> {
   await preloadSidebarSurface(surface);
   // Serial landing requests keep background pressure bounded. Every individual
   // resource is coalesced with a concurrent navigation/read by the cache.
-  for (const resource of surfaceWarmupResources[surface]) await warm(resource);
+  for (const resource of surfaceWarmupResources[surface]) {
+    const result = await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
+    // GitHub's landing response reports the remaining upstream allowance. Do
+    // not spend the last few calls on background work: direct navigation can
+    // still read this cache, but the coordinator stops its remaining queue.
+    if (resource === "github:activity" && (result.data.rateLimit?.remaining ?? Infinity) <= GITHUB_WARMUP_REMAINING_FLOOR) {
+      return { backpressured: true };
+    }
+  }
+  return { backpressured: false };
 }

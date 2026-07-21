@@ -13,7 +13,9 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   for (const surface of ["github", "marketplace", "board", "schedules", "grimoire", "agents"]) {
     assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
   }
-  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\) await warm\(resource\)/);
+  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
+  assert.match(registry, /await warm<\{ rateLimit/);
+  assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
 });
 
@@ -23,5 +25,6 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /document\.hidden/);
   assert.match(hook, /window\.addEventListener\("offline", pause\)/);
   assert.match(hook, /abortWarm\(\)/);
+  assert.match(hook, /surface-warmup:backpressure/);
   assert.match(hook, /warmSurface\(surface\)/);
 });
