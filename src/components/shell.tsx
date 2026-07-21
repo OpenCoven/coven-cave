@@ -27,8 +27,11 @@ import {
   type PanelShortcutBindings,
 } from "@/lib/panel-shortcuts";
 import {
+  isShellNavCollapsedLayout,
   resolveShellDestinationLayout,
-  shouldPersistShellLayout,
+  resolveShellLayoutPersistence,
+  resolveShellNavOpenPreference,
+  type ShellPanelLayout,
 } from "./shell-layout";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
@@ -146,6 +149,11 @@ function writeNavOpenPref(open: boolean): void {
   } catch {
     /* ignore — strict privacy mode or quota */
   }
+}
+function seedNavOpenPref(defaultOpen: boolean): boolean {
+  const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  return resolved.open;
 }
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
@@ -508,6 +516,7 @@ function ShellInner({
     const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
+    seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
   }, [settled, isMobile, groupId, chatContextual]);
@@ -517,11 +526,15 @@ function ShellInner({
   // before applying its open/collapsed policy so widths cannot cross groups.
   const navPrefArmedGroupRef = useRef<string | null>(null);
   const layoutPersistenceGroupRef = useRef<string | null>(null);
+  const expandedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
+  const collapsedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
   const restoredGroupRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!mounted || isMobile) {
       if (isMobile) {
         layoutPersistenceGroupRef.current = null;
+        expandedLayoutRef.current = null;
+        collapsedLayoutRef.current = null;
         restoredGroupRef.current = null;
       }
       return;
@@ -543,6 +556,17 @@ function ShellInner({
           : 0),
       0,
     );
+    if (
+      !chatContextual &&
+      isShellNavCollapsedLayout({
+        layout: defaultLayout,
+        panelIds,
+        groupSize,
+        collapsedNavPixels: NAV_RAIL_PX,
+      })
+    ) {
+      seedNavOpenPref(false);
+    }
     const destinationLayout = resolveShellDestinationLayout({
       panelIds,
       savedLayout: defaultLayout,
@@ -556,6 +580,8 @@ function ShellInner({
     // Group keeps an in-memory layout keyed only by panel ids, even after its
     // id changes. Arm persistence immediately before replacing that stale
     // source layout so transition churn cannot overwrite the destination.
+    expandedLayoutRef.current = { groupId, layout: destinationLayout };
+    collapsedLayoutRef.current = null;
     layoutPersistenceGroupRef.current = groupId;
     restoredGroupRef.current = groupId;
     group.setLayout(destinationLayout);
@@ -610,9 +636,9 @@ function ShellInner({
       return;
     }
     if (!settled || isMobile) return;
-    const pref = readNavOpenPref();
+    const pref = seedNavOpenPref(false);
     const panel = navRef.current;
-    if (panel && pref !== null && !railAutoCollapsedNavRef.current) {
+    if (panel && !railAutoCollapsedNavRef.current) {
       if (pref && panel.isCollapsed()) {
         panel.expand();
         setNavOpen(true);
@@ -754,17 +780,24 @@ function ShellInner({
       defaultLayout={isMobile ? undefined : defaultLayout}
       onLayoutChanged={(layout, detail) => {
         if (layoutPersistenceGroupRef.current !== groupId) return;
-        // Persist the complete expanded layout; collapsed state is remembered
-        // separately so RRP can rebuild its per-panel expansion target on return.
-        if (
-          shouldPersistShellLayout({
-            isMobile,
-            navCollapsed: navRef.current?.isCollapsed() ?? true,
-            layout,
-          })
-        ) {
-          onLayoutChanged(layout, detail);
-        }
+        const navCollapsed = navRef.current?.isCollapsed() ?? true;
+        const persistedLayout = resolveShellLayoutPersistence({
+          isMobile,
+          navCollapsed,
+          layout,
+          savedExpandedLayout:
+            expandedLayoutRef.current?.groupId === groupId
+              ? expandedLayoutRef.current.layout
+              : undefined,
+          previousCollapsedLayout:
+            collapsedLayoutRef.current?.groupId === groupId
+              ? collapsedLayoutRef.current.layout
+              : undefined,
+        });
+        if (!persistedLayout) return;
+        collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
+        expandedLayoutRef.current = { groupId, layout: persistedLayout };
+        onLayoutChanged(persistedLayout, detail);
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >

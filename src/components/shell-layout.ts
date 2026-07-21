@@ -13,6 +13,15 @@ const roundPercentage = (value: number) => Number.parseFloat(value.toFixed(3));
 const LAYOUT_SUM_TOLERANCE = 0.1;
 const COLLAPSED_PIXEL_TOLERANCE = 1;
 
+export function resolveShellNavOpenPreference(
+  persistedOpen: boolean | null,
+  defaultOpen: boolean,
+): { open: boolean; shouldPersist: boolean } {
+  return persistedOpen === null
+    ? { open: defaultOpen, shouldPersist: true }
+    : { open: persistedOpen, shouldPersist: false };
+}
+
 function isCompleteLayout(
   layout: ShellPanelLayout,
   panelIds = Object.keys(layout),
@@ -32,16 +41,76 @@ function isCompleteLayout(
   return Math.abs(sum - 100) <= LAYOUT_SUM_TOLERANCE;
 }
 
-export function shouldPersistShellLayout({
+export function isShellNavCollapsedLayout({
+  layout,
+  panelIds,
+  groupSize,
+  collapsedNavPixels,
+}: {
+  layout: ShellPanelLayout | undefined;
+  panelIds: string[];
+  groupSize: number;
+  collapsedNavPixels: number;
+}): boolean {
+  if (
+    !layout ||
+    !isCompleteLayout(layout, panelIds) ||
+    !Number.isFinite(groupSize) ||
+    groupSize <= 0
+  ) {
+    return false;
+  }
+  return ((layout.nav ?? 0) / 100) * groupSize <=
+    collapsedNavPixels + COLLAPSED_PIXEL_TOLERANCE;
+}
+
+export function resolveShellLayoutPersistence({
   isMobile,
   navCollapsed,
   layout,
+  savedExpandedLayout,
+  previousCollapsedLayout,
 }: {
   isMobile: boolean;
   navCollapsed: boolean;
   layout: ShellPanelLayout;
-}): boolean {
-  return !isMobile && !navCollapsed && isCompleteLayout(layout);
+  savedExpandedLayout: ShellPanelLayout | undefined;
+  previousCollapsedLayout?: ShellPanelLayout;
+}): ShellPanelLayout | undefined {
+  const panelIds = Object.keys(layout);
+  if (isMobile || !isCompleteLayout(layout, panelIds)) return undefined;
+  if (!navCollapsed) {
+    return Object.fromEntries(panelIds.map((panelId) => [panelId, layout[panelId]]));
+  }
+  if (
+    !savedExpandedLayout ||
+    !isCompleteLayout(savedExpandedLayout, panelIds) ||
+    savedExpandedLayout.nav <= layout.nav + LAYOUT_SUM_TOLERANCE
+  ) {
+    return undefined;
+  }
+
+  const saved = Object.fromEntries(
+    panelIds.map((panelId) => [panelId, savedExpandedLayout[panelId]]),
+  );
+  // The first collapsed callback only establishes a baseline. Later callbacks
+  // apply list-like panel deltas to the saved expanded layout; detail remains
+  // the flexible remainder and the expanded nav width never changes.
+  if (!previousCollapsedLayout || !isCompleteLayout(previousCollapsedLayout, panelIds)) {
+    return saved;
+  }
+
+  const merged = { ...saved };
+  let assigned = merged.nav;
+  for (const panelId of panelIds) {
+    if (panelId === "nav" || panelId === "detail") continue;
+    merged[panelId] = roundPercentage(
+      saved[panelId] + layout[panelId] - previousCollapsedLayout[panelId],
+    );
+    assigned += merged[panelId];
+  }
+  merged.detail = roundPercentage(100 - assigned);
+  return isCompleteLayout(merged, panelIds) ? merged : saved;
 }
 
 export function resolveShellDestinationLayout({
@@ -61,11 +130,17 @@ export function resolveShellDestinationLayout({
     return undefined;
   }
 
-  const savedNavPixels = ((savedLayout?.nav ?? 0) / 100) * groupSize;
+  const savedLayoutIsComplete =
+    savedLayout !== undefined && isCompleteLayout(savedLayout, panelIds);
+  const savedNavIsCollapsed = isShellNavCollapsedLayout({
+    layout: savedLayout,
+    panelIds,
+    groupSize,
+    collapsedNavPixels,
+  });
   if (
-    savedLayout &&
-    isCompleteLayout(savedLayout, panelIds) &&
-    savedNavPixels > collapsedNavPixels + COLLAPSED_PIXEL_TOLERANCE
+    savedLayoutIsComplete &&
+    !savedNavIsCollapsed
   ) {
     return Object.fromEntries(panelIds.map((panelId) => [panelId, savedLayout[panelId]]));
   }

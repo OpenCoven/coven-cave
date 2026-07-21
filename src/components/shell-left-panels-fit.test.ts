@@ -25,7 +25,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ NAV_OPEN_PX\);[\s\S]{0,160}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
+  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ NAV_OPEN_PX\);[\s\S]{0,240}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
   "on settle, a fresh group is minimized by setting the whole layout (nav→rail, freed width→detail)",
 );
 assert.match(

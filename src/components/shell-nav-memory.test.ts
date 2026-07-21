@@ -9,9 +9,27 @@ import * as shellLayout from "./shell-layout.ts";
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const compactWhitespace = (input: string) => input.replace(/\s+/g, " ").trim();
 const { resolveShellDestinationLayout } = shellLayout;
-const shouldPersistShellLayout =
-  shellLayout.shouldPersistShellLayout ??
-  (() => true);
+const isShellNavCollapsedLayout =
+  shellLayout.isShellNavCollapsedLayout ??
+  (() => false);
+const resolveShellLayoutPersistence =
+  shellLayout.resolveShellLayoutPersistence ??
+  (() => undefined);
+const resolveShellNavOpenPreference =
+  shellLayout.resolveShellNavOpenPreference ??
+  (() => ({ open: true, shouldPersist: false }));
+
+assert.deepEqual(
+  resolveShellNavOpenPreference(null, false),
+  { open: false, shouldPersist: true },
+  "first-run minimization seeds the separate normal-nav preference as collapsed",
+);
+
+assert.deepEqual(
+  resolveShellNavOpenPreference(true, false),
+  { open: true, shouldPersist: false },
+  "first-run minimization never overwrites an existing user preference",
+);
 
 assert.equal(
   resolveShellDestinationLayout({
@@ -27,12 +45,13 @@ assert.equal(
 );
 
 assert.equal(
-  shouldPersistShellLayout({
+  resolveShellLayoutPersistence({
     isMobile: true,
     navCollapsed: false,
     layout: { nav: 30, list: 25, detail: 45 },
+    savedExpandedLayout: { nav: 30, list: 25, detail: 45 },
   }),
-  false,
+  undefined,
   "mobile drawer layouts never overwrite desktop persistence",
 );
 
@@ -101,26 +120,77 @@ assert.deepEqual(
   "rounded persisted rail percentages are still recognized as collapsed layouts",
 );
 
+const legacyCollapsedNormal = { nav: 5.6, list: 27, detail: 67.4 };
+assert.equal(
+  isShellNavCollapsedLayout({
+    layout: legacyCollapsedNormal,
+    panelIds: ["nav", "list", "detail"],
+    groupSize: 1_000,
+    collapsedNavPixels: 56,
+  }),
+  true,
+  "legacy normal rail layouts are identified for collapsed-preference migration",
+);
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "list", "detail"],
+    savedLayout: legacyCollapsedNormal,
+    groupSize: 1_000,
+    defaultPanelPixels: { nav: 240, list: 260 },
+    collapsedNavPixels: 56,
+    isMobile: false,
+  }),
+  { nav: 24, list: 26, detail: 50 },
+  "legacy collapsed layouts reconstruct a safe complete expanded fallback",
+);
+
 const normalExpanded = { nav: 34, list: 27, detail: 39 };
-let savedNormalLayout: Record<string, number> | undefined;
-if (
-  shouldPersistShellLayout({
+const initialCollapsedNormal = { nav: 5.6, list: 55.4, detail: 39 };
+assert.deepEqual(
+  resolveShellLayoutPersistence({
+    isMobile: false,
+    navCollapsed: true,
+    layout: initialCollapsedNormal,
+    savedExpandedLayout: normalExpanded,
+    previousCollapsedLayout: undefined,
+  }),
+  normalExpanded,
+  "the collapse redistribution itself does not change the saved expanded list/detail layout",
+);
+const savedNormalLayout = resolveShellLayoutPersistence({
+  isMobile: false,
+  navCollapsed: true,
+  layout: { nav: 5.6, list: 59.4, detail: 35 },
+  savedExpandedLayout: normalExpanded,
+  previousCollapsedLayout: initialCollapsedNormal,
+});
+assert.deepEqual(
+  savedNormalLayout,
+  { nav: 34, list: 31, detail: 35 },
+  "list/detail separator changes in the normal nav rail merge into the expanded layout without replacing nav width",
+);
+assert.deepEqual(
+  resolveShellLayoutPersistence({
     isMobile: false,
     navCollapsed: false,
     layout: normalExpanded,
-  })
-) {
-  savedNormalLayout = normalExpanded;
-}
-if (
-  shouldPersistShellLayout({
+    savedExpandedLayout: undefined,
+    previousCollapsedLayout: undefined,
+  }),
+  normalExpanded,
+  "expanded desktop callbacks still persist their complete layout",
+);
+assert.equal(
+  resolveShellLayoutPersistence({
     isMobile: false,
     navCollapsed: true,
-    layout: { nav: 5.6, list: 27, detail: 67.4 },
-  })
-) {
-  savedNormalLayout = { nav: 5.6, list: 27, detail: 67.4 };
-}
+    layout: normalExpanded,
+    savedExpandedLayout: normalExpanded,
+    previousCollapsedLayout: undefined,
+  }),
+  undefined,
+  "a stale collapsed imperative state cannot establish an expanded layout as the collapsed baseline",
+);
 assert.deepEqual(
   resolveShellDestinationLayout({
     panelIds: ["nav", "list", "detail"],
@@ -130,35 +200,28 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  normalExpanded,
-  "normal navigation keeps its user-resized expanded width and list/detail proportions across collapse -> Chat -> return",
+  savedNormalLayout,
+  "normal navigation restores the merged list/detail proportions across collapse -> Chat -> return",
 );
 assert.equal(
-  Object.values(normalExpanded).reduce((sum, size) => sum + size, 0),
+  Object.values(savedNormalLayout ?? {}).reduce((sum, size) => sum + size, 0),
   100,
-  "the remembered normal layout remains a complete valid group layout",
+  "the merged normal layout remains a complete valid group layout",
 );
 
 const chatExpanded = { nav: 31, detail: 69 };
-let savedChatLayout: Record<string, number> | undefined;
-if (
-  shouldPersistShellLayout({
-    isMobile: false,
-    navCollapsed: false,
-    layout: chatExpanded,
-  })
-) {
-  savedChatLayout = chatExpanded;
-}
-if (
-  shouldPersistShellLayout({
-    isMobile: false,
-    navCollapsed: true,
-    layout: { nav: 0, detail: 100 },
-  })
-) {
-  savedChatLayout = { nav: 0, detail: 100 };
-}
+const savedChatLayout = resolveShellLayoutPersistence({
+  isMobile: false,
+  navCollapsed: true,
+  layout: { nav: 0, detail: 100 },
+  savedExpandedLayout: chatExpanded,
+  previousCollapsedLayout: undefined,
+});
+assert.deepEqual(
+  savedChatLayout,
+  chatExpanded,
+  "Chat zero-collapse callbacks preserve its last expanded contextual width",
+);
 assert.deepEqual(
   resolveShellDestinationLayout({
     panelIds: ["nav", "detail"],
@@ -193,6 +256,12 @@ assert.match(
 
 assert.match(
   shell,
+  /minimizedGroupsRef\.current\.add\(groupId\);\s*seedNavOpenPref\(false\);\s*markShellMinimizeApplied\(groupId\);/,
+  "first-run minimization seeds the collapsed preference before recording completion",
+);
+
+assert.match(
+  shell,
   /export type ShellNavPolicy = "remembered" \| "visit-collapsed" \| "chat-contextual";/,
   "Shell exports the route-scoped nav policy contract",
 );
@@ -205,8 +274,8 @@ assert.match(
 
 assert.match(
   shell,
-  /import \{[\s\S]*resolveShellDestinationLayout,[\s\S]*shouldPersistShellLayout,[\s\S]*\} from "\.\/shell-layout";/,
-  "Shell uses the tested destination-layout resolver and persistence gate",
+  /import \{[\s\S]*isShellNavCollapsedLayout,[\s\S]*resolveShellDestinationLayout,[\s\S]*resolveShellLayoutPersistence,[\s\S]*resolveShellNavOpenPreference,[\s\S]*\} from "\.\/shell-layout";/,
+  "Shell uses the tested destination, persistence-merge, and preference helpers",
 );
 
 const destinationLayoutEffect =
@@ -224,13 +293,18 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
+  /if \(\s*!chatContextual &&\s*isShellNavCollapsedLayout\(\{[\s\S]*?layout: defaultLayout,[\s\S]*?collapsedNavPixels: NAV_RAIL_PX,[\s\S]*?\}\)\s*\) \{\s*seedNavOpenPref\(false\);\s*\}[\s\S]*?resolveShellDestinationLayout\(/,
+  "legacy collapsed normal layouts migrate the collapsed preference before their expanded fallback is restored",
+);
+assert.match(
+  destinationLayoutEffect,
   /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ nav: chatContextual \? 260 : NAV_OPEN_PX, \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?collapsedNavPixels: chatContextual \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves an expanded destination layout from its own saved width or pixel defaults",
 );
 assert.match(
   destinationLayoutEffect,
-  /layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;\s*group\.setLayout\(destinationLayout\);/,
-  "the destination group is armed only when its complete layout is ready to apply",
+  /expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};\s*collapsedLayoutRef\.current = null;\s*layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;\s*group\.setLayout\(destinationLayout\);/,
+  "the destination group resets collapsed deltas, remembers, and arms its complete expanded layout before applying it",
 );
 
 // Boot/group-switch application: after the group settles, a saved preference
@@ -245,8 +319,8 @@ assert.match(
 );
 assert.match(
   applyEffect,
-  /const pref = readNavOpenPref\(\);/,
-  "boot reads the persisted sidebar preference",
+  /const pref = seedNavOpenPref\(false\);/,
+  "boot backfills a missing collapsed default preference while preserving an existing preference",
 );
 assert.match(
   applyEffect,
@@ -323,8 +397,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /onLayoutChanged=\{\(layout, detail\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]{0,300}?if \(\s*shouldPersistShellLayout\(\{\s*isMobile,\s*navCollapsed: navRef\.current\?\.isCollapsed\(\) \?\? true,\s*layout,\s*\}\)\s*\) \{\s*onLayoutChanged\(layout, detail\);\s*\}\s*\}\}/,
-  "group-swap churn, mobile drawer layouts, and collapsed layouts cannot overwrite each group's last expanded layout",
+  /onLayoutChanged=\{\(layout, detail\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?const navCollapsed = navRef\.current\?\.isCollapsed\(\) \?\? true;[\s\S]*?const persistedLayout = resolveShellLayoutPersistence\(\{[\s\S]*?navCollapsed,[\s\S]*?savedExpandedLayout:\s*expandedLayoutRef\.current\?\.groupId === groupId[\s\S]*?previousCollapsedLayout:\s*collapsedLayoutRef\.current\?\.groupId === groupId[\s\S]*?\}\);[\s\S]*?if \(!persistedLayout\) return;\s*collapsedLayoutRef\.current = navCollapsed \? \{ groupId, layout \} : null;\s*expandedLayoutRef\.current = \{ groupId, layout: persistedLayout \};\s*onLayoutChanged\(persistedLayout, detail\);\s*\}\}/,
+  "desktop collapsed callbacks merge non-nav changes into each group's expanded layout while mobile and group-swap churn stay disarmed",
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
