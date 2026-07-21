@@ -130,6 +130,18 @@ test("an invalidation immediately starts a replacement request", async () => {
   await assert.rejects(staleRequest, { name: "AbortError" });
 });
 
+test("invalidating resources that are not registered yet is safe", async () => {
+  const cache = createSurfaceWarmCache();
+  cache.invalidateIfDefined("board:cards", "tasks:queue");
+  assert.equal(cache.snapshot().counters.invalidations, 0);
+
+  cache.defineResource("board:cards", () => "old", 1_000);
+  await cache.warm("board:cards");
+  cache.invalidateIfDefined("board:cards", "tasks:queue");
+  assert.equal(cache.snapshot().counters.invalidations, 1);
+  assert.equal(cache.snapshot().entries[0].hasValue, false);
+});
+
 test("pausing background work does not abort a navigation that joined it", async () => {
   const pending = deferred();
   const cache = createSurfaceWarmCache();

@@ -616,7 +616,13 @@ export function HomeComposer({
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard(); }
+          if (json.ok) {
+            // BoardView is normally unmounted while Home is active. Tell the
+            // workspace-owned warm cache about this write before navigating so
+            // the new card cannot be hidden behind a fresh warm snapshot.
+            window.dispatchEvent(new Event("cave:board:reload"));
+            setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard();
+          }
           else onToast("Task card creation failed.");
           break;
         }

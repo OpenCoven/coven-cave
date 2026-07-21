@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { markEnd, markStart } from "@/lib/perf/marks";
-import { abortWarm } from "@/lib/surface-warm-cache";
+import { abortWarm, invalidateIfDefined } from "@/lib/surface-warm-cache";
 import type { SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
 
 const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "github", "marketplace", "grimoire", "agents"];
@@ -83,10 +83,16 @@ export function useSurfaceWarmup(): void {
       abortWarm();
     };
     const onVisibility = () => (document.hidden ? pause() : resume());
+    // Board writes can originate outside BoardView (for example, Home's quick
+    // task composer). Keep a completed background snapshot from surviving one
+    // of those writes until its TTL expires. This listener is workspace-owned,
+    // so it also runs while BoardView itself is unmounted.
+    const onBoardReload = () => invalidateIfDefined("board:cards", "tasks:queue");
     const raf = window.requestAnimationFrame(() => window.requestAnimationFrame(begin));
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", resume);
     window.addEventListener("offline", pause);
+    window.addEventListener("cave:board:reload", onBoardReload);
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf);
@@ -95,6 +101,7 @@ export function useSurfaceWarmup(): void {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", resume);
       window.removeEventListener("offline", pause);
+      window.removeEventListener("cave:board:reload", onBoardReload);
     };
   }, []);
 }

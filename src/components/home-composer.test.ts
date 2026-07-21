@@ -204,8 +204,8 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\); \}/,
-  "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
+  /if \(json\.ok\) \{[\s\S]{0,700}?window\.dispatchEvent\(new Event\("cave:board:reload"\)\)[\s\S]{0,700}?setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\);/,
+  "HomeComposer should invalidate warmed tasks and clear staged attachments after creating a board card",
 );
 
 // ── Familiar selector removed from home ──────────────────────────────────────

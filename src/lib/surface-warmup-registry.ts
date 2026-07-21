@@ -93,12 +93,17 @@ export async function warmSurface(
   // resource is coalesced with a concurrent navigation/read by the cache.
   for (const resource of surfaceWarmupResources[surface]) {
     if (!canContinue()) return { backpressured: false };
-    const result = await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
-    // GitHub's landing response reports the remaining upstream allowance. Do
-    // not spend the last few calls on background work: direct navigation can
-    // still read this cache, but the coordinator stops its remaining queue.
-    if (resource === "github:activity" && (result.data.rateLimit?.remaining ?? Infinity) <= GITHUB_WARMUP_REMAINING_FLOOR) {
-      return { backpressured: true };
+    try {
+      const result = await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
+      // GitHub's landing response reports the remaining upstream allowance. Do
+      // not spend the last few calls on background work: direct navigation can
+      // still read this cache, but the coordinator stops its remaining queue.
+      if (resource === "github:activity" && (result.data.rateLimit?.remaining ?? Infinity) <= GITHUB_WARMUP_REMAINING_FLOOR) {
+        return { backpressured: true };
+      }
+    } catch {
+      // Landing resources are independent. A transient failure in one API
+      // must not leave the rest of this surface cold until a visibility cycle.
     }
   }
   return { backpressured: false };

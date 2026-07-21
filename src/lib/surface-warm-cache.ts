@@ -58,6 +58,8 @@ export type SurfaceWarmCache = {
   read<T>(key: string, options?: { force?: boolean }): Promise<SurfaceWarmCacheRead<T>>;
   warm<T>(key: string): Promise<SurfaceWarmCacheRead<T>>;
   invalidate(key: string): void;
+  /** Invalidate registered resources only; safe for global mutation events during boot. */
+  invalidateIfDefined(...keys: string[]): void;
   /** Abort one key, or every active request with `abort()` / `abort("all")`. */
   abort(key?: string | "all"): void;
   /** Abort only background-owned work; an active navigation read keeps running. */
@@ -300,6 +302,12 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
     cancelRequest(resource);
   }
 
+  function invalidateIfDefined(...keys: string[]): void {
+    for (const key of keys) {
+      if (resources.has(key)) invalidate(key);
+    }
+  }
+
   function abort(key?: string | "all"): void {
     const targets = key === undefined || key === "all" ? resources.values() : [resourceFor(key)];
     for (const resource of targets) {
@@ -336,7 +344,7 @@ export function createSurfaceWarmCache(options: { now?: () => number } = {}): Su
     };
   }
 
-  return { defineResource, read, warm, invalidate, abort, abortWarm, snapshot };
+  return { defineResource, read, warm, invalidate, invalidateIfDefined, abort, abortWarm, snapshot };
 }
 
 /** Process-wide cache used by the surface warm-up coordinator and consumers. */
@@ -346,6 +354,7 @@ export const defineResource = surfaceWarmCache.defineResource;
 export const read = surfaceWarmCache.read;
 export const warm = surfaceWarmCache.warm;
 export const invalidate = surfaceWarmCache.invalidate;
+export const invalidateIfDefined = surfaceWarmCache.invalidateIfDefined;
 export const abort = surfaceWarmCache.abort;
 export const abortWarm = surfaceWarmCache.abortWarm;
 export const surfaceWarmCacheSnapshot = surfaceWarmCache.snapshot;

@@ -15,6 +15,7 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   }
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
   assert.match(registry, /await warm<\{ rateLimit/);
+  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch \{[\s\S]{0,240}must not leave the rest of this surface cold/);
   assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
@@ -34,6 +35,8 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /document\.hidden/);
   assert.match(hook, /window\.addEventListener\("offline", pause\)/);
   assert.match(hook, /abortWarm\(\)/);
+  assert.match(hook, /invalidateIfDefined\("board:cards", "tasks:queue"\)/, "external board writes invalidate warmed landing data while BoardView is unmounted");
+  assert.match(hook, /addEventListener\("cave:board:reload", onBoardReload\)/);
   assert.match(hook, /surface-warmup:backpressure/);
   assert.match(hook, /warmSurface\(surface, runnable\)/);
   assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
