@@ -330,9 +330,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         />
       </div>
 
-      {/* Bottom: Dashboard + Settings, then the version line — shared with
-          Chat's independent WorkspaceSidebar list so both hosts keep the
-          same footer. */}
+      {/* Bottom: Dashboard + Settings, then the version line — shared with the
+          WorkspaceSidebar that replaces this host during Chat. */}
       <SidebarFooter onOpenSettings={onOpenSettings} />
 
       {/* Account avatar — rail-only (CSS-gated, like the brand mark): the 28px

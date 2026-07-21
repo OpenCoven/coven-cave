@@ -87,8 +87,8 @@ assert.match(
 
 // Selecting a destination dismisses the active mobile OVERLAY drawer, but must
 // use the mobile-only `dismissNavMobile`/`dismissListMobile` helpers — NOT
-// `closeNav`/`closeList`, which collapse the independent DESKTOP global nav or
-// persistent Chats list panels. Desktop chat keeps both panes available.
+// `closeNav`/`closeList`, which alter desktop panels. Chat uses only the nav
+// drawer, where WorkspaceSidebar replaces the normal navigation.
 assert.match(
   workspace,
   /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
