@@ -88,7 +88,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-21 (sessions-list cache invalidation): the shared
   // sessions-list-cache module adds one traced file on Windows atop the
   // Sessions redesign; keep the exact maximum.
-  fileCount: 5_549,
+  // 2026-07-21 (Task cockpit): the TaskWorkCockpit + workspace-rail-controller
+  // chunks add five traced files on Windows (CI measured 5,552 against the
+  // pre-Sessions 5,547 base). Keep the exact maximum on the current base.
+  fileCount: 5_554,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
