@@ -176,6 +176,7 @@ export const ICON_NAMES = [
   "ph:flask",
   "ph:flag",
   "ph:flag-fill",
+  "ph:frame-corners",
   "ph:book-bookmark",
   "ph:robot",
   "ph:clipboard-text",
