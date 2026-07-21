@@ -1050,31 +1050,16 @@
   background: var(--color-danger);
 }
 
-/* Typing hint — one line, top-right inside the input area, 10.5px mono muted.
-   Rendered only while the draft is non-empty; never persistent chrome. */
+/* Input wrap — positioning anchor for affordances layered over the input
+   area (the typing hint that used to live here retired 2026-07-21 with its
+   last consumer, the home composer). */
 .cave-composer-input-wrap {
   position: relative;
 }
 
-.cave-composer-typing-hint {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  pointer-events: none;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 1;
-}
-
 @media (max-width: 767px) {
-  /* Skip the hint on mobile widths; grow the new controls to touch size
-     (radius language stays — the plus keeps its 8px corner, the send its
-     circle). */
-  .cave-composer-typing-hint {
-    display: none;
-  }
-
+  /* Grow the new controls to touch size (radius language stays — the plus
+     keeps its 8px corner, the send its circle). */
   .cave-composer-footer-action,
   .cave-composer-plus,
   .cave-composer-send {

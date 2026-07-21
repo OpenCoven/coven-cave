@@ -69,18 +69,26 @@ assert.match(
   "ChatView should distinguish a missing SSE body from an HTTP rejection",
 );
 
+const menuModel = readFileSync(new URL("../lib/chat-session-menu-model.ts", import.meta.url), "utf8");
 assert.match(
-  sessionHeader,
-  /Reflect on this thread[\s\S]{0,600}ph:phone/,
-  "ChatView should expose a Reflect action in the session overflow menu",
+  menuModel,
+  /Reflect on this thread/,
+  "the menu model exposes a Reflect action for the session overflow menu",
 );
 // Reflect must not reuse the thinking toggle's brain — two identical brains
 // in one menu made the actions indistinguishable. Sparkle matches the daily
-// note's Reflection section where reflections land.
+// note's Reflection section where reflections land. The voice call is a
+// direct header button (cave-zolo), so the phone icon lives beside — not
+// inside — the menu.
+assert.match(
+  menuModel,
+  /ctx\.reflecting \? "ph:circle-notch-bold" : "ph:sparkle-bold"/,
+  "the Reflect action keeps its sparkle (spinner while reflecting), distinct from the thinking brain",
+);
 assert.match(
   sessionHeader,
-  /reflecting \? "ph:circle-notch-bold" : "ph:sparkle-bold"/,
-  "the Reflect action keeps its sparkle (spinner while reflecting), distinct from the thinking brain",
+  /function VoiceCallButton[\s\S]{0,900}ph:phone/,
+  "the voice call is a direct header button with the phone icon",
 );
 
 assert.match(

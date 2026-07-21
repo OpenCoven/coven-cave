@@ -767,13 +767,35 @@ details[open] > .cave-tool-summary::before {
   opacity: 0.45;
 }
 
-/* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
- * find affordance show — they reveal on header hover or keyboard focus,
- * keeping their layout slots (no reflow on reveal). Touch devices — which
- * have no hover — skip this and show everything. The kebab holds every
- * secondary action, so nothing becomes hover-only. */
+/* cave-zolo: the direct delete button reads danger on approach — quiet
+ * muted-icon at rest like its siblings, red on hover/armed so the destructive
+ * verb is legible before the confirm popover asks. */
+.cave-chat-session-actions > .cave-chat-delete-btn:hover:not(:disabled),
+.cave-chat-session-actions > .cave-chat-delete-btn[aria-expanded="true"] {
+  border-color: color-mix(in oklch, var(--color-danger) 45%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+
+/* Ultra-minimal header: at rest only the archive, find and ⋮ kebab
+ * affordances show. The promoted voice + delete verbs stay quiet — they
+ * carry the shared reveal-on-hover utility (design language §8) against the
+ * chat header's reveal-scope, surfacing on header hover or keyboard focus
+ * while keeping their layout slots (opacity-only: still tabbable, still in
+ * the a11y tree, no reflow; coarse pointers show everything). This replaces
+ * a bespoke pointer-events dance whose reveal rules could never outrank
+ * their own hide rule, leaving hover-only controls unreachable (cave-zolo).
+ *
+ * An armed popover (kebab menu, delete confirm) keeps the whole cluster
+ * revealed — the anchor must not fade under its own open popover when the
+ * pointer travels into it. */
+.cave-chat-session-actions:has([aria-expanded="true"]) .reveal-on-hover {
+  opacity: 1;
+}
+
+/* The composer footer band's lone "link a task" chip follows the same
+ * quiet-at-rest rhythm against the band (pointer devices only). */
 @media (hover: hover) and (pointer: fine) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {
     opacity: 0;
     transform: translateX(4px);
@@ -783,9 +805,6 @@ details[open] > .cave-tool-summary::before {
       transform var(--duration-fast) var(--ease-standard);
   }
 
-  .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
-  .cave-chat-session-actions:focus-within > .focus-ring,
-  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
   .cave-composer-footer-band:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
   .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
     opacity: 1;
@@ -795,7 +814,6 @@ details[open] > .cave-tool-summary::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {
     transition: none;
     transform: none;

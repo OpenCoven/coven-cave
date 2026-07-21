@@ -880,14 +880,6 @@ export function HomeComposer({
           inputMode="text"
           enterKeyHint="send"
         />
-        {/* Typing hint (chat revamp 1d): appears with the first character,
-            inside the input area — not persistent chrome. Hidden on phone
-            widths (CSS). */}
-        {text.trim() && !sending ? (
-          <span className="cave-composer-typing-hint" aria-hidden>
-            ↵ send · ⇧↵ newline
-          </span>
-        ) : null}
         </div>
 
         {/* Enhance status strip (shared): streaming preview, apply/dismiss
@@ -968,23 +960,6 @@ export function HomeComposer({
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={() => setOptionsOpen(true)}
               />
-              {/* One quiet context pill — Project · Model — replacing the
-                  footer band's picker row (home has no git context). */}
-              <ComposerContextPill
-                projects={projects}
-                projectValue={selectedProjectId || null}
-                onProjectChange={setSelectedProjectId}
-                allowNoProject
-                familiarId={selectedFamiliarId || null}
-                createProject={createProject}
-                runtime={selectedRuntime}
-                modelValue={selectedModelId}
-                modelOptions={runtimeModelOptions}
-                onPickRuntime={handleSelectRuntime}
-                onPickModel={handleSelectModel}
-                disabled={sending}
-                ariaLabel="Composer context: project and model"
-              />
               <div
                 className="hc-dest-pills hc-dest-pills--inline"
                 role="radiogroup"
@@ -1031,8 +1006,9 @@ export function HomeComposer({
           </div>
 
           {/* Model & tuning panel — the existing Options popover, opened from
-              the "+" menu and anchored to it (the footer band it used to sit
-              in collapsed into the context pill + "+" popover). */}
+              the "+" menu and anchored to it (host/thinking/speed tuning stays
+              here; the context pill on the footer band carries project ·
+              model). */}
           <ComposerOptionsMenu
             open={optionsOpen}
             onOpenChange={setOptionsOpen}
@@ -1078,6 +1054,29 @@ export function HomeComposer({
                 onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
               } satisfies ComposerOptionSection,
             ]}
+          />
+        </div>
+        {/* Footer band — the darker strip attached to the card's underside
+            carries the context pill (Project · Model; every picker opens from
+            it). Moved down from the control row (2026-07-21 home parity pass,
+            matching the chat composer) so the write surface above stays
+            minimal. Home has no git context or linked-work strip, so the
+            pill rides alone. */}
+        <div className="cave-composer-footer-band">
+          <ComposerContextPill
+            projects={projects}
+            projectValue={selectedProjectId || null}
+            onProjectChange={setSelectedProjectId}
+            allowNoProject
+            familiarId={selectedFamiliarId || null}
+            createProject={createProject}
+            runtime={selectedRuntime}
+            modelValue={selectedModelId}
+            modelOptions={runtimeModelOptions}
+            onPickRuntime={handleSelectRuntime}
+            onPickModel={handleSelectModel}
+            disabled={sending}
+            ariaLabel="Composer context: project and model"
           />
         </div>
         </div>

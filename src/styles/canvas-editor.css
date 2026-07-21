@@ -88,6 +88,34 @@
   background: color-mix(in oklch, var(--accent-presence) 88%, var(--text-primary));
 }
 
+/* View controls: in-app expand toggle + native full screen. */
+.canvas-editor__view-controls {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  flex: none;
+}
+.canvas-editor__view {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.canvas-editor__view:hover {
+  color: var(--text-primary);
+}
+.canvas-editor__view.is-active {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+}
+
 /* ── Body ────────────────────────────────────────────────────────────────── */
 .canvas-editor__body {
   display: flex;
@@ -137,6 +165,32 @@
   border: 1px solid color-mix(in oklch, var(--color-danger) 40%, transparent);
   border-radius: var(--radius-control);
   background: var(--bg-raised);
+}
+
+/* Expanded: the sketch fills the editor body; the aside and stage chrome go.
+   Pure CSS off the root modifier so editor state survives the toggle. */
+.canvas-editor--expanded .canvas-editor__aside {
+  display: none;
+}
+.canvas-editor--expanded .canvas-editor__stage {
+  padding: 0;
+}
+.canvas-editor--expanded .canvas-editor__frame-shell {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Native fullscreen: the frame shell itself is the fullscreen element.
+   Separate rules — an unsupported selector would invalidate a shared list. */
+.canvas-editor__frame-shell:fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+.canvas-editor__frame-shell:-webkit-full-screen {
+  border: 0;
+  border-radius: 0;
 }
 
 /* ── Aside ───────────────────────────────────────────────────────────────── */
@@ -501,7 +555,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .canvas-editor__mode {
+  .canvas-editor__mode,
+  .canvas-editor__view {
     transition: none;
   }
 }

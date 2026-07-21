@@ -261,7 +261,8 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
   const sessionHeader = read("../components/chat-session-header.tsx");
   assert.match(sessionHeader, /cave:continue-on-phone[\s\S]*detail: \{ chatId: sessionId \}/, "chat overflow dispatches the continue-on-phone event with the session id");
-  assert.match(sessionHeader, />\s*Continue on phone\s*</, "the overflow menu offers Continue on phone");
+  const menuModel = read("../lib/chat-session-menu-model.ts");
+  assert.match(menuModel, /label: "Continue on phone"/, "the overflow menu model offers Continue on phone");
 
   const workspace = read("../components/workspace.tsx");
   assert.match(workspace, /addEventListener\("cave:continue-on-phone"/, "workspace listens for the handoff event");

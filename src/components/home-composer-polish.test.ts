@@ -63,14 +63,20 @@ assert.match(
 );
 
 // ───────── Command-bar hierarchy ─────────
-// Chat revamp 1d: one "+" menu (attach · dictation · call · enhance · Model &
-// tuning) and one context pill (Project · Model) lead the utility row, then
-// the Chat/Task pills; the circular send hugs the right. The footer band is
-// gone — its pickers collapsed into the pill and the "+" popover.
+// Chat revamp 1d + 2026-07-21 home parity pass: one "+" menu (attach ·
+// dictation · call · enhance · Model & tuning) leads the utility row, then the
+// Chat/Task pills; the circular send hugs the right. The context pill
+// (Project · Model) anchors the footer band beneath — matching the chat
+// composer's grammar.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?<ComposerContextPill[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
-  "the utility row leads with the + menu and context pill, then the Chat/Task pill toggle",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
+  "the utility row leads with the + menu, then the Chat/Task pill toggle",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the context pill anchors the footer band beneath the control row",
 );
 assert.match(
   source,
@@ -90,7 +96,7 @@ assert.match(
 assert.doesNotMatch(
   source,
   /hc-footer-band/,
-  "the footer band is retired — its pickers live in the context pill + Options panel",
+  "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
 assert.doesNotMatch(
   source,

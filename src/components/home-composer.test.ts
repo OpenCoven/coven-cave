@@ -455,7 +455,7 @@ assert.match(
 // ── Single-row toolbar replaces mode strip + run rail ───────────────────────
 // The top mode strip and the separate run rail were removed. The footer is the
 // chat composer's: attach + Chat/Task pills left, voice/enhance/send right; the
-// footer band beneath carries the project picker and the runtime + model chip.
+// footer band beneath carries the context pill (project · runtime + model).
 assert.doesNotMatch(
   source,
   /className="hc-mode-strip"/,
@@ -468,8 +468,20 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?<ComposerContextPill[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu/,
-  "Control row: the + menu, context pill, and Chat/Task pills lead; the circular send hugs the right; the Options panel chains off the + anchor",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "Control row: the + menu and Chat/Task pills lead; the circular send hugs the right; the context pill anchors the footer band beneath (2026-07-21 home parity pass)",
+);
+assert.doesNotMatch(
+  source.match(/className="cave-composer-utility-row">[\s\S]*?hc-dest-pills hc-dest-pills--inline/)?.[0] ?? "",
+  /<ComposerContextPill/,
+  "the utility row stays pill-free — context moved down to the footer band",
+);
+// The "↵ send · ⇧↵ newline" typing hint is gone (2026-07-21 parity with the
+// chat composer): the tinted send button already signals sendability.
+assert.doesNotMatch(
+  source,
+  /cave-composer-typing-hint/,
+  "the enter-to-send typing hint no longer renders in the home composer",
 );
 // Voice input is hidden until it actually works — a permanently disabled mic
 // read as broken chrome (user-reported).

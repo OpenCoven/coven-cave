@@ -117,10 +117,11 @@ assert.doesNotMatch(
   "Standalone lifecycle status bar CSS is removed (folded into meta line)",
 );
 
-// In-chat delete lives ONLY in the session overflow (kebab) menu now — the
-// danger "Delete chat…" item swaps the menu body to a confirm view, the
+// In-chat delete is a DIRECT header action (cave-zolo): a trash icon button in
+// the session-actions cluster whose confirm popover (Delete this chat
+// permanently? / Cancel / Delete chat) guards the irreversible commit. The
 // explicit Delete commits via deleteChat, and success reports the confirmed id
-// to Workspace and navigates back. No standalone header trash button remains.
+// to Workspace and navigates back.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -132,30 +133,35 @@ assert.match(
   "Successful delete reaches the shared boundary and navigates back to the list",
 );
 
-// The kebab's delete is a two-step guard: the danger item arms a confirm view
-// (Delete this chat permanently? / Cancel / Delete chat) inside the popover.
+// The delete is a two-step guard: the trash button arms a confirm popover
+// anchored to itself; only the popover's danger item commits.
 assert.match(
   sessionHeader,
-  /function SessionOverflowMenu[\s\S]*?confirmingDelete \? \([\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}[\s\S]*?Delete chat…/,
-  "SessionOverflowMenu guards delete behind an in-popover confirm view",
+  /function DeleteChatButton[\s\S]*?aria-expanded=\{confirming\}[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}/,
+  "DeleteChatButton guards delete behind an anchored confirm popover",
 );
 assert.match(
-  sessionHeader,
-  /onSelect=\{\(\) => setConfirmingDelete\(true\)\}/,
-  "the danger Delete chat… item arms the confirm view instead of deleting outright",
+  source,
+  /<DeleteChatButton deleting=\{deleting\} onDelete=\{\(\) => void deleteChat\(\)\} \/>/,
+  "the header cluster renders the direct delete button",
 );
-// Closing the kebab disarms the confirm so it never reopens pre-armed.
-assert.match(
-  sessionHeader,
-  /const close = \(\) => \{\s*setOpen\(false\);\s*setConfirmingDelete\(false\);\s*\};/,
-  "closing the overflow menu resets the armed delete confirm",
+// The kebab no longer carries delete at all — the menu model owns its items
+// and none of them are the destructive verb. (Scoped to the menu function so
+// DeleteChatButton's own strings don't satisfy the check.)
+const overflowMenuSection = sessionHeader.slice(
+  sessionHeader.indexOf("function SessionOverflowMenu"),
+  sessionHeader.indexOf("function DeleteChatButton"),
 );
-// The standalone header debug/delete buttons are gone — the header's only
-// always-visible controls are Find and the kebab.
+assert.ok(
+  !overflowMenuSection.includes("Delete chat") && !overflowMenuSection.includes("ph:trash"),
+  "SessionOverflowMenu contains no delete item (direct button owns it)",
+);
+// The standalone header debug buttons stay gone — quick actions are Voice/
+// Archive/Find/Delete plus the kebab.
 assert.doesNotMatch(
   source,
   /function HeaderDebugButton|function HeaderDeleteButton|function HeaderThinkingToggle|function HeaderReflectButton/,
-  "the standalone header icon buttons are folded into the overflow menu",
+  "the retired standalone header icon buttons stay removed",
 );
 assert.doesNotMatch(
   source,
@@ -164,11 +170,12 @@ assert.doesNotMatch(
 );
 
 // Project selection is one compact row in the kebab that opens the shared
-// searchable ProjectPickerPopover — not an inline list of every project.
+// searchable ProjectPickerPopover — not an inline list of every project. The
+// row's label comes from the pure menu model.
 assert.match(
   sessionHeader,
-  /function SessionOverflowMenu[\s\S]*?Project: \{activeProject \? activeProject\.name : "No project"\}[\s\S]*?<ProjectPickerPopover/,
-  "the kebab shows a single Project row that opens the shared picker popover",
+  /function SessionOverflowMenu[\s\S]*?sessionMenuSections\(\{[\s\S]*?projectName: activeProject\?\.name \?\? null[\s\S]*?<ProjectPickerPopover/,
+  "the kebab derives its Project row from the menu model and opens the shared picker popover",
 );
 assert.doesNotMatch(
   source,
@@ -397,19 +404,25 @@ assert.match(
   "highlight-failure fallback clears diffLines so markers are not doubled",
 );
 
-// ── Archive (cave-nuzg): delete's reversible sibling in the same kebab ──────
-// Archive chat PATCHes the session; the chat leaves every rail (rails are
-// archive-free by default — chat-siderail-hide-archived.test.ts) but the
-// transcript survives, and the same item reads Unarchive on archived chats.
+// ── Archive (cave-nuzg → cave-zolo): delete's reversible sibling, now a DIRECT
+// header button. Archive chat PATCHes the session; the chat leaves every rail
+// (rails are archive-free by default — chat-siderail-hide-archived.test.ts) but
+// the transcript survives, and the same button flips to Unarchive on archived
+// chats so restore is one click from the header too.
 assert.match(
   sessionHeader,
-  /icon="ph:archive"[\s\S]{0,400}\{archiving \? \(archived \? "Unarchiving…" : "Archiving…"\) : archived \? "Unarchive chat" : "Archive chat"\}/,
-  "the kebab offers Archive chat (Unarchive on archived sessions)",
+  /function ArchiveChatButton[\s\S]{0,400}archiveAction\(\{ archived, archiving \}\)/,
+  "the direct archive button derives its icon/label/verb from the menu model",
 );
 assert.match(
   sessionHeader,
-  /onSelect=\{\(\) => \{\s*onSetArchived\(!archived\);\s*close\(\);/,
-  "selecting the item toggles the session's archived state",
+  /function ArchiveChatButton[\s\S]{0,700}onClick=\{\(\) => onSetArchived\(!archived\)\}/,
+  "clicking the button toggles the session's archived state",
+);
+assert.match(
+  source,
+  /<ArchiveChatButton\s+archived=\{Boolean\(session\.archived_at\)\}\s+archiving=\{archiving\}\s+onSetArchived=\{\(next\) => void setChatArchived\(next\)\}/,
+  "the header cluster renders the direct archive button off the session's archived_at",
 );
 // Archive needs no confirm step — it is reversible, unlike Delete above.
 assert.match(
@@ -424,8 +437,8 @@ assert.match(
 );
 assert.match(
   source,
-  /archived=\{Boolean\(session\?\.archived_at\)\}/,
-  "the menu receives the live archived state of the open session",
+  /archived=\{Boolean\(session\.archived_at\)\}/,
+  "the archive button receives the live archived state of the open session",
 );
 
 console.log("chat-header-row.test.ts: ok");

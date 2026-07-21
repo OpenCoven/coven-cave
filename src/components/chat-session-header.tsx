@@ -1,70 +1,95 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { CaveProject } from "@/lib/cave-projects";
 import { NO_PROJECT_ID, chatProjectById } from "@/lib/chat-projects";
+import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 
+/** Slim overflow kebab (cave-zolo): only genuinely secondary tools live here.
+ *  Lifecycle verbs (archive, delete) and the voice call are direct header
+ *  buttons beside this menu, and rename rides the title's pencil — none of
+ *  them are duplicated in the menu. Item lists come from the pure
+ *  chat-session-menu-model so the contents are testable without React. */
 export function SessionOverflowMenu({
   projects,
   projectId,
   onProjectChange,
   onAddProject,
-  familiar,
   sessionId,
   hasTurns,
-  voiceActive,
-  onOpenVoice,
   onOpenDebug,
   reflecting,
   onReflect,
-  deleting,
-  onDelete,
-  archived,
-  archiving,
-  onSetArchived,
 }: {
   projects: CaveProject[];
   projectId: string | null;
   onProjectChange: (value: string) => void;
   /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
   onAddProject?: () => void;
-  familiar: Familiar;
   /** Active conversation id — powers "Continue on phone" (cave-i74f). */
   sessionId?: string | null;
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
-  voiceActive: boolean;
-  onOpenVoice: () => void;
   onOpenDebug: () => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
-  deleting: boolean;
-  onDelete: () => void;
-  /** Whether this session is archived — flips the menu item to Unarchive. */
-  archived: boolean;
-  archiving: boolean;
-  onSetArchived: (archived: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
     projectId === NO_PROJECT_ID
       ? null
       : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
-  const voiceConfigured = Boolean(familiar.voiceProvider);
 
-  const close = () => {
-    setOpen(false);
-    setConfirmingDelete(false);
+  const sections = sessionMenuSections({
+    sessionId: sessionId ?? null,
+    projectPickerAvailable: projects.length > 0 || Boolean(onAddProject),
+    projectName: activeProject?.name ?? null,
+    projectRoot: activeProject?.root ?? null,
+    hasTurns,
+    showThinking,
+    reflectAvailable: Boolean(onReflect),
+    reflecting,
+  });
+
+  const close = () => setOpen(false);
+
+  const handlers: Record<SessionMenuItemId, () => void> = {
+    "continue-on-phone": () => {
+      close();
+      // Golden path 5: hand off the MOMENT — the pairing modal's QR
+      // carries #chat-<id> so one scan opens this conversation.
+      window.dispatchEvent(
+        new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
+      );
+    },
+    project: () => {
+      // Chain popovers: the kebab closes on this click; the picker
+      // mounts after it, so its outside-click listener misses the
+      // same mousedown and it stays open on the shared anchor.
+      close();
+      setProjectPickerOpen(true);
+    },
+    thinking: () => {
+      setShowThinking(!showThinking);
+      close();
+    },
+    reflect: () => {
+      close();
+      onReflect?.();
+    },
+    debug: () => {
+      onOpenDebug();
+      close();
+    },
   };
 
   return (
@@ -81,139 +106,38 @@ export function SessionOverflowMenu({
           // The picker shares this anchor, so its outside-click handler skips
           // clicks here — close it explicitly or both popovers stack open.
           setProjectPickerOpen(false);
-          if (open) close();
-          else setOpen(true);
+          setOpen(!open);
         }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
       <Popover
         open={open}
-        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        onOpenChange={setOpen}
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
         ariaLabel="Chat options"
       >
-        {confirmingDelete ? (
-          <PopoverBody>
-            <PopoverLabel>Delete this chat permanently?</PopoverLabel>
-            <PopoverItem icon="ph:x" onSelect={() => setConfirmingDelete(false)}>
-              Cancel
-            </PopoverItem>
-            <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
-              {deleting ? "Deleting…" : "Delete chat"}
-            </PopoverItem>
-          </PopoverBody>
-        ) : (
-          <PopoverBody>
-            {sessionId ? (
-              <PopoverItem
-                icon="ph:device-mobile"
-                onSelect={() => {
-                  close();
-                  // Golden path 5: hand off the MOMENT — the pairing modal's QR
-                  // carries #chat-<id> so one scan opens this conversation.
-                  window.dispatchEvent(
-                    new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
-                  );
-                }}
-              >
-                Continue on phone
-              </PopoverItem>
-            ) : null}
-            <PopoverItem
-              icon="ph:pencil-simple"
-              onSelect={() => {
-                window.dispatchEvent(new Event("cave:chat-rename"));
-                close();
-              }}
-            >
-              Rename chat
-            </PopoverItem>
-            {projects.length > 0 || onAddProject ? (
-              <PopoverItem
-                icon="ph:folder"
-                title={activeProject?.root ?? "No project"}
-                onSelect={() => {
-                  // Chain popovers: the kebab closes on this click; the picker
-                  // mounts after it, so its outside-click listener misses the
-                  // same mousedown and it stays open on the shared anchor.
-                  close();
-                  setProjectPickerOpen(true);
-                }}
-              >
-                Project: {activeProject ? activeProject.name : "No project"}
-              </PopoverItem>
-            ) : null}
-            <PopoverSeparator />
-            {hasTurns ? (
-              <PopoverItem
-                icon={showThinking ? "ph:brain-bold" : "ph:brain"}
-                checked={showThinking}
-                title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
-                onSelect={() => {
-                  setShowThinking(!showThinking);
-                  close();
-                }}
-              >
-                {showThinking ? "Hide thinking" : "Show thinking"}
-              </PopoverItem>
-            ) : null}
-            {onReflect ? (
-              <PopoverItem
-                icon={reflecting ? "ph:circle-notch-bold" : "ph:sparkle-bold"}
-                disabled={reflecting}
-                onSelect={() => {
-                  close();
-                  onReflect();
-                }}
-              >
-                {reflecting ? "Reflecting…" : "Reflect on this thread"}
-              </PopoverItem>
-            ) : null}
-            <PopoverItem
-              icon="ph:phone"
-              disabled={!voiceConfigured || voiceActive}
-              onSelect={() => {
-                onOpenVoice();
-                close();
-              }}
-            >
-              {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
-            </PopoverItem>
-            <PopoverItem
-              icon="ph:bug-bold"
-              onSelect={() => {
-                onOpenDebug();
-                close();
-              }}
-            >
-              Debug session
-            </PopoverItem>
-            <PopoverSeparator />
-            {sessionId ? (
-              // Reversible, so no confirm step (unlike Delete below): an
-              // archived chat leaves every rail but stays reachable from the
-              // chat list's "Show archived" toggle, where this same item
-              // reads Unarchive.
-              <PopoverItem
-                icon="ph:archive"
-                disabled={archiving}
-                title={archived ? "Restore this chat to the rail" : "Archive this chat — it leaves the rail but is never deleted"}
-                onSelect={() => {
-                  onSetArchived(!archived);
-                  close();
-                }}
-              >
-                {archiving ? (archived ? "Unarchiving…" : "Archiving…") : archived ? "Unarchive chat" : "Archive chat"}
-              </PopoverItem>
-            ) : null}
-            <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmingDelete(true)}>
-              Delete chat…
-            </PopoverItem>
-          </PopoverBody>
-        )}
+        <PopoverBody>
+          {sections.map((section, si) => (
+            <Fragment key={si}>
+              {si > 0 ? <PopoverSeparator /> : null}
+              {section.map((item) => (
+                <PopoverItem
+                  key={item.id}
+                  icon={item.icon}
+                  checked={item.checked}
+                  disabled={item.disabled}
+                  title={item.title}
+                  onSelect={handlers[item.id]}
+                >
+                  {item.label}
+                </PopoverItem>
+              ))}
+            </Fragment>
+          ))}
+        </PopoverBody>
       </Popover>
       <ProjectPickerPopover
         open={projectPickerOpen}
@@ -228,6 +152,118 @@ export function SessionOverflowMenu({
         ariaLabel="Project for this chat"
       />
     </>
+  );
+}
+
+/** Direct danger action (cave-zolo): the trash icon in the header cluster.
+ *  Delete is irreversible, so it keeps its confirm step — a small popover on
+ *  the button itself instead of a view swap inside the kebab. Quiet at rest:
+ *  reveal-on-hover against the chat header's reveal-scope (design language
+ *  §8), so the destructive verb earns visibility instead of holding it. */
+export function DeleteChatButton({
+  deleting,
+  onDelete,
+}: {
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="focus-ring cave-chat-delete-btn reveal-on-hover"
+        aria-label="Delete this chat"
+        aria-haspopup="dialog"
+        aria-expanded={confirming}
+        title="Delete this chat permanently"
+        onClick={() => setConfirming(!confirming)}
+      >
+        <Icon name="ph:trash" width={14} aria-hidden />
+      </button>
+      <Popover
+        open={confirming}
+        onOpenChange={setConfirming}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={216}
+        ariaLabel="Confirm delete chat"
+      >
+        <PopoverBody>
+          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
+          <PopoverItem icon="ph:x" onSelect={() => setConfirming(false)}>
+            Cancel
+          </PopoverItem>
+          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
+            {deleting ? "Deleting…" : "Delete chat"}
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
+
+/** Direct session-lifecycle action (cave-zolo): archive on live sessions,
+ *  unarchive on archived ones — the same reversible verb pair the kebab used
+ *  to hide. Reversible, so no confirm step (unlike Delete): an archived chat
+ *  leaves every rail but stays reachable from the chat list's "Show archived"
+ *  toggle. */
+export function ArchiveChatButton({
+  archived,
+  archiving,
+  onSetArchived,
+}: {
+  archived: boolean;
+  archiving: boolean;
+  onSetArchived: (archived: boolean) => void;
+}) {
+  const action = archiveAction({ archived, archiving });
+  return (
+    <button
+      type="button"
+      className="cave-chat-archive-btn focus-ring"
+      onClick={() => onSetArchived(!archived)}
+      disabled={archiving}
+      aria-label={action.label}
+      aria-busy={archiving}
+      title={action.title}
+    >
+      <Icon name={action.icon} width={14} aria-hidden />
+    </button>
+  );
+}
+
+/** Direct voice-call action (cave-zolo): rings the session's familiar without
+ *  opening the kebab. Same gating the kebab item had — needs a configured
+ *  voice provider, and one call at a time. Reveal-on-hover like the delete
+ *  button beside it — the header is the reveal-scope. */
+export function VoiceCallButton({
+  familiar,
+  voiceActive,
+  onOpenVoice,
+}: {
+  familiar: Familiar;
+  voiceActive: boolean;
+  onOpenVoice: () => void;
+}) {
+  const action = voiceAction({
+    voiceConfigured: Boolean(familiar.voiceProvider),
+    voiceActive,
+    familiarName: familiar.display_name,
+  });
+  return (
+    <button
+      type="button"
+      className="focus-ring voice-call-button reveal-on-hover"
+      onClick={onOpenVoice}
+      disabled={action.disabled}
+      aria-label={action.label}
+      title={action.label}
+    >
+      <Icon name="ph:phone" width={14} aria-hidden />
+    </button>
   );
 }
 
@@ -266,14 +302,10 @@ export function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
-  // Rename has three entry points into the same edit mode: the pencil button
-  // beside the title, clicking the title text, and the session overflow menu —
-  // which lives outside this component and reaches it via this window event.
-  useEffect(() => {
-    const onRename = () => setEditing(true);
-    window.addEventListener("cave:chat-rename", onRename);
-    return () => window.removeEventListener("cave:chat-rename", onRename);
-  }, []);
+  // Rename has two entry points into the same edit mode: the pencil button
+  // beside the title and clicking the title text. (The overflow menu's Rename
+  // item and its window-event bridge died in cave-zolo — the pencil is the
+  // one affordance.)
 
   const display = baseTitle || session.id;
 

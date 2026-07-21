@@ -24,6 +24,7 @@ import {
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
 import { buildCanvasCommentsRequest } from "@/lib/canvas-comments";
+import { resolveEscapeAction } from "@/lib/canvas-editor-escape";
 import {
   CANVAS_INSPECTOR_READY_MESSAGE_TYPE,
   createCanvasInspectorChannel,
@@ -53,6 +54,17 @@ type ComponentStyleDraft = {
 };
 
 type StyleKey = "fontSize" | "padding" | "radius" | "borderW" | "weight" | "color" | "bg";
+
+// WKWebView (Tauri shell) still exposes only the webkit-prefixed Fullscreen
+// API surface; these widen the DOM types for feature-detected fallbacks.
+type FullscreenDocument = Document & {
+  webkitFullscreenEnabled?: boolean;
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => void;
+};
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
 
 const DEFAULT_STYLE_DRAFT: ComponentStyleDraft = {
   fontSize: 14,
@@ -163,8 +175,12 @@ export function CanvasEditor(props: {
   const [generating, setGenerating] = useState(false);
   const [styleDrafts, setStyleDrafts] = useState<Record<string, ComponentStyleDraft>>({});
   const [announcement, setAnnouncement] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+  const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const frameShellRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const artifactRef = useRef(artifact);
   const codeRef = useRef(code);
@@ -336,24 +352,77 @@ export function CanvasEditor(props: {
     setStyleDrafts({});
   }, [srcDoc]);
 
-  // Escape clears the selection — unless focus sits in a field that still has
-  // content (conventional: Escape there belongs to the field/draft).
+  // Escape precedence (shared resolver): native fullscreen owns Escape (the
+  // browser exits it), then a non-empty field, then the selection clears,
+  // then the in-app expanded sketch restores.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || !selectionRef.current) return;
+      if (event.key !== "Escape") return;
+      const doc = document as FullscreenDocument;
       const active = document.activeElement;
-      if (
+      const fieldHasContent =
         (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
-        && active.value.trim()
-      ) {
-        return;
+        && Boolean(active.value.trim());
+      const action = resolveEscapeAction({
+        nativeFullscreen: Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement),
+        fieldHasContent,
+        hasSelection: selectionRef.current !== null,
+        expanded: expandedRef.current,
+      });
+      if (action === "clear-selection") {
+        selectionRef.current = null;
+        setSelection(null);
+        setAnnouncement("Selection cleared.");
+      } else if (action === "exit-expand") {
+        setExpanded(false);
+        setAnnouncement("Sketch restored.");
       }
-      selectionRef.current = null;
-      setSelection(null);
-      setAnnouncement("Selection cleared.");
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Native fullscreen: detect availability once, and mirror fullscreenchange
+  // (incl. the WebKit-prefixed event WKWebView fires) into button state.
+  useEffect(() => {
+    const doc = document as FullscreenDocument;
+    setFullscreenAvailable(Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled));
+    function onFullscreenChange() {
+      const active = Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement);
+      setNativeFullscreen(active);
+      setAnnouncement(active ? "Entered full screen." : "Exited full screen.");
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+    };
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    setExpanded(!expanded);
+    setAnnouncement(!expanded ? "Sketch expanded." : "Sketch restored.");
+  }, [expanded]);
+
+  const toggleNativeFullscreen = useCallback(() => {
+    const doc = document as FullscreenDocument;
+    if (doc.fullscreenElement ?? doc.webkitFullscreenElement) {
+      if (doc.exitFullscreen) void doc.exitFullscreen().catch(() => {});
+      else doc.webkitExitFullscreen?.();
+      return;
+    }
+    const shell = frameShellRef.current as FullscreenElement | null;
+    if (!shell) return;
+    if (shell.requestFullscreen) {
+      void shell.requestFullscreen().catch(() => {
+        setAnnouncement("Full screen was blocked.");
+      });
+    } else {
+      shell.webkitRequestFullscreen?.();
+    }
   }, []);
 
   // ── Edit mode: live style overrides ───────────────────────────────────────
@@ -656,7 +725,7 @@ export function CanvasEditor(props: {
   );
 
   return (
-    <div className="canvas-editor">
+    <div className={`canvas-editor${expanded ? " canvas-editor--expanded" : ""}`}>
       <span className="sr-only" aria-live="polite">{announcement}</span>
 
       <div className="canvas-editor__head">
@@ -664,6 +733,29 @@ export function CanvasEditor(props: {
           ← Gallery
         </button>
         <span className="canvas-editor__title" title={artifact.title}>{artifact.title}</span>
+        <span className="canvas-editor__view-controls" role="group" aria-label="Sketch view">
+          <button
+            type="button"
+            className={`canvas-editor__view focus-ring-inset${expanded ? " is-active" : ""}`}
+            title="Expand sketch"
+            aria-label="Expand sketch"
+            aria-pressed={expanded}
+            onClick={toggleExpanded}
+          >
+            <Icon name={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={15} aria-hidden />
+          </button>
+          {fullscreenAvailable ? (
+            <button
+              type="button"
+              className="canvas-editor__view focus-ring-inset"
+              title={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
+              aria-label={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
+              onClick={toggleNativeFullscreen}
+            >
+              <Icon name="ph:frame-corners" width={15} aria-hidden />
+            </button>
+          ) : null}
+        </span>
         <span className="canvas-editor__modes" role="group" aria-label="Editor mode">
           {modeButton("select", "Select", "Select components")}
           {modeButton("comment", "Comment", "Pin comments to components")}
@@ -676,7 +768,7 @@ export function CanvasEditor(props: {
 
       <div className="canvas-editor__body">
         <div className="canvas-editor__stage">
-          <div className="canvas-editor__frame-shell">
+          <div className="canvas-editor__frame-shell" ref={frameShellRef}>
             <iframe
               ref={frameRef}
               className="canvas-editor__frame"
