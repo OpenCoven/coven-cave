@@ -469,28 +469,6 @@ details[open] > .cave-tool-summary::before {
   flex: 0 1 auto;
 }
 
-/* Project chip — same 30px pill family as the runtime chip beside it (the
-   home band's treatment, scoped to the chat selector class). */
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector {
-  height: 30px;
-  min-height: 30px;
-  max-width: 200px;
-  padding: 0 11px 0 var(--space-2);
-  font-size: var(--text-xs);
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-}
-
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector .cave-project-picker__trigger-label {
-  max-width: 132px;
-}
-
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
@@ -791,10 +769,9 @@ details[open] > .cave-tool-summary::before {
 
 /* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
  * find affordance show — they reveal on header hover or keyboard focus,
- * keeping their layout slots (no reflow on reveal). The composer footer
- * band's lone "link a task" chip follows the same rhythm against the band.
- * Touch devices — which have no hover — skip this and show everything. The
- * kebab holds every secondary action, so nothing becomes hover-only. */
+ * keeping their layout slots (no reflow on reveal). Touch devices — which
+ * have no hover — skip this and show everything. The kebab holds every
+ * secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
   .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {

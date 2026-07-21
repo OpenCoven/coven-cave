@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const picker = await readFile(new URL("./task-link-picker.tsx", import.meta.url), "utf8");
-const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const linkedWork = await readFile(new URL("./composer-linked-work-actions.tsx", import.meta.url), "utf8");
 
 // ── picker: create-from-chat row ─────────────────────────────────────────────
 assert.match(
@@ -42,21 +42,16 @@ assert.match(
   "a created card flows through the same onAssigned path as a linked one, so the header chip appears immediately",
 );
 
-// ── chat-view: supplies the handoff context ──────────────────────────────────
+// ── linked-work extraction: keep the shared handoff plumbing in the component ─
 assert.match(
-  chatView,
+  linkedWork,
   /import type \{ ChatHandoffContext \} from "@\/lib\/chat-task-handoff"/,
-  "chat-view imports the handoff context type",
+  "composer-linked-work-actions imports the handoff context type",
 );
 assert.match(
-  chatView,
-  /handoff=\{\{ turns: activePath, familiarId: familiar\.id \?\? null, projectId: projectIdDraft \}\}/,
-  "chat-view hands the picker the ACTIVE branch's turns (not abandoned edit/retry branches) plus the chat's familiar and project",
-);
-assert.match(
-  chatView,
+  linkedWork,
   /<TaskLinkPicker[\s\S]*?handoff=\{handoff\}/,
-  "LinkedContextRow forwards the handoff context to the picker",
+  "ComposerLinkedWorkActions forwards the handoff context to the picker",
 );
 
 console.log("chat-task-handoff-wiring.test.ts: ok");

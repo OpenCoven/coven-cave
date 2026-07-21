@@ -78,16 +78,13 @@ assert.match(
 assert.match(
   source,
   /accept=\{CHAT_ATTACHMENT_ACCEPT\}/,
-  "The hidden file input behind the plus button should use the shared attachment accept list",
+  "The hidden file input behind the direct attachment button should use the shared attachment accept list",
 );
 
-// The attach affordance lives in the shared "+" menu (chat revamp 1d); its
-// accessible label survives the relocation.
-const plusMenuSource = readFileSync(new URL("./composer-plus-menu.tsx", import.meta.url), "utf8");
 assert.match(
-  plusMenuSource,
-  /ariaLabel="Attach images, videos, or files"/,
-  "Attach item should keep an explicit accessible label for images, videos, and files",
+  source,
+  /aria-label="Attach images, videos, or files"/,
+  "The direct attachment button should keep an explicit accessible label",
 );
 
 assert.match(
@@ -116,26 +113,40 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*<ComposerPlusMenu[\s\S]*attach=\{\{[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
-  "Composer should keep attachment (via the + menu) and send actions in the footer row",
+  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
+  "Composer should keep direct attachment, voice, grouped options, and send actions in the footer row",
 );
 assert.match(
-  plusMenuSource,
-  /icon="ph:paperclip"/,
-  "the + menu's Attach item keeps the paperclip affordance",
+  source,
+  /aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"/,
+  "the direct Attach button keeps the paperclip affordance",
 );
 
 assert.match(
   source,
-  /className="cave-composer-utility-row"[\s\S]*<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}/,
-  "Composer places the collapsed Options menu in the utility row (host lives inside it now)",
+  /className="cave-composer-utility-row"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
+  "Composer places the grouped Chat options menu in the utility row",
 );
 
 assert.match(
   source,
-  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
-  "The Options menu exposes Access, Model, Thinking, and Speed sections in order",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
 );
+assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
+// "Both" reconciliation (2026-07-21): the context pill returned with the
+// footer band — but only there, never back in the control row.
+assert.equal(
+  source.match(/<ComposerContextPill/g)?.length,
+  1,
+  "the context pill mounts exactly once — in the footer band",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the context pill lives in the footer band, not the control row",
+);
+assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
 // Model selection moved out of the composer UI into the /model slash command.
 assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");

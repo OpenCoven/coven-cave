@@ -44,7 +44,7 @@ import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-compos
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -65,11 +65,11 @@ import {
   shouldShowChatArchiveNudge,
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
-import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
-import { createSmartTaskFromChat } from "@/lib/chat-task-autofill";
 import type { Card } from "@/lib/cave-board-types";
-import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
+import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-work-actions";
+import { LinkedContextRow } from "@/components/composer-linked-work-actions";
+import { ComposerContextPill } from "@/components/composer-context-pill";
 import {
   attachmentIcon,
   extractAgentAttachmentMarkers,
@@ -87,7 +87,8 @@ import { Button } from "@/components/ui/button";
 import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
 import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 import { startOmnigentRunFromBrowser } from "@/lib/omnigent/browser-run";
-import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
+import type { ComposerOptionSection } from "@/components/composer-options-menu";
+import { ComposerActionsMenu } from "@/components/composer-actions-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
@@ -174,8 +175,6 @@ import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-sta
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { ComposerPlusMenu } from "@/components/composer-plus-menu";
-import { ComposerContextPill } from "@/components/composer-context-pill";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
@@ -749,34 +748,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
     case "complete":
       return "Complete";
   }
-}
-
-function repoName(p?: string | null): string {
-  if (!p) return "";
-  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? p;
-}
-
-function githubLabel(kind: string): string {
-  if (kind === "pr") return "PR";
-  if (kind === "issue") return "Issue";
-  if (kind === "review_request") return "Review";
-  if (kind === "discussion") return "Discussion";
-  return "GitHub";
-}
-
-function compactGitHubContextLabel(item: ChatLinkedContext["github"][number]): string {
-  const repo = repoName(item.repo) || item.repo;
-  return item.number ? `${repo} #${item.number}` : repo;
-}
-
-function githubIcon(kind: string): IconName {
-  if (kind === "issue") return "ph:bug-bold";
-  if (kind === "discussion") return "ph:chats";
-  if (kind === "review_request") return "ph:check-circle";
-  if (kind === "notification") return "ph:bell";
-  if (kind === "repo") return "ph:git-fork-bold";
-  return "ph:git-pull-request";
 }
 
 /**
@@ -1441,236 +1412,6 @@ function MetaLine({
         {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
       {children}
-    </div>
-  );
-}
-
-function TaskChip({
-  task,
-  onOpenTask,
-}: {
-  task: NonNullable<ChatLinkedContext["task"]>;
-  onOpenTask?: (cardId: string) => void;
-}) {
-  const base =
-    "cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 items-center border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] text-[var(--text-secondary)]";
-  const statusLine = [task.status, task.priority].filter(Boolean).join(" · ");
-  const accessibleLabel = [task.title, task.status, task.priority].filter(Boolean).join(" ");
-  const body = (
-    <>
-      <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
-      <span className="min-w-0 truncate">{task.title}</span>
-      {statusLine ? <span className="shrink-0 text-[var(--text-muted)]">{statusLine}</span> : null}
-    </>
-  );
-  return onOpenTask ? (
-    <button
-      type="button"
-      aria-label={accessibleLabel}
-      onClick={() => onOpenTask(task.id)}
-      title={`Open task: ${task.title}`}
-      className={`${base} focus-ring transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] hover:text-[var(--text-primary)]`}
-    >
-      {body}
-      <Icon name="ph:arrow-square-out" width={10} className="shrink-0 text-[var(--text-muted)]" />
-    </button>
-  ) : (
-    <span className={base}>{body}</span>
-  );
-}
-
-function LinkedContextRow({
-  linkedContext,
-  onOpenTask,
-  sessionId,
-  onLinkedContextChange,
-  handoff,
-  sessionSettled = false,
-}: {
-  linkedContext: ChatLinkedContext | null;
-  onOpenTask?: (cardId: string) => void;
-  sessionId?: string | null;
-  onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
-  /** Recent turns + familiar/project for the picker's "New task from this chat"
-   *  handoff (cave-px7). Absent → the picker only links existing tasks. */
-  handoff?: ChatHandoffContext | null;
-  /** True once the latest assistant turn settled cleanly — gates the
-   *  one-click "Mark done" on linked tasks (cave-32ks phase 3): finished
-   *  familiar work is the moment the card can flip without leaving chat. */
-  sessionSettled?: boolean;
-}) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [markingId, setMarkingId] = useState<string | null>(null);
-  const [creatingTask, setCreatingTask] = useState(false);
-  const { announce } = useAnnouncer();
-  const task = linkedContext?.task ?? null;
-  const tasks = linkedContext?.tasks ?? (task ? [task] : []);
-  const github = linkedContext?.github ?? [];
-  const canLink = Boolean(sessionId && onLinkedContextChange);
-  if (!task && github.length === 0 && !canLink) return null;
-
-  const linkedIds = new Set(tasks.map((t) => t.id));
-
-  // cave-32ks phase 3: flip the card through its lifecycle machine —
-  // "completed" derives status "done" server-side, and lifecycleReason is the
-  // card's audit note for where the flip came from.
-  const markDone = async (t: (typeof tasks)[number]) => {
-    setMarkingId(t.id);
-    try {
-      const res = await fetch(`/api/board/${encodeURIComponent(t.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lifecycle: "completed",
-          lifecycleReason: sessionId
-            ? `Marked done from chat (session ${sessionId})`
-            : "Marked done from chat",
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false) throw new Error(String(json.error ?? res.status));
-      publishBoardChanged();
-      const done = (x: NonNullable<ChatLinkedContext["task"]>) =>
-        x.id === t.id ? { ...x, status: "done" as const, lifecycle: "completed" as const } : x;
-      onLinkedContextChange?.((prev) =>
-        prev
-          ? { ...prev, task: prev.task ? done(prev.task) : prev.task, tasks: prev.tasks?.map(done) ?? prev.tasks }
-          : prev,
-      );
-      announce(`Task "${t.title}" marked done.`);
-    } catch {
-      announce(`Couldn't mark "${t.title}" done — check your connection.`, "assertive");
-    } finally {
-      setMarkingId(null);
-    }
-  };
-
-  const onAssigned = (card: Card) => {
-    const linked = {
-      id: card.id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      lifecycle: card.lifecycle,
-      labels: card.labels,
-      cwd: card.cwd,
-      // Carrying the card's project re-scopes the picker the moment a task is
-      // linked — the chat belongs in the task's project from then on.
-      projectId: card.projectId ?? null,
-      notes: card.notes.trim() || null,
-    };
-    onLinkedContextChange?.((prev) => {
-      const baseCtx = prev ?? { task: null, tasks: [], github: [] };
-      if (baseCtx.tasks.some((t) => t.id === linked.id)) return baseCtx;
-      return { ...baseCtx, task: baseCtx.task ?? linked, tasks: [...baseCtx.tasks, linked] };
-    });
-  };
-
-  // One-click smart chat → task handoff: creates a board card auto-filled from
-  // the conversation (title, priority, due date, subtasks, links, GitHub links
-  // — see chat-task-autofill.ts) and links it to this chat via onAssigned, the
-  // same path the picker uses, so the task chip appears immediately.
-  const createTaskFromConversation = async () => {
-    if (!handoff || !sessionId || creatingTask) return;
-    setCreatingTask(true);
-    try {
-      const result = await createSmartTaskFromChat({ sessionId, context: handoff });
-      if (!result.ok || !result.card) throw new Error(result.error ?? "Failed to create task");
-      onAssigned(result.card);
-      const filled = [
-        result.card.steps?.length ? `${result.card.steps.length} subtasks` : null,
-        result.card.priority !== "medium" ? `priority ${result.card.priority}` : null,
-        result.card.endDate ? `due ${result.card.endDate}` : null,
-        result.card.github?.length ? `${result.card.github.length} GitHub links` : null,
-      ].filter(Boolean);
-      announce(
-        `Task "${result.card.title}" created from this chat${filled.length ? ` with ${filled.join(", ")}` : ""}.`,
-      );
-    } catch (err) {
-      // Surface the server's specific reason (validation message, HTTP status)
-      // instead of always blaming the connection (cave-t7uz).
-      const reason =
-        err instanceof Error && err.message ? err.message.replace(/\.$/, "") : "check your connection";
-      announce(`Couldn't create a task from this chat — ${reason}.`, "assertive");
-    } finally {
-      setCreatingTask(false);
-    }
-  };
-
-  return (
-    <div className="cave-chat-linked-context">
-      {tasks.map((t) => (
-        <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
-          <TaskChip task={t} onOpenTask={onOpenTask} />
-          {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
-            <button
-              type="button"
-              onClick={() => void markDone(t)}
-              disabled={markingId === t.id}
-              title={`Mark task done: ${t.title}`}
-              aria-label={`Mark task done: ${t.title}`}
-              className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
-            >
-              <Icon name="ph:check-bold" width={10} className="shrink-0" />
-              {markingId === t.id ? "Marking…" : "Mark done"}
-            </button>
-          ) : null}
-        </span>
-      ))}
-      {canLink && handoff ? (
-        <button
-          type="button"
-          onClick={() => void createTaskFromConversation()}
-          disabled={creatingTask}
-          title="Create a task from this conversation — auto-fills title, subtasks, priority, due date, and links"
-          aria-label="Create a task from this conversation"
-          className="cave-chat-linked-chip cave-chat-linked-chip--create-task focus-ring inline-flex items-center gap-1 border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-60"
-        >
-          <Icon name="ph:kanban" width={11} className="shrink-0 text-[var(--accent-presence)]" />
-          {creatingTask ? "Creating…" : "Create task"}
-        </button>
-      ) : null}
-      {canLink ? (
-        <span className="relative inline-flex">
-          <button
-            type="button"
-            onClick={() => setPickerOpen((open) => !open)}
-            title="Link a task to this chat"
-            aria-label="Link a task to this chat"
-            className="cave-chat-linked-chip cave-chat-linked-chip--link-task focus-ring inline-flex items-center justify-center border border-dashed border-[var(--border-strong)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:plus" width={11} className="shrink-0" />
-          </button>
-          {pickerOpen && sessionId ? (
-            <TaskLinkPicker
-              sessionId={sessionId}
-              linkedIds={linkedIds}
-              onAssigned={onAssigned}
-              onClose={() => setPickerOpen(false)}
-              handoff={handoff}
-            />
-          ) : null}
-        </span>
-      ) : null}
-      {github.map((item) => {
-        const compactLabel = compactGitHubContextLabel(item);
-        return (
-          <a
-            key={item.id}
-            href={item.url}
-            title={`Open ${githubLabel(item.kind)} on GitHub: ${item.title}`}
-            className="cave-chat-linked-chip cave-chat-linked-chip--github inline-flex min-w-0 items-center border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-            onClick={(event) => {
-              event.preventDefault();
-              openExternalUrl(item.url);
-            }}
-          >
-            <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
-            <span className="min-w-0 truncate">{compactLabel}</span>
-            {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
-          </a>
-        );
-      })}
     </div>
   );
 }
@@ -2914,10 +2655,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
-  // Composer "+" (chat revamp 1d): one resting utility button; the options
-  // panel ("Model & tuning…") chains off the same anchor, caller-owned.
-  const composerPlusRef = useRef<HTMLButtonElement | null>(null);
-  const [composerOptionsOpen, setComposerOptionsOpen] = useState(false);
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete above, which is null outside `/model <arg>` position).
   const composerModelOptions = useMemo(
@@ -2928,6 +2665,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : composerModelOptions[0]?.id ?? "";
+  const composerResponseSections: ComposerOptionSection[] = [
+    {
+      id: "access",
+      label: "Access",
+      value: permissionMode,
+      options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
+      onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
+    },
+    ...(composerModelOptions.length > 0
+      ? [{
+          id: "model",
+          label: "Model",
+          value: composerModelValue,
+          options: composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
+          onChange: (id: string) => handleSelectModel(id),
+        }]
+      : []),
+    {
+      id: "thinking",
+      label: "Thinking",
+      value: thinkingEffort,
+      options: THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+      onChange: (v: string) => setThinkingEffort(v as ComposerThinkingEffort),
+    },
+    {
+      id: "speed",
+      label: "Speed",
+      value: responseSpeed,
+      options: SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+      onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
+    },
+  ];
 
   // Thumbs votes are stamped with what produced the response (user-requested)
   // so the familiar analytics can aggregate per-model / per-runtime quality —
@@ -5154,8 +4923,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // The linked-context strip (task/GitHub chips + link/create affordances)
   // rides the composer footer band — beside the project, runtime, and git
-  // context — so the header stays one row (title + meta) and the chat's
-  // metadata reads where the message is written, not as chrome above it.
+  // context — so the chat's metadata reads where the message is written; the
+  // composer menu's linked-work group offers the same flows as menu rows.
   const linkedContextRow = (
     <LinkedContextRow
       linkedContext={linkedContext}
@@ -5868,89 +5637,81 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <div className="cave-composer-control-row">
                 <div className="cave-composer-utility-row">
-                  {/* One resting utility button (chat revamp 1d): attach,
-                      dictation, voice call, prompt snippets, enhance, and the
-                      Model & tuning panel all fold behind the "+". Item gates
-                      are unchanged from the standalone buttons they replace —
-                      the voice-call mint guard (voiceCallPending, and busy
-                      only pre-session) still applies, dictation still hides
-                      without an ears engine. */}
-                  <ComposerPlusMenu
-                    triggerRef={composerPlusRef}
-                    attach={{
-                      onSelect: () => fileInputRef.current?.click(),
-                      disabled: busy || attachments.length >= 10,
-                      hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                  <button
+                    type="button"
+                    className="cave-composer-footer-action focus-ring"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={busy || attachments.length >= 10}
+                    title={`Attach images, videos, or files (${keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A"})`}
+                    aria-label="Attach images, videos, or files"
+                  >
+                    <Icon name="ph:paperclip" width={15} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="cave-composer-footer-action focus-ring"
+                    onClick={() => void openVoiceCall()}
+                    disabled={voiceCallPending || (busy && !sessionId)}
+                    title="Voice call"
+                    aria-label="Voice call"
+                  >
+                    <Icon name="ph:phone" width={15} aria-hidden />
+                  </button>
+                  <ComposerActionsMenu
+                    context={{
+                      projects,
+                      projectValue: resolvedProjectId,
+                      onProjectChange: setProjectIdDraft,
+                      allowNoProject: true,
+                      familiarId: familiar.id ?? null,
+                      createProject,
+                      runtime: modelHarness,
+                      modelValue: composerModelValue,
+                      modelOptions: composerModelOptions,
+                      onPickRuntime: handleSelectRuntime,
+                      onPickModel: handleSelectModel,
+                      modelDisabled: busy,
+                      projectRoot: activeProjectRoot,
+                      onOpenUrl,
+                      ariaLabel: "Chat context: project, model, and branch",
                     }}
-                    dictation={
-                      dictation.available
+                    linkedWork={{
+                      linkedContext,
+                      onOpenTask,
+                      sessionId,
+                      onLinkedContextChange: setLinkedContext,
+                      handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                      sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                    }}
+                    improve={{
+                      dictation: dictation.available
                         ? {
                             listening: dictation.listening,
                             toggle: dictation.toggle,
                             disabled: busy && !dictation.listening,
                           }
-                        : undefined
-                    }
-                    call={{
-                      onSelect: () => {
-                        void openVoiceCall();
+                        : undefined,
+                      promptSnippets: {
+                        onSelect: () => setPromptSnippetsOpen(true),
                       },
-                      disabled: voiceCallPending || (busy && !sessionId),
+                      enhance: {
+                        onEnhance: promptEnhance.enhance,
+                        disabled: busy || !input.trim(),
+                        loading: promptEnhance.state.phase === "loading",
+                      },
                     }}
-                    promptSnippets={{ onSelect: () => setPromptSnippetsOpen(true) }}
-                    enhance={{
-                      onEnhance: promptEnhance.enhance,
-                      disabled: busy || !input.trim(),
-                      loading: promptEnhance.state.phase === "loading",
+                    response={{
+                      hostValue: composerHostValue,
+                      onHostPick: setRuntimeHost,
+                      sections: composerResponseSections,
+                      onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                      saveAsTemplateDisabled: !input.trim(),
+                      indicator:
+                        composerHostValue !== LOCAL_HOST_ID ||
+                        permissionMode !== DEFAULT_PERMISSION_MODE ||
+                        thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                        responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                     }}
-                    onOpenModelTuning={() => setComposerOptionsOpen(true)}
-                  />
-                  <ComposerOptionsMenu
-                    open={composerOptionsOpen}
-                    onOpenChange={setComposerOptionsOpen}
-                    anchorRef={composerPlusRef}
-                    hostValue={composerHostValue}
-                    onHostPick={setRuntimeHost}
-                    disabled={busy}
-                    onSaveAsTemplate={() => setSaveTemplateSeed(input)}
-                    saveAsTemplateDisabled={!input.trim()}
-                    indicator={
-                      permissionMode !== DEFAULT_PERMISSION_MODE ||
-                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
-                    }
-                    sections={[
-                      {
-                        id: "access",
-                        label: "Access",
-                        value: permissionMode,
-                        options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
-                        onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
-                      } satisfies ComposerOptionSection,
-                      ...(composerModelOptions.length > 0
-                        ? [{
-                            id: "model",
-                            label: "Model",
-                            value: composerModelValue,
-                            options: composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
-                            onChange: (id: string) => handleSelectModel(id),
-                          } satisfies ComposerOptionSection]
-                        : []),
-                      {
-                        id: "thinking",
-                        label: "Thinking",
-                        value: thinkingEffort,
-                        options: THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                        onChange: (v: string) => setThinkingEffort(v as ComposerThinkingEffort),
-                      } satisfies ComposerOptionSection,
-                      {
-                        id: "speed",
-                        label: "Speed",
-                        value: responseSpeed,
-                        options: SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                        onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
-                      } satisfies ComposerOptionSection,
-                    ]}
                   />
                 </div>
                 <div className="cave-composer-submit-row">

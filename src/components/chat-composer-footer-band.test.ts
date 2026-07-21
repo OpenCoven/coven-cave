@@ -1,34 +1,62 @@
 // @ts-nocheck
-// Source pins for the chat composer's context grammar (2026-07-21 wide-column
-// pass, superseding chat revamp 1d's control-row pill): the session's project ·
-// runtime/model · git context stays ONE quiet context pill, but it lives in
-// the footer band alongside the linked-work strip (tasks · GitHub ·
-// link/create). The utility cluster stays collapsed into ONE "+" menu, and
-// the write surface stays minimal: textarea + "+" · circular send.
+// Source pins for the chat composer's context grammar after the 2026-07-21
+// "both" reconciliation (user call): the wide-column pass's footer band STAYS
+// — context pill (project · runtime/model · git) left, linked-work strip
+// (tasks · GitHub · link/create) right — AND the minimal-composer pass's
+// grouped ComposerActionsMenu keeps all four groups (context · linked work ·
+// improve · response), accepting the duplication. The write surface stays
+// minimal: textarea, then attach · voice · grouped menu · circular send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
-const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
-  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+const read = (relativePath: string) =>
+  readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
+
+const source = read("./chat-view.tsx");
+const pill = read("./composer-context-pill.tsx");
+const activityCss = read("../styles/cave-chat/activity.css");
+const transcriptCss = read("../styles/cave-chat/transcript.css");
+const css = [
+  "../styles/cave-composer.css",
+  "../styles/cave-chat.css",
+  "../styles/cave-chat/activity.css",
+  "../styles/cave-chat/transcript.css",
+]
+  .map((sheet) => read(sheet))
   .join("\n");
 
-// ── The band is the panel's last section, after the control row ─────────────
+// ── The control row: attach · voice · grouped menu · send ───────────────────
+const controlRowMatch = source.match(
+  /<div className="cave-composer-control-row">[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<\/div>\s*<\/div>/,
+);
+assert.ok(controlRowMatch, "expected the composer control row in ChatView");
+
+const controlRow = controlRowMatch[0];
+
+assert.match(
+  controlRow,
+  /aria-label="Attach images, videos, or files"[\s\S]*?aria-label="Voice call"[\s\S]*?<ComposerActionsMenu[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
+  "the control row should keep direct attachment, direct Voice call, grouped ComposerActionsMenu, and then the submit control in order",
+);
+assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions should no longer expose the legacy plus menu");
+assert.doesNotMatch(controlRow, /<ComposerContextPill/, "the context pill lives in the footer band, not the control row");
+assert.doesNotMatch(controlRow, /<ComposerOptionsMenu/, "the composer actions should no longer expose the legacy options menu");
+assert.doesNotMatch(source, /<ComposerLinkedWorkActions\b/, "ChatView should not mount the menu-row linked-work actions directly — the band uses the chip strip");
+
+// ── The footer band is the panel's last section, after the control row ──────
 assert.match(
   source,
-  /className="cave-composer-controls"[\s\S]*?className="cave-composer-footer-band"/,
+  /className="cave-composer-control-row"[\s\S]*?className="cave-composer-footer-band"/,
   "the footer band renders after the composer controls, inside the panel",
 );
-
-// ── Band contents: the context pill + the linked-work strip ─────────────────
 assert.match(
   source,
   /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill[\s\S]*?\{linkedContextRow\}\s*\n\s*<\/div>/,
   "the band leads with the context pill, then the linked-context strip (tasks · GitHub · link/create)",
 );
 
-// ── The context pill replaces the band's picker cluster ─────────────────────
+// ── The context pill folds project/runtime/git behind one control ───────────
 assert.match(
   source,
   /<ComposerContextPill\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
@@ -57,22 +85,6 @@ assert.match(
   "the Branch section elides for git-less composers (home, no-project chats)",
 );
 
-// ── The utility row is just "+" — the pill lives in the band ────────────────
-const utilityRow = source.match(
-  /className="cave-composer-utility-row">[\s\S]*?<div className="cave-composer-submit-row">/,
-)?.[0] ?? "";
-assert.ok(utilityRow, "chat composer utility row is present");
-assert.match(
-  utilityRow,
-  /<ComposerPlusMenu/,
-  "the utility row leads with the + menu",
-);
-assert.doesNotMatch(
-  utilityRow,
-  /<ComposerContextPill/,
-  "the context pill moved down to the footer band (2026-07-21 wide-column pass)",
-);
-
 // ── The header no longer hosts the linked-context strip ─────────────────────
 const header = source.match(/<header className="cave-chat-linear-header[\s\S]*?<\/header>/)?.[0] ?? "";
 assert.ok(header, "chat header is present");
@@ -95,21 +107,51 @@ assert.match(
   /\.cave-context-pill \{[\s\S]{0,400}?height: 30px;[\s\S]{0,200}?border: 1px solid var\(--border-hairline\);\s*\n\s*border-radius: var\(--radius-control\);\s*\n\s*background: color-mix\(in oklch, var\(--text-primary\) 6%, transparent\);\s*\n\s*color: var\(--text-secondary\);\s*\n\s*font-size: var\(--text-sm\);/,
   "the context pill is the quiet 30px control-radius pill (hairline border, 6% text tint, 12px text token)",
 );
+
+// ── The wide reading measure: 64rem, shared by thread · follow-ups · composer
 assert.match(
-  css,
-  /\.cave-composer-plus\[aria-expanded="true"\] \{[\s\S]*?border-color: var\(--accent-presence\);[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 12%, transparent\);/,
-  "the + trigger highlights (accent border + ~12% tint) while its popover is open",
+  activityCss,
+  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
+  "chat activity should define the shared wide-column 64rem measure token",
+);
+assert.match(
+  activityCss,
+  /\.cave-chat-linear \.cave-chat-thread \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
+  "chat thread should cap itself with the shared measure token",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-chat-followups \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
+  "follow-up pills should share the chat reading measure token",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
+  "composer shell should share the chat reading measure token",
+);
+
+// ── Footer action family + circular send ────────────────────────────────────
+assert.match(
+  controlRow,
+  /className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:paperclip"[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:phone"/,
+  "the direct attachment and Voice call buttons should share the compact footer action family",
 );
 assert.match(
   css,
-  /\.cave-composer-send \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?border: 1px solid var\(--accent-presence\);[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?background: transparent;/,
-  "send is the circular 32px accent-outline button",
+  /\.cave-composer-footer-action\s*\{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;/,
+  "footer actions should use the 30px resting-control family",
 );
 assert.match(
   css,
-  /\.cave-composer-send\[data-typing="true"\] \{\s*\n\s*background: color-mix\(in oklch, var\(--accent-presence\) 18%, transparent\);/,
-  "typing adds the ~18% accent tint fill to send",
+  /\.cave-composer-send\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?border:\s*1px solid var\(--accent-presence\);[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?background:\s*transparent;/,
+  "send should remain the circular 32px accent-outline button",
 );
+assert.match(
+  css,
+  /\.cave-composer-send\[data-typing="true"\]\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\) 18%, transparent\);/,
+  "typing should still add the accent tint fill to the send button",
+);
+
 // The "↵ send · ⇧↵ newline" typing hint is gone from the chat composer
 // (2026-07-21): the tinted send button already signals sendability. The
 // home composer keeps its own hint, so the shared CSS class stays.
@@ -131,6 +173,16 @@ assert.match(
   css,
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-meta-line,\s*\.cave-chat-linked-context \{\s*display: none;/,
   "mobile hides the band's linked-context cluster in favor of MobileHeaderTask",
+);
+assert.match(
+  css,
+  /@media \(max-width: 767px\)[\s\S]*?\.cave-composer-footer-action,[\s\S]*?\.cave-composer-plus,[\s\S]*?\.cave-composer-send\s*\{[\s\S]*?width:\s*var\(--touch-target\);/,
+  "footer actions, plus, and send should all grow to the mobile touch target",
+);
+assert.match(
+  css,
+  /\.composer-options__choices\s*\{[\s\S]*?flex-wrap:\s*wrap/,
+  "grouped choice panels wrap inside the popover rather than the composer footer",
 );
 
 console.log("chat-composer-footer-band.test.ts: ok");

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 
 // ── One shared add flow: register + grant in a single human-initiated step ──
@@ -41,6 +41,24 @@ assert.doesNotMatch(
 // selection reads the same everywhere (chat revamp 1d).
 assert.match(homeComposer, /<ComposerContextPill[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context pill hosts the shared project picker");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
+assert.match(
+  contextPill,
+  /export function useComposerContextActions\(/,
+  "context derivation is reusable outside the Home pill wrapper",
+);
+assert.match(contextPill, /export function ComposerContextPickers\(/, "picker siblings are reusable");
+assert.match(contextPill, /const context = useComposerContextActions\(props\);/, "the pill wrapper still builds one shared context controller");
+assert.match(
+  contextPill,
+  /<ComposerContextActionRows[\s\S]*?onOpenProject=\{\(\) => setMenu\("project"\)\}/,
+  "the pill wrapper still renders the extracted project row entry point",
+);
+assert.match(
+  contextPill,
+  /<ComposerContextPickers[\s\S]*?context=\{context\}/,
+  "the pill wrapper still threads the extracted context into the shared pickers",
+);
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
 

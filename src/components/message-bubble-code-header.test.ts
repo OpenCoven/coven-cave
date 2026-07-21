@@ -4,9 +4,18 @@ import { readFile } from "node:fs/promises";
 
 const css = (
   await Promise.all(
-    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
-      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
-    ),
+    [
+      "../styles/globals/foundations.css",
+      "../styles/cave-md/prose.css",
+      "../styles/cave-md/code.css",
+      "../styles/cave-md/interactions.css",
+      "../styles/cave-composer.css",
+      "../styles/chat-list.css",
+      "../styles/calendar.css",
+      "../styles/cave-chat/activity.css",
+      "../styles/cave-chat/bubbles.css",
+      "../styles/cave-chat/transcript.css",
+    ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
   )
 ).join("\n");
 
@@ -98,7 +107,7 @@ assert.match(
 
 assert.match(
   css,
-  /\.cave-chat-linear \{[^}]*--cave-chat-measure:\s*[\d.]+rem/,
+  /\.cave-chat-linear \{[^}]*--cave-chat-measure:/,
   "the chat surface defines a shared reading measure token",
 );
 // The 2026-07-21 wide-column pass supersedes chat-revamp 1b's 760px: the
@@ -223,7 +232,7 @@ assert.match(
 // with theme surfaces. Both the code-block read surface (.cave-code-wrap) and
 // the system bubble draw their ink from the shared --code-surface token so
 // the Code page's file editor can match them exactly.
-const codeSurfaceToken = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const codeSurfaceToken = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 assert.match(
   codeSurfaceToken,
   /--code-surface:\s*oklch\([^)]*\/\s*9\d%\)/,

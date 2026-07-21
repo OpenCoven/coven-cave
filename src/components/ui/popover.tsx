@@ -41,6 +41,21 @@ export type PopoverProps = {
   children: ReactNode;
 };
 
+export function usePopoverInitialFocus(open: boolean, panelSelector: string) {
+  useEffect(() => {
+    if (!open) return;
+    const focusFrame = requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(panelSelector)
+        ?.querySelector<HTMLElement>(
+          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        )
+        ?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [open, panelSelector]);
+}
+
 /**
  * Lightweight portal-rendered popover. Closes on Escape, outside click,
  * scroll, or window resize. Positions itself relative to the anchor; for
@@ -239,13 +254,15 @@ export function PopoverBody({
   );
 }
 
-export function PopoverLabel({ children }: { children: ReactNode }) {
-  return <div className="ui-popover-label" role="presentation">{children}</div>;
+export function PopoverLabel({ children, id }: { children: ReactNode; id?: string }) {
+  return <div id={id} className="ui-popover-label" role="presentation">{children}</div>;
 }
 
 export function PopoverSeparator() {
   return <div className="ui-popover-separator" role="separator" />;
 }
+
+export type PopoverItemSemantic = "menuitem" | "button";
 
 export function PopoverItem({
   icon,
@@ -257,6 +274,7 @@ export function PopoverItem({
   disabled,
   checked,
   title,
+  semantic = "menuitem",
 }: {
   icon?: IconName;
   /** Rich leading visual (e.g. a ProjectAvatar); wins over `icon`. */
@@ -272,6 +290,9 @@ export function PopoverItem({
   /** When set (true/false) the item is a menuitemradio with aria-checked and a
    *  trailing check glyph — for mutually exclusive option groups. */
   checked?: boolean;
+  /** Composite dialogs can retain native button semantics instead of exposing
+   *  rows as menuitems. Pure menus keep the menuitem default. */
+  semantic?: PopoverItemSemantic;
 }) {
   const classes = [
     "ui-popover-item",
@@ -288,8 +309,8 @@ export function PopoverItem({
       data-active={active || undefined}
       disabled={disabled}
       title={title}
-      role={radio ? "menuitemradio" : "menuitem"}
-      aria-checked={radio ? checked : undefined}
+      role={semantic === "button" ? undefined : radio ? "menuitemradio" : "menuitem"}
+      aria-checked={semantic === "button" ? undefined : radio ? checked : undefined}
     >
       {leading ?? (icon ? <Icon name={icon} width={13} aria-hidden /> : null)}
       <span>{children}</span>

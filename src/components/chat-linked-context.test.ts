@@ -11,6 +11,7 @@ async function source(url: URL): Promise<string> {
 }
 
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const linkedWork = await source(new URL("./composer-linked-work-actions.tsx", import.meta.url));
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
@@ -78,31 +79,52 @@ assert.match(
 
 assert.match(
   chatView,
-  /function LinkedContextRow[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*compactGitHubContextLabel\(item\)/,
-  "ChatView should render task and GitHub context chips in the chat header",
+  /import \{ githubIcon, githubLabel, repoName \} from "@\/components\/composer-linked-work-actions"/,
+  "ChatView should keep only the GitHub label/icon helpers from the extracted linked-work module",
+);
+
+assert.doesNotMatch(
+  chatView,
+  /<ComposerLinkedWorkActions\b/,
+  "ChatView should route linked work through ComposerActionsMenu instead of mounting it directly",
+);
+
+// The 2026-07-21 "both" reconciliation keeps the footer band: the chip strip
+// (LinkedContextRow) rides it while the menu's linked-work group duplicates
+// the same flows as rows — both share useLinkedWorkController.
+assert.match(
+  chatView,
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "ChatView should mount the linked-context strip in the composer footer band",
 );
 
 assert.match(
   chatView,
-  /function compactGitHubContextLabel\(item: ChatLinkedContext\["github"\]\[number\]\)[\s\S]*repoName\(item\.repo\)[\s\S]*item\.number \? `\$\{repo\} #\$\{item\.number\}` : repo/,
-  "GitHub header chips should show compact repo names instead of repeating full owner/repo labels",
+  /<ComposerActionsMenu[\s\S]*?linkedWork=\{\{[\s\S]*?linkedContext,[\s\S]*?onLinkedContextChange:\s*setLinkedContext/,
+  "ChatView should supply linked context to the grouped composer actions",
 );
 
 assert.match(
-  chatView,
-  /aria-label="Link a task to this chat"[\s\S]*className="cave-chat-linked-chip cave-chat-linked-chip--link-task/,
-  "The header link-task affordance should be an icon button with accessible text, not another wide text chip",
+  linkedWork,
+  /export function compactGitHubContextLabel\(item: ChatLinkedContext\["github"\]\[number\]\)[\s\S]*repoName\(item\.repo\)[\s\S]*item\.number \? `\$\{repo\} #\$\{item\.number\}` : repo/,
+  "GitHub linked-work rows should still show compact repo names instead of repeating full owner/repo labels",
 );
 
 assert.match(
-  chatView,
-  /onClick=\{\(\) => onOpenTask\(task\.id\)\}/,
-  "Clicking the linked task chip should emit the task id",
+  linkedWork,
+  /<PopoverItem[\s\S]*icon="ph:plus"[\s\S]*title="Link a task to this chat"/,
+  "The extracted linked-work actions should keep the link-task affordance and its accessible copy",
+);
+
+assert.match(
+  linkedWork,
+  /onSelect=\{\(\) => \{\s*onCloseMenu\?\.\(\);\s*onOpenTask\?\.\(t\.id\);/,
+  "Selecting a linked task row should emit the task id",
 );
 assert.match(
-  chatView,
-  /const accessibleLabel = \[task\.title, task\.status, task\.priority\][\s\S]*aria-label=\{accessibleLabel\}/,
-  "Linked task chip should keep a stable accessible name for E2E and screen-reader navigation",
+  linkedWork,
+  /title=\{`Open task: \$\{t\.title\}`\}/,
+  "Linked task rows should keep a stable descriptive title for navigation and hover affordance",
 );
 
 assert.match(

@@ -149,8 +149,13 @@ test("home-composer: voice call item gates itself on an in-flight mint and alway
   );
 });
 
-test("chat-view: call item works pre-session by creating the conversation first", () => {
-  assert.match(chatView, /void openVoiceCall\(\);/);
+test("chat-view: direct voice call button works pre-session by creating the conversation first", () => {
+  assert.match(
+    chatView,
+    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width=\{15\} aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
+  );
+  assert.doesNotMatch(chatView, /\{\s*sessionId\s*&&\s*<button[\s\S]{0,280}aria-label="Voice call"/);
+  assert.doesNotMatch(chatView, /\{\s*sessionId\s*\?\s*<button[\s\S]{0,280}aria-label="Voice call"/);
   // Ordered end to end: mid-session fast path -> in-flight pending bail ->
   // the mint call itself -> the familiar-staleness bail -> the success
   // promote. A rapid re-click or a familiar switch mid-mint must each be
@@ -171,7 +176,10 @@ test("chat-view: voice call button disables itself while a mint is in flight, an
   // sessionId yet) — a click there would mint an unrelated second session
   // and the null-guarded promotion effect would swap the view onto it
   // mid-stream. Mid-session (sessionId set) stays available while busy.
-  assert.match(chatView, /openVoiceCall\(\);[\s\S]{0,120}disabled: voiceCallPending \|\| \(busy && !sessionId\)/);
+  assert.match(
+    chatView,
+    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
+  );
 });
 
 test("chat-view: openVoiceCall always clears the pending flag, even on failure or an early bail", () => {
@@ -237,7 +245,10 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   // Finding 4: the call item can't fork a streaming first send by
   // minting a second, unrelated session underneath it (pre-session only —
   // mid-session stays available while busy).
-  assert.match(chatView, /openVoiceCall\(\);[\s\S]{0,120}disabled: voiceCallPending \|\| \(busy && !sessionId\)/);
+  assert.match(
+    chatView,
+    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
+  );
   // Router side: the callback resets to a fresh compose state for the same
   // familiar/project, mirroring the onVoiceSessionCreated promotion shape
   // but back to sessionId: null.

@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 // the strip's four phases, and the every-surface-mounts-it guarantee.
 
 const source = await readFile(new URL("./composer-enhance.tsx", import.meta.url), "utf8");
+const actionsMenu = await readFile(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 const home = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const quick = await readFile(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
@@ -125,9 +126,8 @@ assert.match(
 );
 
 // ── All three composers mount the shared enhance ─────────────────────────────
-// Home and chat drive enhance through the "+" menu's Enhance-prompt item
-// (chat revamp 1d — same hook, relocated face); quick-chat keeps the inline
-// split control.
+// Home keeps enhance under the "+" menu, chat reaches it through Chat options →
+// Improve, and quick-chat keeps the inline split control.
 for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick-chat-controls", quick]]) {
   assert.match(
     src,
@@ -136,14 +136,19 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
   );
   assert.match(
     src,
-    name === "quick-chat-controls"
-      ? /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/
-      : /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/,
+    name === "home-composer"
+      ? /<ComposerPlusMenu[\s\S]*?enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/
+      : name === "chat-view"
+        ? /<ComposerActionsMenu[\s\S]*?improve=\{\{[\s\S]*?enhance:\s*\{[\s\S]*?onEnhance: promptEnhance\.enhance/
+        : /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/
+    ,
     `${name} wires the shared enhance action`,
   );
   assert.match(
     src,
-    /<EnhanceStrip[\s\S]*?onApply=\{promptEnhance\.apply\}[\s\S]*?onRevert=\{promptEnhance\.revert\}/,
+    name === "quick-chat-controls"
+      ? /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/
+      : /<EnhanceStrip[\s\S]*?onApply=\{promptEnhance\.apply\}[\s\S]*?onRevert=\{promptEnhance\.revert\}/,
     `${name} renders the shared status strip`,
   );
   assert.doesNotMatch(
@@ -152,12 +157,26 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
     `${name} carries no bespoke enhance state — the hook owns the lifecycle`,
   );
 }
-// The "+" menu preserves the intent list the split control offered.
-const plusMenu = await readFile(new URL("./composer-plus-menu.tsx", import.meta.url), "utf8");
+// Chat options' Improve section preserves the smart-enhance + intent-list reachability.
 assert.match(
-  plusMenu,
-  /ENHANCE_INTENTS\.map\(\(intent\) =>[\s\S]*?enhance\?\.onEnhance\(intent\.id\)/,
-  "the + menu's enhance view lists every enhance intent",
+  actionsMenu,
+  /<section[\s\S]*?className="composer-actions__section composer-actions__improve"[\s\S]*?aria-labelledby="composer-actions-improve-label"[\s\S]*?<PopoverLabel id="composer-actions-improve-label">Improve<\/PopoverLabel>/,
+  "Chat options exposes a dedicated Improve section with the stable Improve label id",
+);
+assert.match(
+  actionsMenu,
+  /closePanel\(\);\s*\n\s*improve\.enhance\.onEnhance\("auto"\)/,
+  "Improve → Smart enhance still fires the smart enhance intent",
+);
+assert.match(
+  actionsMenu,
+  /onSelect=\{\(\) => setEnhanceView\(true\)\}[\s\S]*?Enhance options…/,
+  "Improve offers an Enhance options entry that opens the intent list",
+);
+assert.match(
+  actionsMenu,
+  /ENHANCE_INTENTS\.map\(\(intent\) => \([\s\S]*?improve\.enhance\.onEnhance\(intent\.id\)/,
+  "Enhance options lists every shared enhance intent",
 );
 
 // Surface-specific mode + context wiring.

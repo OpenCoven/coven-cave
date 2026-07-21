@@ -135,17 +135,20 @@ assert.match(
   /PERMISSION_MODES|permissionMode/,
   "composer exposes the permission-mode (Access) control",
 );
-// The five response controls (Host · Access · Model · Thinking · Speed) collapse
-// into ONE icon-only Options menu instead of a row of inline pills.
+// Context, linked work, prompt-improvement, and response controls collapse into
+// one grouped Chat options surface while attachment and voice stay one click away.
 assert.match(
   source,
-  /<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}[\s\S]*onHostPick=\{setRuntimeHost\}/,
-  "composer collapses host + response controls into the ComposerOptionsMenu",
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu/,
+  "composer keeps direct attachment and voice controls before the grouped Chat options trigger",
 );
+const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
+assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
+const composerActionsMenuBlock = composerActionsMenuMatch[0];
 assert.match(
-  source,
-  /<div className="cave-composer-utility-row">[\s\S]*<ComposerPlusMenu[\s\S]*<ComposerOptionsMenu/,
-  "composer utility row is the + menu; the Options panel chains off the + anchor",
+  composerActionsMenuBlock,
+  /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
+  "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
 // The context pill (Project · Model · branch) lives in the footer band below
 // the controls (2026-07-21 wide-column pass) — not in the utility row.
@@ -154,38 +157,44 @@ assert.match(
   /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
   "the context pill anchors the footer band",
 );
-// Composer core (chat revamp 1d): the dedicated Prompt-snippets button is
-// folded into the "+" menu, so the resting row is just + · context pill.
-// Snippets are still reachable — the + menu opens them.
 assert.doesNotMatch(
   source,
   /aria-label="Prompt snippets"/,
-  "the standalone Prompt-snippets utility button is gone (folded into the + menu)",
+  "the standalone Prompt-snippets utility button is gone (folded into Chat options)",
+);
+assert.match(
+  composerActionsMenuBlock,
+  /improve=\{\{[\s\S]*promptSnippets:\s*\{[\s\S]*onSelect:\s*\(\) => setPromptSnippetsOpen\(true\)[\s\S]*enhance:\s*\{[\s\S]*onEnhance:\s*promptEnhance\.enhance/,
+  "Chat options keeps Prompt snippets and prompt enhancement reachable through Improve",
 );
 assert.match(
   source,
-  /promptSnippets=\{\{ onSelect: \(\) => setPromptSnippetsOpen\(true\) \}\}/,
-  "the + menu opens Prompt snippets as an action (nothing lost)",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  "the grouped Response section carries Host, Access, Model, Thinking, and Speed in order",
 );
-assert.match(
-  source,
-  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
-  "the Options menu carries Access, Model, Thinking, Speed sections in order",
+assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
+// "Both" reconciliation (2026-07-21): the context pill returned with the
+// footer band — but only there, never back in the control row.
+assert.equal(
+  source.match(/<ComposerContextPill/g)?.length,
+  1,
+  "the context pill mounts exactly once — in the footer band",
 );
+assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 assert.doesNotMatch(
   source,
   /cave-composer-settings-row/,
-  "the inline settings-row of control pills is gone (collapsed into the Options menu)",
+  "the inline settings-row of control pills is gone (collapsed into Chat options)",
 );
 assert.match(
   source,
   /<div className="cave-composer-submit-row">[\s\S]*aria-label="Send message"/,
-  "the circular Send owns the submit row (enhance moved into the + menu)",
+  "the circular Send owns the submit row (enhance moved into Chat options)",
 );
 assert.match(
-  source,
-  /enhance=\{\{\s*\n\s*onEnhance: promptEnhance\.enhance/,
-  "enhance rides the + menu's Enhance-prompt item",
+  composerActionsMenuBlock,
+  /enhance:\s*\{[\s\S]*onEnhance:\s*promptEnhance\.enhance/,
+  "enhance rides the grouped menu's Improve section",
 );
 assert.doesNotMatch(
   source,
@@ -197,8 +206,8 @@ assert.match(
   /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
   "composer footer lays out the utility cluster and submit actions in one minimal row",
 );
-// The Options menu renders each control inline (no nested popover) and keeps the
-// connect-host dialog as a popover sibling so it survives the panel closing.
+// The extracted response section renders each control inline (no nested
+// popover) and keeps the connect-host dialog available to the grouped surface.
 const optionsMenu = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
 assert.match(optionsMenu, /role="radiogroup"/, "each control is an inline radiogroup");
 assert.match(optionsMenu, /ComposerHostChoices/, "host renders inline via the shared choices (no nested popover)");
@@ -656,17 +665,27 @@ assert.doesNotMatch(
   "ChatDebugSnapshot should not define streamHealth",
 );
 assert.match(
-  source,
-  /<LinkedContextRow\b/,
-  "ChatView should render LinkedContextRow for task/GitHub chips",
+  composerActionsMenuBlock,
+  /linkedWork=\{\{[\s\S]*linkedContext,[\s\S]*onOpenTask,[\s\S]*sessionId,[\s\S]*onLinkedContextChange:\s*setLinkedContext/,
+  "ChatView should route task and GitHub linked context through the grouped menu",
 );
-// Footer band (cave-8eo2): the linked-context strip rides the composer footer
-// band — beside the project, runtime, and git chips — not the header, so the
-// header stays one row and the metadata reads where the message is written.
+assert.match(
+  composerActionsMenuBlock,
+  /handoff:\s*\{ turns: activePath, familiarId: familiar\.id \?\? null, projectId: projectIdDraft \},[\s\S]*sessionSettled:/,
+  "Linked Work keeps the active-path handoff and settled-session gate",
+);
+// "Both" reconciliation (2026-07-21): the linked-context chip strip returned
+// with the footer band (shared controller with the menu's Linked Work group)
+// — it mounts exactly once, in the band, never in the header.
+assert.equal(
+  source.match(/<LinkedContextRow\b/g)?.length,
+  1,
+  "the linked-context strip mounts exactly once — in the footer band",
+);
 assert.match(
   source,
   /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
-  "The linked-context row rides the composer footer band",
+  "the footer band carries the linked-context strip beside the context pill",
 );
 assert.doesNotMatch(
   source,
@@ -946,9 +965,7 @@ assert.match(
   /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
   "A visible drop overlay must render while a file drag is over the chat surface",
 );
-const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
-  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
-  .join("\n");
+const caveChatCss = styles;
 assert.match(
   caveChatCss,
   /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,

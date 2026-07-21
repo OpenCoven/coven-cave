@@ -3,8 +3,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
-  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+const styles = [
+  "../styles/cave-md/prose.css",
+  "../styles/cave-composer.css",
+  "../styles/chat-list.css",
+  "../styles/calendar.css",
+  "../styles/cave-chat/activity.css",
+  "../styles/cave-chat/transcript.css",
+]
+  .map((sheet) => readFileSync(new URL(sheet, import.meta.url), "utf8"))
   .join("\n");
 
 assert.match(
@@ -123,8 +130,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should hug just above the composer dock",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*action strip[\s\S]*84px textarea[\s\S]*one compact action footer[\s\S]*214px[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
+  "Mobile scroll-to-bottom FAB should clear the retained composer stack (action strip + textarea + footer + dock padding)",
 );
 
 // The FAB must NOT use `float` — float removes it from flow and breaks
@@ -173,6 +180,11 @@ assert.match(
   styles,
   /\.cave-mobile-header-identity,\s*\.cave-mobile-header-task,/,
   "Linked-task chip should be hidden on desktop alongside the other mobile-only header elements",
+);
+assert.doesNotMatch(
+  styles,
+  /\.cave-mobile-header-identity,\s*\.cave-chat-linked-context,\s*\.cave-mobile-header-task,/,
+  "Desktop hide rules should no longer carry the removed linked-context strip",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

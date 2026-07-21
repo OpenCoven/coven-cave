@@ -9,50 +9,45 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const linkedWork = await readFile(new URL("./composer-linked-work-actions.tsx", import.meta.url), "utf8");
 
 assert.match(
-  chatView,
+  linkedWork,
   /import \{ createSmartTaskFromChat \} from "@\/lib\/chat-task-autofill"/,
-  "chat-view uses the shared smart-autofill helper, not an inline fetch",
+  "composer-linked-work-actions uses the shared smart-autofill helper, not an inline fetch",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /const createTaskFromConversation = async \(\) => \{\s*if \(!handoff \|\| !sessionId \|\| creatingTask\) return;/,
   "creation requires a handoff context and session, and is re-entry guarded",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /createSmartTaskFromChat\(\{ sessionId, context: handoff \}\)/,
   "the button hands the full conversation context to the autofill helper",
 );
 assert.match(
-  chatView,
-  /handoff=\{\{ turns: activePath,/,
-  "the handoff context carries the active branch only — abandoned edit/retry branches must not leak into created tasks",
-);
-assert.match(
-  chatView,
+  linkedWork,
   /if \(!result\.ok \|\| !result\.card\) throw new Error\(result\.error \?\? "Failed to create task"\);\s*onAssigned\(result\.card\);/,
   "the created card flows through the same onAssigned path as a linked one",
 );
 assert.match(
-  chatView,
-  /\{canLink && handoff \? \(\s*<button[\s\S]*?aria-label="Create a task from this conversation"/,
-  "the button only renders when the chat can link tasks and has a handoff context, with an accessible name",
+  linkedWork,
+  /\{canLink && handoff \? \(\s*<PopoverItem[\s\S]*?title="Create a task from this conversation — auto-fills title, subtasks, priority, due date, and links"/,
+  "the create action only renders when the chat can link tasks and has a handoff context, with its detailed affordance copy intact",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /\{creatingTask \? "Creating…" : "Create task"\}/,
   "the button shows in-flight state",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /createSmartTaskFromChat\(\{ sessionId, context: handoff \}\)[\s\S]{0,1500}catch \(err\) \{[\s\S]{0,400}err instanceof Error && err\.message[\s\S]{0,160}check your connection/,
   "creation failure surfaces the server's specific reason (err.message), with the connection hint only as fallback",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /announce\(\s*`Task "\$\{result\.card\.title\}" created from this chat/,
   "success is announced to screen readers, naming what was auto-filled",
 );
