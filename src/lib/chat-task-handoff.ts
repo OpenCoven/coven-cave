@@ -9,7 +9,7 @@
 // familiar with the captured context included.
 
 import type { Card } from "@/lib/cave-board-types";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { publishBoardChanged } from "./board-cache-events.ts";
 
 export type HandoffTurn = {
   id: string;
