@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import * as inspector from "../lib/canvas-inspector.ts";
+import { resolveEscapeAction } from "../lib/canvas-editor-escape.ts";
 
 const {
   buildCanvasInspectorScript,
@@ -274,6 +275,28 @@ assert.match(
   editor,
   /border": css\["border"\] = draft\.borderW > 0 \? `\$\{draft\.borderW\}px solid \$\{SKETCH_BORDER_COLOR\}` : "none";|draft\.borderW > 0 \? `\$\{draft\.borderW\}px solid \$\{SKETCH_BORDER_COLOR\}` : "none"/,
   "border width 0 maps to border: none",
+);
+
+// ── Escape precedence: field → selection → in-app expand ────────────────────
+assert.equal(
+  resolveEscapeAction({ fieldHasContent: true, hasSelection: true, expanded: true }),
+  "none",
+  "a non-empty field owns Escape outright",
+);
+assert.equal(
+  resolveEscapeAction({ fieldHasContent: false, hasSelection: true, expanded: true }),
+  "clear-selection",
+  "selection clears before expand exits",
+);
+assert.equal(
+  resolveEscapeAction({ fieldHasContent: false, hasSelection: false, expanded: true }),
+  "exit-expand",
+  "with nothing selected, Escape exits the expanded sketch",
+);
+assert.equal(
+  resolveEscapeAction({ fieldHasContent: false, hasSelection: false, expanded: false }),
+  "none",
+  "Escape is a no-op when there is nothing to dismiss",
 );
 
 console.log("canvas editor wiring: ok");
