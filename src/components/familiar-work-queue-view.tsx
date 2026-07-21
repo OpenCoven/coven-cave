@@ -11,7 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -288,6 +288,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
+        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
@@ -317,6 +318,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "comment failed");
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
+        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -346,6 +348,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
+        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
@@ -379,6 +382,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
+        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {

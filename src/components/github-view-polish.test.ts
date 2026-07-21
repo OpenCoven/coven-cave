@@ -288,6 +288,7 @@ assert.match(source, /const filtered = useMemo\(/, "the kind-filtered set is mem
 assert.match(source, /const counts: Record<Filter, number> = useMemo\(/, "the per-filter counts are memoised");
 // In-flight fetch can't setState after unmount.
 assert.match(source, /if \(!mountedRef\.current\) return;/, "fetchActivity guards against setState after unmount");
+assert.match(source, /if \(!data\.ok\) \{[\s\S]{0,180}?data\.error === "no_user"[\s\S]{0,120}?setError\("no_user"\)/, "the no-user setup state survives the shared cache");
 
 // GitHub timestamps use the app-canonical relative time via the shared
 // <RelativeTime> component (semantic <time>, preference-aware exact-time hover,

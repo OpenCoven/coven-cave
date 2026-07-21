@@ -43,7 +43,7 @@ export function useSurfaceWarmup(): void {
       markStart(`surface-warmup:${surface}`);
       // Keep the coordinator and its lazy-surface imports out of the initial
       // shell/sidecar trace. It is only needed after first interactive paint.
-      void import("@/lib/surface-warmup-registry").then(({ warmSurface }) => warmSurface(surface))
+      void import("@/lib/surface-warmup-registry").then(({ warmSurface }) => warmSurface(surface, runnable))
         .then((result) => {
           if (!result.backpressured) return;
           backpressured = true;

@@ -79,6 +79,8 @@ type Props = {
   initialTarget?: GitHubItemTarget | null;
 };
 
+type ActivityPayload = ActivityResult | { ok: false; error?: string };
+
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
 
@@ -2358,8 +2360,17 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const { data } = await readSurfaceResource<ActivityResult>("github:activity", force);
+      const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
+      if (!data.ok) {
+        if (data.error === "no_user") {
+          setError("no_user");
+          return;
+        }
+        setError(data.error ?? "GitHub activity unavailable");
+        schedulePoll(60_000);
+        return;
+      }
       const nextActivity = data;
       setActivity((prev) =>
         prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)

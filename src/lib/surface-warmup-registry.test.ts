@@ -17,6 +17,7 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   assert.match(registry, /await warm<\{ rateLimit/);
   assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
+  assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
 });
 
 test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {
@@ -33,6 +34,6 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /window\.addEventListener\("offline", pause\)/);
   assert.match(hook, /abortWarm\(\)/);
   assert.match(hook, /surface-warmup:backpressure/);
-  assert.match(hook, /warmSurface\(surface\)/);
+  assert.match(hook, /warmSurface\(surface, runnable\)/);
   assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
 });

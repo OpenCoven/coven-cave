@@ -17,10 +17,14 @@ export const surfaceWarmupResources = {
   agents: ["agents:coven-memory", "memory:list"],
 } as const satisfies Record<SurfaceWarmupSurface, readonly string[]>;
 
-async function json(signal: AbortSignal, url: string): Promise<unknown> {
+async function json(
+  signal: AbortSignal,
+  url: string,
+  options: { allowError?: (response: Response, payload: unknown) => boolean } = {},
+): Promise<unknown> {
   const response = await fetch(url, { cache: "no-store", signal });
   const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload || payload.ok === false) {
+  if ((!response.ok || !payload || (payload as { ok?: boolean }).ok === false) && !options.allowError?.(response, payload)) {
     throw new Error((payload as { error?: string } | null)?.error ?? `${url} failed (${response.status})`);
   }
   return payload;
@@ -29,7 +33,15 @@ async function json(signal: AbortSignal, url: string): Promise<unknown> {
 // Resource definitions deliberately contain only landing data. Detail panes,
 // mutation dialogs, graph scans, and run histories stay demand-loaded.
 defineResource("github:pat", (signal) => json(signal, "/api/github/pat"), 5 * 60_000);
-defineResource("github:activity", (signal) => json(signal, "/api/github/activity"), 60_000);
+defineResource(
+  "github:activity",
+  (signal) => json(signal, "/api/github/activity", {
+    // No configured GitHub identity is a normal setup state, not a failed
+    // load. Keep the response so GitHubView can render its setup CTA.
+    allowError: (response, payload) => response.status === 401 && (payload as { error?: unknown } | null)?.error === "no_user",
+  }),
+  60_000,
+);
 defineResource("github:familiars", (signal) => json(signal, "/api/familiars"), 30_000);
 defineResource("board:cards", (signal) => json(signal, "/api/board"), 30_000);
 defineResource("marketplace:catalog", (signal) => json(signal, "/api/marketplace"), 2 * 60_000);
@@ -56,11 +68,19 @@ export function invalidateSurfaceResources(...keys: string[]): void {
 }
 
 /** Warm a complete canonical landing surface without rendering it. */
-export async function warmSurface(surface: SurfaceWarmupSurface): Promise<SurfaceWarmResult> {
+export async function warmSurface(
+  surface: SurfaceWarmupSurface,
+  canContinue: () => boolean = () => true,
+): Promise<SurfaceWarmResult> {
+  if (!canContinue()) return { backpressured: false };
   await preloadSidebarSurface(surface);
+  // Chunk imports cannot be aborted. Re-check after they settle so a tab that
+  // was hidden or taken offline during the import never starts its data warm.
+  if (!canContinue()) return { backpressured: false };
   // Serial landing requests keep background pressure bounded. Every individual
   // resource is coalesced with a concurrent navigation/read by the cache.
   for (const resource of surfaceWarmupResources[surface]) {
+    if (!canContinue()) return { backpressured: false };
     const result = await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
     // GitHub's landing response reports the remaining upstream allowance. Do
     // not spend the last few calls on background work: direct navigation can

@@ -152,7 +152,12 @@ assert.match(view, /Move to trash/, "memory delete is labelled as restorable tra
 assert.match(view, /danger: true/, "the confirm renders its destructive style");
 assert.match(
   view,
-  /closeTab\(selectionKey\(selection\)\);\s*invalidateSurfaceResources\("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"\);\s*void load\(true\)/,
+  /function invalidateGrimoireLanding\(\): void \{\s*invalidateSurfaceResources\("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"\);/,
+  "the shared landing cache has one invalidation boundary",
+);
+assert.match(
+  view,
+  /closeTab\(selectionKey\(selection\)\);\s*invalidateGrimoireLanding\(\);\s*void load\(true\)/,
   "a successful delete invalidates and reloads the navigator",
 );
 assert.match(view, /deleteError \? \(\s*<span role="alert"/, "delete failures are announced");

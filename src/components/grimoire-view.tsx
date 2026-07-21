@@ -696,6 +696,10 @@ function GrimoireDocLinks({
 
 export type GrimoireViewKind = "docs" | "graph" | "journal";
 
+function invalidateGrimoireLanding(): void {
+  invalidateSurfaceResources("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal");
+}
+
 export function GrimoireView({
   view: controlledView,
   onViewChange,
@@ -994,7 +998,7 @@ export function GrimoireView({
       }
       // A deleted document's tab closes with it.
       closeTab(selectionKey(selection));
-      invalidateSurfaceResources("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal");
+      invalidateGrimoireLanding();
       void load(true);
       // The row disappearing is the only visual confirmation — say it too.
       announce(
@@ -1215,7 +1219,10 @@ export function GrimoireView({
       return (
         <JournalMdEditor
           date={tab.date}
-          onSaved={() => void load(true)}
+          onSaved={() => {
+            invalidateGrimoireLanding();
+            void load(true);
+          }}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
@@ -1228,6 +1235,7 @@ export function GrimoireView({
           initialPatternId={stitchPrefill.patternId ?? null}
           onSewn={(entryId) => {
             replaceTab(key, { kind: "knowledge", id: entryId });
+            invalidateGrimoireLanding();
             void load(true);
           }}
         />
@@ -1259,6 +1267,7 @@ export function GrimoireView({
             entry={entry}
             onSaved={(saved) => {
               replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
+              invalidateGrimoireLanding();
               void load(true);
             }}
             onCancel={() => closeTab(key)}
@@ -1368,6 +1377,7 @@ export function GrimoireView({
             backlinks={backlinks}
             onOpen={openDoc}
             onCreated={() => {
+              invalidateGrimoireLanding();
               void load(true);
               refreshGraph();
             }}
