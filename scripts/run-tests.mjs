@@ -37,6 +37,7 @@ export const SUITES = {
     "src/lib/surface-preferences.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
+    "src/components/workspace-surface-warmup.test.ts",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
     "src/lib/research-missions.test.ts",

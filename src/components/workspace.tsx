@@ -1157,6 +1157,10 @@ export function Workspace() {
         | { type: "created"; item: InboxItem }
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
+      // Schedules consumes the same inbox data through a warmed, point-in-time
+      // landing cache. Every authoritative stream event can make that cache
+      // stale, even when Schedules itself is unmounted.
+      window.dispatchEvent(new Event("cave:schedules:reload"));
       if (e.type === "snapshot") {
         // Reconnect snapshots usually carry what we already have — keep the
         // reference so inboxItemsWithEphemeral consumers don't re-render

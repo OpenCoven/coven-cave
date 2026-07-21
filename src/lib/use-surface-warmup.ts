@@ -88,11 +88,17 @@ export function useSurfaceWarmup(): void {
     // of those writes until its TTL expires. This listener is workspace-owned,
     // so it also runs while BoardView itself is unmounted.
     const onBoardReload = () => invalidateIfDefined("board:cards", "tasks:queue");
+    // Inbox writes are also emitted through the workspace-owned SSE stream,
+    // including writes made from the notification bell while Schedules is
+    // unmounted. Drop the warm landing snapshot before its 15-second TTL so
+    // navigating to Schedules cannot show the pre-write state.
+    const onSchedulesReload = () => invalidateIfDefined("schedules:inbox", "schedules:automations");
     const raf = window.requestAnimationFrame(() => window.requestAnimationFrame(begin));
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", resume);
     window.addEventListener("offline", pause);
     window.addEventListener("cave:board:reload", onBoardReload);
+    window.addEventListener("cave:schedules:reload", onSchedulesReload);
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf);
@@ -102,6 +108,7 @@ export function useSurfaceWarmup(): void {
       window.removeEventListener("online", resume);
       window.removeEventListener("offline", pause);
       window.removeEventListener("cave:board:reload", onBoardReload);
+      window.removeEventListener("cave:schedules:reload", onSchedulesReload);
     };
   }, []);
 }

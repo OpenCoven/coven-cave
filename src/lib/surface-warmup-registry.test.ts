@@ -37,6 +37,8 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /abortWarm\(\)/);
   assert.match(hook, /invalidateIfDefined\("board:cards", "tasks:queue"\)/, "external board writes invalidate warmed landing data while BoardView is unmounted");
   assert.match(hook, /addEventListener\("cave:board:reload", onBoardReload\)/);
+  assert.match(hook, /invalidateIfDefined\("schedules:inbox", "schedules:automations"\)/, "inbox SSE writes invalidate the warmed Schedules landing data");
+  assert.match(hook, /addEventListener\("cave:schedules:reload", onSchedulesReload\)/);
   assert.match(hook, /surface-warmup:backpressure/);
   assert.match(hook, /warmSurface\(surface, runnable\)/);
   assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
