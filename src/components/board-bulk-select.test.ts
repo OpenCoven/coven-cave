@@ -33,7 +33,7 @@ assert.match(kanban, /aria-checked=\{selectMode \? isSelected : undefined\}/, "k
 
 // Table rows toggle selection instead of opening in select mode.
 assert.match(table, /onClick=\{\(\) => \(selectMode \? onToggleSelect\?\.\(card\.id\) : onSelect\(card\.id\)\)\}/, "table rows toggle selection in select mode");
-assert.match(table, /aria-checked=\{selectMode \? rowChecked : undefined\}/, "table checkbox rows expose aria-checked");
+assert.match(table, /aria-selected=\{isSel\}/, "table rows expose selection without overriding native row semantics");
 
 // ── Extended bulk-edit: priority + label (#4) ──
 assert.match(view, /const bulkSetPriority = async \(priority: CardPriority\)/, "bulk set-priority handler");

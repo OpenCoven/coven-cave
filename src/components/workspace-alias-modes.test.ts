@@ -41,6 +41,11 @@ assert.match(
   /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/,
   "the familiar-work-queue alias renders the Tasks surface on its Queue tab (keyed remount)",
 );
+assert.match(
+  workspace,
+  /<BoardView[\s\S]*daemonRunning=\{daemonRunning\}[\s\S]*onSessionsChanged=\{loadSessions\}[\s\S]*onSessionsDeleted=\{handleSessionsDeleted\}[\s\S]*onSlashFromChat=\{handleSlashIntent\}[\s\S]*onOpenOnboarding=\{openOnboarding\}/,
+  "Tasks should receive the existing ChatView lifecycle callbacks for the embedded task cockpit",
+);
 
 assert.equal(MODE_ALIASES.calendar, "inbox");
 assert.match(

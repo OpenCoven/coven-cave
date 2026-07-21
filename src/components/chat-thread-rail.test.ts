@@ -111,20 +111,21 @@ assert.match(
 );
 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 // The inspector right panel is retired: Git/Changes lands on the code rail's
 // Changes tab, Inspect lands on the promoted Familiar chat tab, and Debug is
 // owned by ChatView's modal (chat-view.tsx listens for cave:debug-open).
 assert.match(
-  chatSurface,
-  /const onChangesOpen = \(\) => \{[\s\S]*?rail\.setActiveTab\("changes"\)/,
-  "ChatSurface maps changes-open to the code rail's Changes tab",
+  railController,
+  /const openChanges = useCallback\(\(\) => \{[\s\S]*?rail\.setActiveTab\("changes"\)/,
+  "The shared rail controller maps changes-open to the code rail's Changes tab",
 );
 assert.match(
-  chatSurface,
-  /addEventListener\("cave:changes-open", onChangesOpen\)/,
-  "ChatSurface listens for the rail's cave:changes-open event",
+  railController,
+  /addEventListener\("cave:changes-open", openChanges\)/,
+  "The shared rail controller listens for cave:changes-open",
 );
 assert.match(
   chatSurface,

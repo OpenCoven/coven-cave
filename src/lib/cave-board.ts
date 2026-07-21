@@ -489,4 +489,18 @@ export async function deleteCard(id: string): Promise<boolean> {
   });
 }
 
+export async function unlinkSessionFromCards(sessionId: string): Promise<number> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    let unlinked = 0;
+    board.cards = board.cards.map((card) => {
+      if (card.sessionId !== sessionId) return card;
+      unlinked += 1;
+      return { ...card, sessionId: null, updatedAt: new Date().toISOString() };
+    });
+    if (unlinked > 0) await saveBoard(board);
+    return unlinked;
+  });
+}
+
 export { BOARD_PATH };

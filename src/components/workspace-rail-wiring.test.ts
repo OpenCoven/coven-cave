@@ -1,167 +1,42 @@
 // @ts-nocheck
-// PR 1 / Task 4: the WorkspaceRail (code rail) is mounted beside the chat
-// conversation on the standalone chat surface, driven by useCodeRail, and its
-// changeCount is polled from /api/changes + refreshed on the cave:changes-refresh
-// edit signal. Source-text guard — asserts the wiring survives refactors.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const chat = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const task = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
+const controller = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 
-assert.match(
-  source,
-  /import\s+\{[\s\S]*WorkspaceRail[\s\S]*\}\s+from\s+"@\/components\/lazy-surfaces"/,
-  "chat-surface lazy-loads WorkspaceRail",
-);
+assert.match(chat, /useWorkspaceRailController\(\{/);
+assert.match(task, /useWorkspaceRailController\(\{/);
+assert.match(controller, /useCodeRail\(\{/);
+assert.match(controller, /projectRoot: effectiveProjectRoot/);
+assert.match(controller, /terminalActive: terminalOpened/);
+assert.match(controller, /browseActive: browseRootOverride !== null/);
+assert.match(controller, /rail\.activeTab === "terminal" && rail\.open[\s\S]*setTerminalOpened\(true\)/);
+assert.match(controller, /function stopRailTerminal[\s\S]*invoke\("pty_stop", \{ threadId \}\)/);
+assert.match(controller, /function stopRailTerminal[\s\S]*killPtyBridge\(threadId\)/);
+assert.match(controller, /setTerminalOpened\(false\)/);
+assert.match(controller, /"cave:changes-refresh"/);
+assert.match(controller, /fetchChangesSummary\(root, opts\)/);
+assert.match(controller, /const effectiveProjectRoot = browseRootOverride \?\? projectRoot/);
+assert.match(controller, /setBrowseRootOverride\(null\)/);
+assert.match(controller, /useState<number \| null>\(null\)/);
+assert.match(controller, /json\.files\?\.length \?\? 0/);
+assert.match(controller, /const showInline = rail\.available && rail\.open && !isMobile && !paneNarrow/);
 
-assert.match(
-  source,
-  /import\s+\{\s*useCodeRail\s*\}\s+from\s+"@\/lib\/use-code-rail"/,
-  "chat-surface imports useCodeRail",
-);
+for (const source of [chat, task]) {
+  assert.match(source, /<WorkspaceRail/);
+  assert.match(source, /changeCount=\{/);
+  assert.match(source, /projectRoot=\{/);
+  assert.match(source, /onSelectTab=\{/);
+  assert.match(source, /onTogglePin=\{/);
+}
 
-assert.match(
-  source,
-  /useCodeRail\(\s*\{[\s\S]*?projectRoot:[\s\S]*?changeCount[\s\S]*?terminalActive:\s*terminalOpened[\s\S]*?\}\s*\)/,
-  "chat-surface calls useCodeRail with projectRoot/changeCount and terminalActive:terminalOpened",
-);
-
-// Once the Terminal tab is opened the rail stays available (keepalive) — the
-// terminalOpened flag flips false→true and feeds back into terminalActive.
-assert.match(
-  source,
-  /rail\.activeTab === "terminal" && rail\.open[\s\S]*?setTerminalOpened\(true\)/,
-  "chat-surface flips terminalOpened once the Terminal tab is opened",
-);
-
-// The active session id is threaded into the rail so the terminal gets a stable
-// per-session pty identity.
-assert.match(
-  source,
-  /<WorkspaceRail[\s\S]*?sessionId=\{snapshot\.sessionId \?\? null\}/,
-  "WorkspaceRail receives the active session id",
-);
-
-// On session change the previous session's rail shell is stopped (desktop PTYs
-// have no idle reaper) and the terminal-held-open latch is reset so the rail is
-// not forced open on an unrelated session.
-assert.match(
-  source,
-  /pty_stop"?,\s*\{\s*threadId:\s*`cave\.rail\.\$\{prev\}`/,
-  "chat-surface stops the previous session's rail pty on session change",
-);
-assert.match(
-  source,
-  /railTermSessionRef[\s\S]*?setTerminalOpened\(false\)/,
-  "chat-surface resets the terminal-held-open latch when the session changes",
-);
-
-assert.match(
-  source,
-  /"cave:changes-refresh"/,
-  "chat-surface listens for the cave:changes-refresh edit signal",
-);
-
-assert.match(
-  source,
-  /fetchChangesSummary\(root/,
-  "chat-surface loads /api/changes for the active root through the shared changes-summary gate (cave-v8hh)",
-);
-
-assert.doesNotMatch(
-  source,
-  /fetch\(`\/api\/changes\?projectRoot=\$\{encodeURIComponent\(/,
-  "no private /api/changes summary fetch remains — the gate owns the request",
-);
-
-assert.match(
-  source,
-  /const activeSession = snapshot\.session;[\s\S]{0,100}?const railProjectRoot = activeSession\?\.project_root \?\? null;/,
-  "standalone files/changes rail is scoped to the active session's project root",
-);
-
-assert.doesNotMatch(
-  source,
-  /const railProjectRoot = (?!activeSession\?\.project_root)/,
-  "railProjectRoot itself stays session-pure (the override lives in a separate binding)",
-);
-
-// cave-z44: the Projects hub can drill into any project's files. The rail's
-// EFFECTIVE root is the browse override when set, else the session root — one
-// binding every rail signal (availability, changeCount, WorkspaceRail) reads,
-// so a peek stays internally coherent. Cleared on session change + collapse.
-assert.match(
-  source,
-  /const effectiveRailRoot = browseRootOverride \?\? railProjectRoot;/,
-  "the rail's effective root is the browse override, falling back to the session root",
-);
-assert.match(
-  source,
-  /useCodeRail\(\s*\{\s*projectRoot:\s*effectiveRailRoot/,
-  "useCodeRail is keyed on the effective (override-aware) root so a peek makes the rail available",
-);
-assert.match(
-  source,
-  /browseActive:\s*browseRootOverride !== null/,
-  "useCodeRail is told when a browse peek is active so it suppresses the Changes auto-reveal",
-);
-assert.match(
-  source,
-  /setBrowseRootOverride\(null\)[\s\S]{0,200}?\}, \[snapshot\.sessionId, terminalOpened\]\)/,
-  "the browse override is cleared when the active session changes",
-);
-
-assert.match(
-  source,
-  /json\.files\?\.length\s*\?\?\s*0/,
-  "changeCount is derived from the /api/changes files length",
-);
-
-// The rail is gated on the hook's availability/open state. Retired Code mode no
-// longer needs a surface switch to suppress it.
-assert.match(
-  source,
-  /showCodeRail\s*=\s*rail\.available\s*&&\s*rail\.open/,
-  "code rail visibility is gated on rail.available && rail.open",
-);
-
-assert.match(
-  source,
-  /\{showCodeRail\s*&&\s*\([\s\S]*?<WorkspaceRail/,
-  "the WorkspaceRail is mounted under the showCodeRail guard",
-);
-
-assert.match(
-  source,
-  /<WorkspaceRail[\s\S]*?changeCount=\{changeCount \?\? 0\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{\(\) => \{[\s\S]*?rail\.collapse\(\)/,
-  "WorkspaceRail receives the null-coerced changeCount + rail state/handlers; collapse also ends the browse peek",
-);
-// Closed-by-default rail (cave-xsq.7): the count seeds as null (unknown) per
-// root and failures stay null, so pre-existing dirt arriving with the first
-// load can't fake the 0→N fresh-batch reveal.
-assert.match(
-  source,
-  /useState<number \| null>\(null\)/,
-  "changeCount seeds as null (not yet loaded) so first-load dirt can't fake a fresh batch",
-);
-
-assert.match(
-  source,
-  /<WorkspaceRail[\s\S]*?projectRoot=\{effectiveRailRoot\}/,
-  "WorkspaceRail Files tab receives the effective (override-aware) project root",
-);
-// The manual collapse handler ends a browse peek so reopening shows the session.
-assert.match(
-  source,
-  /onCollapse=\{\(\) => \{ setBrowseRootOverride\(null\); rail\.collapse\(\); \}\}/,
-  "collapsing the rail clears the browse override",
-);
-
-// Collapsed state renders a reopen strip.
-assert.match(
-  source,
-  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label=\{reopenChecksFailing \? "Show code rail — PR checks failing" : "Show code rail"\}[\s\S]*?rail\.reopen/,
-  "a 'Show code rail' reopen strip is rendered when the rail is available but collapsed",
-);
+assert.match(chat, /sessionId=\{snapshot\.sessionId \?\? null\}/);
+assert.match(task, /sessionId=\{target\.session\.id\}/);
+assert.match(chat, /onCollapse=\{collapseCodeRail\}/);
+assert.match(task, /onCollapse=\{railController\.collapse\}/);
+assert.match(chat, /rail\.available && !rail\.open/);
+assert.match(task, /railController\.rail\.available[\s\S]*!railController\.rail\.open/);
 
 console.log("workspace-rail-wiring.test.ts ok");

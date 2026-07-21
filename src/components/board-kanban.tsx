@@ -743,8 +743,8 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
       (card.status === "running" && card.lifecycle === "running") ||
       (card.status === "review" && card.lifecycle === "review") ||
       (card.status === "done" && card.lifecycle === "completed"));
-  // A card with neither a project nor a cwd can't root its task chats — new
-  // chat starts are refused and linked chats can't inherit a project. Nudge.
+  // A card with neither a project nor a cwd can't root its task work — new
+  // sessions are refused and linked sessions can't inherit a project. Nudge.
   const missingProject = !card.projectId && !card.cwd;
   // The metadata chips below are visual-only (title-attribute spans); fold the
   // same state into the card's accessible name so AT users hear it.
@@ -756,7 +756,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         ? `due soon, ${schedule}`
         : `scheduled ${schedule}`
       : null,
-    session ? "linked chat" : null,
+    session ? "linked work session" : null,
     missingProject ? "no project set" : null,
     attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : null,
     card.labels.length > 0 ? `labels ${card.labels.join(", ")}` : null,
@@ -816,7 +816,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         {missingProject && (
           <span
             className="board-kanban-card-chip board-kanban-card-chip--no-project"
-            title="No project set — pick one in the card's Project field so task chats open in the right place"
+            title="No project set — pick one in the card's Project field so task work opens in the right place"
           >
             <Icon name="ph:folder" width={9} aria-hidden /> No project
           </span>
@@ -832,10 +832,10 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
             // board without opening the chat.
             <span
               className={`board-kanban-card-chip board-kanban-card-chip--chat board-kanban-card-chip--chat-${sessionStatusTone(session.status)}`}
-              title={`Linked chat (${sessionStatusWord(session.status)}): ${session.title || "(untitled)"}`}
+              title={`Linked work (${sessionStatusWord(session.status)}): ${session.title || "(untitled)"}`}
             >
               <span className="board-kanban-card-chip-dot" aria-hidden />
-              Chat · {sessionStatusWord(session.status)}
+              Work · {sessionStatusWord(session.status)}
             </span>
           )}
           {schedule && (
@@ -905,7 +905,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
           <button
             type="button"
             disabled={chatLinking}
-            title="Start chat"
+            title="Start work"
             onClick={(e) => { e.stopPropagation(); void onOpenTaskChat?.(card.id); }}
             className="board-kanban-card-action board-kanban-card-action--chat"
           >

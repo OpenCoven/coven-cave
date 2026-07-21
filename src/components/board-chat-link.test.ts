@@ -17,25 +17,55 @@ assert.match(
   /fetch\(`\/api\/board\/\$\{id\}\/chat`, \{[\s\S]*method: "POST"/,
   "Task chat action should POST to the board chat link endpoint",
 );
-assert.match(
+assert.doesNotMatch(
   boardView,
   /onJumpToSession\?\.\(json\.sessionId, json\.familiarId/,
-  "Task chat action should navigate to the linked session",
+  "Starting task work should not navigate the desktop Tasks surface into general Chat",
 );
 assert.match(
   boardView,
-  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,140}await startTaskChat\(id, project\.root\)/,
-  "Task chats for project-assigned cards should start in the assigned project root",
+  /const \[workCardId, setWorkCardId\] = useState<string \| null>\(null\)/,
+  "BoardView should own the selected task work cockpit",
+);
+assert.match(
+  boardView,
+  /const openTaskWork = async \(id: string\) =>/,
+  "BoardView should expose one task-scoped work entry path",
+);
+assert.match(
+  boardView,
+  /if \(isMobile\)[\s\S]*onJumpToSession\?\.\(/,
+  "Mobile should preserve the existing general Chat fallback",
+);
+assert.match(
+  boardView,
+  /setWorkCardId\(id\)/,
+  "Desktop task work should open in place",
+);
+assert.match(
+  boardView,
+  /<TaskWorkCockpit/,
+  "BoardView should render the focused work cockpit",
+);
+assert.match(
+  boardView,
+  /onRefreshSessions=\{onSessionsChanged\}/,
+  "The task cockpit should reuse Workspace's session refresh",
+);
+assert.match(
+  boardView,
+  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,420}await startTaskChat\(id, project\?\.root\)/,
+  "Task work for project-assigned cards should start in the assigned project root",
 );
 assert.match(
   boardInspector,
-  /Start chat|Open chat/,
-  "Board inspector should show a visible chat button for every task",
+  /Start work|Open work/,
+  "Board inspector should present task-scoped work entry copy",
 );
 assert.match(
   boardInspector,
-  /onOpenTaskChat\?\.\(card\.id/,
-  "Board inspector chat button should call the task chat action",
+  /onOpenTaskWork\?\.\(card\.id/,
+  "Board inspector work action should call the task cockpit callback",
 );
 assert.match(
   route,

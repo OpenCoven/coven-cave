@@ -28,6 +28,7 @@ process.env.COVEN_HOME = TMP_COVEN;
 
 const CONV_DIR = join(TMP, "conversations");
 const STATE_PATH = join(TMP, "state.json");
+const BOARD_PATH = join(TMP, "board.json");
 
 function writeConversation(id: string, turns: unknown[] = []) {
   mkdirSync(CONV_DIR, { recursive: true });
@@ -108,6 +109,29 @@ test("DELETE ?ifEmpty=1 on a missing conversation reports not deleted", async ()
 });
 
 test("default DELETE (no ifEmpty) still deletes AND sacrifices, even with turns", async () => {
+  writeFileSync(BOARD_PATH, JSON.stringify({
+    version: 1,
+    cards: [{
+      id: "card-linked",
+      title: "Linked task",
+      notes: "",
+      status: "running",
+      lifecycle: "running",
+      priority: "medium",
+      familiarId: "milo",
+      sessionId: "sess-default",
+      cwd: null,
+      projectId: null,
+      links: [],
+      github: [],
+      asana: [],
+      labels: [],
+      steps: [],
+      needsHuman: false,
+      createdAt: "2026-06-01T00:00:00Z",
+      updatedAt: "2026-06-01T00:00:00Z",
+    }],
+  }));
   writeConversation("sess-default", [
     { id: "t1", role: "user", text: "hi", createdAt: "2026-06-01T00:00:00Z" },
   ]);
@@ -117,9 +141,12 @@ test("default DELETE (no ifEmpty) still deletes AND sacrifices, even with turns"
   assert.equal(json.ok, true);
   assert.equal(json.deleted, true);
   assert.equal(typeof json.sacrificedAt, "string");
+  assert.equal(json.unlinkedCards, 1);
   assert.equal(existsSync(conversationPath("sess-default")), false, "file removed");
   const state = readState();
   assert.equal(typeof state.sessionSacrificed["sess-default"], "string", "sacrificed — other callers depend on this");
+  const board = JSON.parse(readFileSync(BOARD_PATH, "utf8"));
+  assert.equal(board.cards[0].sessionId, null, "deleted conversations cannot leave dangling task links");
 });
 
 // --- #3469: client PUT cannot forge harness telemetry onto assistant turns ---
