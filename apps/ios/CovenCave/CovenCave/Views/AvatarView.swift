@@ -20,13 +20,15 @@ struct AvatarView: View {
         ZStack {
             Circle().fill(color.opacity(0.22))
             if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        initials(color)
-                    }
+                CachedImageView(
+                    source: .remoteURL(url),
+                    targetSize: CGSize(width: size, height: size)
+                ) { image in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    initials(color)
                 }
             } else {
                 initials(color)

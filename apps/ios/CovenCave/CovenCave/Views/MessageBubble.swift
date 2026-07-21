@@ -282,20 +282,8 @@ struct MessageBubble: View {
 
     @ViewBuilder private var attachmentImages: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-            ForEach(message.attachmentDataUrls, id: \.self) { url in
-                if let image = UIImage.fromDataUrl(url) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 240, maxHeight: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
-                        // Tap to enlarge the attachment full-screen (pinch-zoom).
-                        .onTapGesture { ContentZoom.image(image) }
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Tap to enlarge")
-                }
+            ForEach(message.attachmentDataUrls, id: \.self) { dataURL in
+                MessageAttachmentImage(dataURL: dataURL)
             }
         }
     }
@@ -361,6 +349,57 @@ struct MessageBubble: View {
         if message.isError { return AnyShapeStyle(Color.red.opacity(0.85)) }
         if isUser { return AnyShapeStyle(chrome.accentGradient) }
         return AnyShapeStyle(chrome.bgRaised)
+    }
+}
+
+@MainActor
+private struct MessageAttachmentImage: View {
+    let dataURL: String
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var zoomTask: Task<Void, Never>?
+
+    var body: some View {
+        CachedImageView(
+            source: .dataURL(dataURL),
+            targetSize: CGSize(width: 240, height: 240)
+        ) { thumbnail in
+            Image(uiImage: thumbnail)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 240, maxHeight: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
+                .onTapGesture { presentZoom(fallback: thumbnail) }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Tap to enlarge")
+        } placeholder: {
+            EmptyView()
+        }
+        .onDisappear {
+            zoomTask?.cancel()
+            zoomTask = nil
+        }
+    }
+
+    private func presentZoom(fallback thumbnail: UIImage) {
+        zoomTask?.cancel()
+        let source = CaveImageSource.dataURL(dataURL)
+        let screenSize = UIScreen.main.bounds.size
+        let longestScreenPixels = max(screenSize.width, screenSize.height) * displayScale
+        let targetPixelSize = CGSize(width: longestScreenPixels, height: longestScreenPixels)
+
+        zoomTask = Task {
+            let image = await CaveImageCache.shared.image(
+                for: source,
+                targetPixelSize: targetPixelSize
+            ) ?? thumbnail
+            guard !Task.isCancelled else {
+                return
+            }
+            ContentZoom.image(image)
+        }
     }
 }
 

@@ -3,6 +3,7 @@ CovenCave.xcodeproj/
 
 # Build output
 build/
+build-release/
 DerivedData/
 *.xcuserstate
 
