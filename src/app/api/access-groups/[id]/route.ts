@@ -9,6 +9,7 @@ import {
   invalidShapeResponse,
   memberIdsInput,
   projectGrantsInput,
+  requireLocalHumanGrantMutation,
 } from "../access-groups-route-shared";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,8 @@ export async function PATCH(
   req: Request,
   { params: rawParams }: { params: Promise<{ id: string }> },
 ) {
+  const blocked = requireLocalHumanGrantMutation(req);
+  if (blocked) return blocked;
   const params = await rawParams;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;
@@ -93,6 +96,8 @@ export async function DELETE(
   req: Request,
   { params: rawParams }: { params: Promise<{ id: string }> },
 ) {
+  const blocked = requireLocalHumanGrantMutation(req);
+  if (blocked) return blocked;
   const params = await rawParams;
   let payload: Record<string, unknown> = {};
   try {
