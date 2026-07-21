@@ -2,16 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { covenHome, caveHome, covenWorkspaceRoot } from "@/lib/coven-paths";
+import { realpathOrResolve } from "@/lib/server/canonical-path";
 import { researchMissionsRoot } from "@/lib/server/research-mission-store";
-
-function realpathOrResolve(value: string): string {
-  const resolved = path.resolve(/* turbopackIgnore: true */ value);
-  try {
-    return fs.realpathSync(/* turbopackIgnore: true */ resolved);
-  } catch {
-    return resolved;
-  }
-}
 
 function expandHomeShortcut(value: string): string {
   const trimmed = value.trim();
