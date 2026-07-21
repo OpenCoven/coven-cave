@@ -162,7 +162,7 @@ assert.doesNotMatch(
 // the overview's management mode.
 assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/, "Rituals exposes Overview, Calendar and Crons modes");
 assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
-assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "overview"/, "Overview is the default landing mode; calendar/crons deep links still win");
+assert.match(source, /const \[deepLinkTab, setDeepLinkTab\] = useState<AutomationTab \| null>/, "Calendar and Crons deep links override the saved tab for one visit");
 assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
 assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
 assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
@@ -179,7 +179,7 @@ assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the 
 // Grouping is deliberately behind the overflow menu in the minimalist shell.
 assert.match(source, /INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \([\s\S]{0,420}Group selection by \{option\.label\.toLowerCase\(\)\}/, "group-by remains reachable from the overview options menu");
 assert.doesNotMatch(source, /<StandardSelect[\s\S]{0,120}label="Group inbox by"/, "the group-by dropdown is gone");
-assert.match(source, /cave:inbox:group-by/, "the group-by choice persists per install");
+assert.match(source, /useSurfacePreference\(surfacePreferenceSpecs\.schedules\.groupBy\)/, "the group-by choice persists through the shared workspace preference registry");
 assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
 assert.match(source, /<SelectionToolbar/, "inbox select mode uses the shared bulk toolbar");
 assert.match(

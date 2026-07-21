@@ -510,3 +510,17 @@ export function categoriesFrom(plugins: MarketplacePlugin[]): string[] {
     .map(([category]) => category);
   return ["All", ...cats];
 }
+
+/** Drop persisted Marketplace scopes that no longer exist in the live catalog. */
+export function normalizeMarketplaceScope(
+  categories: readonly string[],
+  category: string,
+  collectionId: string | null,
+): { category: string; collectionId: string | null } {
+  return {
+    category: categories.includes(category) ? category : "All",
+    collectionId: collectionId !== null && COLLECTIONS.some((collection) => collection.id === collectionId)
+      ? collectionId
+      : null,
+  };
+}

@@ -34,6 +34,8 @@ import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   emptyStats,
   FamiliarsEmptyState,
@@ -53,8 +55,6 @@ type FileMemoryResponse =
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
 
 type ViewMode = "roster" | "detail" | "agent-memory";
-
-const LAST_SELECTED_KEY = "cave:agents.lastSelected";
 
 type AgentsViewProps = {
   familiars: Familiar[];
@@ -131,25 +131,8 @@ export function FamiliarsView({
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
-  const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(LAST_SELECTED_KEY);
-  });
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "roster";
-    return window.localStorage.getItem(LAST_SELECTED_KEY) ? "detail" : "roster";
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (selectedFamiliarId) window.localStorage.setItem(LAST_SELECTED_KEY, selectedFamiliarId);
-      else window.localStorage.removeItem(LAST_SELECTED_KEY);
-    } catch {
-      // Full localStorage must not crash the surface; the selection just
-      // won't persist across reloads.
-    }
-  }, [selectedFamiliarId]);
+  const [selectedFamiliarId, setSelectedFamiliarId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
+  const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
 
   // "/" jumps to the search (GitHub-style) while this surface is shown — but
   // never when the user is already typing in a field or holding a modifier.

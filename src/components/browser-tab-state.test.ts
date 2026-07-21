@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { browserTabTitle, defaultPinnedTabs, normalizeBrowserUrl } from "./browser-tab-state.ts";
+import { browserTabTitle, defaultPinnedTabs, normalizeBrowserUrl, resolveRestoredBrowserNavigation } from "./browser-tab-state.ts";
 
 test("default browser tabs retain the user-facing pinned destinations", () => {
   assert.deepEqual(defaultPinnedTabs().map((tab) => tab.id), [
@@ -20,4 +20,13 @@ test("browser URLs retain convenience input and safe navigation rules", () => {
 test("tab titles prefer supplied page titles and compact host names", () => {
   assert.equal(browserTabTitle("https://www.opencoven.ai/docs", "Docs"), "Docs");
   assert.equal(browserTabTitle("https://www.opencoven.ai/docs", "https://www.opencoven.ai/docs"), "opencoven.ai");
+});
+
+test("a removed restored tab falls back without applying its old address", () => {
+  const result = resolveRestoredBrowserNavigation(defaultPinnedTabs(), "removed-tab", "https://example.test/old");
+  assert.deepEqual(result, {
+    activeTabId: "home",
+    address: "https://opencoven.ai",
+    restoredTabExists: false,
+  });
 });

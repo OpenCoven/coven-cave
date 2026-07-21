@@ -2,7 +2,7 @@
 
 import "@/styles/calendar.css";
 
-import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect } from "react";
+import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -20,6 +20,8 @@ import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   AgendaDeadlineRow,
   EmptyScheduleState,
@@ -1391,8 +1393,28 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
   // viewport actually matches mobile. Keeps server/client markup in sync.
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
-  const [anchor, setAnchor] = useState<Date>(new Date());
+  const [storedViewMode, setStoredViewMode] = useSurfacePreference(surfacePreferenceSpecs.calendar.viewMode);
+  const [storedAnchorDate, setStoredAnchorDate] = useSurfacePreference(surfacePreferenceSpecs.calendar.anchorDate);
+  const [deepLinkViewMode, setDeepLinkViewMode] = useState<ViewMode | null>(null);
+  const [deepLinkAnchor, setDeepLinkAnchor] = useState<Date | null>(null);
+  const viewMode = deepLinkViewMode ?? storedViewMode;
+  const fallbackAnchorRef = useRef(new Date());
+  const anchor = useMemo(() => {
+    if (deepLinkAnchor) return deepLinkAnchor;
+    const restored = storedAnchorDate ? new Date(storedAnchorDate) : null;
+    return restored && !Number.isNaN(restored.getTime()) ? restored : fallbackAnchorRef.current;
+  }, [deepLinkAnchor, storedAnchorDate]);
+  const setViewMode = useCallback((next: ViewMode) => {
+    setDeepLinkViewMode(null);
+    setStoredViewMode(next);
+  }, [setStoredViewMode]);
+  const setAnchor = useCallback((next: SetStateAction<Date>) => {
+    const resolved = typeof next === "function" ? next(anchor) : next;
+    if (!Number.isNaN(resolved.getTime())) {
+      setDeepLinkAnchor(null);
+      setStoredAnchorDate(resolved.toISOString());
+    }
+  }, [anchor, setStoredAnchorDate]);
   const [mobileRibbonDayOpen, setMobileRibbonDayOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1402,9 +1424,9 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
       const next = new Date(`${date}T12:00:00`);
       if (Number.isNaN(next.getTime())) return;
-      setAnchor(next);
+      setDeepLinkAnchor(next);
       setMobileRibbonDayOpen(true);
-      setViewMode("day");
+      setDeepLinkViewMode("day");
     };
     const openDate = (event: Event) => {
       openDateValue((event as CustomEvent<{ date?: string }>).detail?.date);
@@ -1456,9 +1478,16 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   useEffect(() => {
     if (isMobile && viewMode !== "agenda" && !(mobileRibbonDayOpen && viewMode === "day")) {
       setMobileRibbonDayOpen(false);
-      setViewMode("agenda");
+      // Phone layout must use Agenda, but that is a viewport constraint rather
+      // than a user preference. Keep it out of the durable registry so a
+      // desktop view choice (for example Month) comes back on the next visit.
+      setDeepLinkViewMode("agenda");
     }
-  }, [isMobile, mobileRibbonDayOpen, viewMode]);
+    // A responsive mobile override must also yield as soon as this surface is
+    // widened again; otherwise Agenda remains pinned for the rest of the mount
+    // even though the stored desktop choice was never changed.
+    if (!isMobile && deepLinkViewMode === "agenda") setDeepLinkViewMode(null);
+  }, [isMobile, mobileRibbonDayOpen, viewMode, deepLinkViewMode]);
   useEffect(() => {
     if (viewMode !== "day" && mobileRibbonDayOpen) setMobileRibbonDayOpen(false);
   }, [mobileRibbonDayOpen, viewMode]);

@@ -37,7 +37,9 @@ import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { BoardKanbanSkeleton, loadBoardPreference, type ViewMode } from "@/components/board-view-display";
+import { BoardKanbanSkeleton, type ViewMode } from "@/components/board-view-display";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 
 type Props = {
@@ -59,9 +61,17 @@ type Props = {
 
 export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl, queueSlot, initialTab }: Props) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<"tasks" | "queue">(
-    initialTab === "queue" && queueSlot ? "queue" : "tasks",
+  const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.board.activeTab);
+  // Alias navigation is an explicit, one-visit destination. It wins over the
+  // saved tab without overwriting it; a subsequent user click resumes saving.
+  const [deepLinkTab, setDeepLinkTab] = useState<"tasks" | "queue" | null>(
+    initialTab === "queue" && queueSlot ? "queue" : null,
   );
+  const activeTab = deepLinkTab ?? storedActiveTab;
+  const setActiveTab = useCallback((tab: "tasks" | "queue") => {
+    setDeepLinkTab(null);
+    setStoredActiveTab(tab);
+  }, [setStoredActiveTab]);
   const [cards, setCards] = useState<Card[]>([]);
   // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores them (mirrors chat/projects).
@@ -76,8 +86,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [hasLoaded, setHasLoaded] = useState(false);
   // Transient feedback when an optimistic mutation fails and is reverted.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => loadBoardPreference("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadBoardPreference("cave:board:groupBy", "status", ["status", "familiar", "project"]));
+  const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.board.viewMode);
+  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.board.groupBy);
   // Per-status WIP limits (loaded after mount to avoid SSR localStorage access).
   const [wipLimits, setWipLimits] = useState<WipLimits>({});
   useEffect(() => { setWipLimits(readWipLimits()); }, []);
@@ -90,7 +100,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   }, []);
   // Gantt has its own grouping: by project (one bar per task) or by task (one
   // bar per checklist step). Separate from the kanban/table groupBy above.
-  const [ganttGroup, setGanttGroup] = useState<"project" | "task" | "familiar">(() => loadBoardPreference("cave:board:ganttGroup", "project", ["project", "task", "familiar"]) as "project" | "task" | "familiar");
+  const [ganttGroup, setGanttGroup] = useSurfacePreference(surfacePreferenceSpecs.board.ganttGroup);
+  const [tableSortKey, setTableSortKey] = useSurfacePreference(surfacePreferenceSpecs.board.tableSortKey);
+  const [tableSortDir, setTableSortDir] = useSurfacePreference(surfacePreferenceSpecs.board.tableSortDir);
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
@@ -198,7 +210,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
   // The command palette can switch the board view directly (e.g. "Tasks: Gantt
   // timeline"); honor it live when the board is already mounted.
   useEffect(() => {
@@ -209,8 +220,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     window.addEventListener("cave:board:set-view", onSetView);
     return () => window.removeEventListener("cave:board:set-view", onSetView);
   }, []);
-  useEffect(() => { localStorage.setItem("cave:board:groupBy", groupBy); }, [groupBy]);
-  useEffect(() => { localStorage.setItem("cave:board:ganttGroup", ganttGroup); }, [ganttGroup]);
 
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
@@ -1242,6 +1251,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         ) : (
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
+            sortKey={tableSortKey} sortDir={tableSortDir}
+            onSortChange={(key, direction) => { setTableSortKey(key); setTableSortDir(direction); }}
             onSelect={setSelectedCardId}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onPatch={patchCard} />

@@ -36,6 +36,8 @@ import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export function emptyStats(): FamiliarCardStats {
   return {
@@ -466,7 +468,7 @@ export function FamiliarDetailPanel({
   onOpenMemoryFile,
   onOpenUrl,
 }: AgentDetailPanelProps) {
-  const [tab, setTab] = useState<DetailTab>("memory");
+  const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
   // Session trace overlay — the daemon event timeline behind one session.
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const familiarSessions = useMemo(

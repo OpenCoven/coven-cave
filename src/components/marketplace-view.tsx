@@ -45,6 +45,7 @@ import {
   sortPlugins,
   countByKind,
   groupPluginsByCategory,
+  normalizeMarketplaceScope,
   resolveCollection,
   COLLECTIONS,
   type KindFilter,
@@ -60,6 +61,8 @@ import {
   toSkillDetail,
   type MarketplaceSection,
 } from "@/components/marketplace/marketplace-view-model";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
@@ -87,9 +90,16 @@ export function MarketplaceViewSurface({
   familiars = [],
 }: Props = {}) {
   // Roles and Capabilities are hidden: their deep links land on Browse.
-  const [section, setSection] = useState<MarketplaceSection>(
-    initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection,
+  const [storedSection, setStoredSection] = useSurfacePreference(surfacePreferenceSpecs.marketplace.section);
+  // Alias links are a one-visit destination, not a replacement for a normal
+  // return preference.
+  const initialDestination = initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection;
+  const [deepLinkSection, setDeepLinkSection] = useState<MarketplaceSection | null>(
+    initialSection === "roles" || initialSection === "capabilities"
+      ? "browse"
+      : initialDestination === "browse" ? null : initialDestination,
   );
+  const section = deepLinkSection ?? storedSection;
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -97,10 +107,10 @@ export function MarketplaceViewSurface({
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState("All");
-  const [kind, setKind] = useState<KindFilter>("all");
-  const [sort, setSort] = useState<SortKey>("recommended");
-  const [collectionId, setCollectionId] = useState<string | null>(null);
+  const [category, setCategory] = useSurfacePreference(surfacePreferenceSpecs.marketplace.category);
+  const [kind, setKind] = useSurfacePreference(surfacePreferenceSpecs.marketplace.kind);
+  const [sort, setSort] = useSurfacePreference(surfacePreferenceSpecs.marketplace.sort);
+  const [collectionId, setCollectionId] = useSurfacePreference(surfacePreferenceSpecs.marketplace.collection);
   const [selected, setSelected] = useState<string | null>(null);
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
@@ -270,9 +280,10 @@ export function MarketplaceViewSurface({
   // Switch sections (clearing the per-section search). Shared by the tab
   // buttons, the tablist's arrow-key navigation, and cross-section CTAs.
   const selectSection = useCallback((next: MarketplaceSection) => {
-    setSection(next);
+    setDeepLinkSection(null);
+    setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
     setQuery("");
-  }, []);
+  }, [setStoredSection]);
 
   const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
   const categoryCounts = useMemo(() => {
@@ -304,6 +315,15 @@ export function MarketplaceViewSurface({
     () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
     [collectionId],
   );
+  // Catalog categories are data-driven, so a choice can disappear between
+  // visits. Keep durable filters truthful by dropping only the invalid scope
+  // after the first catalog response has established the available options.
+  useEffect(() => {
+    if (!loaded) return;
+    const normalized = normalizeMarketplaceScope(categories, category, collectionId);
+    if (normalized.category !== category) setCategory(normalized.category);
+    if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
+  }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
   const collectionIds = useMemo(
     () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
     [plugins, activeCollection],

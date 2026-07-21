@@ -21,7 +21,6 @@ import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/li
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
-import type { GrimoireViewKind } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
@@ -39,6 +38,8 @@ import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   getFamiliarScope,
@@ -312,7 +313,8 @@ export function Workspace() {
   // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
-  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
+  const [grimoireView, setGrimoireView] = useSurfacePreference(surfacePreferenceSpecs.grimoire.view);
+  const [, setBoardViewMode] = useSurfacePreference(surfacePreferenceSpecs.board.viewMode);
   // Alias funnel: MODE_ALIASES (src/lib/workspace-mode.ts) is the single
   // source of truth for where every compatibility mode lands. groupchat /
   // journal / flow are rewritten HERE so `mode` never holds them (Group Chat
@@ -2163,7 +2165,7 @@ export function Workspace() {
     if (intent.kind === "set-board-view") {
       // Persist for a fresh mount, navigate to the board, then signal a live
       // switch in case the board is already mounted.
-      try { localStorage.setItem("cave:board:viewMode", intent.view); } catch { /* ignore */ }
+      setBoardViewMode(intent.view);
       setMode("board");
       window.setTimeout(
         () => window.dispatchEvent(new CustomEvent("cave:board:set-view", { detail: { view: intent.view } })),

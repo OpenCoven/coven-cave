@@ -11,6 +11,7 @@ import {
   countByKind,
   groupPluginsByCategory,
   categoriesFrom,
+  normalizeMarketplaceScope,
   requiredConfigFromManifest,
   remoteUrlFromManifest,
   resolveCollection,
@@ -103,6 +104,11 @@ assert.deepEqual(filterPlugins(merged, { query: "", category: "All" }).map((p) =
 
 // categoriesFrom — "All" first, then by count desc then name
 assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other", "Web"]);
+assert.deepEqual(
+  normalizeMarketplaceScope(["All", "Web"], "Removed category", "removed-collection"),
+  { category: "All", collectionId: null },
+  "stale persisted Marketplace filters must safely fall back after catalog refresh",
+);
 
 // --- requiredConfig + configured + badge state (credential collection) ---
 const rcManifests = {

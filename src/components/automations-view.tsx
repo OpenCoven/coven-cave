@@ -65,6 +65,8 @@ import {
   countByType,
   type AutomationEntry,
 } from "@/lib/automations/automation-entry";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -146,9 +148,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
   const manageBtnRef = useRef<HTMLButtonElement | null>(null);
   const overviewSwipeStartRef = useRef<number | null>(null);
-  const [activeTab, setActiveTab] = useState<AutomationTab>(
-    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : "overview",
+  const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.schedules.activeTab);
+  const [deepLinkTab, setDeepLinkTab] = useState<AutomationTab | null>(
+    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : null,
   );
+  const activeTab = deepLinkTab ?? storedActiveTab;
+  const setActiveTab = useCallback((tab: AutomationTab) => {
+    setDeepLinkTab(null);
+    setStoredActiveTab(tab);
+  }, [setStoredActiveTab]);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [manageMenuOpen, setManageMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -650,20 +658,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
     [resolvedFamiliars],
   );
-  const [familiarFilter, setFamiliarFilter] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const raw = window.localStorage.getItem("cave:automations:familiar-filter");
-    if (!raw) return new Set();
-    return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
-  });
+  const [storedFamiliarFilter, setStoredFamiliarFilter] = useSurfacePreference(surfacePreferenceSpecs.schedules.familiarFilter);
+  const familiarFilter = useMemo(
+    () => new Set(storedFamiliarFilter.split(",").map((value) => value.trim()).filter(Boolean)),
+    [storedFamiliarFilter],
+  );
   const updateFamiliarFilter = useCallback((next: Set<string>) => {
-    setFamiliarFilter(next);
-    try {
-      window.localStorage.setItem("cave:automations:familiar-filter", [...next].join(","));
-    } catch {
-      /* ignore storage errors */
-    }
-  }, []);
+    setStoredFamiliarFilter([...next].sort().join(","));
+  }, [setStoredFamiliarFilter]);
 
   const codexActive = useMemo(
     () =>
@@ -698,19 +700,10 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     () => ritualLogItems(inboxVisible).filter((item) => !needsYouIds.has(item.id)),
     [inboxVisible, needsYouIds],
   );
-  const [inboxGroupBy, setInboxGroupBy] = useState<InboxGroupBy>(() => {
-    if (typeof window === "undefined") return "attention";
-    const raw = window.localStorage.getItem("cave:inbox:group-by");
-    return raw === "kind" || raw === "familiar" ? raw : "attention";
-  });
+  const [inboxGroupBy, setInboxGroupBy] = useSurfacePreference(surfacePreferenceSpecs.schedules.groupBy);
   const updateInboxGroupBy = useCallback((next: InboxGroupBy) => {
     setInboxGroupBy(next);
-    try {
-      window.localStorage.setItem("cave:inbox:group-by", next);
-    } catch {
-      /* ignore storage errors */
-    }
-  }, []);
+  }, [setInboxGroupBy]);
   const inboxGroups = useMemo(
     () => buildInboxGroups(inboxVisible, inboxGroupBy, familiarLabel),
     [inboxVisible, inboxGroupBy, familiarLabel],
