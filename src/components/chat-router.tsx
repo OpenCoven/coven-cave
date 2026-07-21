@@ -54,6 +54,7 @@ import {
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 
@@ -279,6 +280,15 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  // First chat in a fresh project folder (or this surface's just-started
+  // chat) must not hide inside a collapsed group (cave-mllp).
+  useAutoExpandNewGroups({
+    hydrated: sidebarHydrated,
+    sessions,
+    groups: sidebarGroups,
+    activeSessionId: view.kind === "chat" ? view.sessionId : null,
+    setExpandedKeys,
+  });
 
   // ── URL hash sync (CHAT-D9-01) ────────────────────────────────────────────
   // Follows the existing in-app hash idiom (`#card-<id>`):
