@@ -17,10 +17,10 @@ assert.match(view, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\)\)/, "bo
 assert.match(view, /const \[actionError, setActionError\] = useState<string \| null>\(null\)/, "BoardView must track actionError");
 assert.match(
   view,
-  /if \(!json\.ok\) \{[\s\S]*?setActionError\([\s\S]*?await load\(\);/,
+  /if \(!json\.ok\) \{[\s\S]*?setActionError\([\s\S]*?await load\(\{ force: true \}\);/,
   "patchCard must surface an error (not silently revert) on a failed mutation",
 );
-assert.match(view, /catch \{\s*setActionError\([\s\S]*?await load\(\);/, "patchCard must handle network failure with feedback + revert");
+assert.match(view, /catch \{\s*setActionError\([\s\S]*?await load\(\{ force: true \}\);/, "patchCard must handle network failure with feedback + revert");
 assert.match(view, /\{actionError && \(/, "actionError must render a banner");
 
 // ───────── Desktop board toolbar stays one row ─────────
