@@ -133,8 +133,10 @@ export function useWorkspaceRailController({
     }
   }, [stopTerminalOnUnmount]);
 
-  const showInline = rail.available && rail.open && !isMobile && !paneNarrow;
-  const mobileAvailable = (isMobile || paneNarrow) && rail.available;
+  // Visibility gates on `active` so an inactive scope (e.g. ChatSurface on a
+  // non-conversation tab) never reports an open rail to the shell/layout.
+  const showInline = active && rail.available && rail.open && !isMobile && !paneNarrow;
+  const mobileAvailable = active && (isMobile || paneNarrow) && rail.available;
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileSheetRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(mobileOpen, mobileSheetRef, { onEscape: () => setMobileOpen(false) });

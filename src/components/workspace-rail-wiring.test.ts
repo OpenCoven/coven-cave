@@ -22,7 +22,17 @@ assert.match(controller, /const effectiveProjectRoot = browseRootOverride \?\? p
 assert.match(controller, /setBrowseRootOverride\(null\)/);
 assert.match(controller, /useState<number \| null>\(null\)/);
 assert.match(controller, /json\.files\?\.length \?\? 0/);
-assert.match(controller, /const showInline = rail\.available && rail\.open && !isMobile && !paneNarrow/);
+// Copilot review on #3601: inactive scopes must never report an open rail.
+assert.match(
+  controller,
+  /const showInline = active && rail\.available && rail\.open && !isMobile && !paneNarrow/,
+  "showInline gates on the active flag",
+);
+assert.match(
+  controller,
+  /const mobileAvailable = active && \(isMobile \|\| paneNarrow\) && rail\.available/,
+  "mobileAvailable gates on the active flag",
+);
 
 for (const source of [chat, task]) {
   assert.match(source, /<WorkspaceRail/);

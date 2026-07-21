@@ -440,6 +440,9 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                     className={`${isSel ? "selected" : ""}${rowIdx % 2 === 1 ? " board-table-row--alt" : ""}`.trim()}
                     onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}
                     onKeyDown={(event) => {
+                      // Keys bubbling from interactive children (selects,
+                      // buttons) must not toggle/open the row.
+                      if (event.target !== event.currentTarget) return;
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
                       if (selectMode) onToggleSelect?.(card.id);

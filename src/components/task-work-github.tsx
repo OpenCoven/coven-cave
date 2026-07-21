@@ -31,6 +31,7 @@ export function TaskWorkGitHub({
     if (hydratable.length === 0) {
       setItems({});
       setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -121,7 +122,8 @@ export function TaskWorkGitHub({
               type="button"
               className="task-work-github__item focus-ring"
               onClick={() => onOpenUrl?.(link.url)}
-              title="Open in app browser"
+              disabled={!onOpenUrl}
+              title={onOpenUrl ? "Open in app browser" : undefined}
             >
               <span className="task-work-github__item-kicker">
                 {link.repo}{link.number != null ? ` #${link.number}` : ""}
