@@ -325,12 +325,20 @@ assert.doesNotMatch(
 assert.match(
   source,
   /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<SessionOverflowMenu/,
-  "Open chat header actions collapse to a find bar plus a single overflow menu",
+  "Open chat header actions keep the find bar ahead of the overflow menu",
+);
+// cave-zolo: the header cluster carries direct Voice/Archive/Delete buttons;
+// the kebab holds only secondary tools (phone handoff, project, thinking,
+// reflect, debug), sourced from the pure menu model.
+assert.match(
+  source,
+  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*<ChatFindBar[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
+  "Direct session actions (voice, archive, delete) render beside find and the kebab",
 );
 assert.match(
   sessionHeader,
-  /function SessionOverflowMenu[\s\S]*Debug session[\s\S]*Delete chat/,
-  "Secondary session actions (project, voice, debug, delete) live in the overflow menu",
+  /import \{ archiveAction, sessionMenuSections, voiceAction[\s\S]*?\} from "@\/lib\/chat-session-menu-model"/,
+  "Header actions derive their items/states from the pure chat-session-menu-model",
 );
 
 assert.match(
@@ -360,22 +368,34 @@ assert.doesNotMatch(
   "Dead standalone icon-button chrome is removed with the buttons",
 );
 
-// Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions
-// collapse and reveal on hover / keyboard focus (touch devices show them).
+// Ultra-minimal header: the promoted voice + delete verbs are quiet at rest —
+// they use the shared reveal-on-hover utility (§8) against the header's
+// reveal-scope instead of a bespoke pointer-events dance (which could never
+// outrank its own hide rule). Archive, find and the kebab stay visible.
 assert.match(
   sessionHeader,
   /className="focus-ring cave-chat-actions-kebab"/,
   "The overflow kebab is tagged so it stays visible while sibling actions collapse",
 );
 assert.match(
+  sessionHeader,
+  /className="focus-ring cave-chat-delete-btn reveal-on-hover"/,
+  "The direct delete button is quiet at rest via the shared reveal utility",
+);
+assert.match(
+  sessionHeader,
+  /className="focus-ring voice-call-button reveal-on-hover"/,
+  "The direct voice button is quiet at rest via the shared reveal utility",
+);
+assert.doesNotMatch(
   styles,
-  /@media \(hover: hover\) and \(pointer: fine\)\s*\{[\s\S]*\.cave-chat-session-actions > \.focus-ring:not\(\.cave-chat-actions-kebab\):not\(\.cave-chat-find\)[\s\S]*opacity:\s*0;/,
-  "Quick header actions are hidden at rest on pointer devices",
+  /\.focus-ring:not\(\.cave-chat-actions-kebab\)/,
+  "The bespoke cluster hide rule is gone — its :not() chain outranked every reveal rule",
 );
 assert.match(
   styles,
-  /\.cave-chat-linear-header:hover \.cave-chat-session-actions > \.focus-ring[\s\S]*opacity:\s*1;/,
-  "Quick header actions reveal on header hover",
+  /\.cave-chat-session-actions:has\(\[aria-expanded="true"\]\) \.reveal-on-hover \{\s*opacity: 1;/,
+  "An armed popover keeps the cluster revealed so the anchor doesn't fade under it",
 );
 // "No plan limits" is suppressed — the plan chip only shows a real limit.
 assert.match(
@@ -747,25 +767,32 @@ assert.match(
   "Empty-state hint surfaces the slash-command entry point (skills, prompts, /model)",
 );
 
-assert.match(
+// cave-zolo: rename is deduped out of the kebab — the title's pencil is the
+// affordance, and the dead cave:chat-rename bridge is gone with the item.
+assert.doesNotMatch(
   sessionHeader,
-  /icon="ph:pencil-simple"[\s\S]{0,200}dispatchEvent\(new Event\("cave:chat-rename"\)\)[\s\S]{0,160}Rename chat/,
-  "Rename lives in the session overflow menu (Codex/ChatGPT idiom), firing cave:chat-rename",
+  /cave:chat-rename/,
+  "the rename window-event bridge is removed",
 );
-assert.match(
-  sessionHeader,
-  /addEventListener\("cave:chat-rename", onRename\)[\s\S]{0,80}setEditing\(true\)|onRename = \(\) => setEditing\(true\)/,
-  "ChatTitleEditable enters edit mode when the overflow menu fires cave:chat-rename",
-);
+{
+  const overflowMenu = sessionHeader.slice(
+    sessionHeader.indexOf("function SessionOverflowMenu"),
+    sessionHeader.indexOf("function DeleteChatButton"),
+  );
+  assert.ok(
+    !overflowMenu.includes("Rename chat"),
+    "the overflow menu carries no Rename item (the title pencil owns rename)",
+  );
+}
 assert.match(
   sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
-  "Chat title carries an explicit, labeled rename button — click-to-rename and the overflow item alone are not discoverable",
+  "Chat title carries an explicit, labeled rename button — click-to-rename alone is not discoverable",
 );
 assert.match(
   sessionHeader,
   /aria-label="Rename chat"[\s\S]{0,400}ph:pencil-simple/,
-  "The title's rename button uses the same pencil icon as the overflow menu item",
+  "The title's rename button keeps the pencil icon",
 );
 
 // — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
