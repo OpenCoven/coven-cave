@@ -352,18 +352,21 @@ export function CanvasEditor(props: {
     setStyleDrafts({});
   }, [srcDoc]);
 
-  // Escape precedence (shared resolver): a non-empty field owns Escape, then
-  // the selection clears, then the in-app expanded sketch restores.
+  // Escape precedence (shared resolver): native fullscreen owns Escape (the
+  // browser exits it), then a non-empty field, then the selection clears,
+  // then the in-app expanded sketch restores.
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      const doc = document as FullscreenDocument;
       const active = document.activeElement;
       const fieldHasContent =
         (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
         && Boolean(active.value.trim());
       const action = resolveEscapeAction({
+        nativeFullscreen: Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement),
         fieldHasContent,
         hasSelection: selectionRef.current !== null,
         expanded: expandedRef.current,
@@ -734,8 +737,8 @@ export function CanvasEditor(props: {
           <button
             type="button"
             className={`canvas-editor__view focus-ring-inset${expanded ? " is-active" : ""}`}
-            title={expanded ? "Exit expanded sketch" : "Expand sketch"}
-            aria-label={expanded ? "Exit expanded sketch" : "Expand sketch"}
+            title="Expand sketch"
+            aria-label="Expand sketch"
             aria-pressed={expanded}
             onClick={toggleExpanded}
           >

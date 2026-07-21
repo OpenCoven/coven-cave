@@ -314,25 +314,35 @@ assert.match(
   /ref=\{frameShellRef\}/,
   "the frame shell (iframe + error overlay) is the fullscreen element",
 );
+assert.match(
+  editor,
+  /nativeFullscreen: Boolean\(doc\.fullscreenElement \?\? doc\.webkitFullscreenElement\)/,
+  "the keydown handler reads native fullscreen from the DOM at event time",
+);
 
-// ── Escape precedence: field → selection → in-app expand ────────────────────
+// ── Escape precedence: native fullscreen → field → selection → expand ───────
 assert.equal(
-  resolveEscapeAction({ fieldHasContent: true, hasSelection: true, expanded: true }),
+  resolveEscapeAction({ nativeFullscreen: true, fieldHasContent: true, hasSelection: true, expanded: true }),
+  "none",
+  "native fullscreen owns Escape outright — the browser exits it",
+);
+assert.equal(
+  resolveEscapeAction({ nativeFullscreen: false, fieldHasContent: true, hasSelection: true, expanded: true }),
   "none",
   "a non-empty field owns Escape outright",
 );
 assert.equal(
-  resolveEscapeAction({ fieldHasContent: false, hasSelection: true, expanded: true }),
+  resolveEscapeAction({ nativeFullscreen: false, fieldHasContent: false, hasSelection: true, expanded: true }),
   "clear-selection",
   "selection clears before expand exits",
 );
 assert.equal(
-  resolveEscapeAction({ fieldHasContent: false, hasSelection: false, expanded: true }),
+  resolveEscapeAction({ nativeFullscreen: false, fieldHasContent: false, hasSelection: false, expanded: true }),
   "exit-expand",
   "with nothing selected, Escape exits the expanded sketch",
 );
 assert.equal(
-  resolveEscapeAction({ fieldHasContent: false, hasSelection: false, expanded: false }),
+  resolveEscapeAction({ nativeFullscreen: false, fieldHasContent: false, hasSelection: false, expanded: false }),
   "none",
   "Escape is a no-op when there is nothing to dismiss",
 );
