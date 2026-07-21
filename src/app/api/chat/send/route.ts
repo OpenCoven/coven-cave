@@ -1813,8 +1813,17 @@ export async function POST(req: Request) {
         stdoutErrTail.length = 0;
         resumeFailed = false;
         adapterConflict = null;
+        // Settle the heal step BEFORE the retry attempt runs (same shape as
+        // the resume-retry step below): the quarantine itself is finished at
+        // relaunch, and a step left "running" until the attempt ended would
+        // headline the activity strip for the whole reply.
+        pushProgress(
+          "adapter-heal",
+          `Stale ${conflict.id} adapter manifest quarantined; retried`,
+          "done",
+          conflict.manifestPath,
+        );
         await runAttempt(args);
-        pushProgress("adapter-heal", "Retry after manifest quarantine finished", "done");
       }
 
       // Transparent retry: if codex reported its rollout-resume failed and
