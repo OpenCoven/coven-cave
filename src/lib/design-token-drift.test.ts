@@ -42,9 +42,9 @@ import {
 // Current counts as of the P3 codemod PR. Only lower these (banking progress)
 // or raise them with an explicit justification in your PR.
 const BASELINES = {
-  offScaleFontSizePx: 160, // 10.5px/11.5px/… — need per-case renormalization to the type scale (banked -3: canvas-editor.css shipped fully on the type scale)
-  offScaleSpacingPx: 1348, // off-4px-grid pad/margin/gap components (2px/6px/10px/…) — banked -1: canvas-editor.css shipped fully on the space scale
-  offScaleRadiusPx: 211, // 4px/6px/10px/14px/… radii between the sanctioned steps (banked -1: canvas-editor.css uses the radius tokens)
+  offScaleFontSizePx: 160, // 10.5px/11.5px/… — need per-case renormalization to the type scale (banked: canvas-editor.css on the type scale; familiar-tab retokenized the old hero/section styles)
+  offScaleSpacingPx: 1343, // off-4px-grid pad/margin/gap components — banked: canvas-editor.css on the space scale (-1) + familiar-tab snapped to the 4px grid (-5)
+  offScaleRadiusPx: 211, // 4px/6px/10px/14px/… radii between the sanctioned steps
   hexOutsideDefinitions: 156, // hex in render CSS (token definitions excluded) — +1: canvas-editor.css sketch-frame #fff ground, sketch CONTENT not interface color, same precedent as chat-canvas.css's thumbnail #fff
   inlineTsxStyles: 500, // style={{…}} in TSX; many are legit dynamic values
 };
