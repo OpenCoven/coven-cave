@@ -67,7 +67,7 @@ import {
 } from "@/lib/automations/automation-entry";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -281,6 +281,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   useEffect(() => { void load(); }, [load]);
   usePausablePoll(() => { void load(true); }, 15_000, { pauseWhileInputActive: true });
 
+  // A mutation can finish while a warm-up or poll request is still in flight.
+  // Drop that request before the forced reload so its pre-mutation response
+  // cannot win the cache coalescing race and restore the old list.
+  const reloadAfterMutation = useCallback(async () => {
+    invalidateSurfaceResources("schedules:inbox", "schedules:automations");
+    await load(true);
+  }, [load]);
+
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.
   useEffect(() => {
@@ -357,11 +365,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "patch failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const actItem = useCallback(async (id: string, path: string, body?: object) => {
     if (id.startsWith("eph:")) return;
@@ -373,11 +381,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const removeItem = useCallback((id: string) => {
     if (id.startsWith("eph:")) return;
@@ -399,9 +407,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "delete failed");
-      } finally { await load(true); }
+      } finally { await reloadAfterMutation(); }
     });
-  }, [items, scheduleDelete, load]);
+  }, [items, scheduleDelete, reloadAfterMutation]);
 
   // Confirm before firing — crons and flows already do, and the identical Run
   // buttons on the All tab must not behave differently per type.
@@ -473,11 +481,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(action === "read" ? `Marked '${item.title}' as read.` : `Marked '${item.title}' as unread.`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
-  }, [load, announce]);
+  }, [reloadAfterMutation, announce]);
 
   const openSubscriptions = useCallback(async () => {
     // The modal renders a connect hint without a PAT — resolve the live
@@ -530,13 +538,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex patch failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
     setBusyId(auto.id);
@@ -550,13 +558,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       if (json.automation) setSelectedCodex(json.automation);
       announce(`Saved '${patch.name ?? auto.name}'.`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex save failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
@@ -569,9 +577,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
-      } finally { await load(true); }
+      } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, load]);
+  }, [scheduleDelete, reloadAfterMutation]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -599,12 +607,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
       announce(`Created cron '${input.name}'.`);
-      await load(true);
+      await reloadAfterMutation();
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   // "Open" routes to each type's dedicated editor surface.
   const openEntry = useCallback((entry: AutomationEntry) => {
@@ -736,7 +744,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
-      await load(true);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "bulk action failed");
     } finally {
@@ -762,7 +770,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "bulk delete failed");
-      } finally { await load(true); }
+      } finally { await reloadAfterMutation(); }
     });
   };
   const automationsEmpty = codexAutos.length === 0;

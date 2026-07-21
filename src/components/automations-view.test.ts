@@ -216,6 +216,11 @@ assert.match(source, /const loadReqRef = useRef\(0\)/, "load() tracks its own re
 assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load() bumps the request id");
 assert.match(source, /const live = \(\) => reqId === loadReqRef\.current && mountedRef\.current/, "load() writes only while it's the newest load and still mounted");
 assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its writes");
+assert.match(
+  source,
+  /const reloadAfterMutation = useCallback\(async \(\) => \{\s*invalidateSurfaceResources\("schedules:inbox", "schedules:automations"\);\s*await load\(true\);/,
+  "a completed Schedules mutation invalidates both shared landing resources before it reloads",
+);
 
 // ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
