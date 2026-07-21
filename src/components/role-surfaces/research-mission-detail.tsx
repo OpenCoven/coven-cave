@@ -16,6 +16,7 @@ import {
   type ResearchMissionActionInput,
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { ResearchEvidenceLedger } from "./research-evidence-ledger";
 
 type Props = {
@@ -60,6 +61,9 @@ export function ResearchMissionDetail({
   onAutomationAction,
 }: Props) {
   const { announce } = useAnnouncer();
+  // Keeps the running wall-clock reading and "updated Xm ago" stamps advancing
+  // between mission polls.
+  useMinuteTick();
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
