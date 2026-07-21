@@ -1,23 +1,128 @@
 /* Chat → Canvas tab — the gallery of sketches saved from inline chat artifacts
-   ("Save to Canvas" in chat-artifact-viewer persists to /api/canvas). Cards
-   show a non-interactive sandboxed thumbnail; opening a card mounts the full
-   ChatArtifactViewer (chat-artifact.css) inside a Modal. */
+   ("Save to Canvas" in chat-artifact-viewer persists to /api/canvas). A
+   full-bleed toolbar (search · kind filter · count · New sketch) sits over a
+   scrolling card grid; cards show a non-interactive sandboxed thumbnail and
+   open a preview modal, which hands off to the full-surface CanvasEditor. */
 .chat-canvas-view {
-  padding: var(--space-4);
+  padding: 0;
+}
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+.chat-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  flex: none;
+}
+.chat-canvas-toolbar__search {
+  flex: 1;
+  min-width: 0;
+  max-width: 440px;
+}
+.chat-canvas-toolbar__search .ui-search-input {
+  height: 34px;
+  background: color-mix(in oklch, var(--bg-panel) 70%, transparent);
+}
+/* Segmented kind filter — the design-language tint recipe on the active
+   segment (solid accent text / ~13% fill / 45% inset ring). */
+.chat-canvas-toolbar__filter {
+  display: inline-flex;
+  height: 34px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  flex: none;
+}
+.chat-canvas-toolbar__filter-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-canvas-toolbar__filter-btn:hover { color: var(--text-primary); }
+.chat-canvas-toolbar__filter-btn[aria-pressed="true"] {
+  font-weight: 500;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+.chat-canvas-toolbar__count {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+/* "New sketch": quiet at rest with a dashed inner ring (dashed = invitation);
+   hover firms up into a solid accent outline. */
+.chat-canvas-toolbar__new {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 32px;
+  padding: 0 var(--space-3);
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.chat-canvas-toolbar__new::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: calc(var(--radius-control) - 3px);
+  pointer-events: none;
+}
+.chat-canvas-toolbar__new:hover {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+/* ── Grid ─────────────────────────────────────────────────────────────────── */
+.chat-canvas-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-4) var(--space-5) var(--space-8);
 }
 .chat-canvas-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 14px;
   align-content: start;
+}
+.chat-canvas-filter-empty {
+  margin: 0;
+  padding: var(--space-10) var(--space-5);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 .chat-canvas-card {
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
   border: 1px solid var(--border-hairline);
   border-radius: 10px;
   overflow: hidden;
+}
+.chat-canvas-card:hover { border-color: var(--border-strong); }
+/* The card whose preview modal is open. */
+.chat-canvas-card--selected,
+.chat-canvas-card--selected:hover {
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--accent-presence) 18%, transparent);
 }
 .chat-canvas-card__open {
   display: block;
@@ -30,7 +135,7 @@
 .chat-canvas-card__thumb {
   position: relative;
   display: block;
-  height: 170px;
+  height: 156px;
   background: #fff;
   border-bottom: 1px solid var(--border-hairline);
   overflow: hidden;
@@ -50,13 +155,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 10px;
+  padding: var(--space-2) var(--space-3);
   min-width: 0;
 }
 .chat-canvas-card__title {
   flex: 1;
   min-width: 0;
   font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -80,41 +186,121 @@
   border-radius: 6px;
   cursor: pointer;
 }
+/* Deletion is confirmed by dialog, so the hover reads as attention (accent),
+   not alarm — matching the redesign mock. */
 .chat-canvas-card__delete:hover {
-  color: var(--color-danger);
-  background: var(--bg-raised);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
 }
 .chat-canvas-card__delete:disabled {
   opacity: 0.55;
   cursor: default;
 }
-/* Give the reopened viewer real height inside the modal; the inline viewer's
-   preview is otherwise a fixed 360px strip sized for a chat bubble. */
-.chat-canvas-modal-body {
+
+/* ── Preview modal ─────────────────────────────────────────────────────────
+   Clicking a card opens the sketch rendered live but non-interactive
+   (pointer-events off, same opaque-origin sandbox as thumbnails). Running it
+   for real happens in the editor. Bespoke dialog (useFocusTrap) because the
+   shared Modal owns a breadcrumb header/footer this layout replaces. */
+.chat-canvas-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+  background: var(--backdrop-scrim);
+  animation: chat-canvas-preview-fade var(--duration-fast) var(--ease-decelerate);
+}
+@keyframes chat-canvas-preview-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.chat-canvas-preview {
+  width: min(860px, 100%);
+  max-height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: min(64vh, 640px);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  box-shadow: 0 24px 64px oklch(0 0 0 / 50%);
+  overflow: hidden;
 }
-.chat-canvas-modal-body .chat-artifact {
-  margin: 0;
-  flex: 1;
+.chat-canvas-preview__head {
   display: flex;
-  flex-direction: column;
-  min-height: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  flex: none;
 }
-.chat-canvas-modal-body .chat-artifact__body {
+.chat-canvas-preview__title {
   flex: 1;
-  min-height: 0;
-  display: flex;
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.chat-canvas-modal-body .chat-artifact__preview-wrap,
-.chat-canvas-modal-body .chat-artifact__code,
-.chat-canvas-modal-body .chat-artifact__code-edit {
+.chat-canvas-preview__tag {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+}
+.chat-canvas-preview__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-canvas-preview__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+.chat-canvas-preview__body {
+  display: flex;
+  flex: 1;
+  min-height: 340px;
+  background: white; /* sketches expect a white page behind them (thumb precedent) */
+}
+.chat-canvas-preview__frame {
   flex: 1;
   width: 100%;
-  height: auto;
-  min-height: 0;
+  border: 0;
+  display: block;
+  pointer-events: none;
 }
+.chat-canvas-preview__hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  flex: none;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.chat-canvas-preview__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  flex: none;
+}
+.chat-canvas-preview__spacer { flex: 1; }
 
 /* ── "New sketch" add tile (cave-fema) ─────────────────────────────────────
    A ghost tile leads the grid; clicking expands it in-place into the
@@ -129,7 +315,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  border: 1.5px dashed var(--border-strong);
+  min-height: 210px;
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, transparent);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -137,7 +324,8 @@
 }
 .chat-canvas-add--ghost:hover {
   border-color: var(--accent-presence);
-  color: var(--text-primary);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
 }
 .chat-canvas-add--ghost svg { width: 22px; height: 22px; }
 .chat-canvas-add--expanded {
@@ -418,6 +606,7 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-canvas-add__skeleton { animation: none; }
   .chat-canvas-card--new { animation: none; }
+  .chat-canvas-preview-backdrop { animation: none; }
 }
 /* Listitem wrapper for the add tile inside the role="list" grid — contents
    display keeps the tile itself on the grid track. */

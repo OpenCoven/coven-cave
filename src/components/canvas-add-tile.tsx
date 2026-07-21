@@ -46,11 +46,15 @@ type ResultTab = "canvas" | "code";
 export function CanvasAddTile({
   familiarId,
   hero = false,
+  expandRequest,
   onArtifactsChanged,
   onActiveArtifactChange,
 }: {
   familiarId: string | null;
   hero?: boolean;
+  /** Bump to a new nonzero value to expand the collapsed tile (the toolbar's
+   *  "New sketch" button). An already-open composer is left untouched. */
+  expandRequest?: number;
   onArtifactsChanged: (artifacts: CanvasArtifact[], changedId: string) => void;
   onActiveArtifactChange: (id: string | null) => void;
 }) {
@@ -81,6 +85,7 @@ export function CanvasAddTile({
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const codeMenuRef = useRef<HTMLButtonElement | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   const activeFamiliar = chosenFamiliar ?? familiarId;
   const generationVisible = generation.runId !== null && generation.runId !== hiddenRunId;
@@ -109,6 +114,20 @@ export function CanvasAddTile({
       });
     return () => ctrl.abort();
   }, [expanded]);
+
+  // Toolbar-driven expand: same action as clicking the ghost tile. The
+  // composing focus effect scrolls a freshly-expanded tile into view (focus
+  // implies scroll); an already-open tile just gets scrolled to.
+  const expandHandledRef = useRef(0);
+  useEffect(() => {
+    if (!expandRequest || expandRequest === expandHandledRef.current) return;
+    expandHandledRef.current = expandRequest;
+    if (state.phase === "collapsed" && !generationVisible) {
+      dispatch({ type: "expand" });
+      return;
+    }
+    (sectionRef.current ?? ghostRef.current)?.scrollIntoView({ block: "nearest" });
+  }, [expandRequest, state.phase, generationVisible]);
 
   const prevPhaseRef = useRef(state.phase);
   useEffect(() => {
@@ -436,6 +455,7 @@ export function CanvasAddTile({
   return (
     <div role="listitem" className="chat-canvas-add__li">
       <section
+        ref={sectionRef}
         className={`chat-canvas-add chat-canvas-add--expanded${hero ? " chat-canvas-add--hero" : ""}`}
         aria-label="New sketch"
         onKeyDown={(event) => {

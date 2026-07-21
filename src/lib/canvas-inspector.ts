@@ -2,6 +2,7 @@ export const CANVAS_INSPECTOR_MESSAGE_TYPE = "cave-canvas-inspector" as const;
 export const CANVAS_INSPECTOR_READY_MESSAGE_TYPE = "canvas-inspector-ready" as const;
 export const CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE = "canvas-inspector-loaded" as const;
 export const CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE = "canvas-component-selected" as const;
+export const CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE = "cave-canvas-style-override" as const;
 
 export type CanvasInspectorMessage = {
   type: typeof CANVAS_INSPECTOR_MESSAGE_TYPE;
@@ -23,6 +24,23 @@ export function isCanvasInspectorMessage(value: unknown): value is CanvasInspect
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<CanvasInspectorMessage>;
   return message.type === CANVAS_INSPECTOR_MESSAGE_TYPE && typeof message.enabled === "boolean";
+}
+
+export type CanvasStyleOverrideMessage = {
+  type: typeof CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE;
+  selector: string;
+  styles: Record<string, string>;
+};
+
+export function isCanvasStyleOverrideMessage(value: unknown): value is CanvasStyleOverrideMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<CanvasStyleOverrideMessage>;
+  return (
+    message.type === CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE
+    && typeof message.selector === "string"
+    && !!message.styles
+    && typeof message.styles === "object"
+  );
 }
 
 export function isCanvasComponentSelectedMessage(value: unknown): value is CanvasComponentSelectedMessage {
@@ -92,6 +110,11 @@ export function createCanvasInspectorChannel(options: {
       if (!authenticatedLoad || !port) return;
       port.postMessage({ type: CANVAS_INSPECTOR_MESSAGE_TYPE, enabled });
     },
+    /** Preview-only: inline-style the matching sketch element (no-op unless authenticated). */
+    applyStyleOverride(selector: string, styles: Record<string, string>) {
+      if (!authenticatedLoad || !port) return;
+      port.postMessage({ type: CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE, selector, styles });
+    },
     handleFrameLoad(): "authenticated" | "pending" | "unexpected" {
       if (authenticatedLoad && !completedLoad) {
         completedLoad = true;
@@ -134,6 +157,7 @@ function inspectorSource(generation: string): string {
   const LOADED_TYPE = ${JSON.stringify(CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE)};
   const ENABLE_TYPE = ${JSON.stringify(CANVAS_INSPECTOR_MESSAGE_TYPE)};
   const SELECTED_TYPE = ${JSON.stringify(CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE)};
+  const STYLE_TYPE = ${JSON.stringify(CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE)};
   const GENERATION = ${JSON.stringify(generation)};
   const SELECTOR_LIMIT = 500;
   const LABEL_LIMIT = 200;
@@ -155,14 +179,43 @@ function inspectorSource(generation: string): string {
   const postPortMessage = port.postMessage.bind(port);
   const restoredTabIndexes = new Map();
 
+  const applyStyleOverride = (selector, styles) => {
+    let element = null;
+    try {
+      element = document.querySelector(selector);
+    } catch {
+      return;
+    }
+    if (!element || !element.style || typeof element.style.setProperty !== "function") return;
+    for (const property of Object.keys(styles)) {
+      const value = styles[property];
+      if (typeof value !== "string") continue;
+      try {
+        element.style.setProperty(property, value);
+      } catch {
+        /* unknown properties are ignored */
+      }
+    }
+  };
+
   port.onmessage = (portEvent) => {
     const command = portEvent.data;
-    if (!command || command.type !== ENABLE_TYPE || typeof command.enabled !== "boolean") return;
-    enabled = command.enabled;
-    if (enabled) prepareKeyboardCandidates();
-    else {
-      clearHighlight();
-      restoreTabIndexes();
+    if (!command || typeof command !== "object") return;
+    if (command.type === ENABLE_TYPE && typeof command.enabled === "boolean") {
+      enabled = command.enabled;
+      if (enabled) prepareKeyboardCandidates();
+      else {
+        clearHighlight();
+        restoreTabIndexes();
+      }
+      return;
+    }
+    if (
+      command.type === STYLE_TYPE
+      && typeof command.selector === "string"
+      && command.styles && typeof command.styles === "object"
+    ) {
+      applyStyleOverride(command.selector, command.styles);
     }
   };
   port.start();

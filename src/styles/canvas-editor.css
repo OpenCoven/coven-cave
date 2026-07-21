@@ -1,0 +1,507 @@
+/* Canvas sketch editor (design-handoff redesign) — full-surface editor with a
+   stage (sandboxed sketch iframe) on the left and a mode-driven aside
+   (Selection / Comments / Inspector + Design chat) on the right. All interface
+   colors are semantic tokens and spacing sits on the --space scale; the only
+   literals are sketch-content grounds (sketches are arbitrary light pages,
+   like the gallery thumbnails). */
+
+.canvas-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.canvas-editor__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  flex: none;
+}
+.canvas-editor__back {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+.canvas-editor__back:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+}
+.canvas-editor__title {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-editor__modes {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  flex: none;
+}
+.canvas-editor__mode {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: transparent;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.canvas-editor__mode:hover {
+  color: var(--text-primary);
+}
+.canvas-editor__mode.is-active {
+  font-weight: 500;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+}
+.canvas-editor__done {
+  border: 0;
+  cursor: pointer;
+  flex: none;
+  font-size: var(--text-base);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+}
+.canvas-editor__done:hover {
+  background: color-mix(in oklch, var(--accent-presence) 88%, var(--text-primary));
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.canvas-editor__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas-editor__stage {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+}
+.canvas-editor__frame-shell {
+  position: relative;
+  width: min(900px, 100%);
+  height: 100%;
+  min-height: 240px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  overflow: hidden;
+}
+.canvas-editor__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* Sketch ground, not an interface color: sketches expect a light page (same
+     precedent as the gallery thumbnail's #fff). */
+  background: #fff;
+}
+.canvas-editor__error {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 40%, transparent);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+}
+
+/* ── Aside ───────────────────────────────────────────────────────────────── */
+.canvas-editor__aside {
+  width: 320px;
+  flex: none;
+  border-left: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.canvas-editor__panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  flex: none;
+}
+.canvas-editor__panel-title {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.canvas-editor__panel-target {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-editor__panel-target.has-selection {
+  color: var(--accent-presence);
+}
+
+.canvas-editor__panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.canvas-editor__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Select mode: quiet details of the selected component. */
+.canvas-editor__sel-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.canvas-editor__sel-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.canvas-editor__sel-selector {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.canvas-editor__sel-excerpt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+
+/* Edit mode: inspector rows. */
+.canvas-editor__insp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.canvas-editor__insp-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  flex: 1;
+}
+.canvas-editor__insp-num {
+  width: 60px;
+  min-height: 30px;
+  font-size: var(--text-sm);
+  text-align: center;
+  flex: none;
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.canvas-editor__insp-unit {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  width: 18px;
+  flex: none;
+}
+.canvas-editor__weights {
+  display: inline-flex;
+  height: 26px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.canvas-editor__weight {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: transparent;
+}
+.canvas-editor__weight:hover {
+  color: var(--text-primary);
+}
+.canvas-editor__weight.is-active {
+  font-weight: 500;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+}
+.canvas-editor__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  /* The "None" swatch has no literal fill — it shows the app surface, meaning
+     "no override". Colored swatches get their sketch-content fill inline. */
+  background: var(--bg-sunken);
+}
+.canvas-editor__swatch.is-selected {
+  border: 2px solid var(--accent-presence);
+}
+
+/* Comment mode. */
+.canvas-editor__comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.canvas-editor__comment {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.canvas-editor__comment-target {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+  padding-right: var(--space-6);
+}
+.canvas-editor__comment-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+.canvas-editor__comment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+}
+.canvas-editor__comment-remove:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--text-primary) 7%, transparent);
+}
+.canvas-editor__comment-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.canvas-editor__comment-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+.canvas-editor__pin-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+.canvas-editor__pin {
+  border: 0;
+  cursor: pointer;
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-control);
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+}
+.canvas-editor__pin:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Shared accent action (Apply comments / Apply via familiar). */
+.canvas-editor__apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  border: 0;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-control);
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+}
+.canvas-editor__apply:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 88%, var(--text-primary));
+}
+.canvas-editor__apply:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Design chat ─────────────────────────────────────────────────────────── */
+.canvas-editor__chat {
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  max-height: 46%;
+  min-height: 190px;
+}
+.canvas-editor__chat-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  flex: none;
+}
+.canvas-editor__chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.canvas-editor__msg {
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.canvas-editor__msg--agent {
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  align-self: stretch;
+}
+.canvas-editor__msg--user {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  align-self: flex-end;
+  max-width: 85%;
+}
+.canvas-editor__msg--busy {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.canvas-editor__attach {
+  margin: 0 var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--accent-presence);
+  max-width: calc(100% - 24px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-editor__chat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  flex: none;
+}
+.canvas-editor__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-2);
+}
+.canvas-editor__input::placeholder {
+  color: var(--text-muted);
+}
+.canvas-editor__pin-row .canvas-editor__input {
+  min-height: 32px;
+}
+.canvas-editor__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  cursor: pointer;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-control);
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+}
+.canvas-editor__send:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 88%, var(--text-primary));
+}
+.canvas-editor__send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-editor__mode {
+    transition: none;
+  }
+}
