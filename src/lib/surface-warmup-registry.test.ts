@@ -15,8 +15,11 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   }
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
   assert.match(registry, /await warm<\{ rateLimit/);
-  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch \{[\s\S]{0,240}must not leave the rest of this surface cold/);
+  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch(?: \(error\))? \{[\s\S]{0,360}must not leave the rest of this surface cold/);
   assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
+  assert.match(registry, /response\.status === 429/);
+  assert.match(registry, /response\.headers\.has\("retry-after"\)/);
+  assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
   assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}await read<T>\(key, \{ force: true \}\)/, "surface reads join a stale revalidation before returning landing data");

@@ -8,6 +8,13 @@ export type SurfaceWarmResult = { backpressured: boolean };
 
 const GITHUB_WARMUP_REMAINING_FLOOR = 10;
 
+class SurfaceWarmupBackpressureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SurfaceWarmupBackpressureError";
+  }
+}
+
 export const surfaceWarmupResources = {
   github: ["github:pat", "github:activity", "github:familiars", "board:cards"],
   marketplace: ["marketplace:catalog", "marketplace:skills"],
@@ -24,6 +31,18 @@ async function json(
 ): Promise<unknown> {
   const response = await fetch(url, { cache: "no-store", signal });
   const payload = await response.json().catch(() => null);
+  // A Retry-After response, an exhausted upstream allowance, or the standard
+  // 429 response are explicit back-pressure signals. Do not turn one failed
+  // background request into a burst against the remaining landing resources.
+  if (
+    response.status === 429 ||
+    response.headers.has("retry-after") ||
+    response.headers.get("x-ratelimit-remaining") === "0"
+  ) {
+    throw new SurfaceWarmupBackpressureError(
+      (payload as { error?: string } | null)?.error ?? `${url} is rate limited (${response.status})`,
+    );
+  }
   if ((!response.ok || !payload || (payload as { ok?: boolean }).ok === false) && !options.allowError?.(response, payload)) {
     throw new Error((payload as { error?: string } | null)?.error ?? `${url} failed (${response.status})`);
   }
@@ -101,7 +120,8 @@ export async function warmSurface(
       if (resource === "github:activity" && (result.data.rateLimit?.remaining ?? Infinity) <= GITHUB_WARMUP_REMAINING_FLOOR) {
         return { backpressured: true };
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof SurfaceWarmupBackpressureError) return { backpressured: true };
       // Landing resources are independent. A transient failure in one API
       // must not leave the rest of this surface cold until a visibility cycle.
     }
