@@ -1,4 +1,484 @@
-/* Research Desk — Prompt tab styles (cave-dl74, Phase B1 owns this file).
-   Placeholder created in Phase A so the globals.css import order is settled.
-   Until B1 lands, the Prompt tab reuses the composer/link-shelf styles in
-   surface-role-workspaces.css plus .research-prompt in surface-research-desk.css. */
+/* ═══ Research Desk — Prompt tab, the "New research" intake (Phase B1) ═══
+   Design lines 537–621 adapted to coven tokens (never Nocturne hexes): hero
+   line, accent-glow composer card with slash palette, related-context chips,
+   suggested-angle chips, mode cards, the carried-over bounds disclosure, and
+   the quick-saves panel. Base composer styles (textarea, plan-summary pill,
+   bounds grid) still come from surface-role-workspaces.css — this sheet layers
+   the new intake on top and is imported after it, so its overrides win.
+   Semantic tokens only; --research-accent is scoped on .research-desk. */
+
+.research-intake {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  padding: var(--space-4) 22px var(--space-5);
+}
+
+/* ── Hero: one confident line + a quiet promise (design 540–543). ── */
+.research-intake__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.research-intake__hero h2 {
+  margin: 0;
+  font-size: var(--text-xl, 20px);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.research-intake__hero p {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.research-intake__form {
+  gap: var(--space-3);
+}
+
+/* ── Composer card: the accent-glow border (design 545). Glow stays subtle —
+   accent is presence, not CTA. ── */
+.research-intake__card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) 20px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  border: 1px solid color-mix(in oklch, var(--research-accent) 32%, var(--border));
+  box-shadow:
+    0 0 28px color-mix(in oklch, var(--research-accent) 9%, transparent),
+    var(--shadow-md, 0 6px 18px oklch(0 0 0 / 0.25));
+}
+
+.research-intake__prompt {
+  position: relative;
+  margin-bottom: var(--space-2);
+}
+.research-intake__card textarea {
+  min-height: 96px;
+  max-height: 60vh;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 12px 14px;
+}
+
+/* ── Slash-command palette (design 548–559): anchored under the textarea. ── */
+.research-cmd-menu {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 100%;
+  margin-top: 2px;
+  z-index: 30;
+  padding: 5px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-md, 0 10px 26px oklch(0 0 0 / 0.35));
+}
+.research-cmd-menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.research-cmd-menu__item[aria-selected="true"] {
+  background: var(--research-accent-soft);
+}
+.research-cmd-menu__cmd {
+  flex: none;
+  min-width: 72px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--research-accent);
+}
+.research-cmd-menu__label {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+.research-cmd-menu__hint {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-cmd-menu__keys {
+  margin: 4px 0 0;
+  padding: 5px 10px 2px;
+  border-top: 1px solid var(--border-hairline, var(--border));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── Related-context chips (design 561–567): attached quick saves. ── */
+.research-intake__attached {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-hairline, var(--border));
+}
+.research-intake__attached-label {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-intake__attached-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 34ch;
+  padding: 3px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in oklch, var(--research-accent) 40%, transparent);
+  border-radius: var(--radius-pill);
+}
+.research-intake__attached-remove {
+  flex: none;
+  padding: 0 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.research-intake__attached-remove:hover { color: var(--destructive); }
+
+/* ── Suggested angles (design 569–575): real titles only — dashed border,
+   an invitation in the design language. ── */
+.research-intake__angles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-hairline, var(--border));
+}
+.research-intake__angle {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 13px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  background: none;
+  cursor: pointer;
+}
+.research-intake__angle:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--research-accent) 55%, transparent);
+  background: color-mix(in oklch, var(--research-accent) 6%, transparent);
+}
+
+/* ── Footer: Improve · Suggest · status · Start (design 577–580). ── */
+.research-intake__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline, var(--border));
+}
+.research-improve,
+.research-suggest {
+  flex: none;
+  padding: 4px 8px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.research-improve:hover:not(:disabled),
+.research-suggest:hover {
+  color: var(--research-accent);
+  background: var(--research-accent-soft);
+}
+.research-improve:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.research-improve-note {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.research-intake__start { margin-left: auto; }
+
+/* ── Mode cards (design 582–596): auto pick vs ✓ selected. ── */
+.research-intake__modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.research-intake__modes-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.research-intake__modes-head h3 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.research-intake__modes-note {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-intake__modes-reset {
+  padding: 0 2px;
+  font-size: var(--text-2xs);
+  color: var(--research-accent);
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.research-intake__modes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.research-mode-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 13px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  cursor: pointer;
+}
+.research-mode-card:hover {
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+}
+.research-mode-card[data-selected="true"] {
+  border-color: var(--research-accent);
+  background: color-mix(in oklch, var(--research-accent) 8%, transparent);
+  box-shadow: 0 0 14px color-mix(in oklch, var(--research-accent) 12%, transparent);
+}
+.research-mode-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.research-mode-card__name {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.research-mode-card[data-selected="true"] .research-mode-card__name {
+  color: var(--research-accent);
+}
+.research-mode-card__badge {
+  font-size: 10px;
+  color: var(--research-accent);
+  white-space: nowrap;
+}
+.research-mode-card__desc {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.research-mode-card__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.research-intake__bounds { min-width: 0; }
+
+/* ── Quick saves panel (design 598–618). ── */
+.research-quick-saves {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+}
+.research-quick-saves__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+.research-quick-saves__head strong {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.research-quick-saves__count {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+}
+.research-quick-saves__search {
+  margin-left: auto;
+  max-width: 220px;
+  min-height: 28px;
+  padding: 3px 9px;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-base) 68%, transparent);
+}
+.research-quick-saves__all {
+  flex: none;
+  padding: 2px 4px;
+  font-size: var(--text-2xs);
+  color: var(--research-accent);
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.research-quick-saves__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.research-quick-saves__row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  text-align: left;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.research-quick-saves__row:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+.research-quick-saves__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.research-quick-saves__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+.research-quick-saves__row time {
+  flex: none;
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: none;
+}
+.research-quick-saves__mark {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.research-quick-saves__mark[data-attached="true"] { color: var(--research-accent); }
+.research-quick-saves__row[aria-pressed="true"] .research-quick-saves__title {
+  color: var(--research-accent);
+}
+.research-quick-saves__empty {
+  margin: 0;
+  padding: var(--space-2) 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-quick-saves__hint {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-quick-saves__hint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+
+/* ── Focus + motion: every intake button exposes the shared ring; nothing on
+   this tab animates, so reduced motion only needs the guard for hover fades
+   browsers may synthesize. ── */
+.research-intake button:focus-visible,
+.research-intake__card textarea:focus-visible,
+.research-quick-saves__search:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .research-intake * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ── Container-responsive: follow the desk's 900/760/560 breakpoints. ── */
+@container research-desk (max-width: 900px) {
+  .research-intake__modes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container research-desk (max-width: 760px) {
+  .research-intake { padding: var(--space-3) 16px var(--space-4); }
+  .research-quick-saves__search { max-width: 160px; }
+}
+
+@container research-desk (max-width: 560px) {
+  .research-intake { padding: var(--space-3) 12px var(--space-4); }
+  .research-intake__modes-grid { grid-template-columns: minmax(0, 1fr); }
+  .research-quick-saves__head { row-gap: var(--space-2); }
+  .research-quick-saves__search {
+    order: 5;
+    margin-left: 0;
+    max-width: none;
+    width: 100%;
+  }
+  .research-quick-saves__row time { display: none; }
+}

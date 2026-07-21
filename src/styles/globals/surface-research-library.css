@@ -1,2 +1,336 @@
-/* Research Desk — Library tab styles (cave-dl74, Phase B3 owns this file).
-   Placeholder created in Phase A so the globals.css import order is settled. */
+/* ═══ Research Desk — Library tab (cave-dl74, Phase B3 owns this file) ═══
+   Design lines 261–307 / 1260–1292 mapped onto coven tokens (no Nocturne
+   hexes): accent = --research-accent (set on .research-desk), warn/ok are the
+   desk's existing oklch readings, err = --destructive. Container queries ride
+   the .research-desk inline-size container from surface-role-workspaces.css. */
+
+.research-library {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* ── Live ticker (design 264–270): accent-washed strip, dot + words. ── */
+.research-library__ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--research-accent) 6%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+.research-library__ticker strong {
+  flex: none;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.research-library__ticker-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--research-accent);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--research-accent) 18%, transparent);
+}
+.research-library__ticker-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-library__ticker-watch {
+  margin-left: auto;
+  flex: none;
+  border: 0;
+  padding: 2px 4px;
+  background: none;
+  font: inherit;
+  color: var(--research-accent);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+}
+.research-library__ticker-watch:hover { text-decoration: underline; }
+
+/* ── Header: title, real counts, sort note. ── */
+.research-library__body { padding: 20px 22px 32px; }
+.research-library__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.research-library__head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.research-library__count {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-library__sort {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Filter chips + cards/rows segmented toggle (design 277–284). ── */
+.research-library__toolbar {
+  display: flex;
+  gap: 6px 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.research-library__filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.research-library__chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+}
+.research-library__chip:hover { border-color: var(--text-muted); }
+.research-library__chip[aria-pressed="true"] {
+  color: var(--research-accent);
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+  background: color-mix(in oklch, var(--research-accent) 10%, transparent);
+}
+.research-library__chip-count { opacity: 0.6; }
+.research-library__seg {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.research-library__seg-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.research-library__seg-opt + .research-library__seg-opt {
+  border-left: 1px solid var(--border);
+}
+.research-library__seg-opt[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--research-accent) 10%, transparent);
+}
+
+/* ── Grid (cards) — 3-up, container-responsive; rows collapse to a list. ── */
+.research-library__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.research-library__grid[data-view="rows"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Card (design 287–303). Progress drafts tint amber; failed runs red —
+   the tint doubles the kicker's words, never replaces them. ── */
+.research-library-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+}
+.research-library-card[data-type="progress"] {
+  border-color: color-mix(in oklch, oklch(0.8 0.13 75) 35%, transparent);
+}
+.research-library-card[data-type="progress"][data-mission-status="failed"] {
+  border-color: color-mix(in oklch, var(--destructive) 35%, transparent);
+}
+.research-library-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.research-library-card__kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.research-library-card__kicker[data-tone="accent"] { color: var(--research-accent); }
+.research-library-card__kicker[data-tone="warn"] { color: oklch(0.8 0.13 75); }
+.research-library-card__kicker[data-tone="err"] { color: var(--destructive); }
+.research-library-card__when {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: none;
+}
+.research-library-card__title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.research-library-card__summary {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.research-library-card__progress {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--text-muted) 18%, transparent);
+  overflow: hidden;
+}
+.research-library-card__progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: oklch(0.8 0.13 75);
+}
+.research-library-card[data-mission-status="failed"] .research-library-card__progress i {
+  background: var(--destructive);
+}
+.research-library-card__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.research-library-card__meta-when { display: none; }
+.research-library-card__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  align-items: center;
+}
+.research-library-card__run {
+  margin-left: auto;
+  border: 0;
+  padding: 2px 4px;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--research-accent);
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: center;
+  border-radius: var(--radius-sm);
+}
+.research-library-card__run:hover { text-decoration: underline; }
+
+/* ── Rows variant (design 1278–1292): one ellipsized line per artifact. ── */
+.research-library__grid[data-view="rows"] .research-library-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 14px;
+}
+.research-library__grid[data-view="rows"] .research-library-card__head {
+  flex: none;
+  min-width: 210px;
+  justify-content: flex-start;
+}
+.research-library__grid[data-view="rows"] .research-library-card__when { display: none; }
+.research-library__grid[data-view="rows"] .research-library-card__title {
+  flex: none;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.research-library__grid[data-view="rows"] .research-library-card__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  font-size: 11.5px;
+}
+.research-library__grid[data-view="rows"] .research-library-card__progress {
+  flex: none;
+  width: 80px;
+}
+.research-library__grid[data-view="rows"] .research-library-card__meta {
+  flex: none;
+  white-space: nowrap;
+}
+/* Rows fold the timestamp into the meta line (the head column drops it). */
+.research-library__grid[data-view="rows"] .research-library-card__meta-when { display: inline; }
+.research-library__grid[data-view="rows"] .research-library-card__actions {
+  flex: none;
+  margin-top: 0;
+}
+
+/* ── Empty states: honest, with a real next step. ── */
+.research-library__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 48px 22px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.research-library__empty p {
+  margin: 0;
+  max-width: 40ch;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+.research-library__filter-empty {
+  margin: 16px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Responsive: the desk's existing container breakpoints. ── */
+@container research-desk (max-width: 900px) {
+  .research-library__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container research-desk (max-width: 760px) {
+  /* Rows can't fit their fixed columns — let the summary wrap under the head. */
+  .research-library__grid[data-view="rows"] .research-library-card { flex-wrap: wrap; }
+  .research-library__grid[data-view="rows"] .research-library-card__summary { flex-basis: 100%; }
+}
+
+@container research-desk (max-width: 560px) {
+  .research-library__ticker { padding: 8px 12px; }
+  .research-library__body { padding: 16px 12px 28px; }
+  .research-library__grid { grid-template-columns: minmax(0, 1fr); }
+  .research-library__grid[data-view="rows"] .research-library-card__head { min-width: 0; }
+  .research-library__grid[data-view="rows"] .research-library-card__title { max-width: none; }
+}

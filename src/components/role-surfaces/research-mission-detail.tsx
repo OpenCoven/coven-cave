@@ -1,9 +1,27 @@
 "use client";
 
+/**
+ * Mission detail — the Desk tab's center column + right rail (cave-dl74 B2).
+ *
+ * Center: kicker/title header, horizontal 6-phase stepper card with the bound
+ * readings row, one status block per mission state (checkpoint tiles + refine,
+ * live activity, completed abstract, failed retry config), the pinned
+ * decision-first stop banner, and a sticky action bar driven by
+ * allowedResearchActions()/researchContinueLabel().
+ *
+ * Right rail: a state-dependent evidence panel (checkpoint delta triage,
+ * streaming sources, artifact cards), quick links, and the full evidence
+ * ledger folded into a disclosure so every ledger affordance stays reachable.
+ *
+ * Every number shown is derived from real mission data; tiles whose datum is
+ * missing are omitted rather than invented.
+ */
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import {
   allowedResearchActions,
   describeResearchSchedule,
@@ -11,9 +29,11 @@ import {
   researchContinueLabel,
   researchIntentAddsContext,
   researchPhaseStatuses,
+  researchSourceStatusCounts,
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
+  type ResearchSourceRef,
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -23,6 +43,8 @@ type Props = {
   mission: ResearchMission | null;
   onOpenSession(sessionId: string): void;
   onOpenUrl(url: string): void;
+  /** Quick link to the Resources tab (Saved resources). */
+  onShowResources(): void;
   onAction(input: ResearchMissionActionInput): Promise<{ ok: boolean; error?: string }>;
   onSchedule(rrule: string): Promise<{ ok: boolean; error?: string }>;
   onAutomationAction(
@@ -31,6 +53,9 @@ type Props = {
   ): Promise<{ ok: boolean; error?: string }>;
 };
 
+/** Display phases: the runner's trigger phase is real but reads as plumbing,
+ *  so the stepper shows the six research phases scope→publish. Statuses stay
+ *  reconciled by researchPhaseStatuses over exactly these ids. */
 const PHASES = [
   ["scope", "Scope"],
   ["gather", "Gather"],
@@ -52,10 +77,20 @@ const ACTION_LABELS: Partial<Record<ResearchMissionAction, string>> = {
   archive: "Archive",
 };
 
+/** End-of-run actions sit right-aligned in the bar, per the design. */
+const END_ACTIONS: ReadonlySet<ResearchMissionAction> = new Set(["cancel", "archive"]);
+
+/** Note marker appended by "Verify next pass" — the source stays conflicting
+ *  so the agent re-checks it, and the marker records the request. */
+const VERIFY_NOTE = "Verify next pass";
+
+const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", "running"]);
+
 export function ResearchMissionDetail({
   mission,
   onOpenSession,
   onOpenUrl,
+  onShowResources,
   onAction,
   onSchedule,
   onAutomationAction,
@@ -74,6 +109,7 @@ export function ResearchMissionDetail({
   useEffect(() => {
     setRetryRoot(null);
     setActionError(null);
+    setDirection("");
   }, [missionId]);
 
   if (!mission) {
@@ -89,6 +125,21 @@ export function ResearchMissionDetail({
   const iteration = mission.iterations.at(-1);
   const sessionId = iteration?.sessionId;
   const actions = allowedResearchActions(mission);
+  const mainActions = actions.filter((action) => action !== "refine" && !END_ACTIONS.has(action));
+  const endActions = actions.filter((action) => END_ACTIONS.has(action));
+  const sourceCounts = researchSourceStatusCounts(mission.sources);
+  const passNote = mission.status === "completed"
+    ? "final"
+    : iteration
+      ? `pass ${iteration.number} of ${mission.bounds.maxIterations}`
+      : `0 of ${mission.bounds.maxIterations} passes`;
+  // The design's "draft synthesis updated · vN" tile — only when a working
+  // draft actually exists; its version is the iteration that wrote it.
+  const draftArtifact = mission.artifacts.filter((artifact) => artifact.state === "working").at(-1);
+  const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
+  const isLive = LIVE_STATUSES.has(mission.status);
+  const showArtifactRail = !isCheckpointLike && !isLive;
+
   // Root-blocked failures get a self-healing Retry: untouched config clears the
   // rejected root so the retried iteration runs in the mission workspace.
   const rootFailure = mission.status === "failed" && /project root/i.test(mission.lastError ?? "");
@@ -105,6 +156,7 @@ export function ResearchMissionDetail({
       ? (mission.projectRoot ? "Retry in workspace" : "Retry")
       : plannedRetry.projectRoot === mission.projectRoot ? "Retry" : "Retry with new root";
   const continueInfo = researchContinueLabel(mission);
+
   const runAction = async (input: ResearchMissionActionInput) => {
     setBusy(true);
     setActionError(null);
@@ -157,78 +209,288 @@ export function ResearchMissionDetail({
     }
   };
 
+  // Evidence-delta triage reuses the ledger's exact source-update mechanism:
+  // Keep → used, Reject → rejected, Verify → stays conflicting + appends note.
+  const keepSource = (source: ResearchSourceRef) => runAction({
+    action: "update-source",
+    sourceId: source.id,
+    patch: { status: "used" },
+  });
+  const rejectSource = (source: ResearchSourceRef) => runAction({
+    action: "update-source",
+    sourceId: source.id,
+    patch: { status: "rejected" },
+  });
+  const verifySourceNextPass = (source: ResearchSourceRef) => runAction({
+    action: "update-source",
+    sourceId: source.id,
+    patch: {
+      status: "conflicting",
+      note: source.note ? `${source.note}\n${VERIFY_NOTE}` : VERIFY_NOTE,
+    },
+  });
+
+  const renderActionButton = (action: ResearchMissionAction) => (
+    <Button
+      key={action}
+      size="xs"
+      variant={
+        action === "continue"
+          ? (continueInfo.gated ? "ghost" : "primary")
+          : action === "retry"
+            ? "primary"
+            : action === "cancel"
+              ? "danger-ghost"
+              : action === "finish" || action === "resume" || action === "pause"
+                ? "secondary"
+                : "ghost"
+      }
+      disabled={busy}
+      {...(action === "continue"
+        ? { "aria-label": continueInfo.description, title: continueInfo.description }
+        : {})}
+      onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
+    >
+      {action === "continue"
+        ? continueInfo.label
+        : action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
+    </Button>
+  );
+
+  const renderSourceTitle = (source: ResearchSourceRef) => source.url ? (
+    <button
+      type="button"
+      className="research-desk-delta__title"
+      onClick={() => onOpenUrl(source.url!)}
+    >
+      <strong>{source.title}</strong>
+      <Icon name="ph:arrow-square-out" width={11} height={11} aria-hidden />
+      <span className="sr-only"> — opens the source</span>
+    </button>
+  ) : (
+    <strong>{source.title}</strong>
+  );
+
   return (
     <section className="research-mission-detail" aria-labelledby="research-mission-title">
-      <header className="research-mission-detail__header">
-        <div>
-          <span className="research-mission-detail__eyebrow">
-            {mission.mode} · {mission.status}
-            {" · "}
-            <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
-          </span>
-          <h2 id="research-mission-title">{mission.title}</h2>
-          {researchIntentAddsContext(mission) ? <p>{mission.intent}</p> : null}
-        </div>
-        {sessionId ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            leadingIcon="ph:chat-circle-dots"
-            onClick={() => onOpenSession(sessionId)}
-          >
-            Open session
-          </Button>
-        ) : null}
-      </header>
-
       <div className="research-mission-detail__body">
-        <div className="research-evidence-trajectory">
-          <div className="research-evidence-trajectory__head">
-            <span>Evidence trajectory</span>
-            <span>
-              iteration {iteration?.number ?? 0}/{mission.bounds.maxIterations}
-            </span>
-          </div>
-          <ol className="research-phase-list" aria-label="Research progress">
-            {researchPhaseStatuses(mission, PHASE_IDS).map((status, index) => {
-              const [id, label] = PHASES[index];
-              const step = iteration?.steps?.find((item) => item.id === id);
-              // A stale step detail ("Searching sources…") contradicts a
-              // reconciled status; show the detail only when the status is
-              // still the step's own report.
-              const reconciled = status !== (step?.status ?? "pending");
-              return (
-                <li key={id} className={`research-phase research-phase--${status}`}>
-                  <span className="research-phase__node" aria-hidden>
-                    {status === "succeeded" ? <Icon name="ph:check" width={12} height={12} aria-hidden /> : null}
-                  </span>
-                  <div>
-                    <strong>{label}</strong>
-                    <span>{reconciled ? status : step?.detail || status}</span>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-
-          <dl className="research-bound-meter">
-            {researchBoundReadings(mission).map((reading) => (
-              <div
-                key={reading.id}
-                className={reading.tone === "neutral" ? undefined : `research-bound--${reading.tone}`}
-                title={reading.detail}
+        <div className="research-desk-center">
+          <header className="research-mission-detail__header">
+            <div>
+              <span className="research-mission-detail__eyebrow">
+                {mission.mode} · {mission.status}
+                {iteration ? ` · pass ${iteration.number}/${mission.bounds.maxIterations}` : ""}
+                {" · "}
+                <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
+              </span>
+              <h2 id="research-mission-title">{mission.title}</h2>
+              {researchIntentAddsContext(mission) ? <p>{mission.intent}</p> : null}
+            </div>
+            {sessionId ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                leadingIcon="ph:chat-circle-dots"
+                onClick={() => onOpenSession(sessionId)}
               >
-                <dt>{reading.label}</dt>
-                <dd>
-                  {reading.value}
-                  {reading.badge ? (
-                    <em className="research-bound-badge" aria-hidden>{reading.badge}</em>
-                  ) : null}
-                  <span className="sr-only"> — {reading.detail}</span>
-                </dd>
+                Open session
+              </Button>
+            ) : null}
+          </header>
+
+          {/* ── Stepper card: 6 reconciled phases + bounds row ── */}
+          <div className="research-desk-stepper">
+            <ol className="research-desk-stepper__track" aria-label="Research progress">
+              {researchPhaseStatuses(mission, PHASE_IDS).map((status, index) => {
+                const [id, label] = PHASES[index];
+                const step = iteration?.steps?.find((item) => item.id === id);
+                // A stale step detail ("Searching sources…") contradicts a
+                // reconciled status; expose the detail only when the status is
+                // still the step's own report.
+                const reconciled = status !== (step?.status ?? "pending");
+                return (
+                  <li key={id} className={`research-desk-step research-desk-step--${status}`}>
+                    <span className="research-desk-step__node" aria-hidden>
+                      {status === "succeeded" ? (
+                        <Icon name="ph:check" width={11} height={11} aria-hidden />
+                      ) : status === "failed" ? (
+                        <Icon name="ph:x" width={10} height={10} aria-hidden />
+                      ) : null}
+                    </span>
+                    <span className="research-desk-step__label">{label}</span>
+                    <span className="sr-only"> — {reconciled ? status : step?.detail || status}</span>
+                  </li>
+                );
+              })}
+            </ol>
+            <div className="research-desk-stepper__bounds">
+              <dl className="research-bound-meter">
+                {researchBoundReadings(mission).map((reading) => (
+                  <div
+                    key={reading.id}
+                    className={reading.tone === "neutral" ? undefined : `research-bound--${reading.tone}`}
+                    title={reading.detail}
+                  >
+                    <dt>{reading.label}</dt>
+                    <dd>
+                      {reading.value}
+                      {reading.badge ? (
+                        <em className="research-bound-badge" aria-hidden>{reading.badge}</em>
+                      ) : null}
+                      <span className="sr-only"> — {reading.detail}</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <span className="research-desk-stepper__pass">{passNote}</span>
+            </div>
+          </div>
+
+          {/* Why the run stopped reads before what to do about it. */}
+          {mission.lastError ? (
+            <div className="research-mission-stop" role="status">
+              <Icon name="ph:warning" width={14} height={14} aria-hidden />
+              <span>{mission.lastError}</span>
+            </div>
+          ) : iteration?.decisionReason ? (
+            <div className="research-mission-decision" role="status">
+              <span>{iteration.decision ?? "checkpoint"}</span>
+              <p>{iteration.decisionReason}</p>
+            </div>
+          ) : null}
+
+          {/* ── Checkpoint / paused: what changed + refine box.
+                Tiles derive from real data only — a tile whose datum is
+                missing is omitted, never invented. Per-iteration source
+                attribution does not exist in the mission model, so the
+                design's "+N new sources" tile ships as the honest ledger
+                total instead. ── */}
+          {isCheckpointLike ? (
+            <section className="research-desk-block" aria-label={`What changed in pass ${iteration?.number ?? 0}`}>
+              <span className="research-desk-block__kicker">
+                What changed in pass {iteration?.number ?? 0}
+              </span>
+              <div className="research-desk-tiles">
+                {mission.sources.length > 0 ? (
+                  <div className="research-desk-tile">
+                    <strong>{mission.sources.length}</strong>
+                    <span>sources gathered so far</span>
+                  </div>
+                ) : null}
+                {sourceCounts.conflicting > 0 ? (
+                  <div className="research-desk-tile research-desk-tile--warn">
+                    <strong>{sourceCounts.conflicting}</strong>
+                    <span>conflicting claims flagged</span>
+                  </div>
+                ) : null}
+                {draftArtifact ? (
+                  <div className="research-desk-tile">
+                    <strong>v{draftArtifact.iteration}</strong>
+                    <span>draft synthesis updated</span>
+                  </div>
+                ) : null}
               </div>
-            ))}
-          </dl>
+              {iteration?.summary ? (
+                <p className="research-desk-block__note">{iteration.summary}</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/* ── Running: live activity from the latest iteration's real step
+                reports — no fake timestamps, honest when detail is absent. ── */}
+          {isLive ? (
+            <section className="research-desk-block" aria-label="Live activity">
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Live activity</span>
+                <span className="research-desk-block__aside">
+                  {mission.bounds.checkpointEvery === 1
+                    ? "checkpoint after this pass"
+                    : `checkpoint every ${mission.bounds.checkpointEvery} passes`}
+                </span>
+              </div>
+              {iteration?.steps?.length ? (
+                <ul className="research-desk-activity">
+                  {iteration.steps.map((step) => (
+                    <li key={step.id} data-status={step.status}>
+                      <em>{step.id}</em>
+                      <span>{step.detail || step.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="research-desk-block__empty">
+                  No step detail reported yet — activity appears as the pass advances.
+                </p>
+              )}
+            </section>
+          ) : null}
+
+          {/* ── Completed: iteration summary as abstract + honest meta line.
+                Findings chips are not derivable from mission data — skipped. ── */}
+          {mission.status === "completed" ? (
+            <section className="research-desk-block" aria-label="Findings">
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Findings · published</span>
+                <span className="research-desk-block__aside">
+                  {mission.sources.length} sources · {sourceCounts.used} used ·{" "}
+                  {mission.iterations.length} pass{mission.iterations.length === 1 ? "" : "es"}
+                </span>
+              </div>
+              {iteration?.summary ? (
+                <p className="research-desk-block__abstract">{iteration.summary}</p>
+              ) : (
+                <p className="research-desk-block__empty">
+                  The run finished without a written summary — open the artifacts for the findings.
+                </p>
+              )}
+            </section>
+          ) : null}
+
+          {/* ── Failed: retry-root config next to the pinned stop banner. ── */}
+          {showRetryConfig ? (
+            <div className="research-retry-config">
+              <label htmlFor="research-retry-root">Retry project root</label>
+              <input
+                id="research-retry-root"
+                type="text"
+                value={retryRootValue}
+                placeholder="Leave empty to run in the mission workspace"
+                spellCheck={false}
+                onChange={(event) => setRetryRoot(event.target.value)}
+              />
+              {rootFailure ? (
+                <p>
+                  The last run could not start in its project root. Retry runs in the
+                  mission workspace unless a valid root is set above.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* ── Refine box: the design's "✦ Refine direction before continuing"
+                wired to the existing refine action. ── */}
+          {actions.includes("refine") ? (
+            <div className="research-desk-refine">
+              <span className="research-desk-refine__kicker">
+                <Icon name="ph:sparkle" width={12} height={12} aria-hidden />
+                Refine direction before continuing
+              </span>
+              <textarea
+                value={direction}
+                onChange={(event) => setDirection(event.target.value)}
+                placeholder="What should the next iteration prioritize?"
+                aria-label="Refined research direction"
+              />
+              <Button
+                size="xs"
+                variant="secondary"
+                disabled={busy || !direction.trim()}
+                onClick={() => void runAction({ action: "refine", direction })}
+              >
+                Refine and continue
+              </Button>
+            </div>
+          ) : null}
 
           {mission.mode === "autoresearch" ? (
             <section className="research-automation" aria-label="AutoResearch schedule">
@@ -293,85 +555,171 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
-          {/* Why the run stopped reads before what to do about it. */}
-          {mission.lastError ? (
-            <div className="research-mission-stop" role="status">
-              <Icon name="ph:warning" width={14} height={14} aria-hidden />
-              <span>{mission.lastError}</span>
-            </div>
-          ) : iteration?.decisionReason ? (
-            <div className="research-mission-decision" role="status">
-              <span>{iteration.decision ?? "checkpoint"}</span>
-              <p>{iteration.decisionReason}</p>
-            </div>
-          ) : null}
+          {actionError ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
 
+          {/* ── Sticky action bar: main actions left, end actions right.
+                No kbd chip — the desk has no registered shortcut to claim. ── */}
           {actions.length > 0 ? (
             <div className="research-mission-actions" aria-label="Research mission actions">
-              {showRetryConfig ? (
-                <div className="research-retry-config">
-                  <label htmlFor="research-retry-root">Retry project root</label>
-                  <input
-                    id="research-retry-root"
-                    type="text"
-                    value={retryRootValue}
-                    placeholder="Leave empty to run in the mission workspace"
-                    spellCheck={false}
-                    onChange={(event) => setRetryRoot(event.target.value)}
-                  />
-                  {rootFailure ? (
-                    <p>
-                      The last run could not start in its project root. Retry runs in the
-                      mission workspace unless a valid root is set above.
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {actions.filter((action) => action !== "refine").map((action) => (
-                <Button
-                  key={action}
-                  size="xs"
-                  variant={
-                    action === "continue"
-                      ? (continueInfo.gated ? "ghost" : "primary")
-                      : action === "retry" ? "primary" : action === "cancel" ? "danger-ghost" : "ghost"
-                  }
-                  disabled={busy}
-                  {...(action === "continue"
-                    ? { "aria-label": continueInfo.description, title: continueInfo.description }
-                    : {})}
-                  onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
-                >
-                  {action === "continue"
-                    ? continueInfo.label
-                    : action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
-                </Button>
-              ))}
-              {actions.includes("refine") ? (
-                <details className="research-refine-control">
-                  <summary>Refine direction</summary>
-                  <textarea
-                    value={direction}
-                    onChange={(event) => setDirection(event.target.value)}
-                    placeholder="What should the next iteration prioritize?"
-                    aria-label="Refined research direction"
-                  />
-                  <Button
-                    size="xs"
-                    variant="primary"
-                    disabled={busy || !direction.trim()}
-                    onClick={() => void runAction({ action: "refine", direction })}
-                  >
-                    Refine and continue
-                  </Button>
-                </details>
-              ) : null}
+              {mainActions.map(renderActionButton)}
+              <span className="research-mission-actions__spacer" aria-hidden />
+              {endActions.map(renderActionButton)}
             </div>
           ) : null}
-          {actionError ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
         </div>
 
-        <ResearchEvidenceLedger mission={mission} onAction={onAction} onOpenUrl={onOpenUrl} />
+        {/* ── Right rail: state-dependent evidence, quick links, ledger. ── */}
+        <aside className="research-desk-rail" aria-label="Run evidence and links">
+          {isCheckpointLike ? (
+            <section className="research-desk-rail__panel" aria-label="Evidence delta">
+              <h3 className="research-desk-rail__title">
+                Evidence delta — pass {iteration?.number ?? 0}
+              </h3>
+              <p className="research-desk-rail__hint">
+                Triage now or leave it for the agent to resolve next pass.
+              </p>
+              {mission.sources.length === 0 ? (
+                <p className="research-desk-block__empty">No sources in the ledger yet.</p>
+              ) : (
+                <ul className="research-desk-delta">
+                  {mission.sources
+                    .filter((source) => source.status !== "rejected")
+                    .slice(-6)
+                    .map((source) => (
+                      <li
+                        key={source.id}
+                        className={`research-desk-delta__card research-desk-delta__card--${source.status}`}
+                      >
+                        <span className={`research-source-status research-source-status--${source.status}`}>
+                          <i aria-hidden />{source.status}
+                        </span>
+                        {renderSourceTitle(source)}
+                        {source.claim ? <p>{source.claim}</p> : null}
+                        {source.status === "conflicting" || source.status === "candidate" ? (
+                          <div className="research-desk-delta__actions">
+                            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void keepSource(source)}>
+                              Keep
+                            </Button>
+                            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void rejectSource(source)}>
+                              Reject
+                            </Button>
+                            {source.status === "conflicting" ? (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                disabled={busy || (source.note ?? "").includes(VERIFY_NOTE)}
+                                onClick={() => void verifySourceNextPass(source)}
+                              >
+                                Verify next pass
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {isLive ? (
+            <section className="research-desk-rail__panel" aria-label="Sources streaming in">
+              <h3 className="research-desk-rail__title">Sources streaming in</h3>
+              <p className="research-desk-rail__hint">
+                {mission.sources.length} of {mission.bounds.sourceTarget} targeted — review anytime.
+              </p>
+              {mission.sources.length === 0 ? (
+                <p className="research-desk-block__empty">No sources recorded yet.</p>
+              ) : (
+                <ul className="research-desk-stream">
+                  {mission.sources.slice(-6).map((source, index, recent) => {
+                    const latest = index === recent.length - 1;
+                    return (
+                      <li key={source.id} className={latest ? "is-latest" : undefined}>
+                        <i aria-hidden />
+                        <span>{source.title}</span>
+                        {latest ? <span className="sr-only"> — most recently added</span> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {showArtifactRail ? (
+            <section className="research-desk-rail__panel" aria-label="Artifacts">
+              <h3 className="research-desk-rail__title">
+                {mission.status === "failed" && iteration
+                  ? `Artifacts from pass ${iteration.number}`
+                  : "Artifacts"}
+              </h3>
+              {mission.artifacts.length === 0 ? (
+                <p className="research-desk-block__empty">No artifacts yet.</p>
+              ) : (
+                <ul className="research-desk-artifacts">
+                  {mission.artifacts.map((artifact) => (
+                    <li key={artifact.key} className="research-desk-artifact">
+                      <span className="research-desk-artifact__kicker">
+                        {artifact.kind} · {artifact.state}
+                      </span>
+                      <strong>{artifact.title}</strong>
+                      <span className="research-desk-artifact__meta">
+                        iteration {artifact.iteration} ·{" "}
+                        <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
+                      </span>
+                      {artifact.knowledgeId ? (
+                        <button
+                          type="button"
+                          className="research-desk-artifact__open"
+                          onClick={() => openGrimoireDoc("knowledge", artifact.knowledgeId!)}
+                        >
+                          Open in Grimoire
+                          <Icon name="ph:arrow-square-out" width={12} height={12} aria-hidden />
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          <div className="research-desk-rail__links">
+            {sessionId ? (
+              <button
+                type="button"
+                className="research-desk-rail__link focus-ring"
+                onClick={() => onOpenSession(sessionId)}
+              >
+                <Icon name="ph:chat-circle-dots" width={14} height={14} aria-hidden />
+                <span>Discuss this run in chat</span>
+                <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="research-desk-rail__link focus-ring"
+              onClick={onShowResources}
+            >
+              <Icon name="ph:link" width={14} height={14} aria-hidden />
+              <span>Saved resources</span>
+              <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
+            </button>
+          </div>
+
+          {/* Full evidence ledger stays reachable below the state panel. */}
+          <details className="research-desk-rail__ledger">
+            <summary>
+              Evidence ledger
+              <span>
+                {mission.artifacts.length} artifact{mission.artifacts.length === 1 ? "" : "s"} ·{" "}
+                {mission.sources.length} source{mission.sources.length === 1 ? "" : "s"}
+              </span>
+            </summary>
+            <ResearchEvidenceLedger mission={mission} onAction={onAction} onOpenUrl={onOpenUrl} />
+          </details>
+        </aside>
       </div>
     </section>
   );

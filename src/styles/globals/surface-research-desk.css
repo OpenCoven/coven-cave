@@ -100,13 +100,606 @@
   color: var(--text-muted);
 }
 
-/* ── Responsive: follow the desk's existing container breakpoints
-   (900/760/560 in surface-role-workspaces.css). ── */
+/* ═══ Desk tab (cave-dl74, Phase B2) ═══
+   The design's status-first desk: query/command bar on top, 264px runs rail,
+   center detail column with a horizontal stepper + status blocks + sticky
+   action bar, and a 312px evidence rail. Base workspace/list/detail plumbing
+   still lives in surface-role-workspaces.css; overrides here win by import
+   order + specificity, so responsive collapses are re-declared below. */
+
+.research-desk-tab {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* ── Query/command bar (design 51–72). ── */
+.research-desk-querybar {
+  position: relative;
+  padding: 12px 22px 12px;
+}
+.research-desk-querybar__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  color: var(--text-muted);
+}
+.research-desk-querybar__field:focus-within {
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+}
+.research-desk-querybar__field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+.research-desk-querybar__field input::placeholder { color: var(--text-muted); }
+.research-desk-querybar__affordance {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-desk-querybar__popover {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 22px;
+  right: 22px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+.research-desk-querybar__command {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.research-desk-querybar__command:hover,
+.research-desk-querybar__command:focus-visible { background: var(--bg-hover); }
+.research-desk-querybar__command:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -1px;
+}
+.research-desk-querybar__command code {
+  flex: none;
+  min-width: 68px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--research-accent);
+}
+.research-desk-querybar__command span {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+.research-desk-querybar__command em {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-desk-querybar__none {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-desk-querybar__filter-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 2px 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-desk-querybar__filter-hint span { color: var(--text-muted); }
+
+/* ── Runs rail: 264px per the design; base grid comes from
+   .research-desk__workspace in surface-role-workspaces.css. ── */
+.research-desk-tab .research-desk__workspace {
+  grid-template-columns: 264px minmax(0, 1fr);
+  border-top: 1px solid var(--border);
+}
+
+/* Amber checkpoint-attention line under the Runs header (design line 78).
+   Tone rides on the words, not just the color. */
+.research-mission-nav__waiting {
+  margin: 0;
+  padding: 8px var(--space-3) 2px;
+  font-size: var(--text-2xs);
+  color: oklch(0.8 0.13 75); /* existing desk warn reading */
+}
+.research-mission-nav__waiting time { text-transform: none; }
+
+/* ── Detail: center column + 312px evidence rail. ── */
+.research-desk-tab .research-mission-detail { padding: 0; }
+.research-desk-tab .research-mission-detail__body {
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 312px);
+  gap: 0;
+  flex: 1;
+}
+.research-desk-center {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 22px 0;
+}
+.research-desk-tab .research-mission-detail__header { padding: 0 0 2px; }
+
+/* ── Stepper card: 6 nodes with connecting lines, bounds row under a
+   divider, pass note right-aligned (design 99–115). ── */
+.research-desk-stepper {
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+}
+.research-desk-stepper__track {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.research-desk-step {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+}
+.research-desk-step:last-child { flex: none; }
+.research-desk-step__node {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+}
+.research-desk-step__label {
+  margin-left: 7px;
+  padding-top: 3px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* Connecting line fills the leftover row between one step and the next. */
+.research-desk-step:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  margin: 11px 8px 0;
+  background: var(--border);
+}
+.research-desk-step--succeeded .research-desk-step__node {
+  border-color: oklch(0.72 0.14 155);
+  background: oklch(0.72 0.14 155);
+  color: var(--bg-base);
+}
+.research-desk-step--succeeded:not(:last-child)::after { background: oklch(0.72 0.14 155 / 0.55); }
+.research-desk-step--running .research-desk-step__node {
+  border-color: var(--research-accent);
+  background: var(--research-accent);
+  box-shadow: 0 0 0 5px var(--research-accent-soft);
+  animation: research-desk-step-pulse 1.6s ease-in-out infinite;
+}
+.research-desk-step--running .research-desk-step__label { color: var(--text-primary); }
+.research-desk-step--failed .research-desk-step__node {
+  border-color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 20%, transparent);
+  color: var(--destructive);
+}
+.research-desk-step--failed .research-desk-step__label { color: var(--destructive); }
+.research-desk-step--skipped .research-desk-step__node { border-style: dashed; }
+
+@keyframes research-desk-step-pulse { 50% { box-shadow: 0 0 0 8px transparent; } }
+
+.research-desk-stepper__bounds {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+/* Bounds render inline in the stepper card — undo the meter's boxed grid. */
+.research-desk-stepper__bounds .research-bound-meter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.research-desk-stepper__bounds .research-bound-meter > div {
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 0;
+  background: transparent;
+}
+.research-desk-stepper__pass {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Status blocks (design 117–166). ── */
+.research-desk-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+}
+.research-desk-block__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.research-desk-block__kicker {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.research-desk-block__aside { font-size: var(--text-2xs); color: var(--text-muted); }
+.research-desk-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.research-desk-tile {
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+}
+.research-desk-tile strong {
+  display: block;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.research-desk-tile--warn strong { color: oklch(0.8 0.13 75); }
+.research-desk-tile span { font-size: var(--text-2xs); color: var(--text-muted); }
+.research-desk-block__note,
+.research-desk-block__abstract {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.research-desk-block__abstract { color: var(--text-primary); }
+.research-desk-block__empty { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); }
+.research-desk-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+.research-desk-activity li { display: flex; gap: 8px; min-width: 0; }
+.research-desk-activity em {
+  flex: none;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.research-desk-activity li[data-status="running"] span { color: var(--text-primary); }
+.research-desk-activity span { overflow-wrap: anywhere; }
+
+/* ── Refine box (design 128–131). ── */
+.research-desk-refine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.research-desk-refine__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--research-accent);
+}
+.research-desk-refine textarea {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  padding: 8px 11px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-base) 68%, transparent);
+}
+.research-desk-refine textarea:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.research-desk-refine .ui-btn { align-self: flex-start; }
+
+/* ── Sticky action bar (design 168–175): main actions left, end action
+   right; sticks to the bottom of the scrolling center column. ── */
+.research-desk-tab .research-mission-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: auto -22px 0;
+  padding: 12px 22px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--bg-base) 86%, transparent);
+  backdrop-filter: blur(10px);
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.research-mission-actions__spacer { flex: 1; }
+
+/* ── Right rail (design 178–255). ── */
+.research-desk-rail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 14px 22px;
+  border-left: 1px solid var(--border);
+}
+.research-desk-rail__panel { display: flex; flex-direction: column; gap: 8px; }
+.research-desk-rail__title {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.research-desk-rail__hint { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); }
+
+.research-desk-delta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.research-desk-delta__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+}
+.research-desk-delta__card--conflicting {
+  border-color: color-mix(in oklch, oklch(0.8 0.13 75) 40%, transparent);
+}
+.research-desk-delta__card strong { font-size: var(--text-xs); font-weight: 500; line-height: 1.3; color: var(--text-primary); }
+.research-desk-delta__card p { margin: 0; font-size: var(--text-2xs); line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
+.research-desk-delta__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.research-desk-delta__title svg { flex: none; color: var(--research-accent); }
+.research-desk-delta__title:hover strong { color: var(--research-accent); }
+.research-desk-delta__title:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+.research-desk-delta__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+
+.research-desk-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.research-desk-stream li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.research-desk-stream li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-desk-stream i {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: oklch(0.72 0.14 155);
+}
+.research-desk-stream li.is-latest i {
+  background: var(--research-accent);
+  box-shadow: 0 0 0 3px var(--research-accent-soft);
+}
+.research-desk-stream li.is-latest span { color: var(--text-primary); }
+
+.research-desk-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.research-desk-artifact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+}
+.research-desk-artifact__kicker {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 8.5px;
+  text-transform: uppercase;
+  color: var(--research-accent);
+}
+.research-desk-artifact strong { font-size: var(--text-xs); font-weight: 500; line-height: 1.3; color: var(--text-primary); }
+.research-desk-artifact__meta { font-size: var(--text-2xs); color: var(--text-muted); }
+.research-desk-artifact__meta time { text-transform: none; }
+.research-desk-artifact__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--research-accent);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.research-desk-artifact__open:hover { text-decoration: underline; }
+.research-desk-artifact__open:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+/* Quick links: bordered rows with accent-on-hover (design 238–253). */
+.research-desk-rail__links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.research-desk-rail__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.research-desk-rail__link svg { flex: none; color: var(--research-accent); }
+.research-desk-rail__link:hover {
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+  background: var(--research-accent-soft);
+  color: var(--text-primary);
+}
+.research-desk-rail__link-chevron { margin-left: auto; color: var(--text-muted); }
+
+/* Full evidence ledger folded into a disclosure — always reachable. */
+.research-desk-rail__ledger {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.research-desk-rail__ledger > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.research-desk-rail__ledger > summary::-webkit-details-marker { display: none; }
+.research-desk-rail__ledger > summary:hover { color: var(--text-secondary); }
+.research-desk-rail__ledger > summary span {
+  font-family: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  font-size: var(--text-2xs);
+}
+.research-desk-rail__ledger[open] > summary { margin-bottom: 10px; }
+
+/* ── Responsive: follow the desk's existing container breakpoints. The
+   base overrides above out-specify the workspaces-sheet collapses, so the
+   collapses are re-declared here for the desk tab. ── */
+@container research-desk (max-width: 900px) {
+  .research-desk-tab .research-desk__workspace { grid-template-columns: 1fr; }
+  .research-desk-querybar { padding: 10px 14px; }
+  .research-desk-querybar__popover { left: 14px; right: 14px; }
+}
+
 @container research-desk (max-width: 760px) {
   .research-desk__tabs { gap: var(--space-2); }
+  .research-desk-tab .research-mission-detail__body { grid-template-columns: 1fr; }
+  .research-desk-rail { border-left: 0; border-top: 1px solid var(--border); }
 }
 
 @container research-desk (max-width: 560px) {
   .research-desk__tabs { padding: 0 12px; }
   .research-tab-placeholder { padding: var(--space-4) 12px; }
+  .research-desk-querybar { padding: 8px 12px; }
+  .research-desk-querybar__affordance { display: none; }
+  .research-desk-center { padding: 14px 12px 0; }
+  .research-desk-tab .research-mission-actions { margin: auto -12px 0; padding: 10px 12px; flex-wrap: wrap; }
+  .research-desk-stepper__track { overflow-x: auto; padding-bottom: 4px; }
+  .research-desk-tiles { grid-template-columns: 1fr; }
+}
+
+/* Reduced motion: the running node keeps its glow but stops pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .research-desk-step--running .research-desk-step__node { animation: none; }
 }
