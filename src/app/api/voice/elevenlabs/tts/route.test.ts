@@ -1,6 +1,21 @@
 // @ts-nocheck
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// Hermetic vault: resolveSecret falls back to <cwd>/.env.local, <cwd>/vault.yaml
+// (the repo root maps ELEVENLABS_API_KEY to a 1Password ref) and the local
+// encrypted store under caveHome() — on a lived-in machine the 400
+// vault_key_unresolved subtest would resolve the developer's REAL key and hit
+// the live API. Point every fallback at an empty scratch dir BEFORE the route
+// (and its vault module) is imported; all readers treat missing files as empty.
+const TMP = mkdtempSync(join(tmpdir(), "elevenlabs-tts-route-"));
+process.env.COVEN_HOME = TMP;
+process.env.COVEN_CAVE_HOME = join(TMP, "cave");
+process.env.COVEN_VAULT_FILE = join(TMP, "vault.yaml");
+process.env.COVEN_CAVE_ENV_FILE = join(TMP, ".env.local");
 
 const realFetch = globalThis.fetch;
 let nextFetchResponse: Response | null = null;
