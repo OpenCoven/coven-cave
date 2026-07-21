@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { PopoverItem, type PopoverItemSemantic } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
