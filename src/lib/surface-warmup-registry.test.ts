@@ -22,7 +22,8 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
-  assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}await read<T>\(key, \{ force: true \}\)/, "surface reads join a stale revalidation before returning landing data");
+  assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}return read<T>\(key, \{ force: true \}\);/, "surface reads join a stale revalidation before returning landing data");
+  assert.doesNotMatch(registry, /catch\s*\{\s*return result;\s*\}/, "a failed revalidation must not present stale landing data as current");
 });
 
 test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {

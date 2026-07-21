@@ -84,14 +84,9 @@ export async function readSurfaceResource<T>(key: string, force = false): Promis
 
   // Surface components consume a point-in-time result rather than subscribing
   // to cache updates. Join the revalidation before returning so a navigation
-  // that crosses a TTL boundary does not keep its stale landing data until a
-  // later poll or remount. If that revalidation fails, retain the stale value
-  // as the cache's availability fallback.
-  try {
-    return await read<T>(key, { force: true });
-  } catch {
-    return result;
-  }
+  // that crosses a TTL boundary does not present stale landing data as current.
+  // If it fails, let the surface's established loading/error path be truthful.
+  return read<T>(key, { force: true });
 }
 
 export function invalidateSurfaceResources(...keys: string[]): void {
