@@ -207,10 +207,13 @@ assert.doesNotMatch(
   /familiarPanelRail=/,
   "workspace no longer passes a right edge-rail tab toggle to the shell",
 );
+// The chat projects rail migrated onto the shared SurfaceRail (Sessions
+// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
+// so the bespoke edge-rail reopen chip is gone from this sidebar.
 assert.match(
   projectSidebar,
-  /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
-  "collapsed projects sidebar reopen tab uses the pressable chip",
+  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
+  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
 );
 
 assert.match(

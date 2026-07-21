@@ -34,7 +34,9 @@ export function SurfaceRail(props: {
   actions?: ReactNode;
   /** Rendered under the header row only while the rail is open. */
   search?: ReactNode;
-  children: ReactNode | ((open: boolean) => ReactNode);
+  /** Render-prop children receive the open flag plus a setter so collapsed
+   *  content (e.g. avatar-only rows) can expand the rail on activation. */
+  children: ReactNode | ((open: boolean, setOpen: (open: boolean) => void) => ReactNode);
   ariaLabel: string;
 }): React.JSX.Element {
   const { storageKey, title, actions, search, children, ariaLabel } = props;
@@ -82,7 +84,7 @@ export function SurfaceRail(props: {
         {open && search ? <div className="surface-rail__search">{search}</div> : null}
       </div>
       <div className="surface-rail__content">
-        {typeof children === "function" ? children(open) : children}
+        {typeof children === "function" ? children(open, setOpen) : children}
       </div>
       {open ? (
         <div

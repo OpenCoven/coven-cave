@@ -95,6 +95,9 @@ type Props = {
   /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Hides the
    *  project sidebar in both list and chat views to reclaim the limited width. */
   compact?: boolean;
+  /** Hides only the project rail (the outer WorkspaceSidebar owns chats);
+   *  the list keeps its full-width toolbar, unlike compact. */
+  hideRail?: boolean;
   /** Jump from the in-chat project rail to the dedicated Projects tab. */
   onOpenProjectsTab?: () => void;
   /** Allow split panes (drag/keyboard multi-pane) on this mount. Only the
@@ -150,6 +153,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenUrl,
     syncUrlHash,
     compact = false,
+    hideRail = false,
     onOpenProjectsTab,
     enableSplitPanes = false,
   },
@@ -196,7 +200,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
@@ -253,7 +256,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
-    setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
     const hasStoredExpanded =
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
     sidebarDefaultExpandedRef.current = !hasStoredExpanded;
@@ -271,9 +273,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     setExpandedKeys(projectSelectionKeys(sidebarGroups));
   }, [sidebarHydrated, sidebarGroups]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
-  }, [sidebarHydrated, sidebarOpen]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
   }, [sidebarHydrated, expandedKeys]);
@@ -685,6 +684,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
         compact={compact}
+        hideRail={hideRail}
         onSessionsChanged={onSessionsChanged}
         onSessionsDeleted={onSessionsDeleted}
         onOpenUrl={onOpenUrl}
@@ -831,14 +831,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && (
+      {!compact && !hideRail && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
         expandedKeys={expandedKeys}
-        open={sidebarOpen}
         activeSessionId={view.kind === "chat" ? view.sessionId : null}
-        onSetOpen={setSidebarOpen}
         onSelect={setSelection}
         onToggleExpanded={(key) => {
           sidebarDefaultExpandedRef.current = false;

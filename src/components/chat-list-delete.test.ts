@@ -123,7 +123,7 @@ assert.match(source, /<DndContext[\s\S]*onDragEnd=\{\(event\) => handleDragEnd\(
 assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalListSortingStrategy\}/, "All visible chat rows should share one SortableContext");
 assert.match(primitives, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
-assert.match(source, /if \(effectiveSelection === "all"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups so cross-project drag order can stick");
+assert.match(source, /if \(effectiveSelection === "all" && groupBy !== "project"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups (unless grouping by project) so cross-project drag order can stick");
 assert.match(source, /partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
 assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
 assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
@@ -354,7 +354,11 @@ assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<strin
 assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
 assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
-assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen/, "a row click selects in select mode, otherwise opens");
+// Expandable rows (Sessions redesign): a single click toggles the inline
+// detail disclosure; double-click and Enter keep the fast open path. Mobile
+// keeps tap = open — the disclosure is a desktop affordance.
+assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} if \(isMobile\) \{ setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); return; \} setExpandedRowId\(\(cur\) => \(cur === s\.id \? null : s\.id\)\)/, "a row click selects in select mode, opens directly on mobile, otherwise toggles the detail strip");
+assert.match(source, /onDoubleClick=\{\(\) => \{ if \(selectMode\) return; setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/, "double-click still opens the session immediately");
 assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
 assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");

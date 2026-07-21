@@ -666,7 +666,7 @@ export function ChatSurface({
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
-                  compact={compactRail}
+                  hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}

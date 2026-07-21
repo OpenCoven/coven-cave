@@ -124,11 +124,12 @@ assert.match(router, /onPromotePane=\{handlePromotePane\}/, "promote opens the p
 assert.match(sidebar, /function sessionDragProps\(/, "rows share one native-drag helper");
 assert.match(sidebar, /emitChatSessionDragStart\(\{ sessionId, title \}\)/, "row drag announces itself");
 assert.match(sidebar, /emitChatSessionDragEnd\(\)/, "row drag end clears the drop zone");
-// Both row flavors are draggable to the chat.
+// Every row flavor is draggable to the chat (search results, folder rows,
+// and the Recent-mode flat rows).
 assert.equal(
   (sidebar.match(/\{\.\.\.sessionDragProps\(session\.id, title\)\}/g) ?? []).length,
-  2,
-  "search-result rows and folder rows are both drag sources",
+  3,
+  "search-result, folder, and recent rows are all drag sources",
 );
 // The dnd-kit reorder handle keeps sole ownership of its slot: a native drag
 // started from inside it is cancelled.
@@ -209,8 +210,8 @@ assert.match(router, /focusedPaneId=\{effectiveFocusedPane\}/, "the host renders
 assert.match(sidebar, /onOpenSessionInSplit\?: \(session: SessionRow\) => void;/, "sidebar accepts the split opener");
 assert.equal(
   (sidebar.match(/if \(e\.altKey && onOpenInSplit\) \{/g) ?? []).length,
-  2,
-  "both row flavors handle ⌥↵",
+  3,
+  "search-result, folder, and recent rows all handle ⌥↵",
 );
 
 // ── Live IA wiring (the shell list panel is the real thread rail) ────────────
