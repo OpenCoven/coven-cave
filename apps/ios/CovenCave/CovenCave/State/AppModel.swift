@@ -262,7 +262,8 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
-        loadThreads()
+        // Threads hydrate off-main via the store — no file I/O in init.
+        Task { await self.hydrateThreads() }
         loadCardLinks()
         loadFamiliarOrder()
         loadFamiliarViews()
@@ -1743,11 +1744,14 @@ final class AppModel {
 
     // MARK: - Persistence
 
-    private var threadsFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("cave-threads.json")
+    private static var threadsFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("cave-threads.json")
     }
+
+    /// Owns all thread-file I/O (reads, JSON coding, atomic writes) off the
+    /// main actor.
+    @ObservationIgnored private let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
 
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
@@ -1766,32 +1770,30 @@ final class AppModel {
         }
     }
 
-    /// Snapshot on the main actor (cheap value-type map), then encode + write
-    /// off-main. Call directly when a synchronous flush is required (e.g. app
-    /// moving to the background).
+    /// Snapshot on the main actor (cheap value-type map), then hand the encode
+    /// + atomic write to the store actor. Call directly when an immediate flush
+    /// is required (e.g. app moving to the background).
     func flushThreads() {
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
-        let url = threadsFileURL
-        Task.detached(priority: .utility) {
-            do {
-                let data = try JSONEncoder().encode(snapshots)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                // Non-fatal: persistence is best-effort.
-            }
+        Task.detached(priority: .utility) { [threadStore] in
+            // Non-fatal: persistence is best-effort.
+            try? await threadStore.save(snapshots)
         }
     }
 
-    private func loadThreads() {
-        guard let data = try? Data(contentsOf: threadsFileURL),
-              let snapshots = try? JSONDecoder().decode([ThreadSnapshot].self, from: data) else {
-            return
-        }
-        threads = snapshots
-            .sorted { $0.updatedAt > $1.updatedAt }
+    /// One-shot restore at launch: load off-main via the store and publish the
+    /// decoded threads in a single assignment. Threads created before the load
+    /// lands (unlikely, launch-fast) are kept — restored ones merge in by id.
+    private func hydrateThreads() async {
+        guard let snapshots = try? await threadStore.load(), !snapshots.isEmpty else { return }
+        let existing = Set(threads.map(\.id))
+        let restored = snapshots
+            .filter { !existing.contains($0.id) }
             .map { ChatThread(snapshot: $0) }
+        guard !restored.isEmpty else { return }
+        threads = (threads + restored).sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var cardLinksFileURL: URL {

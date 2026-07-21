@@ -24,7 +24,7 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
-struct ThreadSnapshot: Codable, Identifiable {
+struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var id: String
     var title: String
     var familiarIds: [String]
