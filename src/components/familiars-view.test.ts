@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = [
   readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8"),
 ].join("\n");
 
 assert.match(source, /export function FamiliarsView/, "FamiliarsView must be exported");
@@ -41,13 +42,18 @@ assert.match(
 
 assert.match(
   source,
-  /fetch\("\/api\/coven-memory"[\s\S]*fetch\("\/api\/memory"/,
-  "Memory data is fetched from /api/coven-memory and /api/memory",
+  /readSurfaceResource<CovenMemoryResponse>\("agents:coven-memory", force\)[\s\S]*readSurfaceResource<FileMemoryResponse>\("memory:list", force\)/,
+  "Memory landing data consumes the shared warm cache",
+);
+assert.match(
+  source,
+  /defineResource\("agents:coven-memory", \(signal\) => json\(signal, "\/api\/coven-memory"\)/,
+  "The shared registry owns the Coven-memory landing endpoint",
 );
 
 assert.match(
   source,
-  /usePausablePoll\(\(\) => void loadMemory\(\), 30_000\)/,
+  /usePausablePoll\(\(\) => void loadMemory\(true\), 30_000\)/,
   "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
 );
 
