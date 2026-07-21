@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./debug-pane.tsx", import.meta.url), "utf8");
+// globals.css is a stable entry stub — the render-virtualization rules live in
+// the split module sheets, so the containment pin reads primitives.css.
+const primitivesCss = await readFile(
+  new URL("../styles/globals/primitives.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -670,6 +676,36 @@ assert.match(
   changesRoute,
   /could not create safety checkpoint, revert aborted/,
   "A failed safety checkpoint must abort the revert rather than destroy without a backup",
+);
+
+// ── C2: render-virtualized event tail ────────────────────────────────────────
+// EventRow is memoized so the 2s live-tail append (appendEvents keeps existing
+// item references stable) re-renders only new rows, not the whole tail.
+assert.match(
+  source,
+  /const EventRow = memo\(function EventRow\(/,
+  "EventRow must be memoized so live-tail appends only render new rows",
+);
+assert.match(
+  source,
+  /className="debug-event-row rounded-md border/,
+  "Event rows must carry the debug-event-row containment class",
+);
+assert.match(
+  source,
+  /<EventRow key=\{event\.seq\} event=\{event\} dtPrefs=\{dtPrefs\} \/>/,
+  "Clock prefs must be threaded into memoized rows so a prefs change re-renders them",
+);
+assert.match(
+  source,
+  /formatClock\(event\.created_at, dtPrefs, \{ seconds: true \}\)/,
+  "Event clocks must format with the live prefs prop, not the one-shot default",
+);
+// The class must actually virtualize: containment rules live in primitives.css.
+assert.match(
+  primitivesCss,
+  /\.debug-event-row\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-size:\s*auto\s+\d+px;[^}]*\}/,
+  "primitives.css must give .debug-event-row content-visibility containment",
 );
 
 console.log("debug-pane.test.ts: ok");
