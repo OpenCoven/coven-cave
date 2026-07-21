@@ -23,6 +23,7 @@ export const SUITES = {
   app: [
     "src/lib/array-content-equal.test.ts",
     "src/lib/session-list-equal.test.ts",
+    "src/lib/familiar-workspace-sessions.test.ts",
     "src/lib/session-list-deletes.test.ts",
     "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",
@@ -928,6 +929,7 @@ export const SUITES = {
     "src/app/api/board/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
+    "src/app/api/sessions/list/route.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
     "src/app/api/chat/send/harness-routing-tool-events.test.ts",
@@ -1186,6 +1188,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/familiar-workspace-sessions.test.ts",
   "scripts/cave-home-migration-windows.test.ts",
   "src/lib/bento-dashboard.test.ts",
   "src/lib/omnigent/ward-preflight.test.ts",
