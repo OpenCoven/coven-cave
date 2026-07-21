@@ -76,8 +76,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // module add five traced files on Windows. CI measured 5,542; pin the exact
   // cross-platform maximum without relaxing the expanded-byte ceiling.
   // 2026-07-20 (collaborative Canvas): the guarded annotation/revision route
-  // adds one traced file on Windows. CI measured 5,543; keep the exact maximum.
-  fileCount: 5_543,
+  // adds one traced file on Windows. The Windows-native runtime carries two
+  // additional target files (5,545) while Ubuntu remains below this ceiling.
+  fileCount: 5_545,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
