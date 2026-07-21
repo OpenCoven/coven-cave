@@ -38,9 +38,14 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect }:
   const [archivedOpen, setArchivedOpen] = useState(false);
 
   // Selecting an archived mission (e.g. a stable selection that got archived
-  // by a poll refresh) must keep its row reachable, so the group opens.
+  // by a poll refresh) must keep its row reachable, so the group opens — but
+  // only once per selection, so a deliberate re-collapse survives later poll
+  // refreshes that recreate the missions array.
+  const autoOpenedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedId && archivedMissions.some((mission) => mission.id === selectedId)) {
+    if (!selectedId || autoOpenedFor.current === selectedId) return;
+    if (archivedMissions.some((mission) => mission.id === selectedId)) {
+      autoOpenedFor.current = selectedId;
       setArchivedOpen(true);
     }
   }, [selectedId, archivedMissions]);

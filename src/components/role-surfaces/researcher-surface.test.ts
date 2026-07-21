@@ -93,8 +93,10 @@ test("archived missions collapse into a disclosure group below active work", () 
   assert.match(list, /aria-expanded=\{archivedOpen\}/);
   assert.match(list, /research-mission-nav__group-toggle focus-ring/);
   assert.match(list, /research-mission-nav__group-count">\{archivedMissions\.length\}/);
-  // Selecting an archived mission keeps its row reachable by opening the group.
-  assert.match(list, /archivedMissions\.some\(\(mission\) => mission\.id === selectedId\)[\s\S]{0,40}setArchivedOpen\(true\)/);
+  // Selecting an archived mission keeps its row reachable by opening the group
+  // exactly once per selection — re-collapse survives poll refreshes.
+  assert.match(list, /autoOpenedFor\.current === selectedId\) return/);
+  assert.match(list, /archivedMissions\.some\(\(mission\) => mission\.id === selectedId\)[\s\S]{0,80}setArchivedOpen\(true\)/);
   // An all-archived ledger says so instead of claiming there are no missions.
   assert.match(list, /No active missions\./);
   assert.match(css, /\.research-mission-nav__group-toggle/);
