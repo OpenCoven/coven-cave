@@ -1059,10 +1059,16 @@ struct ChatView: View {
     }
 }
 
-/// Bounds auto-scroll work to display cadence: while a request is pending,
-/// further requests are dropped; the pending one fires after one frame
-/// (trailing edge), so a burst of stream flushes costs one `scrollTo` and the
-/// last flush of a finished stream is never lost.
+/// Bounds auto-scroll work to display cadence: the FIRST requested closure is
+/// fired one frame (~16ms) later; closures requested while one is pending are
+/// DROPPED entirely (first-wins, not latest-wins). That's fine here because
+/// every request does the same idempotent "scroll to bottom" — do not reuse
+/// this for non-idempotent work that expects the latest closure to run.
+///
+/// Lifecycle: there is deliberately no `deinit` (a nonisolated deinit can't
+/// touch @MainActor state under strict concurrency). The pending task holds
+/// `self` weakly and guards liveness before scrolling; a task that dangles
+/// past dealloc fires once ≤16ms later and does nothing.
 @MainActor
 final class ScrollCoalescer {
     private var pending: Task<Void, Never>?
@@ -1071,13 +1077,11 @@ final class ScrollCoalescer {
         guard pending == nil else { return }
         pending = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(16))
-            guard !Task.isCancelled else { return }
-            self?.pending = nil
+            guard let self, !Task.isCancelled else { return }
+            self.pending = nil
             scroll()
         }
     }
-
-    deinit { pending?.cancel() }
 }
 
 /// A centered date divider between messages from different days — "Today",

@@ -519,6 +519,8 @@ final class ChatThread: Identifiable, Hashable {
               idx < messages.count, messages[idx].id == messageId else { return }
         var message = messages[idx]
         body(&message)
+        assert(message.createdAt == messages[idx].createdAt,
+               "mutate must not change createdAt — separators are not re-derived on this path")
         inPlaceMutation = true
         messages[idx] = message
         inPlaceMutation = false
