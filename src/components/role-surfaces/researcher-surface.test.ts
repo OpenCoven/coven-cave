@@ -8,6 +8,7 @@ const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.
 const libraryTab = readFileSync(new URL("./research-tab-library.tsx", import.meta.url), "utf8");
 const studioTab = readFileSync(new URL("./research-tab-studio.tsx", import.meta.url), "utf8");
 const resourcesTab = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
+const studioModals = readFileSync(new URL("./research-studio-modals.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
 const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
@@ -116,19 +117,27 @@ test("desk tab composes the mission workspace and keeps action wiring", () => {
   assert.match(deskTab, /context\.openSession\(sessionId, context\.activeFamiliar\.id\)/);
 });
 
-test("prompt tab composes the composer + link shelf and follows starts to the desk", () => {
+test("prompt tab composes the composer + quick saves and follows starts to the desk", () => {
   assert.match(promptTab, /ResearchMissionComposer/);
-  assert.match(promptTab, /ResearchLinkShelf/);
+  // Quick saves read the same links store as the Resources tab via the shared hook.
+  assert.match(promptTab, /useResearchLinks/);
+  // Attached saves land on the new mission as candidate sources through the
+  // ledger's exact attach-source action.
+  assert.match(promptTab, /action: "attach-source"/);
+  assert.match(promptTab, /status: "candidate"/);
   assert.match(promptTab, /daemonRunning=\{context\.runtimeState\.daemonRunning\}/);
   assert.match(promptTab, /onNavigate\("desk", \{ missionId: result\.mission\.id \}\)/);
 });
 
-test("placeholder tabs report real counts only — no fabricated content", () => {
+test("tabs derive from real data — no placeholders or fabricated content", () => {
   assert.match(libraryTab, /mission\.artifacts\.length > 0/);
-  assert.match(studioTab, /mission\.artifacts\.length > 0/);
-  assert.match(resourcesTab, /mission\.sources\.length/);
-  for (const stub of [libraryTab, studioTab, resourcesTab]) {
-    assert.doesNotMatch(stub, /is being assembled|coming soon/i);
+  // Studio offers only missions the generations API would accept: a live
+  // markdown artifact (the eligibility rule lives in the modals module).
+  assert.match(studioModals, /endsWith\(".md"\)/);
+  assert.match(resourcesTab, /mission\.sources/);
+  for (const tab of [libraryTab, studioTab, resourcesTab]) {
+    assert.doesNotMatch(tab, /is being assembled|coming soon/i);
+    assert.doesNotMatch(tab, /research-tab-placeholder/);
   }
 });
 
@@ -139,7 +148,7 @@ test("intake is minimal — the composer is the hero, no marketing copy column",
   assert.doesNotMatch(promptTab, /From intent to evidence/);
   // The intent question is asked exactly once: placeholder text, sr-only label.
   assert.match(composer, /className="sr-only">What should we investigate\?/);
-  assert.match(composer, /placeholder="What should we investigate\?"/);
+  assert.match(composer, /placeholder="What should we investigate\?/);
 });
 
 test("composer makes Auto routing and finite bounds reviewable", () => {

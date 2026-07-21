@@ -128,20 +128,26 @@ test("/save (alias /link) is a first-class slash command", () => {
   );
 });
 
-test("the Research desk mounts the Links shelf over the same store", () => {
-  const surface = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/researcher-surface.tsx"),
+test("the Research desk consumes the same links store", () => {
+  // The old collapsible shelf became two consumers of one shared hook: the
+  // Prompt tab's quick saves and the Resources tab's browser (cave-dl74).
+  const hook = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/use-research-links.ts"),
     "utf8",
   );
-  assert.match(surface, /<ResearchLinkShelf onOpenUrl=\{context\.openUrl\} \/>/);
+  assert.match(hook, /fetch\("\/api\/research\/links"/, "the hook is the one client for the store");
+  assert.match(hook, /source: "desk"/, "desk saves are attributed");
 
-  const shelf = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/research-link-shelf.tsx"),
+  const resources = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/research-tab-resources.tsx"),
     "utf8",
   );
-  assert.match(shelf, /extractLinks\(draft\)/, "the shelf accepts one or many pasted links");
-  assert.match(shelf, /groupSavedLinks\(links\)/, "the shelf renders auto-organized groups");
-  assert.match(shelf, /source: "desk"/, "desk saves are attributed");
-  assert.match(shelf, /<details className="research-links"/, "the shelf collapses to a quiet summary row");
-  assert.match(shelf, /research-links__summary/, "the summary row is the disclosure control");
+  assert.match(resources, /useResearchLinks/, "Resources reads through the shared hook");
+  assert.match(resources, /groupSavedLinks\(/, "Resources renders auto-organized groups");
+
+  const prompt = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/research-tab-prompt.tsx"),
+    "utf8",
+  );
+  assert.match(prompt, /useResearchLinks/, "quick saves read the same store");
 });
