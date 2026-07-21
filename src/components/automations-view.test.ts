@@ -275,6 +275,7 @@ assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems
 assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
 assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
 assert.match(source, /usePausablePoll\(\(\) => \{ void load\(true\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook and bypasses a warm cache");
+assert.match(source, /const onSchedulesReload = \(\) => \{ void reloadAfterMutation\(\); \};[\s\S]{0,220}addEventListener\("cave:schedules:reload", onSchedulesReload\)/, "workspace inbox writes force a mounted Schedules surface to replace an invalidated warm read");
 assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retry/, "the error retry bypasses a fresh warm cache");
 // Selected-detail syncs only adopt content changes — a new-but-identical
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).

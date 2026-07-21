@@ -222,6 +222,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, []);
 
+  // A mutation can finish while a warm-up or poll request is still in flight.
+  // Drop that request before the forced reload so its pre-mutation response
+  // cannot win the cache coalescing race and restore the old list.
+  const reloadAfterMutation = useCallback(async () => {
+    invalidateSurfaceResources("schedules:inbox", "schedules:automations");
+    await load(true);
+  }, [load]);
+
   const refreshRuns = useCallback(async (id: string) => {
     const reqId = ++runsReqRef.current;
     try {
@@ -281,13 +289,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   useEffect(() => { void load(); }, [load]);
   usePausablePoll(() => { void load(true); }, 15_000, { pauseWhileInputActive: true });
 
-  // A mutation can finish while a warm-up or poll request is still in flight.
-  // Drop that request before the forced reload so its pre-mutation response
-  // cannot win the cache coalescing race and restore the old list.
-  const reloadAfterMutation = useCallback(async () => {
-    invalidateSurfaceResources("schedules:inbox", "schedules:automations");
-    await load(true);
-  }, [load]);
+  // Workspace publishes this after inbox SSE writes, including writes initiated
+  // outside this surface. Besides keeping the visible list current, this makes
+  // an in-flight cache read stale via the request-id guard rather than surfacing
+  // its intentional AbortError as a failed Schedules load.
+  useEffect(() => {
+    const onSchedulesReload = () => { void reloadAfterMutation(); };
+    window.addEventListener("cave:schedules:reload", onSchedulesReload);
+    return () => window.removeEventListener("cave:schedules:reload", onSchedulesReload);
+  }, [reloadAfterMutation]);
 
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.
