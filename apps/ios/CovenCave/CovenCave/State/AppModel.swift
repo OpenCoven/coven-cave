@@ -45,6 +45,10 @@ final class AppModel {
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
+    /// Single-flight for `refreshConnection`: overlapping reconnect signals
+    /// (foreground probe, path monitor, pill tap, retry tickers) collapse
+    /// into one discovery sweep instead of stacking probes.
+    @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
 
     var familiars: [Familiar] = []
     var familiarsError: String?
@@ -904,6 +908,9 @@ final class AppModel {
 
         connection = conn
         conn.save()
+        // A probe of the previous endpoint must not be joined as this
+        // configuration's outcome.
+        await refreshCoordinator.cancelActiveRefresh()
         await refreshConnection()
     }
 
@@ -932,6 +939,11 @@ final class AppModel {
     }
 
     func disconnect() {
+        // An in-flight probe's outcome is moot once the endpoint is gone; the
+        // post-probe `connection != nil` guard in refreshConnection catches
+        // any that already resolved.
+        let coordinator = refreshCoordinator
+        Task { await coordinator.cancelActiveRefresh() }
         CaveConnection.clear()
         connection = nil
         familiars = []
@@ -1021,15 +1033,40 @@ final class AppModel {
         await connectWithRetry()
     }
 
+    /// Familiars + theme + profile fetched concurrently, each applied
+    /// independently — one failing resource must not discard the others.
+    /// Mirrors the semantics of `loadFamiliars`/`loadTheme`/`loadOperatorProfile`.
+    private func loadCoreResources() async {
+        guard let client else { return }
+        let payload = await ConnectionBootstrap.load(using: client)
+        switch payload.familiars {
+        case .success(let loaded):
+            familiars = applyFamiliarOrder(loaded)
+            seedFamiliarViews(familiars.map(\.id))
+            familiarsError = nil
+        case .failure(let error):
+            familiarsError = handleSurfaceError(error)
+        }
+        // Theme and profile stay best-effort: on failure the last snapshot
+        // stands (no flash back to the fallback chrome / "You").
+        if case .success(let snapshot) = payload.theme { adopt(snapshot) }
+        if case .success(let profile) = payload.profile, operatorProfile != profile {
+            operatorProfile = profile
+        }
+    }
+
+    /// Each loader owns disjoint state and applies on the main actor, so they
+    /// can overlap their network waits — wall time tracks the slowest surface
+    /// rather than the sum of all of them.
     private func refreshLoadedSurfaces() async {
-        await loadFamiliars()
-        if sessionsLoaded { await loadSessions() }
-        if tasksLoaded { await loadTasks() }
-        if remindersLoaded { await loadReminders() }
-        if projectsLoaded { await loadProjects() }
-        if journalLoaded { await loadJournal() }
-        await loadTheme()
-        await loadOperatorProfile()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.loadCoreResources() }
+            if sessionsLoaded { group.addTask { await self.loadSessions() } }
+            if tasksLoaded { group.addTask { await self.loadTasks() } }
+            if remindersLoaded { group.addTask { await self.loadReminders() } }
+            if projectsLoaded { group.addTask { await self.loadProjects() } }
+            if journalLoaded { group.addTask { await self.loadJournal() } }
+        }
     }
 
     /// `quiet` probes without first flipping the state to `.checking`, so a
@@ -1040,12 +1077,33 @@ final class AppModel {
         guard let connection else { connectionState = .unconfigured; return }
         if !quiet { connectionState = .checking }
 
-        // Try the configured endpoint first, then auto-relocate to a working
-        // port (e.g. the user typed a `.ts.net` host without `:8443`).
-        let configured = connection.baseURL
-        switch await Self.discoverBaseURL(connection.candidateBaseURLs) {
+        // Single-flight the transport decision: concurrent callers join the
+        // in-flight probe, and only the launching caller applies the outcome
+        // (state + loads must run once, not per caller).
+        let candidates = connection.candidateBaseURLs
+        let refresh = await refreshCoordinator.refresh {
+            // Try the configured endpoint first, then auto-relocate to a
+            // working port (e.g. a `.ts.net` host typed without `:8443`).
+            let outcome = await Self.discoverBaseURL(candidates)
+            guard !Task.isCancelled else { return .cancelled }
+            switch outcome {
+            case .found(let url): return .found(url)
+            case .unauthorized: return .unauthorized
+            case .none: return .unreachable
+            }
+        }
+        guard refresh.launched else { return }
+        // The user may have disconnected while the probe ran; its outcome no
+        // longer describes anything configured.
+        guard self.connection != nil else { connectionState = .unconfigured; return }
+
+        switch refresh.result {
+        case .cancelled:
+            // Superseded (endpoint reconfigured mid-probe): the replacing
+            // refresh owns the state.
+            return
         case .found(let working):
-            if working != configured {
+            if working != self.connection?.baseURL {
                 // Relocate: persist the working endpoint so future launches
                 // connect directly. Stored as bare `host:port` when the
                 // default scheme derivation reproduces the URL — a bare host
@@ -1065,13 +1123,11 @@ final class AppModel {
             if reloadLoadedSurfaces {
                 await refreshLoadedSurfaces()
             } else {
-                await loadFamiliars()
-                await loadTheme()
-                await loadOperatorProfile()
+                await loadCoreResources()
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
-        case .none:
+        case .unreachable:
             connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
         }
     }

@@ -1,5 +1,15 @@
 import Foundation
 
+/// The minimal client surface the connection bootstrap needs — lets tests
+/// drive the single-flight refresh and concurrent bootstrap without a live
+/// desktop. `CaveClient` conforms with its existing methods unchanged.
+protocol CaveBootstrapClient: Sendable {
+    func ping() async -> Bool
+    func familiars() async throws -> [Familiar]
+    func fetchTheme() async throws -> ThemeSnapshot
+    func operatorProfile() async throws -> OperatorProfile
+}
+
 /// REST + streaming client for the Coven Cave desktop API.
 /// When the desktop is token-gated (COVEN_CAVE_ACCESS_TOKEN), every request —
 /// REST and SSE alike — carries the paired credential as a Bearer header. This
@@ -773,3 +783,5 @@ struct CaveClient {
         }
     }
 }
+
+extension CaveClient: CaveBootstrapClient {}
