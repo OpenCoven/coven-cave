@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { markEnd, markStart } from "@/lib/perf/marks";
 import { abortWarm } from "@/lib/surface-warm-cache";
-import { warmSurface, type SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
+import type { SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
 
 const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "github", "marketplace", "grimoire", "agents"];
 
@@ -40,7 +40,9 @@ export function useSurfaceWarmup(): void {
       const surface = ORDER[cursor++];
       active = true;
       markStart(`surface-warmup:${surface}`);
-      void warmSurface(surface)
+      // Keep the coordinator and its lazy-surface imports out of the initial
+      // shell/sidecar trace. It is only needed after first interactive paint.
+      void import("@/lib/surface-warmup-registry").then(({ warmSurface }) => warmSurface(surface))
         .catch(() => {
           // A failed warm is deliberately non-fatal; navigation keeps its
           // normal truthful loading/error path and a later resume retries.
