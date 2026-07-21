@@ -455,6 +455,14 @@ export function Workspace() {
   }, []);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
+  // The session the chat surface is showing, mirrored as state so the sidebar
+  // highlight moves the instant a row is clicked. Set optimistically by the
+  // open/new-chat producers below and reconciled by ChatRouter's
+  // onActiveSessionChange (new-chat promotion, back-to-list, in-router opens).
+  // Never read routerRef.currentSessionId() during render for this — the
+  // router applies opens in a deferred hop, so render-time ref reads always
+  // lagged one update behind (the n-1 highlight bug).
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null);
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
@@ -1052,6 +1060,9 @@ export function Workspace() {
       );
       return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
     });
+    // Drop a highlight pointing at a deleted session; the sidebars guard by
+    // row lookup anyway, but keep the mirrored state honest.
+    setActiveChatSessionId((cur) => (cur && confirmedIds.includes(cur) ? null : cur));
     for (const sessionId of confirmedIds) invalidateConversation(sessionId);
     void loadSessions();
   }, [loadSessions]);
@@ -1735,6 +1746,7 @@ export function Workspace() {
 
   const openFamiliarSession = useCallback((sessionId: string, familiarId?: string | null, findQuery?: string) => {
     if (familiarId) setActiveId(familiarId);
+    setActiveChatSessionId(sessionId);
     setPendingChatAction({
       kind: "open",
       sessionId,
@@ -1860,6 +1872,7 @@ export function Workspace() {
     }
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
+    setActiveChatSessionId(null);
     setPendingChatAction({
       kind: "new",
       familiarId,
@@ -1887,6 +1900,7 @@ export function Workspace() {
     if (modeRef.current !== "home") return;
     setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
+    setActiveChatSessionId(result.sessionId);
     setPendingChatAction({ kind: "open", sessionId: result.sessionId, familiarId, autoVoice: true, nonce: Date.now() });
     setMode("chat");
   }, [pushToast]);
@@ -2026,6 +2040,7 @@ export function Workspace() {
   }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat, nextRouter]);
 
   const showFamiliarChatList = useCallback(() => {
+    setActiveChatSessionId(null);
     setPendingChatAction({ kind: "list", nonce: Date.now() });
     setMode("chat");
   }, []);
@@ -2491,7 +2506,7 @@ export function Workspace() {
   const roleSurfaceSession = useRoleSurfaceSession({
     familiar: active,
     sessions,
-    activeSessionId: routerRef.current?.currentSessionId() ?? null,
+    activeSessionId: activeChatSessionId,
     daemonRunning,
     openUrl: openUrlInAppBrowser,
     openSession: openFamiliarSession,
@@ -2566,7 +2581,7 @@ export function Workspace() {
         description: surface.description,
       }))}
       sessions={sessions}
-      activeSessionId={routerRef.current?.currentSessionId() ?? null}
+      activeSessionId={activeChatSessionId}
       onNewChat={() => {
         startFamiliarChat(activeId);
         shellRef.current?.dismissNavMobile();
@@ -2609,7 +2624,7 @@ export function Workspace() {
       sessions={sessions}
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
-      activeSessionId={routerRef.current?.currentSessionId() ?? null}
+      activeSessionId={activeChatSessionId}
       responseNeeded={responseNeeded}
       onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
@@ -2715,6 +2730,7 @@ export function Workspace() {
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
+        onActiveSessionChange={setActiveChatSessionId}
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
@@ -2867,7 +2883,7 @@ export function Workspace() {
   // attached PR via the shared sessionPrStatus derivation). Home has no session
   // context, so it degrades to the active familiar's model + the Tasks count;
   // other surfaces don't render the strip at all.
-  const statusSessionId = routerRef.current?.currentSessionId() ?? null;
+  const statusSessionId = activeChatSessionId;
   const statusSession =
     mode === "chat" && statusSessionId
       ? sessions.find((s) => s.id === statusSessionId) ?? null

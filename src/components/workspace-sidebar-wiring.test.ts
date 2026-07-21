@@ -60,6 +60,14 @@ assert.match(workspace, /onToggleList=\{undefined\}/, "top bar exposes no list t
 assert.match(workspace, /navDrawerOpen=\{navDrawerOpen\}\s*listDrawerOpen=\{false\}/, "top bar only reflects the mobile nav drawer");
 const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
 assert.ok(chatSidebarBlock, "workspace should keep the chat sidebar wiring together");
+// Instant highlight (n-1 bug): the active session must come from mirrored
+// state — optimistic at click time, reconciled by ChatRouter's
+// onActiveSessionChange — never from a render-time routerRef read, which
+// always lagged one update behind the deferred openSession() hop.
+assert.match(chatSidebarBlock, /activeSessionId=\{activeChatSessionId\}/, "chat sidebar highlight reads the mirrored active-session state");
+assert.doesNotMatch(workspace, /activeSessionId=\{routerRef\.current\?\.currentSessionId\(\) \?\? null\}/, "no sidebar may read the router handle during render for the active session");
+assert.match(workspace, /const openFamiliarSession = useCallback\(\(sessionId: string[\s\S]*?setActiveChatSessionId\(sessionId\);/, "opening a session sets the highlight optimistically at click time");
+assert.match(workspace, /onActiveSessionChange=\{setActiveChatSessionId\}/, "ChatRouter reconciles the mirrored state (new-chat promotion, back-to-list)");
 assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
 assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6, "chat sidebar actions dismiss the mobile nav drawer");
 assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile nav drawer");
