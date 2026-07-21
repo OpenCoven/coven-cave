@@ -42,10 +42,10 @@ import {
 // Current counts as of the P3 codemod PR. Only lower these (banking progress)
 // or raise them with an explicit justification in your PR.
 const BASELINES = {
-  offScaleFontSizePx: 163, // 10.5px/11.5px/… — need per-case renormalization to the type scale (+2: chat revamp 1d's typing hint + "+"-menu shortcut hints are 10.5px mono whispers per the composer spec, same voice as the existing 10.5px hint family)
-  offScaleSpacingPx: 1349, // off-4px-grid pad/margin/gap components (2px/6px/10px/…) — +4: the chat composer footer band copies the home hc-footer-band metrics verbatim (6px 10px pad, 6px gap, 11px chip pad) for cross-composer parity
-  offScaleRadiusPx: 212, // 4px/6px/10px/14px/… radii between the sanctioned steps
-  hexOutsideDefinitions: 155, // hex in render CSS (token definitions excluded)
+  offScaleFontSizePx: 160, // 10.5px/11.5px/… — need per-case renormalization to the type scale (banked -3: canvas-editor.css shipped fully on the type scale)
+  offScaleSpacingPx: 1348, // off-4px-grid pad/margin/gap components (2px/6px/10px/…) — banked -1: canvas-editor.css shipped fully on the space scale
+  offScaleRadiusPx: 211, // 4px/6px/10px/14px/… radii between the sanctioned steps (banked -1: canvas-editor.css uses the radius tokens)
+  hexOutsideDefinitions: 156, // hex in render CSS (token definitions excluded) — +1: canvas-editor.css sketch-frame #fff ground, sketch CONTENT not interface color, same precedent as chat-canvas.css's thumbnail #fff
   inlineTsxStyles: 500, // style={{…}} in TSX; many are legit dynamic values
 };
 

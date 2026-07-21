@@ -1,6 +1,5 @@
 "use client";
 
-import "@/styles/chat-artifact.css";
 import "@/styles/chat-canvas.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,39 +7,59 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Modal } from "@/components/ui/modal";
+import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
+import { CanvasEditor } from "@/components/canvas-editor";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import {
+  filterCanvasArtifacts,
   formatArtifactWhen,
+  galleryArtifactKind,
   isCanvasGalleryLoadCurrent,
   mergeCanvasArtifactSnapshot,
   sortArtifactsForGallery,
   type CanvasArtifactSnapshotMutation,
+  type CanvasKindFilter,
 } from "@/lib/canvas-gallery";
 
 // The Canvas tab: the gallery for sketches saved from chat ("Save to Canvas"
 // in the inline artifact viewer persists to ~/.coven/cave/canvas.json via
 // /api/canvas). Until this tab, saved artifacts had no surface after the
 // standalone Canvas page retired — save was a one-way door. This closes the
-// loop: browse saved sketches, reopen one in the full viewer (preview / code /
-// refine), or delete it.
+// loop: browse saved sketches (toolbar search + kind filter), click one for a
+// non-interactive preview modal, open it in the full-surface Canvas editor,
+// or delete it.
 
 type LoadState = "loading" | "ready" | "error";
+
+const KIND_FILTERS: { id: CanvasKindFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "react", label: "React" },
+  { id: "html", label: "HTML" },
+];
 
 export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [state, setState] = useState<LoadState>("loading");
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [kindFilter, setKindFilter] = useState<CanvasKindFilter>("all");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [editorId, setEditorId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
+  // Bumped by the toolbar's "New sketch" button; the add tile expands on change.
+  const [addExpandRequest, setAddExpandRequest] = useState(0);
   const confirm = useConfirm();
   const artifactVersionRef = useRef(0);
   const loadRequestTokenRef = useRef(0);
   const deletedArtifactIdsRef = useRef(new Set<string>());
+  const previewDialogRef = useRef<HTMLDivElement | null>(null);
+  // The delete confirm dialog stacks its own focus trap over the preview's.
+  // Escape there must settle the confirm, not also dismiss the preview.
+  const confirmingDeleteRef = useRef(false);
 
   // The id a just-kept sketch settles in with — drives a one-shot highlight.
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
@@ -109,12 +128,14 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
 
   const remove = useCallback(
     async (artifact: CanvasArtifact) => {
+      confirmingDeleteRef.current = true;
       const ok = await confirm({
         title: "Delete sketch?",
         body: `"${artifact.title}" is removed from the Canvas permanently. Sketches already posted in chats stay in those transcripts.`,
         confirmLabel: "Delete",
         danger: true,
       });
+      confirmingDeleteRef.current = false;
       if (!ok) return;
       setDeletingId(artifact.id);
       try {
@@ -126,7 +147,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { artifacts?: CanvasArtifact[] };
         acceptArtifacts(data.artifacts ?? [], { kind: "delete", deletedId: artifact.id });
-        setOpenId((current) => (current === artifact.id ? null : current));
+        setPreviewId((current) => (current === artifact.id ? null : current));
       } catch {
         // Keep the card; a transient failure shouldn't silently drop it from
         // view while it still exists in the store.
@@ -137,14 +158,28 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     [acceptArtifacts, confirm],
   );
 
-  const opened = useMemo(
-    () => (openId ? (artifacts.find((a) => a.id === openId) ?? null) : null),
-    [openId, artifacts],
+  const preview = useMemo(
+    () => (previewId ? (artifacts.find((a) => a.id === previewId) ?? null) : null),
+    [previewId, artifacts],
   );
+  const editing = useMemo(
+    () => (editorId ? (artifacts.find((a) => a.id === editorId) ?? null) : null),
+    [editorId, artifacts],
+  );
+
+  useFocusTrap(preview !== null, previewDialogRef, {
+    onEscape: () => {
+      if (!confirmingDeleteRef.current) setPreviewId(null);
+    },
+  });
 
   const galleryArtifacts = useMemo(
     () => activeComposerId ? artifacts.filter((artifact) => artifact.id !== activeComposerId) : artifacts,
     [activeComposerId, artifacts],
+  );
+  const filteredArtifacts = useMemo(
+    () => filterCanvasArtifacts(galleryArtifacts, q, kindFilter),
+    [galleryArtifacts, q, kindFilter],
   );
 
   if (state === "error") {
@@ -171,98 +206,202 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     );
   }
 
+  // Full-surface takeover: the editor replaces toolbar + grid until closed.
+  if (editing) {
+    return (
+      <CanvasEditor
+        artifact={editing}
+        familiarId={familiarId}
+        onClose={() => setEditorId(null)}
+        onArtifactUpdated={handleArtifactUpdated}
+      />
+    );
+  }
+
+  const trimmedQuery = q.trim();
+
   return (
-    <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-      <div className="chat-canvas-grid" role="list" aria-label="Saved sketches" aria-busy={state === "loading"}>
-        {/* One stable tree position across empty<->populated so crossing zero
-            never remounts the composer (which would wipe typed input and
-            abort an in-flight generation). Empty gallery = hero-styled tile:
-            the add tile IS the empty state. */}
-        <CanvasAddTile
-          hero={galleryArtifacts.length === 0}
-          familiarId={familiarId}
-          onArtifactsChanged={handleSaved}
-          onActiveArtifactChange={setActiveComposerId}
-        />
-        {galleryArtifacts.map((artifact) => {
-          const srcDoc =
-            artifact.kind === "react" ? buildReactSrcDoc(artifact.code) : buildPreviewSrcDoc(artifact.code);
-          return (
-            <div
-              key={artifact.id}
-              role="listitem"
-              className={`chat-canvas-card${artifact.id === justSavedId ? " chat-canvas-card--new" : ""}`}
-            >
+    <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col">
+      {galleryArtifacts.length > 0 ? (
+        <div className="chat-canvas-toolbar">
+          <SearchInput
+            containerClassName="chat-canvas-toolbar__search"
+            value={q}
+            onValueChange={setQ}
+            onClear={() => setQ("")}
+            placeholder="Search sketches…"
+            aria-label="Search sketches"
+          />
+          <div className="chat-canvas-toolbar__filter" role="group" aria-label="Filter sketches by kind">
+            {KIND_FILTERS.map((f) => (
               <button
+                key={f.id}
                 type="button"
-                className="chat-canvas-card__open focus-ring"
-                aria-label={`Open sketch: ${artifact.title}`}
-                onClick={() => setOpenId(artifact.id)}
+                className="chat-canvas-toolbar__filter-btn focus-ring-inset"
+                aria-pressed={kindFilter === f.id}
+                onClick={() => setKindFilter(f.id)}
               >
-                <span className="chat-canvas-card__thumb" aria-hidden>
-                  {/* Non-interactive thumbnail: same opaque-origin sandbox as the
-                      inline viewer, minus popups/modals — it's just a picture here. */}
-                  <iframe
-                    className="chat-canvas-card__frame"
-                    title={`Preview of ${artifact.title}`}
-                    sandbox="allow-scripts"
-                    loading="lazy"
-                    srcDoc={srcDoc}
-                    tabIndex={-1}
-                  />
-                </span>
+                {f.label}
               </button>
-              <div className="chat-canvas-card__meta">
-                <span className="chat-canvas-card__title" title={artifact.prompt || artifact.title}>
-                  {artifact.title}
-                </span>
-                <span className="chat-canvas-card__sub">
-                  {artifact.kind === "react" ? "React" : "HTML"}
-                  {(() => { const when = formatArtifactWhen(artifact.updatedAt); return when ? ` · ${when}` : ""; })()}
-                </span>
+            ))}
+          </div>
+          <span className="chat-canvas-toolbar__count" aria-live="polite">
+            {filteredArtifacts.length} of {galleryArtifacts.length} sketches
+          </span>
+          <button
+            type="button"
+            className="chat-canvas-toolbar__new focus-ring"
+            onClick={() => setAddExpandRequest((n) => n + 1)}
+          >
+            <Icon name="ph:plus-bold" width={14} aria-hidden /> New sketch
+          </button>
+        </div>
+      ) : null}
+      <div className="chat-canvas-scroll">
+        <div className="chat-canvas-grid" role="list" aria-label="Saved sketches" aria-busy={state === "loading"}>
+          {/* One stable tree position across empty<->populated so crossing zero
+              never remounts the composer (which would wipe typed input and
+              abort an in-flight generation). Empty gallery = hero-styled tile:
+              the add tile IS the empty state. The tile always leads the grid
+              regardless of the active search/filter. */}
+          <CanvasAddTile
+            hero={galleryArtifacts.length === 0}
+            familiarId={familiarId}
+            expandRequest={addExpandRequest}
+            onArtifactsChanged={handleSaved}
+            onActiveArtifactChange={setActiveComposerId}
+          />
+          {filteredArtifacts.map((artifact) => {
+            const srcDoc =
+              artifact.kind === "react" ? buildReactSrcDoc(artifact.code) : buildPreviewSrcDoc(artifact.code);
+            return (
+              <div
+                key={artifact.id}
+                role="listitem"
+                className={`chat-canvas-card${artifact.id === justSavedId ? " chat-canvas-card--new" : ""}${artifact.id === previewId ? " chat-canvas-card--selected" : ""}`}
+              >
                 <button
                   type="button"
-                  className="chat-canvas-card__delete focus-ring"
-                  aria-label={`Delete sketch: ${artifact.title}`}
-                  title="Delete sketch"
-                  disabled={deletingId === artifact.id}
-                  onClick={() => void remove(artifact)}
+                  className="chat-canvas-card__open focus-ring"
+                  aria-label={`Open sketch: ${artifact.title}`}
+                  onClick={() => setPreviewId(artifact.id)}
                 >
-                  <Icon name="ph:trash" width={14} aria-hidden />
+                  <span className="chat-canvas-card__thumb" aria-hidden>
+                    {/* Non-interactive thumbnail: same opaque-origin sandbox as the
+                        inline viewer, minus popups/modals — it's just a picture here. */}
+                    <iframe
+                      className="chat-canvas-card__frame"
+                      title={`Preview of ${artifact.title}`}
+                      sandbox="allow-scripts"
+                      loading="lazy"
+                      srcDoc={srcDoc}
+                      tabIndex={-1}
+                    />
+                  </span>
                 </button>
+                <div className="chat-canvas-card__meta">
+                  <span className="chat-canvas-card__title" title={artifact.prompt || artifact.title}>
+                    {artifact.title}
+                  </span>
+                  <span className="chat-canvas-card__sub">
+                    {galleryArtifactKind(artifact) === "react" ? "React" : "HTML"}
+                    {(() => { const when = formatArtifactWhen(artifact.updatedAt); return when ? ` · ${when}` : ""; })()}
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-canvas-card__delete focus-ring"
+                    aria-label={`Delete sketch: ${artifact.title}`}
+                    title="Delete sketch"
+                    disabled={deletingId === artifact.id}
+                    onClick={() => void remove(artifact)}
+                  >
+                    <Icon name="ph:trash" width={13} aria-hidden />
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      {artifacts.length === 0 ? (
-        <p className="chat-canvas-add__hint">
-          Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
-        </p>
-      ) : null}
-      {/* Reopen a saved sketch in the full inline viewer. Persisted identity
-          enables component comments and same-artifact revisions. */}
-      <Modal
-        open={opened !== null}
-        onClose={() => setOpenId(null)}
-        breadcrumb={["Canvas", opened?.title ?? ""]}
-        wide
-      >
-        {opened ? (
-          <div className="chat-canvas-modal-body">
-            <ChatArtifactViewer
-              key={opened.id}
-              initialCode={opened.code}
-              kind={opened.kind ?? "html"}
-              title={opened.title}
-              familiarId={familiarId}
-              sourcePrompt={opened.prompt}
-              artifact={opened}
-              onArtifactUpdated={handleArtifactUpdated}
-            />
-          </div>
+            );
+          })}
+        </div>
+        {filteredArtifacts.length === 0 && galleryArtifacts.length > 0 ? (
+          <p className="chat-canvas-filter-empty" role="status">
+            {trimmedQuery
+              ? <>No sketches match &ldquo;{trimmedQuery}&rdquo;</>
+              : `No ${kindFilter === "react" ? "React" : "HTML"} sketches yet.`}
+          </p>
         ) : null}
-      </Modal>
+        {artifacts.length === 0 ? (
+          <p className="chat-canvas-add__hint">
+            Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
+          </p>
+        ) : null}
+      </div>
+      {/* Preview modal: the sketch rendered live but non-interactive. Running
+          it for real (and refining/commenting) happens in the editor. */}
+      {preview ? (
+        <div
+          className="chat-canvas-preview-backdrop"
+          role="presentation"
+          onClick={() => setPreviewId(null)}
+        >
+          <div
+            ref={previewDialogRef}
+            className="chat-canvas-preview"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Sketch preview: ${preview.title}`}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="chat-canvas-preview__head">
+              <span className="chat-canvas-preview__title" title={preview.title}>{preview.title}</span>
+              <span className="chat-canvas-preview__tag">
+                {galleryArtifactKind(preview) === "react" ? "React" : "HTML"}
+                {(() => { const when = formatArtifactWhen(preview.updatedAt); return when ? ` · ${when}` : ""; })()}
+              </span>
+              <button
+                type="button"
+                className="chat-canvas-preview__close focus-ring"
+                aria-label="Close preview"
+                onClick={() => setPreviewId(null)}
+              >
+                <Icon name="ph:x" width={15} aria-hidden />
+              </button>
+            </header>
+            <div className="chat-canvas-preview__body">
+              <iframe
+                className="chat-canvas-preview__frame"
+                title={`Preview of ${preview.title}`}
+                sandbox="allow-scripts"
+                srcDoc={preview.kind === "react" ? buildReactSrcDoc(preview.code) : buildPreviewSrcDoc(preview.code)}
+                tabIndex={-1}
+              />
+            </div>
+            <p className="chat-canvas-preview__hint">
+              Sketch preview — open it in the editor to run it live.
+            </p>
+            <footer className="chat-canvas-preview__foot">
+              <Button
+                variant="ghost"
+                onClick={() => void remove(preview)}
+                disabled={deletingId === preview.id}
+              >
+                Delete
+              </Button>
+              <span className="chat-canvas-preview__spacer" />
+              <Button variant="secondary" onClick={() => setPreviewId(null)}>Close</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setEditorId(preview.id);
+                  setPreviewId(null);
+                }}
+              >
+                Open in editor
+              </Button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
