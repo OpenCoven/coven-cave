@@ -281,18 +281,28 @@ assert.match(
 );
 assert.match(
   source,
-  /const streamStatusActive =\s*status === "running" \|\|\s*streamHealth\.phase === "connecting" \|\|\s*streamHealth\.phase === "streaming" \|\|\s*streamHealth\.phase === "resuming"/,
-  "Server status activity must include authoritative connecting, streaming, and resuming client phases",
+  /const serverRunLive = streamStatus \? !streamStatus\.done : null;\s*const debugActive = isDebugSessionActive\(\{\s*status,\s*streamPhase: streamHealth\.phase,\s*serverRunLive,\s*\}\)/,
+  "Pane liveness must combine sessions-list status, the pane's own transport phase, and server run-buffer liveness (A3)",
 );
 assert.match(
   source,
-  /if \(!streamStatusActive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
+  /if \(!debugActive\) return;[\s\S]*?window\.setInterval[\s\S]*?shouldPollEvents\(\{\s*status,\s*streamPhase: streamHealth\.phase,\s*serverRunLive,\s*visible: document\.visibilityState === "visible",\s*\}\)[\s\S]*?fetchEvents\(\)[\s\S]*?POLL_MS/,
+  "The live event tail must gate on the hybrid signal, not the poll-lagged sessions-list status alone",
+);
+assert.doesNotMatch(
+  source,
+  /if \(status !== "running"\) return/,
+  "No effect may hold the event tail closed on the sessions-list status alone — no row must not mean no tail",
+);
+assert.match(
+  source,
+  /if \(!debugActive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
   "Server status polls on the existing cadence while the combined stream is active and visible",
 );
 assert.match(
   source,
-  /prevStreamStatusActiveRef\.current && !streamStatusActive[\s\S]*?fetchStreamStatus\(\)[\s\S]*?prevStreamStatusActiveRef\.current = streamStatusActive/,
-  "A combined client/server active-to-terminal transition triggers one final server-status refresh",
+  /prevActiveRef\.current && !debugActive[\s\S]*?fetchEvents\(\);\s*void fetchStreamStatus\(\);[\s\S]*?prevActiveRef\.current = debugActive/,
+  "An active-to-terminal transition triggers one final events drain and server-status refresh",
 );
 assert.match(
   source,
@@ -328,7 +338,7 @@ assert.ok(
 );
 assert.match(
   source,
-  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{streamStatusActive \|\| streamSummary\.tone !== "healthy"\}/,
+  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{debugActive \|\| streamSummary\.tone !== "healthy"\}/,
   "Stream health defaults open for any combined active stream or non-healthy client summary",
 );
 assert.match(

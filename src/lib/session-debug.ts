@@ -2,7 +2,11 @@ import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
-import type { ChatStreamClientHealth, RunBufferStatus } from "./chat-stream-health.ts";
+import type {
+  ChatStreamClientHealth,
+  ChatStreamPhase,
+  RunBufferStatus,
+} from "./chat-stream-health.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -107,8 +111,37 @@ export function nextAfterSeq(events: CovenEvent[]): number {
   return events.reduce((max, e) => (e.seq > max ? e.seq : max), 0);
 }
 
-export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
-  return args.status === "running" && args.visible;
+/** Signals the debug pane combines to decide whether its session is live. */
+export type DebugActivitySignals = {
+  /** `session.status` from the polled sessions list — poll-lagged, and null
+   *  until the list grows a row for this session. */
+  status: string | null;
+  /** The owning pane's own transport phase (S6 client health) — ground truth
+   *  for runs this ChatView is streaming. */
+  streamPhase: ChatStreamPhase;
+  /** Whether the server run-buffer reports the run unfinished (`!done`);
+   *  null until GET /api/chat/stream/status has answered. */
+  serverRunLive: boolean | null;
+};
+
+/** Hybrid liveness for the debug pane. The sessions-list `status` alone is a
+ *  broken gate: it lags the 30s-ish poll and is null before the row exists, so
+ *  a pane opened on a live run never started its event tail. Any one signal
+ *  claiming the run is live wins. */
+export function isDebugSessionActive(args: DebugActivitySignals): boolean {
+  if (args.status === "running") return true;
+  if (
+    args.streamPhase === "connecting" ||
+    args.streamPhase === "streaming" ||
+    args.streamPhase === "resuming"
+  ) {
+    return true;
+  }
+  return args.serverRunLive === true;
+}
+
+export function shouldPollEvents(args: DebugActivitySignals & { visible: boolean }): boolean {
+  return isDebugSessionActive(args) && args.visible;
 }
 
 /** Snapshot of one pane's fetched event tail, kept across modal close/reopen. */

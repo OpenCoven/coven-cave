@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   appendEvents,
   nextAfterSeq,
+  isDebugSessionActive,
   shouldPollEvents,
   formatEventPayload,
   buildDebugBundle,
@@ -38,11 +39,42 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// isDebugSessionActive: hybrid liveness — any one signal claiming the run is
+// live wins; the poll-lagged (or missing) sessions-list status alone can't
+// hold the tail closed.
+const quiet = { status: null, streamPhase: "idle", serverRunLive: null };
+assert.equal(isDebugSessionActive(quiet), false, "all-unknown signals stay inactive");
+assert.equal(isDebugSessionActive({ ...quiet, status: "running" }), true);
+assert.equal(isDebugSessionActive({ ...quiet, status: "completed" }), false);
+for (const streamPhase of ["connecting", "streaming", "resuming"]) {
+  assert.equal(
+    isDebugSessionActive({ ...quiet, streamPhase }),
+    true,
+    `own-run phase ${streamPhase} activates the tail before the sessions row exists`,
+  );
+}
+for (const streamPhase of ["idle", "settled", "degraded", "stopped"]) {
+  assert.equal(isDebugSessionActive({ ...quiet, streamPhase }), false);
+}
+assert.equal(
+  isDebugSessionActive({ ...quiet, serverRunLive: true }),
+  true,
+  "server run-buffer liveness activates router-opened panes with no row and no own run",
+);
+assert.equal(isDebugSessionActive({ ...quiet, serverRunLive: false }), false);
+assert.equal(
+  isDebugSessionActive({ status: "completed", streamPhase: "settled", serverRunLive: false }),
+  false,
+  "all signals agreeing the run is over deactivates the tail",
+);
+
+// shouldPollEvents: active and visible
+assert.equal(shouldPollEvents({ ...quiet, status: "running", visible: true }), true);
+assert.equal(shouldPollEvents({ ...quiet, status: "running", visible: false }), false);
+assert.equal(shouldPollEvents({ ...quiet, streamPhase: "streaming", visible: true }), true);
+assert.equal(shouldPollEvents({ ...quiet, serverRunLive: true, visible: false }), false);
+assert.equal(shouldPollEvents({ ...quiet, status: "completed", visible: true }), false);
+assert.equal(shouldPollEvents({ ...quiet, visible: true }), false);
 
 // filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
 import { filterEvents } from "./session-debug.ts";
