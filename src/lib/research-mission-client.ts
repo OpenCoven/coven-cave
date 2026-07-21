@@ -5,6 +5,7 @@ import type {
 } from "./research-missions.ts";
 import type { AutomationStatus } from "./codex-automations-types.ts";
 import type { ResearchAutomationScheduleInput } from "./server/research-mission-runner.ts";
+import { publishSchedulesChanged } from "./board-cache-events.ts";
 
 export type ResearchMissionListResponse = {
   ok: boolean;
@@ -88,7 +89,9 @@ export async function scheduleResearchMission(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  return readJson<ResearchMissionResponse>(response);
+  const result = await readJson<ResearchMissionResponse>(response);
+  if (result.ok) publishSchedulesChanged();
+  return result;
 }
 
 export async function setResearchAutomationStatus(
@@ -100,7 +103,9 @@ export async function setResearchAutomationStatus(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ status }),
   });
-  return readJson<{ ok: boolean; error?: string }>(response);
+  const result = await readJson<{ ok: boolean; error?: string }>(response);
+  if (result.ok) publishSchedulesChanged();
+  return result;
 }
 
 export async function runResearchAutomationNow(
