@@ -1756,6 +1756,14 @@ final class AppModel {
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
 
+    /// Guards against saving before the async `hydrateThreads()` restore has
+    /// settled. Without it, a background/flush that fires before hydration
+    /// publishes would snapshot the not-yet-hydrated (possibly empty) `threads`
+    /// array and overwrite the user's snapshot file with nothing. Set true once
+    /// the load settles — including the load-failure/empty path, where later
+    /// saves are legitimate.
+    @ObservationIgnored private var threadsHydrated = false
+
     func persistThreads() {
         // Debounce: many call sites (message send/receive, edits, archive,
         // reorder) fire in quick bursts. Encoding every thread + message to
@@ -1774,6 +1782,8 @@ final class AppModel {
     /// + atomic write to the store actor. Call directly when an immediate flush
     /// is required (e.g. app moving to the background).
     func flushThreads() {
+        // Never persist before hydration settles — see `threadsHydrated`.
+        guard threadsHydrated else { return }
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
@@ -1787,7 +1797,11 @@ final class AppModel {
     /// decoded threads in a single assignment. Threads created before the load
     /// lands (unlikely, launch-fast) are kept — restored ones merge in by id.
     private func hydrateThreads() async {
-        guard let snapshots = try? await threadStore.load(), !snapshots.isEmpty else { return }
+        let snapshots = (try? await threadStore.load()) ?? []
+        // The load has settled: from here on saves can no longer clobber an
+        // unread snapshot file, so flushes are safe even if we restored nothing.
+        defer { threadsHydrated = true }
+        guard !snapshots.isEmpty else { return }
         let existing = Set(threads.map(\.id))
         let restored = snapshots
             .filter { !existing.contains($0.id) }
