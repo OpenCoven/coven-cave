@@ -1153,6 +1153,7 @@ export const SUITES = {
     "scripts/ios-development-terminal-chrome.test.mjs",
     "scripts/ios-diary-page.test.mjs",
     "scripts/ios-surface-failures.test.mjs",
+    "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "scripts/mobile-tailscale-native.test.mjs",
     "src/components/mobile-handoff.test.ts",

@@ -82,10 +82,17 @@ assert.match(
   /func loadTheme\(\) async \{[\s\S]*client\.fetchTheme\(\)[\s\S]*ChromePalette\(snapshot: snapshot\)/,
   "AppModel.loadTheme should fetch and adopt the desktop palette",
 );
+// Connect no longer sequences loadFamiliars() → loadTheme(); the concurrent
+// bootstrap fetches familiars + theme + profile together and adopts the theme.
 assert.match(
   model,
-  /await loadFamiliars\(\)\s*\n\s*await loadTheme\(\)/,
-  "refreshConnection should load the theme on connect",
+  /private func loadCoreResources\(\) async \{[\s\S]*ConnectionBootstrap\.load\(using: client\)[\s\S]*if case \.success\(let snapshot\) = payload\.theme \{ adopt\(snapshot\) \}/,
+  "connect bootstrap should fetch and adopt the desktop theme",
+);
+assert.match(
+  model,
+  /await loadCoreResources\(\)/,
+  "refreshConnection should run the core-resource bootstrap on connect",
 );
 
 // --- App chrome applies accent, mode, and propagates the palette ------------
