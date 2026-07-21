@@ -393,7 +393,7 @@ assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.i
 assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");
 // One refresh helper cancels the pending poll first, so Retry can't leak a
 // second timer chain.
-assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(\)/, "refreshActivity cancels the scheduled poll before refetching");
+assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(false, true\)/, "refreshActivity cancels the scheduled poll before forcing a refetch");
 assert.doesNotMatch(source, /onClick=\{\(\) => void fetchActivity\(\)\}/, "no manual site refetches without cancelling the pending poll (Retry leak fixed)");
 // CI status shows passing/pending, not only failing (a green PR was invisible).
 assert.match(source, /item\.checkStatus === "passing"/, "CI passing state renders a badge");

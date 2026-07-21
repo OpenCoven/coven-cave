@@ -233,7 +233,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // change made while the window was in the background) doesn't sit stale until
   // a manual reload — most visibly in the installed desktop app, where the OS
   // window manager doesn't fire the web visibility events that browser tabs do.
-  useRefreshOnFocus(load);
+  useRefreshOnFocus(() => load({ force: true }));
 
   // Light background poll so a card that flips status (e.g. a familiar moving a
   // task running -> done) reflects without a manual reload while the board is

@@ -37,7 +37,7 @@ export function useSurfaceWarmup(): void {
 
     const runnable = () => !cancelled && !backpressured && !document.hidden && navigator.onLine !== false;
     const runNext = () => {
-      if (!runnable() || cursor >= ORDER.length) return;
+      if (active || !runnable() || cursor >= ORDER.length) return;
       const surface = ORDER[cursor++];
       active = true;
       markStart(`surface-warmup:${surface}`);
@@ -71,7 +71,7 @@ export function useSurfaceWarmup(): void {
     };
     const resume = () => {
       paused = false;
-      if (runnable() && cursor < ORDER.length) cancelIdle = scheduleIdle(runNext);
+      if (!active && runnable() && cursor < ORDER.length) cancelIdle = scheduleIdle(runNext);
     };
     const pause = () => {
       if (paused) return;

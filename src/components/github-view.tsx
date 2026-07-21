@@ -2349,16 +2349,16 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // visibilitychange effect refetches (and reschedules) on return.
   function schedulePoll(ms: number) {
     if (typeof document !== "undefined" && document.hidden) return;
-    timerRef.current = window.setTimeout(() => void fetchActivity(true), ms);
+    timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
   }
 
-  async function fetchActivity(silent = false) {
+  async function fetchActivity(silent = false, force = false) {
     // Skeleton only on the first load — a manual refresh with data already on
     // screen must not unmount the list (and any open composer draft with it).
     if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const { data } = await readSurfaceResource<ActivityResult>("github:activity", silent);
+      const { data } = await readSurfaceResource<ActivityResult>("github:activity", force);
       if (!mountedRef.current) return;
       const nextActivity = data;
       setActivity((prev) =>
@@ -2381,7 +2381,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
   function refreshActivity() {
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
-    void fetchActivity();
+    void fetchActivity(false, true);
   }
 
   useEffect(() => {
@@ -2397,7 +2397,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
       if (document.hidden) {
         if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       } else {
-        void fetchActivity(true);
+        void fetchActivity(true, true);
       }
     };
     document.addEventListener("visibilitychange", onVis);
