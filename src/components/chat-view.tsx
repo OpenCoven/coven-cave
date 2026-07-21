@@ -53,7 +53,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
-import { ChatTitleEditable, SessionOverflowMenu } from "@/components/chat-session-header";
+import { ArchiveChatButton, ChatTitleEditable, DeleteChatButton, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
@@ -5007,23 +5007,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onBack={onBack}
         >
           <div className="cave-chat-session-actions">
-            {/* Chat-revamp 1b: the design's header "Mark done" slot. This
-                app's session lifecycle verb is Archive (reversible, kebab has
-                carried it since cave-nuzg) — icon-only, with the honest verb
-                living in the aria-label/tooltip. Hidden on already-archived
-                sessions (the kebab's Unarchive covers restore). */}
-            {sessionId && session && !session.archived_at ? (
-              <button
-                type="button"
-                className="cave-chat-archive-btn focus-ring"
-                onClick={() => void setChatArchived(true)}
-                disabled={archiving}
-                aria-label={archiving ? "Archiving chat…" : "Archive this chat"}
-                aria-busy={archiving}
-                title="Archive this chat — it leaves the rail but is never deleted"
-              >
-                <Icon name="ph:archive" width={14} aria-hidden />
-              </button>
+            {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
+                no longer hides them). Voice joins the hover-reveal quick set;
+                Archive stays always-visible (the design's "Mark done" slot,
+                chat-revamp 1b) and flips to Unarchive on archived sessions so
+                restore is one click too. Delete keeps its confirm popover. */}
+            {sessionId && session ? (
+              <VoiceCallButton
+                familiar={familiar}
+                voiceActive={voiceCallOpen}
+                onOpenVoice={() => setVoiceCallOpen(true)}
+              />
+            ) : null}
+            {sessionId && session ? (
+              <ArchiveChatButton
+                archived={Boolean(session.archived_at)}
+                archiving={archiving}
+                onSetArchived={(next) => void setChatArchived(next)}
+              />
             ) : null}
             {turns.length > 0 ? (
               <ChatFindBar
@@ -5039,6 +5040,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
+            {sessionId ? (
+              <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
+            ) : null}
             {sessionId && (
               <SessionOverflowMenu
                 key={sessionId}
@@ -5046,19 +5050,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
                 onAddProject={overflowAddProject.beginAddProject}
-                familiar={familiar}
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
-                voiceActive={voiceCallOpen}
-                onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
-                deleting={deleting}
-                onDelete={() => void deleteChat()}
-                archived={Boolean(session?.archived_at)}
-                archiving={archiving}
-                onSetArchived={(next) => void setChatArchived(next)}
               />
             )}
             {overflowAddProject.addProjectModal}

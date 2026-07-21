@@ -5,6 +5,7 @@ import {
   attachStagingHook,
   emptyStateSource,
   globalsSrc,
+  menuModel,
   menusHookSource,
   sessionHeader,
   source,
@@ -58,8 +59,14 @@ assert.match(
 );
 assert.match(
   sessionHeader,
-  /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*checked=\{showThinking\}[\s\S]*\{showThinking \? "Hide thinking" : "Show thinking"\}/,
+  /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*setShowThinking\(!showThinking\)/,
   "The session overflow menu carries the global Show-thinking toggle",
+);
+// The toggle's label/checked state derive from the pure menu model (cave-zolo).
+assert.match(
+  menuModel,
+  /id: "thinking",\s*label: ctx\.showThinking \? "Hide thinking" : "Show thinking",[\s\S]*?checked: ctx\.showThinking/,
+  "The menu model flips the thinking item label and checkmark with the preference",
 );
 
 assert.match(
