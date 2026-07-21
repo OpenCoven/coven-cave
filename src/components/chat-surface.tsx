@@ -16,7 +16,7 @@ import {
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
-import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
@@ -146,6 +146,21 @@ export function ChatSurface({
   const railProjectRoot = activeSession?.project_root ?? null;
   const sessionRunning = activeSession?.status === "running";
   const activateConversation = useCallback(() => setScope("conversation"), []);
+  // Coven "Debug thread": a participant's pinned session is a regular resumable
+  // daemon session, so debugging it = opening it as a conversation with the
+  // debug modal latched (same S1 latch the rail's Debug action uses). The
+  // latch survives until the ChatView mounts, so ordering is forgiving.
+  const debugGroupSession = useCallback(
+    (sessionId: string, familiarId: string) => {
+      onSetActiveFamiliar(familiarId);
+      setScope("conversation");
+      window.setTimeout(() => {
+        routerRef.current?.openSession(sessionId);
+        requestDebugOpen();
+      }, 0);
+    },
+    [onSetActiveFamiliar, routerRef],
+  );
   const railController = useWorkspaceRailController({
     containerRef: surfaceRef,
     projectRoot: railProjectRoot,
@@ -433,6 +448,7 @@ export function ChatSurface({
               familiars={resolvedFamiliars}
               onSessionStarted={onSessionStarted}
               onOpenUrl={onOpenUrl}
+              onDebugSession={debugGroupSession}
             />
           </div>
         ) : (

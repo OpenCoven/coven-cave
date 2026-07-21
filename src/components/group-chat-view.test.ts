@@ -364,3 +364,41 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
     "deleting a coven drops its stashed draft",
   );
 });
+
+test("coven Details drawer offers per-participant Debug (A5: no debug affordance in the coven tab)", () => {
+  // Each participant's pinned session is a regular resumable daemon session;
+  // the drawer lists them with a Debug action instead of hosting a DebugPane.
+  assert.match(
+    view,
+    /onDebugSession\?: \(sessionId: string, familiarId: string\) => void/,
+    "GroupChatView accepts an onDebugSession handler",
+  );
+  assert.match(
+    view,
+    /participants\.some\(\(f\) => activeGroup\.sessions\[f\.id\]\)/,
+    "the Threads section only renders when a participant has a pinned session",
+  );
+  assert.match(
+    view,
+    /onClick=\{\(\) => onDebugSession\(sessionId, f\.id\)\}/,
+    "Debug passes the pinned session AND its familiar so the host can scope the conversation",
+  );
+  assert.match(
+    view,
+    /className="coven-tab__thread-debug focus-ring"/,
+    "the Debug action keeps the shared focus-ring class",
+  );
+  // Host wiring: chat-surface switches to the conversation scope, opens the
+  // session through the router, and latches the debug modal (S1 latch) — the
+  // same machinery the rail's Debug action relies on.
+  assert.match(
+    chatSurface,
+    /const debugGroupSession = useCallback\(\s*\n\s*\(sessionId: string, familiarId: string\) => \{\s*\n\s*onSetActiveFamiliar\(familiarId\);\s*\n\s*setScope\("conversation"\);\s*\n\s*window\.setTimeout\(\(\) => \{\s*\n\s*routerRef\.current\?\.openSession\(sessionId\);\s*\n\s*requestDebugOpen\(\);/,
+    "chat-surface opens the member session as a conversation and latches debug-open",
+  );
+  assert.match(
+    chatSurface,
+    /onDebugSession=\{debugGroupSession\}/,
+    "chat-surface hands the handler to GroupChatView",
+  );
+});

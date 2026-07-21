@@ -90,9 +90,12 @@ type Props = {
    *  refresh its session list and surface the new threads elsewhere. */
   onSessionStarted?: (sessionId: string) => void;
   onOpenUrl?: (url: string) => void;
+  /** Opens a participant's pinned session as a regular conversation with the
+   *  debug modal latched — the coven tab itself has no DebugPane host. */
+  onDebugSession?: (sessionId: string, familiarId: string) => void;
 };
 
-export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props) {
+export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugSession }: Props) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
   const [groups, setGroups] = useState<CovenGroup[]>([]);
@@ -1185,6 +1188,36 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   Created <RelativeTime iso={activeGroup.createdAt} /> · updated{" "}
                   <RelativeTime iso={activeGroup.updatedAt} />
                 </span>
+                {/* Threads: each participant answers in its own resumable daemon
+                    session (group-chat.ts sessions map). Debug jumps to that
+                    session as a regular conversation with the debug modal
+                    latched — the coven tab has no DebugPane of its own. */}
+                {onDebugSession && participants.some((f) => activeGroup.sessions[f.id]) ? (
+                  <div className="coven-tab__threads">
+                    <span className="coven-tab__field-label">Threads</span>
+                    <ul className="coven-tab__threads-list">
+                      {participants.map((f) => {
+                        const sessionId = activeGroup.sessions[f.id];
+                        if (!sessionId) return null;
+                        return (
+                          <li key={f.id} className="coven-tab__thread-row">
+                            <FamiliarAvatar familiar={f} size="sm" />
+                            <span className="coven-tab__thread-name">{f.display_name}</span>
+                            <button
+                              type="button"
+                              className="coven-tab__thread-debug focus-ring"
+                              title={`Debug ${f.display_name}'s session`}
+                              onClick={() => onDebugSession(sessionId, f.id)}
+                            >
+                              <Icon name="ph:bug-bold" width={12} height={12} aria-hidden />
+                              Debug
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
