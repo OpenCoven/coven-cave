@@ -17,7 +17,7 @@ const css = (
 ).join("\n");
 
 assert.match(controller, /const \[mobileOpen, setMobileOpen\] = useState\(false\)/);
-assert.match(controller, /const mobileAvailable = \(isMobile \|\| paneNarrow\) && rail\.available/);
+assert.match(controller, /const mobileAvailable = active && \(isMobile \|\| paneNarrow\) && rail\.available/);
 assert.match(controller, /useFocusTrap\(mobileOpen, mobileSheetRef, \{ onEscape: \(\) => setMobileOpen\(false\) \}\)/);
 assert.match(controller, /!rail\.available \|\| \(!isMobile && !paneNarrow\) \|\| !active/);
 

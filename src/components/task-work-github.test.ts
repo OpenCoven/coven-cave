@@ -13,6 +13,14 @@ assert.match(source, /onManage/);
 assert.match(source, /Couldn't fully refresh/);
 assert.match(source, /checksJson\?\.error \?\? "GitHub checks lookup failed"/);
 assert.match(source, /catch \(reason\) \{\s*checksError = reason instanceof Error/);
+// Copilot review on #3601: the no-hydratable-links early return must clear
+// loading, and item buttons must not be focusable no-ops without onOpenUrl.
+assert.match(
+  source,
+  /if \(hydratable\.length === 0\) \{\s*setItems\(\{\}\);\s*setError\(null\);\s*setLoading\(false\);/,
+  "empty-links early return clears the loading flag",
+);
+assert.match(source, /disabled=\{!onOpenUrl\}/, "item buttons disable without an onOpenUrl handler");
 assert.doesNotMatch(source, /GitHubView/);
 assert.match(cockpit, /<TaskWorkGitHub/);
 assert.match(cockpit, /stopTerminalOnUnmount: true/);
