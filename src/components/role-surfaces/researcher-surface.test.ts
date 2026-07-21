@@ -113,6 +113,10 @@ test("timestamps are relative and schedules read as prose, not raw data", () => 
   assert.match(detail, /describeResearchSchedule\(mission\.automation\.rrule\)/);
   assert.match(detail, /relativeTime\(mission\.automation\.lastRunAt\)/);
   assert.match(ledger, /relativeTime\(artifact\.updatedAt\)/);
+  // Detail must re-render on a minute tick so the running wall-clock reading
+  // and relative stamps advance between mission polls (cave-2hdg).
+  assert.match(detail, /import \{ useMinuteTick \} from "@\/lib\/use-minute-tick"/);
+  assert.match(detail, /useMinuteTick\(\)/);
   // Uppercase/capitalize chrome must not distort the relative-time text.
   assert.match(css, /\.research-mission-row__meta time \{[^}]*text-transform: none/);
   assert.match(css, /\.research-mission-detail__eyebrow time \{[^}]*text-transform: none/);
