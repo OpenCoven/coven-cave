@@ -71,3 +71,11 @@ test("publishing from the Scribe surface invalidates a warmed Grimoire landing",
     /if \(!json\?\.ok \|\| !json\.entry\?\.id\) \{[\s\S]{0,500}invalidateIfDefined\("grimoire:knowledge", "grimoire:collections"\);/,
   );
 });
+
+test("vault knowledge-pack seeds invalidate a warmed Grimoire landing", async () => {
+  const modal = await readFile(new URL("../components/marketplace/knowledge-pack-seed-modal.tsx", here), "utf8");
+  assert.match(
+    modal,
+    /seed = await postJson<KnowledgePackSeedResult>\("\/api\/knowledge\/packs\/seed", request\);[\s\S]{0,700}if \(target === "vault"\) invalidateIfDefined\("grimoire:knowledge", "grimoire:collections"\);/,
+  );
+});
