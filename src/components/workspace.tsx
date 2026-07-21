@@ -2729,6 +2729,11 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliarId={activeId}
         scopeFamiliarIds={scopeIds}
+        daemonRunning={daemonRunning}
+        onSessionsChanged={loadSessions}
+        onSessionsDeleted={handleSessionsDeleted}
+        onSlashFromChat={handleSlashIntent}
+        onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlInAppBrowser}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);

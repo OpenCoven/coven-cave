@@ -122,7 +122,7 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /await onOpenTaskChat\(id\)/,
+    /await openTaskWork\(id\)/,
     "after rebinding, the board fix should re-run the task-chat start",
   );
   assert.match(
