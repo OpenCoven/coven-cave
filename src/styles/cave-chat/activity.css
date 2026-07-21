@@ -463,14 +463,24 @@ details[open] > .cave-tool-summary::before {
   overscroll-behavior: contain;
 }
 
+/* The linked-task cluster hugs the trailing edge; its own overflow-x keeps a
+   long chip run scrolling internally instead of widening the band. */
+.cave-composer-footer-band > .cave-chat-linked-context {
+  flex: 0 1 auto;
+}
+
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
-  /* Wide readable column (task 7): the transcript, follow-ups, and composer
-     share one centered measure that grows on roomy panes but still respects a
-     92% gutter on narrower widths. The header stays full-bleed; only the
-     reading/writing column is capped + centered. */
-  --cave-chat-measure: min(92%, 88rem);
+  /* Centered reading column (cave-xsq.1): the conversation + composer share one
+     comfortable measure and sit in a centered column — the ChatGPT reading
+     model — instead of spanning the full pane (reverses the 2026-06-18
+     full-width choice below). Chat-revamp 1b narrowed cave-973a's 64rem to
+     47.5rem; the 2026-07-21 wide-column pass widens it back to 64rem (1024px)
+     so long responses and diffs get room, with the suggestion row + composer
+     sharing the same measure. The header stays a full-bleed bar (its divider
+     spans the pane); only the reading/writing column is capped + centered. */
+  --cave-chat-measure: 64rem;
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
@@ -763,7 +773,8 @@ details[open] > .cave-tool-summary::before {
  * have no hover — skip this and show everything. The kebab holds every
  * secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
     opacity: 0;
     transform: translateX(4px);
     pointer-events: none;
@@ -774,7 +785,9 @@ details[open] > .cave-tool-summary::before {
 
   .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
   .cave-chat-session-actions:focus-within > .focus-ring,
-  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring {
+  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
+  .cave-composer-footer-band:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
+  .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
     opacity: 1;
     transform: none;
     pointer-events: auto;
@@ -782,7 +795,8 @@ details[open] > .cave-tool-summary::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
     transition: none;
     transform: none;
   }
@@ -1031,6 +1045,46 @@ details[open] > .cave-tool-summary::before {
     animation: none;
     background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   }
+}
+
+/* Linked context row (chips for task / GitHub items) */
+.cave-chat-linked-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.cave-chat-linked-chip {
+  min-height: 20px;
+  max-width: min(30vw, 300px);
+  gap: var(--space-1);
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.cave-chat-linked-chip--task {
+  max-width: min(32vw, 320px);
+}
+
+.cave-chat-linked-chip--link-task {
+  width: 20px;
+  min-width: 20px;
+  padding: 0;
+}
+
+.cave-chat-linked-chip--github {
+  max-width: min(18vw, 180px);
+}
+
+.cave-chat-linked-context::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-agent-marker {

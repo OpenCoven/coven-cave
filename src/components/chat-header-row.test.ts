@@ -59,10 +59,12 @@ assert.doesNotMatch(
   "ChatView does not mount linked-work actions directly",
 );
 
-assert.doesNotMatch(
+// The 2026-07-21 "both" reconciliation: the footer band came back (context
+// pill + linked-work chip strip) alongside the grouped composer menu.
+assert.match(
   source,
-  /cave-composer-footer-band/,
-  "the obsolete empty footer band is removed",
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill[\s\S]*?\{linkedContextRow\}/,
+  "the footer band carries the context pill and the linked-context strip",
 );
 
 assert.match(

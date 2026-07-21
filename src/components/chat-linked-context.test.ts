@@ -89,10 +89,13 @@ assert.doesNotMatch(
   "ChatView should route linked work through ComposerActionsMenu instead of mounting it directly",
 );
 
-assert.doesNotMatch(
+// The 2026-07-21 "both" reconciliation keeps the footer band: the chip strip
+// (LinkedContextRow) rides it while the menu's linked-work group duplicates
+// the same flows as rows — both share useLinkedWorkController.
+assert.match(
   chatView,
-  /cave-composer-footer-band/,
-  "ChatView should remove the obsolete empty footer band",
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "ChatView should mount the linked-context strip in the composer footer band",
 );
 
 assert.match(

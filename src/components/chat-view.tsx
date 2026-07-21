@@ -67,6 +67,8 @@ import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { Card } from "@/lib/cave-board-types";
 import { openExternalUrl } from "@/lib/open-external";
 import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-work-actions";
+import { LinkedContextRow } from "@/components/composer-linked-work-actions";
+import { ComposerContextPill } from "@/components/composer-context-pill";
 import {
   attachmentIcon,
   extractAgentAttachmentMarkers,
@@ -4897,6 +4899,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // The linked-context strip (task/GitHub chips + link/create affordances)
+  // rides the composer footer band — beside the project, runtime, and git
+  // context — so the chat's metadata reads where the message is written; the
+  // composer menu's linked-work group offers the same flows as menu rows.
+  const linkedContextRow = (
+    <LinkedContextRow
+      linkedContext={linkedContext}
+      onOpenTask={onOpenTask}
+      sessionId={sessionId}
+      onLinkedContextChange={setLinkedContext}
+      // Handoff carries the ACTIVE branch only: `turns` holds every branch of
+      // an edited/retried conversation, so deriving a task from it would pull
+      // titles, subtasks, links, and deadlines from turns the user abandoned.
+      handoff={{ turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+      sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
+    />
+  );
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -5554,14 +5574,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
-            {/* Typing hint (chat revamp 1d): appears with the first character,
-                inside the input area — not persistent chrome. Hidden on
-                phone widths (CSS). */}
-            {input.trim() && !busy ? (
-              <span className="cave-composer-typing-hint" aria-hidden>
-                ↵ send · ⇧↵ newline
-              </span>
-            ) : null}
             </div>
             {/* Enhance status strip (shared): streaming preview, apply/dismiss
                 for late arrivals, one-tap revert after an in-place apply. */}
@@ -5701,6 +5713,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   )}
                 </div>
               </div>
+            </div>
+            {/* Footer band — the darker strip attached to the panel's
+                underside carries the context pill (Project · Model/runtime ·
+                branch; every picker opens from it) on the left and the
+                linked-work strip (tasks · GitHub · link/create) on the
+                right. The pill moved down from the control row (2026-07-21
+                wide-column pass) so the write surface above stays minimal. */}
+            <div className="cave-composer-footer-band">
+              <ComposerContextPill
+                projects={projects}
+                projectValue={resolvedProjectId}
+                onProjectChange={setProjectIdDraft}
+                allowNoProject
+                familiarId={familiar.id ?? null}
+                createProject={createProject}
+                runtime={modelHarness}
+                modelValue={composerModelValue}
+                modelOptions={composerModelOptions}
+                onPickRuntime={handleSelectRuntime}
+                onPickModel={handleSelectModel}
+                modelDisabled={busy}
+                projectRoot={activeProjectRoot}
+                onOpenUrl={onOpenUrl}
+                ariaLabel="Chat context: project, model, and branch"
+              />
+              {linkedContextRow}
             </div>
           </div>
         </div>

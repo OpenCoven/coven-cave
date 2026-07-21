@@ -76,6 +76,11 @@ assert.match(
   /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerActionsMenu/,
   "the chat options trigger sits in the composer utility row — always visible, session or not",
 );
+assert.match(
+  chatView,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
+);
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(

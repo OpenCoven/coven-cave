@@ -52,17 +52,20 @@ export type ComposerLinkedWorkActionsProps = {
   itemSemantic?: PopoverItemSemantic;
 };
 
-export function ComposerLinkedWorkActions({
+/** Shared linked-work controller: the mark-done / link / create-task flows
+ *  behind BOTH presentations (the composer menu's rows and the footer band's
+ *  chip strip), so the two surfaces can't drift apart. */
+function useLinkedWorkController({
   linkedContext,
-  onOpenTask,
   sessionId,
   onLinkedContextChange,
   handoff,
-  sessionSettled = false,
-  onCloseMenu,
-  embedded = false,
-  itemSemantic,
-}: ComposerLinkedWorkActionsProps) {
+}: {
+  linkedContext: ChatLinkedContext | null;
+  sessionId?: string | null;
+  onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
+  handoff?: ChatHandoffContext | null;
+}) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [creatingTask, setCreatingTask] = useState(false);
@@ -148,6 +151,48 @@ export function ComposerLinkedWorkActions({
       setCreatingTask(false);
     }
   };
+
+  return {
+    task,
+    tasks,
+    github,
+    canLink,
+    linkedIds,
+    pickerOpen,
+    setPickerOpen,
+    markingId,
+    markDone,
+    creatingTask,
+    createTaskFromConversation,
+    onAssigned,
+  };
+}
+
+export function ComposerLinkedWorkActions({
+  linkedContext,
+  onOpenTask,
+  sessionId,
+  onLinkedContextChange,
+  handoff,
+  sessionSettled = false,
+  onCloseMenu,
+  embedded = false,
+  itemSemantic,
+}: ComposerLinkedWorkActionsProps) {
+  const {
+    task,
+    tasks,
+    github,
+    canLink,
+    linkedIds,
+    pickerOpen,
+    setPickerOpen,
+    markingId,
+    markDone,
+    creatingTask,
+    createTaskFromConversation,
+    onAssigned,
+  } = useLinkedWorkController({ linkedContext, sessionId, onLinkedContextChange, handoff });
 
   if (!task && github.length === 0 && !canLink) {
     return (
@@ -242,6 +287,158 @@ export function ComposerLinkedWorkActions({
               {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
             </span>
           </PopoverItem>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskChip({
+  task,
+  onOpenTask,
+}: {
+  task: NonNullable<ChatLinkedContext["task"]>;
+  onOpenTask?: (cardId: string) => void;
+}) {
+  const base =
+    "cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 items-center border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] text-[var(--text-secondary)]";
+  const statusLine = [task.status, task.priority].filter(Boolean).join(" · ");
+  const accessibleLabel = [task.title, task.status, task.priority].filter(Boolean).join(" ");
+  const body = (
+    <>
+      <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
+      <span className="min-w-0 truncate">{task.title}</span>
+      {statusLine ? <span className="shrink-0 text-[var(--text-muted)]">{statusLine}</span> : null}
+    </>
+  );
+  return onOpenTask ? (
+    <button
+      type="button"
+      aria-label={accessibleLabel}
+      onClick={() => onOpenTask(task.id)}
+      title={`Open task: ${task.title}`}
+      className={`${base} focus-ring transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] hover:text-[var(--text-primary)]`}
+    >
+      {body}
+      <Icon name="ph:arrow-square-out" width={10} className="shrink-0 text-[var(--text-muted)]" />
+    </button>
+  ) : (
+    <span className={base}>{body}</span>
+  );
+}
+
+/** Chip-strip presentation of the same linked-work controller: task chips ·
+ *  mark-done · create/link affordances · GitHub chips, riding the composer's
+ *  footer band. The composer menu's linked-work group offers the same flows
+ *  as menu rows; both surfaces share useLinkedWorkController. */
+export function LinkedContextRow({
+  linkedContext,
+  onOpenTask,
+  sessionId,
+  onLinkedContextChange,
+  handoff,
+  sessionSettled = false,
+}: {
+  linkedContext: ChatLinkedContext | null;
+  onOpenTask?: (cardId: string) => void;
+  sessionId?: string | null;
+  onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
+  /** Recent turns + familiar/project for the picker's "New task from this chat"
+   *  handoff (cave-px7). Absent → the picker only links existing tasks. */
+  handoff?: ChatHandoffContext | null;
+  /** True once the latest assistant turn settled cleanly — gates the
+   *  one-click "Mark done" on linked tasks (cave-32ks phase 3): finished
+   *  familiar work is the moment the card can flip without leaving chat. */
+  sessionSettled?: boolean;
+}) {
+  const {
+    task,
+    tasks,
+    github,
+    canLink,
+    linkedIds,
+    pickerOpen,
+    setPickerOpen,
+    markingId,
+    markDone,
+    creatingTask,
+    createTaskFromConversation,
+    onAssigned,
+  } = useLinkedWorkController({ linkedContext, sessionId, onLinkedContextChange, handoff });
+  if (!task && github.length === 0 && !canLink) return null;
+
+  return (
+    <div className="cave-chat-linked-context">
+      {tasks.map((t) => (
+        <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
+          <TaskChip task={t} onOpenTask={onOpenTask} />
+          {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
+            <button
+              type="button"
+              onClick={() => void markDone(t)}
+              disabled={markingId === t.id}
+              title={`Mark task done: ${t.title}`}
+              aria-label={`Mark task done: ${t.title}`}
+              className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
+            >
+              <Icon name="ph:check-bold" width={10} className="shrink-0" />
+              {markingId === t.id ? "Marking…" : "Mark done"}
+            </button>
+          ) : null}
+        </span>
+      ))}
+      {canLink && handoff ? (
+        <button
+          type="button"
+          onClick={() => void createTaskFromConversation()}
+          disabled={creatingTask}
+          title="Create a task from this conversation — auto-fills title, subtasks, priority, due date, and links"
+          aria-label="Create a task from this conversation"
+          className="cave-chat-linked-chip cave-chat-linked-chip--create-task focus-ring inline-flex items-center gap-1 border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          <Icon name="ph:kanban" width={11} className="shrink-0 text-[var(--accent-presence)]" />
+          {creatingTask ? "Creating…" : "Create task"}
+        </button>
+      ) : null}
+      {canLink ? (
+        <span className="relative inline-flex">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((open) => !open)}
+            title="Link a task to this chat"
+            aria-label="Link a task to this chat"
+            className="cave-chat-linked-chip cave-chat-linked-chip--link-task focus-ring inline-flex items-center justify-center border border-dashed border-[var(--border-strong)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:plus" width={11} className="shrink-0" />
+          </button>
+          {pickerOpen && sessionId ? (
+            <TaskLinkPicker
+              sessionId={sessionId}
+              linkedIds={linkedIds}
+              onAssigned={onAssigned}
+              onClose={() => setPickerOpen(false)}
+              handoff={handoff}
+            />
+          ) : null}
+        </span>
+      ) : null}
+      {github.map((item) => {
+        const compactLabel = compactGitHubContextLabel(item);
+        return (
+          <a
+            key={item.id}
+            href={item.url}
+            title={`Open ${githubLabel(item.kind)} on GitHub: ${item.title}`}
+            className="cave-chat-linked-chip cave-chat-linked-chip--github inline-flex min-w-0 items-center border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            onClick={(event) => {
+              event.preventDefault();
+              openExternalUrl(item.url);
+            }}
+          >
+            <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <span className="min-w-0 truncate">{compactLabel}</span>
+            {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
+          </a>
         );
       })}
     </div>

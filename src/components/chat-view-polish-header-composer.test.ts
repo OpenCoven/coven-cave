@@ -150,6 +150,13 @@ assert.match(
   /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
   "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
+// The context pill (Project · Model · branch) lives in the footer band below
+// the controls (2026-07-21 wide-column pass) — not in the utility row.
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the context pill anchors the footer band",
+);
 assert.doesNotMatch(
   source,
   /aria-label="Prompt snippets"/,
@@ -166,7 +173,13 @@ assert.match(
   "the grouped Response section carries Host, Access, Model, Thinking, and Speed in order",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-assert.doesNotMatch(source, /<ComposerContextPill/, "legacy context-pill composition should be gone");
+// "Both" reconciliation (2026-07-21): the context pill returned with the
+// footer band — but only there, never back in the control row.
+assert.equal(
+  source.match(/<ComposerContextPill/g)?.length,
+  1,
+  "the context pill mounts exactly once — in the footer band",
+);
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 assert.doesNotMatch(
   source,
@@ -661,9 +674,19 @@ assert.match(
   /handoff:\s*\{ turns: activePath, familiarId: familiar\.id \?\? null, projectId: projectIdDraft \},[\s\S]*sessionSettled:/,
   "Linked Work keeps the active-path handoff and settled-session gate",
 );
-assert.doesNotMatch(source, /<LinkedContextRow\b/, "legacy direct LinkedContextRow composition should be gone");
-assert.doesNotMatch(source, /linkedContextRow/, "legacy linked-context footer row state should be gone");
-assert.doesNotMatch(source, /cave-composer-footer-band/, "the empty linked-context footer band should be removed");
+// "Both" reconciliation (2026-07-21): the linked-context chip strip returned
+// with the footer band (shared controller with the menu's Linked Work group)
+// — it mounts exactly once, in the band, never in the header.
+assert.equal(
+  source.match(/<LinkedContextRow\b/g)?.length,
+  1,
+  "the linked-context strip mounts exactly once — in the footer band",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "the footer band carries the linked-context strip beside the context pill",
+);
 assert.doesNotMatch(
   source,
   /hasLinkedChips/,

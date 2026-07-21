@@ -7,11 +7,14 @@ import SwiftUI
 struct CanvasView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var prompt = ""
     @State private var selectedFamiliarId: String?
     @State private var genTask: Task<Void, Never>?
     @State private var detail: CanvasArtifact?
+    @State private var headerScrollState = CanvasHeaderScrollState()
+    @State private var headerControlsVisible = true
     @FocusState private var promptFocused: Bool
 
     private let columns = [GridItem(.adaptive(minimum: 158), spacing: 12)]
@@ -73,29 +76,55 @@ struct CanvasView: View {
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await app.loadCanvas() }
         .safeAreaInset(edge: .top, spacing: 0) { header }
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            CanvasHeaderScrollState.normalizedOffset(
+                contentOffsetY: geometry.contentOffset.y,
+                topInset: geometry.contentInsets.top
+            )
+        } action: { _, offset in
+            let controlsVisible = headerScrollState.observe(offset: offset)
+            guard controlsVisible != headerControlsVisible else { return }
+            if !controlsVisible {
+                promptFocused = false
+            }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                headerControlsVisible = controlsVisible
+            }
+        }
     }
 
     // MARK: - Header + composer
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Canvas")
-                    .font(.largeTitle.weight(.bold))
-                Spacer()
-                if !app.canvasArtifacts.isEmpty {
-                    Text("^[\(app.canvasArtifacts.count) artifact](inflect: true)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            titleRow
+                .zIndex(1)
+            if headerControlsVisible {
+                VStack(alignment: .leading, spacing: 12) {
+                    composer
+                    starterBar
                 }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(0)
             }
-            composer
-            starterBar
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(.bar)
+    }
+
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Canvas")
+                .font(.largeTitle.weight(.bold))
+            Spacer()
+            if !app.canvasArtifacts.isEmpty {
+                Text("^[\(app.canvasArtifacts.count) artifact](inflect: true)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var composer: some View {

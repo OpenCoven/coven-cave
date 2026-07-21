@@ -18,6 +18,12 @@ assert.match(
   "response choices should wrap inside the grouped panel",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "the plus menu should not own the composer footer");
-assert.doesNotMatch(source, /<ComposerContextPill/, "the context pill should not own the composer footer");
+// "Both" reconciliation (2026-07-21): the pill rides the footer band below
+// the controls — the control row itself stays pill-free.
+assert.doesNotMatch(
+  source.match(/className="cave-composer-control-row">[\s\S]*?className="cave-composer-footer-band"/)?.[0] ?? "",
+  /<ComposerContextPill/,
+  "the context pill should not own the composer control row",
+);
 
 console.log("composer-density.test.ts: ok");

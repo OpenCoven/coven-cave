@@ -134,7 +134,18 @@ assert.match(
   "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-assert.doesNotMatch(source, /<ComposerContextPill/, "legacy context-pill composition should be gone");
+// "Both" reconciliation (2026-07-21): the context pill returned with the
+// footer band — but only there, never back in the control row.
+assert.equal(
+  source.match(/<ComposerContextPill/g)?.length,
+  1,
+  "the context pill mounts exactly once — in the footer band",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the context pill lives in the footer band, not the control row",
+);
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
 // Model selection moved out of the composer UI into the /model slash command.

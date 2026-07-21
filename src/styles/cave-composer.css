@@ -79,6 +79,32 @@
   justify-content: flex-end;
 }
 
+/* ── Footer band ─────────────────────────────────────────────────────────────
+ * The darker strip attached to the panel's underside (home composer's
+ * hc-footer-band, same grammar): the chat's session metadata — project ·
+ * runtime/model · git context on the left, linked tasks/GitHub on the right —
+ * moved OUT of the input's control row so the write surface above stays
+ * minimal. Last child of .cave-composer-panel, so the panel's overflow clips
+ * it into the rounded bottom corners; it reads as the card, one tone deeper. */
+.cave-composer-footer-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+}
+
+.cave-composer-footer-band__context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .cave-composer-icon-button {
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 52%, transparent);

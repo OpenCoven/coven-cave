@@ -458,9 +458,12 @@
     overflow: hidden;
   }
 
-  /* Mobile keeps its own identity rail + context menu, so the desktop meta
-     line would double-report there. */
-  .cave-chat-meta-line {
+  /* Mobile keeps its own identity rail + context menu; the desktop meta line
+     would double-report there, and the footer band's linked-context cluster
+     yields to the header's MobileHeaderTask chip (the band keeps project ·
+     runtime · git, which have no mobile twin). */
+  .cave-chat-meta-line,
+  .cave-chat-linked-context {
     display: none;
   }
 
