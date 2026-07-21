@@ -56,6 +56,7 @@ actor ConnectionRefreshCoordinator {
     func cancelActiveRefresh() {
         inFlight?.cancel()
         inFlight = nil
+        activeNonce = nil
     }
 }
 
