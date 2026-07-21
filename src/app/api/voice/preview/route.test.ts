@@ -5,9 +5,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Hermetic secret resolution: no real vault, no repo .env.local.
+// Hermetic secret resolution: no real vault, no repo .env.local. COVEN_VAULT_FILE
+// must also point away from <cwd>/vault.yaml — the repo root maps OPENAI_API_KEY
+// to a 1Password ref, so loadVaultMap's cwd fallback would shell out to `op`
+// (slow, and resolves a REAL key when the item exists).
 const TMP = mkdtempSync(join(tmpdir(), "voice-preview-route-"));
 process.env.HOME = TMP;
+process.env.COVEN_VAULT_FILE = join(TMP, "vault.yaml");
 process.env.COVEN_CAVE_ENV_FILE = join(TMP, "absent.env.local");
 
 function req(voice: string | null) {

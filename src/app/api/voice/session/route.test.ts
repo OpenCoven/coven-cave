@@ -7,6 +7,11 @@ import { join } from "node:path";
 
 const TMP = mkdtempSync(join(tmpdir(), "voice-session-route-"));
 process.env.HOME = TMP;
+// Hermetic vault: without these, resolveSecret's fallbacks read <cwd>/vault.yaml
+// (repo root maps OPENAI_API_KEY to a 1Password ref → shells out to `op`) and
+// <cwd>/.env.local — slow, and resolves REAL keys on a lived-in machine.
+process.env.COVEN_VAULT_FILE = join(TMP, "vault.yaml");
+process.env.COVEN_CAVE_ENV_FILE = join(TMP, ".env.local");
 
 const FAMILIAR_ID = "milo";
 const SESSION_ID = "sess-route";
