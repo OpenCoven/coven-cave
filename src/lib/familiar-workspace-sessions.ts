@@ -25,38 +25,66 @@ import type { SessionRow } from "@/lib/types";
  *
  * Matching is prefix-based on normalized paths so both the workspace root
  * itself and any nested subdir (notes/, memory/, ...) are recognized.
+ *
+ * Purely path-based: it has no knowledge of registered projects, so a project
+ * whose root literally lives inside the familiar-workspaces tree would match.
+ * That is not a real configuration (project roots and familiar workspaces are
+ * distinct trees), but callers that need to guarantee an exemption should
+ * filter such roots out before calling.
  */
 export function isFamiliarWorkspaceRoot(
   projectRoot: string | null | undefined,
   familiarWorkspacesRoot: string,
   declaredWorkspaceRoots: readonly string[] = [],
 ): boolean {
-  const root = normalizeProjectRoot(projectRoot);
-  if (root === "/") return false;
-  const prefixes = [familiarWorkspacesRoot, ...declaredWorkspaceRoots]
+  return matchesFamiliarWorkspacePrefix(
+    projectRoot,
+    normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots),
+  );
+}
+
+/**
+ * Normalize the familiar-workspace prefix list once. Pulled out so the filter
+ * below builds it a single time instead of per-session (Copilot review: avoid
+ * re-normalizing the same prefixes for every row on large session lists).
+ */
+function normalizeFamiliarWorkspacePrefixes(
+  familiarWorkspacesRoot: string,
+  declaredWorkspaceRoots: readonly string[] = [],
+): string[] {
+  return [familiarWorkspacesRoot, ...declaredWorkspaceRoots]
     .map((p) => normalizeProjectRoot(p))
     .filter((p) => p !== "/");
-  return prefixes.some(
+}
+
+/** Prefix test against an already-normalized prefix list. */
+function matchesFamiliarWorkspacePrefix(
+  projectRoot: string | null | undefined,
+  normalizedPrefixes: readonly string[],
+): boolean {
+  const root = normalizeProjectRoot(projectRoot);
+  if (root === "/") return false;
+  return normalizedPrefixes.some(
     (prefix) => root === prefix || root.startsWith(`${prefix}/`),
   );
 }
 
 /**
  * Drop sessions whose `project_root` is a familiar-workspace root. Sessions
- * with no/rootless project ("(no project)" bucket) and real registered-project
- * sessions are always kept. Pure — safe to call on the response path.
+ * with no/rootless project (the "(no project)" bucket) are kept, as are all
+ * sessions whose root is not inside the familiar-workspaces tree — which in
+ * normal configurations means every real registered-project session, since
+ * project roots live outside that tree. Pure — safe to call on the response
+ * path.
  */
 export function collapseFamiliarWorkspaceSessions(
   sessions: SessionRow[],
   familiarWorkspacesRoot: string,
   declaredWorkspaceRoots: readonly string[] = [],
 ): SessionRow[] {
+  // Normalize the prefix list once, then test each row inline.
+  const prefixes = normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots);
   return sessions.filter(
-    (session) =>
-      !isFamiliarWorkspaceRoot(
-        session.project_root,
-        familiarWorkspacesRoot,
-        declaredWorkspaceRoots,
-      ),
+    (session) => !matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
   );
 }
