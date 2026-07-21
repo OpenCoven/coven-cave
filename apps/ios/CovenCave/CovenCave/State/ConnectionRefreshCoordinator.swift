@@ -20,6 +20,8 @@ enum ConnectionRefreshResult: Equatable, Sendable {
 /// post-connect loads run once, not per caller.
 actor ConnectionRefreshCoordinator {
     private var inFlight: Task<ConnectionRefreshResult, Never>?
+    private var inFlightNonce: UInt64 = 0
+    private var activeNonce: UInt64?
     /// Surface-reload intent accumulated onto the current in-flight probe by
     /// joiners. Only the launcher applies the outcome, so a joiner that wanted
     /// a full surface reload would otherwise have its intent silently dropped
