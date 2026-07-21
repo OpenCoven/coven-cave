@@ -85,6 +85,61 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(probeCount, 2)
     }
 
+    // MARK: - Joiner surface-reload intent
+
+    func testJoinerReloadIntentIsMergedOntoTheLauncher() async {
+        let coordinator = ConnectionRefreshCoordinator()
+        let probeStarted = Gate()
+
+        // Launcher does NOT want a surface reload…
+        let launcher = Task {
+            await coordinator.refresh(requestSurfaceReload: false) {
+                await probeStarted.open()
+                // Hold the probe open long enough for the joiner to attach and
+                // record its intent. If the window is ever missed, the joiner
+                // launches its own probe and the XCTFail below fires — the
+                // test fails loudly rather than passing vacuously.
+                try? await Task.sleep(for: .milliseconds(300))
+                return ConnectionRefreshResult.unauthorized
+            }
+        }
+        await probeStarted.wait()
+        // …but the joiner does. Only the launcher applies the outcome, so the
+        // joiner's intent must ride along with the launcher's result.
+        let joiner = Task {
+            await coordinator.refresh(requestSurfaceReload: true) {
+                XCTFail("joiner must not launch its own probe")
+                return ConnectionRefreshResult.unreachable
+            }
+        }
+
+        let first = await launcher.value
+        let second = await joiner.value
+        XCTAssertTrue(first.launched)
+        XCTAssertTrue(
+            first.surfaceReloadRequested,
+            "launcher must consume the joiner's OR-merged reload intent")
+        XCTAssertFalse(second.launched)
+        XCTAssertFalse(second.surfaceReloadRequested)
+    }
+
+    func testReloadIntentResetsForAFreshLaunch() async {
+        let coordinator = ConnectionRefreshCoordinator()
+
+        // A launcher's own intent carries through…
+        let first = await coordinator.refresh(requestSurfaceReload: true) {
+            ConnectionRefreshResult.unreachable
+        }
+        XCTAssertTrue(first.surfaceReloadRequested)
+
+        // …and must not leak into the next, unrelated launch.
+        let second = await coordinator.refresh(requestSurfaceReload: false) {
+            ConnectionRefreshResult.unreachable
+        }
+        XCTAssertTrue(second.launched)
+        XCTAssertFalse(second.surfaceReloadRequested)
+    }
+
     // MARK: - Cancellation
 
     func testCancelClearsTheInFlightProbe() async {

@@ -1079,9 +1079,17 @@ final class AppModel {
 
         // Single-flight the transport decision: concurrent callers join the
         // in-flight probe, and only the launching caller applies the outcome
-        // (state + loads must run once, not per caller).
+        // (state + loads must run once, not per caller). A joiner's
+        // surface-reload intent is OR-merged onto the probe so the launcher
+        // applies it — the joiner returning early must not drop it.
         let candidates = connection.candidateBaseURLs
-        let refresh = await refreshCoordinator.refresh {
+        // Identity of the endpoint this probe describes. `configure()` cancels
+        // the in-flight probe, but a launcher that already passed its
+        // `Task.isCancelled` check races that cancel — without this capture it
+        // would compare its stale outcome against the user's just-entered
+        // endpoint, "relocate", and persist the old one back.
+        let probedBaseURL = connection.baseURL
+        let refresh = await refreshCoordinator.refresh(requestSurfaceReload: reloadLoadedSurfaces) {
             // Try the configured endpoint first, then auto-relocate to a
             // working port (e.g. a `.ts.net` host typed without `:8443`).
             let outcome = await Self.discoverBaseURL(candidates)
@@ -1096,6 +1104,11 @@ final class AppModel {
         // The user may have disconnected while the probe ran; its outcome no
         // longer describes anything configured.
         guard self.connection != nil else { connectionState = .unconfigured; return }
+        // Superseded mid-flight: the endpoint was reconfigured after this
+        // probe slipped past its cancellation check. Its outcome describes the
+        // old endpoint — applying it would silently revert the user's new one.
+        // The replacing configuration's own refresh owns the state.
+        guard self.connection?.baseURL == probedBaseURL else { return }
 
         switch refresh.result {
         case .cancelled:
@@ -1120,7 +1133,8 @@ final class AppModel {
             connectionState = .connected
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
-            if reloadLoadedSurfaces {
+            // OR of this launcher's own flag and any joiner's merged intent.
+            if refresh.surfaceReloadRequested {
                 await refreshLoadedSurfaces()
             } else {
                 await loadCoreResources()

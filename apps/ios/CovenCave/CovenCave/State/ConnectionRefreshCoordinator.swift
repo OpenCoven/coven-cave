@@ -20,17 +20,32 @@ enum ConnectionRefreshResult: Equatable, Sendable {
 /// post-connect loads run once, not per caller.
 actor ConnectionRefreshCoordinator {
     private var inFlight: Task<ConnectionRefreshResult, Never>?
+    /// Surface-reload intent accumulated onto the current in-flight probe by
+    /// joiners. Only the launcher applies the outcome, so a joiner that wanted
+    /// a full surface reload would otherwise have its intent silently dropped
+    /// — instead it's OR-merged here and handed to the launcher on return.
+    /// Reset at each launch: the flag belongs to that probe's cohort.
+    private var pendingSurfaceReload = false
 
     func refresh(
+        requestSurfaceReload: Bool = false,
         _ probe: @escaping @Sendable () async -> ConnectionRefreshResult
-    ) async -> (result: ConnectionRefreshResult, launched: Bool) {
-        if let inFlight { return (await inFlight.value, false) }
+    ) async -> (result: ConnectionRefreshResult, launched: Bool, surfaceReloadRequested: Bool) {
+        if let inFlight {
+            if requestSurfaceReload { pendingSurfaceReload = true }
+            return (await inFlight.value, false, false)
+        }
+        pendingSurfaceReload = false
         let task = Task { await probe() }
         inFlight = task
         // Only clear our own task: a cancel + relaunch while we await must
         // not blow away the successor's in-flight slot.
         defer { if inFlight == task { inFlight = nil } }
-        return (await task.value, true)
+        let result = await task.value
+        // Joiners that piled onto this probe set the flag while `inFlight` was
+        // still ours, which the actor serializes strictly before this resume —
+        // so the read below cannot miss a joined caller's intent.
+        return (result, true, requestSurfaceReload || pendingSurfaceReload)
     }
 
     /// Cancel the in-flight probe (if any) and clear the slot so the next
