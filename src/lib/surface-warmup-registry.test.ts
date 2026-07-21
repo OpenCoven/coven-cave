@@ -19,6 +19,13 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
 });
 
+test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {
+  const surfaces = await readFile(new URL("../components/lazy-surfaces.tsx", import.meta.url), "utf8");
+  assert.match(surfaces, /const loadGitHubView = \(\) => import\("@\/components\/github-view"\)/);
+  assert.match(surfaces, /return loadGitHubView\(\)\.then\(\(\) => undefined\)/);
+  assert.doesNotMatch(surfaces, /function preloadSurface/);
+});
+
 test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {
   const hook = await source("use-surface-warmup.ts");
   assert.match(hook, /requestAnimationFrame\(\(\) => window\.requestAnimationFrame\(begin\)\)/);
