@@ -23,4 +23,15 @@ assert.match(
   "the generated Tauri override must use the platform-correct command",
 );
 
+assert.match(
+  source,
+  /if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
+  "an inherited sidecar token must reach the desktop webview through the URL hash",
+);
+assert.match(
+  source,
+  /"devUrl":"\$\{dev_url\}"/,
+  "both launcher paths must use the token-bearing dev URL",
+);
+
 console.log("dev-app: ok");

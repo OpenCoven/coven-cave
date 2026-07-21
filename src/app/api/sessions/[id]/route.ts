@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { isValidSessionId } from "@/lib/server/session-id";
 import {
   archiveSessionLocal,
   extendSessionAutoArchiveLocal,
@@ -10,11 +11,6 @@ import {
 } from "@/lib/cave-config";
 import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
-
-/** Validate session ID: only alphanum, hyphens, colons, dots — no path traversal. */
-function isValidSessionId(id: string): boolean {
-  return /^[A-Za-z0-9:._-]{1,256}$/.test(id);
-}
 
 export const dynamic = "force-dynamic";
 
