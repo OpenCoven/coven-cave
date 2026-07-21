@@ -100,6 +100,12 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
+function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
+  if (!panel || panel.isCollapsed() === !open) return;
+  if (open) panel.expand();
+  else panel.collapse();
+}
+
 // The minimized-by-default nav is applied exactly ONCE per group per browser,
 // tracked by this flag (the panel library persists layouts under its own
 // `react-resizable-panels:*` keys, so we can't reuse those; a self-owned flag is
@@ -567,6 +573,8 @@ function ShellInner({
     ) {
       seedNavOpenPref(false);
     }
+    const rememberedNavOpen =
+      navPolicy === "remembered" ? seedNavOpenPref(false) : null;
     const destinationLayout = resolveShellDestinationLayout({
       panelIds,
       savedLayout: defaultLayout,
@@ -585,7 +593,15 @@ function ShellInner({
     layoutPersistenceGroupRef.current = groupId;
     restoredGroupRef.current = groupId;
     group.setLayout(destinationLayout);
-  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane]);
+    if (rememberedNavOpen !== null) {
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+      applyPanelOpenState(navRef.current, rememberedNavOpen);
+      setNavOpen(rememberedNavOpen);
+      minimizedGroupsRef.current.add(groupId);
+      markShellMinimizeApplied(groupId);
+    }
+  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);

@@ -279,7 +279,7 @@ assert.match(
 );
 
 const destinationLayoutEffect =
-  shell.match(/const layoutPersistenceGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane\]\);/)?.[0] ?? "";
+  shell.match(/const layoutPersistenceGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy\]\);/)?.[0] ?? "";
 assert.ok(destinationLayoutEffect.length > 0, "the destination group restoration effect exists");
 assert.match(
   destinationLayoutEffect,
@@ -305,6 +305,16 @@ assert.match(
   destinationLayoutEffect,
   /expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};\s*collapsedLayoutRef\.current = null;\s*layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;\s*group\.setLayout\(destinationLayout\);/,
   "the destination group resets collapsed deltas, remembers, and arms its complete expanded layout before applying it",
+);
+assert.match(
+  destinationLayoutEffect,
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};[\s\S]*?group\.setLayout\(destinationLayout\);\s*if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*setNavOpen\(rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}/,
+  "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
+);
+assert.match(
+  destinationLayoutEffect,
+  /\}, \[mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy\]\);/,
+  "destination restoration reruns with the active nav policy",
 );
 
 // Boot/group-switch application: after the group settles, a saved preference
