@@ -10,7 +10,9 @@ import { buildPromptEnhancement } from "../../lib/prompt-enhancer.ts";
 
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+// The prompt sheet rides with the mode-gated surface (bundle budget, #3264
+// pattern), so selector pins read the sheet itself, not the root globals.
+const css = readFileSync(new URL("../../styles/globals/surface-research-prompt.css", import.meta.url), "utf8");
 
 // ── Intake validation (unchanged contract from the pre-redesign composer) ────
 

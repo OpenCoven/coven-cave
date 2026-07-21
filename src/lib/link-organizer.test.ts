@@ -8,6 +8,7 @@ import {
   deriveLinkTitle,
   groupSavedLinks,
   LINK_CATEGORY_META,
+  linkCategoryMeta,
   LINK_CATEGORY_ORDER,
   normalizeLinkUrl,
   type SavedLink,
@@ -150,4 +151,31 @@ test("the Research desk consumes the same links store", () => {
     "utf8",
   );
   assert.match(prompt, /useResearchLinks/, "quick saves read the same store");
+});
+
+test("unknown categories degrade to Other instead of crashing a surface", () => {
+  // The store is shared across app versions — a category this build doesn't
+  // know must never take down the Research Desk (it did once: reading .icon
+  // off an undefined meta unloaded the whole surface).
+  const foreign = {
+    id: "x1",
+    url: "https://example.com/x",
+    category: "newsletter" as never,
+    title: "Foreign category",
+    addedAt: new Date().toISOString(),
+    source: "chat" as const,
+  };
+  assert.equal(linkCategoryMeta("newsletter").label, "Other");
+  const groups = groupSavedLinks([foreign]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].category, "other");
+  // Surfaces go through the tolerant accessor, not raw table indexing.
+  for (const rel of [
+    "src/components/role-surfaces/research-tab-resources.tsx",
+    "src/components/role-surfaces/research-tab-prompt.tsx",
+  ]) {
+    const source = readFileSync(path.join(repoRoot, rel), "utf8");
+    assert.match(source, /linkCategoryMeta\(/);
+    assert.doesNotMatch(source, /LINK_CATEGORY_META\[/);
+  }
 });

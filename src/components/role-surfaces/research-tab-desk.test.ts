@@ -6,7 +6,9 @@ const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url)
 const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+// The desk sheet rides with the mode-gated surface (bundle budget, #3264
+// pattern), so selector pins read the sheet itself, not the root globals.
+const css = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
 
 // ── Stepper: 6 displayed phases, reconciled statuses ─────────────────────────
 

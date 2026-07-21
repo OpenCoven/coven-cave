@@ -20,7 +20,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Icon } from "@/lib/icon";
 import {
-  LINK_CATEGORY_META,
+  linkCategoryMeta,
   LINK_CATEGORY_ORDER,
   groupSavedLinks,
   normalizeLinkUrl,
@@ -305,7 +305,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
               aria-pressed={activeFilter === category}
               onClick={() => setFilter(category)}
             >
-              {LINK_CATEGORY_META[category].label} <span>{categoryCounts.get(category)}</span>
+              {linkCategoryMeta(category).label} <span>{categoryCounts.get(category)}</span>
             </button>
           ))}
         </div>
@@ -362,8 +362,8 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   >
                     <div className="research-res-card__head">
                       <span className="research-res-card__chip">
-                        <Icon name={LINK_CATEGORY_META[link.category].icon} width={11} height={11} aria-hidden />
-                        {LINK_CATEGORY_META[link.category].label}
+                        <Icon name={linkCategoryMeta(link.category).icon} width={11} height={11} aria-hidden />
+                        {linkCategoryMeta(link.category).label}
                       </span>
                       {view === "grid" ? (
                         <span className="research-res-card__saved">
@@ -438,12 +438,12 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           >
             <header className="research-res-overlay__head">
               <span className="research-res-overlay__glyph" aria-hidden>
-                <Icon name={LINK_CATEGORY_META[openLink.category].icon} width={18} height={18} />
+                <Icon name={linkCategoryMeta(openLink.category).icon} width={18} height={18} />
               </span>
               <div className="research-res-overlay__heading">
                 <div className="research-res-overlay__meta">
                   <span className="research-res-card__chip">
-                    {LINK_CATEGORY_META[openLink.category].label}
+                    {linkCategoryMeta(openLink.category).label}
                   </span>
                   <span className="research-res-overlay__saved">
                     saved <RelativeTime iso={openLink.addedAt} fallback="just now" />
@@ -494,7 +494,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   can derive — none of the design's invented metrics. */}
               <div className="research-res-overlay__stats">
                 <div>
-                  <strong>{LINK_CATEGORY_META[openLink.category].label}</strong>
+                  <strong>{linkCategoryMeta(openLink.category).label}</strong>
                   <span>category</span>
                 </div>
                 <div>

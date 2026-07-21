@@ -16,7 +16,7 @@ test("resources render real SavedLink fields only — no fabricated stats", () =
   assert.match(source, /RelativeTime iso=\{openLink\.addedAt\}/);
   assert.match(source, /linkDomain\(link\.url\)/);
   assert.match(source, /linkDomain\(openLink\.url\)/);
-  assert.match(source, /LINK_CATEGORY_META\[link\.category\]/);
+  assert.match(source, /linkCategoryMeta\(link\.category\)/);
   // Mono title styling is reserved for GitHub links, per the design.
   assert.match(source, /link\.category === "github" \? " research-res-card__title--mono"/);
   // Honest counts: header line and the /save mention (a real chat command).

@@ -20,7 +20,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { LINK_CATEGORY_META, type SavedLink } from "@/lib/link-organizer";
+import { linkCategoryMeta, type SavedLink } from "@/lib/link-organizer";
 import type { ResearchMissionMode } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { ResearchMissionComposer, type AttachedResearchLink } from "./research-mission-composer";
@@ -155,8 +155,8 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
                     onClick={() => toggleAttach(link)}
                   >
                     <span className="research-quick-saves__chip" data-category={link.category}>
-                      <Icon name={LINK_CATEGORY_META[link.category].icon} width={11} height={11} aria-hidden />
-                      {LINK_CATEGORY_META[link.category].label}
+                      <Icon name={linkCategoryMeta(link.category).icon} width={11} height={11} aria-hidden />
+                      {linkCategoryMeta(link.category).label}
                     </span>
                     <span className="research-quick-saves__title">{link.title}</span>
                     <time dateTime={link.addedAt}>{relativeTime(link.addedAt) || "just now"}</time>
