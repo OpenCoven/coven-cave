@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -181,11 +182,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
       else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
       scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
-        await fetch("/api/memory/delete", {
+        const response = await fetch("/api/memory/delete", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ path }),
         });
+        if (response.ok) invalidateIfDefined("agents:coven-memory", "memory:list");
         // Delete committed server-side; stop filtering (unless a newer delete
         // has already claimed the slot).
         if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;

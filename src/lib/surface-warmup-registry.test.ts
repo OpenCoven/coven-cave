@@ -92,3 +92,26 @@ test("vault knowledge-pack seeds invalidate a warmed Grimoire landing", async ()
     /seed = await postJson<KnowledgePackSeedResult>\("\/api\/knowledge\/packs\/seed", request\);[\s\S]{0,700}if \(target === "vault"\) invalidateIfDefined\("grimoire:knowledge", "grimoire:collections"\);/,
   );
 });
+
+test("external journal and memory writers invalidate warmed Grimoire resources", async () => {
+  const journal = await readFile(new URL("../components/journal/journal-entries.tsx", here), "utf8");
+  assert.equal(
+    [...journal.matchAll(/invalidateIfDefined\("grimoire:journal"\)/g)].length,
+    3,
+    "generate, save, and delete all invalidate the warmed journal list",
+  );
+
+  const memoryEditor = await readFile(new URL("../components/md-editor/memory-md-editor.tsx", here), "utf8");
+  assert.match(
+    memoryEditor,
+    /setDiskChanged\(false\);[\s\S]{0,260}invalidateIfDefined\("memory:list"\)/,
+    "memory saves invalidate Grimoire's file list",
+  );
+
+  const memoryList = await readFile(new URL("../components/familiars-memory-view.tsx", here), "utf8");
+  assert.match(
+    memoryList,
+    /const response = await fetch\("\/api\/memory\/delete"[\s\S]{0,400}if \(response\.ok\) invalidateIfDefined\("agents:coven-memory", "memory:list"\)/,
+    "memory deletes invalidate both warmed memory landings",
+  );
+});

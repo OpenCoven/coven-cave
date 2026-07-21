@@ -16,6 +16,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { publishBoardChanged } from "@/lib/board-cache-events";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import type { Familiar } from "@/lib/types";
 
 // Stable empty-scope fallback so the filteredDays memo's identity is steady
@@ -437,6 +438,7 @@ export function JournalEntries({
     }).catch(() => null);
     if (!mountedRef.current) return;
     setGenerating(false);
+    if (saveRes?.ok) invalidateIfDefined("grimoire:journal");
     if (saveRes && saveRes.status === 409) {
       setError("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
     }
@@ -480,6 +482,7 @@ export function JournalEntries({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not save journal entry.");
+      invalidateIfDefined("grimoire:journal");
       if (!mountedRef.current) return true;
       cancelEdit();
       await loadDay(day.date);
@@ -516,6 +519,7 @@ export function JournalEntries({
         const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { method: "DELETE" });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not delete journal entry.");
+        invalidateIfDefined("grimoire:journal");
       } catch (err) {
         if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not delete journal entry.");
       } finally {
