@@ -38,11 +38,18 @@ actor ConnectionRefreshCoordinator {
             return (await inFlight.value, false, false)
         }
         pendingSurfaceReload = false
+        inFlightNonce &+= 1
+        let nonce = inFlightNonce
+        activeNonce = nonce
         let task = Task { await probe() }
         inFlight = task
         // Only clear our own task: a cancel + relaunch while we await must
         // not blow away the successor's in-flight slot.
-        defer { if inFlight == task { inFlight = nil } }
+        defer {
+            guard activeNonce == nonce else { return }
+            inFlight = nil
+            activeNonce = nil
+        }
         let result = await task.value
         // Joiners that piled onto this probe set the flag while `inFlight` was
         // still ours, which the actor serializes strictly before this resume —
