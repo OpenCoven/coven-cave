@@ -5,28 +5,69 @@ type ResolveShellDestinationLayoutOptions = {
   savedLayout: ShellPanelLayout | undefined;
   groupSize: number;
   defaultPanelPixels: Partial<Record<string, number>>;
-  requireOpenNav: boolean;
+  collapsedNavPixels: number;
+  isMobile: boolean;
 };
 
 const roundPercentage = (value: number) => Number.parseFloat(value.toFixed(3));
+const LAYOUT_SUM_TOLERANCE = 0.1;
+const COLLAPSED_PIXEL_TOLERANCE = 1;
+
+function isCompleteLayout(
+  layout: ShellPanelLayout,
+  panelIds = Object.keys(layout),
+): boolean {
+  if (
+    panelIds.length < 2 ||
+    !panelIds.every(
+      (panelId) =>
+        typeof layout[panelId] === "number" &&
+        Number.isFinite(layout[panelId]) &&
+        layout[panelId] >= 0,
+    )
+  ) {
+    return false;
+  }
+  const sum = panelIds.reduce((total, panelId) => total + layout[panelId], 0);
+  return Math.abs(sum - 100) <= LAYOUT_SUM_TOLERANCE;
+}
+
+export function shouldPersistShellLayout({
+  isMobile,
+  navCollapsed,
+  layout,
+}: {
+  isMobile: boolean;
+  navCollapsed: boolean;
+  layout: ShellPanelLayout;
+}): boolean {
+  return !isMobile && !navCollapsed && isCompleteLayout(layout);
+}
 
 export function resolveShellDestinationLayout({
   panelIds,
   savedLayout,
   groupSize,
   defaultPanelPixels,
-  requireOpenNav,
+  collapsedNavPixels,
+  isMobile,
 }: ResolveShellDestinationLayoutOptions): ShellPanelLayout | undefined {
   if (
-    savedLayout &&
-    panelIds.every((panelId) => Number.isFinite(savedLayout[panelId])) &&
-    (!requireOpenNav || (savedLayout.nav ?? 0) > 0)
+    isMobile ||
+    !Number.isFinite(groupSize) ||
+    groupSize <= 0 ||
+    panelIds.length === 0
   ) {
-    return Object.fromEntries(panelIds.map((panelId) => [panelId, savedLayout[panelId]]));
+    return undefined;
   }
 
-  if (!Number.isFinite(groupSize) || groupSize <= 0 || panelIds.length === 0) {
-    return undefined;
+  const savedNavPixels = ((savedLayout?.nav ?? 0) / 100) * groupSize;
+  if (
+    savedLayout &&
+    isCompleteLayout(savedLayout, panelIds) &&
+    savedNavPixels > collapsedNavPixels + COLLAPSED_PIXEL_TOLERANCE
+  ) {
+    return Object.fromEntries(panelIds.map((panelId) => [panelId, savedLayout[panelId]]));
   }
 
   const layout: ShellPanelLayout = {};
@@ -45,11 +86,16 @@ export function resolveShellDestinationLayout({
   }
 
   if (flexiblePanelIds.length > 0) {
+    if (assigned >= 100) return undefined;
     const flexibleSize = roundPercentage((100 - assigned) / flexiblePanelIds.length);
-    for (const panelId of flexiblePanelIds) {
-      layout[panelId] = flexibleSize;
+    for (let index = 0; index < flexiblePanelIds.length; index += 1) {
+      const panelId = flexiblePanelIds[index];
+      layout[panelId] =
+        index === flexiblePanelIds.length - 1
+          ? roundPercentage(100 - assigned - flexibleSize * index)
+          : flexibleSize;
     }
   }
 
-  return layout;
+  return isCompleteLayout(layout, panelIds) ? layout : undefined;
 }
