@@ -72,7 +72,7 @@ export function ComposerLinkedWorkActions({
   const github = linkedContext?.github ?? [];
   const canLink = Boolean(sessionId && onLinkedContextChange);
 
-  const linkedIds = new Set(tasks.map((t) => t.id));
+  const linkedIds = useMemo(() => new Set(tasks.map((t) => t.id)), [tasks]);
 
   const markDone = async (t: (typeof tasks)[number]) => {
     setMarkingId(t.id);
