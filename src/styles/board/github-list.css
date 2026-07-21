@@ -239,7 +239,7 @@
 .gh-familiar-stack-more { margin-left:5px; color:var(--text-muted); font-size:10.5px; }
 
 /* Org/repo filter + group-by controls (right of the kind tabs) */
-.gh-select { appearance:none; -webkit-appearance:none; max-width:170px; height:var(--gh-control-h); padding:0 22px 0 8px; border:1px solid var(--border-hairline); border-radius:var(--radius-control); background-color:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238a8a96'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; transition:background-color .12s,border-color .12s,color .12s; }
+.gh-select { appearance:none; -webkit-appearance:none; max-width:170px; height:var(--gh-control-h); padding:0 8px; border:1px solid var(--border-hairline); border-radius:var(--radius-control); background-color:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:background-color .12s,border-color .12s,color .12s; }
 .gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
 .gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
 .gh-select:disabled { opacity:.45; cursor:not-allowed; }
