@@ -5215,18 +5215,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <div className="cave-chat-session-actions">
             {/* Chat-revamp 1b: the design's header "Mark done" slot. This
                 app's session lifecycle verb is Archive (reversible, kebab has
-                carried it since cave-nuzg) — honest verbs rule, so the ghost
-                button says Archive. Hidden on already-archived sessions (the
-                kebab's Unarchive covers restore). */}
+                carried it since cave-nuzg) — icon-only, with the honest verb
+                living in the aria-label/tooltip. Hidden on already-archived
+                sessions (the kebab's Unarchive covers restore). */}
             {sessionId && session && !session.archived_at ? (
               <button
                 type="button"
                 className="cave-chat-archive-btn focus-ring"
                 onClick={() => void setChatArchived(true)}
                 disabled={archiving}
+                aria-label={archiving ? "Archiving chat…" : "Archive this chat"}
+                aria-busy={archiving}
                 title="Archive this chat — it leaves the rail but is never deleted"
               >
-                {archiving ? "Archiving…" : "Archive"}
+                <Icon name="ph:archive" width={14} aria-hidden />
               </button>
             ) : null}
             {turns.length > 0 ? (
