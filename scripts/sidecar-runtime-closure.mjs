@@ -79,6 +79,8 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // adds one traced file on Windows. CI measured 5,543.
   // 2026-07-21 (Canvas redesign): the full-surface canvas editor adds one
   // traced chunk on Windows. CI measured 5,544.
+  // 2026-07-21 (Familiar redesign): the SurfaceRail + familiar-tab chunk adds
+  // one traced file on Windows. CI measured 5,545.
   // 2026-07-21 (sidebar warm-up): the direct lazy loaders traced at 5,574 on
   // Ubuntu and 5,576 on Windows; retain ten files of cross-platform headroom
   // without relaxing the expanded-byte ceiling.
