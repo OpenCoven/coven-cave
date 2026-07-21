@@ -939,6 +939,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
+    "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
     "src/app/api/onboarding/setup/route.test.ts",
