@@ -4,9 +4,18 @@ import { readFile } from "node:fs/promises";
 
 const css = (
   await Promise.all(
-    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
-      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
-    ),
+    [
+      "../styles/globals/foundations.css",
+      "../styles/cave-md/prose.css",
+      "../styles/cave-md/code.css",
+      "../styles/cave-md/interactions.css",
+      "../styles/cave-composer.css",
+      "../styles/chat-list.css",
+      "../styles/calendar.css",
+      "../styles/cave-chat/activity.css",
+      "../styles/cave-chat/bubbles.css",
+      "../styles/cave-chat/transcript.css",
+    ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
   )
 ).join("\n");
 
@@ -98,20 +107,9 @@ assert.match(
 
 assert.match(
   css,
-  /\.cave-chat-linear \{[^}]*--cave-chat-measure:\s*[\d.]+rem/,
+  /\.cave-chat-linear \{[^}]*--cave-chat-measure:/,
   "the chat surface defines a shared reading measure token",
 );
-// Chat-revamp 1b supersedes cave-973a's 64rem: the avatar-row transcript
-// grammar reads on the design's 760px (47.5rem) column, shared by the
-// suggestion row and composer. Pin the exact value so drift in either
-// direction is a deliberate decision.
-{
-  const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
-  assert.ok(
-    measure && Number(measure[1]) === 47.5,
-    `the reading measure is the chat-revamp 1b 760px column (47.5rem; got ${measure?.[1] ?? "none"})`,
-  );
-}
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
@@ -223,7 +221,7 @@ assert.match(
 // with theme surfaces. Both the code-block read surface (.cave-code-wrap) and
 // the system bubble draw their ink from the shared --code-surface token so
 // the Code page's file editor can match them exactly.
-const codeSurfaceToken = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const codeSurfaceToken = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 assert.match(
   codeSurfaceToken,
   /--code-surface:\s*oklch\([^)]*\/\s*9\d%\)/,

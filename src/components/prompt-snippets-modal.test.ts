@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 
 const modal = await readFile(new URL("./prompt-snippets-modal.tsx", import.meta.url), "utf8");
 const saveModal = await readFile(new URL("./save-template-modal.tsx", import.meta.url), "utf8");
+const actionsMenu = await readFile(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 const optionsMenu = await readFile(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
 const home = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
@@ -106,27 +107,58 @@ assert.doesNotMatch(saveModal, /autoFocus/, "no autoFocus inside a focus-trapped
 assert.match(saveModal, /\{\{name\|default\}\}/, "the form teaches the placeholder + default grammar");
 
 // ── Composer wiring ──────────────────────────────────────────────────────────
+assert.match(actionsMenu, /Prompt snippets/, "the Chat options Improve group carries the snippets action");
+assert.match(
+  actionsMenu,
+  /<ComposerResponseSections[\s\S]*saveAsTemplateDisabled=\{response\.saveAsTemplateDisabled\}/,
+  "the grouped Chat options Response section forwards the save-as-template disabled state",
+);
 assert.match(optionsMenu, /Save draft as template…/, "the Options menu carries the save action");
 assert.match(
   optionsMenu,
   /disabled=\{saveAsTemplateDisabled\}/,
   "the save action can be disabled (empty draft)",
 );
-for (const [name, src, draft] of [["home-composer", home, "text"], ["chat-view", chat, "input"]]) {
+assert.match(
+  home,
+  /onSaveAsTemplate=\{\(\) => setSaveTemplateSeed\(text\)\}/,
+  "home-composer seeds the save modal with the current draft",
+);
+assert.match(
+  home,
+  /saveAsTemplateDisabled=\{!text\.trim\(\)\}/,
+  "home-composer disables save-as-template while the draft is empty",
+);
+assert.match(
+  chat,
+  /<ComposerActionsMenu[\s\S]*?improve=\{\{[\s\S]*?promptSnippets:\s*\{[\s\S]*?onSelect:\s*\(\)\s*=>\s*setPromptSnippetsOpen\(true\)/,
+  "chat-view opens PromptSnippetsModal through Chat options → Improve",
+);
+assert.match(
+  chat,
+  /<ComposerActionsMenu[\s\S]*?response=\{\{[\s\S]*?onSaveAsTemplate:\s*\(\)\s*=>\s*setSaveTemplateSeed\(input\)/,
+  "chat-view seeds the save modal through Chat options → Response",
+);
+assert.match(
+  chat,
+  /<ComposerActionsMenu[\s\S]*?response=\{\{[\s\S]*?saveAsTemplateDisabled:\s*!input\.trim\(\)/,
+  "chat-view disables save-as-template through Chat options → Response while the draft is empty",
+);
+for (const [name, src, openState, closeState, insertCall] of [
+  ["home-composer", home, "snippetsBrowserOpen", "setSnippetsBrowserOpen", "insertPromptTemplate"],
+  ["chat-view", chat, "promptSnippetsOpen", "setPromptSnippetsOpen", "insertPrompt"],
+] as const) {
   assert.match(
     src,
-    new RegExp(`onSaveAsTemplate=\\{\\(\\) => setSaveTemplateSeed\\(${draft}\\)\\}`),
-    `${name} seeds the save modal with the current draft`,
+    new RegExp(
+      `<PromptSnippetsModal[\\s\\S]{0,200}?open=\\{${openState}\\}[\\s\\S]{0,200}?onClose=\\{\\(\\) => ${closeState}\\(false\\)\\}[\\s\\S]{0,300}?onPick=\\{\\(p\\) => \\{[\\s\\S]{0,120}?${closeState}\\(false\\);[\\s\\S]{0,120}?${insertCall}\\(p\\);`,
+    ),
+    `${name} keeps the prompt snippets modal close-then-insert behavior`,
   );
   assert.match(
     src,
-    new RegExp(`saveAsTemplateDisabled=\\{!${draft}\\.trim\\(\\)\\}`),
-    `${name} disables save-as-template while the draft is empty`,
-  );
-  assert.match(
-    src,
-    /<SaveTemplateModal[\s\S]{0,200}?initialBody=\{saveTemplateSeed \?\? ""\}/,
-    `${name} mounts the save modal`,
+    /<SaveTemplateModal[\s\S]{0,200}?open=\{saveTemplateSeed !== null\}[\s\S]{0,120}?onClose=\{\(\) => setSaveTemplateSeed\(null\)\}[\s\S]{0,120}?initialBody=\{saveTemplateSeed \?\? ""\}/,
+    `${name} mounts the save modal with snapshot draft state`,
   );
 }
 

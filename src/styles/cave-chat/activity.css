@@ -463,46 +463,14 @@ details[open] > .cave-tool-summary::before {
   overscroll-behavior: contain;
 }
 
-/* The linked-task cluster hugs the trailing edge; its own overflow-x keeps a
-   long chip run scrolling internally instead of widening the band. */
-.cave-composer-footer-band > .cave-chat-linked-context {
-  flex: 0 1 auto;
-}
-
-/* Project chip — same 30px pill family as the runtime chip beside it (the
-   home band's treatment, scoped to the chat selector class). */
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector {
-  height: 30px;
-  min-height: 30px;
-  max-width: 200px;
-  padding: 0 11px 0 var(--space-2);
-  font-size: var(--text-xs);
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-}
-
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector .cave-project-picker__trigger-label {
-  max-width: 132px;
-}
-
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
-  /* Centered reading column (cave-xsq.1): the conversation + composer share one
-     comfortable measure and sit in a centered column — the ChatGPT reading
-     model — instead of spanning the full pane (reverses the 2026-06-18
-     full-width choice below). Chat-revamp 1b re-narrows cave-973a's 64rem to
-     the design's 760px (47.5rem): the avatar-row grammar reads best on a
-     tight column, and the suggestion row + composer share the same measure.
-     The header stays a full-bleed bar (its divider spans the pane); only the
+  /* Wide readable column (task 7): the transcript, follow-ups, and composer
+     share one centered measure that grows on roomy panes but still respects a
+     92% gutter on narrower widths. The header stays full-bleed; only the
      reading/writing column is capped + centered. */
-  --cave-chat-measure: 47.5rem;
+  --cave-chat-measure: min(92%, 88rem);
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
@@ -790,13 +758,11 @@ details[open] > .cave-tool-summary::before {
 
 /* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
  * find affordance show — they reveal on header hover or keyboard focus,
- * keeping their layout slots (no reflow on reveal). The composer footer
- * band's lone "link a task" chip follows the same rhythm against the band.
- * Touch devices — which have no hover — skip this and show everything. The
- * kebab holds every secondary action, so nothing becomes hover-only. */
+ * keeping their layout slots (no reflow on reveal). Touch devices — which
+ * have no hover — skip this and show everything. The kebab holds every
+ * secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
-  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn) {
     opacity: 0;
     transform: translateX(4px);
     pointer-events: none;
@@ -807,9 +773,7 @@ details[open] > .cave-tool-summary::before {
 
   .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
   .cave-chat-session-actions:focus-within > .focus-ring,
-  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
-  .cave-composer-footer-band:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
-  .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
+  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring {
     opacity: 1;
     transform: none;
     pointer-events: auto;
@@ -817,8 +781,7 @@ details[open] > .cave-tool-summary::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn),
-  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find):not(.cave-chat-archive-btn) {
     transition: none;
     transform: none;
   }
@@ -1067,46 +1030,6 @@ details[open] > .cave-tool-summary::before {
     animation: none;
     background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   }
-}
-
-/* Linked context row (chips for task / GitHub items) */
-.cave-chat-linked-context {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 20px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  white-space: nowrap;
-}
-
-.cave-chat-linked-chip {
-  min-height: 20px;
-  max-width: min(30vw, 300px);
-  gap: var(--space-1);
-  padding: 0 6px;
-  border-radius: 6px;
-  font-size: 10.5px;
-  line-height: 1;
-}
-
-.cave-chat-linked-chip--task {
-  max-width: min(32vw, 320px);
-}
-
-.cave-chat-linked-chip--link-task {
-  width: 20px;
-  min-width: 20px;
-  padding: 0;
-}
-
-.cave-chat-linked-chip--github {
-  max-width: min(18vw, 180px);
-}
-
-.cave-chat-linked-context::-webkit-scrollbar {
-  display: none;
 }
 
 .cave-agent-marker {

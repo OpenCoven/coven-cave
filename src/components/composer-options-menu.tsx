@@ -4,37 +4,37 @@ import "@/styles/cave-composer.css";
 
 // Composer Options menu — a single icon-only trigger that collapses the chat
 // composer's response controls (Host · Access · Model · Thinking · Speed) into
-// one popover panel. Each control is an inline radiogroup, so there are no
-// nested popovers (the shared Popover treats a portaled child popover's clicks
-// as "outside" and would close — see ui/popover.tsx). The Host picker reuses the
-// inline choices extracted from ComposerHostChip; its Connect-new-host dialog is
-// rendered as a sibling of the Popover so it survives the panel closing.
+// one popover panel. ComposerResponseSections is the reusable body; this wrapper
+// keeps the trigger, open state, prompt-snippets action, and sibling connect
+// dialog. Each control is an inline radiogroup, so there are no nested popovers
+// (the shared Popover treats a portaled child popover's clicks as "outside" and
+// would close — see ui/popover.tsx).
 
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
-import { Popover, PopoverBody } from "@/components/ui/popover";
+import { Popover, PopoverBody, usePopoverInitialFocus } from "@/components/ui/popover";
 import {
   ComposerHostChoices,
   ConnectHostDialog,
   useComposerHosts,
 } from "@/components/composer-host-chip";
-import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat-hosts";
 
-type Choice = { value: string; label: string };
+export type ComposerOptionChoice = { value: string; label: string };
 
 export type ComposerOptionSection = {
   /** Stable id (React key) — accessible name comes from `label`. */
   id: string;
   label: string;
   value: string;
-  options: Choice[];
+  options: ComposerOptionChoice[];
   onChange: (value: string) => void;
 };
 
 /** One labeled single-select rendered as a proper radiogroup: roving tabindex
  *  plus arrow-key navigation, so keyboard users move between options with one
  *  Tab stop per group rather than tabbing through every pill. */
-function OptionRadioGroup({ label, value, options, onChange }: ComposerOptionSection) {
+export function ComposerOptionRadioGroup({ label, value, options, onChange }: ComposerOptionSection) {
   const groupRef = useRef<HTMLDivElement | null>(null);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -82,6 +82,66 @@ function OptionRadioGroup({ label, value, options, onChange }: ComposerOptionSec
   );
 }
 
+export type ComposerResponseHostsController = {
+  hostOptions: ChatHostOption[];
+  load: (force?: boolean) => Promise<boolean>;
+  removeHost: (host: string) => Promise<void>;
+};
+
+export function useComposerResponseHosts(hostValue: string): ComposerResponseHostsController {
+  const { options: hostOptions, load, removeHost } = useComposerHosts(hostValue);
+  return { hostOptions, load, removeHost };
+}
+
+export function ComposerResponseSections({
+  hostValue,
+  hostOptions,
+  onHostPick,
+  onRemoveHost,
+  sections,
+  onConnectNew,
+  onSaveAsTemplate,
+  saveAsTemplateDisabled,
+}: {
+  hostValue: string;
+  hostOptions: ChatHostOption[];
+  onHostPick: (id: string) => void;
+  onRemoveHost?: (host: string) => void;
+  sections: ComposerOptionSection[];
+  onConnectNew: () => void;
+  onSaveAsTemplate?: () => void;
+  saveAsTemplateDisabled?: boolean;
+}) {
+  return (
+    <>
+      {onSaveAsTemplate ? (
+        <button
+          type="button"
+          className="composer-options__action composer-actions__inline-action focus-ring disabled:opacity-40"
+          disabled={saveAsTemplateDisabled}
+          onClick={onSaveAsTemplate}
+        >
+          <Icon name="ph:floppy-disk-bold" width={14} aria-hidden />
+          Save draft as template…
+        </button>
+      ) : null}
+      <div className="composer-options__section">
+        <span className="composer-options__label">Host</span>
+        <ComposerHostChoices
+          options={hostOptions}
+          value={hostValue}
+          onRemoveHost={onRemoveHost}
+          onPick={onHostPick}
+          onConnectNew={onConnectNew}
+        />
+      </div>
+      {sections.map((section) => (
+        <ComposerOptionRadioGroup key={section.id} {...section} />
+      ))}
+    </>
+  );
+}
+
 export function ComposerOptionsMenu({
   hostValue,
   onHostPick,
@@ -126,16 +186,27 @@ export function ComposerOptionsMenu({
     onOpenChange?.(next);
   };
   const [connectOpen, setConnectOpen] = useState(false);
+  const hostRefreshPending = useRef(false);
+  const hostsLoaded = useRef(false);
   const internalAnchorRef = useRef<HTMLButtonElement | null>(null);
   const anchorRef = externalAnchorRef ?? internalAnchorRef;
-  const { options: hostOptions, load, removeHost } = useComposerHosts(hostValue);
+  const { hostOptions, load, removeHost } = useComposerResponseHosts(hostValue);
+  usePopoverInitialFocus(open, ".composer-options__panel");
 
-  // Trigger-less mode never sees the trigger's onClick, so refresh the host
-  // list whenever the caller opens the panel (same load the trigger did).
   useEffect(() => {
-    if (open) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    if (!open) return;
+    const force = hostRefreshPending.current;
+    if (hostsLoaded.current && !force) return;
+    hostRefreshPending.current = false;
+    if (force) hostsLoaded.current = false;
+    let cancelled = false;
+    void load(force).then((loaded) => {
+      if (!cancelled && loaded) hostsLoaded.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [load, open]);
 
   const showDot = Boolean(indicator) || hostValue !== LOCAL_HOST_ID;
 
@@ -152,7 +223,6 @@ export function ComposerOptionsMenu({
           aria-label="Composer options"
           title="Composer options"
           onClick={() => {
-            void load();
             setOpen(!open);
           }}
         >
@@ -183,36 +253,26 @@ export function ComposerOptionsMenu({
               Prompt snippets…
             </button>
           ) : null}
-          {onSaveAsTemplate ? (
-            <button
-              type="button"
-              className="composer-options__action focus-ring disabled:opacity-40"
-              disabled={saveAsTemplateDisabled}
-              onClick={() => {
-                setOpen(false);
-                onSaveAsTemplate();
-              }}
-            >
-              <Icon name="ph:floppy-disk-bold" width={14} aria-hidden />
-              Save draft as template…
-            </button>
-          ) : null}
-          <div className="composer-options__section">
-            <span className="composer-options__label">Host</span>
-            <ComposerHostChoices
-              options={hostOptions}
-              value={hostValue}
-              onRemoveHost={(host) => void removeHost(host)}
-              onPick={onHostPick}
-              onConnectNew={() => {
-                setOpen(false);
-                setConnectOpen(true);
-              }}
-            />
-          </div>
-          {sections.map((section) => (
-            <OptionRadioGroup key={section.id} {...section} />
-          ))}
+          <ComposerResponseSections
+            hostValue={hostValue}
+            hostOptions={hostOptions}
+            onHostPick={onHostPick}
+            onRemoveHost={(host) => void removeHost(host)}
+            sections={sections}
+            onConnectNew={() => {
+              setOpen(false);
+              setConnectOpen(true);
+            }}
+            onSaveAsTemplate={
+              onSaveAsTemplate
+                ? () => {
+                    setOpen(false);
+                    onSaveAsTemplate();
+                  }
+                : undefined
+            }
+            saveAsTemplateDisabled={saveAsTemplateDisabled}
+          />
         </PopoverBody>
       </Popover>
       {connectOpen && (
@@ -220,7 +280,7 @@ export function ComposerOptionsMenu({
           onClose={() => setConnectOpen(false)}
           onConnected={(host) => {
             onHostPick(host);
-            void load(true);
+            hostRefreshPending.current = true;
           }}
         />
       )}

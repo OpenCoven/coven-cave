@@ -15,6 +15,7 @@ const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url
 const homeModelState = readFileSync(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-runtime-chip.css", import.meta.url), "utf8");
+const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 
 // ── Parity: the home composer carries the same picker (cave-v25g) ───────────
 // The runtime/model picker now opens from the composer context pill (chat
@@ -23,6 +24,26 @@ assert.match(
   homeComposer,
   /<ComposerContextPill[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
   "the home composer's context pill hosts the runtime picker from its own model state",
+);
+assert.match(
+  contextPill,
+  /export function ComposerContextActionRows\(/,
+  "runtime/model rows are reusable outside the Home pill wrapper",
+);
+assert.match(
+  contextPill,
+  /<RuntimeLogo runtime=\{context\.config\.runtime\} size=\{13\} \/>/,
+  "reusable context rows receive the actual runtime id for the shared RuntimeLogo",
+);
+assert.match(
+  contextPill,
+  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?const modelLabel = runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
+  "triggerless context actions derive runtime/model labels once for the shared rows",
+);
+assert.match(
+  contextPill,
+  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
+  "ComposerContextPill still wraps the extracted runtime/model rows and pickers",
 );
 
 // ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────
@@ -47,13 +68,13 @@ assert.match(
 // ── The picker is always in the composer control row, wired to live state ───
 assert.match(
   chatView,
-  /<ComposerContextPill[\s\S]*?runtime=\{modelHarness\}[\s\S]*?modelValue=\{composerModelValue\}[\s\S]*?modelOptions=\{composerModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
-  "the chat composer's context pill hosts the runtime picker from the live model state (runtime + effective model)",
+  /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?runtime: modelHarness,[\s\S]*?modelValue: composerModelValue,[\s\S]*?modelOptions: composerModelOptions,[\s\S]*?onPickRuntime: handleSelectRuntime,[\s\S]*?onPickModel: handleSelectModel,[\s\S]*?\}\}/,
+  "the chat composer threads live runtime/model state into ComposerActionsMenu's shared context props",
 );
 assert.match(
   chatView,
-  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerContextPill/,
-  "the pill sits in the composer utility row — always visible, session or not",
+  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerActionsMenu/,
+  "the chat options trigger sits in the composer utility row — always visible, session or not",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──

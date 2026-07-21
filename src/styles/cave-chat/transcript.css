@@ -458,12 +458,9 @@
     overflow: hidden;
   }
 
-  /* Mobile keeps its own identity rail + context menu; the desktop meta line
-     would double-report there, and the footer band's linked-context cluster
-     yields to the header's MobileHeaderTask chip (the band keeps project ·
-     runtime · git, which have no mobile twin). */
-  .cave-chat-meta-line,
-  .cave-chat-linked-context {
+  /* Mobile keeps its own identity rail + context menu, so the desktop meta
+     line would double-report there. */
+  .cave-chat-meta-line {
     display: none;
   }
 
@@ -630,9 +627,10 @@
   }
 
   .cave-scroll-bottom-button {
-    /* Sit just above the composer dock. The mobile composer (action strip +
-       ~84px input + two compact control rows + padding) is ~214px tall; hug just above
-       it rather than floating high in the transcript. */
+    /* Sit just above the composer dock. The mobile composer still keeps the
+       action strip, the ~84px textarea, one compact action footer, and dock
+       padding — ~214px total — so hug just above it rather than floating high
+       in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
     width: var(--touch-target);
     height: var(--touch-target);
@@ -704,13 +702,6 @@
   }
 
   .cave-composer-utility-row {
-    flex-wrap: wrap;
-  }
-
-  /* Phone width: the band's context chips wrap instead of crushing each
-     other (home band's rhythm). */
-  .cave-composer-footer-band,
-  .cave-composer-footer-band__context {
     flex-wrap: wrap;
   }
 

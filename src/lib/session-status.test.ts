@@ -23,7 +23,7 @@ assert.equal(sessionStatusWord("RUNNING"), "running", "case-insensitive");
 // ── Phase 2 pins: the board's chips carry live status ─────────────────────────
 const kanban = await readFile(new URL("../components/board-kanban.tsx", import.meta.url), "utf8");
 const inspector = await readFile(new URL("../components/board-inspector.tsx", import.meta.url), "utf8");
-const boardCss = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
+const boardCss = await readFile(new URL("../styles/board/kanban-inspector.css", import.meta.url), "utf8");
 
 assert.match(
   kanban,
@@ -48,29 +48,30 @@ assert.match(boardCss, /board-drawer-chat-status-dot--running/, "inspector dot t
 
 // ── Phase 3 pins: settled chat offers one-click Mark done ─────────────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+const linkedWork = await readFile(new URL("../components/composer-linked-work-actions.tsx", import.meta.url), "utf8");
 
 assert.match(
-  chatView,
+  linkedWork,
   /sessionSettled && t\.status !== "done" && onLinkedContextChange \? \(/,
   "Mark done shows only for a settled session on a not-yet-done task",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /lifecycle: "completed",\s*lifecycleReason: sessionId/,
-  "the flip goes through the card lifecycle machine with an audit reason (status derives server-side)",
+  "the linked-work action flips through the card lifecycle machine with an audit reason (status derives server-side)",
 );
 assert.match(
   chatView,
-  /sessionSettled=\{!activePendingTurn && Boolean\(lastSettledAssistantTurn\) && !lastSettledAssistantTurn\?\.error\}/,
+  /sessionSettled:\s*!activePendingTurn && Boolean\(lastSettledAssistantTurn\) && !lastSettledAssistantTurn\?\.error/,
   "settled = no in-flight turn, a clean last assistant turn",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /announce\(`Task "\$\{t\.title\}" marked done\.`\)/,
   "success is voiced for AT",
 );
 assert.match(
-  chatView,
+  linkedWork,
   /Couldn't mark "\$\{t\.title\}" done/,
   "failure is voiced too — no silent no-op buttons",
 );

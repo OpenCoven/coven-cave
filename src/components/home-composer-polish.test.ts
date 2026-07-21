@@ -36,7 +36,16 @@ assert.doesNotMatch(
 assert.doesNotMatch(source, /hc-keyboard-hint/, "home composer should not render the keyboard hint strip");
 assert.doesNotMatch(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ commands/, "old shortcut hint copy is removed");
 
-const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
+const css = (
+  await Promise.all(
+    [
+      "../styles/home-composer/landing-composer.css",
+      "../styles/home-composer/feed-menus.css",
+      "../styles/home-composer/digest.css",
+      "../styles/home-composer/hearth-continuations.css",
+    ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
+  )
+).join("\n");
 assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
 
 // ───────── Task 3: chat-parity Send button ─────────

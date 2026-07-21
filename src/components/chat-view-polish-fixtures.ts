@@ -5,7 +5,17 @@ export const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), 
 export const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 export const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
 export const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
-export const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+export const styles = [
+  "cave-md",
+  "cave-composer",
+  "chat-list",
+  "calendar",
+  "cave-chat",
+  "cave-chat/bubbles",
+  "cave-chat/activity",
+  "cave-chat/transcript",
+  "cave-chat/auxiliary-surfaces",
+]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 export const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");

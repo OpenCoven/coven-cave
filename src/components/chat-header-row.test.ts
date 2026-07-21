@@ -6,14 +6,15 @@ import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const styles = ["cave-md", "cave-md/code", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity", "cave-chat/transcript"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const codeFenceSource = readFileSync(new URL("../lib/message-code-fences.ts", import.meta.url), "utf8");
 
-// After the streamline refactor the header is MetaLine (title + status meta)
-// plus an optional LinkedContextRow — no ChatContextStrip, no headline row.
+// After the streamline refactor the header is MetaLine (title + status meta);
+// linked-work actions are extracted, but ChatView does not mount them directly
+// in the footer band yet.
 assert.doesNotMatch(
   source,
   /<ChatContextStrip\b/,
@@ -46,16 +47,22 @@ assert.doesNotMatch(
   "the back-to-chats control is gone from the chat header",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /<LinkedContextRow\b/,
-  "ChatView renders LinkedContextRow for task/GitHub chips",
+  /import \{[\s\S]*ComposerLinkedWorkActions[\s\S]*\} from "@\/components\/composer-linked-work-actions"/,
+  "ChatView no longer imports the linked-work footer component",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /function LinkedContextRow[\s\S]*?if \(!task && github\.length === 0 && !canLink\) return null/,
-  "LinkedContextRow renders when there's linked context OR a chat session that can link a task",
+  /<ComposerLinkedWorkActions\b/,
+  "ChatView does not mount linked-work actions directly",
+);
+
+assert.doesNotMatch(
+  source,
+  /cave-composer-footer-band/,
+  "the obsolete empty footer band is removed",
 );
 
 assert.match(

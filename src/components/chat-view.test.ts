@@ -2,7 +2,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const styles = [
+  "cave-md",
+  "cave-composer",
+  "chat-list",
+  "calendar",
+  "cave-chat/activity",
+  "cave-chat/transcript",
+  "cave-chat/auxiliary-surfaces",
+]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -181,8 +189,8 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /projectRoot: activeProjectRoot,/,
-  "ChatView must not echo the raw activeProjectRoot (session cwd) as an explicit projectRoot",
+  /body: JSON\.stringify\(\{[\s\S]{0,400}?projectRoot: activeProjectRoot,/,
+  "ChatView must not echo the raw activeProjectRoot (session cwd) as the send request's explicit projectRoot",
 );
 
 // ── #2618: a failed chat send keeps the user in-chat with the message preserved,

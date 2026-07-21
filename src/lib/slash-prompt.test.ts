@@ -94,7 +94,11 @@ assert.doesNotMatch(chatView, /sendRaw\([^)]*promptInsertion/, "prompt insertion
 assert.doesNotMatch(chatView, /sendRaw\([^)]*\.body\b/, "a template body is never sent directly");
 // Prompt snippets fold into the composer "+" menu (chat revamp 1d): no
 // standalone utility button, reachable via the menu's promptSnippets item.
-assert.match(chatView, /promptSnippets=\{\{ onSelect: \(\) => setPromptSnippetsOpen\(true\) \}\}/, "the composer + menu opens Prompt snippets");
+assert.match(
+  chatView,
+  /<ComposerActionsMenu[\s\S]*?improve=\{\{[\s\S]*?promptSnippets:\s*\{[\s\S]*?onSelect:\s*\(\)\s*=>\s*setPromptSnippetsOpen\(true\)/,
+  "the Chat options Improve group opens Prompt snippets",
+);
 assert.match(chatView, /onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/, "empty state can open the snippets modal");
 
 // ── Prompt snippets modal ────────────────────────────────────────────────────

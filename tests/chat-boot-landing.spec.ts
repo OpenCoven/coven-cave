@@ -59,6 +59,12 @@ async function seed(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: () => new Promise(() => {}),
+      },
+    });
   });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS }));
   await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
@@ -114,9 +120,21 @@ test.describe("chat boot landing", () => {
 
   test("landing offers a task-resume pill, voice call from turn zero, and hints at / commands", async ({ page }) => {
     await seed(page);
+    let voiceConversationCreateCalls = 0;
     await page.route("**/api/sessions/list**", (route) =>
       route.fulfill({ json: { ok: true, sessions: [] } }),
     );
+    await page.route("**/api/chat/conversation", (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      voiceConversationCreateCalls += 1;
+      return route.fulfill({ json: { ok: true, sessionId: "voice-s1" } });
+    });
+    await page.route("**/api/chat/conversation/**", (route) => {
+      if (route.request().method() === "DELETE") {
+        return route.fulfill({ json: { ok: true, deleted: true } });
+      }
+      return route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } } });
+    });
 
     await page.goto("/?mode=chat");
     const empty = page.locator(".cave-chat-empty");
@@ -133,10 +151,24 @@ test.describe("chat boot landing", () => {
     await expect(composer).toHaveValue(/Continue the task: Fix login flow/);
     await expect(empty).toBeVisible();
 
-    // Voice no longer needs a session: the call action is present from turn
-    // zero inside the composer "+" menu (it mints a conversation on demand).
-    await page.getByRole("button", { name: "Composer actions" }).click();
-    await expect(page.getByRole("menuitem", { name: "Voice call" })).toBeVisible();
+    // Voice no longer needs a session: the call action is a direct button from
+    // turn zero, while the overflow has moved to the dedicated Chat options trigger.
+    const voiceCall = page.getByRole("button", { name: "Voice call" });
+    await expect(voiceCall).toBeVisible();
+    await expect(voiceCall).toBeEnabled();
+    const createVoiceConversation = page.waitForResponse(
+      (response) => response.url().endsWith("/api/chat/conversation") && response.request().method() === "POST",
+    );
+    await voiceCall.click();
+    await createVoiceConversation;
+    expect(voiceConversationCreateCalls).toBe(1);
+    const voiceDialog = page.getByRole("dialog", { name: "Nova" });
+    await expect(voiceDialog).toBeVisible();
+    await expect(page.getByText("Requesting microphone…")).toBeVisible();
+    await voiceDialog.getByRole("button", { name: "End call" }).click();
+    await expect(voiceDialog).toHaveCount(0);
+    await page.getByRole("button", { name: "Chat options" }).click();
+    await expect(page.getByText("Improve")).toBeVisible();
     await page.keyboard.press("Escape");
 
     // Dosed discoverability: the ready line mentions the slash entry point.

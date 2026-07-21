@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Card } from "@/lib/cave-board-types";
@@ -23,12 +25,14 @@ export function TaskLinkPicker({
   onAssigned,
   onClose,
   handoff,
+  embedded = false,
 }: {
   sessionId: string;
   linkedIds: Set<string>;
   onAssigned: (card: Card) => void;
   onClose: () => void;
   handoff?: ChatHandoffContext | null;
+  embedded?: boolean;
 }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +127,9 @@ export function TaskLinkPicker({
       ref={ref}
       role="dialog"
       aria-label="Link a task to this chat"
-      className="absolute left-0 top-full z-30 mt-1 w-[20rem] max-w-[80vw] overflow-hidden rounded-lg border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-lg"
+      tabIndex={-1}
+      data-embedded={embedded || undefined}
+      className={`task-link-picker ${embedded ? "task-link-picker--embedded" : "task-link-picker--floating"}`}
     >
       <div className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] px-2.5 py-2">
         <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />

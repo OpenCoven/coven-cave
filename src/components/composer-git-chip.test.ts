@@ -9,25 +9,39 @@ const chip = readFileSync(new URL("./composer-git-chip.tsx", import.meta.url), "
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const summary = readFileSync(new URL("../lib/use-changes-summary.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.url), "utf8");
+const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 
 // ── The chat composer carries git context from the chat's active root ───────
-// The git context now rides the composer context pill (chat revamp 1d) —
-// same summary hook + branch menu, opened from the pill's Branch section.
+// Task 3's triggerless extraction moved branch/PR/change actions into shared
+// ComposerContextActionRows + ComposerContextPickers, with ComposerContextPill
+// staying as the wrapper that owns the anchor/menu state.
 assert.match(
   chatView,
-  /<ComposerContextPill[\s\S]*?projectRoot=\{activeProjectRoot\}[\s\S]*?onOpenUrl=\{onOpenUrl\}/,
-  "the chat composer's context pill is wired to the resolved project root",
+  /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?projectRoot: activeProjectRoot,[\s\S]*?onOpenUrl,[\s\S]*?\}\}/,
+  "the chat composer threads its resolved project root into ComposerActionsMenu's shared context props",
 );
-const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+assert.match(pill, /export function useComposerContextActions\(/, "git context derivation is reusable outside the pill trigger");
 assert.match(
   pill,
   /useChangesSummary\(\s*\n?\s*root,\s*\n?\s*Boolean\(root\),?\s*\n?\s*\)/,
   "the pill reads branch/worktree/dirty state from the shared changes-summary hook",
 );
+assert.match(pill, /const pr = useBranchPr\(root, branch\);/, "shared context actions derive the branch PR once from root + branch");
+assert.match(pill, /export function ComposerContextActionRows\(/, "branch/PR/change rows are extracted from the pill trigger");
 assert.match(
   pill,
-  /<GitBranchMenuPopover[\s\S]*?projectRoot=\{root\}[\s\S]*?onSwitched=\{reload\}/,
-  "the pill's Branch section opens the shared branch-switch menu",
+  /export function ComposerContextPickers\(/,
+  "branch picker siblings are reusable outside the Home pill wrapper",
+);
+assert.match(
+  pill,
+  /<GitBranchMenuPopover[\s\S]*?projectRoot=\{context\.root\}[\s\S]*?onSwitched=\{context\.reload\}/,
+  "the reusable branch picker keeps the shared branch-switch menu wiring",
+);
+assert.match(
+  pill,
+  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
+  "ComposerContextPill still wraps the extracted branch rows/pickers on the shared anchor",
 );
 assert.match(
   pill,

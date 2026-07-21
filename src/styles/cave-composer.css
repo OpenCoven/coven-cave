@@ -79,32 +79,6 @@
   justify-content: flex-end;
 }
 
-/* ── Footer band ─────────────────────────────────────────────────────────────
- * The darker strip attached to the panel's underside (home composer's
- * hc-footer-band, same grammar): the chat's session metadata — project ·
- * runtime/model · git context on the left, linked tasks/GitHub on the right —
- * moved OUT of the input's control row so the write surface above stays
- * minimal. Last child of .cave-composer-panel, so the panel's overflow clips
- * it into the rounded bottom corners; it reads as the card, one tone deeper. */
-.cave-composer-footer-band {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: 6px 10px;
-  border-top: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
-}
-
-.cave-composer-footer-band__context {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
 .cave-composer-icon-button {
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
@@ -761,8 +735,34 @@
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CHAT REVAMP 1d — one "+" button · one context pill · circular send
+   CHAT REVAMP 1d — compact footer actions · grouped "+" · circular send
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cave-composer-footer-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-footer-action:hover:not(:disabled) {
+  background: var(--bg-raised);
+}
+
+.cave-composer-footer-action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
 
 /* The composer's single resting utility button. 30px, control radius (8px),
    6% text tint — highlights with an accent border + ~12% accent tint while
@@ -799,6 +799,69 @@
   opacity: 0.4;
 }
 
+.composer-actions__trigger {
+  position: relative;
+}
+
+.composer-actions__indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 72%, var(--text-muted));
+  box-shadow: 0 0 0 1.5px var(--bg-surface);
+}
+
+.composer-actions__panel {
+  width: min(360px, calc(100vw - 16px));
+  padding: var(--space-1);
+  overscroll-behavior: contain;
+}
+
+.composer-actions__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.composer-actions__section {
+  min-width: 0;
+  padding: var(--space-1) 0;
+}
+
+.composer-actions__section + .composer-actions__section {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.composer-actions__linked {
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.composer-actions__improve .ui-popover-item,
+.composer-actions__item {
+  gap: 10px;
+}
+
+.composer-actions__icon--live {
+  color: var(--accent-presence);
+  animation: hc-mic-pulse 1.6s ease-in-out infinite;
+}
+
+.composer-actions__response .composer-options__action {
+  border-bottom: 0;
+}
+
+.composer-actions__response .composer-options__section {
+  padding-right: var(--space-2);
+  padding-left: var(--space-2);
+}
+
+.composer-actions__enhance {
+  min-width: 0;
+}
+
 /* "+" popover rows: icon · label · trailing shortcut hint. */
 .composer-plus__panel {
   padding: var(--space-1);
@@ -833,8 +896,35 @@
   animation: hc-mic-pulse 1.6s ease-in-out infinite;
 }
 
+.task-link-picker {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  box-shadow: 0 18px 44px color-mix(in oklch, var(--bg-base) 32%, transparent);
+}
+
+.task-link-picker--floating {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  width: min(20rem, 80vw);
+  max-width: 80vw;
+}
+
+.task-link-picker--embedded {
+  position: static;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  margin-top: var(--space-1);
+  box-shadow: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .composer-plus__icon--live { animation: none; }
+  .composer-plus__icon--live,
+  .composer-actions__icon--live { animation: none; }
 }
 
 /* The one quiet context pill — project swatch · "Project · Model · branch" ·
@@ -959,6 +1049,7 @@
     display: none;
   }
 
+  .cave-composer-footer-action,
   .cave-composer-plus,
   .cave-composer-send {
     width: var(--touch-target);
@@ -972,5 +1063,24 @@
     height: var(--touch-target);
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .composer-actions__panel {
+    width: calc(100vw - 16px);
+    min-width: 0 !important;
+  }
+
+  .composer-actions__panel .ui-popover-item,
+  .composer-actions__inline-action,
+  .composer-actions__panel [role="radio"] {
+    min-height: var(--touch-target);
+  }
+
+  .composer-actions__linked {
+    max-height: min(13rem, 30vh);
+  }
+
+  .composer-actions__response .composer-options__choices {
+    gap: var(--space-2);
   }
 }

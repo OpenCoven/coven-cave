@@ -125,25 +125,52 @@ export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => voi
  */
 export function useComposerHosts(value: string): {
   options: ChatHostOption[];
-  load: (force?: boolean) => Promise<void>;
+  load: (force?: boolean) => Promise<boolean>;
   /** Unregister a host (DELETE /api/hosts) and refresh the list (cave-4zdp). */
   removeHost: (host: string) => Promise<void>;
 } {
   const [hosts, setHosts] = useState<ChatHostOption[] | null>(null);
-  const loading = useRef(false);
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const queuedForcedLoad = useRef<Promise<boolean> | null>(null);
 
-  const load = useCallback(async (force = false) => {
-    if (loading.current && !force) return;
-    loading.current = true;
-    try {
+  const startLoad = useCallback((): Promise<boolean> => {
+    const request = (async () => {
+      let loaded = false;
       const quick = await fetch("/api/hosts?probe=0").then((res) => res.json()).catch(() => null);
-      if (quick?.ok && Array.isArray(quick.hosts)) setHosts(quick.hosts);
+      if (quick?.ok && Array.isArray(quick.hosts)) {
+        setHosts(quick.hosts);
+        loaded = true;
+      }
       const probed = await fetch("/api/hosts").then((res) => res.json()).catch(() => null);
-      if (probed?.ok && Array.isArray(probed.hosts)) setHosts(probed.hosts);
-    } finally {
-      if (force) loading.current = false;
-    }
+      if (probed?.ok && Array.isArray(probed.hosts)) {
+        setHosts(probed.hosts);
+        loaded = true;
+      }
+      return loaded;
+    })();
+    inFlight.current = request;
+    const clearInFlight = () => {
+      if (inFlight.current === request) inFlight.current = null;
+    };
+    void request.then(clearInFlight, clearInFlight);
+    return request;
   }, []);
+
+  const load = useCallback((force = false): Promise<boolean> => {
+    const active = inFlight.current;
+    if (!active) return startLoad();
+    if (!force) return active;
+    if (queuedForcedLoad.current) return queuedForcedLoad.current;
+
+    let queued: Promise<boolean>;
+    const startQueuedLoad = () => {
+      if (queuedForcedLoad.current === queued) queuedForcedLoad.current = null;
+      return startLoad();
+    };
+    queued = active.then(startQueuedLoad, startQueuedLoad);
+    queuedForcedLoad.current = queued;
+    return queued;
+  }, [startLoad]);
 
   const removeHost = useCallback(async (host: string) => {
     try {
