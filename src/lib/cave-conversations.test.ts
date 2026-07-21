@@ -647,3 +647,72 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(branched.activeLeafId, "child-turn", "active leaf off the stub is untouched");
 }
 console.log("cave-conversations cache test OK");
+
+// ── First-turn stub pending marker (cave-0g2x crash truth) ───────────────────
+// The stub write stamps pendingUserTurnId on the file and `pending` on the
+// summary; the sessions list resolves pending rows against the live run
+// registry (running vs failed) instead of letting a crashed first turn read
+// as a phantom "completed". Any end-of-stream save settles the marker.
+{
+  const { createConversationStub, stripConversationStubTurn } = await import(
+    "./cave-conversations.ts"
+  );
+
+  await createConversationStub({
+    sessionId: "stub-pending-marker",
+    familiarId: "charm",
+    harness: "codex",
+    userTurn: { id: "pending-turn", text: "long first prompt" },
+  });
+  const stub = await loadConversation("stub-pending-marker");
+  assert.equal(stub?.pendingUserTurnId, "pending-turn", "stub write stamps the pending marker");
+  const pendingSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(pendingSummary?.pending, true, "summary carries the pending flag");
+  assert.equal(pendingSummary?.status, undefined, "pending stays statusless (merge honesty)");
+
+  // Normal settle: the same process strips its own stub turn — marker gone.
+  const settled = await loadConversation("stub-pending-marker");
+  assert.equal(stripConversationStubTurn(settled, "pending-turn"), true);
+  assert.equal(settled.pendingUserTurnId, undefined, "strip clears the pending marker");
+  settled.turns.push(
+    { id: "pending-turn", role: "user", text: "long first prompt", createdAt: "2026-07-21T02:00:00.000Z", parentId: null },
+    { id: "reply", role: "assistant", text: "ok", createdAt: "2026-07-21T02:00:01.000Z", isError: false, parentId: "pending-turn" },
+  );
+  settled.activeLeafId = "reply";
+  await saveConversation(settled);
+  const settledSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(settledSummary?.pending, undefined, "settled conversation drops the flag");
+  assert.equal(settledSummary?.status, "completed");
+
+  // Crash-then-resume: a NEW server process saves a later turn without the
+  // crashed run's in-memory stub id. The marker must still clear — while the
+  // stubbed user turn deliberately stays as the record of the lost prompt.
+  await createConversationStub({
+    sessionId: "stub-crashed",
+    familiarId: "charm",
+    harness: "claude",
+    userTurn: { id: "lost-prompt", text: "prompt the crash orphaned" },
+  });
+  const crashed = await loadConversation("stub-crashed");
+  assert.equal(crashed?.pendingUserTurnId, "lost-prompt");
+  assert.equal(
+    stripConversationStubTurn(crashed, null),
+    false,
+    "a resumed save has no stub id to strip",
+  );
+  assert.equal(crashed.pendingUserTurnId, undefined, "…but the marker still settles");
+  assert.equal(crashed.turns.length, 1, "the orphaned prompt stays in the tree");
+  await saveConversation(crashed);
+  const recoveredSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-crashed",
+  );
+  assert.equal(recoveredSummary?.pending, undefined, "recovered chat is no longer pending");
+
+  await deleteConversation("stub-pending-marker");
+  await deleteConversation("stub-crashed");
+}
+console.log("cave-conversations pending-marker test OK");

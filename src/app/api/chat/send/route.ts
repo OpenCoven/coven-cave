@@ -56,6 +56,7 @@ import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
   registerChatRun,
   unregisterChatRun,
+  addChatRunKeys,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
@@ -1315,6 +1316,12 @@ export async function POST(req: Request) {
         // leak out as a "new session" (it fragmented every continued
         // chat into one sidebar entry per turn).
         const announcedId = body.sessionId ?? sessionId;
+        // A new chat registered with only the client runId (body.sessionId is
+        // null until the harness mints the id) — late-key the run so
+        // /api/chat/stop and the sessions-list liveness probe reach it by
+        // conversation id. runHandle is declared later in this scope but is
+        // always initialized before the stream handlers that call announce.
+        addChatRunKeys(runHandle, [announcedId]);
         // First-turn visibility (cave-0g2x): persist a stub conversation with
         // the pending user turn as soon as the id exists, so the sessions
         // list can surface this chat during its entire first turn (and after

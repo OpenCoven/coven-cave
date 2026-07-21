@@ -48,6 +48,38 @@ export function unregisterChatRun(handle: ChatRunHandle): void {
   handle.keys.length = 0;
 }
 
+/**
+ * Late-key a live run. A new chat's conversation id only exists once the
+ * harness announces it, so the initial registration carries just the client
+ * runId; adding the announced id makes the run reachable by conversation id —
+ * for /api/chat/stop on a first turn and for the sessions-list liveness probe
+ * (hasActiveChatRun). No-op after the run settled.
+ */
+export function addChatRunKeys(
+  handle: ChatRunHandle,
+  keys: Array<string | null | undefined>,
+): void {
+  const entry = handle.keys
+    .map((key) => active.get(key))
+    .find((candidate) => candidate?.handle === handle);
+  if (!entry) return;
+  for (const key of keys) {
+    if (!key || handle.keys.includes(key)) continue;
+    active.set(key, entry);
+    handle.keys.push(key);
+  }
+}
+
+/**
+ * True when a streaming run is currently in flight under the key. The
+ * sessions-list read uses this to keep a first-turn stub honest: a pending
+ * conversation whose run this process doesn't hold means the server died
+ * mid-turn — the row reports `failed` instead of a phantom `completed`.
+ */
+export function hasActiveChatRun(key: string): boolean {
+  return active.has(key);
+}
+
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
  *  Returns false when nothing is in flight under the key. */
 export function requestChatStop(key: string): boolean {

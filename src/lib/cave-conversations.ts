@@ -100,6 +100,14 @@ export type ConversationFile = {
   /** Branching lineage (set by fork-to-new-thread in a later PR). */
   parentSessionId?: string;
   branchedFromTurnId?: string;
+  /**
+   * First-turn stub marker (cave-0g2x): id of the pending user turn written by
+   * createConversationStub, cleared by the first end-of-stream save
+   * (stripConversationStubTurn). Still set on a conversation whose run is not
+   * live in the run registry = the server died mid-first-turn; the sessions
+   * list uses that to report `failed` instead of a phantom `completed`.
+   */
+  pendingUserTurnId?: string;
 };
 
 function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } | null {
@@ -129,6 +137,11 @@ export type ConversationSummary = {
   prUrl?: string;
   status?: string;
   exitCode?: number | null;
+  /** True while the first-turn stub marker is set (see
+   *  ConversationFile.pendingUserTurnId): the first reply is still streaming,
+   *  or its server died mid-turn. The sessions list disambiguates via the
+   *  in-process run registry. */
+  pending?: boolean;
   createdAt?: string;
   updatedAt: string;
 };
@@ -297,6 +310,7 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
       },
     ],
     activeLeafId: seed.userTurn.id,
+    pendingUserTurnId: seed.userTurn.id,
   });
   return true;
 }
@@ -314,6 +328,11 @@ export function stripConversationStubTurn(
   conv: ConversationFile,
   stubTurnId: string | null | undefined,
 ): boolean {
+  // Any end-of-stream save settles the pending state — including a resumed
+  // turn saved by a NEW server process after a crash (its in-memory stub id
+  // is long gone, and the crashed turn's stub deliberately stays in the tree
+  // as the record of the lost prompt).
+  delete conv.pendingUserTurnId;
   if (!stubTurnId) return false;
   const stub = conv.turns.find((turn) => turn.id === stubTurnId);
   if (!stub) return false;
@@ -395,6 +414,7 @@ async function readConversationSummary(
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
         ...(terminal ? { status: terminal.status, exitCode: terminal.exitCode } : {}),
+        ...(conv.pendingUserTurnId ? { pending: true } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

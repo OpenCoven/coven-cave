@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState, type CaveState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
+import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import {
   sweepAutoArchive,
   sweepMergedPrAutoArchive,
@@ -161,7 +162,18 @@ async function computeSessionsList(
     loadState(),
     loadProjects(),
   ]);
-  const localConversations = await listConversations();
+  const localConversations = (await listConversations()).map((conv) => {
+    // First-turn stubs (cave-0g2x) are statusless; resolve them against the
+    // in-process run registry. Run in flight → an honest `running` row (a
+    // conversation-only row would otherwise default to "completed"). No run →
+    // the server died mid-first-turn: `failed`, not a phantom completion.
+    // Registry-truth is process-local, which matches how chat runs live and
+    // die with this server process.
+    if (!conv.pending) return conv;
+    return hasActiveChatRun(conv.sessionId)
+      ? { ...conv, status: "running", exitCode: 0 }
+      : { ...conv, status: "failed", exitCode: 1 };
+  });
   // Backfill for local-only chat rows (UI chats the daemon never sees):
   // map the conversation's recorded cwd to its registered project root so
   // the sidebar's project groups pick new chats up immediately.
