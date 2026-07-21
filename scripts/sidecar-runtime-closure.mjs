@@ -83,7 +83,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // one traced file on Windows. CI measured 5,545; keep the exact maximum.
   // 2026-07-21 (Group redesign): the coven-tab chunk adds two traced files on
   // Windows. CI measured 5,547; keep the exact maximum.
-  fileCount: 5_547,
+  // 2026-07-21 (Sessions redesign): the chat-session-grouping chunk adds one
+  // traced file on Windows. CI measured 5,548; keep the exact maximum.
+  fileCount: 5_548,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

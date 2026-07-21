@@ -203,6 +203,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [groupBy, setGroupBy] = useState<ChatSessionGroupBy>("none");
   // Expandable-row disclosure: a single click opens an inline detail strip
   // (Resume/Open + Archive); double-click and Enter keep the fast open path.
+  // Mobile keeps tap = open (messengers' convention; double-tap is awkward on
+  // touch) — the disclosure is a desktop affordance.
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   useEffect(() => { setExpandedRowId(null); }, [familiar?.id]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
@@ -1184,7 +1186,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           aria-expanded={selectMode ? undefined : isExpanded}
                           aria-controls={isExpanded ? detailId : undefined}
                           tabIndex={0}
-                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setExpandedRowId((cur) => (cur === s.id ? null : s.id)); }}
+                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } if (isMobile) { setActiveId(s.id); onOpen(s.id, s.familiarId); return; } setExpandedRowId((cur) => (cur === s.id ? null : s.id)); }}
                           onDoubleClick={() => { if (selectMode) return; setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onMouseLeave={cancelHoverPrefetch}

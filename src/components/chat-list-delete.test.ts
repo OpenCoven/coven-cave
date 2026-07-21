@@ -355,8 +355,9 @@ assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\
 assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
 // Expandable rows (Sessions redesign): a single click toggles the inline
-// detail disclosure; double-click and Enter keep the fast open path.
-assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setExpandedRowId\(\(cur\) => \(cur === s\.id \? null : s\.id\)\)/, "a row click selects in select mode, otherwise toggles the detail strip");
+// detail disclosure; double-click and Enter keep the fast open path. Mobile
+// keeps tap = open — the disclosure is a desktop affordance.
+assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} if \(isMobile\) \{ setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); return; \} setExpandedRowId\(\(cur\) => \(cur === s\.id \? null : s\.id\)\)/, "a row click selects in select mode, opens directly on mobile, otherwise toggles the detail strip");
 assert.match(source, /onDoubleClick=\{\(\) => \{ if \(selectMode\) return; setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/, "double-click still opens the session immediately");
 assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
