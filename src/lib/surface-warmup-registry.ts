@@ -59,8 +59,20 @@ defineResource("tasks:queue", async (signal) => {
   return Promise.allSettled([json(signal, "/api/beads?mode=ready"), json(signal, "/api/beads/prs")]);
 }, 30_000);
 
-export function readSurfaceResource<T>(key: string, force = false): Promise<SurfaceWarmCacheRead<T>> {
-  return read<T>(key, { force });
+export async function readSurfaceResource<T>(key: string, force = false): Promise<SurfaceWarmCacheRead<T>> {
+  const result = await read<T>(key, { force });
+  if (!result.cache.stale) return result;
+
+  // Surface components consume a point-in-time result rather than subscribing
+  // to cache updates. Join the revalidation before returning so a navigation
+  // that crosses a TTL boundary does not keep its stale landing data until a
+  // later poll or remount. If that revalidation fails, retain the stale value
+  // as the cache's availability fallback.
+  try {
+    return await read<T>(key, { force: true });
+  } catch {
+    return result;
+  }
 }
 
 export function invalidateSurfaceResources(...keys: string[]): void {
