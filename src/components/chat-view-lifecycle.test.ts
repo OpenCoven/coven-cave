@@ -461,6 +461,27 @@ assert.match(
   "The synthetic Receiving-response row settles (done) at first chunk (CHAT-D12-01)",
 );
 
+// (b2) The server's "Starting <harness>" step (id "harness-start") is only
+// settled server-side at process EXIT, so it spun as the live activity
+// headline for the whole reply. Streamed text or a tool event proves the
+// start completed — both apply sites settle it client-side; the server's
+// exit update (label + duration) still lands via the normal upsert.
+assert.match(
+  source,
+  /function settleProgressEventById\(\s*\n\s*progress: ProgressEvent\[\] \| undefined,\s*\n\s*id: string,/,
+  "settleProgressEventById settles a named running step on later evidence",
+);
+assert.match(
+  source,
+  /const applyAssistantChunk = \([\s\S]*?upsertProgressEvent\(settleProgressEventById\(t\.progress, "harness-start"\), \{\s*\n\s*id: "stream",/,
+  "First streamed chunk settles the harness-start step (it demonstrably started)",
+);
+assert.match(
+  source,
+  /upsertProgressEvent\(settleProgressEventById\(t\.progress, "harness-start"\), \{\s*\n\s*id: "tools",/,
+  "A tool event settles the harness-start step too (tooling turns can run long before prose)",
+);
+
 // (c) CHAT-D3-06: the MetaLine streaming state carries a compact ticking
 // elapsed ("writing… · 14s · esc to cancel") so the wall-clock counter
 // survives past the first token. SR-quiet: the ticker lives in an aria-hidden

@@ -434,6 +434,22 @@ function settleRunningProgress(
   return progress.map((item) => (item.status === "running" ? { ...item, status } : item));
 }
 
+/** Settle one still-"running" step once later evidence proves it finished.
+ *  The server only settles "harness-start" when the process EXITS, so
+ *  "Starting <harness>" would otherwise spin as the live activity headline for
+ *  the entire reply; streamed text or a tool event proves the start completed.
+ *  Reference-stable when nothing matches, and a later server update for the
+ *  same id (exit label + duration) still lands via the normal upsert. */
+function settleProgressEventById(
+  progress: ProgressEvent[] | undefined,
+  id: string,
+): ProgressEvent[] | undefined {
+  if (!progress?.some((item) => item.id === id && item.status === "running")) return progress;
+  return progress.map((item) =>
+    item.id === id && item.status === "running" ? { ...item, status: "done" as const } : item,
+  );
+}
+
 function fmtDuration(ms?: number): string | null {
   if (ms == null || ms < 0) return null;
   const s = Math.round(ms / 1000);
@@ -4610,8 +4626,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // CHAT-D12-01: settle the synthetic row the moment text is
               // flowing — the streamed text IS the live signal from here
               // on. Leaving it "running" kept the auto-open ProgressGroup
-              // pulsing for the entire stream.
-              progress: upsertProgressEvent(t.progress, {
+              // pulsing for the entire stream. Same evidence settles the
+              // server's "Starting <harness>" step, which the server itself
+              // only closes at process exit.
+              progress: upsertProgressEvent(settleProgressEventById(t.progress, "harness-start"), {
                 id: "stream",
                 label: "Receiving response",
                 status: "done",
@@ -4754,7 +4772,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               ...t,
               tools: nextTools,
               lifecycle: t.pending ? "tooling" : t.lifecycle,
-              progress: upsertProgressEvent(t.progress, {
+              // A tool event is proof the harness started — settle the
+              // server's "Starting <harness>" step (tooling turns can run
+              // long before any prose streams; see settleProgressEventById).
+              progress: upsertProgressEvent(settleProgressEventById(t.progress, "harness-start"), {
                 id: "tools",
                 label: incoming.status === "running" ? "Tool call running" : "Tool call finished",
                 detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,

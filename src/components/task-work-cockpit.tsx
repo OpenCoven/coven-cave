@@ -165,7 +165,17 @@ export function TaskWorkCockpit({
 
       <div className="task-work-cockpit__body">
         {target.kind === "ready" && familiar ? (
-          <Group className="task-work-cockpit__group" orientation="horizontal">
+          <Group
+            className="task-work-cockpit__group"
+            orientation="horizontal"
+            // The library retains an in-memory layout per panel-id set, so
+            // when the code rail collapses (its Panel unmounts) the surviving
+            // conversation panel kept its stale two-panel width — the chat sat
+            // at ~half the cockpit beside dead space. Remount the Group per
+            // pane set (the chat-split-host convention) so each set lays out
+            // fresh and a solo conversation always fills the cockpit.
+            key={railController.showInline ? "conversation-rail" : "conversation"}
+          >
             <Panel id="task-conversation" className="flex min-h-0 min-w-0" minSize="45%">
               <ChatView
                 familiar={familiar}

@@ -514,8 +514,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\)\)[\s\S]*pushProgress\("resume-retry", "Fresh chat started", "done"/,
-  "Transparent resume fallback should be visible in the progress timeline",
+  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*?pushProgress\(\s*"resume-retry",[\s\S]*?"Fresh chat started",\s*"done",?\s*\)[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  "Transparent resume fallback should be visible in the progress timeline and settle BEFORE the fresh attempt runs — left running until the attempt ended, 'Resume failed…' headlined the activity strip for the whole reply",
 );
 
 assert.match(
