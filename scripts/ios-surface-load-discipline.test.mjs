@@ -45,7 +45,7 @@ assert.match(
 
 assert.doesNotMatch(
   chatsHome,
-  /\.task \{ await app\.loadSessions\(\) \}/,
+  /\.task \{\s*await app\.loadSessions\(\)\s*\}/,
   "ChatsHomeView must not fire an unguarded loadSessions on every appear",
 );
 

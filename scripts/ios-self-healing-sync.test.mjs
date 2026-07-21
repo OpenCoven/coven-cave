@@ -39,8 +39,8 @@ assert.match(
 // every already-opened surface reload in one task group instead of a sequence.
 assert.match(
   model,
-  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{ await self\.loadCoreResources\(\) \}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}[\s\S]*?if projectsLoaded \{ group\.addTask \{ await self\.loadProjects\(\) \} \}[\s\S]*?if journalLoaded \{ group\.addTask \{ await self\.loadJournal\(\) \} \}/,
-  "reconnect should refresh all already-opened surfaces plus familiars/theme",
+  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{ await self\.loadCoreResources\(\) \}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}[\s\S]*?if projectsLoaded \{ group\.addTask \{ await self\.loadProjects\(\) \} \}[\s\S]*?if journalLoaded \{ group\.addTask \{ await self\.loadJournal\(\) \} \}[\s\S]*?if canvasLoaded \{ group\.addTask \{ await self\.loadCanvas\(\) \} \}/,
+  "reconnect should refresh all already-opened surfaces plus familiars/theme (canvas included — it has no other automatic recovery path)",
 );
 assert.match(
   model,
@@ -71,6 +71,13 @@ assert.match(
   connection,
   /static func isAuthFailure\(_ error: Error\) -> Bool/,
   "CaveError should expose an auth-failure classifier",
+);
+// Canvas has no per-view retry (its load task is one-shot behind canvasLoaded),
+// so its failures MUST go through the shared path to schedule auto recovery.
+assert.match(
+  model,
+  /func loadCanvas\(\) async \{[\s\S]*?canvasError = handleSurfaceError\(error\)/,
+  "canvas load failures should share the surface error path (auth routing + auto recover)",
 );
 
 // --- Transport resilience: waits for connectivity and retries transient request failures

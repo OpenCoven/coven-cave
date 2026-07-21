@@ -647,7 +647,12 @@ final class AppModel {
             canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
             canvasError = nil
         } catch {
-            canvasError = error.localizedDescription
+            // Shared surface-error path: an auth failure routes to pairing
+            // guidance, and a failure while "connected" schedules the auto
+            // recover — whose surface reload includes canvas (below), so a
+            // transient first-load error heals instead of leaving the gallery
+            // permanently empty behind the view's one-shot load guard.
+            canvasError = handleSurfaceError(error)
         }
         canvasLoaded = true
     }
@@ -975,7 +980,7 @@ final class AppModel {
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
-        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
+        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded || canvasLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
@@ -1066,6 +1071,7 @@ final class AppModel {
             if remindersLoaded { group.addTask { await self.loadReminders() } }
             if projectsLoaded { group.addTask { await self.loadProjects() } }
             if journalLoaded { group.addTask { await self.loadJournal() } }
+            if canvasLoaded { group.addTask { await self.loadCanvas() } }
         }
     }
 
