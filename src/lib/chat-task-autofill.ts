@@ -7,6 +7,7 @@
 // board's enrich-steps pipeline can still refine the card later.
 
 import type { CardGitHubLink, CardPriority } from "@/lib/cave-board-types";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import { taskGitHubLinkFromUrl } from "@/lib/task-github";
 import {
   buildChatHandoffNotes,
@@ -260,6 +261,7 @@ export async function createSmartTaskFromChat({
     if (!res.ok || !data?.ok) {
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
+    publishBoardChanged();
     return { ok: true, card: data.card as Card };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };

@@ -43,3 +43,20 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /warmSurface\(surface, runnable\)/);
   assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
 });
+
+test("external board writers invalidate a warmed board landing before navigation", async () => {
+  const writers = [
+    "../components/chat-view.tsx",
+    "../components/task-link-picker.tsx",
+    "../components/thread-signals-section.tsx",
+    "../components/journal/journal-entries.tsx",
+    "../lib/chat-task-handoff.ts",
+    "../lib/chat-task-autofill.ts",
+    "../lib/github-tasks.ts",
+    "../lib/asana-tasks.ts",
+  ];
+  for (const writer of writers) {
+    const code = await readFile(new URL(writer, here), "utf8");
+    assert.match(code, /publishBoardChanged\(\)/, `${writer} publishes its successful board write`);
+  }
+});

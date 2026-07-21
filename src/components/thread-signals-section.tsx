@@ -21,6 +21,7 @@ import {
   type SignalDismissalMap,
 } from "@/lib/thread-signal-dismissals";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -292,6 +293,7 @@ function ThreadSignalsTable({
       return next;
     });
     if (succeeded.length > 0) {
+      publishBoardChanged();
       setAdded((prev) => new Set([...prev, ...succeeded]));
       setSelected((prev) => {
         const next = new Set(prev);

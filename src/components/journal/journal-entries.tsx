@@ -15,6 +15,7 @@ import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug 
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
 import { familiarInScope } from "@/lib/familiar-multiselect";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import type { Familiar } from "@/lib/types";
 
 // Stable empty-scope fallback so the filteredDays memo's identity is steady
@@ -108,6 +109,7 @@ function NextPaths({
           });
           const json = await res.json().catch(() => ({ ok: false }));
           if (!res.ok || !json.ok) throw new Error();
+          publishBoardChanged();
           flashDone(key);
           onNotice("Added to Tasks.", { label: "View tasks", mode: "board" });
         } else {

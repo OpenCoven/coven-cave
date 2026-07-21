@@ -7,6 +7,7 @@
 // a bead.
 
 import type { CardAsanaKind, CardAsanaLink } from "@/lib/cave-board-types";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   mergeLinksWithAsana,
   mergeTaskAsanaLinks,
@@ -94,6 +95,7 @@ export async function createBoardCardFromAsanaItem(
     if (!res.ok || !data?.ok) {
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
+    publishBoardChanged();
     return { ok: true, cardId: data.card?.id as string | undefined };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
@@ -126,6 +128,7 @@ export async function attachAsanaItemToCard(
     if (!res.ok || !data?.ok) {
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
+    publishBoardChanged();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
