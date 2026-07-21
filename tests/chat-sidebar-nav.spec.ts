@@ -81,7 +81,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect(expandToggle).toHaveAttribute("aria-expanded", "false");
     await expect(sidebar).toBeHidden();
 
-    await page.keyboard.press("Meta+b");
+    await page.keyboard.press("ControlOrMeta+b");
     await expect(search).toBeVisible();
     await expect(page.getByRole("button", { name: "Collapse Chat sidebar" })).toHaveAttribute("aria-expanded", "true");
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
