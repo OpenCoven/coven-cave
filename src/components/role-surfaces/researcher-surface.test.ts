@@ -17,6 +17,9 @@ const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url)
 const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
 const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+// The tab-strip/desk sheet rides with the surface (not the root bundle), so
+// strip-level selectors are asserted against the sheet itself.
+const deskCss = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
 
 // ── Tab host (cave-dl74 Phase A) ─────────────────────────────────────────────
 
@@ -42,7 +45,7 @@ test("tab strip uses the shared Tabs tablist with wired panels", () => {
   assert.match(surface, /role="tabpanel"/);
   assert.match(surface, /id=\{`research-desk-panel-\$\{activeTab\}`\}/);
   assert.match(surface, /aria-labelledby=\{`research-desk-tab-\$\{activeTab\}`\}/);
-  assert.match(css, /\.research-desk__tabs/);
+  assert.match(deskCss, /\.research-desk__tabs/);
 });
 
 test("tab selection persists under cave:research:tab with an SSR guard", () => {
@@ -69,7 +72,7 @@ test("engine status derives honestly from the daemon and live missions", () => {
   assert.match(surface, /Engine offline · runs stay retryable/);
   assert.match(surface, /data-tone=\{daemonRunning \? "ok" : "warn"\}/);
   // Tone is a class/dot + words, not color alone.
-  assert.match(css, /\.research-desk__engine\[data-tone="warn"\] \.research-desk__engine-dot/);
+  assert.match(deskCss, /\.research-desk__engine\[data-tone="warn"\] \.research-desk__engine-dot/);
 });
 
 test("desk tab flags waiting checkpoints only while the desk is not active", () => {
@@ -78,7 +81,7 @@ test("desk tab flags waiting checkpoints only while the desk is not active", () 
   // The dot carries sr-only text so the flag is not visual-only.
   assert.match(surface, /research-desk__tab-dot" aria-hidden/);
   assert.match(surface, /sr-only"> — a run is waiting at a checkpoint/);
-  assert.match(css, /\.research-desk__tab-dot/);
+  assert.match(deskCss, /\.research-desk__tab-dot/);
 });
 
 test("onNavigate selects missions and routes Prompt modes per the contract", () => {
@@ -88,16 +91,14 @@ test("onNavigate selects missions and routes Prompt modes per the contract", () 
   assert.match(promptTab, /initialMode\?: ResearchMissionMode/);
 });
 
-test("all five tab CSS modules are imported after the workspaces sheet", () => {
-  // The effective globals.css keeps the facade's @import lines as inert
-  // metadata (scripts/css-source-contract.cjs), so ordering is checkable.
-  const workspaces = css.indexOf("surface-role-workspaces.css");
-  assert.ok(workspaces !== -1);
+test("all five tab CSS modules ride with the surface, not the root bundle", () => {
+  // The mode-gated surface imports its own sheets so home first-load stays
+  // inside the CSS bundle budget (#3264 pattern) — never via globals.css.
   for (const name of ["desk", "prompt", "library", "studio", "resources"]) {
-    const index = css.indexOf(`surface-research-${name}.css`);
+    assert.match(surface, new RegExp(`import "@/styles/globals/surface-research-${name}\\.css"`));
     assert.ok(
-      index > workspaces,
-      `surface-research-${name}.css must be imported after surface-role-workspaces.css`,
+      !css.includes(`surface-research-${name}.css`),
+      `surface-research-${name}.css must not enter the root globals.css bundle`,
     );
   }
 });

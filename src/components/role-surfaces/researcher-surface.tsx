@@ -15,6 +15,14 @@
  * mission or preselecting a Prompt mode). B agents build on it, not around it.
  */
 
+// Surface sheets ride with this mode-gated component instead of the root
+// globals.css so the home first-load stays inside the CSS bundle budget
+// (#3264 pattern; the desk sheet carries the tab strip, then one per tab).
+import "@/styles/globals/surface-research-desk.css";
+import "@/styles/globals/surface-research-prompt.css";
+import "@/styles/globals/surface-research-library.css";
+import "@/styles/globals/surface-research-studio.css";
+import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import type { ResearchMissionMode, ResearchMissionStatus } from "@/lib/research-missions";
