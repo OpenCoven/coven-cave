@@ -1088,6 +1088,7 @@ export const SUITES = {
     "src/app/api/sessions/[id]/events/route.test.ts",
     "src/app/api/sessions/prune/prune-response.test.ts",
     "src/lib/server/familiar-contract-files.test.ts",
+    "src/lib/server/canonical-path.test.ts",
     "src/lib/server/project-paths.test.ts",
     "src/lib/server/home-browse.test.ts",
     "src/lib/server/session-project-roots.test.ts",
