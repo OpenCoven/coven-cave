@@ -158,9 +158,9 @@ assert.match(
   "Selection handler is nullable so the menu can scope to all familiars",
 );
 
-// Mobile quick actions: Tasks. New chat now lives at the top of the left
-// sidebar (SidebarMinimal) for both desktop and mobile, so the top bar no
-// longer renders a New chat button. The task quick actions themselves moved
+// Mobile quick actions: Tasks. New chat lives in WorkspaceSidebar, the
+// contextual primary nav in Chat; SidebarMinimal returns outside Chat. The top
+// bar therefore no longer renders a New chat button. The task quick actions moved
 // into the shared overflow menu (§8 chrome budget — occasional verbs don't
 // earn always-visible chrome), with the live open-task badge kept on the
 // trigger.
@@ -172,7 +172,7 @@ assert.match(
 assert.doesNotMatch(
   source,
   /aria-label="New chat"/,
-  "the New chat button has moved out of the mobile top bar to the sidebar",
+  "New chat belongs to Chat's contextual WorkspaceSidebar; SidebarMinimal returns outside Chat",
 );
 assert.match(
   source,
