@@ -63,3 +63,11 @@ test("external board writers invalidate a warmed board landing before navigation
     assert.match(code, /publishBoardChanged\(\)/, `${writer} publishes its successful board write`);
   }
 });
+
+test("publishing from the Scribe surface invalidates a warmed Grimoire landing", async () => {
+  const scribe = await readFile(new URL("../components/role-surfaces/scribe-surface.tsx", here), "utf8");
+  assert.match(
+    scribe,
+    /if \(!json\?\.ok \|\| !json\.entry\?\.id\) \{[\s\S]{0,500}invalidateIfDefined\("grimoire:knowledge", "grimoire:collections"\);/,
+  );
+});
