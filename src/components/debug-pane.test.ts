@@ -76,6 +76,34 @@ assert.match(
   "Hitting the page-cap must surface a truncation notice with a Load more continuation, not truncate silently",
 );
 
+// ── Event-tail persistence across modal close/reopen (A2) ─────────────────────
+
+assert.match(
+  source,
+  /const \[cachedSnapshot\] = useState\(\(\) => readDebugEventsCache\(paneKey\)\)/,
+  "The pane must seed from the per-session events cache exactly once per mount",
+);
+assert.match(
+  source,
+  /useState<CovenEvent\[\]>\(cachedSnapshot\?\.events \?\? \[\]\)/,
+  "A reopened pane must render the previously drained tail instead of an empty list",
+);
+assert.match(
+  source,
+  /useRef\(cachedSnapshot\?\.cursor \?\? 0\)/,
+  "The afterSeq cursor must resume from the cache so reopen doesn't re-drain from seq 0",
+);
+assert.match(
+  source,
+  /useState\(cachedSnapshot\?\.tailCapped \?\? false\)/,
+  "The Load-more truncation notice must survive close/reopen with the cached tail",
+);
+assert.match(
+  source,
+  /if \(events\.length === 0 && cursorRef\.current === 0\) return;\s*writeDebugEventsCache\(paneKey, \{ events, cursor: cursorRef\.current, tailCapped \}\);/,
+  "The pane must write the tail through to the cache on change, skipping empty panes so untouched chats don't evict real tails",
+);
+
 // ── Stream health (chat-session-debugging S6) ─────────────────────────────────
 
 assert.match(
@@ -248,7 +276,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!snapshot\.sessionId && !snapshot\.streamHealth\.runId\?\.trim\(\)\)[\s\S]*?const paneKey = snapshot\.sessionId \?\? `run:\$\{snapshot\.streamHealth\.runId!\.trim\(\)\}`;[\s\S]*?<DebugPaneInner key=\{paneKey\}/,
+  /if \(!snapshot\.sessionId && !snapshot\.streamHealth\.runId\?\.trim\(\)\)[\s\S]*?const paneKey = snapshot\.sessionId \?\? `run:\$\{snapshot\.streamHealth\.runId!\.trim\(\)\}`;[\s\S]*?<DebugPaneInner key=\{paneKey\} paneKey=\{paneKey\}/,
   "A new-chat pane must render once its run ID exists and remount when promoted to a session",
 );
 assert.match(
