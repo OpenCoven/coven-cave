@@ -99,7 +99,7 @@ test("schedule and standard Automation controls use their owning APIs", async ()
     requests.push({ input: String(input), method: init?.method, body: init?.body });
     return Response.json({ ok: true, mission: mission("m/1", "checkpoint") });
   }) as typeof fetch;
-  globalThis.window = { dispatchEvent: (event: Event) => events.push(event.type) } as Window & typeof globalThis;
+  globalThis.window = { dispatchEvent: (event: Event) => events.push(event.type) } as unknown as Window & typeof globalThis;
   try {
     await scheduleResearchMission("m/1", {
       rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
