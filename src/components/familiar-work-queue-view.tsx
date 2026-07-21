@@ -116,9 +116,9 @@ type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary
 // whole load: beads-only when the gh PR bridge is down, PRs-only when the
 // beads adapter is down. Only both failing rejects — then there is genuinely
 // nothing to show.
-async function fetchQueue(signal: AbortSignal): Promise<FetchedQueue> {
+async function fetchQueue(signal: AbortSignal, force = false): Promise<FetchedQueue> {
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue");
+  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue", force);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const [beadsSettled, prsSettled] = data;
 
@@ -213,13 +213,13 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     });
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     const seq = ++loadSeq.current;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal);
+      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal, force);
       if (seq !== loadSeq.current) return; // a newer load won
       if (!prsOk && hadPrDataRef.current) {
         // The bridge worked before and just failed — keep earlier data on
@@ -261,7 +261,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     );
   }, [hasLoaded, queue, announce]);
 
-  usePausablePoll(() => void load(), 30_000, { pauseWhileInputActive: true });
+  usePausablePoll(() => void load(true), 30_000, { pauseWhileInputActive: true });
 
   const familiarName = useCallback(
     (key: string) => {
@@ -288,7 +288,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        await load();
+        await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
       } finally {
@@ -317,7 +317,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "comment failed");
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        await load();
+        await load(true);
         return true;
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not add a note to ${id}`, "assertive");
@@ -346,7 +346,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
-        await load();
+        await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
       } finally {
@@ -379,7 +379,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
-        await load();
+        await load(true);
         return true;
       } catch (err) {
         announce(
@@ -453,7 +453,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             headline="Couldn't load the queue"
             subtitle={error}
             actions={
-              <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+              <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
                 Retry
               </Button>
             }
@@ -483,7 +483,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             variant="ghost"
             size="sm"
             leadingIcon="ph:arrow-clockwise"
-            onClick={() => void load()}
+            onClick={() => void load(true)}
             aria-label="Refresh queue"
           >
             Refresh
@@ -565,7 +565,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <div className="fwq-banner fwq-banner--danger" role="alert" title={error}>
           <Icon name="ph:warning-circle" width={14} aria-hidden />
           <span className="fwq-banner-text">Couldn&apos;t refresh the queue — showing earlier data.</span>
-          <Button variant="ghost" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+          <Button variant="ghost" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
             Retry
           </Button>
         </div>
@@ -591,7 +591,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
       ) : null}
 
-      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} familiarId={activeFamiliarId} />
+      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load(true)} familiarId={activeFamiliarId} />
 
       <div className="fwq-body">
         {q.total === 0 ? (

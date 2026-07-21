@@ -59,25 +59,6 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // Flow experience lives on feature/automations-flow (its /api/flows engine +
 // webhooks remain live under src/lib/flow + src/lib/server).
 
-// Keep the raw imports separate from the `next/dynamic` wrappers. Besides
-// preserving the measured first-render path below, this gives the post-launch
-// warm-up coordinator a way to fetch a sidebar's chunks without mounting a
-// surface (and therefore without running any of its effects).
-const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
-const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
-const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
-const loadMarketplaceView = () =>
-  import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface);
-const loadAutomationsView = () =>
-  import("@/components/automations-view").then((m) => m.AutomationsView);
-const loadFamiliarWorkQueueView = () =>
-  import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView);
-const loadFamiliarsView = () =>
-  import("@/components/familiars-view").then((m) => m.FamiliarsView);
-const loadGrimoireView = () => import("@/components/grimoire-view").then((m) => m.GrimoireView);
-const loadInboxEscalationsView = () =>
-  import("@/components/inbox-escalations-view").then((m) => m.InboxEscalationsView);
-
 /** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
 export type WarmableSidebarSurface =
   | "github"
@@ -87,57 +68,35 @@ export type WarmableSidebarSurface =
   | "grimoire"
   | "agents";
 
-/**
- * Fetch a canonical sidebar surface's code without rendering it. Composite
- * destinations include each lazy child that their landing view mounts.
- */
-export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
-  switch (surface) {
-    case "github":
-      return loadGitHubView().then(() => undefined);
-    case "marketplace":
-      return loadMarketplaceView().then(() => undefined);
-    case "board":
-      return loadBoardView().then(() => loadFamiliarWorkQueueView()).then(() => undefined);
-    case "schedules":
-      return loadInboxEscalationsView()
-        .then(() => loadCalendarView())
-        .then(() => loadAutomationsView())
-        .then(() => undefined);
-    case "grimoire":
-      return loadGrimoireView().then(() => undefined);
-    case "agents":
-      return loadFamiliarsView().then(() => undefined);
-  }
-}
-
 export const GitHubView = dynamic(
-  timed("github", loadGitHubView),
+  timed("github", () => import("@/components/github-view").then((m) => m.GitHubView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const CalendarView = dynamic(
-  timed("calendar", loadCalendarView),
+  timed("calendar", () => import("@/components/calendar-view").then((m) => m.CalendarView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const BoardView = dynamic(
-  timed("board", loadBoardView),
+  timed("board", () => import("@/components/board-view").then((m) => m.BoardView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const MarketplaceView = dynamic(
-  timed("marketplace", loadMarketplaceView),
+  timed("marketplace", () => import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const AutomationsView = dynamic(
-  timed("automations", loadAutomationsView),
+  timed("automations", () => import("@/components/automations-view").then((m) => m.AutomationsView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const FamiliarWorkQueueView = dynamic(
-  timed("familiar-work-queue", loadFamiliarWorkQueueView),
+  timed("familiar-work-queue", () =>
+    import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView),
+  ),
   { ssr: false, loading: SurfaceFallback },
 );
 
@@ -160,19 +119,52 @@ export const BrowserPane = dynamic(
 // graph. Mode surfaces keep a full-area skeleton while their local chunk is
 // fetched from the packaged Next server.
 export const FamiliarsView = dynamic(
-  timed("familiars", loadFamiliarsView),
+  timed("familiars", () => import("@/components/familiars-view").then((m) => m.FamiliarsView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const GrimoireView = dynamic(
-  timed("grimoire", loadGrimoireView),
+  timed("grimoire", () => import("@/components/grimoire-view").then((m) => m.GrimoireView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const InboxEscalationsView = dynamic(
-  timed("schedules", loadInboxEscalationsView),
+  timed("schedules", () =>
+    import("@/components/inbox-escalations-view").then((m) => m.InboxEscalationsView),
+  ),
   { ssr: false, loading: SurfaceFallback },
 );
+
+type PreloadableSurface = { preload?: () => Promise<unknown> };
+
+function preloadSurface(surface: unknown): Promise<void> {
+  const preload = (surface as PreloadableSurface).preload;
+  return preload ? preload().then(() => undefined) : Promise.resolve();
+}
+
+/**
+ * Fetch a canonical sidebar surface's existing lazy chunk without mounting it.
+ * `next/dynamic` owns the imports, so warming reuses its already-traced chunk
+ * boundary instead of adding a second server-side import graph.
+ */
+export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
+  switch (surface) {
+    case "github":
+      return preloadSurface(GitHubView);
+    case "marketplace":
+      return preloadSurface(MarketplaceView);
+    case "board":
+      return preloadSurface(BoardView).then(() => preloadSurface(FamiliarWorkQueueView));
+    case "schedules":
+      return preloadSurface(InboxEscalationsView)
+        .then(() => preloadSurface(CalendarView))
+        .then(() => preloadSurface(AutomationsView));
+    case "grimoire":
+      return preloadSurface(GrimoireView);
+    case "agents":
+      return preloadSurface(FamiliarsView);
+  }
+}
 
 export const OpenCovenSubmissionPage = dynamic(
   timed("submissions", () =>

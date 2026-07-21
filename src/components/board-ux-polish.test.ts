@@ -276,7 +276,7 @@ assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tra
 assert.match(view, /inFlightPatchesRef\.current \+= 1/, "every patch enters the in-flight counter");
 assert.match(
   view,
-  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\);/,
+  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\{ force: true \}\);/,
   "the reconciling reload waits for the whole batch and runs once",
 );
 assert.doesNotMatch(
