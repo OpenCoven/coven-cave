@@ -4,7 +4,7 @@
 // The UI only forwards decisions — the daemon re-validates, applies or
 // refuses, audits, and removes the pending file. Every refusal is visible;
 // nothing is optimistic.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Icon } from "@/lib/icon";
 import {
   decisionAvailability,
@@ -14,6 +14,10 @@ import {
   proposalListModel,
   type DecisionOutcome,
 } from "@/lib/proposal-flow";
+import {
+  responseEnvelopeStateAt,
+  useResponseEnvelopeFreshness,
+} from "@/lib/response-envelope-freshness";
 import type { ProposalView } from "@/lib/threads-read";
 import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/weave-rail";
 
@@ -48,6 +52,35 @@ function OutcomeNote({ outcome }: { outcome: DecisionOutcome }) {
   );
 }
 
+function ProposalAuthorityTrace({ proposal }: { proposal: ProposalView }) {
+  const authority = proposal.authority;
+  if (!authority || authority.state !== "verified") return null;
+
+  return (
+    <dl
+      aria-label="Daemon authority trace"
+      className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1.5 text-[length:var(--text-xs)]"
+    >
+      <dt className="text-[var(--text-muted)]">approval path</dt>
+      <dd className="font-mono text-[var(--text-primary)]">{authority.approvalPath.label}</dd>
+      <dt className="text-[var(--text-muted)]">lifecycle</dt>
+      <dd className="font-mono text-[var(--text-primary)]">{authority.lifecycle}</dd>
+      <dt className="text-[var(--text-muted)]">affected regions</dt>
+      <dd className="font-mono text-[var(--text-primary)]">
+        {authority.affectedRegions.length > 0 ? authority.affectedRegions.join(", ") : "none reported"}
+      </dd>
+      <dt className="text-[var(--text-muted)]">veto deadline</dt>
+      <dd className="font-mono text-[var(--text-primary)]">
+        {authority.approvalPath.vetoDeadline ?? "not reported"}
+      </dd>
+      <dt className="text-[var(--text-muted)]">earliest close</dt>
+      <dd className="font-mono text-[var(--text-primary)]">{authority.earliestClose ?? "not reported"}</dd>
+      <dt className="text-[var(--text-muted)]">blocked reason</dt>
+      <dd className="font-mono text-[var(--text-primary)]">{authority.blockedReason ?? "none reported"}</dd>
+    </dl>
+  );
+}
+
 function ProposalCard({
   proposal,
   state,
@@ -60,19 +93,34 @@ function ProposalCard({
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
   const [outcome, setOutcome] = useState<DecisionOutcome | null>(null);
-  const availability = decisionAvailability(state, proposal);
+  const availability = decisionAvailability(state, proposal, note);
   const payload = proposal.payload;
+  const noteInputId = useId();
+  const noteHelpId = useId();
+  const approvalRationaleRequired =
+    proposal.authority?.state === "verified" &&
+    proposal.authority.approvalPath.variant === "human-approval-with-rationale";
+  const disabledApproval =
+    availability.allowed
+      ? availability.actions.find((action) => action.decision === "approve" && !action.enabled)
+      : undefined;
 
   const decide = useCallback(
     async (decision: "approve" | "reject") => {
-      if (!payload || submitting) return;
+      const currentAvailability = decisionAvailability(responseEnvelopeStateAt(state), proposal, note);
+      if (!payload || submitting || !currentAvailability.allowed) return;
+      const action = currentAvailability.actions.find((candidate) => candidate.decision === decision);
+      if (!action?.enabled) return;
       setSubmitting(decision);
       setOutcome(null);
       try {
         const res = await fetch(`/api/proposals/${encodeURIComponent(payload.id)}/${decision}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(note.trim().length > 0 ? { note: note.trim() } : {}),
+          body: JSON.stringify({
+            note: note.trim().length > 0 ? note.trim() : undefined,
+            expectedRevision: currentAvailability.expectedRevision,
+          }),
         });
         const body: unknown = await res.json().catch(() => null);
         const result = decisionOutcomeFromResponse(decision, res.status, body);
@@ -84,7 +132,7 @@ function ProposalCard({
         setSubmitting(null);
       }
     },
-    [payload, note, submitting, onDecided],
+    [state, proposal, note, payload, submitting, onDecided],
   );
 
   if (proposal.parse === "corrupt" || !payload) {
@@ -120,6 +168,7 @@ function ProposalCard({
       </header>
 
       <p className="mt-1 text-xs text-[var(--color-warning)]">{fraySummary(proposal)}</p>
+      <ProposalAuthorityTrace proposal={proposal} />
 
       <div className="mt-2 flex flex-col gap-2">
         {editPreviews(proposal).map((edit) => (
@@ -138,32 +187,46 @@ function ProposalCard({
 
       {availability.allowed ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="optional note for the audit log"
-            aria-label="Decision note"
-            className="focus-ring min-w-48 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-xs"
-          />
-          <button
-            type="button"
-            disabled={submitting !== null}
-            onClick={() => void decide("approve")}
-            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-success)]/50 px-2 py-1 text-xs font-medium text-[var(--color-success)] hover:bg-[var(--color-success)]/10 disabled:opacity-50"
-          >
-            <Icon name="ph:check-circle" aria-hidden />
-            {submitting === "approve" ? "Forwarding…" : "Approve"}
-          </button>
-          <button
-            type="button"
-            disabled={submitting !== null}
-            onClick={() => void decide("reject")}
-            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 px-2 py-1 text-xs font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
-          >
-            <Icon name="ph:x-circle" aria-hidden />
-            {submitting === "reject" ? "Forwarding…" : "Reject"}
-          </button>
+          <div className="min-w-48 flex-1">
+            <label htmlFor={noteInputId} className="block text-xs font-medium text-[var(--text-primary)]">
+              Decision note{" "}
+              <span className="font-normal text-[var(--text-muted)]">
+                ({approvalRationaleRequired ? "required to approve" : "optional"})
+              </span>
+            </label>
+            <input
+              id={noteInputId}
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              aria-describedby={noteHelpId}
+              aria-required={approvalRationaleRequired}
+              className="focus-ring mt-1 w-full rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-xs"
+            />
+            <p id={noteHelpId} className="mt-1 text-xs text-[var(--text-muted)]">
+              {disabledApproval
+                ? disabledApproval.disabledReason
+                : approvalRationaleRequired
+                  ? "The rationale will be recorded with approval. Reject remains available without a note."
+                  : "Optional note for the audit log."}
+            </p>
+          </div>
+          {availability.actions.map((action) => (
+            <button
+              key={action.decision}
+              type="button"
+              disabled={submitting !== null || !action.enabled}
+              onClick={() => void decide(action.decision)}
+              className={
+                action.decision === "approve"
+                  ? "focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-success)]/50 px-2 py-1 text-xs font-medium text-[var(--color-success)] hover:bg-[var(--color-success)]/10 disabled:opacity-50"
+                  : "focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 px-2 py-1 text-xs font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
+              }
+            >
+              <Icon name={action.decision === "approve" ? "ph:check-circle" : "ph:x-circle"} aria-hidden />
+              {submitting === action.decision ? "Forwarding…" : action.label}
+            </button>
+          ))}
         </div>
       ) : (
         <p role="status" className="mt-2 flex items-center gap-1 text-xs text-[var(--text-muted)]">
@@ -178,6 +241,7 @@ function ProposalCard({
 
 export function ProposalApproval() {
   const [state, setState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
+  const responseState = useResponseEnvelopeFreshness(state);
 
   const load = useCallback(async () => {
     setState(await fetchProposals());
@@ -187,26 +251,26 @@ export function ProposalApproval() {
     void load();
   }, [load]);
 
-  if (state.kind === "loading") {
+  if (responseState.kind === "loading") {
     return <p className="text-xs text-[var(--text-muted)]">Reading staged proposals…</p>;
   }
-  if (state.kind === "blocked") {
+  if (responseState.kind === "blocked") {
     return (
       <div role="status" className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-4">
         <p className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
           <Icon name="ph:shield-slash" aria-hidden />
           Blocked — cannot verify staged proposals
         </p>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">{state.message}</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">{responseState.message}</p>
       </div>
     );
   }
 
-  const model = proposalListModel(state.data);
+  const model = proposalListModel(responseState.data);
 
   return (
     <div className="flex flex-col gap-3">
-      {state.banners.map((banner) => (
+      {responseState.banners.map((banner) => (
         <p
           key={banner.kind}
           role="status"
@@ -227,7 +291,7 @@ export function ProposalApproval() {
             <ProposalCard
               key={proposal.file}
               proposal={proposal}
-              state={state}
+              state={responseState}
               onDecided={() => void load()}
             />
           ))}
@@ -235,14 +299,15 @@ export function ProposalApproval() {
             <ProposalCard
               key={proposal.file}
               proposal={proposal}
-              state={state}
+              state={responseState}
               onDecided={() => void load()}
             />
           ))}
         </ul>
       )}
       <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-        observed {state.meta.observedAt} · cursor {state.meta.sourceCursor} · adapter {state.meta.adapter}
+        observed {responseState.meta.observedAt} · cursor {responseState.meta.sourceCursor} · adapter{" "}
+        {responseState.meta.adapter}
       </p>
     </div>
   );

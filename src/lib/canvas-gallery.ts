@@ -31,6 +31,28 @@ export function isCanvasGalleryLoadCurrent(
   );
 }
 
+export type CanvasKindFilter = "all" | "react" | "html";
+
+/** Kind with the store's back-compat default: legacy artifacts (pre-React)
+ *  have no `kind` and are treated as "html", same as everywhere else. */
+export function galleryArtifactKind(artifact: CanvasArtifact): "react" | "html" {
+  return artifact.kind === "react" ? "react" : "html";
+}
+
+/** Toolbar search + segmented kind filter for the gallery grid.
+ *  Case-insensitive substring match on the title; preserves input order. */
+export function filterCanvasArtifacts(
+  artifacts: CanvasArtifact[],
+  query: string,
+  kindFilter: CanvasKindFilter,
+): CanvasArtifact[] {
+  const q = query.trim().toLowerCase();
+  return artifacts.filter((artifact) => {
+    if (kindFilter !== "all" && galleryArtifactKind(artifact) !== kindFilter) return false;
+    return !q || artifact.title.toLowerCase().includes(q);
+  });
+}
+
 export type CanvasArtifactSnapshotMutation =
   | { kind: "upsert"; changedId: string; deletedIds?: ReadonlySet<string> }
   | { kind: "delete"; deletedId: string };

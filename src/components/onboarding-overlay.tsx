@@ -171,6 +171,10 @@ export function OnboardingOverlay({
   statusRef.current = status;
   const statusGenerationRef = useRef(0);
   const statusRefreshInFlightRef = useRef(false);
+  // The open-time load and the heartbeat's immediate tick can overlap before
+  // the first render settles. Keep that from issuing two identical lane
+  // probes (unlike status, this request was not previously coalesced).
+  const npmLaneRefreshInFlightRef = useRef(false);
   const autoFinishFiredRef = useRef(false);
   const finishOnboarding = useCallback(() => {
     try {
@@ -233,6 +237,8 @@ export function OnboardingOverlay({
   }, []);
 
   const refreshNpmLane = useCallback(async () => {
+    if (npmLaneRefreshInFlightRef.current) return;
+    npmLaneRefreshInFlightRef.current = true;
     try {
       const res = await fetch("/api/onboarding/install", { cache: "no-store" });
       if (!res.ok) return;
@@ -253,6 +259,8 @@ export function OnboardingOverlay({
       }
     } catch {
       /* Retain the last observed lane state until the next successful poll. */
+    } finally {
+      npmLaneRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -292,11 +300,37 @@ export function OnboardingOverlay({
     }
   }, []);
 
+  // One-shot loads when the wizard opens; the recurring heartbeat below owns
+  // the 2s cadence.
   useEffect(() => {
     if (!open) return;
     void refresh();
     void loadUpdates();
     void loadHarnesses();
+    void refreshNpmLane();
+  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+
+  // The 2s status/npm-lane heartbeat runs only while something can still
+  // change underneath the wizard: an incomplete required step, a running or
+  // queued install, a busy shared npm lane, or a setup action in flight.
+  // Once every step is confirmed and nothing is running, stop re-probing the
+  // CLI every 2 seconds (cave-0hhd) — the confirmed state stays on screen,
+  // manual Re-check and each action's own refresh() still work, and any new
+  // activity (an install click, the queue draining) resumes the heartbeat.
+  const heartbeatIdle =
+    (status?.complete ?? false) &&
+    npmLane === null &&
+    installQueue.length === 0 &&
+    !Object.values(installJobs).some((job) => job.status === "running") &&
+    picking === null &&
+    !startingDaemon &&
+    !savingOnboardingConnection;
+
+  useEffect(() => {
+    if (!open || heartbeatIdle) return;
+    // Immediate tick when the heartbeat (re)starts — refresh() collapses the
+    // duplicate with the open-time load via its in-flight guard.
+    void refresh();
     void refreshNpmLane();
     pollRef.current = setInterval(() => {
       void refresh();
@@ -307,7 +341,7 @@ export function OnboardingOverlay({
       pollRef.current = null;
       statusGenerationRef.current += 1;
     };
-  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+  }, [open, heartbeatIdle, refresh, refreshNpmLane]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -976,7 +1010,8 @@ export function OnboardingOverlay({
               Follow the numbered steps. Each one carries its own instructions,
               a one-click action where Cave can do the work for you, and the
               exact command if you&rsquo;d rather use a terminal. Finished
-              steps tick themselves — status re-checks every 2 seconds.
+              steps tick themselves while setup is in progress — status
+              re-checks every 2 seconds until everything is ready.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

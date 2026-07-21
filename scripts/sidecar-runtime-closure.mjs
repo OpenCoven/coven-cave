@@ -76,9 +76,12 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // module add five traced files on Windows. CI measured 5,542; pin the exact
   // cross-platform maximum without relaxing the expanded-byte ceiling.
   // 2026-07-20 (collaborative Canvas): the guarded annotation/revision route
-  // adds one traced file on Windows. Sidebar warm-up's direct lazy loaders
-  // then traced at 5,574 on Ubuntu and 5,576 on Windows; retain ten files of
-  // cross-platform headroom without relaxing the expanded-byte ceiling.
+  // adds one traced file on Windows. CI measured 5,543.
+  // 2026-07-21 (Canvas redesign): the full-surface canvas editor adds one
+  // traced chunk on Windows. CI measured 5,544.
+  // 2026-07-21 (sidebar warm-up): the direct lazy loaders traced at 5,574 on
+  // Ubuntu and 5,576 on Windows; retain ten files of cross-platform headroom
+  // without relaxing the expanded-byte ceiling.
   fileCount: 5_586,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });

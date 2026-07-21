@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { SettingsGroup } from "@/components/ui/settings-group";
 import {
   normalizeChatAutoArchivePolicy,
   type ChatAutoArchivePolicy,
@@ -14,6 +13,10 @@ import {
  * event-driven archiving (task completion, thread reflections), and the idle
  * windows. Reads/writes the `chatAutoArchive` key through `/api/config`, whose
  * PATCH merges partial policies over the stored one.
+ *
+ * Presentation follows the Settings.dc.html redesign mock: one bordered card
+ * whose child rows dim as a block while the master switch is off. Styles live
+ * in cave-chat/auxiliary-surfaces.css under `.chat-settings*`.
  */
 
 type SaveState = "idle" | "saving" | "error";
@@ -21,19 +24,17 @@ type SaveState = "idle" | "saving" | "error";
 function PolicyRow({
   label,
   description,
-  dimmed,
   children,
 }: {
   label: string;
   description?: string;
-  dimmed?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className={`flex items-center justify-between gap-4 px-4 py-3 ${dimmed ? "opacity-50" : ""}`}>
-      <div className="min-w-0">
-        <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{label}</p>
-        {description && <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>}
+    <div className="chat-settings__row">
+      <div className="chat-settings__row-text">
+        <p className="chat-settings__row-title">{label}</p>
+        {description && <p className="chat-settings__row-desc">{description}</p>}
       </div>
       {children}
     </div>
@@ -59,9 +60,9 @@ function PolicySwitch({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`settings-switch focus-ring${checked ? " is-on" : ""}`}
+      className={`chat-settings__switch focus-ring${checked ? " is-on" : ""}`}
     >
-      <span className="settings-switch__knob" aria-hidden />
+      <span className="chat-settings__knob" aria-hidden />
     </button>
   );
 }
@@ -87,7 +88,7 @@ function PolicyDays({
     if (days !== value) onCommit(days);
   };
   return (
-    <label className="flex shrink-0 items-center gap-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+    <label className="chat-settings__days">
       <input
         type="number"
         min={0}
@@ -100,7 +101,7 @@ function PolicyDays({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
-        className="w-16 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-right text-[length:var(--text-sm)] text-[var(--text-primary)] focus-ring"
+        className="chat-settings__days-input focus-ring"
       />
       days
     </label>
@@ -156,27 +157,27 @@ export function ChatSettingsView() {
 
   return (
     <div className="chat-settings-view min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
-        <header>
-          <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Chat settings</h2>
-          <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-            Applies to every chat on this device. Per-familiar behavior (like auto
-            self-report) lives with each familiar under Familiars → Brain.
-          </p>
-        </header>
+      <div className="chat-settings">
+        <h2 className="chat-settings__title">Chat settings</h2>
+        <p className="chat-settings__subtitle">
+          Applies to every chat on this device. Per-familiar behavior (like auto
+          self-report) lives with each familiar under Familiars → Brain.
+        </p>
 
         {loadError ? (
-          <p role="alert" className="text-[length:var(--text-sm)] text-[var(--color-danger)]">
+          <p role="alert" className="chat-settings__hint text-[var(--color-danger)]">
             {loadError}
           </p>
         ) : !policy ? (
-          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
+          <p className="chat-settings__hint">Loading…</p>
         ) : (
           <>
-            <SettingsGroup
-              label="Auto-archive"
-              description="Move finished chats out of the list automatically. Chats marked keep are never auto-archived."
-            >
+            <p className="chat-settings__kicker">Auto-archive</p>
+            <p className="chat-settings__hint">
+              Move finished chats out of the list automatically. Chats marked keep are
+              never auto-archived.
+            </p>
+            <div className="chat-settings__card">
               <PolicyRow
                 label="Auto-archive"
                 description="Master switch for event- and time-based archiving."
@@ -187,68 +188,68 @@ export function ChatSettingsView() {
                   onChange={(enabled) => update({ enabled })}
                 />
               </PolicyRow>
-              <PolicyRow
-                label="After task completion"
-                description="Archive a chat when its linked task completes, instead of only nudging."
-                dimmed={sweepOff}
-              >
-                <PolicySwitch
-                  label="Archive after task completion"
-                  checked={policy.archiveOnTaskCompletion}
-                  disabled={sweepOff}
-                  onChange={(archiveOnTaskCompletion) => update({ archiveOnTaskCompletion })}
-                />
-              </PolicyRow>
-              <PolicyRow
-                label="After thread reflection"
-                description="Archive a thread once its reflection lands. Manual reflections archive right away; automatic ones only archive threads already idle."
-                dimmed={sweepOff}
-              >
-                <PolicySwitch
-                  label="Archive after thread reflection"
-                  checked={policy.archiveOnReflection}
-                  disabled={sweepOff}
-                  onChange={(archiveOnReflection) => update({ archiveOnReflection })}
-                />
-              </PolicyRow>
-              <PolicyRow
-                label="After PR merge"
-                description="Archive a chat once the pull request its work produced merges."
-                dimmed={sweepOff}
-              >
-                <PolicySwitch
-                  label="Archive after PR merge"
-                  checked={policy.archiveOnPrMerge}
-                  disabled={sweepOff}
-                  onChange={(archiveOnPrMerge) => update({ archiveOnPrMerge })}
-                />
-              </PolicyRow>
-              <PolicyRow
-                label="External chats idle for"
-                description="Chats created outside the chat surface (cron, flows, generated runs). 0 turns this window off."
-                dimmed={sweepOff}
-              >
-                <PolicyDays
-                  label="Archive external chats after days idle"
-                  value={policy.externalAfterDays}
-                  disabled={sweepOff}
-                  onCommit={(externalAfterDays) => update({ externalAfterDays })}
-                />
-              </PolicyRow>
-              <PolicyRow
-                label="Any chat idle for"
-                description="Every chat, regardless of origin. 0 turns this window off."
-                dimmed={sweepOff}
-              >
-                <PolicyDays
-                  label="Archive any chat after days idle"
-                  value={policy.idleAfterDays}
-                  disabled={sweepOff}
-                  onCommit={(idleAfterDays) => update({ idleAfterDays })}
-                />
-              </PolicyRow>
-            </SettingsGroup>
-            <p aria-live="polite" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              {/* The mock dims/disables the child rows as one block while the
+                  master switch is off; the controls also carry `disabled` so
+                  the state reaches screen readers, not just pointer-events. */}
+              <div className={`chat-settings__children${sweepOff ? " is-disabled" : ""}`}>
+                <PolicyRow
+                  label="After task completion"
+                  description="Archive a chat when its linked task completes, instead of only nudging."
+                >
+                  <PolicySwitch
+                    label="Archive after task completion"
+                    checked={policy.archiveOnTaskCompletion}
+                    disabled={sweepOff}
+                    onChange={(archiveOnTaskCompletion) => update({ archiveOnTaskCompletion })}
+                  />
+                </PolicyRow>
+                <PolicyRow
+                  label="After thread reflection"
+                  description="Archive a thread once its reflection lands. Manual reflections archive right away; automatic ones only archive threads already idle."
+                >
+                  <PolicySwitch
+                    label="Archive after thread reflection"
+                    checked={policy.archiveOnReflection}
+                    disabled={sweepOff}
+                    onChange={(archiveOnReflection) => update({ archiveOnReflection })}
+                  />
+                </PolicyRow>
+                <PolicyRow
+                  label="After PR merge"
+                  description="Archive a chat once the pull request its work produced merges."
+                >
+                  <PolicySwitch
+                    label="Archive after PR merge"
+                    checked={policy.archiveOnPrMerge}
+                    disabled={sweepOff}
+                    onChange={(archiveOnPrMerge) => update({ archiveOnPrMerge })}
+                  />
+                </PolicyRow>
+                <PolicyRow
+                  label="External chats idle for"
+                  description="Chats created outside the chat surface (cron, flows, generated runs). 0 turns this window off."
+                >
+                  <PolicyDays
+                    label="Archive external chats after days idle"
+                    value={policy.externalAfterDays}
+                    disabled={sweepOff}
+                    onCommit={(externalAfterDays) => update({ externalAfterDays })}
+                  />
+                </PolicyRow>
+                <PolicyRow
+                  label="Any chat idle for"
+                  description="Every chat, regardless of origin. 0 turns this window off."
+                >
+                  <PolicyDays
+                    label="Archive any chat after days idle"
+                    value={policy.idleAfterDays}
+                    disabled={sweepOff}
+                    onCommit={(idleAfterDays) => update({ idleAfterDays })}
+                  />
+                </PolicyRow>
+              </div>
+            </div>
+            <p aria-live="polite" className="chat-settings__save">
               {saveState === "error"
                 ? "Saving failed — change reverted. Try again."
                 : saveState === "saving"
