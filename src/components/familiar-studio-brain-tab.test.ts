@@ -25,6 +25,11 @@ assert.match(
 );
 assert.match(
   source,
+  /modelOptions\.length > 0[\s\S]{0,160}<StandardSelect/,
+  "A runtime with catalog models, including Hermes, must render the dropdown instead of only free text",
+);
+assert.match(
+  source,
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
