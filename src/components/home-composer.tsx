@@ -81,6 +81,7 @@ import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, PLACEHOLDERS, type Destination } from "@/components/home/home-destinations";
 import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -620,7 +621,7 @@ export function HomeComposer({
             // BoardView is normally unmounted while Home is active. Tell the
             // workspace-owned warm cache about this write before navigating so
             // the new card cannot be hidden behind a fresh warm snapshot.
-            window.dispatchEvent(new Event("cave:board:reload"));
+            publishBoardChanged();
             setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard();
           }
           else onToast("Task card creation failed.");

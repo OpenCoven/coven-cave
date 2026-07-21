@@ -160,6 +160,7 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
@@ -1160,7 +1161,7 @@ export function Workspace() {
       // Schedules consumes the same inbox data through a warmed, point-in-time
       // landing cache. Every authoritative stream event can make that cache
       // stale, even when Schedules itself is unmounted.
-      window.dispatchEvent(new Event("cave:schedules:reload"));
+      publishSchedulesChanged();
       if (e.type === "snapshot") {
         // Reconnect snapshots usually carry what we already have — keep the
         // reference so inboxItemsWithEphemeral consumers don't re-render

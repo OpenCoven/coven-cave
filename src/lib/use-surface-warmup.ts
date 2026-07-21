@@ -70,6 +70,7 @@ export function useSurfaceWarmup(): void {
       cancelIdle = scheduleIdle(runNext);
     };
     const resume = () => {
+      backpressured = false;
       paused = false;
       if (!active && runnable() && cursor < ORDER.length) cancelIdle = scheduleIdle(runNext);
     };
