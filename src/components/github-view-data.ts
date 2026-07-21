@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 export type ActivityResult = {
   ok: true;
@@ -33,9 +34,8 @@ export function useFamiliars(): {
   const [familiarsFailed, setFamiliarsFailed] = useState(false);
 
   useEffect(() => {
-    fetch("/api/familiars")
-      .then((response) => response.json())
-      .then((data) => {
+    readSurfaceResource<{ ok?: boolean; familiars?: Familiar[] }>("github:familiars")
+      .then(({ data }) => {
         if (data?.ok && Array.isArray(data.familiars)) {
           setFamiliars(data.familiars as Familiar[]);
           setFamiliarsFailed(false);
@@ -60,9 +60,8 @@ export function useCards(): {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/board")
-      .then((response) => response.json())
-      .then((data) => {
+    readSurfaceResource<{ ok?: boolean; cards?: Card[] }>("board:cards", tick > 0)
+      .then(({ data }) => {
         if (cancelled) return;
         if (data?.ok && Array.isArray(data.cards)) {
           setCards(data.cards as Card[]);

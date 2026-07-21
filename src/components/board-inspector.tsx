@@ -9,6 +9,7 @@ import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -1150,6 +1151,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
       });
       const json = await res.json();
       if (!json.ok) { setLifecycleErr(json.error ?? "failed"); return; }
+      publishBoardChanged();
       onCardReplaced(json.card as Card);
     } catch (err) {
       setLifecycleErr(err instanceof Error ? err.message : "failed");

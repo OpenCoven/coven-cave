@@ -166,6 +166,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
         if (!res.ok || json?.ok === false) {
           throw new Error(typeof json?.error === "string" ? json.error : `remove failed (${res.status})`);
         }
+        window.dispatchEvent(new Event("cave:familiars-refresh"));
         announce(`Removed ${f.display_name}. Restore it from Recently removed.`);
       } catch (err) {
         setRemovedLocally((prev) => {
@@ -201,6 +202,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
         next.delete(entry.id);
         return next;
       });
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
       announce(`Restored ${entry.displayName}.`);
       onRosterChanged?.();
     } catch (err) {

@@ -96,6 +96,7 @@ assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
 assert.match(view, /`Filed \$\{beadId\} for PR #\$\{pr\.number\}\.`/, "success announces the new bead id");
+assert.match(view, /invalidateSurfaceResources\("tasks:queue"\);\s*await load\(true\)/, "queue mutations invalidate an in-flight warm before reloading");
 
 // ── cave-p63a: claim-for-familiar picker ─────────────────────────────────────
 // Claim stays the default (connected user); a compact StandardSelect beside it

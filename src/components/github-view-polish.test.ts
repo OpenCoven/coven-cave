@@ -288,6 +288,7 @@ assert.match(source, /const filtered = useMemo\(/, "the kind-filtered set is mem
 assert.match(source, /const counts: Record<Filter, number> = useMemo\(/, "the per-filter counts are memoised");
 // In-flight fetch can't setState after unmount.
 assert.match(source, /if \(!mountedRef\.current\) return;/, "fetchActivity guards against setState after unmount");
+assert.match(source, /if \(!data\.ok\) \{[\s\S]{0,180}?data\.error === "no_user"[\s\S]{0,120}?setError\("no_user"\)/, "the no-user setup state survives the shared cache");
 
 // GitHub timestamps use the app-canonical relative time via the shared
 // <RelativeTime> component (semantic <time>, preference-aware exact-time hover,
@@ -393,7 +394,7 @@ assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.i
 assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");
 // One refresh helper cancels the pending poll first, so Retry can't leak a
 // second timer chain.
-assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(\)/, "refreshActivity cancels the scheduled poll before refetching");
+assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(false, true\)/, "refreshActivity cancels the scheduled poll before forcing a refetch");
 assert.doesNotMatch(source, /onClick=\{\(\) => void fetchActivity\(\)\}/, "no manual site refetches without cancelling the pending poll (Retry leak fixed)");
 // CI status shows passing/pending, not only failing (a green PR was invisible).
 assert.match(source, /item\.checkStatus === "passing"/, "CI passing state renders a badge");

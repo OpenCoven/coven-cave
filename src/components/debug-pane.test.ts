@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./debug-pane.tsx", import.meta.url), "utf8");
+// globals.css is a stable entry stub — the render-virtualization rules live in
+// the split module sheets, so the containment pin reads primitives.css.
+const primitivesCss = await readFile(
+  new URL("../styles/globals/primitives.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -281,18 +287,28 @@ assert.match(
 );
 assert.match(
   source,
-  /const streamStatusActive =\s*status === "running" \|\|\s*streamHealth\.phase === "connecting" \|\|\s*streamHealth\.phase === "streaming" \|\|\s*streamHealth\.phase === "resuming"/,
-  "Server status activity must include authoritative connecting, streaming, and resuming client phases",
+  /const sessionLive = isDebugSessionLive\(\{\s*status,\s*clientPhase: streamHealth\.phase,\s*serverStatus: streamStatus,\s*\}\)/,
+  "Pane liveness combines the sessions-list row, the client transport phase, and the server run buffer",
 );
 assert.match(
   source,
-  /if \(!streamStatusActive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
-  "Server status polls on the existing cadence while the combined stream is active and visible",
+  /const \[follow, setFollow\] = useState\(\(\) =>\s*isDebugSessionLive\(\{ status, clientPhase: streamHealth\.phase, serverStatus: null \}\),?\s*\)/,
+  "Initial tail-follow seeds from the client-side witnesses (server status hasn't loaded at mount)",
 );
 assert.match(
   source,
-  /prevStreamStatusActiveRef\.current && !streamStatusActive[\s\S]*?fetchStreamStatus\(\)[\s\S]*?prevStreamStatusActiveRef\.current = streamStatusActive/,
-  "A combined client/server active-to-terminal transition triggers one final server-status refresh",
+  /if \(!sessionLive\) return;[\s\S]*?window\.setInterval[\s\S]*?shouldPollEvents\(\{ live: sessionLive, visible: document\.visibilityState === "visible" \}\)[\s\S]*?fetchEvents\(\)[\s\S]*?POLL_MS/,
+  "The events tail gates on composite liveness, not the poll-lagged sessions list alone",
+);
+assert.match(
+  source,
+  /if \(!sessionLive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
+  "Server status polls on the existing cadence while any liveness witness is active and visible",
+);
+assert.match(
+  source,
+  /prevLiveRef\.current && !sessionLive[\s\S]*?fetchEvents\(\);[\s\S]*?fetchStreamStatus\(\);[\s\S]*?prevLiveRef\.current = sessionLive/,
+  "A live-to-terminal transition triggers one final events catch-up plus server-status refresh",
 );
 assert.match(
   source,
@@ -328,8 +344,8 @@ assert.ok(
 );
 assert.match(
   source,
-  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{streamStatusActive \|\| streamSummary\.tone !== "healthy"\}/,
-  "Stream health defaults open for any combined active stream or non-healthy client summary",
+  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{sessionLive \|\| streamSummary\.tone !== "healthy"\}/,
+  "Stream health defaults open for any live session or non-healthy client summary",
 );
 assert.match(
   source,
@@ -660,6 +676,36 @@ assert.match(
   changesRoute,
   /could not create safety checkpoint, revert aborted/,
   "A failed safety checkpoint must abort the revert rather than destroy without a backup",
+);
+
+// ── C2: render-virtualized event tail ────────────────────────────────────────
+// EventRow is memoized so the 2s live-tail append (appendEvents keeps existing
+// item references stable) re-renders only new rows, not the whole tail.
+assert.match(
+  source,
+  /const EventRow = memo\(function EventRow\(/,
+  "EventRow must be memoized so live-tail appends only render new rows",
+);
+assert.match(
+  source,
+  /className="debug-event-row rounded-md border/,
+  "Event rows must carry the debug-event-row containment class",
+);
+assert.match(
+  source,
+  /<EventRow key=\{event\.seq\} event=\{event\} dtPrefs=\{dtPrefs\} \/>/,
+  "Clock prefs must be threaded into memoized rows so a prefs change re-renders them",
+);
+assert.match(
+  source,
+  /formatClock\(event\.created_at, dtPrefs, \{ seconds: true \}\)/,
+  "Event clocks must format with the live prefs prop, not the one-shot default",
+);
+// The class must actually virtualize: containment rules live in primitives.css.
+assert.match(
+  primitivesCss,
+  /\.debug-event-row\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-size:\s*auto\s+\d+px;[^}]*\}/,
+  "primitives.css must give .debug-event-row content-visibility containment",
 );
 
 console.log("debug-pane.test.ts: ok");

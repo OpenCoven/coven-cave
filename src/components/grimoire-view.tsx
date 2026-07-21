@@ -37,6 +37,7 @@ import {
 } from "@/lib/datetime-format";
 import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -695,6 +696,10 @@ function GrimoireDocLinks({
 
 export type GrimoireViewKind = "docs" | "graph" | "journal";
 
+function invalidateGrimoireLanding(): void {
+  invalidateSurfaceResources("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal");
+}
+
 export function GrimoireView({
   view: controlledView,
   onViewChange,
@@ -913,7 +918,7 @@ export function GrimoireView({
     setStoredSelectionKey(selection ? selectionKey(selection) : null);
   }, [openTabs, preferencesHydrated, selection, setStoredSelectionKey, storedSelectionKey]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoadError(null);
     // The doc graph is derived from the same corpus — refresh it whenever the
     // lists refresh after a save/delete (the scan hook already fetched on
@@ -921,13 +926,13 @@ export function GrimoireView({
     if (firstLoadDoneRef.current) refreshGraph();
     firstLoadDoneRef.current = true;
     try {
-      const [kRes, cRes, mRes, jRes] = await Promise.all([
-        fetch("/api/knowledge", { cache: "no-store" }),
-        fetch("/api/knowledge/collections", { cache: "no-store" }),
-        fetch("/api/memory", { cache: "no-store" }),
-        fetch("/api/journal", { cache: "no-store" }),
+      const [kResult, cResult, mResult, jResult] = await Promise.all([
+        readSurfaceResource<{ ok?: boolean; entries?: GrimoireKnowledgeEntry[] }>("grimoire:knowledge", force),
+        readSurfaceResource<{ ok?: boolean; collections?: KnowledgeCollectionSummary[] }>("grimoire:collections", force),
+        readSurfaceResource<{ ok?: boolean; entries?: MemoryEntry[] }>("memory:list", force),
+        readSurfaceResource<{ ok?: boolean; days?: JournalSummary[] }>("grimoire:journal", force),
       ]);
-      const [k, c, m, j] = await Promise.all([kRes.json(), cRes.json(), mRes.json(), jRes.json()]);
+      const [k, c, m, j] = [kResult.data, cResult.data, mResult.data, jResult.data];
       setKnowledge(k.ok && Array.isArray(k.entries) ? k.entries : []);
       setCollections(c.ok && Array.isArray(c.collections) ? c.collections : []);
       setMemory(m.ok && Array.isArray(m.entries) ? m.entries : []);
@@ -993,7 +998,8 @@ export function GrimoireView({
       }
       // A deleted document's tab closes with it.
       closeTab(selectionKey(selection));
-      void load();
+      invalidateGrimoireLanding();
+      void load(true);
       // The row disappearing is the only visual confirmation — say it too.
       announce(
         selection.kind === "memory"
@@ -1213,7 +1219,10 @@ export function GrimoireView({
       return (
         <JournalMdEditor
           date={tab.date}
-          onSaved={() => void load()}
+          onSaved={() => {
+            invalidateGrimoireLanding();
+            void load(true);
+          }}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
@@ -1226,7 +1235,8 @@ export function GrimoireView({
           initialPatternId={stitchPrefill.patternId ?? null}
           onSewn={(entryId) => {
             replaceTab(key, { kind: "knowledge", id: entryId });
-            void load();
+            invalidateGrimoireLanding();
+            void load(true);
           }}
         />
       );
@@ -1257,7 +1267,8 @@ export function GrimoireView({
             entry={entry}
             onSaved={(saved) => {
               replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
-              void load();
+              invalidateGrimoireLanding();
+              void load(true);
             }}
             onCancel={() => closeTab(key)}
             onDirtyChange={(dirty) => setTabDirty(key, dirty)}
@@ -1366,7 +1377,8 @@ export function GrimoireView({
             backlinks={backlinks}
             onOpen={openDoc}
             onCreated={() => {
-              void load();
+              invalidateGrimoireLanding();
+              void load(true);
               refreshGraph();
             }}
           />
