@@ -333,7 +333,7 @@ assert.match(
 );
 assert.match(
   editorCss,
-  /\.canvas-editor__frame-shell:fullscreen \{/,
+  /\.canvas-editor__frame-shell:fullscreen \{[^}]*border: 0;/,
   "native fullscreen strips the frame chrome",
 );
 
