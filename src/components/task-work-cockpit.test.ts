@@ -18,3 +18,11 @@ assert.match(source, /useWorkspaceRailController/);
 assert.match(source, /<WorkspaceRail/);
 assert.match(source, /<WorkspaceRailSheet/);
 assert.doesNotMatch(source, /ChatRouter|ChatList/);
+// The resizable Group must remount per pane set: the library retains a layout
+// per panel-id set, and without the key a collapsed code rail left the
+// conversation panel at its stale two-panel width beside dead space.
+assert.match(
+  source,
+  /<Group\s*\n(?:\s*(?:className|orientation)=[^\n]*\n|\s*\/\/[^\n]*\n)*\s*key=\{railController\.showInline \? "conversation-rail" : "conversation"\}/,
+  "cockpit Group is keyed by the visible pane set so a solo conversation fills the cockpit",
+);

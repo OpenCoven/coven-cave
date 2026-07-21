@@ -1842,8 +1842,20 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
+        // Settle the retry step BEFORE the fresh attempt runs, not after it
+        // finishes: the step's own work (rebuild context, relaunch) is done
+        // the moment the fresh run launches. Left "running" until the attempt
+        // ended, "Resume failed…" stayed the live headline in the activity
+        // strip for the entire reply — minutes of what read like an
+        // unresolved failure while the fresh chat streamed fine underneath.
+        pushProgress(
+          "resume-retry",
+          retry.replayedHistory
+            ? "Recent context replayed into a fresh chat"
+            : "Fresh chat started",
+          "done",
+        );
         await runAttempt(buildArgs(null, retry.prompt));
-        pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
