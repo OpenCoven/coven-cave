@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { isOwnedSession } from "@/lib/cave-config";
+import { invalidateSessionsListCache } from "@/lib/server/sessions-list-cache";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidSessionId } from "@/lib/server/session-security";
 
@@ -29,5 +30,8 @@ export async function POST(
       { status: 502 },
     );
   }
+  // The kill changed the daemon-side row's status; bust the list cache so
+  // the refresh fired by the killing client sees it immediately (cave-53yx).
+  invalidateSessionsListCache();
   return NextResponse.json({ ok: true });
 }

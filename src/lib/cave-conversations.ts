@@ -3,6 +3,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { SessionOrigin } from "./types.ts";
@@ -221,6 +222,10 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   // torn half-JSON that loadConversation silently drops.
   await writeJsonAtomic(pathFor(conv.sessionId), conv);
   conversationSummaryCache.delete(pathFor(conv.sessionId));
+  // Bust the sessions-list SWR cache (cave-53yx): a new or updated
+  // conversation must be visible to the event-driven list refresh that fires
+  // right after the save, not 1-2 polls later.
+  invalidateSessionsListCache();
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
@@ -235,6 +240,7 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     const file = pathFor(sessionId);
     await unlink(file);
     conversationSummaryCache.delete(file);
+    invalidateSessionsListCache();
     return true;
   } catch {
     return false;

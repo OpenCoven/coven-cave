@@ -14,7 +14,10 @@ import {
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
 import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
 import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
-import { createSwrCache } from "@/lib/swr-cache";
+import {
+  sessionsListCache,
+  type SessionsListResult,
+} from "@/lib/server/sessions-list-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
@@ -36,39 +39,10 @@ type DaemonSession = {
   initiator?: SessionInitiator;
 };
 
-type SessionsListPayload =
-  | {
-      ok: true;
-      degraded?: boolean;
-      error?: string;
-      sessions: SessionRow[];
-    }
-  | {
-      ok: false;
-      error: string;
-      sessions: [];
-    };
-
-type SessionsListResult = {
-  payload: SessionsListPayload;
-  init?: ResponseInit;
-};
-
-// Stale-while-revalidate cache (cave-5m1c). The old plain 2s TTL sat under
-// the workspace's 4s poll, so effectively EVERY poll missed and paid the full
-// daemon + git + archive-sweep recompute on the response path. Now a poll
-// inside the fresh window is a pure cache hit; a poll after it is served the
-// previous payload instantly while one background recompute refreshes it —
-// steady-state pollers never wait on the compute. Error payloads are never
-// served stale (a transient daemon failure must not pin a 503 for the whole
-// stale window), and concurrent callers still share one in-flight compute.
-const SESSIONS_LIST_CACHE_MS = 2000;
-const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
-const sessionsListCache = createSwrCache<SessionsListResult>({
-  ttlMs: SESSIONS_LIST_CACHE_MS,
-  staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
-  canServeStale: (result) => result.payload.ok,
-});
+// Stale-while-revalidate cache (cave-5m1c) + mutation invalidation
+// (cave-53yx) live in @/lib/server/sessions-list-cache — a route file may
+// only export handlers, and session mutators must be able to bust the cache
+// so post-mutation refreshes never serve the pre-mutation list.
 
 function isTrueProjectCwd(projectRoot: string): boolean {
   const trimmed = projectRoot.trim();

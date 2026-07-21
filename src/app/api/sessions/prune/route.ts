@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
+import { invalidateSessionsListCache } from "@/lib/server/sessions-list-cache";
 import { prunePayload } from "./prune-response";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     // On a dry run the daemon reports how many sessions *would* be pruned; the
     // shared payload helper routes that to `wouldPrune` so the Maintenance
     // "Check" UI reads it the same way it does for the client path below.
+    if (!dryRun && native.data.pruned > 0) invalidateSessionsListCache();
     return NextResponse.json(
       prunePayload({ dryRun, count: native.data.pruned, method: "daemon" }),
     );
@@ -91,5 +93,6 @@ export async function POST(req: Request) {
     if (del.ok) pruned++;
   }
 
+  if (pruned > 0) invalidateSessionsListCache();
   return NextResponse.json(prunePayload({ dryRun: false, count: pruned, method: "client" }));
 }

@@ -520,18 +520,32 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /const sessionsListCache = createSwrCache<SessionsListResult>\(/,
-    "/sessions/list: repeated callers should share a stale-while-revalidate cached response",
+    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
+    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+  );
+  const sessionsListCacheSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),
+    "utf8",
   );
   assert.match(
-    sessionsListSource,
+    sessionsListCacheSource,
+    /export const sessionsListCache = createSwrCache<SessionsListResult>\(/,
+    "sessions-list-cache: the shared cache instance is a stale-while-revalidate cache",
+  );
+  assert.match(
+    sessionsListCacheSource,
     /canServeStale: \(result\) => result\.payload\.ok/,
-    "/sessions/list: error payloads must never be served stale (no pinned 503s)",
+    "sessions-list-cache: error payloads must never be served stale (no pinned 503s)",
   );
   assert.match(
-    sessionsListSource,
+    sessionsListCacheSource,
     /SESSIONS_LIST_STALE_SERVE_MS = 30_000/,
-    "/sessions/list: stale serve window covers the poll cadence so polls never block on recompute",
+    "sessions-list-cache: stale serve window covers the poll cadence so polls never block on recompute",
+  );
+  assert.match(
+    sessionsListCacheSource,
+    /export function invalidateSessionsListCache\(\): void \{\s*\n\s*sessionsListCache\.clear\(\);/,
+    "sessions-list-cache: mutation paths can bust every cached view (cave-53yx)",
   );
 
   const swrCacheSource = readFileSync(

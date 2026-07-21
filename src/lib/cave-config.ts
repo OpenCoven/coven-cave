@@ -3,6 +3,7 @@ import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
+import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
 import {
   type ChatAutoArchivePolicy,
@@ -644,11 +645,16 @@ async function updateState<T>(
   }
 }
 
+// Session-list mutators below call invalidateSessionsListCache() after their
+// state write (cave-53yx): the SWR cache behind /api/sessions/list would
+// otherwise serve the pre-mutation list to the event-driven refresh fired
+// right after the mutation, delaying the visible change by 1-2 polls.
 export async function recordOwnedSession(sessionId: string): Promise<void> {
   try {
     await updateState((state) => {
       state.sessionOwned[sessionId] = new Date().toISOString();
     });
+    invalidateSessionsListCache();
   } catch {
     /* best effort */
   }
@@ -788,6 +794,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
     await updateState((state) => {
       state.sessionFamiliar[sessionId] = familiarId;
     });
+    invalidateSessionsListCache();
   } catch {
     /* best effort */
   }
@@ -798,7 +805,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
-  return updateState((state) => {
+  const next = await updateState((state) => {
     const trimmed = title.trim();
     if (!trimmed) {
       delete state.sessionTitles[sessionId];
@@ -807,6 +814,8 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
     }
     return trimmed || null;
   });
+  invalidateSessionsListCache();
+  return next;
 }
 
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
@@ -815,6 +824,7 @@ export async function archiveSessionLocal(sessionId: string): Promise<string> {
   await updateState((state) => {
     state.sessionArchived[sessionId] = now;
   });
+  invalidateSessionsListCache();
   return now;
 }
 
@@ -829,6 +839,7 @@ export async function summonSessionLocal(sessionId: string): Promise<void> {
       SUMMON_GRACE_DAYS,
     );
   });
+  invalidateSessionsListCache();
 }
 
 /** Mark or unmark a session keep (never auto-archived). Manual archive still works. */
@@ -840,6 +851,7 @@ export async function setSessionKeepLocal(sessionId: string, keep: boolean): Pro
       delete state.sessionKeep[sessionId];
     }
   });
+  invalidateSessionsListCache();
   return keep;
 }
 
@@ -851,6 +863,7 @@ export async function extendSessionAutoArchiveLocal(
   await updateState((state) => {
     state.sessionArchiveExtendedUntil[sessionId] = untilIso;
   });
+  invalidateSessionsListCache();
   return untilIso;
 }
 
@@ -858,6 +871,11 @@ export async function extendSessionAutoArchiveLocal(
  * Archive a batch of sessions in one state write (auto-archive sweep).
  * Sessions already archived or sacrificed are skipped. Returns the ids that
  * were archived now, mapped to their shared archive timestamp.
+ *
+ * Deliberately does NOT invalidate the sessions-list cache: the sweeps run
+ * INSIDE the list compute and their result is already folded into the
+ * returned rows (applySweptRows); invalidating mid-compute would version-bump
+ * the entry away and leave the cache permanently cold.
  */
 export async function autoArchiveSessionsLocal(
   sessionIds: string[],
@@ -879,6 +897,8 @@ export async function autoArchiveSessionsLocal(
  * Archive a batch of sessions whose pull requests just merged, recording each
  * (session, PR) pair so the sweep is one-shot — summoning the chat later won't
  * be undone by the next poll. Returns the archive timestamp used.
+ * Sweep-internal: no sessions-list cache invalidation (see
+ * autoArchiveSessionsLocal).
  */
 export async function archiveSessionsForMergedPrs(
   entries: Array<{ sessionId: string; prKey: string }>,
@@ -903,6 +923,7 @@ export async function sacrificeSessionLocal(sessionId: string): Promise<string> 
   await updateState((state) => {
     state.sessionSacrificed[sessionId] = now;
   });
+  invalidateSessionsListCache();
   return now;
 }
 

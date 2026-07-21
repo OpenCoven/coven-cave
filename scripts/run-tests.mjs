@@ -985,6 +985,7 @@ export const SUITES = {
     "src/lib/server/chat-work-branch.test.ts",
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
+    "src/lib/server/sessions-list-cache.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
     "src/lib/server/operator-profile-context.test.ts",
