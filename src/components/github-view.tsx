@@ -61,6 +61,7 @@ import { GithubSubscriptionsModal } from "@/components/github-subscriptions-moda
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useSurfacePreference } from "@/lib/surface-preferences";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
@@ -142,6 +143,7 @@ function PatSetupModal({
         setError(data?.error ?? "Failed to save. Check that your PAT has read:user and repo scopes.");
         return;
       }
+      invalidateSurfaceResources("github:pat", "github:activity");
       onSaved(data.login ?? trimmedUser, !!trimmedPat);
     } catch {
       setError("Network error — please try again.");
@@ -269,6 +271,7 @@ function PatSetupModal({
                         setError(data?.error ?? "Couldn't remove the token.");
                         return;
                       }
+                      invalidateSurfaceResources("github:pat", "github:activity");
                       onSaved(usernameInput.trim() || username || "", false);
                     } catch {
                       setError("Network error — please try again.");
@@ -2336,8 +2339,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
 
   async function fetchPatStatus() {
     try {
-      const res = await fetch("/api/github/pat");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<PatStatus>("github:pat");
       if (data) setPatStatus(data as PatStatus);
     } catch { /* non-fatal */ }
   }
@@ -2356,24 +2358,9 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/github/activity");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<ActivityResult>("github:activity", silent);
       if (!mountedRef.current) return;
-
-      if (res.status === 401 && data?.error === "no_user") {
-        setError("no_user");
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? `GitHub error (${res.status})`);
-        setLoading(false);
-        schedulePoll(60_000);
-        return;
-      }
-
-      const nextActivity = data as ActivityResult;
+      const nextActivity = data;
       setActivity((prev) =>
         prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
@@ -2643,6 +2630,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
           onSaved={(login, hasPat) => {
+            invalidateSurfaceResources("github:pat", "github:activity");
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
             refreshActivity();

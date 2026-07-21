@@ -36,6 +36,7 @@ import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/component
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import {
   emptyStats,
   FamiliarsEmptyState,
@@ -150,14 +151,14 @@ export function FamiliarsView({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const loadMemory = useCallback(async () => {
+  const loadMemory = useCallback(async (force = false) => {
     try {
-      const [covenRes, fileRes] = await Promise.all([
-        fetch("/api/coven-memory", { cache: "no-store" }),
-        fetch("/api/memory", { cache: "no-store" }),
+      const [covenResult, fileResult] = await Promise.all([
+        readSurfaceResource<CovenMemoryResponse>("agents:coven-memory", force),
+        readSurfaceResource<FileMemoryResponse>("memory:list", force),
       ]);
-      const covenJson = (await covenRes.json()) as CovenMemoryResponse;
-      const fileJson = (await fileRes.json()) as FileMemoryResponse;
+      const covenJson = covenResult.data;
+      const fileJson = fileResult.data;
       if (covenJson.ok) setCovenEntries(covenJson.entries ?? []);
       if (fileJson.ok) setFileEntries(fileJson.entries ?? []);
       const errors = [
@@ -177,7 +178,7 @@ export function FamiliarsView({
     void loadMemory();
   }, [loadMemory]);
   // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void loadMemory(), 30_000);
+  usePausablePoll(() => void loadMemory(true), 30_000);
 
   // Single source of truth for the memory endpoints: the embedded
   // FamiliarsMemoryView mounts consume this instead of running their own

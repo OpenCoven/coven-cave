@@ -67,6 +67,7 @@ import {
 } from "@/lib/automations/automation-entry";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -188,17 +189,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     return () => { mountedRef.current = false; };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     const reqId = ++loadReqRef.current;
     // Live only while this is still the newest load AND the view is mounted; a
     // superseded (or unmounted) load drops all its writes.
     const live = () => reqId === loadReqRef.current && mountedRef.current;
     try {
-      const [inboxRes, codexRes] = await Promise.all([
-        fetch("/api/inbox", { cache: "no-store" }),
-        fetch("/api/codex-automations", { cache: "no-store" }),
+      const [inboxResult, codexResult] = await Promise.all([
+        readSurfaceResource<{ ok?: boolean; items?: InboxItem[]; error?: string }>("schedules:inbox", force),
+        readSurfaceResource<{ ok?: boolean; automations?: CodexAutomation[]; error?: string }>("schedules:automations", force),
       ]);
-      const inboxJson = await inboxRes.json();
+      const inboxJson = inboxResult.data;
       if (!live()) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
       // Content-equality guards (codebase convention — see board-view/workspace):
@@ -207,7 +208,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       // stay quiet instead of re-firing every 15s.
       const nextItems = inboxJson.items ?? [];
       setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
-      const codexJson = await codexRes.json();
+      const codexJson = codexResult.data;
       if (!live()) return;
       if (codexJson.ok) {
         const nextAutos = codexJson.automations ?? [];
@@ -278,7 +279,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // hitting /api/inbox + /api/codex-automations every 15s with nobody looking.
   // A refetch on return brings it current immediately.
   useEffect(() => { void load(); }, [load]);
-  usePausablePoll(() => { void load(); }, 15_000, { pauseWhileInputActive: true });
+  usePausablePoll(() => { void load(true); }, 15_000, { pauseWhileInputActive: true });
 
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.
@@ -356,7 +357,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "patch failed");
     } finally { setBusyId(null); }
@@ -372,7 +373,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
@@ -398,7 +399,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "delete failed");
-      } finally { await load(); }
+      } finally { await load(true); }
     });
   }, [items, scheduleDelete, load]);
 
@@ -472,7 +473,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(action === "read" ? `Marked '${item.title}' as read.` : `Marked '${item.title}' as unread.`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
@@ -529,7 +530,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex patch failed");
     } finally {
@@ -549,7 +550,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       if (json.automation) setSelectedCodex(json.automation);
       announce(`Saved '${patch.name ?? auto.name}'.`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex save failed");
     } finally {
@@ -568,7 +569,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
-      } finally { await load(); }
+      } finally { await load(true); }
     });
   }, [scheduleDelete, load]);
 
@@ -598,7 +599,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
       announce(`Created cron '${input.name}'.`);
-      await load();
+      await load(true);
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
@@ -735,7 +736,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
       announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "bulk action failed");
     } finally {
@@ -761,7 +762,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         if (!res.ok) throw new Error(`http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "bulk delete failed");
-      } finally { await load(); }
+      } finally { await load(true); }
     });
   };
   const automationsEmpty = codexAutos.length === 0;
@@ -985,7 +986,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <span className="min-w-0 flex-1 truncate">{error}</span>
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void load(true)}
               className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             >
               Retry

@@ -40,6 +40,7 @@ import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { BoardKanbanSkeleton, type ViewMode } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
 type Props = {
@@ -148,14 +149,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // response, so only the latest load ever touches state (mirrors
   // capabilities-view / marketplace-configure).
   const loadCtlRef = useRef<AbortController | null>(null);
-  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+  const load = useCallback(async (opts?: { quiet?: boolean; force?: boolean }) => {
     const quiet = opts?.quiet === true;
     loadCtlRef.current?.abort();
     const ctl = new AbortController();
     loadCtlRef.current = ctl;
     try {
-      const res = await fetch("/api/board", { cache: "no-store", signal: ctl.signal });
-      const json = await res.json();
+      const { data: json } = await readSurfaceResource<{ ok?: boolean; cards?: Card[]; error?: string }>("board:cards", opts?.force === true);
       if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       if (json.ok) {
         const loaded = json.cards as Card[];
@@ -224,7 +224,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
   useEffect(() => {
-    const onReload = () => { void load(); };
+  const onReload = () => { invalidateSurfaceResources("board:cards", "tasks:queue"); void load(); };
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
@@ -249,7 +249,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     rescheduleUndo !== null ||
     (deletePending?.item?.length ?? 0) > 0;
   usePausablePoll(
-    () => { void load({ quiet: true }); },
+    () => { void load({ quiet: true, force: true }); },
     15_000,
     { enabled: !interacting, pauseWhileInputActive: true },
   );
@@ -406,6 +406,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
         reloadWhenPatchesSettleRef.current = true;
       } else {
+        invalidateSurfaceResources("board:cards", "tasks:queue");
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
@@ -422,7 +423,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       inFlightPatchesRef.current -= 1;
       if (inFlightPatchesRef.current === 0 && reloadWhenPatchesSettleRef.current) {
         reloadWhenPatchesSettleRef.current = false;
-        await load();
+        await load({ force: true });
       }
     }
   };
@@ -454,6 +455,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       // silently dropping the failure).
       const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
       if (!json.ok) throw new Error(json.error ?? "create failed");
+      invalidateSurfaceResources("board:cards", "tasks:queue");
       setActionError(null);
       announce(`Created task '${draft.title.trim()}'.`);
       await load();
@@ -507,6 +509,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       async () => {
         // Commit: drop from local state, then fire the DELETEs. Both the unhide
         // (pending → null) and this removal batch, so the cards never flash back.
+        invalidateSurfaceResources("board:cards", "tasks:queue");
         setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
         const results = await Promise.all(
           toRemove.map(async (c) => {
@@ -519,7 +522,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         const failed = results.filter((ok) => !ok).length;
         if (failed > 0) {
           setActionError(`Couldn't delete ${failed} of ${toRemove.length} task${toRemove.length === 1 ? "" : "s"} — reverted those.`);
-          await load();
+          await load({ force: true });
         } else {
           setActionError(null);
         }
@@ -608,6 +611,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     setClearConfirm(false);
     if (snapshot.length === 0) return;
     const ids = new Set(snapshot.map((c) => c.id));
+    invalidateSurfaceResources("board:cards", "tasks:queue");
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
@@ -631,7 +635,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       setActionError(
         `Couldn't clear ${failed.length} of ${snapshot.length} done task${snapshot.length === 1 ? "" : "s"} — reverted those.`,
       );
-      await load();
+      await load({ force: true });
     } else {
       setActionError(null);
     }
@@ -675,7 +679,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     } catch {
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
-    await load();
+    invalidateSurfaceResources("board:cards", "tasks:queue");
+    await load({ force: true });
   };
 
   // Revert a gantt reschedule to its snapshotted dates (without re-arming undo).

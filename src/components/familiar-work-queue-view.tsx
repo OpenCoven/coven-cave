@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -108,16 +109,18 @@ type FetchedQueue = {
   prsError: string | null;
 };
 
+type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary[]; merged?: MergedPrRef[]; error?: string };
+
 // Either source alone still renders a useful queue, so a single failing
 // adapter DEGRADES the surface (with a truthful banner) instead of failing the
 // whole load: beads-only when the gh PR bridge is down, PRs-only when the
 // beads adapter is down. Only both failing rejects — then there is genuinely
 // nothing to show.
 async function fetchQueue(signal: AbortSignal): Promise<FetchedQueue> {
-  const [beadsSettled, prsSettled] = await Promise.allSettled([
-    fetch("/api/beads?mode=ready", { cache: "no-store", signal }).then((res) => res.json()),
-    fetch("/api/beads/prs", { cache: "no-store", signal }).then((res) => res.json()),
-  ]);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue");
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const [beadsSettled, prsSettled] = data;
 
   let readyBeads: ReadyBead[] = [];
   let beadsOk = false;

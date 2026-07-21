@@ -63,6 +63,7 @@ import {
 } from "@/components/marketplace/marketplace-view-model";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
@@ -155,16 +156,15 @@ export function MarketplaceViewSurface({
   // shared live region — otherwise these core actions are silent to AT.
   const { announce } = useAnnouncer();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     loadCtl.current?.abort();
     const ctl = new AbortController();
     loadCtl.current = ctl;
     setLoaded(false);
     try {
-      const res = await fetch("/api/marketplace", { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as { ok?: boolean; plugins?: MarketplacePlugin[]; error?: string };
+      const { data: json } = await readSurfaceResource<{ ok?: boolean; plugins?: MarketplacePlugin[]; error?: string }>("marketplace:catalog", force);
       if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `marketplace http ${res.status}`);
+      if (!json.ok) throw new Error(json.error ?? "marketplace unavailable");
       // A reload can land while an install/uninstall is still writing (e.g.
       // the configure dialog fires onChanged → load()). For those ids, keep
       // the optimistic `installed` — the response was snapshotted before the
@@ -206,7 +206,8 @@ export function MarketplaceViewSurface({
         clearCraftArrivalWatch();
         setCraftWatch(null);
         announce("Your familiar's Craft draft arrived", "polite");
-        void load().then(() => setSelected(arrived));
+        invalidateSurfaceResources("marketplace:catalog");
+        void load(true).then(() => setSelected(arrived));
       }
     } catch {
       // Local API — the next tick retries.
@@ -223,9 +224,9 @@ export function MarketplaceViewSurface({
     setSkillsLoaded(false);
     try {
       const trimmed = search.trim();
-      const url = trimmed ? `/api/skills/directory?q=${encodeURIComponent(trimmed)}` : "/api/skills/directory";
-      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as {
+      const json = (trimmed
+        ? await fetch(`/api/skills/directory?q=${encodeURIComponent(trimmed)}`, { cache: "no-store", signal: ctl.signal }).then((res) => res.json())
+        : (await readSurfaceResource("marketplace:skills")).data) as {
         ok?: boolean;
         entries?: SkillBrowserEntry[];
         error?: string;
@@ -233,7 +234,7 @@ export function MarketplaceViewSurface({
         fetchedAt?: string;
       };
       if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `skills http ${res.status}`);
+      if (!json.ok) throw new Error(json.error ?? "skills unavailable");
       setSkills(json.entries ?? []);
       setSkillsError(null);
     } catch (err) {
@@ -430,6 +431,7 @@ export function MarketplaceViewSurface({
       } else {
         announce("Added to your setup", "polite");
       }
+      invalidateSurfaceResources("marketplace:catalog");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "install failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -497,6 +499,7 @@ export function MarketplaceViewSurface({
         setInstalled(id, false);
         announce("Removed from your setup", "polite");
       }
+      invalidateSurfaceResources("marketplace:catalog");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "uninstall failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -960,7 +963,8 @@ export function MarketplaceViewSurface({
           onRemove={() => void remove(selectedPlugin.id)}
           onDraftDeleted={() => {
             setSelected(null);
-            void load();
+            invalidateSurfaceResources("marketplace:catalog");
+            void load(true);
           }}
           onAdjustRoles={(seed) => {
             setSelected(null);
@@ -976,7 +980,7 @@ export function MarketplaceViewSurface({
           displayName={configuringPlugin.displayName}
           open={true}
           onClose={() => setConfiguringId(null)}
-          onChanged={() => void load()}
+          onChanged={() => { invalidateSurfaceResources("marketplace:catalog"); void load(true); }}
         />
       ) : null}
 
@@ -990,7 +994,8 @@ export function MarketplaceViewSurface({
         onCreated={(id) => {
           setCreatingCraft(false);
           setCraftSeed(null);
-          void load().then(() => setSelected(id));
+          invalidateSurfaceResources("marketplace:catalog");
+          void load(true).then(() => setSelected(id));
           announce("Craft draft saved", "polite");
         }}
       />

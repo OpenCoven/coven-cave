@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { test } from "node:test";
+
+const here = new URL(".", import.meta.url);
+
+async function source(name: string): Promise<string> {
+  return readFile(new URL(name, here), "utf8");
+}
+
+test("warmup registry covers canonical sidebar landings with bounded serial resources", async () => {
+  const registry = await source("surface-warmup-registry.ts");
+  for (const surface of ["github", "marketplace", "board", "schedules", "grimoire", "agents"]) {
+    assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
+  }
+  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\) await warm\(resource\)/);
+  assert.match(registry, /preloadSidebarSurface\(surface\)/);
+});
+
+test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {
+  const hook = await source("use-surface-warmup.ts");
+  assert.match(hook, /requestAnimationFrame\(\(\) => window\.requestAnimationFrame\(begin\)\)/);
+  assert.match(hook, /document\.hidden/);
+  assert.match(hook, /window\.addEventListener\("offline", pause\)/);
+  assert.match(hook, /abortWarm\(\)/);
+  assert.match(hook, /warmSurface\(surface\)/);
+});

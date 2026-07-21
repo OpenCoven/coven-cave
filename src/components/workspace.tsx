@@ -51,6 +51,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -232,6 +233,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 export function Workspace() {
+  useSurfaceWarmup();
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
   const routerRef = useRef<ChatRouterHandle | null>(null);
