@@ -79,3 +79,14 @@ assert.doesNotMatch(
   /const userTurnId = crypto\.randomUUID\(\)/,
   "no save path may mint a fresh user-turn id divorced from the stub's — that would duplicate the first turn",
 );
+
+// ── Stop + liveness by conversation id (cave-0g2x follow-through) ────────────
+// A new chat's run registers under only the client runId (body.sessionId is
+// null until the harness mints an id). announceSession must late-key the run
+// registry with the announced id so /api/chat/stop works mid-first-turn and
+// the sessions-list liveness probe (hasActiveChatRun) sees the run.
+assert.match(
+  chatRoute,
+  /const announceSession = \(id: string\) => \{[\s\S]{0,1200}addChatRunKeys\(runHandle, \[announcedId\]\)/,
+  "announceSession late-keys the run registry with the announced conversation id",
+);
