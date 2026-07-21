@@ -177,11 +177,21 @@ assert.match(
   "selection is enabled in every mode once the inspector authenticates",
 );
 
-// Escape deselects, but never swallows Escape from a non-empty field.
+// Escape routes through the shared resolver: field → selection → expand.
 assert.match(
   editor,
-  /event\.key !== "Escape" \|\| !selectionRef\.current\) return;[\s\S]{0,400}?active\.value\.trim\(\)[\s\S]{0,120}?return;[\s\S]{0,200}?setSelection\(null\)/,
-  "Escape clears the selection unless a field still holds content",
+  /import \{ resolveEscapeAction \} from "@\/lib\/canvas-editor-escape";/,
+  "the editor delegates Escape precedence to the shared resolver",
+);
+assert.match(
+  editor,
+  /event\.key !== "Escape"\) return;[\s\S]{0,500}?resolveEscapeAction\(\{/,
+  "the keydown handler asks the resolver what Escape should do",
+);
+assert.match(
+  editor,
+  /action === "clear-selection"[\s\S]{0,300}?setSelection\(null\)[\s\S]{0,400}?action === "exit-expand"[\s\S]{0,200}?setExpanded\(false\)/,
+  "selection clears before expand exits, matching the resolver order",
 );
 
 // Pinned comments persist as artifact annotations via PATCH.
@@ -275,6 +285,34 @@ assert.match(
   editor,
   /border": css\["border"\] = draft\.borderW > 0 \? `\$\{draft\.borderW\}px solid \$\{SKETCH_BORDER_COLOR\}` : "none";|draft\.borderW > 0 \? `\$\{draft\.borderW\}px solid \$\{SKETCH_BORDER_COLOR\}` : "none"/,
   "border width 0 maps to border: none",
+);
+
+// ── Full screen: in-app expand + native fullscreen ──────────────────────────
+assert.match(
+  editor,
+  /className=\{`canvas-editor\$\{expanded \? " canvas-editor--expanded" : ""\}`\}/,
+  "the expanded state drives the root modifier class",
+);
+assert.match(editor, /aria-pressed=\{expanded\}/, "the expand toggle exposes pressed state");
+assert.match(
+  editor,
+  /doc\.fullscreenEnabled \|\| doc\.webkitFullscreenEnabled/,
+  "availability covers standard and WebKit-prefixed Fullscreen APIs",
+);
+assert.match(
+  editor,
+  /\{fullscreenAvailable \? \(/,
+  "the native full screen button renders only when the API is available",
+);
+assert.match(
+  editor,
+  /addEventListener\("fullscreenchange", onFullscreenChange\);[\s\S]{0,120}?addEventListener\("webkitfullscreenchange", onFullscreenChange\)/,
+  "fullscreenchange (incl. webkit) keeps the button state in sync",
+);
+assert.match(
+  editor,
+  /ref=\{frameShellRef\}/,
+  "the frame shell (iframe + error overlay) is the fullscreen element",
 );
 
 // ── Escape precedence: field → selection → in-app expand ────────────────────
