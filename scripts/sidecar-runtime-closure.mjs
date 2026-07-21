@@ -79,7 +79,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // adds one traced file on Windows. CI measured 5,543; keep the exact maximum.
   // 2026-07-21 (Canvas redesign): the full-surface canvas editor adds one
   // traced chunk on Windows. CI measured 5,544; keep the exact maximum.
-  fileCount: 5_544,
+  // 2026-07-21 (Familiar redesign): the SurfaceRail + familiar-tab chunk adds
+  // one traced file on Windows. CI measured 5,545; keep the exact maximum.
+  fileCount: 5_545,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
