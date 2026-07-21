@@ -162,12 +162,11 @@ export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<
     case "marketplace":
       return loadMarketplaceView().then(() => undefined);
     case "board":
-      return loadBoardView().then(() => loadFamiliarWorkQueueView()).then(() => undefined);
+      return Promise.all([loadBoardView(), loadFamiliarWorkQueueView()]).then(() => undefined);
     case "schedules":
-      return loadInboxEscalationsView()
-        .then(() => loadCalendarView())
-        .then(() => loadAutomationsView())
-        .then(() => undefined);
+      return Promise.all([loadInboxEscalationsView(), loadCalendarView(), loadAutomationsView()]).then(
+        () => undefined,
+      );
     case "grimoire":
       return loadGrimoireView().then(() => undefined);
     case "agents":
