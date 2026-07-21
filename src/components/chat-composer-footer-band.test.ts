@@ -154,11 +154,17 @@ assert.match(
 
 // The "↵ send · ⇧↵ newline" typing hint is gone from the chat composer
 // (2026-07-21): the tinted send button already signals sendability. The
-// home composer keeps its own hint, so the shared CSS class stays.
+// home composer dropped its hint in the same day's parity pass, so the
+// shared CSS class is retired with its last consumer.
 assert.doesNotMatch(
   source,
   /cave-composer-typing-hint/,
   "the enter-to-send typing hint no longer renders in the chat composer",
+);
+assert.doesNotMatch(
+  css,
+  /cave-composer-typing-hint/,
+  "the typing-hint CSS is retired with its last consumer (the home composer)",
 );
 
 // ── Reveal + mobile behavior ─────────────────────────────────────────────────

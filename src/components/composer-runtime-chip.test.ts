@@ -26,6 +26,11 @@ assert.match(
   "the home composer's context pill hosts the runtime picker from its own model state",
 );
 assert.match(
+  homeComposer,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the home pill anchors the composer footer band (2026-07-21 home parity pass moved it down from the utility row)",
+);
+assert.match(
   contextPill,
   /export function ComposerContextActionRows\(/,
   "runtime/model rows are reusable outside the Home pill wrapper",
