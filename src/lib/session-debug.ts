@@ -2,7 +2,11 @@ import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
-import type { ChatStreamClientHealth, RunBufferStatus } from "./chat-stream-health.ts";
+import type {
+  ChatStreamClientHealth,
+  ChatStreamPhase,
+  RunBufferStatus,
+} from "./chat-stream-health.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -107,8 +111,62 @@ export function nextAfterSeq(events: CovenEvent[]): number {
   return events.reduce((max, e) => (e.seq > max ? e.seq : max), 0);
 }
 
-export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
-  return args.status === "running" && args.visible;
+/** How long the statusless activity probe keeps the tail polling past the
+ *  last evidence of liveness (newest daemon event, or the probe start). */
+export const EVENTS_ACTIVITY_WINDOW_MS = 15_000;
+
+/** Liveness signals for the live event tail. The polled sessions list can lag
+ *  reality by a poll cycle or lack a row for the session entirely (pre-listing
+ *  runs, sessions opened from outside the polled view) — so the row status is
+ *  only one hint among three. */
+export type EventsTailSignals = {
+  /** Polled sessions-list status; null when the session has no row. */
+  status: string | null;
+  /** The owning pane's live transport phase — leads the polled row when this
+   *  pane itself is streaming (a fresh run on a row still marked settled). */
+  streamPhase: ChatStreamPhase;
+  /** Newest daemon event timestamp observed so far (epoch ms), null before
+   *  any drain returned a parseable event. */
+  lastEventAt: number | null;
+  /** When the statusless probe started (pane mount), epoch ms. */
+  probedAt: number;
+  now: number;
+};
+
+/** Whether the live event tail should keep polling (A3). A running row or an
+ *  active transport phase is definitive. A settled row is trusted — no
+ *  polling. A statusless row gets a bounded activity probe instead of never
+ *  starting: poll while the newest observed event (falling back to the probe
+ *  start before the first drain) is within {@link EVENTS_ACTIVITY_WINDOW_MS};
+ *  an old cached tail closes the window immediately. */
+export function eventsTailActive(signals: EventsTailSignals): boolean {
+  if (signals.status === "running") return true;
+  if (
+    signals.streamPhase === "connecting" ||
+    signals.streamPhase === "streaming" ||
+    signals.streamPhase === "resuming"
+  ) {
+    return true;
+  }
+  if (signals.status !== null) return false;
+  const anchor = signals.lastEventAt ?? signals.probedAt;
+  return signals.now - anchor < EVENTS_ACTIVITY_WINDOW_MS;
+}
+
+export function shouldPollEvents(args: EventsTailSignals & { visible: boolean }): boolean {
+  return args.visible && eventsTailActive(args);
+}
+
+/** Newest parseable `created_at` among events, as epoch ms; null when none
+ *  parse. Anchors the statusless activity probe on daemon truth so draining
+ *  an old finished tail doesn't read as live activity. */
+export function latestEventTimestampMs(events: CovenEvent[]): number | null {
+  let max: number | null = null;
+  for (const event of events) {
+    const t = Date.parse(event.created_at);
+    if (!Number.isNaN(t) && (max === null || t > max)) max = t;
+  }
+  return max;
 }
 
 /** Snapshot of one pane's fetched event tail, kept across modal close/reopen. */

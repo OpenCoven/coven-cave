@@ -19,9 +19,11 @@ import {
   appendEvents,
   buildDebugBundle,
   debugFileName,
+  eventsTailActive,
   exportDebugTurn,
   filterEvents,
   formatEventPayload,
+  latestEventTimestampMs,
   nextAfterSeq,
   readDebugEventsCache,
   shouldPollEvents,
@@ -288,11 +290,10 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
   const dtPrefs = useDateTimePrefs();
   const cwd = formatRuntime(session?.runtime);
   const streamSummary = useMemo(() => streamHealthSummary(streamHealth), [streamHealth]);
-  const streamStatusActive =
-    status === "running" ||
-    streamHealth.phase === "connecting" ||
-    streamHealth.phase === "streaming" ||
-    streamHealth.phase === "resuming";
+  const streamPhase = streamHealth.phase;
+  const streamPhaseActive =
+    streamPhase === "connecting" || streamPhase === "streaming" || streamPhase === "resuming";
+  const streamStatusActive = status === "running" || streamPhaseActive;
   const lastEventLabel = streamHealth.lastEventAt
     ? formatTimestamp(streamHealth.lastEventAt, dtPrefs) || streamHealth.lastEventAt
     : "—";
@@ -312,10 +313,25 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
   const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
   const { announce } = useAnnouncer();
   // Tail-follow only makes sense while events are streaming in; opening a
-  // finished session shouldn't jump past the Session section.
-  const [follow, setFollow] = useState(status === "running");
+  // finished session shouldn't jump past the Session section. The pane's own
+  // transport phase counts alongside the polled row (A3): a just-sent run
+  // should follow even while the sessions list still reports the old status.
+  const [follow, setFollow] = useState(status === "running" || streamPhaseActive);
   const cursorRef = useRef(cachedSnapshot?.cursor ?? 0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // A3 liveness signals: the polled sessions list can lag a poll cycle or lack
+  // a row entirely (null status), so the tail self-detects. The probe anchor
+  // is the newest daemon event seen (seeded from the cached tail), falling
+  // back to the mount time before the first drain returns anything.
+  const probedAtRef = useRef(Date.now());
+  const lastEventAtRef = useRef<number | null>(
+    cachedSnapshot ? latestEventTimestampMs(cachedSnapshot.events) : null,
+  );
+  // Flips true when the statusless activity window closes, stopping the poll
+  // timer; fresh events (a reappearing run, a manual Retry that finds new
+  // ones) re-open it from fetchEvents.
+  const [probeExpired, setProbeExpired] = useState(false);
 
   const fetchInFlightRef = useRef(false);
   const streamStatusInFlightRef = useRef(false);
@@ -402,6 +418,14 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
         const incoming = json.events ?? [];
         setEvents((prev) => appendEvents(prev, incoming));
         cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
+        // Advance the liveness anchor on daemon truth (event timestamps, not
+        // arrival time) and re-open the statusless probe — a Retry that finds
+        // fresh events resumes the live tail.
+        const newest = latestEventTimestampMs(incoming);
+        if (newest !== null && (lastEventAtRef.current === null || newest > lastEventAtRef.current)) {
+          lastEventAtRef.current = newest;
+          setProbeExpired(false);
+        }
         lastPageFull = incoming.length >= 200;
         if (!lastPageFull) break;
       }
@@ -491,16 +515,33 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
     void fetchStreamStatus();
   }, [fetchStreamStatus]);
 
-  // Live tail while the session is running and the tab is visible.
+  // Live tail while the session is demonstrably live and the tab is visible.
+  // The polled row status is only a hint (A3): this pane's transport phase
+  // covers post-send row lag, and a statusless row (absent from the polled
+  // list) gets a bounded activity probe — eventsTailActive owns the policy.
+  const tailMayRun = status === "running" || streamPhaseActive || (status === null && !probeExpired);
   useEffect(() => {
-    if (status !== "running") return;
+    if (!tailMayRun) return;
     const id = window.setInterval(() => {
-      if (shouldPollEvents({ status, visible: document.visibilityState === "visible" })) {
+      const signals = {
+        status,
+        streamPhase,
+        lastEventAt: lastEventAtRef.current,
+        probedAt: probedAtRef.current,
+        now: Date.now(),
+      };
+      if (!eventsTailActive(signals)) {
+        // Statusless probe went quiet — stop the timer; fetchEvents re-opens
+        // it when fresh events surface.
+        setProbeExpired(true);
+        return;
+      }
+      if (shouldPollEvents({ ...signals, visible: document.visibilityState === "visible" })) {
         void fetchEvents();
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [fetchEvents, status]);
+  }, [fetchEvents, status, streamPhase, tailMayRun]);
   useEffect(() => {
     if (!streamStatusActive) return;
     const id = window.setInterval(() => {
@@ -518,6 +559,14 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
     if (prevStatusRef.current === "running" && status !== "running") void fetchEvents();
     prevStatusRef.current = status;
   }, [fetchEvents, status]);
+  // Mirror catch-up when this pane's own run settles — the row can still say
+  // "completed" from before the send (A3), so the status transition above
+  // never fires for it.
+  const prevStreamPhaseActiveRef = useRef(streamPhaseActive);
+  useEffect(() => {
+    if (prevStreamPhaseActiveRef.current && !streamPhaseActive) void fetchEvents();
+    prevStreamPhaseActiveRef.current = streamPhaseActive;
+  }, [fetchEvents, streamPhaseActive]);
   const prevStreamStatusActiveRef = useRef(streamStatusActive);
   useEffect(() => {
     if (prevStreamStatusActiveRef.current && !streamStatusActive) {

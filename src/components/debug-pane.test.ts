@@ -281,7 +281,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const streamStatusActive =\s*status === "running" \|\|\s*streamHealth\.phase === "connecting" \|\|\s*streamHealth\.phase === "streaming" \|\|\s*streamHealth\.phase === "resuming"/,
+  /const streamPhaseActive =\s*streamPhase === "connecting" \|\| streamPhase === "streaming" \|\| streamPhase === "resuming";\s*const streamStatusActive = status === "running" \|\| streamPhaseActive/,
   "Server status activity must include authoritative connecting, streaming, and resuming client phases",
 );
 assert.match(
@@ -293,6 +293,38 @@ assert.match(
   source,
   /prevStreamStatusActiveRef\.current && !streamStatusActive[\s\S]*?fetchStreamStatus\(\)[\s\S]*?prevStreamStatusActiveRef\.current = streamStatusActive/,
   "A combined client/server active-to-terminal transition triggers one final server-status refresh",
+);
+
+// ── A3: the events tail self-detects liveness under a lagged/absent row ─────
+assert.match(
+  source,
+  /const tailMayRun = status === "running" \|\| streamPhaseActive \|\| \(status === null && !probeExpired\);/,
+  "A3: the tail timer runs on a running row, this pane's active transport phase, or an open statusless probe — never solely on the polled row",
+);
+assert.match(
+  source,
+  /if \(!eventsTailActive\(signals\)\) \{[\s\S]*?setProbeExpired\(true\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(shouldPollEvents\(\{ \.\.\.signals, visible: document\.visibilityState === "visible" \}\)\)/,
+  "A3: each tick re-evaluates the pure liveness gate — an expired statusless probe stops the timer instead of polling forever",
+);
+assert.match(
+  source,
+  /const newest = latestEventTimestampMs\(incoming\);[\s\S]*?lastEventAtRef\.current = newest;[\s\S]*?setProbeExpired\(false\);/,
+  "A3: drains anchor liveness on daemon event timestamps and re-open an expired probe when fresh events surface (manual Retry resumes the tail)",
+);
+assert.match(
+  source,
+  /const lastEventAtRef = useRef<number \| null>\(\s*cachedSnapshot \? latestEventTimestampMs\(cachedSnapshot\.events\) : null,?\s*\)/,
+  "A3: the probe anchor seeds from the cached tail so reopening an old statusless session doesn't fake 15s of liveness",
+);
+assert.match(
+  source,
+  /const \[follow, setFollow\] = useState\(status === "running" \|\| streamPhaseActive\)/,
+  "A3: tail-follow starts for a just-sent run even while the polled row still reports the old status",
+);
+assert.match(
+  source,
+  /prevStreamPhaseActiveRef\.current && !streamPhaseActive[\s\S]*?fetchEvents\(\)[\s\S]*?prevStreamPhaseActiveRef\.current = streamPhaseActive/,
+  "A3: settling this pane's own run triggers the one-shot events catch-up — the row transition never fires when the list lags",
 );
 assert.match(
   source,

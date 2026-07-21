@@ -38,11 +38,111 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// eventsTailActive / shouldPollEvents (A3): the polled row is only a hint —
+// transport phase and observed daemon events keep the tail truthful when the
+// sessions list lags or has no row.
+import { eventsTailActive, latestEventTimestampMs, EVENTS_ACTIVITY_WINDOW_MS } from "./session-debug.ts";
+{
+  const idle = { streamPhase: "idle", lastEventAt: null, probedAt: 0, now: 0 };
+
+  // Running row is definitive, regardless of phase or event recency.
+  assert.equal(
+    eventsTailActive({ ...idle, status: "running", now: 9_999_999 }),
+    true,
+    "running row → active even with no recent events",
+  );
+
+  // The pane's own transport phase wins over a stale settled row — the list
+  // can still say "completed" from before this pane started a fresh run.
+  for (const streamPhase of ["connecting", "streaming", "resuming"]) {
+    assert.equal(
+      eventsTailActive({ ...idle, status: "completed", streamPhase, now: 9_999_999 }),
+      true,
+      `active transport phase (${streamPhase}) overrides a settled row`,
+    );
+  }
+  assert.equal(
+    eventsTailActive({ ...idle, status: "completed" }),
+    false,
+    "settled row with an idle transport → no polling",
+  );
+  for (const streamPhase of ["settled", "degraded", "stopped", "idle"]) {
+    assert.equal(
+      eventsTailActive({ ...idle, status: "failed", streamPhase }),
+      false,
+      `inactive phase (${streamPhase}) does not keep a settled row polling`,
+    );
+  }
+
+  // Statusless row (absent from the polled list): bounded activity probe.
+  assert.equal(
+    eventsTailActive({ ...idle, status: null, probedAt: 1_000, now: 1_000 }),
+    true,
+    "statusless session polls from mount (probe window open)",
+  );
+  assert.equal(
+    eventsTailActive({
+      ...idle,
+      status: null,
+      probedAt: 1_000,
+      now: 1_000 + EVENTS_ACTIVITY_WINDOW_MS,
+    }),
+    false,
+    "probe window is strict: exactly window-old anchor stops the tail",
+  );
+  assert.equal(
+    eventsTailActive({ ...idle, status: null, lastEventAt: 5_000, probedAt: 0, now: 6_000 }),
+    true,
+    "recent daemon events keep a statusless tail alive",
+  );
+  assert.equal(
+    eventsTailActive({
+      ...idle,
+      status: null,
+      lastEventAt: 1_000,
+      probedAt: 100_000,
+      now: 100_000,
+    }),
+    false,
+    "an old cached tail closes the probe immediately — stale events beat a fresh mount",
+  );
+}
+
+// shouldPollEvents: visibility gates on top of the liveness signals
+const pollBase = { streamPhase: "idle", lastEventAt: null, probedAt: 0, now: 0 };
+assert.equal(shouldPollEvents({ ...pollBase, status: "running", visible: true }), true);
+assert.equal(shouldPollEvents({ ...pollBase, status: "running", visible: false }), false);
+assert.equal(shouldPollEvents({ ...pollBase, status: "completed", visible: true }), false);
+assert.equal(
+  shouldPollEvents({ ...pollBase, status: null, visible: true }),
+  true,
+  "statusless session polls within the probe window (was: never started)",
+);
+
+// latestEventTimestampMs: daemon-truth anchor for the statusless probe
+assert.equal(latestEventTimestampMs([]), null);
+assert.equal(
+  latestEventTimestampMs([
+    { ...ev(1), created_at: "2026-06-10T00:00:00Z" },
+    { ...ev(2), created_at: "2026-06-10T00:00:05Z" },
+    { ...ev(3), created_at: "2026-06-10T00:00:01Z" },
+  ]),
+  Date.parse("2026-06-10T00:00:05Z"),
+  "newest parseable created_at wins, regardless of order",
+);
+assert.equal(
+  latestEventTimestampMs([{ ...ev(1), created_at: "not a date" }]),
+  null,
+  "unparseable timestamps are skipped, not NaN-poisoned",
+);
+assert.equal(
+  latestEventTimestampMs([
+    { ...ev(1), created_at: "garbage" },
+    { ...ev(2), created_at: "2026-06-10T00:00:05Z" },
+  ]),
+  Date.parse("2026-06-10T00:00:05Z"),
+  "mixed tails use the parseable entries",
+);
 
 // filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
 import { filterEvents } from "./session-debug.ts";
