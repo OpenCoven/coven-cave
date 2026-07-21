@@ -8,6 +8,7 @@ import {
   deriveLinkTitle,
   groupSavedLinks,
   LINK_CATEGORY_META,
+  linkCategoryMeta,
   LINK_CATEGORY_ORDER,
   normalizeLinkUrl,
   type SavedLink,
@@ -128,20 +129,53 @@ test("/save (alias /link) is a first-class slash command", () => {
   );
 });
 
-test("the Research desk mounts the Links shelf over the same store", () => {
-  const surface = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/researcher-surface.tsx"),
+test("the Research desk consumes the same links store", () => {
+  // The old collapsible shelf became two consumers of one shared hook: the
+  // Prompt tab's quick saves and the Resources tab's browser (cave-dl74).
+  const hook = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/use-research-links.ts"),
     "utf8",
   );
-  assert.match(surface, /<ResearchLinkShelf onOpenUrl=\{context\.openUrl\} \/>/);
+  assert.match(hook, /fetch\("\/api\/research\/links"/, "the hook is the one client for the store");
+  assert.match(hook, /source: "desk"/, "desk saves are attributed");
 
-  const shelf = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/research-link-shelf.tsx"),
+  const resources = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/research-tab-resources.tsx"),
     "utf8",
   );
-  assert.match(shelf, /extractLinks\(draft\)/, "the shelf accepts one or many pasted links");
-  assert.match(shelf, /groupSavedLinks\(links\)/, "the shelf renders auto-organized groups");
-  assert.match(shelf, /source: "desk"/, "desk saves are attributed");
-  assert.match(shelf, /<details className="research-links"/, "the shelf collapses to a quiet summary row");
-  assert.match(shelf, /research-links__summary/, "the summary row is the disclosure control");
+  assert.match(resources, /useResearchLinks/, "Resources reads through the shared hook");
+  assert.match(resources, /groupSavedLinks\(/, "Resources renders auto-organized groups");
+
+  const prompt = readFileSync(
+    path.join(repoRoot, "src/components/role-surfaces/research-tab-prompt.tsx"),
+    "utf8",
+  );
+  assert.match(prompt, /useResearchLinks/, "quick saves read the same store");
+});
+
+test("unknown categories degrade to Other instead of crashing a surface", () => {
+  // The store is shared across app versions — a category this build doesn't
+  // know must never take down the Research Desk (it did once: reading .icon
+  // off an undefined meta unloaded the whole surface).
+  const foreign = {
+    id: "x1",
+    url: "https://example.com/x",
+    category: "newsletter" as never,
+    title: "Foreign category",
+    addedAt: new Date().toISOString(),
+    source: "chat" as const,
+  };
+  assert.equal(linkCategoryMeta("newsletter").label, "Other");
+  const groups = groupSavedLinks([foreign]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].category, "other");
+  // Surfaces go through the tolerant accessor, not raw table indexing.
+  for (const rel of [
+    "src/components/role-surfaces/research-tab-resources.tsx",
+    "src/components/role-surfaces/research-tab-prompt.tsx",
+  ]) {
+    const source = readFileSync(path.join(repoRoot, rel), "utf8");
+    assert.match(source, /linkCategoryMeta\(/);
+    assert.doesNotMatch(source, /LINK_CATEGORY_META\[/);
+  }
 });

@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const surface = readFileSync(new URL("./researcher-surface.tsx", import.meta.url), "utf8");
+const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url), "utf8");
+const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
+const libraryTab = readFileSync(new URL("./research-tab-library.tsx", import.meta.url), "utf8");
+const studioTab = readFileSync(new URL("./research-tab-studio.tsx", import.meta.url), "utf8");
+const resourcesTab = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
+const studioModals = readFileSync(new URL("./research-studio-modals.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
 const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
@@ -11,21 +17,139 @@ const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url)
 const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
 const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+// The tab-strip/desk sheet rides with the surface (not the root bundle), so
+// strip-level selectors are asserted against the sheet itself.
+const deskCss = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
 
-test("surface is mission-first and no longer stores a pretend research desk", () => {
+// ── Tab host (cave-dl74 Phase A) ─────────────────────────────────────────────
+
+test("surface is a five-tab host over one shared missions hook", () => {
   assert.match(surface, /useResearchMissions/);
-  assert.match(surface, /ResearchMissionComposer/);
-  assert.match(surface, /ResearchMissionList/);
-  assert.match(surface, /ResearchMissionDetail/);
+  // One hook instance feeds every tab — tabs never re-fetch on their own.
+  assert.match(surface, /const research = useResearchMissions\(context\.activeFamiliar\.id\)/);
+  for (const tab of ["ResearchTabPrompt", "ResearchTabDesk", "ResearchTabLibrary", "ResearchTabStudio", "ResearchTabResources"]) {
+    assert.match(surface, new RegExp(`<${tab}`));
+  }
   assert.doesNotMatch(surface, /RESEARCHER_INITIAL_STATE/);
+  // The tab-host contract is exported for the tab components to consume.
+  assert.match(surface, /export type ResearchDeskTab = "prompt" \| "desk" \| "library" \| "studio" \| "resources"/);
+  assert.match(surface, /export type ResearchTabProps/);
 });
 
+test("tab strip uses the shared Tabs tablist with wired panels", () => {
+  // Shared Tabs component provides role=tablist/tab semantics + roving arrows.
+  assert.match(surface, /<Tabs<ResearchDeskTab>/);
+  assert.match(surface, /ariaLabel="Research desk views"/);
+  assert.match(surface, /idPrefix="research-desk"/);
+  // The active panel is a real tabpanel labelled by its tab.
+  assert.match(surface, /role="tabpanel"/);
+  assert.match(surface, /id=\{`research-desk-panel-\$\{activeTab\}`\}/);
+  assert.match(surface, /aria-labelledby=\{`research-desk-tab-\$\{activeTab\}`\}/);
+  assert.match(deskCss, /\.research-desk__tabs/);
+});
+
+test("tab selection persists under cave:research:tab with an SSR guard", () => {
+  assert.match(surface, /cave:research:tab/);
+  assert.match(surface, /if \(typeof window === "undefined"\) return null/);
+  assert.match(surface, /window\.localStorage\.getItem\(TAB_STORAGE_KEY\)/);
+  assert.match(surface, /window\.localStorage\.setItem\(TAB_STORAGE_KEY, next\)/);
+  // Stored garbage never becomes a tab.
+  assert.match(surface, /isResearchDeskTab\(stored\) \? stored : null/);
+});
+
+test("default tab is desk when missions exist, else prompt — never persisted", () => {
+  assert.match(surface, /tab \?\? \(research\.loading \|\| research\.missions\.length > 0 \? "desk" : "prompt"\)/);
+  // Only explicit selections write to storage: the persist call lives in
+  // selectTab, and the default is a derived fallback, not a setTab call.
+  assert.match(surface, /const selectTab = useCallback\(\(next: ResearchDeskTab\) => \{\s*setTab\(next\);/);
+});
+
+test("engine status derives honestly from the daemon and live missions", () => {
+  assert.match(surface, /context\.runtimeState\.daemonRunning/);
+  assert.match(surface, /new Set\(\["running", "planning", "queued"\]\)/);
+  assert.match(surface, /Engine ready · \$\{liveCount\} run\$\{liveCount === 1 \? "" : "s"\} live/);
+  // Daemon down degrades honestly instead of pretending readiness.
+  assert.match(surface, /Engine offline · runs stay retryable/);
+  assert.match(surface, /data-tone=\{daemonRunning \? "ok" : "warn"\}/);
+  // Tone is a class/dot + words, not color alone.
+  assert.match(deskCss, /\.research-desk__engine\[data-tone="warn"\] \.research-desk__engine-dot/);
+});
+
+test("desk tab flags waiting checkpoints only while the desk is not active", () => {
+  assert.match(surface, /mission\.status === "checkpoint"/);
+  assert.match(surface, /checkpointWaiting && activeTab !== "desk"/);
+  // The dot carries sr-only text so the flag is not visual-only.
+  assert.match(surface, /research-desk__tab-dot" aria-hidden/);
+  assert.match(surface, /sr-only"> — a run is waiting at a checkpoint/);
+  assert.match(deskCss, /\.research-desk__tab-dot/);
+});
+
+test("onNavigate selects missions and routes Prompt modes per the contract", () => {
+  assert.match(surface, /if \(opts\?\.missionId\) select\(opts\.missionId\)/);
+  assert.match(surface, /if \(opts\?\.mode !== undefined\) setPromptMode\(opts\.mode\)/);
+  assert.match(surface, /initialMode=\{promptMode \?\? undefined\}/);
+  assert.match(promptTab, /initialMode\?: ResearchMissionMode/);
+});
+
+test("all five tab CSS modules ride with the surface, not the root bundle", () => {
+  // The mode-gated surface imports its own sheets so home first-load stays
+  // inside the CSS bundle budget (#3264 pattern) — never via globals.css.
+  for (const name of ["desk", "prompt", "library", "studio", "resources"]) {
+    assert.match(surface, new RegExp(`import "@/styles/globals/surface-research-${name}\\.css"`));
+    assert.ok(
+      !css.includes(`surface-research-${name}.css`),
+      `surface-research-${name}.css must not enter the root globals.css bundle`,
+    );
+  }
+});
+
+// ── Desk tab composition (behavior preserved from the pre-tab surface) ──────
+
+test("desk tab composes the mission workspace and keeps action wiring", () => {
+  assert.match(deskTab, /ResearchMissionList/);
+  assert.match(deskTab, /ResearchMissionDetail/);
+  assert.match(deskTab, /research\.act/);
+  assert.match(deskTab, /research\.schedule/);
+  assert.match(deskTab, /research\.controlAutomation/);
+  // Load errors surface with a retry, outside any hidden panel.
+  assert.match(deskTab, /research-desk__error" role="alert"/);
+  assert.match(deskTab, /void research\.load\(\)/);
+  // Sessions open against the active familiar.
+  assert.match(deskTab, /context\.openSession\(sessionId, context\.activeFamiliar\.id\)/);
+});
+
+test("prompt tab composes the composer + quick saves and follows starts to the desk", () => {
+  assert.match(promptTab, /ResearchMissionComposer/);
+  // Quick saves read the same links store as the Resources tab via the shared hook.
+  assert.match(promptTab, /useResearchLinks/);
+  // Attached saves land on the new mission as candidate sources through the
+  // ledger's exact attach-source action.
+  assert.match(promptTab, /action: "attach-source"/);
+  assert.match(promptTab, /status: "candidate"/);
+  assert.match(promptTab, /daemonRunning=\{context\.runtimeState\.daemonRunning\}/);
+  assert.match(promptTab, /onNavigate\("desk", \{ missionId: result\.mission\.id \}\)/);
+});
+
+test("tabs derive from real data — no placeholders or fabricated content", () => {
+  assert.match(libraryTab, /mission\.artifacts\.length > 0/);
+  // Studio offers only missions the generations API would accept: a live
+  // markdown artifact (the eligibility rule lives in the modals module).
+  assert.match(studioModals, /endsWith\(".md"\)/);
+  assert.match(resourcesTab, /mission\.sources/);
+  for (const tab of [libraryTab, studioTab, resourcesTab]) {
+    assert.doesNotMatch(tab, /is being assembled|coming soon/i);
+    assert.doesNotMatch(tab, /research-tab-placeholder/);
+  }
+});
+
+// ── Composer / intake ────────────────────────────────────────────────────────
+
 test("intake is minimal — the composer is the hero, no marketing copy column", () => {
-  assert.doesNotMatch(surface, /research-desk__intake-copy/);
-  assert.doesNotMatch(surface, /From intent to evidence/);
+  assert.doesNotMatch(promptTab, /research-desk__intake-copy/);
+  assert.doesNotMatch(promptTab, /From intent to evidence/);
   // The intent question is asked exactly once: placeholder text, sr-only label.
   assert.match(composer, /className="sr-only">What should we investigate\?/);
-  assert.match(composer, /placeholder="What should we investigate\?"/);
+  assert.match(composer, /placeholder="What should we investigate\?/);
 });
 
 test("composer makes Auto routing and finite bounds reviewable", () => {
@@ -159,7 +283,7 @@ test("checkpoint lifecycle controls are explicit and server-backed", () => {
   assert.match(detail, /Continue/);
   assert.match(detail, /Finish now/);
   assert.match(detail, /Refine direction/);
-  assert.match(surface, /research\.act/);
+  assert.match(deskTab, /research\.act/);
 });
 
 test("the action bar reads decision-first with a consequence-labeled Continue", () => {
@@ -197,8 +321,8 @@ test("autoresearch schedules use standard paused Automation controls", () => {
   assert.match(detail, /Run now/);
   assert.match(detail, /Pause schedule/);
   assert.match(detail, /Resume schedule/);
-  assert.match(surface, /research\.schedule/);
-  assert.match(surface, /research\.controlAutomation/);
+  assert.match(deskTab, /research\.schedule/);
+  assert.match(deskTab, /research\.controlAutomation/);
 });
 
 test("unknown research cost is shown honestly", () => {
