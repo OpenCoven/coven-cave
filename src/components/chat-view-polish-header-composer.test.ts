@@ -144,8 +144,15 @@ assert.match(
 );
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*<ComposerPlusMenu[\s\S]*<ComposerContextPill[\s\S]*<ComposerOptionsMenu/,
-  "composer utility row is the + menu and context pill; the Options panel chains off the + anchor",
+  /<div className="cave-composer-utility-row">[\s\S]*<ComposerPlusMenu[\s\S]*<ComposerOptionsMenu/,
+  "composer utility row is the + menu; the Options panel chains off the + anchor",
+);
+// The context pill (Project · Model · branch) lives in the footer band below
+// the controls (2026-07-21 wide-column pass) — not in the utility row.
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  "the context pill anchors the footer band",
 );
 // Composer core (chat revamp 1d): the dedicated Prompt-snippets button is
 // folded into the "+" menu, so the resting row is just + · context pill.
