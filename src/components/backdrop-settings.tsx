@@ -160,6 +160,7 @@ export function BackdropSettings() {
               type="button"
               role="switch"
               aria-checked={prefs.matchAccent}
+              aria-label="Match accent to the image"
               onClick={() => writeBackdropPrefs({ matchAccent: !prefs.matchAccent })}
               className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
                 prefs.matchAccent

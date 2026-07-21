@@ -112,3 +112,15 @@ test("table lightbox traps Tab and restores focus to its trigger (CHAT-D11-02)",
   assert.match(fn, /\(event\.shiftKey \? last : first\)\.focus\(\);/, "escaped focus must be recaptured into the dialog");
   assert.match(src, /import \{ FOCUSABLE \} from "@\/lib\/use-focus-trap";/);
 });
+
+test("backdrop matchAccent switch carries its own accessible name (cave-rc09)", async () => {
+  // Wrapping a button in a <label> does not name it per HTML-AAM — without an
+  // aria-label, screen readers announce only "On"/"Off". Same fix as the
+  // Look-tab familiar switch in #3421 (1ac9d1ce).
+  const src = await read("./backdrop-settings.tsx");
+  assert.match(
+    src,
+    /role="switch"\s*aria-checked=\{prefs\.matchAccent\}\s*aria-label="Match accent to the image"/,
+    "the matchAccent switch must carry an explicit aria-label",
+  );
+});
