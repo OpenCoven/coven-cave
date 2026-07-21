@@ -100,6 +100,11 @@ type Props = {
   hideRail?: boolean;
   /** Jump from the in-chat project rail to the dedicated Projects tab. */
   onOpenProjectsTab?: () => void;
+  /** Reports the session the router's chat view is showing (null on the list
+   *  or a not-yet-minted new chat). Lets the Workspace mirror the active
+   *  session as state instead of reading the imperative handle during render,
+   *  which always lagged one update behind (the n-1 highlight bug). */
+  onActiveSessionChange?: (sessionId: string | null) => void;
   /** Allow split panes (drag/keyboard multi-pane) on this mount. Only the
    *  full-width main chat surface opts in — the compact companion rail has no
    *  room, and two mounts must not fight over the persisted layout. */
@@ -155,11 +160,30 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     compact = false,
     hideRail = false,
     onOpenProjectsTab,
+    onActiveSessionChange,
     enableSplitPanes = false,
   },
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
+  // Mirror the active session upward when it *changes*. Seeding the ref with
+  // the mount value (always null — view starts as the list) means mount never
+  // notifies, so a fresh router can't clobber the Workspace's optimistic
+  // click-time highlight while a pending open is still in its deferred
+  // openSession() hop; every real session (or back-to-list) lands as a later
+  // change and reports normally. Change-detection (not a first-run boolean)
+  // keeps this correct under StrictMode's dev double-mount.
+  const onActiveSessionChangeRef = useRef(onActiveSessionChange);
+  useEffect(() => {
+    onActiveSessionChangeRef.current = onActiveSessionChange;
+  }, [onActiveSessionChange]);
+  const activeSessionId = view.kind === "chat" ? view.sessionId : null;
+  const lastReportedSessionRef = useRef<string | null>(activeSessionId);
+  useEffect(() => {
+    if (lastReportedSessionRef.current === activeSessionId) return;
+    lastReportedSessionRef.current = activeSessionId;
+    onActiveSessionChangeRef.current?.(activeSessionId);
+  }, [activeSessionId]);
   // ── Multi-pane split (drag a convo from the thread rail onto the chat) ────
   // The primary chat is one pane; dropped conversations open beside/above/
   // below it. Pure layout rules live in @/lib/chat-split; panes for deleted
