@@ -93,12 +93,18 @@ export function useSurfaceWarmup(): void {
     // unmounted. Drop the warm landing snapshot before its 15-second TTL so
     // navigating to Schedules cannot show the pre-write state.
     const onSchedulesReload = () => invalidateIfDefined("schedules:inbox", "schedules:automations");
+    // The normal roster-refresh event is emitted after a familiar is summoned,
+    // removed, restored, or reconfigured. GitHub's assignment controls consume
+    // a warmed roster too, so don't keep a fresh pre-mutation snapshot for its
+    // 30-second TTL.
+    const onFamiliarsRefresh = () => invalidateIfDefined("github:familiars");
     const raf = window.requestAnimationFrame(() => window.requestAnimationFrame(begin));
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", resume);
     window.addEventListener("offline", pause);
     window.addEventListener("cave:board:reload", onBoardReload);
     window.addEventListener("cave:schedules:reload", onSchedulesReload);
+    window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf);
@@ -109,6 +115,7 @@ export function useSurfaceWarmup(): void {
       window.removeEventListener("offline", pause);
       window.removeEventListener("cave:board:reload", onBoardReload);
       window.removeEventListener("cave:schedules:reload", onSchedulesReload);
+      window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     };
   }, []);
 }

@@ -43,9 +43,21 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
   assert.match(hook, /addEventListener\("cave:board:reload", onBoardReload\)/);
   assert.match(hook, /invalidateIfDefined\("schedules:inbox", "schedules:automations"\)/, "inbox SSE writes invalidate the warmed Schedules landing data");
   assert.match(hook, /addEventListener\("cave:schedules:reload", onSchedulesReload\)/);
+  assert.match(hook, /invalidateIfDefined\("github:familiars"\)/, "roster writes invalidate GitHub's warmed familiar list");
+  assert.match(hook, /addEventListener\("cave:familiars-refresh", onFamiliarsRefresh\)/);
   assert.match(hook, /surface-warmup:backpressure/);
   assert.match(hook, /warmSurface\(surface, runnable\)/);
   assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
+});
+
+test("roster membership changes publish the workspace familiar-refresh event", async () => {
+  for (const sourcePath of [
+    "../components/familiar-summoning-circle.tsx",
+    "../components/familiar-studio-lifecycle-tab.tsx",
+  ]) {
+    const code = await readFile(new URL(sourcePath, here), "utf8");
+    assert.match(code, /window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\)/, `${sourcePath} invalidates warmed familiar consumers`);
+  }
 });
 
 test("external board writers invalidate a warmed board landing before navigation", async () => {
