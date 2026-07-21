@@ -24,8 +24,18 @@ assert.match(
 
 assert.match(
   source,
-  /collapseFamiliarWorkspace\s*\n?\s*\?\s*collapseFamiliarWorkspaceSessions\(/,
-  "collapse is applied only when the flag is set (default view stays unfiltered)",
+  /if \(!collapseFamiliarWorkspace\) return sessions;/,
+  "the collapse helper is a no-op (and skips the FS read) when the flag is off",
+);
+
+// Regression guard for the Copilot review finding: the degraded (daemon-down,
+// local-only) branch must apply the same collapse as the happy path, or a
+// local chat under a familiar-workspace root leaks into the unscoped view when
+// the daemon is unavailable. One helper definition + two call sites = 3 hits.
+assert.equal(
+  (source.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
+  3,
+  "applyFamiliarWorkspaceCollapse is defined once and called in BOTH the happy and degraded paths",
 );
 
 console.log("sessions list route.test.ts: ok");
