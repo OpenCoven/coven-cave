@@ -6,6 +6,8 @@
 // src/components/weave-rail.test.ts / thread-pane.test.ts).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 
 import {
   blockedMessage,
@@ -316,5 +318,18 @@ describe("rail + pane models", () => {
     assert.equal(shortHash("aabbccddeeff00112233"), "aabbccddeeff…");
     assert.equal(shortHash("aabb"), "aabb");
     assert.equal(shortHash(""), "(unavailable)");
+  });
+});
+
+describe("client bundle boundary", () => {
+  it("bundles the weave rail for browsers without Node built-ins", async () => {
+    await build({
+      entryPoints: [fileURLToPath(new URL("./weave-rail.ts", import.meta.url))],
+      bundle: true,
+      platform: "browser",
+      format: "esm",
+      write: false,
+      logLevel: "silent",
+    });
   });
 });

@@ -30,9 +30,22 @@ export function proposalListModel(proposals: ProposalView[]): ProposalListModel 
 // ---------------------------------------------------------------------------
 // Decision availability
 
+export type ProposalDecision = "approve" | "reject";
+
+export type DecisionAction = {
+  decision: ProposalDecision;
+  label: "Approve" | "Reject" | "Veto";
+  enabled: boolean;
+  disabledReason?: string;
+};
+
 export type DecisionAvailability =
-  | { allowed: true }
-  | { allowed: false; reason: string };
+  | { allowed: true; actions: DecisionAction[]; expectedRevision?: string }
+  | { allowed: false; actions: []; reason: string };
+
+function decisionsUnavailable(reason: string): DecisionAvailability {
+  return { allowed: false, actions: [], reason };
+}
 
 /**
  * A decision may only be offered when the surface is fresh, verified, and the
@@ -42,26 +55,89 @@ export type DecisionAvailability =
 export function decisionAvailability(
   state: SurfaceState<ProposalView[]>,
   proposal: ProposalView,
+  note = "",
 ): DecisionAvailability {
   if (proposal.parse === "corrupt") {
-    return {
-      allowed: false,
-      reason: "This staged file is corrupt — it cannot be approved or rejected; inspect it on disk.",
-    };
+    return decisionsUnavailable(
+      "This staged file is corrupt — it cannot be approved or rejected; inspect it on disk.",
+    );
   }
   if (state.kind !== "ready") {
-    return { allowed: false, reason: "The proposals list is blocked — decisions need verified state." };
+    return decisionsUnavailable("The proposals list is blocked — decisions need verified state.");
   }
   if (state.meta.adapter === "fixtures") {
-    return {
-      allowed: false,
-      reason: "Fixture data — there is no daemon to carry a decision. Approvals stay disabled.",
-    };
+    return decisionsUnavailable(
+      "Fixture data — there is no daemon to carry a decision. Approvals stay disabled.",
+    );
   }
   if (!decisionsEnabled(state)) {
-    return { allowed: false, reason: "This view is stale — refresh before deciding." };
+    return decisionsUnavailable("This view is stale — refresh before deciding.");
   }
-  return { allowed: true };
+
+  const authority = proposal.authority;
+  if (!authority) {
+    return decisionsUnavailable("This proposal has no verified authority envelope — decisions stay disabled.");
+  }
+  if (authority.state === "blocked") {
+    return decisionsUnavailable(`Proposal authority is blocked (${authority.why}) — no decision is available.`);
+  }
+  if (authority.state === "legacy") {
+    return {
+      allowed: true,
+      actions: [
+        { decision: "approve", label: "Approve", enabled: true },
+        { decision: "reject", label: "Reject", enabled: true },
+      ],
+    };
+  }
+
+  if (authority.lifecycle === "ready-for-replay") {
+    return decisionsUnavailable("This proposal is ready for replay — no human decision is available.");
+  }
+  if (authority.lifecycle === "blocked") {
+    return decisionsUnavailable("The daemon reports this proposal blocked — no decision is available.");
+  }
+  if (authority.lifecycle === "veto-window-open") {
+    if (
+      authority.availableDecisions.length !== 1 ||
+      authority.availableDecisions[0] !== "reject"
+    ) {
+      return decisionsUnavailable("The veto authority envelope is inconsistent — no decision is available.");
+    }
+    return {
+      allowed: true,
+      expectedRevision: authority.proposalRevision,
+      actions: [{ decision: "reject", label: "Veto", enabled: true }],
+    };
+  }
+
+  const actions = authority.availableDecisions.map<DecisionAction>((decision) => {
+    if (decision === "approve") {
+      const enabled =
+        authority.approvalPath.variant !== "human-approval-with-rationale" ||
+        note.trim().length > 0;
+      return {
+        decision,
+        label: "Approve",
+        enabled,
+        ...(enabled
+          ? {}
+          : {
+              disabledReason:
+                "Approval is disabled until you add a rationale. Reject remains available without a note.",
+            }),
+      };
+    }
+    return { decision, label: "Reject", enabled: true };
+  });
+  if (actions.length === 0) {
+    return decisionsUnavailable("The daemon offers no human decision for this proposal.");
+  }
+  return {
+    allowed: true,
+    expectedRevision: authority.proposalRevision,
+    actions,
+  };
 }
 
 // ---------------------------------------------------------------------------

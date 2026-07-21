@@ -1,0 +1,25 @@
+{
+  "proposalId": "cccccccc-0000-4000-8000-000000000501",
+  "proposalRevision": "e9372e01bd26c37ea61c85f07140db544f5d426aa7a29a6404a54a23b0bba26e",
+  "familiarUuid": "eeeeeeee-0000-4000-8000-000000000501",
+  "familiarId": "echo",
+  "writer": "familiar:echo",
+  "stagedAt": "2026-07-15T09:02:00Z",
+  "targets": [
+    "MEMORY.md"
+  ],
+  "approvalPath": {
+    "variant": "human_approval_with_rationale",
+    "label": "human_review",
+    "veto_deadline": null,
+    "affected_surfaces": [
+      "MEMORY.md"
+    ]
+  },
+  "lifecycle": "awaiting_human_approval",
+  "earliestClose": null,
+  "affectedRegions": [
+    "memory_conventions"
+  ],
+  "blockedReason": null
+}

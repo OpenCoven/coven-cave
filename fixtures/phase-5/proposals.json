@@ -1,0 +1,156 @@
+{
+  "proposals": [
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000501",
+      "proposalRevision": "e9372e01bd26c37ea61c85f07140db544f5d426aa7a29a6404a54a23b0bba26e",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000501",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T09:02:00Z",
+      "targets": [
+        "MEMORY.md"
+      ],
+      "approvalPath": {
+        "variant": "human_approval_with_rationale",
+        "label": "human_required",
+        "veto_deadline": null,
+        "affected_surfaces": [
+          "MEMORY.md"
+        ]
+      },
+      "lifecycle": "awaiting_human_approval",
+      "earliestClose": null,
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": null
+    },
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000504",
+      "proposalRevision": "f939d1c1b29998aceaacb0f86fba908a9cc4b9109539020e6d9b0a0840fd8fbd",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000504",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T09:32:00Z",
+      "targets": [
+        "MEMORY.md"
+      ],
+      "approvalPath": {
+        "variant": "human_approval",
+        "label": "human_review",
+        "veto_deadline": null,
+        "affected_surfaces": [
+          "MEMORY.md"
+        ]
+      },
+      "lifecycle": "blocked",
+      "earliestClose": null,
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": "daemon-reported-block"
+    },
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000506",
+      "proposalRevision": "6f503cd316fc66d8180a9a261fe0d0a58b39ed3ab856601d852703249ea372a6",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000506",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T09:52:00Z",
+      "targets": [
+        "MEMORY.md",
+        "NOTES.md"
+      ],
+      "approvalPath": {
+        "variant": "familiar_coherence",
+        "label": "familiar_review",
+        "veto_deadline": "2026-07-15T10:22:00Z",
+        "affected_surfaces": [
+          "MEMORY.md",
+          "NOTES.md"
+        ]
+      },
+      "lifecycle": "veto_window_open",
+      "earliestClose": "2026-07-15T09:57:00Z",
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": null
+    },
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000503",
+      "proposalRevision": "dc45d36e73de6f5dee2de0543701e5c79748718a16b49d731445b340503a840a",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000503",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T09:22:00Z",
+      "targets": [
+        "MEMORY.md"
+      ],
+      "approvalPath": {
+        "variant": "familiar_coherence",
+        "label": "familiar_review",
+        "veto_deadline": "2026-07-15T09:52:00Z",
+        "affected_surfaces": [
+          "MEMORY.md"
+        ]
+      },
+      "lifecycle": "ready_for_replay",
+      "earliestClose": "2026-07-15T09:27:00Z",
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": null
+    },
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000507",
+      "proposalRevision": "1de5d1aa5751b5beddba34ffd63325a8fb77d49501a6adc841eacbcf21eca864",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000507",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T10:02:00Z",
+      "targets": [
+        "MEMORY.md"
+      ],
+      "approvalPath": {
+        "variant": "human_approval_with_rationale",
+        "label": "human_required",
+        "veto_deadline": null,
+        "affected_surfaces": [
+          "MEMORY.md"
+        ]
+      },
+      "lifecycle": "future_lifecycle",
+      "earliestClose": null,
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": null
+    },
+    {
+      "proposalId": "cccccccc-0000-4000-8000-000000000502",
+      "proposalRevision": "528137b73e3f53bc728b4c71b5f838f76062135ead62141f76b86aa34121044e",
+      "familiarUuid": "eeeeeeee-0000-4000-8000-000000000502",
+      "familiarId": "echo",
+      "writer": "familiar:echo",
+      "stagedAt": "2026-07-15T09:12:00Z",
+      "targets": [
+        "MEMORY.md"
+      ],
+      "approvalPath": {
+        "variant": "familiar_coherence",
+        "label": "familiar_review",
+        "veto_deadline": "2026-07-15T09:42:00Z",
+        "affected_surfaces": [
+          "MEMORY.md"
+        ]
+      },
+      "lifecycle": "veto_window_open",
+      "earliestClose": "2026-07-15T09:17:00Z",
+      "affectedRegions": [
+        "memory_conventions"
+      ],
+      "blockedReason": null
+    }
+  ]
+}

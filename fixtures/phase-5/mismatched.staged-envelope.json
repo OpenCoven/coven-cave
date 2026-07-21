@@ -1,0 +1,221 @@
+{
+  "schema": "phase5_v1",
+  "pending": {
+    "id": "cccccccc-0000-4000-8000-000000000506",
+    "familiar_id": "eeeeeeee-0000-4000-8000-000000000506",
+    "writer": "familiar:echo",
+    "channel": "Mutation",
+    "thread_id": "aaaaaaa5-0005-4005-8005-000000000506",
+    "fray": {
+      "Frayed": {
+        "strand": null,
+        "channel": "Mutation",
+        "reason": "ContentHashMismatch"
+      }
+    },
+    "edits": [
+      {
+        "surface": "MEMORY.md",
+        "contents": {
+          "encoding": "utf8",
+          "data": "Proposed change for mismatched.\n"
+        }
+      }
+    ],
+    "staged_at": [
+      2026,
+      196,
+      9,
+      52,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "classification": {
+    "proposal_id": "cccccccc-0000-4000-8000-000000000506",
+    "familiar_id": "eeeeeeee-0000-4000-8000-000000000506",
+    "channel": "Mutation",
+    "affected_surfaces": [
+      "MEMORY.md"
+    ],
+    "affected_regions": [
+      "memory_conventions"
+    ],
+    "path_tier_floor": 1,
+    "approval_path": {
+      "kind": "familiar_coherence",
+      "veto": {
+        "duration": {
+          "secs": 1800,
+          "nanos": 0
+        },
+        "min_visible": {
+          "secs": 300,
+          "nanos": 0
+        }
+      }
+    },
+    "evidence_replay_hash": [
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130
+    ],
+    "classified_at": [
+      2026,
+      196,
+      9,
+      52,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "materialized_diff": {
+    "surfaces": [
+      {
+        "surface": "MEMORY.md",
+        "before": [
+          98,
+          101,
+          102,
+          111,
+          114,
+          101
+        ],
+        "after": [
+          80,
+          114,
+          111,
+          112,
+          111,
+          115,
+          101,
+          100,
+          32,
+          99,
+          104,
+          97,
+          110,
+          103,
+          101,
+          32,
+          102,
+          111,
+          114,
+          32,
+          109,
+          105,
+          115,
+          109,
+          97,
+          116,
+          99,
+          104,
+          101,
+          100,
+          46,
+          10
+        ]
+      }
+    ]
+  },
+  "region_evidence": [
+    {
+      "region_id": "memory_conventions",
+      "affected_surfaces": [
+        "MEMORY.md"
+      ],
+      "min_path_tier": 1,
+      "replay_bytes": [
+        114,
+        101,
+        112,
+        108,
+        97,
+        121,
+        45,
+        109,
+        105,
+        115,
+        109,
+        97,
+        116,
+        99,
+        104,
+        101,
+        100
+      ],
+      "rationale": "Lifecycle sample for mismatched"
+    }
+  ],
+  "lifecycle": {
+    "state": "veto_window_open"
+  },
+  "staged_at": [
+    2026,
+    196,
+    9,
+    52,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "veto_deadline": [
+    2026,
+    196,
+    10,
+    22,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "earliest_close": [
+    2026,
+    196,
+    9,
+    57,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

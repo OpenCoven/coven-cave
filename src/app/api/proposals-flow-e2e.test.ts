@@ -19,6 +19,7 @@ import { activeThreadsAdapter, httpStatusForEnvelope } from "../../lib/threads-a
 
 const PROPOSAL_OK = "cccccccc-0001-4001-8001-000000000001";
 const CORRUPT_ID = "dddddddd-0001-4001-8001-000000000001";
+const PROPOSAL_REVISION = "a".repeat(64);
 
 const tempDirs: string[] = [];
 function tempDir(prefix: string): string {
@@ -55,18 +56,30 @@ describe("route-source pins: handlers are exactly the composition under test", (
     }
   });
 
-  it("decision routes forward the parsed note and guard origin + JSON", () => {
+  it("decision routes accept an optional body, validate revisions, and forward revision + note", () => {
     for (const file of ["proposals/[id]/approve/route.ts", "proposals/[id]/reject/route.ts"]) {
       const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
       assert.match(source, /rejectNonLocalRequest\(req\)/, `${file} keeps the local-origin guard`);
+      assert.match(source, /await req\.text\(\)/, `${file} reads an optional raw body`);
+      assert.match(source, /rawBody\.trim\(\)/, `${file} preserves bodyless legacy calls`);
       assert.match(source, /invalid json body/, `${file} answers 400 on malformed JSON`);
-      assert.match(source, /\.(approve|reject)\(id, note\)/, `${file} forwards id + note to the adapter only`);
+      assert.match(source, /\^\[0-9a-f\]\{64\}\$/, `${file} requires exactly 64 lowercase hex characters`);
+      assert.match(source, /invalid expectedRevision/, `${file} answers 400 on malformed revisions`);
+      assert.match(
+        source,
+        /\.(approve|reject)\(id, expectedRevision, note\)/,
+        `${file} forwards id + expectedRevision + note to the adapter only`,
+      );
+      assert.ok(
+        source.indexOf("invalid expectedRevision") < source.search(/\.(approve|reject)\(id, expectedRevision, note\)/),
+        `${file} validates the revision before forwarding`,
+      );
     }
   });
 });
 
 describe("GET flow — real checked-in staged writes through the env-selected adapter", () => {
-  it("serves the pending fixtures with the freshness envelope (explicit fixtures mode)", async () => {
+  it("serves the legacy and Phase 5 pending fixtures with the freshness envelope", async () => {
     process.env.COVEN_THREADS_ADAPTER = "fixtures";
     delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;
     const envelope = await activeThreadsAdapter().proposals();
@@ -74,10 +87,10 @@ describe("GET flow — real checked-in staged writes through the env-selected ad
     assert.equal(envelope.blocked, false);
     assert.equal(envelope.meta.adapter, "fixtures");
     assert.ok(envelope.meta.observedAt && envelope.meta.staleAfter && envelope.meta.sourceCursor);
-    assert.equal(envelope.data?.length, 3, "two ok + one corrupt staged fixture");
+    assert.equal(envelope.data?.length, 10, "nine ok + one corrupt staged fixture");
     const ok = envelope.data?.filter((p) => p.parse === "ok") ?? [];
     const corrupt = envelope.data?.filter((p) => p.parse === "corrupt") ?? [];
-    assert.equal(ok.length, 2);
+    assert.equal(ok.length, 9);
     assert.equal(corrupt.length, 1);
     const utf8 = ok.find((p) => p.payload?.id === PROPOSAL_OK);
     assert.ok(utf8, "the utf8 staged write is listed");
@@ -102,7 +115,7 @@ describe("decision flow — forward-only, fail-closed, staged files untouched", 
     delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;
     const pendingDir = path.join(process.cwd(), "fixtures", "phase-4", "pending");
     const before = readdirSync(pendingDir).sort();
-    const envelope = await activeThreadsAdapter().approve(PROPOSAL_OK, "ship it");
+    const envelope = await activeThreadsAdapter().approve(PROPOSAL_OK, PROPOSAL_REVISION, "ship it");
     assert.equal(envelope.blocked, true);
     assert.equal(envelope.why, "daemon-unavailable");
     assert.equal(httpStatusForEnvelope(envelope, "POST"), 503);
@@ -137,7 +150,7 @@ describe("decision flow — forward-only, fail-closed, staged files untouched", 
     process.env.COVEN_HOME = home;
     const adapter = activeThreadsAdapter();
     assert.equal(adapter.kind, "daemon", "env selects the real daemon adapter");
-    const envelope = await adapter.approve(PROPOSAL_OK, "yes");
+    const envelope = await adapter.approve(PROPOSAL_OK, PROPOSAL_REVISION, "yes");
     assert.equal(envelope.blocked, true, "no daemon socket answers in this environment");
     assert.match(String(envelope.why), /daemon-(unreachable|unavailable)/);
     assert.equal(httpStatusForEnvelope(envelope, "POST"), 503);
