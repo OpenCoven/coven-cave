@@ -8,6 +8,7 @@ const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
 const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url), "utf8");
+const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
 const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 
@@ -73,12 +74,34 @@ test("the plan summary pill is the bounds toggle — honest, labeled, focusing",
 
 
 test("mission list uses roving tabindex keyboard navigation", () => {
-  assert.match(list, /resolveRovingId\(missionIds, current, selectedId\)/);
-  assert.match(list, /nextRovingId\(missionIds, rovingId, event\.key as RovingKey\)/);
+  // Roving covers exactly the rendered rows: active always, archived only
+  // while the disclosure group is expanded.
+  assert.match(list, /resolveRovingId\(visibleIds, current, selectedId\)/);
+  assert.match(list, /nextRovingId\(visibleIds, rovingId, event\.key as RovingKey\)/);
   assert.match(list, /tabIndex=\{mission\.id === rovingId \? 0 : -1\}/);
   assert.match(list, /onKeyDown=\{onListKeyDown\}/);
   assert.match(list, /buttonRefs\.current\.get\(id\)\?\.focus\(\)/);
   assert.match(list, /research-mission-row focus-ring/);
+});
+
+test("archived missions collapse into a disclosure group below active work", () => {
+  // Partition: archived rows leave the working ledger…
+  assert.match(list, /mission\.status === "archived" \? archived : active/);
+  // …the header counts active missions only…
+  assert.match(list, /<span>\{activeMissions\.length\}<\/span>/);
+  // …and the group is a real count-labeled disclosure.
+  assert.match(list, /aria-expanded=\{archivedOpen\}/);
+  assert.match(list, /research-mission-nav__group-toggle focus-ring/);
+  assert.match(list, /research-mission-nav__group-count">\{archivedMissions\.length\}/);
+  // Selecting an archived mission keeps its row reachable by opening the group
+  // exactly once per selection — re-collapse survives poll refreshes.
+  assert.match(list, /autoOpenedFor\.current === selectedId\) return/);
+  assert.match(list, /archivedMissions\.some\(\(mission\) => mission\.id === selectedId\)[\s\S]{0,80}setArchivedOpen\(true\)/);
+  // An all-archived ledger says so instead of claiming there are no missions.
+  assert.match(list, /No active missions\./);
+  assert.match(css, /\.research-mission-nav__group-toggle/);
+  // Auto-selection never lands inside the collapsed group.
+  assert.match(clientLib, /mission\.status !== "archived"/);
 });
 
 test("mission list and evidence trajectory expose semantic state", () => {

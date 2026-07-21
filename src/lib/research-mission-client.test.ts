@@ -73,6 +73,22 @@ test("stable selection survives polling and active states are explicit", () => {
   assert.equal(isActiveResearchMission(missions[1]), false);
 });
 
+test("fallback selection skips archived missions unless nothing else exists", () => {
+  const missions = [
+    mission("old", "archived"),
+    mission("fresh", "completed"),
+    mission("older", "archived"),
+  ];
+  // No selection → first unarchived mission wins even when archived rows sort first.
+  assert.equal(selectStableMission(null, missions), "fresh");
+  assert.equal(selectStableMission("missing", missions), "fresh");
+  // A deliberate archived selection remains stable.
+  assert.equal(selectStableMission("old", missions), "old");
+  // All-archived ledgers still select something rather than nothing.
+  assert.equal(selectStableMission(null, [mission("only", "archived")]), "only");
+  assert.equal(selectStableMission(null, []), null);
+});
+
 test("actions post to the encoded mission endpoint", async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];

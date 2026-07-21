@@ -948,6 +948,26 @@
 .research-mission-nav__list { display: flex; flex-direction: column; padding: 7px; }
 .research-mission-nav__list li + li { margin-top: 3px; }
 
+.research-mission-nav__group { border-top: 1px solid var(--border); }
+.research-mission-nav__group .research-mission-nav__list { padding-top: 3px; }
+.research-mission-nav__group-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-2) 14px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.research-mission-nav__group-toggle:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.research-mission-nav__group-count { margin-left: auto; font-weight: 500; }
+
 .research-mission-row {
   display: flex;
   width: 100%;

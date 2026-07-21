@@ -31,7 +31,10 @@ export function selectStableMission(
   missions: ResearchMission[],
 ): string | null {
   if (selectedId && missions.some((mission) => mission.id === selectedId)) return selectedId;
-  return missions[0]?.id ?? null;
+  // Never auto-select into the collapsed archived group; archived rows are
+  // only selected deliberately.
+  const firstUnarchived = missions.find((mission) => mission.status !== "archived");
+  return firstUnarchived?.id ?? missions[0]?.id ?? null;
 }
 
 export async function listResearchMissions(
