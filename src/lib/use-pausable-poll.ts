@@ -21,8 +21,18 @@ import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
  * The initial mount load stays the caller's job — this hook only schedules the
  * recurring poll + the on-return refresh.
  */
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
+
 function pollPausedForActiveInput(pauseWhileInputActive: boolean): boolean {
   if (!pauseWhileInputActive || typeof document === "undefined") return false;
+  // The pause exists so nonessential polls don't compete with touch-keyboard
+  // composition on mobile. On desktop, the chat composer keeps focus
+  // essentially permanently, so an unconditional pause starved the sessions
+  // poll indefinitely and froze the siderail while chatting (cave-i7nz).
+  // Scope the pause to coarse-pointer (touch) contexts only.
+  if (typeof window === "undefined" || !window.matchMedia(COARSE_POINTER_QUERY).matches) {
+    return false;
+  }
   const active = document.activeElement;
   if (!active) return false;
   return (
