@@ -1176,7 +1176,7 @@ describe("normalizeProposal (§2.6)", () => {
     );
   });
 
-  it("binds the daemon to the staged timestamp's canonical textual representation", () => {
+  it("binds the daemon staged timestamp by exact instant across equivalent offsets", () => {
     const { staged: fixture, daemon } = daemonContractFixture();
     const stagedAt = [2026, 196, 9, 0, 2, 0, 2, 0, 0];
     const staged = {
@@ -1192,16 +1192,23 @@ describe("normalizeProposal (§2.6)", () => {
     };
 
     assert.equal(normalizeProposalAuthority(staged, exact).state, "verified");
-    assert.deepEqual(
+    assert.equal(
       normalizeProposalAuthority(staged, {
         ...exact,
         stagedAt: "2026-07-15T07:00:02Z",
+      }).state,
+      "verified",
+    );
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...exact,
+        stagedAt: "2026-07-15T07:00:02.000000001Z",
       }),
       { state: "blocked", why: "daemon-mismatch" },
     );
   });
 
-  it("canonicalizes strict string-form staged timestamps before binding", () => {
+  it("binds strict string-form staged timestamps by nanosecond instant, not spelling", () => {
     const { staged: fixture, daemon } = daemonContractFixture();
     const stagedAt = "2026-07-15T09:00:02.1200+00:00";
     const staged = {
@@ -1217,10 +1224,17 @@ describe("normalizeProposal (§2.6)", () => {
     };
 
     assert.equal(normalizeProposalAuthority(staged, summary).state, "verified");
-    assert.deepEqual(
+    assert.equal(
       normalizeProposalAuthority(staged, {
         ...summary,
         stagedAt,
+      }).state,
+      "verified",
+    );
+    assert.deepEqual(
+      normalizeProposalAuthority(staged, {
+        ...summary,
+        stagedAt: "2026-07-15T09:00:02.120000001Z",
       }),
       { state: "blocked", why: "daemon-mismatch" },
     );
@@ -1448,25 +1462,16 @@ describe("normalizeProposal (§2.6)", () => {
     assert.deepEqual(view.authority.affectedRegions, ["display-only-region"]);
   });
 
-  it("treats daemon approval labels and deadline metadata as authoritative", () => {
+  it("rejects noncanonical daemon approval labels and deadline shapes", () => {
     const { staged, daemon } = daemonContractFixture();
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
-    const accepted = [
+    const rejected = [
       {
         staged,
         summary: {
           ...daemon,
           approvalPath: { ...daemon.approvalPath, label: "Review with your own words" },
         },
-        label: "Review with your own words",
-      },
-      {
-        staged,
-        summary: {
-          ...daemon,
-          approvalPath: { ...daemon.approvalPath, label: "human_required" },
-        },
-        label: "human_required",
       },
       {
         staged,
@@ -1477,24 +1482,28 @@ describe("normalizeProposal (§2.6)", () => {
             veto_deadline: "2026-07-15T09:30:02Z",
           },
         },
-        label: "human_review",
+      },
+      {
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          approvalPath: { ...vetoDaemon.approvalPath, label: "coherence_review" },
+        },
       },
       {
         staged: vetoStaged,
         summary: {
           ...vetoDaemon,
           approvalPath: { ...vetoDaemon.approvalPath, veto_deadline: null },
-          lifecycle: "ready_for_replay",
         },
-        label: "familiar_review",
       },
     ];
 
-    for (const [index, { staged: candidate, summary, label }] of accepted.entries()) {
-      const authority = normalizeProposal(`phase5-authoritative-${index}.json`, candidate, summary).authority;
-      assert.equal(authority.state, "verified");
-      if (authority.state !== "verified") continue;
-      assert.equal(authority.approvalPath.label, label);
+    for (const [index, { staged: candidate, summary }] of rejected.entries()) {
+      assert.deepEqual(
+        normalizeProposal(`phase5-noncanonical-${index}.json`, candidate, summary).authority,
+        { state: "blocked", why: "daemon-unparseable" },
+      );
     }
   });
 
@@ -1527,7 +1536,7 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
-  it("preserves arbitrary daemon approval labels verbatim", () => {
+  it("renders each validated canonical daemon approval label verbatim", () => {
     const { staged, daemon } = daemonContractFixture();
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
     const autoStaged = {
@@ -1554,27 +1563,21 @@ describe("normalizeProposal (§2.6)", () => {
           approvalPath: {
             ...daemon.approvalPath,
             variant: "auto_regression",
-            label: "Automatic after checks",
+            label: "auto",
           },
           lifecycle: "ready_for_replay",
         },
-        label: "Automatic after checks",
+        label: "auto",
       },
       {
         staged: vetoStaged,
-        summary: {
-          ...vetoDaemon,
-          approvalPath: { ...vetoDaemon.approvalPath, label: "Sage may veto" },
-        },
-        label: "Sage may veto",
+        summary: vetoDaemon,
+        label: "familiar_review",
       },
       {
         staged,
-        summary: {
-          ...daemon,
-          approvalPath: { ...daemon.approvalPath, label: "Principal review" },
-        },
-        label: "Principal review",
+        summary: daemon,
+        label: "human_review",
       },
       {
         staged: rationaleStaged,
@@ -1584,10 +1587,10 @@ describe("normalizeProposal (§2.6)", () => {
           approvalPath: {
             ...daemon.approvalPath,
             variant: "human_approval_with_rationale",
-            label: "Review with your own words",
+            label: "human_required",
           },
         },
-        label: "Review with your own words",
+        label: "human_required",
       },
     ];
 
@@ -1599,21 +1602,23 @@ describe("normalizeProposal (§2.6)", () => {
     }
   });
 
-  it("does not derive daemon approval or lifecycle metadata from the staged envelope", () => {
+  it("binds daemon approval path variant and deadline to staged classification and root", () => {
     const { staged, daemon } = daemonContractFixture();
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
-    const authoritative = [
+    const rationaleStaged = {
+      ...staged,
+      classification: {
+        ...staged.classification,
+        approval_path: { kind: "human_approval_with_rationale" },
+      },
+    };
+    const mismatched = [
       {
-        staged,
+        staged: rationaleStaged,
         summary: {
           ...daemon,
-          approvalPath: {
-            ...daemon.approvalPath,
-            variant: "human_approval_with_rationale",
-            label: "Review with your own words",
-          },
+          proposalRevision: canonicalProposalRevision(rationaleStaged),
         },
-        decisions: ["approve", "reject"],
       },
       {
         staged: vetoStaged,
@@ -1621,29 +1626,203 @@ describe("normalizeProposal (§2.6)", () => {
           ...vetoDaemon,
           approvalPath: {
             ...vetoDaemon.approvalPath,
-            variant: "auto_regression",
-            label: "Automatic after veto",
             veto_deadline: "2026-07-15T09:30:03Z",
           },
         },
-        decisions: ["reject"],
       },
       {
         staged,
         summary: {
           ...daemon,
-          lifecycle: "ready_for_replay",
+          approvalPath: {
+            ...daemon.approvalPath,
+            variant: "human_approval_with_rationale",
+            label: "human_required",
+            veto_deadline: null,
+          },
         },
-        decisions: [],
       },
     ];
 
-    for (const { staged: candidate, summary, decisions } of authoritative) {
-      const authority = normalizeProposalAuthority(candidate, summary);
-      assert.equal(authority.state, "verified");
-      if (authority.state !== "verified") continue;
-      assert.deepEqual(authority.availableDecisions, decisions);
+    for (const { staged: candidate, summary } of mismatched) {
+      assert.deepEqual(normalizeProposalAuthority(candidate, summary), {
+        state: "blocked",
+        why: "daemon-mismatch",
+      });
     }
+  });
+
+  it("requires root deadline presence to match whether the staged approval path has a veto", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
+    const autoWithNoVeto = {
+      ...staged,
+      classification: {
+        ...staged.classification,
+        approval_path: { kind: "auto_regression", veto: null },
+      },
+      lifecycle: { state: "ready_for_replay" },
+      veto_deadline: "2026-07-15T09:30:02Z",
+    };
+    const humanWithClose = {
+      ...staged,
+      earliest_close: "2026-07-15T09:05:02Z",
+    };
+    const vetoWithoutDeadline = {
+      ...vetoStaged,
+      veto_deadline: null,
+    };
+    const vetoWithoutEarliestClose = {
+      ...vetoStaged,
+      earliest_close: null,
+    };
+    const cases = [
+      {
+        staged: autoWithNoVeto,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(autoWithNoVeto),
+          approvalPath: {
+            ...daemon.approvalPath,
+            variant: "auto_regression",
+            label: "auto",
+            veto_deadline: "2026-07-15T09:30:02Z",
+          },
+          lifecycle: "ready_for_replay",
+        },
+      },
+      {
+        staged: humanWithClose,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(humanWithClose),
+          earliestClose: "2026-07-15T09:05:02Z",
+        },
+      },
+      {
+        staged: vetoWithoutDeadline,
+        summary: {
+          ...vetoDaemon,
+          proposalRevision: canonicalProposalRevision(vetoWithoutDeadline),
+          approvalPath: { ...vetoDaemon.approvalPath, veto_deadline: null },
+        },
+      },
+      {
+        staged: vetoWithoutEarliestClose,
+        summary: {
+          ...vetoDaemon,
+          proposalRevision: canonicalProposalRevision(vetoWithoutEarliestClose),
+          earliestClose: null,
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      assert.deepEqual(normalizeProposalAuthority(testCase.staged, testCase.summary), {
+        state: "blocked",
+        why: "daemon-mismatch",
+      });
+    }
+  });
+
+  it("requires veto deadlines to equal staged_at plus duration and min_visible exactly", () => {
+    const { staged, daemon } = vetoContractFixture();
+    const durationMismatch = {
+      ...staged,
+      veto_deadline: "2026-07-15T09:30:01.999999999Z",
+    };
+    const minVisibleMismatch = {
+      ...staged,
+      earliest_close: "2026-07-15T09:05:02.000000001Z",
+    };
+    const cases = [
+      {
+        staged: durationMismatch,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(durationMismatch),
+          approvalPath: {
+            ...daemon.approvalPath,
+            veto_deadline: "2026-07-15T09:30:01.999999999Z",
+          },
+        },
+      },
+      {
+        staged: minVisibleMismatch,
+        summary: {
+          ...daemon,
+          proposalRevision: canonicalProposalRevision(minVisibleMismatch),
+          earliestClose: "2026-07-15T09:05:02.000000001Z",
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      assert.deepEqual(normalizeProposalAuthority(testCase.staged, testCase.summary), {
+        state: "blocked",
+        why: "daemon-mismatch",
+      });
+    }
+  });
+
+  it("derives veto deadlines with nanosecond precision across equivalent timezone offsets", () => {
+    const { staged: fixture, daemon } = vetoContractFixture();
+    const stagedAt = [2026, 196, 9, 0, 2, 900_000_000, 0, 0, 0];
+    const staged = {
+      ...fixture,
+      pending: { ...fixture.pending, staged_at: stagedAt },
+      classification: {
+        ...fixture.classification,
+        classified_at: stagedAt,
+        approval_path: {
+          kind: "familiar_coherence",
+          veto: {
+            duration: { secs: 1800, nanos: 200_000_000 },
+            min_visible: { secs: 300, nanos: 300_000_000 },
+          },
+        },
+      },
+      staged_at: stagedAt,
+      veto_deadline: "2026-07-15T11:30:03.1+02:00",
+      earliest_close: "2026-07-15T04:05:03.2-05:00",
+    };
+    const summary = {
+      ...daemon,
+      stagedAt: "2026-07-15T04:00:02.9-05:00",
+      proposalRevision: canonicalProposalRevision(staged),
+      approvalPath: {
+        ...daemon.approvalPath,
+        veto_deadline: "2026-07-15T09:30:03.1Z",
+      },
+      earliestClose: "2026-07-15T11:05:03.2+02:00",
+    };
+
+    assert.equal(normalizeProposalAuthority(staged, summary).state, "verified");
+  });
+
+  it("does not let a daemon summary downgrade a staged rationale path", () => {
+    const { staged, daemon } = daemonContractFixture();
+    const rationaleStaged = {
+      ...staged,
+      classification: {
+        ...staged.classification,
+        approval_path: { kind: "human_approval_with_rationale" },
+      },
+    };
+    const downgraded = {
+      ...daemon,
+      proposalRevision: canonicalProposalRevision(rationaleStaged),
+      approvalPath: {
+        ...daemon.approvalPath,
+        variant: "human_approval",
+        label: "human_review",
+      },
+    };
+
+    assert.deepEqual(normalizeProposalAuthority(rationaleStaged, downgraded), {
+      state: "blocked",
+      why: "daemon-mismatch",
+    });
   });
 
   it("accepts a nullable blocked reason and exposes no blocked actions", () => {
@@ -1713,24 +1892,38 @@ describe("normalizeProposal (§2.6)", () => {
     assert.deepEqual(authority.availableDecisions, []);
   });
 
-  it("treats earliestClose as independent display data", () => {
+  it("binds daemon earliestClose to the staged derived instant, including null presence", () => {
     const { staged, daemon } = daemonContractFixture();
+    const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
     const summaries = [
       {
-        ...daemon,
-        earliestClose: "2026-07-15T09:05:00Z",
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          earliestClose: null,
+        },
       },
       {
-        ...daemon,
-        earliestClose: null,
+        staged: vetoStaged,
+        summary: {
+          ...vetoDaemon,
+          earliestClose: "2026-07-15T09:05:02.000000001Z",
+        },
+      },
+      {
+        staged,
+        summary: {
+          ...daemon,
+          earliestClose: "2026-07-15T09:05:02Z",
+        },
       },
     ];
 
-    for (const [index, summary] of summaries.entries()) {
-      assert.equal(
-        normalizeProposal(`phase5-independent-close-${index}.json`, staged, summary).authority.state,
-        "verified",
-        `independent earliestClose case ${index}`,
+    for (const [index, testCase] of summaries.entries()) {
+      assert.deepEqual(
+        normalizeProposal(`phase5-bound-close-${index}.json`, testCase.staged, testCase.summary).authority,
+        { state: "blocked", why: "daemon-mismatch" },
+        `bound earliestClose case ${index}`,
       );
     }
   });

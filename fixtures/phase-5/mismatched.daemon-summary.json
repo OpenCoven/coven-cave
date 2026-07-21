@@ -11,7 +11,7 @@
   ],
   "approvalPath": {
     "variant": "familiar_coherence",
-    "label": "mismatch_review",
+    "label": "familiar_review",
     "veto_deadline": "2026-07-15T10:22:00Z",
     "affected_surfaces": [
       "MEMORY.md",

@@ -444,13 +444,32 @@ describe("daemon adapter — proposals and decisions", () => {
     return { home, pendingFile, staged, summary };
   }
 
-  it("GETs the daemon proposal envelope and joins summaries without rereading staged details", async () => {
+  it("fails closed when pending changes during the daemon summary request", async () => {
     const { home, pendingFile, summary } = homeWithScheduled("awaiting-human-approval");
     const calls: string[] = [];
     const adapter = new DaemonThreadsAdapter({
       call: async <T>(req: { path: string }) => {
         calls.push(req.path);
         writeFileSync(pendingFile, "{ changed after the staged read");
+        return { ok: true, status: 200, data: { proposals: [summary] } as T };
+      },
+      covenHomeDir: home,
+    });
+
+    const res = await adapter.proposals();
+    assert.deepEqual(calls, [DAEMON_PROPOSALS_PATH]);
+    assert.equal(res.blocked, true);
+    assert.equal(res.why, "unparseable");
+    assert.equal(res.data, null);
+    assert.equal(res.meta.verified, false);
+  });
+
+  it("returns joined proposals when the certified pending snapshot stays stable", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const calls: string[] = [];
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>(req: { path: string }) => {
+        calls.push(req.path);
         return { ok: true, status: 200, data: { proposals: [summary] } as T };
       },
       covenHomeDir: home,
@@ -465,7 +484,7 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(proposal?.authority?.state, "verified");
     if (proposal?.authority?.state !== "verified") return;
     assert.equal(proposal.authority.lifecycle, "awaiting-human-approval");
-    assert.equal(proposal.authority.approvalPath.label, "human_review");
+    assert.equal(proposal.authority.approvalPath.label, "human_required");
   });
 
   it("accepts the real daemon non-blocked summary shape that omits blockedReason", async () => {
@@ -875,10 +894,10 @@ describe("fail-closed sweep: no adapter state renders healthy from unverifiable 
 
 describe("phase 5 proposal fixtures", () => {
   const verifiedCases = [
-    ["awaiting-human-approval", "awaiting-human-approval", ["approve", "reject"], null, "human_review"],
-    ["veto-window-open", "veto-window-open", ["reject"], null, "coherence_review"],
-    ["ready-for-replay", "ready-for-replay", [], null, "replay_ready"],
-    ["blocked", "blocked", [], "daemon-reported-block", "policy_blocked"],
+    ["awaiting-human-approval", "awaiting-human-approval", ["approve", "reject"], null, "human_required"],
+    ["veto-window-open", "veto-window-open", ["reject"], null, "familiar_review"],
+    ["ready-for-replay", "ready-for-replay", [], null, "familiar_review"],
+    ["blocked", "blocked", [], "daemon-reported-block", "human_review"],
   ] as const;
 
   for (const [name, lifecycle, decisions, blockedReason, label] of verifiedCases) {

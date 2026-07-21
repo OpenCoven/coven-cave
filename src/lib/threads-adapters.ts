@@ -92,12 +92,20 @@ type StagedProposal = {
   raw: unknown;
 };
 
+type PendingSnapshot = {
+  staged: StagedProposal[];
+  cursor: string;
+};
+
 type ProposalSummarySource =
   | { state: "available"; byId: Map<string, unknown> }
   | { state: "unavailable" }
   | { state: "unparseable" };
 
-function readPendingDir(dir: string, fileFilter: (file: string) => boolean = (file) => file.endsWith(".json")): StagedProposal[] | null {
+function readPendingSnapshot(
+  dir: string,
+  fileFilter: (file: string) => boolean = (file) => file.endsWith(".json"),
+): PendingSnapshot | null {
   // null = the listing itself could not be verified (unreadable dir, not a
   // dir, permissions). Callers fail closed — a throw here would 500 the route
   // instead of rendering blocked.
@@ -109,15 +117,28 @@ function readPendingDir(dir: string, fileFilter: (file: string) => boolean = (fi
   } catch {
     return null;
   }
-  return files.map((file) => {
+  const cursor = createHash("sha256");
+  const staged = files.map((file) => {
+    let serialized: string;
     try {
-      const raw: unknown = JSON.parse(readFileSync(path.join(/* turbopackIgnore: true */ dir, file), "utf8"));
+      serialized = readFileSync(path.join(/* turbopackIgnore: true */ dir, file), "utf8");
+      cursor.update(file).update("\0").update(serialized).update("\0");
+      const raw: unknown = JSON.parse(serialized);
       return { file, raw };
     } catch {
+      cursor.update(file).update("\0unreadable-or-corrupt\0");
       // R6: corrupt pending file — listed, actions disabled, never dropped.
       return { file, raw: null };
     }
   });
+  return { staged, cursor: `pending:${cursor.digest("hex").slice(0, 16)}` };
+}
+
+function readPendingDir(
+  dir: string,
+  fileFilter: (file: string) => boolean = (file) => file.endsWith(".json"),
+): StagedProposal[] | null {
+  return readPendingSnapshot(dir, fileFilter)?.staged ?? null;
 }
 
 function stagedProposalId(raw: unknown): string | null {
@@ -539,20 +560,24 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       if (existsSync(/* turbopackIgnore: true */ this.home)) return okEnvelope([], this.meta("pending:empty", true));
       return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
     }
-    const staged = readPendingDir(pendingDir);
-    if (staged === null) {
+    const snapshot = readPendingSnapshot(pendingDir);
+    if (snapshot === null) {
       // The staging area exists but its listing cannot be verified: blocked,
       // never a throw and never an empty-healthy answer.
       return blockedEnvelope("unparseable", this.meta("pending:unreadable", false));
     }
-    if (staged.length === 0) return okEnvelope([], this.meta(pendingDirCursor(pendingDir), true));
+    if (snapshot.staged.length === 0) return okEnvelope([], this.meta(snapshot.cursor, true));
 
     const res = await this.call<unknown>({ path: DAEMON_PROPOSALS_PATH, timeoutMs: this.timeoutMs });
+    const confirmedSnapshot = readPendingSnapshot(pendingDir);
+    if (confirmedSnapshot === null || confirmedSnapshot.cursor !== snapshot.cursor) {
+      return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));
+    }
     const summaries = res.ok ? proposalSummarySource(res.data) : { state: "unavailable" as const };
     const summariesCursor = res.ok ? proposalSummaryCursor(res.data) : `unavailable:${res.status}`;
     return okEnvelope(
-      joinProposalSummaries(staged, summaries),
-      this.meta(`${pendingDirCursor(pendingDir)}:${summariesCursor}`, true),
+      joinProposalSummaries(snapshot.staged, summaries),
+      this.meta(`${snapshot.cursor}:${summariesCursor}`, true),
     );
   }
 

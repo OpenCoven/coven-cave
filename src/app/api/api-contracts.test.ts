@@ -270,10 +270,16 @@ function usesJsonResponse(source: string): boolean {
 }
 
 function effectiveRouteSource(file: string, source: string): string {
+  const parts = [source];
   const reexport = source.match(/from\s+"(\.[^"]+\/route)";/);
-  if (!reexport) return source;
-  const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
-  return `${source}\n${readFileSync(target, "utf8")}`;
+  if (reexport) {
+    const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
+    parts.push(readFileSync(target, "utf8"));
+  }
+  if (source.includes('from "@/lib/proposal-decision-body"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));
+  }
+  return parts.join("\n");
 }
 
 const routeFiles = walkRoutes(apiRoot);
@@ -306,7 +312,7 @@ for (const contract of contracts) {
     assert.doesNotMatch(source, /invalid json|invalid JSON/, `${contract.route} legacy invalid-JSON behavior changed`);
   }
   if (contract.optionalJsonBody) {
-    assert.match(source, /rawBody\.trim\(\)/, `${contract.route} must accept a missing request body`);
+    assert.match(effectiveSource, /rawBody\.trim\(\)/, `${contract.route} must accept a missing request body`);
   }
   if (contract.pathGuard) {
     assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);

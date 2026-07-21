@@ -75,6 +75,12 @@ const APPROVAL_PATH_VARIANTS = new Map<string, ProposalApprovalPathVariantView>(
   ["human_approval", "human-approval"],
   ["human_approval_with_rationale", "human-approval-with-rationale"],
 ]);
+const APPROVAL_PATH_LABELS = new Map<string, string>([
+  ["auto_regression", "auto"],
+  ["familiar_coherence", "familiar_review"],
+  ["human_approval", "human_review"],
+  ["human_approval_with_rationale", "human_required"],
+]);
 const CHANNEL_VALUES = new Set(["Deliberate", "Forced", "Serialization", "Mutation"]);
 const FRAY_REASON_VALUES = new Set([
   "ContentHashMismatch",
@@ -328,6 +334,40 @@ function canonicalStagedInstant(value: unknown): string | null {
   )}:${padNumber(second, 2)}${fraction}${offset}`;
 }
 
+function stagedInstantEpochNanos(value: unknown): bigint | null {
+  const canonical = canonicalStagedInstant(value);
+  if (!canonical) return null;
+  const match = RFC3339_RE.exec(canonical)!;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction, offset] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const adjustedYear = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(adjustedYear / 400);
+  const yearOfEra = adjustedYear - era * 400;
+  const shiftedMonth = month + (month > 2 ? -3 : 9);
+  const dayOfYear = Math.floor((153 * shiftedMonth + 2) / 5) + Number(dayText) - 1;
+  const dayOfEra =
+    yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  const days = BigInt(era * 146_097 + dayOfEra);
+  const secondsOfDay =
+    Number(hourText) * 3_600 + Number(minuteText) * 60 + Number(secondText);
+  let offsetSeconds = 0;
+  if (offset !== "Z") {
+    const direction = offset[0] === "-" ? -1 : 1;
+    offsetSeconds = direction * (Number(offset.slice(1, 3)) * 3_600 + Number(offset.slice(4, 6)) * 60);
+  }
+  const nanoseconds = BigInt((fraction ?? "").padEnd(9, "0") || "0");
+  const nanosPerSecond = BigInt(1_000_000_000);
+  return (days * BigInt(86_400) + BigInt(secondsOfDay - offsetSeconds)) * nanosPerSecond + nanoseconds;
+}
+
+function sameStagedInstant(left: unknown, right: unknown): boolean {
+  if (left === null || right === null) return left === null && right === null;
+  const leftNanos = stagedInstantEpochNanos(left);
+  const rightNanos = stagedInstantEpochNanos(right);
+  return leftNanos !== null && rightNanos !== null && leftNanos === rightNanos;
+}
+
 function isByteArray(value: unknown, length?: number): value is number[] {
   return (
     Array.isArray(value) &&
@@ -371,6 +411,31 @@ function isVetoWindowShape(value: unknown): boolean {
     return false;
   }
   return isDurationAtMost(value.min_visible as RawRecord, value.duration as RawRecord);
+}
+
+function durationNanos(value: RawRecord): bigint {
+  return BigInt(Number(value.secs)) * BigInt(1_000_000_000) + BigInt(Number(value.nanos));
+}
+
+function hasConsistentStagedVetoMetadata(raw: RawRecord): boolean {
+  if (!isRecord(raw.classification) || !isRecord(raw.classification.approval_path)) return false;
+  const approvalPath = raw.classification.approval_path;
+  const veto =
+    approvalPath.kind === "auto_regression" || approvalPath.kind === "familiar_coherence"
+      ? approvalPath.veto
+      : null;
+
+  if (veto === null) return raw.veto_deadline === null && raw.earliest_close === null;
+  if (!isRecord(veto) || !isRecord(veto.duration) || !isRecord(veto.min_visible)) return false;
+
+  const stagedAt = stagedInstantEpochNanos(raw.staged_at);
+  const vetoDeadline = stagedInstantEpochNanos(raw.veto_deadline);
+  const earliestClose = stagedInstantEpochNanos(raw.earliest_close);
+  return (
+    stagedAt !== null &&
+    vetoDeadline === stagedAt + durationNanos(veto.duration) &&
+    earliestClose === stagedAt + durationNanos(veto.min_visible)
+  );
 }
 
 function isApprovalPathShape(value: unknown): boolean {
@@ -643,6 +708,7 @@ function isCompleteScheduledEnvelope(raw: RawRecord): boolean {
     canonicalStagedInstant(raw.staged_at) !== null &&
     isNullableStagedInstant(raw.veto_deadline) &&
     isNullableStagedInstant(raw.earliest_close) &&
+    hasConsistentStagedVetoMetadata(raw) &&
     hasConsistentScheduledEnvelopeBindings(raw)
   );
 }
@@ -740,9 +806,17 @@ function normalizeApprovalPath(source: RawRecord): ProposalAuthorityVerifiedView
   }
   const variantKey = source.variant;
   const variant = APPROVAL_PATH_VARIANTS.get(variantKey);
-  if (!variant) return null;
+  const expectedLabel = APPROVAL_PATH_LABELS.get(variantKey);
+  if (!variant || source.label !== expectedLabel) return null;
   const vetoDeadline = daemonNullableIso(source.veto_deadline);
   if (!vetoDeadline.valid) return null;
+  if (variantKey === "familiar_coherence" && vetoDeadline.value === null) return null;
+  if (
+    (variantKey === "human_approval" || variantKey === "human_approval_with_rationale") &&
+    vetoDeadline.value !== null
+  ) {
+    return null;
+  }
   return {
     variant,
     label: source.label,
@@ -846,13 +920,15 @@ function normalizeVerifiedAuthority(
   if (!stagedFamiliarUuid || daemonSummary.familiarUuid !== stagedFamiliarUuid) return null;
   if (daemonSummary.proposalId !== payload.id || daemonSummary.writer !== payload.writer) return null;
 
-  const envelopeStagedAt = canonicalStagedInstant(stagedEnvelope.staged_at);
-  const pendingStagedAt = canonicalStagedInstant(findPendingCandidate(stagedEnvelope).staged_at);
+  const envelopeStagedAt = stagedInstantEpochNanos(stagedEnvelope.staged_at);
+  const pendingStagedAt = stagedInstantEpochNanos(findPendingCandidate(stagedEnvelope).staged_at);
+  const daemonStagedAt = stagedInstantEpochNanos(daemonSummary.stagedAt);
   if (
-    !envelopeStagedAt ||
-    !pendingStagedAt ||
+    envelopeStagedAt === null ||
+    pendingStagedAt === null ||
+    daemonStagedAt === null ||
     pendingStagedAt !== envelopeStagedAt ||
-    daemonSummary.stagedAt !== envelopeStagedAt
+    daemonStagedAt !== envelopeStagedAt
   ) {
     return null;
   }
@@ -862,6 +938,17 @@ function normalizeVerifiedAuthority(
   if (!sameStringSet(targets, daemonSummary.targets)) return null;
   if (!sameStringSet(targets, daemonSummary.approvalPath.affectedSurfaces)) return null;
   if (canonicalProposalRevision(stagedEnvelope) !== daemonSummary.proposalRevision) return null;
+  if (!isRecord(stagedEnvelope.classification) || !isRecord(stagedEnvelope.classification.approval_path)) {
+    return null;
+  }
+  const stagedVariant = APPROVAL_PATH_VARIANTS.get(String(stagedEnvelope.classification.approval_path.kind));
+  if (
+    stagedVariant !== daemonSummary.approvalPath.variant ||
+    !sameStagedInstant(stagedEnvelope.veto_deadline, daemonSummary.approvalPath.vetoDeadline) ||
+    !sameStagedInstant(stagedEnvelope.earliest_close, daemonSummary.earliestClose)
+  ) {
+    return null;
+  }
 
   return {
     state: "verified",
