@@ -15,6 +15,7 @@ import { RichText } from "@/components/rich-text";
 import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
+import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
@@ -5282,6 +5283,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
+        {/* Floating Environment HUD (cave-68vv): wide panes only; keys on the
+            same session-root derivation as ChatStageHeader above. */}
+        <ChatEnvironmentPanel
+          projectRoot={session?.project_root ?? projectRoot ?? null}
+          runtime={session?.runtime ?? null}
+          hasTurns={turns.length > 0}
+          onOpenUrl={onOpenUrl}
+        />
         <div
           ref={threadRef}
           className="cave-chat-thread"

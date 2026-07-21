@@ -248,6 +248,8 @@ export const ICON_NAMES = [
   "ph:link",
   "ph:link-simple",
   "ph:git-pull-request",
+  "ph:git-commit",
+  "ph:git-diff",
   "ph:git-branch",
   "ph:git-merge",
   "ph:git-diff",

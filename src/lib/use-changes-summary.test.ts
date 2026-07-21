@@ -42,5 +42,9 @@ assert.match(
   "a stale in-flight response for a previous root can't write into the new root's state",
 );
 assert.match(src, /Array\.isArray\(json\.files\) \? json\.files\.length : 0/, "count is the changed-file list length");
+// cave-68vv: the Environment panel's `+N −N` totals ride the SAME summary
+// response — summed by the pure model helper, not a second fetch.
+assert.match(src, /setTotals\(sumFileTotals\(json\.files\)\)/, "diff totals summed from the shared summary response");
+assert.match(src, /totals, loaded, notARepo, branch, worktree, reload/, "totals exposed alongside the existing summary fields");
 
 console.log("use-changes-summary.test.ts: ok");

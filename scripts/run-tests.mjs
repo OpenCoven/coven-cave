@@ -764,6 +764,8 @@ export const SUITES = {
     "src/lib/appearance-corner-radius.test.ts",
     "src/lib/use-changes-summary.test.ts",
     "src/lib/changes-summary-fetch.test.ts",
+    "src/lib/chat-environment-panel-model.test.ts",
+    "src/components/chat-environment-panel.test.ts",
     "src/lib/use-familiar-contracts.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
