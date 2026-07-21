@@ -36,11 +36,9 @@ assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("home"\)\}/, "Home
 assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("inbox"\)\}/, "Scheduled button should navigate through the explicit sidebar callback");
 assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("marketplace"\)\}/, "Plugins button should navigate through the explicit sidebar callback");
 assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar should not dispatch raw mode events for its own navigation buttons");
-// The Chats list header keeps a labeled familiar switcher near thread
-// navigation. The global nav stays SidebarMinimal, so chat intentionally keeps
-// this list-pane control even though the top bar and expanded nav may also show
-// familiar controls (#2747, restored by cave-l3ay after #2750 briefly removed
-// it as a supposed duplicate).
+// The Chats primary-nav header keeps a labeled familiar switcher near thread
+// navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
+// supposed duplicate).
 assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
@@ -52,16 +50,25 @@ assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rai
 // "Search projects or threads…" clipped); the aria-label keeps the full scope.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
 assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
-assert.match(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace mounts Chats as the persistent list pane only in chat mode");
-assert.match(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode visits start with the global nav collapsed");
-assert.match(workspace, /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/, "chat mode keeps the Chats list persistent on desktop");
-assert.match(workspace, /nav=\{sidebar\}\s*list=\{list\}/, "workspace always passes the global nav as nav and the chat sidebar as list");
-assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile list drawer");
-assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile list drawer");
-assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile list drawer");
-assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissListMobile\(\);[\s\S]*?\}\}/, "sidebar Home, Scheduled, and Plugins routes dismiss the mobile list drawer");
-assert.match(workspace, /onOpenUrl=\{\(url\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/, "sidebar PR links dismiss the mobile list drawer before opening");
-assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissListMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile list drawer");
+assert.match(workspace, /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/, "workspace selects Chats as the contextual primary nav");
+assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace should not mount Chats in the list slot");
+assert.match(workspace, /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/, "chat mode activates the contextual nav policy");
+assert.doesNotMatch(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode should not use the obsolete visit-collapsed policy");
+assert.doesNotMatch(workspace, /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/, "chat mode should not reserve a persistent list pane");
+assert.match(workspace, /nav=\{contextualNav\}\s*list=\{undefined\}/, "workspace passes contextual nav and no list content");
+assert.match(workspace, /onToggleList=\{undefined\}/, "top bar exposes no list toggle");
+assert.match(workspace, /navDrawerOpen=\{navDrawerOpen\}\s*listDrawerOpen=\{false\}/, "top bar only reflects the mobile nav drawer");
+const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
+assert.ok(chatSidebarBlock, "workspace should keep the chat sidebar wiring together");
+assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
+assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6, "chat sidebar actions dismiss the mobile nav drawer");
+assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile nav drawer");
+assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile nav drawer");
+assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile nav drawer");
+assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "sidebar Home, Scheduled, and Plugins routes dismiss the mobile nav drawer");
+assert.match(workspace, /onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/, "sidebar PR links dismiss the mobile nav drawer before opening");
+assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile nav drawer");
+assert.match(workspace, /hideThreadRail/, "ChatSurface keeps its internal thread rail hidden");
 assert.doesNotMatch(workspace, /const exitChatMode = useCallback/, "workspace should not keep an unused chat-exit helper");
 assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an unused prior-surface exit contract");
 // chat-view wiring (unchanged — just verify it still exists)
