@@ -2579,7 +2579,7 @@ export function Workspace() {
       }}
       onOpenSession={(id) => {
         openFamiliarSession(id);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}

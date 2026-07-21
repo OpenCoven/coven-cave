@@ -97,9 +97,9 @@ type Props = {
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
-  /** Drop the in-surface project/thread rail. Set when the outer
-   *  WorkspaceSidebar already owns the project-grouped chat list (desktop list
-   *  pane or mobile list drawer), so the in-surface rail would duplicate it. */
+  /** Drop the in-surface project/thread rail. Set when the outer contextual
+   *  Shell nav/sidebar already owns the project-grouped chat list, so the
+   *  in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
 };
 

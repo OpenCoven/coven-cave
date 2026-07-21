@@ -94,10 +94,17 @@ assert.match(
   /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
+const normalSidebarBlock = workspace.match(/const sidebar =[\s\S]*?const chatSidebar =/)?.[0] ?? "";
+assert.ok(normalSidebarBlock, "Workspace should keep the normal SidebarMinimal wiring together");
 assert.match(
-  workspace,
+  normalSidebarBlock,
+  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Normal mobile session taps should dismiss the nav drawer that becomes Chat's contextual sidebar",
+);
+assert.doesNotMatch(
+  normalSidebarBlock,
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Mobile list drawer session taps should dismiss the list drawer (mobile-only) without collapsing the desktop list",
+  "Normal mobile session taps should not target the absent Chat list drawer",
 );
 const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
 assert.ok(chatSidebarBlock, "Workspace should keep the contextual Chat nav wiring together");
