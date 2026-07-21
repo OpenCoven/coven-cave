@@ -1,14 +1,9 @@
 // E2E for the proposal decision flow with REAL staged-write fixtures
 // (threads-986.17.6, spec §3.7).
 //
-// `next/server` cannot be imported under the bare-node test runner, so this
-// test drives the exact composition the route handlers execute —
-// activeThreadsAdapter() (env-selected, no mocks) + httpStatusForEnvelope —
-// over the checked-in fixtures/phase-4/pending/ staged writes and a real
-// temp COVEN_HOME, then pins the route sources to that composition so the
-// handlers cannot drift from what is tested here. Guard behavior
-// (rejectNonLocalRequest, invalid-JSON 400) is enforced per-route by
-// src/app/api/api-contracts.test.ts.
+// This test drives both the route handlers and the exact composition they
+// forward into — activeThreadsAdapter() (env-selected, no mocks) +
+// httpStatusForEnvelope — over checked-in and isolated staged-write fixtures.
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +11,10 @@ import path from "node:path";
 import { after, afterEach, describe, it } from "node:test";
 
 import { activeThreadsAdapter, httpStatusForEnvelope } from "../../lib/threads-adapters.ts";
+import { parseProposalDecisionBody } from "../../lib/proposal-decision-body.ts";
+
+const { POST: approveProposal } = await import("./proposals/[id]/approve/route.ts");
+const { POST: rejectProposal } = await import("./proposals/[id]/reject/route.ts");
 
 const PROPOSAL_OK = "cccccccc-0001-4001-8001-000000000001";
 const CORRUPT_ID = "dddddddd-0001-4001-8001-000000000001";
@@ -56,24 +55,76 @@ describe("route-source pins: handlers are exactly the composition under test", (
     }
   });
 
-  it("decision routes accept an optional body, validate revisions, and forward revision + note", () => {
+  it("decision routes preserve their local guard and forward the shared parser result exactly", () => {
     for (const file of ["proposals/[id]/approve/route.ts", "proposals/[id]/reject/route.ts"]) {
       const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
       assert.match(source, /rejectNonLocalRequest\(req\)/, `${file} keeps the local-origin guard`);
-      assert.match(source, /await req\.text\(\)/, `${file} reads an optional raw body`);
-      assert.match(source, /rawBody\.trim\(\)/, `${file} preserves bodyless legacy calls`);
-      assert.match(source, /invalid json body/, `${file} answers 400 on malformed JSON`);
-      assert.match(source, /\^\[0-9a-f\]\{64\}\$/, `${file} requires exactly 64 lowercase hex characters`);
-      assert.match(source, /invalid expectedRevision/, `${file} answers 400 on malformed revisions`);
       assert.match(
         source,
-        /\.(approve|reject)\(id, expectedRevision, note\)/,
-        `${file} forwards id + expectedRevision + note to the adapter only`,
+        /parseProposalDecisionBody\(await req\.text\(\)\)/,
+        `${file} parses the optional body through the shared pure helper`,
       );
-      assert.ok(
-        source.indexOf("invalid expectedRevision") < source.search(/\.(approve|reject)\(id, expectedRevision, note\)/),
-        `${file} validates the revision before forwarding`,
+      assert.match(
+        source,
+        /\.(approve|reject)\(id, decision\.expectedRevision, decision\.note\)/,
+        `${file} forwards the parser's exact expectedRevision + note result`,
       );
+    }
+  });
+});
+
+describe("proposal decision body parser", () => {
+  it("preserves omitted and structurally empty legacy bodies", () => {
+    for (const rawBody of ["", " \n ", "{}", "null", "[]", '"legacy primitive"']) {
+      assert.deepEqual(parseProposalDecisionBody(rawBody), {
+        ok: true,
+        expectedRevision: undefined,
+        note: undefined,
+      });
+    }
+  });
+
+  it("normalizes null notes to omitted and preserves string notes exactly", () => {
+    assert.deepEqual(parseProposalDecisionBody('{"note":null}'), {
+      ok: true,
+      expectedRevision: undefined,
+      note: undefined,
+    });
+    assert.deepEqual(parseProposalDecisionBody('{"note":" principal note "}'), {
+      ok: true,
+      expectedRevision: undefined,
+      note: " principal note ",
+    });
+  });
+
+  it("rejects every non-null, non-string note", () => {
+    for (const note of [42, false, { text: "no" }, ["no"]]) {
+      assert.deepEqual(parseProposalDecisionBody(JSON.stringify({ note })), {
+        ok: false,
+        error: "invalid note",
+      });
+    }
+  });
+
+  it("rejects malformed JSON", () => {
+    assert.deepEqual(parseProposalDecisionBody("{"), {
+      ok: false,
+      error: "invalid json body",
+    });
+  });
+
+  it("accepts only omitted or exact lowercase SHA-256 revisions", () => {
+    const revision = "a".repeat(64);
+    assert.deepEqual(parseProposalDecisionBody(JSON.stringify({ expectedRevision: revision, note: "ship it" })), {
+      ok: true,
+      expectedRevision: revision,
+      note: "ship it",
+    });
+    for (const expectedRevision of [null, "", "a".repeat(63), "A".repeat(64), 42]) {
+      assert.deepEqual(parseProposalDecisionBody(JSON.stringify({ expectedRevision })), {
+        ok: false,
+        error: "invalid expectedRevision",
+      });
     }
   });
 });
@@ -110,6 +161,28 @@ describe("GET flow — real checked-in staged writes through the env-selected ad
 });
 
 describe("decision flow — forward-only, fail-closed, staged files untouched", () => {
+  for (const [decision, handler] of [
+    ["approve", approveProposal],
+    ["reject", rejectProposal],
+  ] as const) {
+    it(`${decision} route rejects non-null, non-string notes with 400`, async () => {
+      process.env.COVEN_THREADS_ADAPTER = "fixtures";
+      for (const note of [42, false, { text: "no" }, ["no"]]) {
+        const response = await handler(
+          new Request(`http://127.0.0.1/api/proposals/${PROPOSAL_OK}/${decision}`, {
+            method: "POST",
+            headers: { "content-type": "application/json", host: "127.0.0.1" },
+            body: JSON.stringify({ note }),
+          }),
+          { params: Promise.resolve({ id: PROPOSAL_OK }) },
+        );
+        assert.equal(response.status, 400);
+        assert.deepEqual(await response.json(), { ok: false, error: "invalid note" });
+      }
+    });
+
+  }
+
   it("R5: fixtures mode (no daemon) answers 503 and the checked-in files never change", async () => {
     process.env.COVEN_THREADS_ADAPTER = "fixtures";
     delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;

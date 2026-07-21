@@ -10,7 +10,7 @@
   ],
   "approvalPath": {
     "variant": "human_approval",
-    "label": "policy_blocked",
+    "label": "human_review",
     "veto_deadline": null,
     "affected_surfaces": [
       "MEMORY.md"

@@ -10,7 +10,7 @@
   ],
   "approvalPath": {
     "variant": "human_approval_with_rationale",
-    "label": "human_review",
+    "label": "human_required",
     "veto_deadline": null,
     "affected_surfaces": [
       "MEMORY.md"

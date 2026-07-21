@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
+import { parseProposalDecisionBody } from "@/lib/proposal-decision-body";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { activeThreadsAdapter, httpStatusForEnvelope } from "@/lib/threads-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-type DecisionBody = { expectedRevision?: unknown; note?: unknown };
 
 // POST /api/proposals/[id]/approve — thin daemon-forwarder (spec §3.7). The
 // daemon re-validates, applies or refuses, audits, and removes the pending
@@ -15,27 +14,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const rejected = rejectNonLocalRequest(req);
   if (rejected) return rejected;
   const { id } = await params;
-  let body: DecisionBody = {};
-  const rawBody = await req.text();
-  if (rawBody.trim() !== "") {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(rawBody);
-    } catch {
-      return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
-    }
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      body = parsed as DecisionBody;
-    }
-  }
-  const expectedRevision = body.expectedRevision;
-  if (
-    expectedRevision !== undefined &&
-    (typeof expectedRevision !== "string" || !/^[0-9a-f]{64}$/.test(expectedRevision))
-  ) {
-    return NextResponse.json({ ok: false, error: "invalid expectedRevision" }, { status: 400 });
-  }
-  const note = typeof body.note === "string" ? body.note : undefined;
-  const envelope = await activeThreadsAdapter().approve(id, expectedRevision, note);
+  const decision = parseProposalDecisionBody(await req.text());
+  if (!decision.ok) return NextResponse.json({ ok: false, error: decision.error }, { status: 400 });
+  const envelope = await activeThreadsAdapter().approve(id, decision.expectedRevision, decision.note);
   return NextResponse.json(envelope, { status: httpStatusForEnvelope(envelope, "POST") });
 }
