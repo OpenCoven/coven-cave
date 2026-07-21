@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { sumFileTotals } from "@/lib/chat-environment-panel-model";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 /**
@@ -26,6 +27,8 @@ const POLL_MS = 5000;
 type ChangesSummary = {
   /** Number of changed files (0 when clean, when not a repo, or before load). */
   count: number;
+  /** Summed per-file numstat vs HEAD (`+N −N`); untracked files carry no counts. */
+  totals: { additions: number; deletions: number };
   /** True once the first fetch has settled. */
   loaded: boolean;
   /** The root is not a git repo (no diffs to show). */
@@ -45,6 +48,7 @@ export function useChangesSummary(
   active: boolean,
 ): ChangesSummary {
   const [count, setCount] = useState(0);
+  const [totals, setTotals] = useState<{ additions: number; deletions: number }>({ additions: 0, deletions: 0 });
   const [loaded, setLoaded] = useState(false);
   const [notARepo, setNotARepo] = useState(false);
   const [branch, setBranch] = useState<string | null>(null);
@@ -67,6 +71,7 @@ export function useChangesSummary(
       if (httpOk && json.ok) {
         setNotARepo(json.repo === false);
         setCount(Array.isArray(json.files) ? json.files.length : 0);
+        setTotals(sumFileTotals(json.files));
         setBranch(typeof json.branch === "string" ? json.branch : null);
         setWorktree(typeof json.worktree === "string" ? json.worktree : null);
       }
@@ -94,5 +99,5 @@ export function useChangesSummary(
     void load({ force: true });
   }, [load]);
 
-  return { count, loaded, notARepo, branch, worktree, reload };
+  return { count, totals, loaded, notARepo, branch, worktree, reload };
 }
