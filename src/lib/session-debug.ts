@@ -2,7 +2,11 @@ import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
-import type { ChatStreamClientHealth, RunBufferStatus } from "./chat-stream-health.ts";
+import type {
+  ChatStreamClientHealth,
+  ChatStreamPhase,
+  RunBufferStatus,
+} from "./chat-stream-health.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -107,8 +111,35 @@ export function nextAfterSeq(events: CovenEvent[]): number {
   return events.reduce((max, e) => (e.seq > max ? e.seq : max), 0);
 }
 
-export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
-  return args.status === "running" && args.visible;
+/** Poll-lag-free session liveness for the debug pane. The sessions-list row
+ *  is polled and can be absent entirely (pre-promotion chats, list lag), so
+ *  `status === "running"` alone starts the live tail late or never. Any of
+ *  three independent signals counts as evidence events are flowing now:
+ *  - the polled row says the session is running (works for external writers
+ *    once the list catches up);
+ *  - this pane's own stream transport is mid-run (connecting/streaming/
+ *    resuming — instant, no poll lag);
+ *  - the server run buffer for this session is still open
+ *    (`RunBufferStatus.done === false` from /api/chat/stream/status, which is
+ *    dual-keyed by conversation id — daemon-side truth even when another
+ *    surface drives the run). `null` means unknown/no buffer and is not
+ *    evidence either way. */
+export function debugSessionLive(args: {
+  status: string | null;
+  streamPhase: ChatStreamPhase;
+  serverRunDone: boolean | null;
+}): boolean {
+  return (
+    args.status === "running" ||
+    args.streamPhase === "connecting" ||
+    args.streamPhase === "streaming" ||
+    args.streamPhase === "resuming" ||
+    args.serverRunDone === false
+  );
+}
+
+export function shouldPollEvents(args: { live: boolean; visible: boolean }): boolean {
+  return args.live && args.visible;
 }
 
 /** Snapshot of one pane's fetched event tail, kept across modal close/reopen. */

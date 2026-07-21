@@ -19,6 +19,7 @@ import {
   appendEvents,
   buildDebugBundle,
   debugFileName,
+  debugSessionLive,
   exportDebugTurn,
   filterEvents,
   formatEventPayload,
@@ -288,11 +289,6 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
   const dtPrefs = useDateTimePrefs();
   const cwd = formatRuntime(session?.runtime);
   const streamSummary = useMemo(() => streamHealthSummary(streamHealth), [streamHealth]);
-  const streamStatusActive =
-    status === "running" ||
-    streamHealth.phase === "connecting" ||
-    streamHealth.phase === "streaming" ||
-    streamHealth.phase === "resuming";
   const lastEventLabel = streamHealth.lastEventAt
     ? formatTimestamp(streamHealth.lastEventAt, dtPrefs) || streamHealth.lastEventAt
     : "—";
@@ -308,12 +304,22 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
   const [streamStatus, setStreamStatus] = useState<RunBufferStatus | null>(null);
   const [streamStatusLoaded, setStreamStatusLoaded] = useState(false);
   const [streamStatusError, setStreamStatusError] = useState<string | null>(null);
+  // Truthful liveness (A3): the polled sessions row alone starts the live tail
+  // late or never — the row can be absent (pre-promotion chats, list lag) and
+  // its status is poll-lagged. The pane's own stream transport and the server
+  // run buffer (done === false while a run is open, even one driven from
+  // another surface) are poll-lag-free evidence events are flowing now.
+  const live = debugSessionLive({
+    status,
+    streamPhase: streamHealth.phase,
+    serverRunDone: streamStatus ? streamStatus.done : null,
+  });
   const [eventQuery, setEventQuery] = useState("");
   const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
   const { announce } = useAnnouncer();
   // Tail-follow only makes sense while events are streaming in; opening a
   // finished session shouldn't jump past the Session section.
-  const [follow, setFollow] = useState(status === "running");
+  const [follow, setFollow] = useState(live);
   const cursorRef = useRef(cachedSnapshot?.cursor ?? 0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -491,40 +497,36 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
     void fetchStreamStatus();
   }, [fetchStreamStatus]);
 
-  // Live tail while the session is running and the tab is visible.
+  // Live tail while the session is live and the tab is visible.
   useEffect(() => {
-    if (status !== "running") return;
+    if (!live) return;
     const id = window.setInterval(() => {
-      if (shouldPollEvents({ status, visible: document.visibilityState === "visible" })) {
+      if (shouldPollEvents({ live, visible: document.visibilityState === "visible" })) {
         void fetchEvents();
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [fetchEvents, status]);
+  }, [fetchEvents, live]);
   useEffect(() => {
-    if (!streamStatusActive) return;
+    if (!live) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void fetchStreamStatus();
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [fetchStreamStatus, streamStatusActive]);
+  }, [fetchStreamStatus, live]);
 
-  // One-shot catch-up when the session leaves "running", so events emitted in
-  // the final poll window aren't dropped.
-  const prevStatusRef = useRef(status);
+  // One-shot catch-up when liveness ends, so events and buffer state emitted
+  // in the final poll window aren't dropped.
+  const prevLiveRef = useRef(live);
   useEffect(() => {
-    if (prevStatusRef.current === "running" && status !== "running") void fetchEvents();
-    prevStatusRef.current = status;
-  }, [fetchEvents, status]);
-  const prevStreamStatusActiveRef = useRef(streamStatusActive);
-  useEffect(() => {
-    if (prevStreamStatusActiveRef.current && !streamStatusActive) {
+    if (prevLiveRef.current && !live) {
+      void fetchEvents();
       void fetchStreamStatus();
     }
-    prevStreamStatusActiveRef.current = streamStatusActive;
-  }, [fetchStreamStatus, streamStatusActive]);
+    prevLiveRef.current = live;
+  }, [fetchEvents, fetchStreamStatus, live]);
 
   // Auto-follow: stick to the bottom while new events stream in; scrolling
   // up pauses, the pill below resumes.
@@ -635,7 +637,7 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
 
         <Section
           title="Stream health"
-          defaultOpen={streamStatusActive || streamSummary.tone !== "healthy"}
+          defaultOpen={live || streamSummary.tone !== "healthy"}
         >
           <KVRow k="overall">
             <span className="inline-flex items-center gap-1.5">

@@ -281,18 +281,28 @@ assert.match(
 );
 assert.match(
   source,
-  /const streamStatusActive =\s*status === "running" \|\|\s*streamHealth\.phase === "connecting" \|\|\s*streamHealth\.phase === "streaming" \|\|\s*streamHealth\.phase === "resuming"/,
-  "Server status activity must include authoritative connecting, streaming, and resuming client phases",
+  /const live = debugSessionLive\(\{\s*status,\s*streamPhase: streamHealth\.phase,\s*serverRunDone: streamStatus \? streamStatus\.done : null,\s*\}\)/,
+  "Pane liveness must combine the polled row, own transport phase, and server run buffer (A3: poll-lag-free)",
 );
 assert.match(
   source,
-  /if \(!streamStatusActive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
-  "Server status polls on the existing cadence while the combined stream is active and visible",
+  /const \[follow, setFollow\] = useState\(live\)/,
+  "Tail-follow starts on for any truthfully live session, not only when the row says running",
 );
 assert.match(
   source,
-  /prevStreamStatusActiveRef\.current && !streamStatusActive[\s\S]*?fetchStreamStatus\(\)[\s\S]*?prevStreamStatusActiveRef\.current = streamStatusActive/,
-  "A combined client/server active-to-terminal transition triggers one final server-status refresh",
+  /if \(!live\) return;[\s\S]*?window\.setInterval[\s\S]*?shouldPollEvents\(\{ live, visible: document\.visibilityState === "visible" \}\)[\s\S]*?fetchEvents\(\)[\s\S]*?POLL_MS/,
+  "Events live-tail polls while truthfully live and visible — not only when the poll-lagged row says running",
+);
+assert.match(
+  source,
+  /if \(!live\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
+  "Server status polls on the existing cadence while the combined stream is live and visible",
+);
+assert.match(
+  source,
+  /prevLiveRef\.current && !live[\s\S]*?fetchEvents\(\);\s*void fetchStreamStatus\(\);[\s\S]*?prevLiveRef\.current = live/,
+  "A live-to-terminal transition triggers one final events catch-up and server-status refresh",
 );
 assert.match(
   source,
@@ -328,8 +338,8 @@ assert.ok(
 );
 assert.match(
   source,
-  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{streamStatusActive \|\| streamSummary\.tone !== "healthy"\}/,
-  "Stream health defaults open for any combined active stream or non-healthy client summary",
+  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{live \|\| streamSummary\.tone !== "healthy"\}/,
+  "Stream health defaults open for any live stream or non-healthy client summary",
 );
 assert.match(
   source,

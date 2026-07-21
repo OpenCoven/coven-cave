@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   appendEvents,
   nextAfterSeq,
+  debugSessionLive,
   shouldPollEvents,
   formatEventPayload,
   buildDebugBundle,
@@ -38,11 +39,35 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// debugSessionLive: any one of three signals is evidence events are flowing.
+const cold = { status: null, streamPhase: "idle", serverRunDone: null };
+assert.equal(debugSessionLive(cold), false, "no signals => not live");
+assert.equal(debugSessionLive({ ...cold, status: "running" }), true, "polled row says running");
+assert.equal(debugSessionLive({ ...cold, status: "completed" }), false);
+assert.equal(debugSessionLive({ ...cold, status: "failed" }), false);
+for (const streamPhase of ["connecting", "streaming", "resuming"]) {
+  assert.equal(
+    debugSessionLive({ ...cold, streamPhase }),
+    true,
+    `own transport mid-run (${streamPhase}) is live even with no session row`,
+  );
+}
+for (const streamPhase of ["idle", "settled", "degraded", "stopped"]) {
+  assert.equal(debugSessionLive({ ...cold, streamPhase }), false, `${streamPhase} is not live`);
+}
+assert.equal(
+  debugSessionLive({ ...cold, serverRunDone: false }),
+  true,
+  "open server run buffer is live — covers runs driven from another surface",
+);
+assert.equal(debugSessionLive({ ...cold, serverRunDone: true }), false, "finished buffer");
+assert.equal(debugSessionLive({ ...cold, serverRunDone: null }), false, "no buffer is unknown");
+
+// shouldPollEvents: only while live and visible
+assert.equal(shouldPollEvents({ live: true, visible: true }), true);
+assert.equal(shouldPollEvents({ live: true, visible: false }), false);
+assert.equal(shouldPollEvents({ live: false, visible: true }), false);
+assert.equal(shouldPollEvents({ live: false, visible: false }), false);
 
 // filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
 import { filterEvents } from "./session-debug.ts";
