@@ -179,6 +179,45 @@ assert.equal(
 assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
 
+// ── per-session debug events cache: reopen restores the drained tail (A2) ───
+import {
+  clearDebugEventsCacheForTest,
+  readDebugEventsCache,
+  writeDebugEventsCache,
+} from "./session-debug.ts";
+
+{
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s1"), null, "cold cache → null (pane starts from seq 0)");
+
+  const tail = { events: [ev(1), ev(2)], cursor: 2, tailCapped: false };
+  writeDebugEventsCache("s1", tail);
+  assert.equal(readDebugEventsCache("s1"), tail, "hit returns the exact stored snapshot");
+
+  const capped = { events: [ev(1), ev(2), ev(3)], cursor: 3, tailCapped: true };
+  writeDebugEventsCache("s1", capped);
+  assert.equal(readDebugEventsCache("s1"), capped, "rewrite replaces the snapshot for the key");
+  assert.equal(
+    readDebugEventsCache("s1").tailCapped,
+    true,
+    "tailCapped survives the round-trip so the Load-more notice reappears on reopen",
+  );
+
+  // LRU bound: writing beyond the cap evicts the least recently touched key.
+  clearDebugEventsCacheForTest();
+  for (let i = 0; i < 8; i++) {
+    writeDebugEventsCache(`s${i}`, { events: [ev(1)], cursor: 1, tailCapped: false });
+  }
+  readDebugEventsCache("s0"); // touch s0 so s1 is now the oldest
+  writeDebugEventsCache("s8", { events: [ev(1)], cursor: 1, tailCapped: false });
+  assert.notEqual(readDebugEventsCache("s0"), null, "recently read key survives eviction");
+  assert.equal(readDebugEventsCache("s1"), null, "least recently touched key is evicted at the cap");
+  assert.notEqual(readDebugEventsCache("s8"), null, "newest write is retained");
+
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s8"), null, "test hook clears the cache");
+}
+
 // ── turnActualModel / turnMetaSummary: served-model + usage meta (S2) ───────
 import { turnActualModel, turnMetaSummary } from "./session-debug.ts";
 

@@ -23,8 +23,10 @@ import {
   filterEvents,
   formatEventPayload,
   nextAfterSeq,
+  readDebugEventsCache,
   shouldPollEvents,
   turnMetaSummary,
+  writeDebugEventsCache,
   type CovenEvent,
   type DebugStreamHealth,
   type DebugTurn,
@@ -273,7 +275,7 @@ function EventRow({ event }: { event: CovenEvent }) {
 
 // ── Pane ──────────────────────────────────────────────────────────────────────
 
-function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
+function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: DebugPaneProps }) {
   const { sessionId, session, familiar, turns, streamHealth } = snapshot;
   const streamStatusRunId = streamHealth.runId?.trim() ?? "";
   const streamStatusSessionId = sessionId?.trim() ?? "";
@@ -297,7 +299,11 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   const lastErrorLabel = streamHealth.lastErrorAt
     ? formatTimestamp(streamHealth.lastErrorAt, dtPrefs) || streamHealth.lastErrorAt
     : "—";
-  const [events, setEvents] = useState<CovenEvent[]>([]);
+  // The modal unmounts this pane when closed, so the fetched tail + cursor are
+  // seeded from the per-session cache — a reopen renders the drained tail
+  // instantly and the mount fetch resumes from the cursor instead of seq 0.
+  const [cachedSnapshot] = useState(() => readDebugEventsCache(paneKey));
+  const [events, setEvents] = useState<CovenEvent[]>(cachedSnapshot?.events ?? []);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<RunBufferStatus | null>(null);
   const [streamStatusLoaded, setStreamStatusLoaded] = useState(false);
@@ -308,7 +314,7 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   // Tail-follow only makes sense while events are streaming in; opening a
   // finished session shouldn't jump past the Session section.
   const [follow, setFollow] = useState(status === "running");
-  const cursorRef = useRef(0);
+  const cursorRef = useRef(cachedSnapshot?.cursor ?? 0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetchInFlightRef = useRef(false);
@@ -320,7 +326,14 @@ function DebugPaneInner({ snapshot }: { snapshot: DebugPaneProps }) {
   const streamStatusRequestKeyRef = useRef<string | null>(null);
   // True when a drain stopped at the page cap with a full final page — more
   // events likely remain server-side and the list is silently incomplete.
-  const [tailCapped, setTailCapped] = useState(false);
+  const [tailCapped, setTailCapped] = useState(cachedSnapshot?.tailCapped ?? false);
+
+  // Write-through: keep the cache current so closing the modal loses nothing.
+  // Empty panes are skipped so untouched chats don't evict real tails.
+  useEffect(() => {
+    if (events.length === 0 && cursorRef.current === 0) return;
+    writeDebugEventsCache(paneKey, { events, cursor: cursorRef.current, tailCapped });
+  }, [paneKey, events, tailCapped]);
 
   useEffect(() => {
     streamStatusLifecycleRef.current = true;
@@ -815,5 +828,5 @@ export function DebugPane(snapshot: DebugPaneProps) {
   }
   // New chats key by run until promotion; established chats remain session-keyed.
   const paneKey = snapshot.sessionId ?? `run:${snapshot.streamHealth.runId!.trim()}`;
-  return <DebugPaneInner key={paneKey} snapshot={snapshot} />;
+  return <DebugPaneInner key={paneKey} paneKey={paneKey} snapshot={snapshot} />;
 }
