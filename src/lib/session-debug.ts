@@ -2,7 +2,11 @@ import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
-import type { ChatStreamClientHealth, RunBufferStatus } from "./chat-stream-health.ts";
+import type {
+  ChatStreamClientHealth,
+  ChatStreamPhase,
+  RunBufferStatus,
+} from "./chat-stream-health.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -107,8 +111,32 @@ export function nextAfterSeq(events: CovenEvent[]): number {
   return events.reduce((max, e) => (e.seq > max ? e.seq : max), 0);
 }
 
-export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
-  return args.status === "running" && args.visible;
+/** Composite liveness witness for the debug pane. The polled sessions list is
+ *  only one (lagged) source of truth: a session missing a row reads status
+ *  null, and a just-started run stays "idle" until the next list poll. The
+ *  pane's own transport phase is authoritative the moment ChatView opens a
+ *  stream, and the server run buffer (GET /api/chat/stream/status, keyed by
+ *  runId or conversation id) self-detects runs this pane didn't start —
+ *  `done: false` means the daemon is still emitting. Any witness saying
+ *  "live" wins; a null buffer (unknown/reaped run) is not a witness. */
+export function isDebugSessionLive(args: {
+  status: string | null;
+  clientPhase: ChatStreamPhase;
+  serverStatus: RunBufferStatus | null;
+}): boolean {
+  if (args.status === "running") return true;
+  if (
+    args.clientPhase === "connecting" ||
+    args.clientPhase === "streaming" ||
+    args.clientPhase === "resuming"
+  ) {
+    return true;
+  }
+  return args.serverStatus !== null && !args.serverStatus.done;
+}
+
+export function shouldPollEvents(args: { live: boolean; visible: boolean }): boolean {
+  return args.live && args.visible;
 }
 
 /** Snapshot of one pane's fetched event tail, kept across modal close/reopen. */

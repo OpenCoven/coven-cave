@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   appendEvents,
   nextAfterSeq,
+  isDebugSessionLive,
   shouldPollEvents,
   formatEventPayload,
   buildDebugBundle,
@@ -38,11 +39,56 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// isDebugSessionLive: any witness saying "live" wins — sessions-list status,
+// client transport phase, or the server run buffer (done: false)
+{
+  const idle = { status: null, clientPhase: "idle", serverStatus: null };
+  const buffer = (done) => ({
+    done,
+    oldestRetainedSeq: 1,
+    latestSeq: 5,
+    retainedEventCount: 5,
+    retainedBytes: 100,
+    hasEvictedEvents: false,
+    liveTails: 0,
+  });
+  assert.equal(isDebugSessionLive(idle), false, "no witness => not live");
+  assert.equal(isDebugSessionLive({ ...idle, status: "running" }), true, "sessions-list row wins");
+  for (const clientPhase of ["connecting", "streaming", "resuming"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      true,
+      `client ${clientPhase} phase wins without a sessions-list row (poll lag / missing row)`,
+    );
+  }
+  for (const clientPhase of ["settled", "degraded", "stopped"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      false,
+      `terminal client ${clientPhase} phase is not a live witness`,
+    );
+  }
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(false) }),
+    true,
+    "an undone server run buffer self-detects runs this pane didn't start",
+  );
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(true) }),
+    false,
+    "a finished buffer is not a live witness",
+  );
+  assert.equal(
+    isDebugSessionLive({ status: "completed", clientPhase: "settled", serverStatus: buffer(true) }),
+    false,
+    "all witnesses terminal => not live",
+  );
+}
+
+// shouldPollEvents: only while live and visible
+assert.equal(shouldPollEvents({ live: true, visible: true }), true);
+assert.equal(shouldPollEvents({ live: true, visible: false }), false);
+assert.equal(shouldPollEvents({ live: false, visible: true }), false);
 
 // filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
 import { filterEvents } from "./session-debug.ts";

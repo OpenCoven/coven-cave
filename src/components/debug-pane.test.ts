@@ -281,18 +281,28 @@ assert.match(
 );
 assert.match(
   source,
-  /const streamStatusActive =\s*status === "running" \|\|\s*streamHealth\.phase === "connecting" \|\|\s*streamHealth\.phase === "streaming" \|\|\s*streamHealth\.phase === "resuming"/,
-  "Server status activity must include authoritative connecting, streaming, and resuming client phases",
+  /const sessionLive = isDebugSessionLive\(\{\s*status,\s*clientPhase: streamHealth\.phase,\s*serverStatus: streamStatus,\s*\}\)/,
+  "Pane liveness combines the sessions-list row, the client transport phase, and the server run buffer",
 );
 assert.match(
   source,
-  /if \(!streamStatusActive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
-  "Server status polls on the existing cadence while the combined stream is active and visible",
+  /const \[follow, setFollow\] = useState\(\(\) =>\s*isDebugSessionLive\(\{ status, clientPhase: streamHealth\.phase, serverStatus: null \}\),?\s*\)/,
+  "Initial tail-follow seeds from the client-side witnesses (server status hasn't loaded at mount)",
 );
 assert.match(
   source,
-  /prevStreamStatusActiveRef\.current && !streamStatusActive[\s\S]*?fetchStreamStatus\(\)[\s\S]*?prevStreamStatusActiveRef\.current = streamStatusActive/,
-  "A combined client/server active-to-terminal transition triggers one final server-status refresh",
+  /if \(!sessionLive\) return;[\s\S]*?window\.setInterval[\s\S]*?shouldPollEvents\(\{ live: sessionLive, visible: document\.visibilityState === "visible" \}\)[\s\S]*?fetchEvents\(\)[\s\S]*?POLL_MS/,
+  "The events tail gates on composite liveness, not the poll-lagged sessions list alone",
+);
+assert.match(
+  source,
+  /if \(!sessionLive\) return;[\s\S]*?window\.setInterval[\s\S]*?document\.visibilityState === "visible"[\s\S]*?fetchStreamStatus\(\)[\s\S]*?POLL_MS/,
+  "Server status polls on the existing cadence while any liveness witness is active and visible",
+);
+assert.match(
+  source,
+  /prevLiveRef\.current && !sessionLive[\s\S]*?fetchEvents\(\);[\s\S]*?fetchStreamStatus\(\);[\s\S]*?prevLiveRef\.current = sessionLive/,
+  "A live-to-terminal transition triggers one final events catch-up plus server-status refresh",
 );
 assert.match(
   source,
@@ -328,8 +338,8 @@ assert.ok(
 );
 assert.match(
   source,
-  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{streamStatusActive \|\| streamSummary\.tone !== "healthy"\}/,
-  "Stream health defaults open for any combined active stream or non-healthy client summary",
+  /streamHealthSummary\(streamHealth\)[\s\S]*?defaultOpen=\{sessionLive \|\| streamSummary\.tone !== "healthy"\}/,
+  "Stream health defaults open for any live session or non-healthy client summary",
 );
 assert.match(
   source,
