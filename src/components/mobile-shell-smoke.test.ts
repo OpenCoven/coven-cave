@@ -15,7 +15,27 @@ const automationsView = [
   await readFile(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
 ].join("\n");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const globals = (
+  await Promise.all(
+    [
+      "../app/globals.css",
+      "../styles/sidebar-minimal.css",
+      "../styles/status-bar.css",
+      "../styles/globals/foundations.css",
+      "../styles/globals/shell-navigation.css",
+      "../styles/globals/primitives.css",
+      "../styles/globals/themes.css",
+      "../styles/globals/desktop-chrome.css",
+      "../styles/globals/shell-responsive.css",
+      "../styles/globals/calendar-agenda.css",
+      "../styles/globals/surface-compact-calendar.css",
+      "../styles/globals/surface-reporting.css",
+      "../styles/globals/surface-chat-overlays.css",
+      "../styles/globals/surface-marketplace.css",
+      "../styles/globals/surface-role-workspaces.css",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
+  )
+).join("\n");
 
 assert.match(
   bottomTerminal,
@@ -67,42 +87,56 @@ assert.match(
 
 // Selecting a destination dismisses the active mobile OVERLAY drawer, but must
 // use the mobile-only `dismissNavMobile`/`dismissListMobile` helpers — NOT
-// `closeNav`/`closeList`, which collapse the independent DESKTOP global nav or
-// persistent Chats list panels. Desktop chat keeps both panes available.
+// `closeNav`/`closeList`, which alter desktop panels. Chat uses only the nav
+// drawer, where WorkspaceSidebar replaces the normal navigation.
 assert.match(
   workspace,
   /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
+const normalSidebarBlock = workspace.match(/const sidebar =[\s\S]*?const chatSidebar =/)?.[0] ?? "";
+assert.ok(normalSidebarBlock, "Workspace should keep the normal SidebarMinimal wiring together");
 assert.match(
-  workspace,
+  normalSidebarBlock,
+  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Normal mobile session taps should dismiss the nav drawer that becomes Chat's contextual sidebar",
+);
+assert.doesNotMatch(
+  normalSidebarBlock,
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Mobile list drawer session taps should dismiss the list drawer (mobile-only) without collapsing the desktop list",
+  "Normal mobile session taps should not target the absent Chat list drawer",
+);
+const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
+assert.ok(chatSidebarBlock, "Workspace should keep the contextual Chat nav wiring together");
+assert.doesNotMatch(
+  chatSidebarBlock,
+  /dismissListMobile/,
+  "Chat contextual-nav actions should never target the unused list drawer",
 );
 assert.match(
-  workspace,
-  /onOpenSession=\{\(session\) => \{[\s\S]*openFamiliarSession\(session\.id, session\.familiarId\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Chat list session opens should dismiss the mobile list drawer without collapsing the persistent desktop Chats list",
+  chatSidebarBlock,
+  /onOpenSession=\{\(session\) => \{[\s\S]*openFamiliarSession\(session\.id, session\.familiarId\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat session opens should dismiss the mobile contextual nav without changing desktop layout",
 );
 assert.match(
-  workspace,
-  /onNewChat=\{\(projectRoot\) => \{[\s\S]*startFamiliarChat\(activeId, projectRoot\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Chat list new-chat actions should dismiss the mobile list drawer without touching the desktop list pane",
+  chatSidebarBlock,
+  /onNewChat=\{\(projectRoot\) => \{[\s\S]*startFamiliarChat\(activeId, projectRoot\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat new-chat actions should dismiss the mobile contextual nav without changing desktop layout",
 );
 assert.match(
-  workspace,
-  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Chat list Home, Scheduled, and Plugins actions should dismiss the mobile list drawer without touching the desktop list pane",
+  chatSidebarBlock,
+  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat Home, Scheduled, and Plugins actions should dismiss the mobile contextual nav without changing desktop layout",
 );
 assert.match(
-  workspace,
-  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
-  "Chat list PR links should dismiss only the mobile list drawer before opening",
+  chatSidebarBlock,
+  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
+  "Chat PR links should dismiss only the mobile contextual nav before opening",
 );
 assert.match(
-  workspace,
-  /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
-  "Chat list settings should dismiss only the mobile list drawer before routing",
+  chatSidebarBlock,
+  /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
+  "Chat settings should dismiss only the mobile contextual nav before routing",
 );
 
 // The mobile-only dismissers must be gated on isMobile and must NOT call the
@@ -126,13 +160,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /onToggleList=\{list \? \(\) => shellRef\.current\?\.toggleList\(\) : undefined\}/,
-  "Workspace should wire the TopBar list button to the shell list toggle",
+  /onToggleNav=\{\(\) => shellRef\.current\?\.toggleNav\(\)\}[\s\S]*onToggleList=\{undefined\}/,
+  "Mobile Chat should expose the contextual nav toggle and no list toggle",
 );
 assert.match(
   workspace,
-  /listDrawerOpen=\{listDrawerOpen\}/,
-  "Workspace should pass the shell's list drawer state through to the TopBar",
+  /navDrawerOpen=\{navDrawerOpen\}\s*listDrawerOpen=\{false\}/,
+  "Mobile Chat should expose nav drawer state while reporting the absent list drawer as closed",
 );
 
 assert.match(

@@ -52,8 +52,8 @@ assert.match(
   /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser",\s*\]/,
   "keyboard surface order should not include a standalone Terminal destination",
 );
-assert.match(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "chat mode mounts WorkspaceSidebar as the independent Chats list");
-assert.match(workspace, /nav=\{sidebar\}\s*list=\{list\}/, "workspace keeps SidebarMinimal as the global nav while Chat mounts WorkspaceSidebar separately");
+assert.match(workspace, /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/, "chat mode replaces the global nav with the contextual Chats sidebar");
+assert.match(workspace, /nav=\{contextualNav\}\s*list=\{undefined\}/, "workspace mounts the contextual Chat nav without an independent list pane");
 
 assert.doesNotMatch(
   chatSurface,

@@ -453,10 +453,10 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Header — the labeled familiar switcher (#2747). The global nav stays
-            mounted beside Chats now; this header remains the chat-local scope
-            control restored by cave-l3ay after #2750 removed it as a supposed
-            duplicate. */}
+        {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
+            the primary Shell nav during Chat; Home exits Chat and restores the
+            normal navigation. This scope control was restored by cave-l3ay
+            after #2750 removed it as a supposed duplicate. */}
         <header className="cnav__header">
           <div className="cnav__switcher">
             <FamiliarSwitcher

@@ -360,9 +360,8 @@ export function Workspace() {
     }
     setModeRaw(next);
   }, []);
-  // Chat mode keeps the global nav in the nav pane and mounts the project-
-  // grouped Chats list beside it. The Chats header button explicitly routes
-  // back Home rather than restoring a prior surface.
+  // Chat mode replaces the global nav with the project-grouped Chats sidebar.
+  // Its Home button exits Chat, restoring the normal navigation.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -2580,7 +2579,7 @@ export function Workspace() {
       }}
       onOpenSession={(id) => {
         openFamiliarSession(id);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}
@@ -2608,7 +2607,7 @@ export function Workspace() {
       onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onOpenSessionInSplit={(session) => {
         // Open beside the current chat: same pending-action pipeline as a
@@ -2617,15 +2616,15 @@ export function Workspace() {
         // active familiar is left alone — the pane carries its own.
         setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
         setMode("chat");
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onNewChat={(projectRoot) => {
         startFamiliarChat(activeId, projectRoot);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onNavigate={(nextMode) => {
         setMode(nextMode);
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
       }}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
@@ -2637,18 +2636,18 @@ export function Workspace() {
         handleSessionsDeleted([session.id]);
       }}
       onOpenUrl={(url) => {
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
         openUrlInApp(url);
       }}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
-        shellRef.current?.dismissListMobile();
+        shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
       }}
     />
   );
 
-  const list = mode === "chat" ? chatSidebar : undefined;
+  const contextualNav = mode === "chat" ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -2982,9 +2981,8 @@ export function Workspace() {
         onCloseSplitTile={closeSplitTile}
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
-        navPolicy={mode === "chat" ? "visit-collapsed" : "remembered"}
-        listPolicy={mode === "chat" ? "persistent" : "collapsible"}
-        topBar={({ navDrawerOpen, listDrawerOpen }) => (
+        navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
+        topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
@@ -3059,14 +3057,14 @@ export function Workspace() {
               }}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
-              onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
+              onToggleList={undefined}
               navDrawerOpen={navDrawerOpen}
-            listDrawerOpen={listDrawerOpen}
-          />
+              listDrawerOpen={false}
+            />
           </>
         )}
-        nav={sidebar}
-        list={list}
+        nav={contextualNav}
+        list={undefined}
         detail={detail}
       />
 

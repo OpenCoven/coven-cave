@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-// The footer (Dashboard + Settings + version) now lives in a shared component so
-// it stays identical in the global nav and Chat's independent WorkspaceSidebar list.
+// The footer (Dashboard + Settings + version) lives in a shared component so it
+// stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
 const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.match(

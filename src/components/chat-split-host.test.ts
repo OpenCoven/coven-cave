@@ -214,10 +214,10 @@ assert.equal(
   "search-result, folder, and recent rows all handle ⌥↵",
 );
 
-// ── Live IA wiring (the shell list panel is the real thread rail) ────────────
+// ── Live IA wiring (the contextual nav is the outer thread rail) ─────────────
 // Workspace mounts ChatSurface with hideThreadRail while WorkspaceSidebar owns
-// the project-grouped chat list in the shell list pane (desktop) / list drawer
-// (mobile), so splits must reach the chat through that outer list: its rows are
+// the one project-grouped chat list in the primary contextual nav (desktop) /
+// nav drawer (mobile). Splits still enter through that outer list: its rows are
 // drag sources + ⌥↵/⌥-click split openers, routed through the pending action.
 
 const shellNav = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");

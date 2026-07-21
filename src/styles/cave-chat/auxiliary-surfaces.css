@@ -955,7 +955,8 @@
 }
 
 /* Full-height reopen rail on the chat surface's right edge — the reflection of
-   the left-side shell chrome beside Chat (collapsed global nav / Chats list):
+   the left-side shell chrome beside Chat (WorkspaceSidebar is the contextual
+   primary nav in Chat; SidebarMinimal returns outside Chat):
    icon over a vertical uppercase label ("Code"), reading top→bottom with the
    glyph face to the right/outside (vertical-rl). An in-flow flex child (NOT
    absolutely positioned): the rail reserves its own layout width so content
