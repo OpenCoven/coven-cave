@@ -12,6 +12,8 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
+import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
+import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
 import { createSwrCache } from "@/lib/swr-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
@@ -156,9 +158,29 @@ async function applyAutoArchiveSweep(
   );
 }
 
+/**
+ * Apply the opt-in familiar-workspace collapse to an already-scoped list.
+ * Pulled out so both the happy path and the degraded (daemon-down, local-only)
+ * path enforce the same opt-in contract — otherwise a local chat created under
+ * a familiar-workspace root would leak into the unscoped view while the daemon
+ * is unavailable. No-op (and no FS read) when the flag is off.
+ */
+async function applyFamiliarWorkspaceCollapse(
+  sessions: SessionRow[],
+  collapseFamiliarWorkspace: boolean,
+): Promise<SessionRow[]> {
+  if (!collapseFamiliarWorkspace) return sessions;
+  return collapseFamiliarWorkspaceSessions(
+    sessions,
+    familiarWorkspacesRoot(),
+    Array.from((await readFamiliarWorkspaces()).values()),
+  );
+}
+
 async function computeSessionsList(
   includeArchived: boolean,
   familiarId: string | null,
+  collapseFamiliarWorkspace: boolean,
 ): Promise<SessionsListResult> {
   const [res, state, projects] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
@@ -184,7 +206,10 @@ async function computeSessionsList(
           error: res.error ?? `daemon http ${res.status}`,
           sessions: await applyMergedPrAutoArchive(
             await enrichSessionsWithGitContext(
-              await scopeForFamiliar(localSessions, projects, familiarId),
+              await applyFamiliarWorkspaceCollapse(
+                await scopeForFamiliar(localSessions, projects, familiarId),
+                collapseFamiliarWorkspace,
+              ),
             ),
             state,
             includeArchived,
@@ -217,11 +242,12 @@ async function computeSessionsList(
   );
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
+  const visible = await applyFamiliarWorkspaceCollapse(scoped, collapseFamiliarWorkspace);
   return {
     payload: {
       ok: true,
       sessions: await applyMergedPrAutoArchive(
-        await enrichSessionsWithGitContext(scoped),
+        await enrichSessionsWithGitContext(visible),
         state,
         includeArchived,
       ),
@@ -233,13 +259,17 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
   const familiarId = url.searchParams.get("familiarId")?.trim() || null;
+  const collapseFamiliarWorkspace =
+    url.searchParams.get("collapseFamiliarWorkspace") === "1";
   if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
   }
-  // Cache per (archived, familiar) — scoped views differ by grant set.
-  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}`;
+  // Cache per (archived, familiar, collapse) — each view differs by its result set.
+  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
+    collapseFamiliarWorkspace ? "collapse" : "full"
+  }`;
   const result = await sessionsListCache.get(cacheKey, () =>
-    computeSessionsList(includeArchived, familiarId),
+    computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace),
   );
   return NextResponse.json(result.payload, result.init);
 }

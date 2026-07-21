@@ -113,3 +113,4 @@ ds-bundle/
 .design-sync/learnings/
 .design-sync/node_modules
 /.worktrees
+/.cave-trash
