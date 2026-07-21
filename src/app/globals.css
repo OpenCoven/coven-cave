@@ -19,3 +19,8 @@
 @import "../styles/globals/surface-chat-overlays.css";
 @import "../styles/globals/surface-marketplace.css";
 @import "../styles/globals/surface-role-workspaces.css";
+@import "../styles/globals/surface-research-desk.css";
+@import "../styles/globals/surface-research-prompt.css";
+@import "../styles/globals/surface-research-library.css";
+@import "../styles/globals/surface-research-studio.css";
+@import "../styles/globals/surface-research-resources.css";

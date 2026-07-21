@@ -1,0 +1,112 @@
+/* ═══ Research Desk — tab-host shell (cave-dl74, Phase A) ═══
+   The five-tab research surface: tab strip row, engine-status line, checkpoint
+   dot badge, panel sizing, and the Phase A placeholder sections. Tab button
+   visuals come from the shared Tabs component (src/components/ui/tabs.tsx).
+   Desk-tab content styles still live in surface-role-workspaces.css:682–1154
+   until Phase C prunes what is dead. Semantic tokens only — 16 themes ×
+   dark/light must hold; the two oklch literals below are the desk's existing
+   ok/warn readings per the design→token mapping table. */
+
+/* ── Tab strip: tabs left, engine status right, one hairline under both.
+   Design header is 48px (line 34); under the surface header a 40px strip
+   matches the app's compact-header band. ── */
+.research-desk__tabs {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.research-desk__tabs [role="tablist"] {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.research-desk__tabs [role="tablist"]::-webkit-scrollbar { display: none; }
+
+/* ── Engine status: "Engine ready · N runs live" (design line 45). Tone is
+   carried by the dot and the words — never color alone. ── */
+.research-desk__engine {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 7px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.research-desk__engine-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: oklch(0.75 0.14 155); /* engine ready — existing desk ok */
+}
+.research-desk__engine[data-tone="warn"] .research-desk__engine-dot {
+  background: oklch(0.8 0.13 75); /* daemon offline — existing desk warn */
+}
+
+/* ── Checkpoint dot on the Desk tab label (sr-only text rides along). ── */
+.research-desk__tab-flag {
+  display: inline-flex;
+  align-items: center;
+}
+.research-desk__tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--research-accent);
+}
+
+/* ── Active tab panel fills the surface below the strip. ── */
+.research-desk__panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* Prompt tab wrapper (composer + link shelf keep their existing styles). */
+.research-prompt {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Phase A placeholder sections (Library / Studio / Resources) — replaced by
+   the B agents; real counts only, no fabricated content. */
+.research-tab-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) 22px;
+}
+.research-tab-placeholder h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.research-tab-placeholder p {
+  margin: 0;
+  max-width: 52ch;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Responsive: follow the desk's existing container breakpoints
+   (900/760/560 in surface-role-workspaces.css). ── */
+@container research-desk (max-width: 760px) {
+  .research-desk__tabs { gap: var(--space-2); }
+}
+
+@container research-desk (max-width: 560px) {
+  .research-desk__tabs { padding: 0 12px; }
+  .research-tab-placeholder { padding: var(--space-4) 12px; }
+}
