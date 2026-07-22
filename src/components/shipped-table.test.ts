@@ -255,7 +255,7 @@ assert.match(component, /nextShippedSort/, "component calls nextShippedSort");
 assert.match(component, /rel="noreferrer"/, "component has rel=noreferrer on links");
 assert.match(component, /tabIndex=\{0\}/, "component has tabIndex={0} on viewport");
 assert.match(component, /No shipped work matches this filter\./, "component has empty state text");
-assert.match(component, /relativeTime\(pr\.mergedAt, nowMs\)/, "component calls relativeTime with nowMs");
+assert.match(component, /relativeTime\(pr\.mergedAt, nowMs, "compact"\)/, "component calls relativeTime with compact density");
 
 // Page pins
 assert.match(page, /<ShippedTable/, "page contains <ShippedTable");
@@ -267,9 +267,10 @@ assert.doesNotMatch(
 );
 
 // CSS pins
-assert.match(css, /\.dr-shipped__viewport[\s\S]*?max-height:\s*300px/, "CSS viewport has max-height: 300px");
-assert.match(css, /\.dr-shipped__viewport[\s\S]*?overflow:\s*auto/, "CSS viewport has overflow: auto");
-assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[\s\S]*?position:\s*sticky/, "CSS thead th has position: sticky");
+assert.match(css, /\.dr-shipped__viewport\s*\{[^}]*max-height:\s*300px/, "CSS viewport has max-height: 300px");
+assert.match(css, /\.dr-shipped__viewport\s*\{[^}]*overflow:\s*auto/, "CSS viewport has overflow: auto");
+assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[^}]*position:\s*sticky/, "CSS thead th has position: sticky");
+assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[^}]*box-shadow:\s*0 1px 0 var\(--border-hairline\)/, "CSS thead th has box-shadow hairline");
 
 console.log("shipped-table.test.ts: ok");
 

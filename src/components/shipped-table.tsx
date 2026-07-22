@@ -75,6 +75,7 @@ export function ShippedTable({
       </div>
       <div
         className="dr-shipped__viewport"
+        role="region"
         tabIndex={0}
         aria-label="Merged pull requests table"
       >
@@ -131,7 +132,9 @@ export function ShippedTable({
                     {pr.repo}#{pr.number}
                   </td>
                   <td className="dr-shipped__time">
-                    {relativeTime(pr.mergedAt, nowMs)}
+                    {/* Density pinned to "compact" so SSR HTML and client hydration render
+                        identically, regardless of the user's localStorage density preference. */}
+                    {relativeTime(pr.mergedAt, nowMs, "compact")}
                   </td>
                 </tr>
               ))

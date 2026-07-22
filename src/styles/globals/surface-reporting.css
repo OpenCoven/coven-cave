@@ -144,7 +144,7 @@
 }
 .dr-metric {
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   padding: var(--space-5);
   /* Ultra low-profile, Apple-style grouped card: generous radius, a faint
      hairline over a barely-raised translucent fill — no accent bar, no shadow,
@@ -279,7 +279,7 @@ a.dr-row:active { transform: translateY(1px); }
   font-weight: 560;
   line-height: 1.35;
   color: var(--text-primary);
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -290,7 +290,7 @@ a.dr-row:active { transform: translateY(1px); }
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--text-secondary);
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 1;
@@ -326,7 +326,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: var(--bg-raised);
-  overflow: hidden;
+  overflow: auto;
 }
 .dr-shipped__toolbar {
   display: flex;
@@ -363,6 +363,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  scroll-padding-top: 34px;
   outline: none;
 }
 .dr-shipped__viewport:focus-visible {
@@ -382,7 +383,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   z-index: 1;
   background: var(--bg-raised);
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-hairline);
+  box-shadow: 0 1px 0 var(--border-hairline);
   font-weight: 600;
 }
 .dr-shipped__table thead th button {
@@ -490,7 +491,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: var(--text-base);
   font-weight: 620;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -822,7 +823,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .retro-familiar-panel small {
   display: block;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -850,7 +851,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   position: relative;
   display: grid;
   grid-template-columns: 3px minmax(0, 1fr);
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: var(--bg-raised);
@@ -883,7 +884,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .retro-run-row__meta {
   display: block;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1083,7 +1084,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .growth-picker__value b {
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-base);
@@ -1180,7 +1181,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: block;
   min-height: 28px;
   margin-top: 10px;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 22px;
@@ -1289,7 +1290,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 /* Accept-rate meter — tone thresholds match GROWTH_THRESHOLDS (0.35 / 0.5). */
 .growth-track-meter {
-  overflow: hidden;
+  overflow: auto;
   height: 6px;
   margin-top: var(--space-2);
   border-radius: var(--radius-pill);
@@ -1632,7 +1633,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   height: 4px;
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--border-hairline) 60%, transparent);
-  overflow: hidden;
+  overflow: auto;
 }
 .fa-progression__meter i {
   display: block;
@@ -1816,7 +1817,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   flex: 1;
 }
 .fa-session__title {
-  overflow: hidden;
+  overflow: auto;
   color: var(--text-primary);
   font-size: var(--text-sm);
   text-decoration: none;
@@ -1825,7 +1826,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .fa-session__title:hover { text-decoration: underline; }
 .fa-session__meta {
-  overflow: hidden;
+  overflow: auto;
   color: var(--text-muted);
   font-size: var(--text-xs);
   text-overflow: ellipsis;
@@ -1946,7 +1947,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   gap: 10px;
 }
 .trace-kind {
-  overflow: hidden;
+  overflow: auto;
   padding: 2px var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);
@@ -2029,7 +2030,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: var(--text-sm);
 }
 .fa-feedback-row__name {
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
@@ -2041,7 +2042,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   height: 6px;
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--color-danger) 28%, var(--bg-base));
-  overflow: hidden;
+  overflow: auto;
 }
 .fa-feedback-row__bar i {
   position: absolute;
@@ -2164,7 +2165,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-trend-chip--regressing { color: var(--color-warning); }
 .fa-factor-bar {
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   height: 10px;
   /* Keeps bars visible inside the narrowest metric cells. */
   min-width: 44px;
@@ -2598,7 +2599,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: inline-block;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: auto;
   color: var(--text-primary);
   font-size: var(--text-base);
   font-weight: 500;
@@ -2821,7 +2822,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .tsc-meta {
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   color: var(--text-muted);
   font-size: var(--text-xs);
   text-overflow: ellipsis;
@@ -2845,7 +2846,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .tsc-score-item b {
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -2957,7 +2958,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .cave-fill-btn {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  overflow: auto;
   transition:
     color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard);
@@ -3056,7 +3057,7 @@ details[open] > .cave-edit-card__summary::before {
 }
 .cave-edit-card__title {
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
@@ -3127,7 +3128,7 @@ details[open] > .cave-edit-card__summary::before {
 .cave-edit-card__error {
   flex: 0 1 auto;
   max-width: 12rem;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-xs);
@@ -3143,7 +3144,7 @@ details[open] > .cave-edit-card__summary::before {
 }
 .cave-review-modal__path {
   margin: 0;
-  overflow: hidden;
+  overflow: auto;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -3185,7 +3186,7 @@ details[open] > .cave-edit-card__summary::before {
     inset 0 1px 0 0 color-mix(in oklch, var(--foreground) 7%, transparent),
     0 24px 60px -14px rgba(0, 0, 0, 0.5),
     0 8px 22px -10px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
+  overflow: auto;
   transform-origin: top right;
   animation: quick-chat-overlay-in 180ms var(--ease-emphasized, cubic-bezier(0.2, 0.8, 0.2, 1));
 }
