@@ -121,48 +121,6 @@
   border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
 }
 
-/* Chip row: runtime/model metadata pills (mono) + surface link pills. */
-.familiar-tab__pill {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.familiar-tab__links-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 var(--space-1);
-  background: var(--border-hairline);
-}
-
-.familiar-tab__link-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: 26px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--accent-presence);
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-}
-
-.familiar-tab__link-pill:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-}
-
 /* ── Card grid: 1.5fr/1fr on a wide pane, stacked (and page-scrolled) below ── */
 
 .familiar-tab__grid {
@@ -394,15 +352,44 @@
   color: var(--text-muted);
 }
 
-/* Coarse pointers: the pill links and group toggles are compact targets tuned
-   for a cursor — grow their hit areas on touch. */
-@media (pointer: coarse) {
-  .familiar-tab__links a,
-  .familiar-tab__links button {
-    min-height: 32px;
-    padding-block: var(--space-1);
-  }
+/* ── Section tabs (skills-page handoff) ──────────────────────────────────────
+   Hero props row: the three live binding selects (Runtime / Model / Voice)
+   sit in one grid band under the description, mirroring the fam-chips grid
+   from the design prototype. */
+.familiar-tab__props {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  max-width: 560px;
+}
 
+@container (max-width: 560px) {
+  .familiar-tab__props {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The tab band draws the hairline itself so the Tabs underline can sit flush
+   on it (bordered={false} on the component). */
+.familiar-tab__tabs {
+  border-bottom: 1px solid var(--border-hairline);
+  flex: none;
+}
+
+/* The hero and tab band stay put; each section scrolls as one region. */
+.familiar-tab__section {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Coarse pointers: the group toggles and CTAs are compact targets tuned for a
+   cursor — grow their hit areas on touch. */
+@media (pointer: coarse) {
   .familiar-tab__group-toggle,
   .familiar-tab__row-toggle {
     padding-block: var(--space-3);
