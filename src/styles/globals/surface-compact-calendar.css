@@ -1148,11 +1148,15 @@
   }
 }
 
-/* Home doorway to the Ask Salem section — quiet, hairline, muted-until-hover. */
+/* Home doorway to the Ask Salem section — quiet, hairline, muted-until-hover.
+   `margin-top: auto` pins it to the bottom of the stretched hearth card (the
+   card's interior slack lands above it); padding keeps the minimum gap from
+   the snippets section when there is no slack. */
 .home-ask-salem {
   display: flex;
   justify-content: center;
-  margin-top: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
 }
 .home-ask-salem__btn {
   display: inline-flex;

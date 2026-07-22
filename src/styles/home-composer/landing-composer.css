@@ -18,7 +18,7 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: var(--space-10) var(--space-8) 56px;
+  padding: var(--space-10) var(--space-8) var(--space-10);
   gap: var(--space-4);
   overflow-y: auto;
   box-sizing: border-box;
@@ -71,10 +71,13 @@
  *   One centered panel on the washed base holding the greeting, the composer,
  *   and the Continue / Open work / Prompt snippets sections. Translucent panel
  *   fill so the radial wash reads through; the root scrolls when the card
- *   outgrows a short viewport. */
+ *   outgrows a short viewport. On tall viewports the card grows to the root's
+ *   bottom inset (no dead wash strip below it); `0` shrink keeps the intrinsic
+ *   height as the floor so short windows still scroll. */
 .home-hearth-card {
   display: flex;
   flex-direction: column;
+  flex: 1 0 auto;
   width: 100%;
   max-width: min(930px, 100%);
   margin-inline: auto;
