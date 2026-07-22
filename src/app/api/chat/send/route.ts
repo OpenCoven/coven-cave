@@ -1313,6 +1313,12 @@ export async function POST(req: Request) {
       }
 
       let sessionId: string | null = body.sessionId ?? null;
+      // Cave keeps `sessionId` as the stable conversation id for resumed
+      // chats. Grok's end frame still carries the native session id, which
+      // may change when an access-mode switch starts a fresh native session.
+      // Keep it separately so the next Grok turn resumes the actual CLI
+      // session rather than Cave's conversation id.
+      let grokSessionId: string | null = null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -1544,6 +1550,7 @@ export async function POST(req: Request) {
               push({ kind: "assistant_chunk", text: event.text });
               return;
             case "end":
+              if (event.sessionId) grokSessionId = event.sessionId;
               if (!sessionId && event.sessionId) announceSession(event.sessionId);
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
@@ -2078,7 +2085,7 @@ export async function POST(req: Request) {
       // is tracked on the file for the next resume but never becomes the
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
-      const harnessSessionId = sessionId;
+      const harnessSessionId = grokDirect ? grokSessionId ?? sessionId : sessionId;
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.

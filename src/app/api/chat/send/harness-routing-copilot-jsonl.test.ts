@@ -71,6 +71,16 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /case "end":\s*if \(event\.sessionId\) grokSessionId = event\.sessionId;/,
+  "Grok end events must retain the native session id even when Cave is resuming a stable conversation id",
+);
+assert.match(
+  chatRoute,
+  /const harnessSessionId = grokDirect \? grokSessionId \?\? sessionId : sessionId;/,
+  "a fresh Grok session created after an access-mode switch must be persisted as the next resume target",
+);
+assert.match(
+  chatRoute,
   /grokDirect\s*\? \{\s*command: process\.platform === "win32" \? "grok\.exe" : "grok"/,
   "Windows uses grok.exe directly while Unix uses grok",
 );
