@@ -125,6 +125,33 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
 
+  // OpenClaw is a Cave-owned bridge, not a daemon harness. Reserve and link
+  // the conversation id here so the task cockpit can start the normal Chat
+  // stream with the full task context instead of asking the daemon to spawn an
+  // unsupported `openclaw` adapter.
+  if (binding.harness === "openclaw") {
+    const sessionId = crypto.randomUUID();
+    const updated = await updateCard(card.id, {
+      sessionId,
+      familiarId,
+      ...(card.projectId || body.projectRoot ? { cwd: projectRoot } : {}),
+    });
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
+    }
+    await recordSessionFamiliar(sessionId, familiarId);
+    return NextResponse.json({
+      ok: true,
+      reused: false,
+      card: updated,
+      sessionId,
+      familiarId,
+      projectRoot,
+      initialPrompt: buildInitialTaskChatPrompt(card),
+      bridge: "openclaw",
+    });
+  }
+
   // ── Intelligent worktree isolation ────────────────────────────────────────
   // If another card already has a live session for a *different* issue in the
   // same GitHub repo, this issue gets its own dedicated git worktree so the

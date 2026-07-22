@@ -128,6 +128,11 @@ export function BoardView({
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [workCardId, setWorkCardId] = useState<string | null>(null);
+  const [pendingBridgeStart, setPendingBridgeStart] = useState<{
+    cardId: string;
+    sessionId: string;
+    initialPrompt: string;
+  } | null>(null);
   const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
@@ -137,6 +142,16 @@ export function BoardView({
   // which familiar to rebind and which task chat to re-run.
   const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
+
+  // The OpenClaw bridge reserves its conversation id before the first streamed
+  // turn. Once the normal chat path persists that local conversation, stop
+  // treating this as a first-launch handoff so reopening the task never sends
+  // the task prompt twice.
+  useEffect(() => {
+    if (pendingBridgeStart && sessions.some((session) => session.id === pendingBridgeStart.sessionId)) {
+      setPendingBridgeStart(null);
+    }
+  }, [pendingBridgeStart, sessions]);
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
   // snapshots the cleared cards so they can be re-created via POST.
@@ -740,7 +755,12 @@ export function BoardView({
   const startTaskChat = async (
     id: string,
     projectRoot?: string,
-  ): Promise<{ sessionId: string; familiarId: string | null } | null> => {
+  ): Promise<{
+    sessionId: string;
+    familiarId: string | null;
+    initialPrompt?: string;
+    bridge?: string;
+  } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
@@ -761,6 +781,8 @@ export function BoardView({
         card?: Card;
         sessionId?: string;
         familiarId?: string | null;
+        initialPrompt?: string;
+        bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
         throw new Error(json.error ?? "failed to open task work");
@@ -770,7 +792,12 @@ export function BoardView({
         setCards((prev) => prev.map((candidate) => candidate.id === id ? updatedCard : candidate));
       }
       onSessionsChanged();
-      return { sessionId: json.sessionId, familiarId: json.familiarId ?? null };
+      return {
+        sessionId: json.sessionId,
+        familiarId: json.familiarId ?? null,
+        initialPrompt: json.initialPrompt,
+        bridge: json.bridge,
+      };
     } catch (err) {
       setChatLinkError(err instanceof Error ? err.message : "failed to open task work");
       setChatLinkErrorCardId(id);
@@ -803,6 +830,9 @@ export function BoardView({
 
     const started = await startTaskChat(id, project?.root);
     if (!started) return;
+    if (started.bridge === "openclaw" && started.initialPrompt) {
+      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
+    }
     if (isMobile) {
       onJumpToSession?.(started.sessionId, started.familiarId);
       return;
@@ -868,6 +898,11 @@ export function BoardView({
           setWorkCardId(null);
         }}
         onUnlinkSession={() => patchCard(workCard.id, { sessionId: null })}
+        initialPrompt={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialPrompt
+            : null
+        }
         onSlashCommand={onSlashFromChat}
         onOpenOnboarding={onOpenOnboarding}
         onOpenUrl={onOpenUrl}

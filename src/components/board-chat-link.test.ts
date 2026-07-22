@@ -6,6 +6,8 @@ const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "
 const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
 const chatSendRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const taskWorkCockpit = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   boardView,
@@ -101,6 +103,36 @@ assert.match(
   route,
   /callDaemon<\{ id: string; status: string \}>/,
   "Board chat endpoint should create a real daemon session when a card is unlinked",
+);
+assert.match(
+  route,
+  /if \(binding\.harness === "openclaw"\)[\s\S]{0,1200}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
+  "OpenClaw task cards reserve a bridge conversation before the daemon-only path",
+);
+assert.match(
+  route,
+  /if \(binding\.harness === "openclaw"\)[\s\S]{0,5000}callDaemon/,
+  "OpenClaw bridge handling must run before the daemon-only session path",
+);
+assert.doesNotMatch(
+  route.match(/if \(binding\.harness === "openclaw"\)[\s\S]{0,1600}/)?.[0] ?? "",
+  /callDaemon/,
+  "OpenClaw task cards must never ask the daemon to spawn OpenClaw",
+);
+assert.match(
+  boardView,
+  /started\.bridge === "openclaw"[\s\S]{0,300}setPendingBridgeStart/,
+  "Board keeps the first OpenClaw task prompt until its local conversation appears",
+);
+assert.match(
+  taskWorkCockpit,
+  /initialPrompt && familiar[\s\S]{0,600}autoSendInitialPrompt/,
+  "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",
+);
+assert.match(
+  chatView,
+  /sessionId && !autoSendInitialPrompt/,
+  "ChatView only auto-sends into an existing session for the explicit task-bridge handoff",
 );
 assert.match(
   route,
