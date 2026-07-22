@@ -1,0 +1,208 @@
+/* Familiar tab — Identity section (skills-page design handoff).
+ *
+ * Imported by familiar-tab-identity.tsx (surface CSS ships with its component,
+ * not globals — #3264). Card scaffolding (.familiar-tab__card, __card-head,
+ * __facts, __rows, __empty …) is reused read-only from familiar-tab.css; this
+ * file only adds the identity-specific grid and row furniture, all under the
+ * familiar-identity__ prefix. Container queries resolve against
+ * .familiar-tab__main (container-type: inline-size). */
+
+.familiar-identity__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* About | (Runtime + Voice): 1.2fr/1fr on a wide pane, stacked below. */
+.familiar-identity__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+@container (min-width: 840px) {
+  .familiar-identity__grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+}
+
+.familiar-identity__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.familiar-identity__about {
+  display: flex;
+  flex-direction: column;
+}
+
+.familiar-identity__desc {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.familiar-identity__desc--empty {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.familiar-identity__desc--empty > p {
+  margin: 0;
+}
+
+/* The facts grid sits at the bottom of the About card so short descriptions
+   don't leave the card ragged next to the runtime column. */
+.familiar-identity__facts {
+  margin-top: auto;
+}
+
+.familiar-identity__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+/* Quiet CTA / drill-through: muted until hover, accent = invitation to act. */
+.familiar-identity__cta {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-identity__cta:hover {
+  color: var(--accent-presence);
+}
+
+/* Neutral "bound" marker on the Voice card — same quiet chip as __count. */
+.familiar-identity__voice-pill {
+  font-size: var(--text-2xs);
+}
+
+/* Roles header pill — success tint recipe (solid text / 14% fill / 38% border). */
+.familiar-identity__pill--active {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--color-success);
+  white-space: nowrap;
+}
+
+.familiar-identity__role {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.familiar-identity__role:first-child {
+  border-top: none;
+}
+
+.familiar-identity__caret {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-identity__caret[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+/* Expanded role: the granted skill ids as quiet mono chips. */
+.familiar-identity__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-3) var(--space-6);
+}
+
+.familiar-identity__chip {
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Identity contract — compliance pill + real per-file rows. */
+.familiar-identity__contract-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--color-success);
+  white-space: nowrap;
+}
+
+.familiar-identity__contract-pill--fail {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.familiar-identity__files {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.familiar-identity__file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.familiar-identity__file-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.familiar-identity__file-tag {
+  font-family: var(--font-sans, inherit);
+  font-weight: 400;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.familiar-identity__file-tag--missing {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+}
+
+.familiar-identity__file-blurb {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

@@ -1,0 +1,325 @@
+/* Familiar tab — Analytics section (design-handoff rebuild).
+ *
+ * BEM prefix `familiar-analytics-tab__` — deliberately NOT `familiar-analytics__`,
+ * which belongs to the standalone dashboard analytics surface.
+ *
+ * Carousel slides live in a grid stack (all children on grid-area 1/1) and the
+ * hidden ones toggle `visibility: hidden`, so the visx charts stay mounted and
+ * never re-measure/re-animate when the user pages between slides. */
+
+.familiar-analytics-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── Alerts / toolbar ─────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--color-warning) 8%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.familiar-analytics-tab__retry {
+  margin-left: auto;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  height: 24px;
+  padding: 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.familiar-analytics-tab__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.familiar-analytics-tab__freshness {
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── KPI row ──────────────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@container (max-width: 720px) {
+  .familiar-analytics-tab__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.familiar-analytics-tab__kpi {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.familiar-analytics-tab__kpi-label {
+  flex: 1;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.familiar-analytics-tab__kpi-value {
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.familiar-analytics-tab__kpi-note {
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.familiar-analytics-tab__kpi-note--up {
+  color: var(--color-success);
+}
+
+/* ── Card grid ────────────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@container (max-width: 720px) {
+  .familiar-analytics-tab__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.familiar-analytics-tab__card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.familiar-analytics-tab__card--list {
+  padding: 0;
+}
+
+.familiar-analytics-tab__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.familiar-analytics-tab__card-head--list {
+  margin-bottom: 0;
+  align-items: baseline;
+  padding: var(--space-4) var(--space-5) var(--space-2);
+}
+
+.familiar-analytics-tab__card-title {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.familiar-analytics-tab__card-meta {
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Carousel chrome ──────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.familiar-analytics-tab__dots {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.familiar-analytics-tab__dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  cursor: pointer;
+}
+
+.familiar-analytics-tab__dot.is-active {
+  background: var(--accent-presence);
+}
+
+/* Grid stack: every slide occupies 1/1; hidden slides keep layout + mount. */
+.familiar-analytics-tab__stack {
+  display: grid;
+}
+
+.familiar-analytics-tab__stack--charts {
+  flex: 1;
+}
+
+.familiar-analytics-tab__slide {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.familiar-analytics-tab__slide.is-hidden {
+  visibility: hidden;
+}
+
+.familiar-analytics-tab__donut-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-2) 0;
+}
+
+/* ── Recent runs ──────────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__runs,
+.familiar-analytics-tab__heals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.familiar-analytics-tab__run {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.familiar-analytics-tab__run:hover {
+  background: var(--bg-hover);
+}
+
+.familiar-analytics-tab__run-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.familiar-analytics-tab__run-title:hover {
+  text-decoration: underline;
+}
+
+.familiar-analytics-tab__run-when {
+  width: 70px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.familiar-analytics-tab__run-dur {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Needs a human ────────────────────────────────────────────────────── */
+
+.familiar-analytics-tab__count-pill {
+  white-space: nowrap;
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+  border-radius: var(--radius-pill);
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+}
+
+.familiar-analytics-tab__count-pill--warning {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+}
+
+.familiar-analytics-tab__heal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-5) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.familiar-analytics-tab__heal-title {
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.familiar-analytics-tab__heal-note {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.familiar-analytics-tab__quiet {
+  margin: 0;
+  padding: var(--space-2) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

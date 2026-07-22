@@ -201,6 +201,7 @@ const contracts: RouteContract[] = [
   { route: "/sessions/prune", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/sessions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/skills/file", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/skills/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/skills/eval-loop/[familiarId]", methods: ["GET"], kind: "json" },
   { route: "/skills/directory", methods: ["GET"], kind: "json" },
   { route: "/skills/build", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
