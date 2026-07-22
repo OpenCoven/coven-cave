@@ -105,10 +105,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 5,616 Windows on the combined tree). Pin the combined exact maximum
   // without relaxing the expanded-byte ceiling.
   // 2026-07-22 (composer cascade menus): the shared composer-add-menu +
-  // lazy data/submenu-position chunks add two traced files on Windows
-  // (CI measured 5,618). Keep the exact maximum without relaxing the
-  // expanded-byte ceiling.
-  fileCount: 5_618,
+  // lazy data/submenu-position chunks add traced files on Windows — CI
+  // measured 5,618 then 5,619 across two runs of the same tree (chunk
+  // hashing wobble), so retain nine files of headroom instead of pinning
+  // the exact maximum. Byte ceiling untouched.
+  fileCount: 5_628,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
