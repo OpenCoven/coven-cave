@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const modal = readFileSync(new URL("./new-card-modal.tsx", import.meta.url), "utf8");
+const projectFamiliars = readFileSync(new URL("../lib/use-project-familiars.ts", import.meta.url), "utf8");
 
 assert.ok(modal.includes('import { Button } from "@/components/ui/button"'), "new-card modal action buttons use the shared Button primitive");
 assert.ok(modal.includes('import { StandardSelect } from "@/components/ui/select"'), "new-card modal dropdowns use StandardSelect");
@@ -36,6 +37,21 @@ assert.match(
   modal,
   /function Select\(\{[\s\S]{0,180}disabled = false,[\s\S]{0,500}<StandardSelect[\s\S]{0,360}disabled=\{disabled\}/,
   "the modal Select wrapper forwards the familiar picker's disabled state to StandardSelect",
+);
+assert.match(
+  projectFamiliars,
+  /const \[loadedProjectId, setLoadedProjectId\] = useState<string \| null>\(null\)/,
+  "project-scoped familiar results retain the project that produced them",
+);
+assert.match(
+  projectFamiliars,
+  /loadedSuccessfully: enabled && Boolean\(projectId\) && loadedProjectId === projectId/,
+  "a familiar roster from the previous project never enables the picker during a project change",
+);
+assert.match(
+  projectFamiliars,
+  /catch \{[\s\S]{0,220}finally/,
+  "a failed familiar request leaves the dependent picker in its load-failure state without an unhandled rejection",
 );
 
 console.log("new-card-modal.test.ts: ok");
