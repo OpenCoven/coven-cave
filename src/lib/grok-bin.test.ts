@@ -10,6 +10,12 @@ assert.match(
   /"grok\.exe", "grok\.cmd", "grok\.bat", "grok"/,
   "Windows discovery must support both the native Grok executable and npm command shims",
 );
+
+assert.match(
+  source,
+  /export function grokCandidateBinNames[\s\S]*platform === "win32"[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\][\s\S]*microsoft\|wsl[\s\S]*\["grok", "grok\.exe"\]/,
+  "WSL finds a Windows native Grok executable while Windows also supports npm command shims",
+);
 assert.match(
   source,
   /covenSpawnEnv\(\)[\s\S]*split\(path\.delimiter\)/,

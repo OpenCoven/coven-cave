@@ -7,6 +7,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   covenLaunchCommandForBinary,
@@ -26,12 +27,24 @@ function candidateDirs(): string[] {
     );
 }
 
-function candidateBinNames(): string[] {
+/**
+ * A WSL process can invoke a native Windows `.exe` directly when the Windows
+ * PATH has been imported.  Unlike Windows, Linux's exec lookup does not use
+ * PATHEXT, so include the extension explicitly instead of requiring users to
+ * set GROK_BIN after installing Grok Build on the Windows side.
+ */
+export function grokCandidateBinNames(
+  platform: NodeJS.Platform = process.platform,
+  release: string = os.release(),
+): string[] {
   // Prefer the native installer when both it and an npm shim are present in
   // the same directory. PATH directory order remains the user-visible
   // precedence across installation methods.
-  return process.platform === "win32"
-    ? ["grok.exe", "grok.cmd", "grok.bat", "grok"]
+  if (platform === "win32") {
+    return ["grok.exe", "grok.cmd", "grok.bat", "grok"];
+  }
+  return /(?:microsoft|wsl)/i.test(release)
+    ? ["grok", "grok.exe"]
     : ["grok"];
 }
 
@@ -53,7 +66,7 @@ export function grokBin(): string {
   }
 
   for (const directory of candidateDirs()) {
-    for (const name of candidateBinNames()) {
+    for (const name of grokCandidateBinNames()) {
       const candidate = path.join(directory, name);
       try {
         const stat = statSync(candidate);
