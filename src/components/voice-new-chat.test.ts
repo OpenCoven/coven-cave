@@ -87,7 +87,9 @@ test("chat-view: voice nonce effect checks the target session before consuming t
 
 const workspace = read("./workspace.tsx");
 const homeComposer = read("./home-composer.tsx");
-const plusMenu = read("./composer-plus-menu.tsx");
+// The plus-menu is a thin wrapper now — the row markup (phone/mic labels)
+// lives in the shared cascade menu.
+const plusMenu = read("./composer-add-menu.tsx");
 
 test("workspace: startVoiceChat creates the session then routes with autoVoice", () => {
   assert.match(
@@ -271,8 +273,8 @@ test("both composers mount dictation with fill-and-review append", () => {
   }
   // The mic item lives in the shared "+" menu (chat revamp 1d): its label swap
   // and aria-pressed state survive the relocation.
-  assert.match(plusMenu, /ariaLabel=\{dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, "plus-menu mic label");
-  assert.match(plusMenu, /ariaPressed=\{dictation\.listening\}/, "plus-menu mic keeps aria-pressed");
+  assert.match(plusMenu, /ariaLabel=\{legacy\.dictation\.listening \? "Stop dictation" : "Dictate your message"\}/, "plus-menu mic label");
+  assert.match(plusMenu, /ariaPressed=\{legacy\.dictation\.listening\}/, "plus-menu mic keeps aria-pressed");
   // A live toggle must always accept "stop": a disabled mic mid-listen would
   // leave the user with a hot mic they can't turn off for the whole agent
   // turn (chat) or send window (home). Only START stays gated on busy/sending.

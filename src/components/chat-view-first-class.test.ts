@@ -83,8 +83,18 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Attach images, videos, or files"/,
-  "The direct attachment button should keep an explicit accessible label",
+  /attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
+  "The attachment action should ride the grouped Chat options menu (Add files or photos)",
+);
+
+const addMenuSource = readFileSync(
+  new URL("./composer-add-menu.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  addMenuSource,
+  /ariaLabel="Attach images, videos, or files"/,
+  "The shared add-menu attach row should keep an explicit accessible label",
 );
 
 assert.match(
@@ -113,13 +123,13 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
-  "Composer should keep direct attachment, voice, grouped options, and send actions in the footer row",
+  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
+  "Composer should keep voice, grouped options (attach inside), and send actions in the footer row",
 );
 assert.match(
-  source,
-  /aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"/,
-  "the direct Attach button keeps the paperclip affordance",
+  addMenuSource,
+  /ariaLabel="Attach images, videos, or files"[\s\S]{0,400}?icon="ph:paperclip"|icon="ph:paperclip"[\s\S]{0,400}?ariaLabel="Attach images, videos, or files"/,
+  "the menu's Attach row keeps the paperclip affordance",
 );
 
 assert.match(
