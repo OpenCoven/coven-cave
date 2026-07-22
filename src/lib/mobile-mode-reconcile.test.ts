@@ -20,6 +20,49 @@ test("clean optional-unavailable responses open the circuit until a forced retry
   assert.equal(calls, 2, "the explicit Retry/toggle path probes immediately");
 });
 
+test("the breaker half-opens after its TTL so the status tracks a changing world", async () => {
+  let healthy = false;
+  let clock = 0;
+  const reconcile = createMobileModeReconciler(
+    async () =>
+      healthy
+        ? Response.json({ ok: true, nativeHost: "cave.tail.test" })
+        : Response.json({ ok: false, unavailable: true, error: "Tailscale isn't running" }, { status: 503 }),
+    () => clock,
+  );
+
+  assert.equal((await reconcile(true)).retryBlocked, true, "first probe fails and arms the breaker");
+  clock += 30_000;
+  assert.equal((await reconcile(true)).skipped, true, "inside the TTL the cached failure is replayed");
+
+  // The human opens Tailscale and connects; the next tick past the TTL must
+  // discover it WITHOUT a manual Retry — this exact staleness shipped a
+  // "Tailscale isn't running" card over a live connection.
+  healthy = true;
+  clock += 20_000;
+  const healed = await reconcile(true);
+  assert.equal(healed.skipped, undefined, "past the TTL the poll runs a real probe");
+  assert.equal(healed.ok, true, "the card heals to the true status");
+  assert.equal((await reconcile(true)).ok, true, "a healed breaker stays closed");
+});
+
+test("a failed half-open probe re-arms the breaker with a fresh TTL", async () => {
+  let calls = 0;
+  let clock = 0;
+  const reconcile = createMobileModeReconciler(async () => {
+    calls += 1;
+    return Response.json({ ok: false, unavailable: true, error: "still down" }, { status: 503 });
+  }, () => clock);
+
+  await reconcile(true);
+  clock += 46_000;
+  await reconcile(true);
+  assert.equal(calls, 2, "the TTL lets one real probe through");
+  clock += 30_000;
+  assert.equal((await reconcile(true)).skipped, true, "the re-armed breaker caches again");
+  assert.equal(calls, 2);
+});
+
 test("legacy sidecar 503 responses still open the automatic-retry circuit", async () => {
   let calls = 0;
   const reconcile = createMobileModeReconciler(async () => {

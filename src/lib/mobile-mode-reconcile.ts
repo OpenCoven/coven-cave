@@ -21,21 +21,37 @@ export type MobileModeResponse = {
 type MobileModeRequest = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 /**
+ * A prerequisite 503 (Tailscale off, no token yet) opens the breaker so
+ * automatic refreshes stop hammering the probe ladder — but the world it
+ * failed against KEEPS CHANGING (the human opens Tailscale and connects).
+ * After this TTL the breaker half-opens: the next automatic poll runs one
+ * real probe, which either heals the card or re-arms the breaker. Without
+ * this, a single failure latched "Tailscale isn't running" on screen until a
+ * manual Retry, long after the connection was actually up.
+ */
+const RETRY_BLOCK_TTL_MS = 45_000;
+
+/**
  * Coalesces the Workspace and Settings reconcilers and opens a small circuit
  * breaker for deliberate 503 "prerequisite unavailable" responses. Automatic
- * focus/interval refreshes then reuse the recorded result without touching the
- * network. A user toggle or Retry passes force:true and probes immediately.
- * Unexpected responses and transport failures stay retryable.
+ * focus/interval refreshes reuse the recorded result until the breaker's TTL
+ * lapses, then probe again so the card tracks reality. A user toggle or Retry
+ * passes force:true and probes immediately. Unexpected responses and
+ * transport failures stay retryable.
  */
-export function createMobileModeReconciler(request: MobileModeRequest) {
-  let blocked: { enabled: boolean; result: MobileModeResponse } | null = null;
+export function createMobileModeReconciler(request: MobileModeRequest, now: () => number = Date.now) {
+  let blocked: { enabled: boolean; result: MobileModeResponse; at: number } | null = null;
   let inFlight: { enabled: boolean; promise: Promise<MobileModeResponse> } | null = null;
 
   return async function reconcile(
     enabled: boolean,
     options?: { force?: boolean },
   ): Promise<MobileModeResponse> {
-    if (!options?.force && blocked?.enabled === enabled) {
+    if (
+      !options?.force
+      && blocked?.enabled === enabled
+      && now() - blocked.at < RETRY_BLOCK_TTL_MS
+    ) {
       return { ...blocked.result, skipped: true };
     }
     if (inFlight?.enabled === enabled) return inFlight.promise;
@@ -58,7 +74,7 @@ export function createMobileModeReconciler(request: MobileModeRequest) {
           status: response.status,
           retryBlocked,
         };
-        blocked = result.retryBlocked ? { enabled, result } : null;
+        blocked = result.retryBlocked ? { enabled, result, at: now() } : null;
         return result;
       } catch (error) {
         blocked = null;

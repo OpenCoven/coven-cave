@@ -516,7 +516,6 @@ export function Workspace() {
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
-  const [mobileModeAutoRetryBlocked, setMobileModeAutoRetryBlocked] = useState(false);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch
@@ -556,13 +555,11 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
-    setMobileModeAutoRetryBlocked(false);
     setMobileModeEnabledState(enabled);
   }, []);
 
   const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {
     const result = await reconcileMobileModeRequest(enabled, options);
-    setMobileModeAutoRetryBlocked(result.retryBlocked);
     if (!result.ok) {
       // suppressError covers the one-time boot reconcile with the pref off:
       // the shared reconciler reports transport failures as !ok too, so both
@@ -596,9 +593,12 @@ export function Workspace() {
     });
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
-  // in a hidden tab and refreshes on return.
+  // in a hidden tab and refreshes on return. The poll keeps ticking through
+  // prerequisite failures — the shared reconciler's TTL breaker decides when a
+  // tick becomes a real probe, so the status heals itself once Tailscale
+  // comes up instead of latching stale until a manual Retry.
   usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
-    enabled: mobileModeEnabled && !mobileModeAutoRetryBlocked,
+    enabled: mobileModeEnabled,
   });
 
   // Milestone crossings → renown ledger → inbox toasts. Self-contained
