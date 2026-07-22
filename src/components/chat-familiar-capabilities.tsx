@@ -30,7 +30,7 @@ import { deriveFamiliarSectionData } from "@/lib/familiar-tab-section-model";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
-import type { AdapterReport } from "@/lib/harness-adapters";
+import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
 import { catalogForRuntime } from "@/lib/runtime-models";
@@ -99,11 +99,15 @@ function FamiliarIdentityHero({
   const runtimeValue = familiar.harnessOverride ?? "";
   const runtimeOptions: StandardSelectOption<string>[] = [
     { value: "", label: `Default${defaultHarness ? ` · ${defaultHarness.label}` : ""}`, detail: "Inherit the cave runtime" },
-    ...harnesses.map((h) => ({
-      value: h.id,
-      label: h.label,
-      detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
-    })),
+    // Same binding-picker policy as the Studio Brain tab: tool installs the
+    // daemon reports (Coven Code) aren't per-familiar runtime choices.
+    ...harnesses
+      .filter((h) => isBindableRuntimeChoice(h.id))
+      .map((h) => ({
+        value: h.id,
+        label: h.label,
+        detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
+      })),
   ];
 
   // Model select: sourced from the same runtime → provider catalog the chat

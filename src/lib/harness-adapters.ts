@@ -202,6 +202,20 @@ export function isSummonableLocalHarness(harness: string): boolean {
   return SUMMONABLE_LOCAL_HARNESSES.has(canonicalHarnessId(harness));
 }
 
+// Coven Code is an app/tool install the daemon still reports through
+// `coven adapter list`, not a per-familiar runtime — COMPATIBILITY_ADAPTERS
+// already policy-excludes it, but the daemon merge path re-introduces it into
+// /api/harnesses. Hidden from the runtime BINDING pickers (Studio Brain tab,
+// Familiar tab hero) for now; the adapters/settings surfaces still list it as
+// an installable tool.
+const BINDING_PICKER_EXCLUDED_HARNESSES = new Set(["coven-code"]);
+
+export function isBindableRuntimeChoice(harness: string): boolean {
+  // canonicalHarnessId echoes unknown ids in their original casing — the
+  // exclusion must still catch "Coven-Code" however the daemon spells it.
+  return !BINDING_PICKER_EXCLUDED_HARNESSES.has(canonicalHarnessId(harness).trim().toLowerCase());
+}
+
 // The single display-label authority for runtime/harness ids: curated Cave
 // copy wins, then the synced registry's accepted label, then the raw id.
 // UI surfaces (runtime logo, capabilities map, adapter rows) should delegate

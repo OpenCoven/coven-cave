@@ -10,6 +10,7 @@ import {
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
+  isBindableRuntimeChoice,
   isSummonableLocalHarness,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
@@ -113,6 +114,15 @@ assert.equal(isSummonableLocalHarness("grok"), true);
 assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
 assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
 assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
+
+// Binding pickers (Studio Brain tab, Familiar tab hero) hide tool installs the
+// daemon's adapter list re-introduces past the COMPATIBILITY_ADAPTERS policy
+// exclusion. Everything else stays choosable, even not-yet-summonable runtimes.
+assert.equal(isBindableRuntimeChoice("coven-code"), false, "Coven Code never appears in runtime binding pickers");
+assert.equal(isBindableRuntimeChoice("Coven-Code"), false, "the exclusion is casing-proof against daemon spelling drift");
+assert.equal(isBindableRuntimeChoice("codex"), true);
+assert.equal(isBindableRuntimeChoice("openclaw"), true, "non-summonable runtimes remain bindable for existing familiars");
+assert.equal(isBindableRuntimeChoice("opencode"), true);
 
 assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
