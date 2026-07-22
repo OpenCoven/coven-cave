@@ -24,12 +24,38 @@ assert.equal(parseSseFrame("event: ping"), null, "non-data lines are ignored");
 assert.equal(parseSseFrame("data: "), null, "empty data payload yields null");
 assert.equal(parseSseFrame("data: {not json"), null, "malformed JSON yields null, not a throw");
 
+// /api/chat/send frames every event as "id: N\ndata: {json}" so the stream can
+// be resumed — a parser requiring the frame to START with "data:" dropped every
+// event and the journal/canvas saw an empty reply (cave-am2b).
+assert.deepEqual(
+  parseSseFrame('id: 7\ndata: {"kind":"assistant_chunk","text":"hi"}'),
+  { kind: "assistant_chunk", text: "hi" },
+  "an id line ahead of the data payload is tolerated",
+);
+
+assert.deepEqual(
+  parseSseFrame('id: 7\r\ndata: {"kind":"done","sessionId":"s1"}'),
+  { kind: "done", sessionId: "s1" },
+  "CRLF line endings inside a frame are tolerated",
+);
+
+assert.deepEqual(
+  parseSseFrame('event: message\nid: 2\ndata: {"kind":"session","sessionId":"s2"}'),
+  { kind: "session", sessionId: "s2" },
+  "event: and id: lines are skipped, data still parses",
+);
+
+assert.equal(parseSseFrame("id: 9"), null, "a frame with no data line yields null");
+
 const originalFetch = globalThis.fetch;
 const encoder = new TextEncoder();
+// Mirror the real wire shape: /api/chat/send prefixes every frame with an
+// "id: N" line (resume cursor). The generator must parse these, not just
+// bare "data:" frames (cave-am2b).
 const responseFor = (frames) => new Response(
   new ReadableStream({
     start(controller) {
-      for (const frame of frames) controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+      frames.forEach((frame, i) => controller.enqueue(encoder.encode(`id: ${i + 1}\ndata: ${JSON.stringify(frame)}\n\n`)));
       controller.close();
     },
   }),

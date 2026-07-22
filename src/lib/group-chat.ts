@@ -148,6 +148,9 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
 /**
  * Parse the rolling SSE buffer into complete `data:` events, returning the
  * leftover partial frame. Same `\n\n`-delimited framing as chat-view.tsx.
+ * Frames may carry `id:` lines ahead of the `data:` payload (/api/chat/send
+ * frames every event as "id: N\ndata: {json}" for stream resume) — requiring
+ * the frame to *start with* "data:" dropped every id-carrying event (cave-am2b).
  */
 export function parseSseBuffer(buffer: string): { events: GroupStreamEvent[]; rest: string } {
   const events: GroupStreamEvent[] = [];
@@ -156,8 +159,11 @@ export function parseSseBuffer(buffer: string): { events: GroupStreamEvent[]; re
   while ((idx = rest.indexOf("\n\n")) >= 0) {
     const frame = rest.slice(0, idx);
     rest = rest.slice(idx + 2);
-    if (!frame.startsWith("data:")) continue;
-    const payload = frame.slice(5).trim();
+    const data: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+    }
+    const payload = data.join("\n").trim();
     if (!payload) continue;
     try {
       events.push(JSON.parse(payload) as GroupStreamEvent);

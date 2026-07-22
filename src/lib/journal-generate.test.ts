@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { buildReflectionPrompt } from "./journal-generate.ts";
+import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts";
 
 {
   const p = buildReflectionPrompt("2026-06-20: 2 responses.\n- Reply to Sage");
@@ -26,6 +26,37 @@ import { buildReflectionPrompt } from "./journal-generate.ts";
     /const trimmed = extractNextPaths\(text\)\.visible\.trim\(\);/,
     "the directive block is stripped from the reflection text",
   );
+}
+
+// ── id-framed SSE events must not read as an empty reply (cave-am2b) ─────────
+// /api/chat/send frames every event as "id: N\ndata: {json}" (resume cursor).
+// The old frame parser required frames to START with "data:", so every chunk
+// was dropped and generation always failed with "didn't return a reflection".
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "session", sessionId: "j1" },
+            { kind: "assistant_chunk", text: "A quiet, steady day" },
+            { kind: "assistant_chunk", text: " of tending memory." },
+            { kind: "done", sessionId: "j1", isError: false },
+          ];
+          frames.forEach((f, i) => controller.enqueue(encoder.encode(`id: ${i + 1}\ndata: ${JSON.stringify(f)}\n\n`)));
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null, "an id-framed stream is not an error");
+    assert.equal(result.text, "A quiet, steady day of tending memory.", "chunks accumulate across id-framed frames");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 console.log("journal-generate.test.ts: ok");
