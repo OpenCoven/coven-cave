@@ -4,7 +4,7 @@ import "@/styles/dashboard.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import type { PairingStep } from "@/lib/mobile-handoff";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -18,6 +18,7 @@ import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
+import { PairingStepsList } from "@/components/pairing-steps-list";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
@@ -2655,14 +2656,6 @@ type MobileHandoffCardState = {
   lastSeenAt: number | null;
 };
 
-/** One glyph per checklist state — never color alone (cave-jr4r.1). */
-const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; className: string; announce: string }> = {
-  ok: { icon: "ph:check-circle-bold", className: "text-[var(--color-success)]", announce: "done" },
-  fail: { icon: "ph:x-circle", className: "text-[var(--color-warning)]", announce: "failed" },
-  skipped: { icon: "ph:minus-circle", className: "text-[var(--text-muted)]", announce: "skipped" },
-  pending: { icon: "ph:circle-dashed", className: "text-[var(--text-muted)]", announce: "waiting" },
-};
-
 function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
@@ -2786,26 +2779,7 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
 
       {/* The proven ladder — which rung broke, and what to do about it. */}
       {mobileModeEnabled && steps ? (
-        <ol className="flex flex-col gap-1.5 rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-3" aria-label="Pairing checklist">
-          {steps.map((step) => {
-            const glyph = PAIRING_STEP_GLYPH[step.state];
-            return (
-              <li key={step.id} className="flex items-start gap-2 text-[length:var(--text-sm)]">
-                <Icon name={glyph.icon} className={`mt-[1px] shrink-0 ${glyph.className}`} aria-hidden />
-                <span className="min-w-0">
-                  <span className={step.state === "skipped" ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}>
-                    {step.label}
-                  </span>
-                  <span className="sr-only"> — {glyph.announce}</span>
-                  {step.detail && (step.state === "fail" || step.state === "pending") ? (
-                    <span className={`block text-[length:var(--text-xs)] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
-                      {step.detail}
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            );
-          })}
+        <PairingStepsList steps={steps}>
           {steps.some((step) => step.state === "fail") ? (
             <li className="mt-1 flex items-center gap-2" aria-hidden={false}>
               <Button
@@ -2825,7 +2799,7 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
               ) : null}
             </li>
           ) : null}
-        </ol>
+        </PairingStepsList>
       ) : null}
 
       {/* Humanized failure — the jargon lives behind a disclosure now. Only

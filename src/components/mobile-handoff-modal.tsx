@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { PairingStepsList } from "@/components/pairing-steps-list";
 import { copyText } from "@/lib/clipboard";
+import type { PairingStep } from "@/lib/mobile-handoff";
 import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 type HandoffReady = {
   ok: true;
@@ -18,12 +21,18 @@ type HandoffReady = {
   expiresAtIso?: string;
   qrSvg: string;
   warning?: string;
+  /** The proven probe ladder (cave-jr4r.1) — present on success too, so the
+   *  modal can show the live "Phone seen" rung instead of discarding it. */
+  steps?: PairingStep[];
+  lastSeenAt?: number | null;
 };
 
 type HandoffError = {
   ok: false;
   error?: string;
   stderr?: string;
+  /** Which rung broke — the route reports the whole ladder on failures. */
+  steps?: PairingStep[];
 };
 
 type HandoffResponse = HandoffReady | HandoffError;
@@ -65,6 +74,10 @@ export function MobileHandoffModal({
 }: Props) {
   const [handoff, setHandoff] = useState<HandoffReady | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Failure ladder from the route — which rung broke, not just one string. */
+  const [errorSteps, setErrorSteps] = useState<PairingStep[] | null>(null);
+  /** Live paired signal: flips the "Phone seen" rung the moment a scan lands. */
+  const [phoneSeenAt, setPhoneSeenAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<"host" | "invite" | null>(null);
   const lastAutoCopyRequestRef = useRef(0);
@@ -90,6 +103,7 @@ export function MobileHandoffModal({
 
     setLoading(true);
     setError(null);
+    setErrorSteps(null);
     setCopied(null);
     setHandoff(null);
     try {
@@ -105,9 +119,11 @@ export function MobileHandoffModal({
       if (!json.ok) {
         setHandoff(null);
         setError(json.stderr || json.error || "Mobile handoff failed.");
+        setErrorSteps(Array.isArray(json.steps) && json.steps.length > 0 ? json.steps : null);
         return;
       }
       setHandoff(json);
+      setPhoneSeenAt(json.lastSeenAt ?? null);
       if (copyRequest > 0 && copyRequest !== lastAutoCopyRequestRef.current) {
         await copyHandoffUrl(json);
         if (controller.signal.aborted) return;
@@ -143,6 +159,35 @@ export function MobileHandoffModal({
     if (handoff) await copyHandoffUrl(handoff);
   }, [copyHandoffUrl, handoff]);
 
+  // While the modal shows a healthy ladder that's still waiting on the first
+  // scan, poll the cheap paired-signal read (~5s, paused in hidden tabs) so
+  // "Waiting for the first scan" flips to a green "Phone seen" the moment the
+  // phone lands — the loop closes on the desktop, not just on the phone.
+  const phoneRungPending = Boolean(handoff?.steps) && !phoneSeenAt;
+  const pollPhoneSeen = useCallback(async () => {
+    try {
+      const res = await fetch("/api/mobile-handoff", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      });
+      const json = (await res.json()) as { ok: boolean; lastSeenAt?: number | null };
+      if (json.ok && json.lastSeenAt) setPhoneSeenAt(json.lastSeenAt);
+    } catch {
+      // Best-effort signal — the next tick retries.
+    }
+  }, []);
+  usePausablePoll(() => void pollPhoneSeen(), 5000, { enabled: open && phoneRungPending });
+
+  /** The success ladder with the phone rung kept live by the poll. */
+  const displaySteps = useMemo(() => {
+    if (!handoff?.steps) return null;
+    if (!phoneSeenAt) return handoff.steps;
+    return handoff.steps.map((step) =>
+      step.id === "phone" ? { ...step, state: "ok" as const, detail: undefined } : step,
+    );
+  }, [handoff, phoneSeenAt]);
+
   const copyHost = useCallback(async () => {
     if (!handoff?.nativeHost) return;
     try {
@@ -161,6 +206,7 @@ export function MobileHandoffModal({
 
     setLoading(true);
     setError(null);
+    setErrorSteps(null);
     try {
       const res = await fetch("/api/mobile-handoff", {
         method: "POST",
@@ -271,7 +317,10 @@ export function MobileHandoffModal({
               ) : null}
               <p className="mobile-handoff__hint">
                 The QR opens the Tailscale-served desktop page; the host is what the native app needs.
+                Don’t type your Mac’s 127.0.0.1 or Wi‑Fi LAN address into the phone — it can’t reach
+                your desktop that way.
               </p>
+              {displaySteps ? <PairingStepsList steps={displaySteps} className="mobile-handoff__steps" /> : null}
               {handoff.warning ? (
                 <p className="mobile-handoff__warning">{handoff.warning}</p>
               ) : null}
@@ -293,7 +342,14 @@ export function MobileHandoffModal({
               ) : null}
             </>
           ) : error ? (
-            <p className="mobile-handoff__error">{error}</p>
+            <>
+              {errorSteps ? (
+                // The route's proven ladder: WHICH rung broke and what to do,
+                // instead of one opaque error string.
+                <PairingStepsList steps={errorSteps} className="mobile-handoff__steps" />
+              ) : null}
+              <p className="mobile-handoff__error">{error}</p>
+            </>
           ) : (
             <p className="mobile-handoff__meta">
               Cave will publish this desktop through Tailscale Serve and show the native app host.
