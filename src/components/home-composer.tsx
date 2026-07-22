@@ -1095,22 +1095,30 @@ export function HomeComposer({
             matching the chat composer) so the write surface above stays
             minimal. Home has no git context or linked-work strip, so the
             pill rides alone. */}
-        <div className="cave-composer-footer-band">
-          <ComposerContextPill
-            projects={projects}
-            projectValue={selectedProjectId || null}
-            onProjectChange={setSelectedProjectId}
-            allowNoProject
-            familiarId={selectedFamiliarId || null}
-            createProject={createProject}
-            runtime={selectedRuntime}
-            modelValue={selectedModelId}
-            modelOptions={runtimeModelOptions}
-            onPickRuntime={handleSelectRuntime}
-            onPickModel={handleSelectModel}
-            disabled={sending}
-            ariaLabel="Composer context: project and model"
-          />
+        {/* Footer toolbar — refinement pass (2026-07-22): a clean bottom bar
+            inside the composer. Left cluster carries project + model as two
+            SEPARATE controls (no ambiguous "No project · Model" combined
+            label); the segmented Chat/Task control and attach live in the
+            control row above. Send hugs bottom-right, vertically aligned. */}
+        <div className="cave-composer-footer-band home-composer-toolbar">
+          <div className="home-composer-toolbar__left">
+            <ComposerContextPill
+              projects={projects}
+              projectValue={selectedProjectId || null}
+              onProjectChange={setSelectedProjectId}
+              allowNoProject
+              familiarId={selectedFamiliarId || null}
+              createProject={createProject}
+              runtime={selectedRuntime}
+              modelValue={selectedModelId}
+              modelOptions={runtimeModelOptions}
+              onPickRuntime={handleSelectRuntime}
+              onPickModel={handleSelectModel}
+              disabled={sending}
+              ariaLabel="Composer context: project and model"
+              splitControls
+            />
+          </div>
         </div>
         </div>
       </div>

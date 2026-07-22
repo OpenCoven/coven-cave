@@ -286,14 +286,96 @@ export function ComposerContextPickers({
   );
 }
 
-export function ComposerContextPill(props: ComposerContextProps) {
+export function ComposerContextPill(props: ComposerContextProps & { splitControls?: boolean }) {
   const [menu, setMenu] = useState<"hub" | ComposerContextView>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const projectRef = useRef<HTMLButtonElement | null>(null);
+  const modelRef = useRef<HTMLButtonElement | null>(null);
   const context = useComposerContextActions(props);
   const summary = [
     context.summary,
     ...(context.hasGit && context.branch ? [context.branch] : []),
   ].join(" · ");
+
+  // Split mode (home refinement 2026-07-22): project and model ride as two
+  // distinct, separately-labelled trigger buttons instead of one ambiguous
+  // combined pill. Each opens its own picker; the anchor is the button itself
+  // so the popover lands under the control the user clicked.
+  if (props.splitControls) {
+    const projectLabel = context.selectedProject?.name ?? "No project";
+    const modelLabel = context.modelLabel ?? context.runtimeName;
+    return (
+      <>
+        <button
+          ref={projectRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="dialog"
+          aria-expanded={menu === "project"}
+          aria-label={`Project: ${projectLabel} — change project`}
+          title={context.selectedProject?.root ?? "No project selected"}
+          onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            {context.selectedProject ? (
+              <ProjectAvatar
+                name={context.selectedProject.name}
+                root={context.selectedProject.root}
+                color={context.selectedProject.color}
+                size="sm"
+              />
+            ) : (
+              <Icon name="ph:folder" width={13} aria-hidden />
+            )}
+          </span>
+          <span className="cave-context-chip__text">{projectLabel}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+        <button
+          ref={modelRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled || context.config.modelDisabled}
+          aria-haspopup="dialog"
+          aria-expanded={menu === "model"}
+          aria-label={`Model: ${modelLabel} — change model`}
+          title={`Runtime: ${context.runtimeName}${context.modelLabel ? ` · Model: ${context.modelLabel}` : ""}`}
+          onClick={() => setMenu((c) => (c === "model" ? null : "model"))}
+        >
+          <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
+            <RuntimeLogo runtime={context.config.runtime} size={13} />
+          </span>
+          <span className="cave-context-chip__text">{modelLabel}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+
+        <ProjectPickerPopover
+          open={menu === "project"}
+          onOpenChange={(open) => setMenu(open ? "project" : null)}
+          anchorRef={projectRef}
+          projects={context.config.projects}
+          value={context.config.projectValue}
+          onChange={context.config.onProjectChange}
+          allowNoProject={context.config.allowNoProject}
+          onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+          addingProject={context.addFlow.adding}
+          ariaLabel="Choose project"
+        />
+        <ComposerRuntimePopover
+          open={menu === "model"}
+          onOpenChange={(open) => setMenu(open ? "model" : null)}
+          anchorRef={modelRef}
+          runtime={context.config.runtime}
+          modelValue={context.config.modelValue}
+          modelOptions={context.config.modelOptions}
+          onPickRuntime={context.config.onPickRuntime}
+          onPickModel={context.config.onPickModel}
+        />
+        {context.config.createProject ? context.addFlow.addProjectModal : null}
+      </>
+    );
+  }
 
   return (
     <>
