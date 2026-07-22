@@ -2629,7 +2629,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
-      : composerModelOptions[0]?.id ?? "";
+      : modelHarness === "opencode"
+        ? ""
+        : composerModelOptions[0]?.id ?? "";
   const {
     skills,
     prompts,

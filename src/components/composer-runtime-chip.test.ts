@@ -168,4 +168,10 @@ assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: var\(--
 const hostCss = readFileSync(new URL("../styles/composer-host-chip.css", import.meta.url), "utf8");
 assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the host chip matches the same pill token");
 
+assert.match(
+  chatView,
+  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: modelHarness === "opencode"[\s\S]*?\? ""/,
+  "an unconfigured OpenCode chat shows the runtime default rather than an unselected inventory entry",
+);
+
 console.log("composer-runtime-chip.test.ts: ok");

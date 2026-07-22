@@ -826,10 +826,10 @@ export async function POST(req: Request) {
   // bridge has no CLI model passthrough.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
-  const modelForwardingEnabled = openCodeDirect
-    ? await openCodeRunSupportsModel()
-    : hermesDirect
-      ? await hermesChatSupportsModel()
+  const modelForwardingEnabled = hermesDirect
+    ? await hermesChatSupportsModel()
+    : openCodeDirect
+      ? await openCodeRunSupportsModel()
       : binding.harness !== "openclaw" && (await covenRunSupportsModel());
   // OpenCode's direct CLI has neither Cave's permission nor add-dir flags.
   const permissionForwardingEnabled =

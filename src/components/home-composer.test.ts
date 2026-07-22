@@ -757,3 +757,9 @@ assert.match(
   const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
   assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the chat placeholder matches (one composer family)");
 }
+
+assert.match(
+  source,
+  /selectedRuntime === "opencode"[\s\S]*?modelState\?\.effectiveModel[\s\S]*?: ""[\s\S]*?runtimeModelOptions\.length === 0/,
+  "OpenCode without an explicit model keeps the CLI default instead of displaying the first discovered model",
+);

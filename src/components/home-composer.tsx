@@ -239,11 +239,15 @@ export function HomeComposer({
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
   const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
   const selectedModelId =
-    runtimeModelOptions.length === 0
-      ? ""
-      : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
-        ? modelState!.effectiveModel
-        : runtimeModelOptions[0]?.id ?? "";
+    selectedRuntime === "opencode"
+      ? modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+        ? modelState.effectiveModel
+        : ""
+      : runtimeModelOptions.length === 0
+        ? ""
+        : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
+          ? modelState!.effectiveModel
+          : runtimeModelOptions[0]?.id ?? "";
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
