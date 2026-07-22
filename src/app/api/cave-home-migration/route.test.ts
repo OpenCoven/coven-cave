@@ -37,6 +37,12 @@ assert.match(
 assert.match(source, /force-dynamic/, "status must never be served from the route cache");
 assert.match(source, /ACTIONS = new Set<ReconciliationAction>/, "review actions are allowlisted");
 assert.match(source, /Unknown legacy migration entry/, "action requests are restricted to the shared manifest");
+assert.match(source, /Invalid confirm flag/, "confirm must be boolean when present");
+assert.match(
+  source,
+  /confirmDiscard: body\.confirm === true/,
+  "explicit confirmation is forwarded to the discard guard (cave-5ax2)",
+);
 assert.match(source, /req\.body[\s\S]*readJsonBody<[^>]+>\(req, MAX_ACTION_BODY_BYTES\)[\s\S]*: null/, "actions are bounded while body-less legacy POST requests remain compatible");
 
 console.log("cave-home-migration route.test.ts: ok");

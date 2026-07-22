@@ -24,7 +24,12 @@ assert.match(src, /Open backup folder/, "review exposes verified recovery bundle
 assert.match(src, /return "Defer"/, "review lets users defer ambiguous decisions");
 assert.match(src, /shell_open_path/, "desktop opens the absolute backup directory through the validated command");
 assert.match(src, /usePausablePoll\(\(\) => void refresh\(\), 5 \* 60_000/, "managed mirrors are rechecked for stale legacy writes while Cave remains open — at a gentle 5min cadence (the endpoint rescans the legacy home per hit; cave-v8hh)");
-assert.match(src, /JSON\.stringify\(\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry");
+assert.match(src, /JSON\.stringify\(confirm\s*\?\s*\{ legacy: detail\.legacy, action, confirm: true \}\s*:\s*\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry and only send confirm after the guard asked for it");
+assert.match(src, /confirmationRequired\?\.find/, "a guard-blocked resolution surfaces its confirmation request");
+assert.match(src, /Discard larger copy anyway/, "the destructive retry is an explicit, labeled second step (cave-5ax2)");
+assert.match(src, /setConfirmRequest\(null\)/, "the confirmation request can be cancelled");
+assert.match(src, /detail\.legacySize/, "review shows the legacy copy size");
+assert.match(src, /detail\.canonicalSize/, "review shows the canonical copy size");
 assert.match(src, /review-dismissed:/, "dismissal is keyed by the exact review set");
 assert.match(src, /detail\.legacyHash \?\? "missing"/, "a changed legacy mirror re-surfaces after an earlier dismissal");
 assert.match(src, /detail\.canonicalHash \?\? "missing"/, "a changed canonical copy re-surfaces after an earlier dismissal");
