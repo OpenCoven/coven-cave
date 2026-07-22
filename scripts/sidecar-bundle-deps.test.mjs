@@ -68,7 +68,7 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 5_616/, "runtime closure must retain combined cross-platform headroom");
+assert.match(closureSource, /fileCount: 5_628/, "runtime closure must retain combined cross-platform headroom");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are

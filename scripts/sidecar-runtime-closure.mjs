@@ -106,8 +106,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // without relaxing the expanded-byte ceiling.
   // 2026-07-22 (composer add menu): the unified "+" menu splits the composer
   // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
-  // CI measured 5,618 on Windows. Keep the exact maximum.
-  fileCount: 5_618,
+  // CI traced 5,618–5,619 on Windows across runs. Retain ten files of
+  // headroom over the jittering maximum without relaxing the byte ceiling.
+  fileCount: 5_628,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
