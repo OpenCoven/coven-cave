@@ -100,6 +100,9 @@ chats (no project, non-repo root) render no branch chip.
   exists.
 - Update any `home-composer*` test pins referencing `splitControls`.
 - Extend `composer-git-chip.test.ts` pins for the optional popover rows.
+- Update `tests/composer-runtime-chip.spec.ts` (Playwright, required CI check):
+  it selects the hub pill by aria-label and clicks the hub's Model row — it
+  must drive the model chip directly instead.
 - Validate: targeted `node --experimental-strip-types --test` on the touched
   test files (with the CSS facade hook where globals are read), then
   `pnpm typecheck`; full `pnpm test:app` before PR.
