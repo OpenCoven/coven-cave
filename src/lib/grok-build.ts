@@ -46,6 +46,22 @@ function bareModel(model: string | null): string | null {
   return slash >= 0 ? model.slice(slash + 1) || null : model;
 }
 
+/**
+ * Cave's global default belongs to its own provider. When a Grok familiar
+ * merely inherits that default, omit `--model` and let the installed CLI use
+ * the authenticated account's current default instead of pinning a
+ * compile-time Grok model name that may not be available on this install.
+ */
+export function grokShouldUseCliDefault(input: {
+  modelSource: string;
+  globalDefaultModel: string;
+}): boolean {
+  return (
+    input.modelSource === "global-default" &&
+    !/^(?:xai\/)?grok-/i.test(input.globalDefaultModel.trim())
+  );
+}
+
 function readAllowRule(directory: string): string {
   // Grok's permission-rule grammar treats a bare Read prefix as every path;
   // use a recursive glob so Cave's project grant stays an actual native grant.

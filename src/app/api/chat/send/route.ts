@@ -51,6 +51,7 @@ import {
   grokIdentityRules,
   grokResumeNeedsNewSandboxSession,
   grokSandboxProfileForPermission,
+  grokShouldUseCliDefault,
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
@@ -868,6 +869,16 @@ export async function POST(req: Request) {
     existingConversation,
     modelForwardingEnabled,
   });
+  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
+  // live `grok models` catalog is account-specific and may not contain the
+  // compile-time fallback, while omitting --model reliably selects the CLI's
+  // current authenticated default on every supported host.
+  const grokForwardModel = grokShouldUseCliDefault({
+    modelSource: modelState.source,
+    globalDefaultModel: config.defaults.model,
+  })
+    ? null
+    : cleanModelId(desiredModel);
 
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
@@ -1197,7 +1208,7 @@ export async function POST(req: Request) {
         prompt,
         resumeSessionId,
         newSessionId: grokSessionHint,
-        model: cleanModelId(desiredModel),
+        model: grokForwardModel,
         permissionMode: body.permissionMode === "read" ? "read" : "full",
         grantDirs,
         identityRules: grokIdentityRules(
@@ -1570,7 +1581,7 @@ export async function POST(req: Request) {
               if (!sessionId && event.sessionId) announceSession(event.sessionId);
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
-              if (!confirmedModel && cleanModelId(desiredModel)) confirmedModel = desiredModel;
+              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
               result = {
                 is_error: event.isError,
                 usage: parseStreamJsonUsage(event.usage),

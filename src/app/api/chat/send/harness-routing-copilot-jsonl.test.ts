@@ -61,6 +61,16 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /const grokForwardModel = grokShouldUseCliDefault\([\s\S]*?\? null\s*:\s*cleanModelId\(desiredModel\);[\s\S]*?buildGrokBuildArgs\(\{[\s\S]*?model: grokForwardModel,/,
+  "an inherited non-Grok global model must omit --model so the installed Grok CLI chooses its authenticated default",
+);
+assert.match(
+  chatRoute,
+  /if \(!confirmedModel && grokForwardModel\) confirmedModel = desiredModel;/,
+  "Cave must not claim an inherited fallback model was applied when it deliberately used Grok's CLI default",
+);
+assert.match(
+  chatRoute,
   /if \(grokDirect\) \{\s*handleGrokLine\(line, isJson\);\s*return;/,
   "Grok stdout routes through the native JSONL parser, never generic stream-json parsing",
 );

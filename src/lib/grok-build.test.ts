@@ -4,6 +4,7 @@ import {
   grokIdentityRules,
   grokResumeNeedsNewSandboxSession,
   grokSandboxProfileForPermission,
+  grokShouldUseCliDefault,
   parseGrokModels,
   parseGrokStreamEvent,
 } from "./grok-build.ts";
@@ -95,6 +96,22 @@ assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { ki
 
 assert.equal(grokSandboxProfileForPermission("read"), "read");
 assert.equal(grokSandboxProfileForPermission(undefined), "full");
+assert.equal(
+  grokShouldUseCliDefault({
+    modelSource: "global-default",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+  }),
+  true,
+  "a Grok familiar inheriting Cave's provider default must let its CLI choose the authenticated default",
+);
+assert.equal(
+  grokShouldUseCliDefault({
+    modelSource: "global-default",
+    globalDefaultModel: "xai/grok-code-fast-1",
+  }),
+  false,
+  "an explicitly configured Grok global default must still be forwarded",
+);
 assert.equal(
   grokResumeNeedsNewSandboxSession({
     resumeSessionId: "session-id",
