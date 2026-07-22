@@ -93,6 +93,7 @@ import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
+  modelApplicationFromRun,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -1824,8 +1825,14 @@ export async function POST(req: Request) {
             close();
           });
 
-          child.on("close", () => {
+          child.on("close", (code) => {
             captureHermesSessionFromStderr("", true);
+            // OpenCode normally emits a JSON error envelope, but older CLI
+            // builds can exit non-zero with only stderr. Do not mistake that
+            // failed invocation for a successful model application below.
+            if (openCodeDirect && code !== 0) {
+              result = { ...result, is_error: true };
+            }
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
@@ -2022,16 +2029,28 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
-      // OpenCode's JSON event protocol does not echo the selected model. A
-      // successful direct run is therefore the only runtime confirmation that
-      // its accepted `--model` value was applied.
-      if (openCodeDirect && forwardModel && !result.is_error) {
-        confirmedModel = forwardModel;
+      // OpenCode's JSON event protocol does not echo the selected model. Its
+      // direct argv proves the selection was forwarded, while a successful
+      // exit is the only confirmation it was applied. Preserve an explicit
+      // model rejection as failed rather than incorrectly reporting applied.
+      if (openCodeDirect && forwardModel) {
+        const application = modelApplicationForHarness(
+          modelApplicationFromRun({
+            confirmedModel: forwardModel,
+            isError: result.is_error === true,
+            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+          }),
+        );
+        if (!result.is_error) responseMetadata.confirmedModel = forwardModel;
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = application.reason;
+        modelState.applicationState = application.state;
+        modelState.reason = application.reason;
       }
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
-      if (confirmedModel) {
+      else if (confirmedModel) {
         const application = modelApplicationForHarness({ supported: true, confirmed: true });
         responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;

@@ -52,8 +52,13 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && forwardModel && !result\.is_error[\s\S]*?confirmedModel = forwardModel/,
-  "a successful OpenCode run confirms its selected model even though its JSON events omit it",
+  /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
+  "OpenCode marks model-specific failed runs as rejected instead of confirming the forwarded model",
+);
+assert.match(
+  route,
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(openCodeDirect && code !== 0\)[\s\S]*?is_error: true/,
+  "a non-zero OpenCode exit cannot be treated as a successful model run when no JSON error arrives",
 );
 
 console.log("opencode harness routing tests passed");
