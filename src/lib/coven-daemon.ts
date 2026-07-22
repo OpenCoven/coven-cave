@@ -88,7 +88,14 @@ export function socketPath(): string {
 }
 
 export function normalizeHubUrl(rawUrl: string): string {
-  const trimmed = rawUrl.trim().replace(/\/+$/, "");
+  // Trim whitespace, then trailing slashes, without a backtracking-prone
+  // regex: `/\/+$/` is polynomial-ReDoS-prone on user-provided URLs
+  // (reachable via the daemon probe/config routes). Manual scans are linear
+  // and preserve the original trim-then-strip-slashes semantics.
+  const whitespaceTrimmed = rawUrl.trim();
+  let end = whitespaceTrimmed.length;
+  while (end > 0 && whitespaceTrimmed[end - 1] === "/") end -= 1;
+  const trimmed = whitespaceTrimmed.slice(0, end);
   if (!trimmed) return "";
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;

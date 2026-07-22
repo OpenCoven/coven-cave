@@ -17,6 +17,7 @@ import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version"
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
 import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
+import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "@/lib/travel-offline-replay";
 
@@ -47,9 +48,7 @@ function hubAnswered(res: DaemonResponse<unknown>) {
 function failureReason(target: DaemonTarget, res: DaemonResponse<unknown>) {
   const detail = extractDaemonError(res) ?? `http ${res.status}`;
   if (target.mode !== "hub") return detail;
-  if (res.status === 401 || res.status === 403) return `hub unauthorized: ${detail}`;
-  if (hubAnswered(res)) return `hub unhealthy: ${detail}`;
-  return `hub unreachable: ${detail}`;
+  return classifyHubFailure(res);
 }
 
 function failureAvailability(target: DaemonTarget, res: DaemonResponse<unknown>) {
@@ -90,6 +89,7 @@ export async function GET() {
   }
   const { config } = snapshot;
   const target = daemonTargetForConfig(config);
+  const checkedAt = new Date().toISOString();
   const executorStatuses = await executorStatusesForConfig(config);
   let travelState = snapshot.state.travel;
   let hubReachable: boolean | null = target.mode === "local" ? true : null;
@@ -104,6 +104,7 @@ export async function GET() {
       running: false,
       availability: "misconfigured",
       reason: target.error,
+      checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
       travel: travelStatus,
@@ -148,6 +149,7 @@ export async function GET() {
       running: false,
       availability: failureAvailability(target, res),
       reason: failureReason(target, res),
+      checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
       travel: travelStatus,
@@ -163,6 +165,7 @@ export async function GET() {
   return NextResponse.json({
     running: true,
     availability: "online",
+    checkedAt,
     apiVersion: res.data.apiVersion,
     covenVersion: displayCovenVersion({
       daemonVersion: res.data.covenVersion,

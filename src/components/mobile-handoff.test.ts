@@ -153,7 +153,7 @@ assert.match(settings, /Mobile mode/, "Settings should label the one-click nativ
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
 
 // ── The pairing card (cave-rkiw): one scan, plain language, jargon demoted ──
-assert.match(settings, /describeMobileHandoffError/, "Settings translates handoff failures into plain language");
+assert.match(settings, /classifyTailscaleFailure/, "Settings translates handoff failures into plain language");
 assert.match(
   settings,
   /Pairing secret unavailable/,

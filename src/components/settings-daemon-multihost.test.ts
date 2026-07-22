@@ -29,6 +29,17 @@ assert.match(
   "Hub URL input should make the expected private-network HTTP target concrete",
 );
 
+assert.match(shell, /fetch\("\/api\/tailscale\/devices"/, "hub mode should discover tailnet devices");
+assert.match(shell, /devicesCtlRef\.current\?\.abort\(\)/, "device discovery refreshes should abort stale requests");
+assert.match(shell, /Tailnet devices/, "hub mode should label the discovery picker");
+assert.match(shell, /device\.isSelf \? " · This device"/, "the self device should be visibly identified");
+assert.match(shell, /http:\/\/\$\{host\}:8787/, "selecting a device should build the standard hub URL");
+assert.match(shell, /fetch\("\/api\/daemon\/probe"/, "hub URL saves should probe daemon health first");
+assert.match(shell, /Save anyway/, "an unreachable hub should require an explicit override");
+assert.match(shell, /Configured but unreachable/, "hub status should distinguish configured from connected");
+assert.match(shell, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
+assert.match(shell, /classifyTailscaleFailure/, "discovery and pairing should share friendly Tailscale failure copy");
+
 assert.match(
   shell,
   /placeholder=\{"executor-1\.tailnet:8787\\nexecutor-2\.tailnet:8787"\}/,

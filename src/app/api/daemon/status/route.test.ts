@@ -108,8 +108,8 @@ assert.match(
 
 assert.match(
   source,
-  /res\.status === 401 \|\| res\.status === 403[\s\S]*hub unauthorized/,
-  "hub auth failures should be labelled separately instead of treated as offline",
+  /classifyHubFailure\(res\)/,
+  "hub failures should reuse the probe route's shared unauthorized/unhealthy/unreachable taxonomy",
 );
 
 assert.match(

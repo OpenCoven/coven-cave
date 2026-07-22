@@ -95,7 +95,12 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Ubuntu and 5,576 on Windows before the later Group, Sessions, and Task
   // cockpit chunks landed. Retain ten files of cross-platform headroom for the
   // combined tree without relaxing the expanded-byte ceiling.
-  fileCount: 5_596,
+  // 2026-07-21 (Tailscale hub sync): the two new API routes
+  // (tailscale/devices, daemon/probe) plus their tailscale-devices /
+  // daemon-probe libs add traced files; CI measured 5,608 on Windows and
+  // 5,606 on Ubuntu. Keep the exact cross-platform maximum with the same
+  // ten-file headroom convention.
+  fileCount: 5_608,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

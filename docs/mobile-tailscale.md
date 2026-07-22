@@ -57,6 +57,14 @@ The app stores the invite in an HTTP-only cookie after the first successful requ
 
 In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
 
+## Connect Cave to a remote Server Hub
+
+Open **Settings → Daemon → Connection**, choose **Server hub**, and use the **Tailnet devices** list to select the machine running the remote Coven daemon. Cave discovers this device and online peers from `tailscale status --json`; it uses the device's `100.x` address when available and fills the standard daemon port, `8787`. The current machine is labelled **This device**. You can still enter a MagicDNS name or another private HTTP URL manually.
+
+Before Cave saves a Server Hub URL, it checks `/api/v1/health` with a short timeout and shows the result and latency beside the field. A healthy target saves normally. An unreachable, unauthorized, or unhealthy target remains unsaved until you explicitly choose **Save anyway**. The Status group then distinguishes a connected hub and its last successful check from a configured-but-unreachable hub.
+
+When Phone pairing has already resolved this machine's tailnet address, expand **Manual setup** and choose **Use this device as hub** to carry that address into the Server Hub field. Cave still runs the reachability check before saving it.
+
 ## Remote Agent Handoff
 
 When asking an agent to run the mobile version remotely, the safest repeatable flow is:
