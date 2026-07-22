@@ -185,6 +185,11 @@ function candidateDirs(): string[] {
     "/opt/homebrew/bin",
     "/usr/local/bin",
     path.join(/* turbopackIgnore: true */ HOME, ".local", "bin"),
+    // Grok Build's official installer uses ~/.grok/bin on macOS, Linux, and
+    // Windows. A desktop app can start without the user's shell PATH, so keep
+    // the direct runtime discoverable even when the installer could not add
+    // its symlink or profile entry.
+    path.join(/* turbopackIgnore: true */ HOME, ".grok", "bin"),
     // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
     // missing flags. Prefer the npm-published binary when both exist.
     path.join(/* turbopackIgnore: true */ HOME, ".cargo", "bin"),
