@@ -144,6 +144,19 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
           </div>
         </div>
         <div className="salem-panel__header-actions">
+          <button
+            type="button"
+            className="salem-btn-icon focus-ring"
+            title="Open full view"
+            aria-label="Open Ask Salem full view"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("cave:navigate-mode", { detail: { mode: "salem" } }),
+              )
+            }
+          >
+            <Icon name="ph:arrows-out-simple" width={14} aria-hidden />
+          </button>
           <Icon name="ph:book-open" width={14} />
         </div>
       </div>

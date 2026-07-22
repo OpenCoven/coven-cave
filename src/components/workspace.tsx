@@ -82,6 +82,7 @@ import {
   OpenCovenSubmissionPage,
   RailInspector,
   SalemChatPanel,
+  AskSalemView,
   ShortcutsSheet,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
@@ -222,6 +223,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   "familiar-work-queue": "Tasks",
   journal: "Journal",
   grimoire: "Memories",
+  salem: "Ask Salem",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -2857,6 +2859,8 @@ export function Workspace() {
       />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
+    ) : mode === "salem" ? (
+      <AskSalemView familiars={familiars} activeFamiliarId={activeId} />
     ) : (
       <HomeComposer
         familiars={familiars}

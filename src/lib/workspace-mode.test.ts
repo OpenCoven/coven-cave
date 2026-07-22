@@ -60,3 +60,12 @@ test("the documented alias landings hold", () => {
   assert.equal(MODE_ALIASES.roles, "marketplace", "Roles is a Marketplace hub section");
   assert.equal(MODE_ALIASES.capabilities, "marketplace", "Capabilities is a Marketplace hub section");
 });
+
+test("salem is a canonical standalone surface, not an alias", () => {
+  // Ask Salem renders its own full surface (navHidden in the sidebar). Deep
+  // links (?mode=salem), cave:navigate-mode, and last-surface restore all
+  // validate through this vocabulary.
+  assert.ok((CANONICAL_WORKSPACE_MODES as readonly string[]).includes("salem"));
+  assert.ok(!isAliasWorkspaceMode("salem"), "salem must not be remapped through MODE_ALIASES");
+  assert.equal(resolveWorkspaceModeAlias("salem"), "salem");
+});

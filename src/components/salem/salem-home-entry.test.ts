@@ -23,8 +23,16 @@ assert.match(widget, /labels: \["salem", "happy-path", card\.recommendedPathId\]
 assert.match(widget, /steps: card\.steps\.map/, "copies path steps into the checklist");
 assert.match(widget, /Salem path: \$\{card\.title\}/, "titles the board card by the path");
 
-// Sidebar: the Ask Salem entry was removed from the left side panel.
+// Sidebar: the Ask Salem entry was removed from the left side panel. The mode
+// exists as a FOLDER_MODES row (object literal, not JSX) but must stay
+// navHidden so it never renders as a sidebar entry — it's summoned via Home,
+// the ⌘K palette, deep links, or the widget's expand button.
 assert.doesNotMatch(sidebar, /label="Ask Salem"/, "sidebar no longer exposes an Ask Salem entry");
+assert.match(
+  sidebar,
+  /id: "salem", label: "Ask Salem",[^\n]*navHidden: true/,
+  "salem FOLDER_MODES row stays navHidden (palette/deep-link only, no sidebar row)",
+);
 
 // Projects empty state offers Ask Salem.
 assert.match(projects, /Ask Salem/, "projects empty state offers Ask Salem");

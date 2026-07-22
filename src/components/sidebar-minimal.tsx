@@ -121,6 +121,10 @@ const FOLDER_MODES: Array<{
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
   // those launchers but hidden from the sidebar rows.
   { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
+  // Ask Salem is a destination you summon (Home entry, ⌘K "Go to", deep link,
+  // or the split-pane widget's expand button) — deliberately NOT a sidebar row
+  // (see salem-home-entry.test.ts). navHidden keeps it reachable everywhere else.
+  { id: "salem", label: "Ask Salem", iconName: "ph:cat", description: "Ask the docs familiar — grounded answers from the Coven index and your Cave", navHidden: true },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
