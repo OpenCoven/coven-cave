@@ -139,8 +139,8 @@ assert.match(
 // one grouped Chat options surface while attachment and voice stay one click away.
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu/,
-  "composer keeps direct attachment and voice controls before the grouped Chat options trigger",
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{/,
+  "composer keeps the direct voice control before the grouped Chat options trigger (attach folds into the menu)",
 );
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");

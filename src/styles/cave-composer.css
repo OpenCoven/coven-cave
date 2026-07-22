@@ -922,6 +922,13 @@
   animation: hc-mic-pulse 1.6s ease-in-out infinite;
 }
 
+/* Cascade-menu inline note (loading/empty states inside a flyout). */
+.composer-add__note {
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 .task-link-picker {
   overflow: hidden;
   border: 1px solid var(--border-strong);
