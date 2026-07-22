@@ -197,11 +197,17 @@ struct ChatsHomeView: View {
                     .foregroundStyle(.secondary)
             }
             // Telegram-style profile entry: Settings moved off the tab bar
-            // and lives behind the operator avatar here.
-            CircularIconButton(systemImage: "person.crop.circle",
-                               label: "Settings") {
+            // and lives behind the operator's avatar here.
+            Button {
                 app.selectedTab = .settings
+            } label: {
+                AvatarView(familiar: nil,
+                           url: app.operatorAvatarURL,
+                           size: ChatChrome.control,
+                           fallbackName: app.operatorDisplayName)
             }
+            .buttonStyle(.glassPress)
+            .accessibilityLabel("Settings")
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
                 showNewChat = true
