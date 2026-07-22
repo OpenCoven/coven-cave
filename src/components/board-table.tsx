@@ -11,6 +11,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { StandardSelect } from "@/components/ui/select";
+import { useProjectFamiliarsByProject } from "@/lib/use-project-familiars";
 
 export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";
@@ -204,6 +205,19 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
     ],
     [familiars],
   );
+  // Table mode can assign a familiar inline, bypassing the inspector. Scope
+  // each project-backed row to the same server-authorized roster as the other
+  // Board pickers; cards with no project intentionally retain every installed
+  // runtime/harness choice.
+  const projectIds = useMemo(
+    () => cards.flatMap((card) => card.projectId ? [card.projectId] : []),
+    [cards],
+  );
+  const {
+    familiarsByProject,
+    loadingProjectIds,
+    loadedProjectIds,
+  } = useProjectFamiliarsByProject({ projectIds });
 
   // Columns rendered in the user's saved order; any unknown/new key is dropped
   // and any column missing from the saved order is appended so the table is
@@ -497,6 +511,23 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                           );
                           break;
                         case "familiar":
+                          {
+                            const projectId = card.projectId;
+                            const scopedFamiliars = projectId ? familiarsByProject.get(projectId) ?? [] : familiars;
+                            const familiarPickerReady = !projectId || (
+                              loadedProjectIds.has(projectId) && !loadingProjectIds.has(projectId)
+                            );
+                            const rowFamiliarOptions = !projectId
+                              ? familiarOptions
+                              : !familiarPickerReady
+                                ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+                                : [
+                                    { value: "", label: "Unassigned" },
+                                    ...scopedFamiliars.map((familiar) => ({
+                                      value: familiar.id,
+                                      label: familiar.display_name,
+                                    })),
+                                  ];
                           content = (
                             <span className="board-table-cell-familiar">
                               <span className={`board-table-familiar-avatar${resolvedFamiliar ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
@@ -506,16 +537,18 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                                 <StandardSelect
                                   label={`Assign familiar for ${card.title}`}
                                   className="board-table-familiar-select"
-                                  value={card.familiarId ?? ""}
+                                  value={familiarPickerReady ? card.familiarId ?? "" : ""}
                                   // A linked session was created with the prior familiar's
                                   // harness/runtime. Reassignment must start fresh instead
                                   // of relabelling that session under a different runtime.
                                   onChange={(next) => onPatch(card.id, { familiarId: next || null, sessionId: null })}
-                                  options={familiarOptions}
+                                  options={rowFamiliarOptions}
+                                  disabled={!familiarPickerReady}
                                 />
                               </span>
                             </span>
                           );
+                          }
                           break;
                         case "lifecycle":
                           content = <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />;

@@ -9,6 +9,12 @@ export type ProjectFamiliarsState = {
   loadedSuccessfully: boolean;
 };
 
+export type ProjectFamiliarsByProjectState = {
+  familiarsByProject: ReadonlyMap<string, Familiar[]>;
+  loadingProjectIds: ReadonlySet<string>;
+  loadedProjectIds: ReadonlySet<string>;
+};
+
 /**
  * Loads only familiars that may launch a session in the selected project.
  * Clearing the prior result before each fetch prevents a picker from briefly
@@ -68,4 +74,64 @@ export function useProjectFamiliars({
     loading,
     loadedSuccessfully: enabled && Boolean(projectId) && loadedProjectId === projectId,
   };
+}
+
+/**
+ * Fetches the authorized roster once per distinct project. Table mode exposes
+ * an inline familiar picker for many cards at once, so sharing this lookup
+ * keeps project-backed cards constrained without hiding the complete roster
+ * for intentionally unscoped tasks.
+ */
+export function useProjectFamiliarsByProject({
+  projectIds,
+  enabled = true,
+}: {
+  projectIds: readonly string[];
+  enabled?: boolean;
+}): ProjectFamiliarsByProjectState {
+  const [familiarsByProject, setFamiliarsByProject] = useState<Map<string, Familiar[]>>(() => new Map());
+  const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(() => new Set());
+  const [loadedProjectIds, setLoadedProjectIds] = useState<Set<string>>(() => new Set());
+  const generationRef = useRef(0);
+  const projectIdsKey = [...new Set(projectIds.map((projectId) => projectId.trim()).filter(Boolean))]
+    .sort()
+    .join("\u0000");
+
+  useEffect(() => {
+    generationRef.current += 1;
+    const generation = generationRef.current;
+    const ids = projectIdsKey ? projectIdsKey.split("\u0000") : [];
+
+    if (!enabled || ids.length === 0) {
+      setFamiliarsByProject(new Map());
+      setLoadingProjectIds(new Set());
+      setLoadedProjectIds(new Set());
+      return;
+    }
+
+    setFamiliarsByProject(new Map());
+    setLoadingProjectIds(new Set(ids));
+    setLoadedProjectIds(new Set());
+    void Promise.all(ids.map(async (projectId) => {
+      try {
+        const response = await fetch(`/api/familiars?projectId=${encodeURIComponent(projectId)}`, {
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null) as { ok?: boolean; familiars?: Familiar[] } | null;
+        return response.ok && payload?.ok
+          ? [projectId, Array.isArray(payload.familiars) ? payload.familiars : []] as const
+          : null;
+      } catch {
+        return null;
+      }
+    })).then((results) => {
+      if (generationRef.current !== generation) return;
+      const loaded = results.filter((result): result is readonly [string, Familiar[]] => result !== null);
+      setFamiliarsByProject(new Map(loaded));
+      setLoadedProjectIds(new Set(loaded.map(([projectId]) => projectId)));
+      setLoadingProjectIds(new Set());
+    });
+  }, [enabled, projectIdsKey]);
+
+  return { familiarsByProject, loadingProjectIds, loadedProjectIds };
 }
