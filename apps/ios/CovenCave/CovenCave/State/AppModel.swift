@@ -1643,7 +1643,9 @@ final class AppModel {
             return DisplayMessage(role: role,
                                   familiarId: role == .assistant ? assignee : nil,
                                   text: turn.text,
-                                  isError: turn.isError ?? false)
+                                  isError: turn.isError ?? false,
+                                  activity: role == .assistant
+                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
         }
         persistThreads()
     }
@@ -1803,7 +1805,8 @@ final class AppModel {
         let copiedMessages = thread.messages.map { message in
             DisplayMessage(role: message.role, familiarId: message.familiarId,
                            text: message.text, isError: message.isError,
-                           attachmentDataUrls: message.attachmentDataUrls)
+                           attachmentDataUrls: message.attachmentDataUrls,
+                           activity: message.activity)
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,

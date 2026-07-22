@@ -222,6 +222,13 @@ struct MessageBubble: View {
                     attachmentImages
                         .contextMenu { messageActions }
                 }
+                // What the familiar is doing (tool calls / progress) — live
+                // while streaming, a collapsed summary once finished.
+                if !isUser, !message.activitySteps.isEmpty {
+                    AgentActivityView(steps: message.activitySteps,
+                                      streaming: message.streaming)
+                        .padding(.leading, 2)
+                }
                 // Hide the (empty) text bubble for image-only messages.
                 if !parsed.visible.isEmpty || message.attachmentDataUrls.isEmpty {
                     bubble
