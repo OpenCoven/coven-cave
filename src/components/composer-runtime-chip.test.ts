@@ -139,8 +139,8 @@ assert.match(
 // menu-less runtime with no model step, completes the visit.
 assert.match(
   chip,
-  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,400}?if \(catalog\.models\.length === 0\) setOpen\(false\);/,
-  "a runtime pick closes the menu only for menu-less runtimes (hermes/openclaw); curated runtimes keep it open until a model is picked",
+  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,700}?if \(catalog\.models\.length === 0 && catalog\.runtime !== "opencode"\) setOpen\(false\);/,
+  "a runtime pick closes the menu only for menu-less runtimes; curated runtimes and OpenCode's asynchronous inventory stay open until a model is picked",
 );
 const modelRowBlock = chip.match(/\{modelOptions\.map\(\(m\) =>[\s\S]*?\)\)\}/)?.[0] ?? "";
 assert.match(
