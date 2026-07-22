@@ -107,6 +107,34 @@ assert.deepEqual(
   "resumed read-only turns use --resume, still trust granted roots via --add-dir (cave-n1yc: read-only sessions previously got no grant access at all), and keep the manifest's deny-tool sandbox args",
 );
 
+const unattendedArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "run one bounded iteration",
+  resumeSessionId: null,
+  newSessionId: "22222222-3333-4444-8555-666666666666",
+  model: null,
+  permissionMode: "unattended",
+  addDirs: ["/Users/example/.coven/cave/research-missions/research-1"],
+});
+assert.deepEqual(
+  unattendedArgs,
+  [
+    "--session-id",
+    "22222222-3333-4444-8555-666666666666",
+    "--add-dir",
+    "/Users/example/.coven/cave/research-missions/research-1",
+    "--allow-all-tools",
+    "--allow-all-urls",
+    "--output-format",
+    "json",
+    "--stream",
+    "on",
+    "-p",
+    "run one bounded iteration",
+  ],
+  "unattended one-shots (flow sessions) pre-approve tools and URLs — a -p run can't answer prompts, so approvals otherwise auto-deny and every workspace write fails — while path verification stays on (no --allow-all/--allow-all-paths), keeping writes inside cwd + --add-dir grants",
+);
+
 // ── identity preamble (mirror of coven's FamiliarContext) ─────────────────────
 
 assert.equal(

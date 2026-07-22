@@ -185,6 +185,21 @@ test("the default project root is the pre-resolved mission workspace", async () 
   assert.equal(result.status, "running");
 });
 
+test("every launch grants the mission workspace as a harness trust dir", async () => {
+  // A configured project root moves the spawn cwd away from the workspace;
+  // without an --add-dir grant a non-interactive run cannot write there and
+  // the iteration ends with "completed without artifacts/primary.md".
+  const grants: Array<string[] | undefined> = [];
+  const runner = makeResearchMissionRunner(deps({
+    startFlow: async (_flow, options) => {
+      grants.push(options.addDirs);
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+  await runner.createAndStart({ ...INPUT, projectRoot: "/allowed/repo" });
+  assert.deepEqual(grants, [["/tmp/research-missions/mission-1"]]);
+});
+
 test("an unallowed configured project root fails fast with an actionable error", async () => {
   let starts = 0;
   const runner = makeResearchMissionRunner(deps({

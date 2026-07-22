@@ -87,7 +87,12 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     resumeSessionId: null,
     newSessionId: sessionId,
     model: null,
-    permissionMode: "full",
+    // Flow runs are Cave-initiated one-shots with nobody at the prompt: they
+    // need pre-approved tools/URLs or the CLI auto-denies every write and the
+    // iteration "completes" with an untouched workspace (the research-mission
+    // "completed without artifacts/primary.md" failure). Path verification
+    // stays on — writes are confined to the spawn cwd plus addDirs.
+    permissionMode: "unattended",
     addDirs,
   });
 

@@ -45,11 +45,12 @@ assert.match(
 // Flow prompts direct familiars to write memory/self-reports into their own
 // workspace, but the spawn cwd is the project root and a non-interactive run
 // can't prompt for permission — the workspace must ride as a harness-level
-// trust grant or every such write hard-fails.
+// trust grant or every such write hard-fails. Callers (e.g. research
+// missions) can grant additional roots such as the mission workspace.
 assert.match(
   source,
-  /startCopilotFlowRun\(\{[\s\S]*?addDirs: await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\}\);/,
-  "direct copilot flow spawn must trust the familiar's own workspace via addDirs",
+  /startCopilotFlowRun\(\{[\s\S]*?addDirs: \[[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\],[\s\S]*?\}\);/,
+  "direct copilot flow spawn must trust caller grants and the familiar's own workspace via addDirs",
 );
 assert.match(
   source,

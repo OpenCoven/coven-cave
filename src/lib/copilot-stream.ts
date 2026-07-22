@@ -52,6 +52,15 @@ export type CopilotStreamSpec = {
 // shipped in every CLI version this stream path supports (verified 1.0.70).
 const COPILOT_ADD_DIR_FLAG = "--add-dir";
 
+// Approval argv for unattended one-shot runs (flow sessions). A `-p` spawn
+// cannot answer approval prompts, so without these the CLI auto-denies every
+// tool — the "mission workspace was read-only all session" failure that left
+// research missions without artifacts/primary.md. Deliberately narrower than
+// the manifest's full_args (`--allow-all`): tools and URLs are approved, but
+// file-path verification stays ON, confining writes to the spawn cwd plus the
+// explicit `--add-dir` grants (native flags verified against CLI 1.0.73).
+const COPILOT_UNATTENDED_ARGS = ["--allow-all-tools", "--allow-all-urls"];
+
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   if (!value.every((entry) => typeof entry === "string")) return null;
@@ -136,7 +145,14 @@ export type CopilotStreamLaunch = {
   newSessionId: string | null;
   /** Cleaned model id; a `provider/` namespace is stripped for copilot. */
   model: string | null;
-  permissionMode: "full" | "read";
+  /**
+   * `full` — interactive chat turns: access stays implicit (no widening args;
+   * #3297). `read` — manifest deny-tool sandbox. `unattended` — non-interactive
+   * one-shots that can't answer approval prompts (flow sessions): tools and
+   * URLs are pre-approved but path verification keeps writes inside the spawn
+   * cwd + `addDirs`. Never expose `unattended` to request-supplied modes.
+   */
+  permissionMode: "full" | "read" | "unattended";
   /**
    * Granted directories to trust at the harness level (repeatable
    * `--add-dir`). Without these the runtime-scope preamble's grants are
@@ -174,8 +190,12 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   // Sandbox mapping from the manifest. Read-only is enforced explicitly;
   // full access stays implicit so the direct Copilot stream path does not widen
   // the local harness sandbox with manifest full_args such as `--allow-all`.
+  // Unattended one-shots pre-approve tools/URLs (auto-deny otherwise) while
+  // path verification keeps the cwd + --add-dir write boundary.
   if (launch.permissionMode === "read") {
     args.push(...spec.sandboxReadOnlyArgs);
+  } else if (launch.permissionMode === "unattended") {
+    args.push(...COPILOT_UNATTENDED_ARGS);
   }
   args.push(...spec.prefixArgs, launch.prompt);
   return args;
