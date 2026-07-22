@@ -13,8 +13,8 @@ assert.match(
 
 assert.match(
   source,
-  /export function grokCandidateBinNames[\s\S]*platform === "win32"[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\][\s\S]*microsoft\|wsl[\s\S]*\["grok", "grok\.exe"\]/,
-  "WSL finds a Windows native Grok executable while Windows also supports npm command shims",
+  /export function grokCandidateBinNames[\s\S]*platform === "win32"[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\][\s\S]*microsoft\|wsl[\s\S]*\["grok", "grok\.exe", "grok\.cmd", "grok\.bat"\]/,
+  "WSL finds native Windows executables and npm command shims while Windows supports the same shims",
 );
 assert.match(
   source,
@@ -33,8 +33,8 @@ assert.match(
 );
 assert.match(
   source,
-  /covenLaunchCommandForBinary\(binary\)/,
-  "Windows npm shims must be converted to a direct Node launch, not spawned as .cmd files",
+  /const shimPlatform = \/\\\.\(cmd\|bat\)\$\/i\.test\(binary\) \? "win32" : process\.platform;[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
+  "Windows npm shims discovered from either Windows or WSL must be converted to a direct Node launch, not spawned as .cmd files",
 );
 
 console.log("grok-bin tests passed");

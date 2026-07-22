@@ -62,7 +62,10 @@ export function grokCandidateBinNames(
     return ["grok.exe", "grok.cmd", "grok.bat", "grok"];
   }
   return /(?:microsoft|wsl)/i.test(release)
-    ? ["grok", "grok.exe"]
+    // A Windows global npm install only guarantees a .cmd shim (rather than
+    // grok.exe). WSL can read its JS entry point, so recognize that launcher
+    // too instead of requiring a second Linux-side Grok installation.
+    ? ["grok", "grok.exe", "grok.cmd", "grok.bat"]
     : ["grok"];
 }
 
@@ -112,7 +115,12 @@ export function grokBin(): string {
 }
 
 export function grokLaunchCommandForBinary(binary: string): CovenLaunchCommand {
-  return covenLaunchCommandForBinary(binary);
+  // A WSL Cave process can discover a Windows global npm shim through the
+  // imported Windows PATH. Treat that shim like its native-Windows counterpart
+  // so we execute its JavaScript target with argv (never through cmd.exe,
+  // which would re-parse untrusted chat prompts as shell syntax).
+  const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
+  return covenLaunchCommandForBinary(binary, shimPlatform);
 }
 
 /** A spawn-safe command for the native executable or an npm Windows shim. */
