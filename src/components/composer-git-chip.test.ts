@@ -158,4 +158,29 @@ assert.match(
   "the branch trigger stops propagation so it never fires the chip's open-changes click",
 );
 
+// ── The branch menu carries PR + changes rows (post-hub grammar, cave-g21f) ──
+// The footer's branch chip opens this menu directly; the PR link and the
+// Git-changes drill-through that used to live in the pill's hub ride along as
+// optional footer rows so nothing regresses.
+assert.match(
+  chip,
+  /pr\?: BranchPr \| null;[\s\S]*?onOpenPr\?: \(url: string\) => void;[\s\S]*?onOpenChanges\?: \(\) => void;/,
+  "the branch menu takes optional PR/changes rows so the footer chip keeps hub parity",
+);
+assert.match(
+  chip,
+  /\{pr \|\| onOpenChanges \? <PopoverSeparator \/> : null\}/,
+  "the extra rows sit behind a separator and render only when provided",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenPr\?\.\(pr\.url\);[\s\S]{0,120}?Open PR #\{pr\.number\}/,
+  "the PR row closes the menu and defers to the host's URL opener",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenChanges\(\);[\s\S]{0,120}?Open Git changes/,
+  "the changes row closes the menu and fires the host's drill-through",
+);
+
 console.log("composer-git-chip.test.ts: ok");
