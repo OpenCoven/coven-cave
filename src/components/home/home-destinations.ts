@@ -8,6 +8,6 @@ export const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] 
 ];
 
 export const PLACEHOLDERS: Record<Destination, string> = {
-  chat: "Ask Nova anything…",
+  chat: "Summon something magical",
   board: "Describe what you want Nova to complete…",
 };

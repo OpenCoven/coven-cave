@@ -102,83 +102,132 @@
   color: var(--text-primary);
 }
 
-/* Continue — a persisted disclosure (like Open work below) whose open state
-   shows two side-by-side resume cards. */
+/* "Continue where you left off" (reference parity 2026-07-22) — three
+   horizontal resume cards below the composer. Icon glyph · title + source
+   subtitle · presence-aware "Edited N ago" foot · resume arrow. Uniform grid
+   collapses to one column on narrow widths. */
+.home-continue {
+  margin-top: var(--space-6);
+}
+.home-continue__label {
+  margin: 0 0 var(--space-3);
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
 .home-continue__cards {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  padding-top: var(--space-2);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
 }
-.home-continue__cards[data-count="1"] {
-  grid-template-columns: 1fr;
-}
-@media (max-width: 640px) {
-  .home-continue__cards {
-    grid-template-columns: 1fr;
-  }
+.home-continue__cards[data-count="1"] { grid-template-columns: 1fr; }
+.home-continue__cards[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .home-continue__cards,
+  .home-continue__cards[data-count="2"],
+  .home-continue__cards[data-count="3"] { grid-template-columns: 1fr; }
 }
 .home-continue__card {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "glyph body go"
+    "glyph foot go";
   align-items: center;
-  gap: var(--space-2);
+  column-gap: var(--space-3);
+  row-gap: 2px;
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
+  border-radius: var(--radius-lg, var(--radius-control));
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
 }
 .home-continue__card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, var(--border-strong));
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
 }
-.home-continue__dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--text-muted);
-}
-.home-continue__dot.is-running {
-  background: var(--accent-presence);
+.home-continue__glyph {
+  grid-area: glyph;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-secondary);
 }
 .home-continue__body {
+  grid-area: body;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  flex: 1 1 auto;
   min-width: 0;
 }
 .home-continue__title {
   font-size: var(--text-base);
+  font-weight: 550;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-continue__meta {
+.home-continue__sub {
   font-size: var(--text-xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-continue__go {
-  flex: none;
+.home-continue__foot {
+  grid-area: foot;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
-  transition: transform 120ms var(--ease-standard);
+  min-width: 0;
+}
+.home-continue__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 70%, var(--text-muted));
+}
+.home-continue__dot.is-running {
+  background: var(--accent-presence);
+  box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+.home-continue__age {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-continue__go {
+  grid-area: go;
+  align-self: center;
+  color: var(--text-muted);
+  transition: transform 140ms var(--ease-standard), color 140ms var(--ease-standard);
 }
 .home-continue__card:hover .home-continue__go {
+  color: var(--text-secondary);
   transform: translateX(2px);
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-continue__card:hover .home-continue__go {
-    transform: none;
-  }
+  .home-continue__card:hover .home-continue__go { transform: none; }
 }
+.home-continue__card:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+
+/* Continue disclosure/legacy card styles retired below (reference parity). */
 
 /* Disclosures (Open work · Prompt snippets) — header row over a fade-ended
    hairline: the divider is a gradient that ramps in 48px from each end. */

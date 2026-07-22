@@ -61,6 +61,7 @@ import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
 import { HomeSuggestionPills } from "@/components/home/home-suggestion-pills";
+import { HomeContinue } from "@/components/home/home-continue";
 import { useBoardCards } from "@/components/home/use-board-cards";
 import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -1137,6 +1138,18 @@ export function HomeComposer({
           cards={boardCards}
           projectName={selectedProject?.name ?? null}
           onPick={insertPrompt}
+        />
+      ) : null}
+
+      {/* "Continue where you left off" (reference parity 2026-07-22): up to
+          three recent resumable sessions as horizontal cards. Only on a blank
+          draft and when there is real resume history — stays out of the way
+          once you start typing. */}
+      {!text.trim() ? (
+        <HomeContinue
+          sessions={sessions}
+          familiarNameById={familiarNameById}
+          onOpenSession={onOpenSession}
         />
       ) : null}
 
