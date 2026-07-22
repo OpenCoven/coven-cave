@@ -110,9 +110,17 @@ assert.match(
   /await initializeAppPreferences\(\)[\s\S]*migrateLegacyBackdropImage\(\)/,
   "preference and legacy backdrop migration should run after hydration/auth bootstrap",
 );
-assert.match(controller, /PREFERENCES_SLOW_MS = 2_000[\s\S]*severity: "warning"/, "slow reconciliation is surfaced after shell mount");
-assert.match(controller, /severity: "error"[\s\S]*label: "Retry"/, "terminal bootstrap failure has an actionable retry");
-assert.match(controller, /dismissBanner\(PREFERENCES_BANNER_ID\)/, "successful recovery clears degraded status");
+assert.match(
+  controller,
+  /PREFERENCES_AUTO_RETRY_MS = \[5_000, 10_000, 20_000\]/,
+  "failed bootstrap retries silently with bounded backoff",
+);
+assert.match(
+  controller,
+  /attempt >= PREFERENCES_AUTO_RETRY_MS\.length\) return;/,
+  "silent auto-retry gives up after three attempts",
+);
+assert.doesNotMatch(controller, /pushBanner|useShellBanners|dismissBanner/, "reconciliation never surfaces a banner");
 for (const timing of ["response-commit", "shell-visible", "reconciliation-settled"]) {
   assert.ok(controller.includes(`\"${timing}\"`), `bootstrap controller records ${timing}`);
 }
