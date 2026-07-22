@@ -5,6 +5,7 @@
 // streaming/session contract to drive a local chat safely.
 
 export type RuntimeModelOption = { id: string; label: string };
+export type GrokSandboxProfile = "full" | "read";
 
 export type GrokStreamEvent =
   | { kind: "text"; text: string }
@@ -50,6 +51,24 @@ function readAllowRule(directory: string): string {
   // use a recursive glob so Cave's project grant stays an actual native grant.
   const normalized = directory.replace(/\\/g, "/").replace(/\/+$/, "");
   return `Read(${normalized}/**)`;
+}
+
+export function grokSandboxProfileForPermission(permissionMode: unknown): GrokSandboxProfile {
+  return permissionMode === "read" ? "read" : "full";
+}
+
+/**
+ * Grok pins its OS sandbox to the session that created it. Starting a new
+ * session is therefore required when Cave's requested access mode differs
+ * from the saved one; otherwise a "read" turn could resume an unrestricted
+ * session (or a "full" turn remain read-only).
+ */
+export function grokResumeNeedsNewSandboxSession(input: {
+  resumeSessionId: string | null;
+  savedProfile?: GrokSandboxProfile;
+  requestedProfile: GrokSandboxProfile;
+}): boolean {
+  return !!input.resumeSessionId && input.savedProfile !== input.requestedProfile;
 }
 
 export function grokIdentityRules(

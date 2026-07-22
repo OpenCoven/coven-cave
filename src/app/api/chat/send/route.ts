@@ -49,6 +49,8 @@ import {
 import {
   buildGrokBuildArgs,
   grokIdentityRules,
+  grokResumeNeedsNewSandboxSession,
+  grokSandboxProfileForPermission,
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
@@ -1127,6 +1129,7 @@ export async function POST(req: Request) {
   // direct local integration, deliberately independent of coven's generic
   // `run --stream-json` adapter protocol.
   const grokDirect = !sshRuntime && binding.harness === "grok";
+  const grokSandboxProfile = grokSandboxProfileForPermission(body.permissionMode);
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
@@ -1220,7 +1223,23 @@ export async function POST(req: Request) {
   const resumeTarget = body.sessionId
     ? existingConversation?.harnessSessionId ?? body.sessionId
     : null;
-  const args = buildArgs(resumeTarget);
+  // Grok deliberately refuses to change a resumed session's sandbox. Persist
+  // the profile used for the previous native session and transparently start a
+  // fresh one (with recent context replayed) when the access chip changed. An
+  // older conversation without this metadata also starts fresh, rather than
+  // risking a read-only request inheriting an unrestricted old session.
+  const grokFreshSessionForSandbox = grokDirect && grokResumeNeedsNewSandboxSession({
+    resumeSessionId: resumeTarget,
+    savedProfile: existingConversation?.grokSandboxProfile,
+    requestedProfile: grokSandboxProfile,
+  });
+  const grokSandboxRetry = grokFreshSessionForSandbox
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
+  const args = buildArgs(
+    grokFreshSessionForSandbox ? null : resumeTarget,
+    grokSandboxRetry?.prompt,
+  );
 
   // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
@@ -1285,6 +1304,13 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (grokFreshSessionForSandbox) {
+        pushProgress(
+          "grok-sandbox-restart",
+          "Access mode changed; starting a fresh Grok session with recent context",
+          "done",
+        );
+      }
 
       let sessionId: string | null = body.sessionId ?? null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
@@ -2147,6 +2173,7 @@ export async function POST(req: Request) {
         const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
+        if (grokDirect) conv.grokSandboxProfile = grokSandboxProfile;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);

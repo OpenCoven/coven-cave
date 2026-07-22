@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   buildGrokBuildArgs,
   grokIdentityRules,
+  grokResumeNeedsNewSandboxSession,
+  grokSandboxProfileForPermission,
   parseGrokModels,
   parseGrokStreamEvent,
 } from "./grok-build.ts";
@@ -88,5 +90,26 @@ assert.deepEqual(
   { kind: "error", message: "not authenticated", usage: undefined, totalCostUsd: 0 },
 );
 assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { kind: "ignore" });
+
+assert.equal(grokSandboxProfileForPermission("read"), "read");
+assert.equal(grokSandboxProfileForPermission(undefined), "full");
+assert.equal(
+  grokResumeNeedsNewSandboxSession({
+    resumeSessionId: "session-id",
+    savedProfile: "full",
+    requestedProfile: "read",
+  }),
+  true,
+  "a resumed Grok chat must start fresh when the requested sandbox changes",
+);
+assert.equal(
+  grokResumeNeedsNewSandboxSession({
+    resumeSessionId: "session-id",
+    savedProfile: "read",
+    requestedProfile: "read",
+  }),
+  false,
+  "a resume can retain the native Grok session when its sandbox matches",
+);
 
 console.log("grok-build tests passed");
