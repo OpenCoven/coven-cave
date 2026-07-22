@@ -77,8 +77,17 @@ test("copy flash is a 1200ms label swap — reduced-motion safe", () => {
   assert.match(css, /prefers-reduced-motion[\s\S]*transition: none/);
 });
 
+test("copy goes through lib/clipboard's copyText — works in the Tauri webview", () => {
+  // navigator.clipboard is undefined outside secure contexts (packaged Tauri,
+  // plain-http LAN) — copyText falls back to execCommand and reports success,
+  // so the ✓ flash only shows when the copy actually landed.
+  assert.match(modals, /import \{ copyText \} from "@\/lib\/clipboard"/);
+  assert.match(modals, /const ok = await copyText\(text\)/);
+  assert.doesNotMatch(source, /navigator\.clipboard\.writeText/);
+});
+
 test("modals trap focus, restore on close, Esc + backdrop close, announce open", () => {
-  assert.match(modals, /useFocusTrap\(true, dialogRef, \{ onEscape: onClose \}\)/);
+  assert.match(modals, /useFocusTrap\(active, dialogRef, \{ onEscape: onClose \}\)/);
   assert.match(modals, /role="dialog"/);
   assert.match(modals, /aria-modal="true"/);
   assert.match(modals, /tabIndex=\{-1\}/);
@@ -90,6 +99,23 @@ test("modals trap focus, restore on close, Esc + backdrop close, announce open",
   for (const variant of ["config", "viewer", "editor"]) {
     assert.match(modals, new RegExp(`variant="${variant}"`));
   }
+});
+
+test("stacked viewer+editor keep exactly one live focus trap (active gating)", () => {
+  // StudioModal exposes `active` (default true) and feeds it to useFocusTrap
+  // as the enable flag — an inactive dialog has no Tab cycle and no Escape
+  // handler, so Escape closes only the top (editor) dialog, not both.
+  assert.match(modals, /active\?: boolean/);
+  assert.match(modals, /active = true/);
+  assert.match(modals, /useFocusTrap\(active, dialogRef/);
+  // The parked dialog is also hidden from AT and input — no second
+  // aria-modal sibling in the accessibility tree while stacked.
+  assert.match(modals, /aria-hidden=\{active \? undefined : true\}/);
+  assert.match(modals, /inert=\{!active \|\| undefined\}/);
+  // The viewer forwards the flag to the shared shell…
+  assert.match(modals, /active=\{active\}/);
+  // …and the studio parks the viewer exactly while the editor is stacked.
+  assert.match(tab, /active=\{editorGeneration === null\}/);
 });
 
 test("filter chips cover only kinds that can exist, with real counts", () => {
@@ -115,4 +141,26 @@ test("per-kind actions stay honest: mermaid inline + copy, open per kind, no fak
   assert.match(modals, /Download \.md/);
   assert.match(modals, /new Blob\(\[markdown\], \{ type: "text\/markdown" \}\)/);
   assert.doesNotMatch(source, /Export (pptx|pdf|png|mp3|mp4)/i);
+});
+
+test("familiar switches can't leak another familiar's generations (loadSeq guard)", () => {
+  // Canonical stale-response guard (familiar-work-queue-view): each load bumps
+  // the epoch, and both resolution paths discard responses from older epochs —
+  // an in-flight fetch for the previous familiar can never land.
+  assert.match(tab, /const loadSeq = useRef\(0\)/);
+  assert.match(tab, /const seq = \+\+loadSeq\.current/);
+  const staleGuards = tab.match(/seq !== loadSeq\.current/g) ?? [];
+  assert.ok(staleGuards.length >= 2, "then AND catch paths must check the epoch");
+  // On a familiar switch the previous rows drop immediately (loading/empty,
+  // never another familiar's generations) and the kind filter resets to All
+  // so a kind the new familiar lacks can't strand an empty view.
+  assert.match(tab, /loadedFamiliarRef\.current !== familiarId/);
+  assert.match(tab, /setGenerations\(\[\]\);\s*setFilter\("all"\);/);
+});
+
+test("remove treats the DELETE 404 as success — no phantom rows", () => {
+  // A generation already gone server-side ("generation not found") is a
+  // completed removal: the row leaves the list instead of re-erroring.
+  assert.match(tab, /!result\.ok && result\.error === "generation not found"/);
+  assert.match(tab, /if \(!result\.ok && !alreadyGone\)/);
 });

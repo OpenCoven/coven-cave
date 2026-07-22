@@ -87,9 +87,17 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /aria-labelledby="research-res-overlay-title"/);
   assert.match(source, /tabIndex=\{-1\}/);
-  // Copy flashes ✓ for 1200ms (a text/icon swap — reduced-motion safe) and
-  // Open goes through the surface context, not a raw anchor.
-  assert.match(source, /navigator\.clipboard\.writeText\(url\)/);
+  // Copy goes through lib/clipboard's copyText — navigator.clipboard is
+  // undefined outside secure contexts (packaged Tauri, plain-http LAN), so
+  // the raw API silently no-ops there while copyText falls back to
+  // execCommand and reports whether the copy landed. The ✓ flash (1200ms
+  // text/icon swap — reduced-motion safe) only shows on real success, and a
+  // failure is announced assertively. Open goes through the surface context,
+  // not a raw anchor.
+  assert.match(source, /import \{ copyText \} from "@\/lib\/clipboard"/);
+  assert.match(source, /const ok = await copyText\(url\)/);
+  assert.match(source, /announce\("Couldn’t copy the link\.", "assertive"\)/);
+  assert.doesNotMatch(source, /navigator\.clipboard\.writeText/);
   assert.match(source, /setTimeout\(\(\) => setCopied\(false\), 1200\)/);
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
 });

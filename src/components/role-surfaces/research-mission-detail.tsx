@@ -17,7 +17,7 @@
  * missing are omitted rather than invented.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -105,8 +105,17 @@ export function ResearchMissionDetail({
   // null = untouched; the retry payload then adapts to the failure instead.
   const [retryRoot, setRetryRoot] = useState<string | null>(null);
   const missionId = mission?.id ?? null;
+  // Tracks the mission currently on screen so an action that settles after
+  // the user switched missions is discarded instead of applying its
+  // busy/error/announce state to the wrong mission's view.
+  const missionIdRef = useRef(missionId);
 
+  // A mission switch resets every piece of per-mission action state — the
+  // in-flight action belongs to the previous mission (its settle handlers
+  // check missionIdRef and discard), so the fresh mission starts unblocked.
   useEffect(() => {
+    missionIdRef.current = missionId;
+    setBusy(false);
     setRetryRoot(null);
     setActionError(null);
     setDirection("");
@@ -138,6 +147,9 @@ export function ResearchMissionDetail({
   const draftArtifact = mission.artifacts.filter((artifact) => artifact.state === "working").at(-1);
   const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
   const isLive = LIVE_STATUSES.has(mission.status);
+  // Archived missions are read-only: automation controls gate on this the
+  // same way "Create schedule" already does.
+  const isArchived = mission.status === "archived";
   const showArtifactRail = !isCheckpointLike && !isLive;
 
   // Root-blocked failures get a self-healing Retry: untouched config clears the
@@ -157,57 +169,62 @@ export function ResearchMissionDetail({
       : plannedRetry.projectRoot === mission.projectRoot ? "Retry" : "Retry with new root";
   const continueInfo = researchContinueLabel(mission);
 
-  const runAction = async (input: ResearchMissionActionInput) => {
+  /** Shared settle path for every mission action. The hook reports failures
+   *  as { ok: false }; the catch is transport defense only — a throw skips
+   *  the ok branch, so a failure is never reported twice. State from an
+   *  action that settles after a mission switch is discarded, and the busy
+   *  flag always clears for the mission that set it. */
+  const runMissionAction = async (
+    fallbackError: string,
+    perform: () => Promise<{ ok: boolean; error?: string }>,
+    onSuccess: () => void,
+  ) => {
+    const startedFor = mission.id;
+    const stillCurrent = () => missionIdRef.current === startedFor;
     setBusy(true);
     setActionError(null);
     try {
-      const result = await onAction(input);
+      const result = await perform();
+      if (!stillCurrent()) return;
       if (!result.ok) {
-        const message = result.error ?? "Research action failed";
+        const message = result.error ?? fallbackError;
         setActionError(message);
         announce(message);
         return;
       }
+      onSuccess();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const message = error instanceof Error ? error.message : fallbackError;
+      setActionError(message);
+      announce(message);
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  };
+  const runAction = (input: ResearchMissionActionInput) => runMissionAction(
+    "Research action failed",
+    () => onAction(input),
+    () => {
       if (input.action === "refine") setDirection("");
       if (input.action === "retry") setRetryRoot(null);
       announce(`Research ${input.action} applied.`);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  );
   const runAutomationAction = async (action: "pause" | "resume" | "run-now") => {
-    if (!mission.automation) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      const result = await onAutomationAction(mission.automation.id, action);
-      if (!result.ok) {
-        const message = result.error ?? "Automation action failed";
-        setActionError(message);
-        announce(message);
-        return;
-      }
-      announce(action === "run-now" ? "Research iteration started." : `Schedule ${action}d.`);
-    } finally {
-      setBusy(false);
-    }
+    const automation = mission.automation;
+    if (!automation) return;
+    await runMissionAction(
+      "Automation action failed",
+      () => onAutomationAction(automation.id, action),
+      () => announce(action === "run-now" ? "Research iteration started." : `Schedule ${action}d.`),
+    );
   };
-  const createSchedule = async () => {
-    setBusy(true);
-    setActionError(null);
-    try {
-      const result = await onSchedule("RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0");
-      if (!result.ok) {
-        const message = result.error ?? "Research schedule could not be created";
-        setActionError(message);
-        announce(message);
-        return;
-      }
-      announce("Paused daily research schedule created.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const createSchedule = () => runMissionAction(
+    "Research schedule could not be created",
+    () => onSchedule("RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"),
+    () => announce("Paused daily research schedule created."),
+  );
 
   // Evidence-delta triage reuses the ledger's exact source-update mechanism:
   // Keep → used, Reject → rejected, Verify → stays conflicting + appends note.
@@ -513,7 +530,7 @@ export function ResearchMissionDetail({
                     <Button
                       size="xs"
                       variant="ghost"
-                      disabled={busy}
+                      disabled={busy || isArchived}
                       onClick={() => void runAutomationAction(mission.automation!.status === "ACTIVE" ? "pause" : "resume")}
                     >
                       {mission.automation.status === "ACTIVE" ? "Pause schedule" : "Resume schedule"}
@@ -521,7 +538,7 @@ export function ResearchMissionDetail({
                     <Button
                       size="xs"
                       variant="primary"
-                      disabled={busy || mission.status === "completed"}
+                      disabled={busy || isArchived || mission.status === "completed"}
                       onClick={() => void runAutomationAction("run-now")}
                     >
                       Run now

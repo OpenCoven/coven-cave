@@ -7,6 +7,7 @@ import { allowedResearchActions, type ResearchMission } from "../research-missio
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
+  reconcileResearchMissionList,
   sessionAlreadyGone,
   withinStartupGrace,
   type ResearchMissionRunnerDeps,
@@ -315,4 +316,127 @@ test("malformed sources checkpoint the mission instead of publishing", async () 
   const result = await runner.reconcile(stored);
   assert.equal(result.status, "checkpoint");
   assert.match(result.lastError ?? "", /sources\.json is malformed/);
+});
+
+test("a mission with no artifact refs reconciles instead of throwing", async () => {
+  const published: string[] = [];
+  let stored = checkpointMission({
+    status: "running",
+    artifacts: [],
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "running",
+      finishedAt: undefined,
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: [
+          "@@research-control",
+          '{"decision":"complete","reason":"Done","confidence":0.9}',
+          "@@research-artifacts-written",
+        ].join("\n"),
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async () => "# Complete\n",
+    publishKnowledge: async (entry) => { published.push(entry.body); return entry; },
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.artifacts, [], "no artifact ref may be invented");
+  assert.deepEqual(published, [], "nothing publishes without an artifact ref");
+});
+
+test("manually attached sources survive evidence reconciliation", async () => {
+  let stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "running",
+      finishedAt: undefined,
+    }],
+    sources: [
+      {
+        id: "manual-memo",
+        title: "Manual memo",
+        url: "https://example.com/manual-memo",
+        sourceType: "web",
+        status: "candidate",
+      },
+      {
+        id: "manual-dup",
+        title: "Stale manual copy",
+        url: "https://example.com/source",
+        sourceType: "web",
+        status: "candidate",
+      },
+    ],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: [
+          "@@research-control",
+          '{"decision":"complete","reason":"Done","confidence":0.9}',
+          "@@research-artifacts-written",
+        ].join("\n"),
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async () => "# Complete\n",
+    readSources: async () => [{
+      id: "source-1",
+      title: "Primary source",
+      url: "https://example.com/source",
+      sourceType: "web",
+      status: "used",
+    }],
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.sources.length, 2);
+  const manual = result.sources.find((source) => source.id === "manual-memo");
+  assert.ok(manual, "the manual-only source must survive the reconcile");
+  assert.equal(manual?.status, "candidate");
+  const collided = result.sources.find((source) => source.url === "https://example.com/source");
+  assert.equal(collided?.id, "source-1", "the flow-written entry wins a url collision");
+  assert.equal(collided?.status, "used");
+});
+
+test("one poisoned mission degrades to its stored snapshot instead of failing the list", async () => {
+  const poisoned = checkpointMission({ id: "mission-poisoned" });
+  const healthy = checkpointMission({ id: "mission-healthy" });
+  let healthyReconciles = 0;
+  const runner = {
+    reconcile: async (mission: ResearchMission): Promise<ResearchMission> => {
+      if (mission.id === "mission-poisoned") throw new Error("boom");
+      healthyReconciles += 1;
+      return { ...mission, lastError: "reconciled" };
+    },
+    reconcileAutomation: async (mission: ResearchMission): Promise<ResearchMission> => mission,
+  };
+  const result = await reconcileResearchMissionList([poisoned, healthy], runner);
+  assert.equal(result.length, 2, "the list endpoint must keep serving");
+  assert.deepEqual(result[0], poisoned, "the poisoned mission falls back to its stored snapshot");
+  assert.equal(result[1].lastError, "reconciled");
+  assert.equal(healthyReconciles, 1);
 });

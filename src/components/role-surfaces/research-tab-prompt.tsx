@@ -20,6 +20,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { linkCategoryMeta, type SavedLink } from "@/lib/link-organizer";
 import type { ResearchMissionMode } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
@@ -37,6 +38,7 @@ const ANGLE_SEEDS_PER_POOL = 6;
 
 export function ResearchTabPrompt({ research, context, onNavigate, initialMode }: ResearchTabPromptProps) {
   const links = useResearchLinks();
+  const { announce } = useAnnouncer();
   const [attached, setAttached] = useState<SavedLink[]>([]);
   const [query, setQuery] = useState("");
 
@@ -90,9 +92,12 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
           if (result.ok) {
             // Attach the selected quick saves as candidate sources — the same
             // attach-source action the evidence ledger uses. A failed attach is
-            // non-fatal: the mission exists and the ledger can attach later.
+            // non-fatal: the mission exists (and its spend is committed), so
+            // failures are collected — never aborting the loop or the desk
+            // hand-off, which would invite a duplicate-spend retry.
+            let failedAttaches = 0;
             for (const link of attached) {
-              await research.act(result.mission.id, {
+              const attach = await research.act(result.mission.id, {
                 action: "attach-source",
                 source: {
                   id: `link-${link.id}`,
@@ -101,9 +106,13 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
                   sourceType: "web",
                   status: "candidate",
                 },
-              });
+              }).catch(() => ({ ok: false as const }));
+              if (!attach.ok) failedAttaches += 1;
             }
             setAttached([]);
+            if (failedAttaches > 0) {
+              announce(`Mission started — ${failedAttaches} link${failedAttaches === 1 ? "" : "s"} failed to attach.`);
+            }
             // A freshly started mission lives on the Desk — follow it there.
             onNavigate("desk", { missionId: result.mission.id });
           }

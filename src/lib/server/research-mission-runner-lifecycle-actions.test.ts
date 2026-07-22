@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ConversationFile } from "../cave-conversations.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import { allowedResearchActions, type ResearchMission } from "../research-missions.ts";
+import { allowedResearchActions, type ResearchMission, type ResearchSourcePatch } from "../research-missions.ts";
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
@@ -406,4 +406,112 @@ test("artifact rejection preserves the file reference and refine starts once", a
   });
   assert.equal(refined.direction, "Prioritize primary sources published since 2024");
   assert.equal(refined.iterations.length, 2);
+});
+
+test("cancel kills a queued session that already carries a session id", async () => {
+  // Travel handoffs and slow starts can leave a live session on an iteration
+  // that still reads "queued" — cancel must kill it, not only "running" ones.
+  const killed: string[] = [];
+  let stored = checkpointMission({
+    status: "queued",
+    iterations: [{
+      number: 1,
+      status: "queued",
+      flowRunId: "run-1",
+      sessionId: "session-1",
+      startedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    killSession: async (sessionId) => { killed.push(sessionId); },
+  }));
+  const result = await runner.act(stored.id, { action: "cancel" });
+  assert.deepEqual(killed, ["session-1"], "a queued iteration with a session keeps burning spend");
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.iterations[0].status, "cancelled");
+});
+
+test("cancel keeps a settled iteration's recorded outcome", async () => {
+  const killed: string[] = [];
+  let stored = checkpointMission();
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    killSession: async (sessionId) => { killed.push(sessionId); },
+  }));
+  const result = await runner.act(stored.id, { action: "cancel" });
+  assert.deepEqual(killed, [], "a settled iteration's session is already gone");
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.iterations[0].status, "checkpoint", "the settled outcome must survive cancel");
+  assert.equal(result.iterations[0].finishedAt, NOW.toISOString());
+});
+
+test("update-source rejects unknown fields, url/id tampering, and invalid values", async () => {
+  let stored = checkpointMission({
+    sources: [{
+      id: "manual-1",
+      title: "Spec",
+      url: "https://example.com/spec",
+      sourceType: "web",
+      status: "candidate",
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+  }));
+  const rejections: Array<[Record<string, unknown>, RegExp]> = [
+    [{ url: "javascript:alert(1)" }, /invalid source patch field: url/],
+    [{ id: "hijacked" }, /invalid source patch field: id/],
+    [{ addedAt: "2020-01-01T00:00:00.000Z" }, /invalid source patch field: addedAt/],
+    [{ status: null }, /invalid source status/],
+    [{ status: "definitely-not-a-status" }, /invalid source status/],
+    [{ confidence: 7 }, /invalid source confidence/],
+    [{ title: "   " }, /invalid source title/],
+  ];
+  for (const [patch, expected] of rejections) {
+    await assert.rejects(
+      runner.act(stored.id, {
+        action: "update-source",
+        sourceId: "manual-1",
+        patch: patch as unknown as ResearchSourcePatch,
+      }),
+      expected,
+    );
+  }
+  assert.equal(stored.sources[0].url, "https://example.com/spec", "the stored url must be untouched");
+  assert.equal(stored.sources[0].id, "manual-1");
+  assert.equal(stored.sources[0].status, "candidate");
+});
+
+test("createAndStart cannot resurrect a mission cancelled during launch", async () => {
+  let stored: ResearchMission | null = null;
+  let releaseStart!: () => void;
+  const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });
+  let observedStart!: () => void;
+  const startObserved = new Promise<void>((resolve) => { observedStart = resolve; });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => (stored ? structuredClone(stored) : null),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => {
+      observedStart();
+      await startGate;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+  const creating = runner.createAndStart(INPUT);
+  await startObserved;
+  const cancelling = runner.act("mission-1", { action: "cancel" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  releaseStart();
+  const [, cancelled] = await Promise.all([creating, cancelling]);
+  const finalStored = stored as ResearchMission | null;
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(
+    finalStored?.status,
+    "cancelled",
+    "the launch-result save must not overwrite a concurrent cancel",
+  );
 });
