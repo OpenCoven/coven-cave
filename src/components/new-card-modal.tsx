@@ -74,9 +74,10 @@ export function NewCardModal({
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
 
-  // The project comes first. Familiar choices are then fetched server-side
-  // with the session-launch access requirement, matching the final launch
-  // authorization boundary.
+  // Project-backed familiar choices are fetched server-side with the
+  // session-launch access requirement, matching the final launch
+  // authorization boundary. Unscoped cards retain the complete roster so
+  // users can deliberately choose the installed harness/runtime they need.
   const { projects, loading: projectsLoading } = useProjects({ enabled: open });
   const {
     familiars: eligibleFamiliars,
@@ -115,9 +116,15 @@ export function NewCardModal({
   // The selected project drives the card's working directory — there is no
   // free-form cwd field, so drafts never carry machine-specific paths.
   const selectedProject = projects.find((p) => p.id === projectId) ?? null;
-  const familiarPickerReady = Boolean(projectId) && eligibleFamiliarsLoaded && !eligibleFamiliarsLoading;
+  const familiarPickerReady = !projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
   const familiarOptions = !projectId
-    ? [{ value: "", label: "Choose a project first", disabled: true }]
+    ? [
+        { value: "", label: "Unassigned" },
+        ...familiars.map((familiar) => ({
+          value: familiar.id,
+          label: `${familiar.display_name} · ${familiar.harness ?? "?"}`,
+        })),
+      ]
     : eligibleFamiliarsLoading
       ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
       : !eligibleFamiliarsLoaded

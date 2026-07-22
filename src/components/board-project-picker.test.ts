@@ -46,7 +46,17 @@ assert.match(
 assert.match(
   inspector,
   /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,200}disabled=\{!familiarPickerReady\}/,
-  "inspector disables and hides the familiar choice until its project authorization result is ready",
+  "inspector disables the familiar choice until its project authorization result is ready",
+);
+assert.match(
+  inspector,
+  /const familiarPickerReady = !card\.projectId \|\| \(eligibleFamiliarsLoaded && !eligibleFamiliarsLoading\)/,
+  "inspector keeps the familiar picker available for unscoped cards",
+);
+assert.match(
+  inspector,
+  /const familiarOptions = !card\.projectId[\s\S]{0,360}\.{3}familiars\.map\(\(familiar\)/,
+  "inspector preserves the complete familiar roster for unscoped cards",
 );
 assert.match(
   inspector,
@@ -84,7 +94,7 @@ assert.ok(
 assert.match(
   newCard,
   /value=\{familiarPickerReady \? familiarId \?\? "" : ""\}[\s\S]{0,200}disabled=\{!familiarPickerReady\}/,
-  "new-card modal requires a selected and authorized project before Familiar is available",
+  "new-card modal gates project-backed familiar choices on authorization",
 );
 assert.match(
   newCard,

@@ -796,7 +796,11 @@ export function BoardView({
   const openTaskWork = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
     if (!card) return;
-    if (card.sessionId) {
+    // Project-backed sessions must still traverse the board-chat endpoint so
+    // a grant revoked after the session was created cannot be reopened from
+    // the Board without a fresh authorization check. Unscoped legacy cards
+    // have no project boundary to revalidate and can keep the direct path.
+    if (card.sessionId && !card.projectId) {
       if (isMobile) {
         const linkedSession = sessions.find((session) => session.id === card.sessionId);
         onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);

@@ -25,13 +25,18 @@ assert.match(
 );
 assert.match(
   modal,
-  /const familiarPickerReady = Boolean\(projectId\) && eligibleFamiliarsLoaded && !eligibleFamiliarsLoading/,
-  "new-card modal enables Familiar only after a project-scoped response succeeds",
+  /const familiarPickerReady = !projectId \|\| \(eligibleFamiliarsLoaded && !eligibleFamiliarsLoading\)/,
+  "new-card modal enables the complete roster for unscoped work and waits for authorization otherwise",
 );
 assert.match(
   modal,
   /eligibleFamiliars\.map\(\(familiar\)/,
   "new-card modal renders only the server-authorized familiar list",
+);
+assert.match(
+  modal,
+  /const familiarOptions = !projectId[\s\S]{0,500}\.{3}familiars\.map\(\(familiar\)/,
+  "new-card modal preserves the complete familiar roster for unscoped cards",
 );
 assert.match(
   modal,

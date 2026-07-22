@@ -1143,9 +1143,12 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
     }
   }, [card.familiarId, card.id, card.projectId, eligibleFamiliars, eligibleFamiliarsLoaded, onPatch]);
 
-  const familiarPickerReady = Boolean(card.projectId) && eligibleFamiliarsLoaded && !eligibleFamiliarsLoading;
+  const familiarPickerReady = !card.projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
   const familiarOptions = !card.projectId
-    ? [{ value: "", label: "Choose a project first", disabled: true }]
+    ? [
+        { value: "", label: "Unassigned" },
+        ...familiars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+      ]
     : eligibleFamiliarsLoading
       ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
       : !eligibleFamiliarsLoaded

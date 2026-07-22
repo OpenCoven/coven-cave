@@ -39,6 +39,11 @@ assert.match(
 );
 assert.match(
   boardView,
+  /if \(card\.sessionId && !card\.projectId\)/,
+  "project-backed task sessions must revisit the board endpoint for current authorization before opening",
+);
+assert.match(
+  boardView,
   /if \(isMobile\)[\s\S]*onJumpToSession\?\.\(/,
   "Mobile should preserve the existing general Chat fallback",
 );
