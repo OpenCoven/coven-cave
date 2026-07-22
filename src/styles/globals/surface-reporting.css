@@ -331,8 +331,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .dr-shipped__toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border-bottom: 1px solid var(--border-hairline);
 }
 .dr-shipped__search {
@@ -342,7 +342,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-3);
   color: var(--text-primary);
   outline: none;
 }
@@ -383,7 +383,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   top: 0;
   z-index: 1;
   background: var(--bg-raised);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   /* box-shadow, not border-bottom: collapsed borders don't travel with sticky
      cells, so the hairline would vanish once rows scroll (see .fa-thread-table). */
   box-shadow: 0 1px 0 var(--border-hairline);
@@ -393,7 +393,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   all: unset;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   cursor: pointer;
   font: inherit;
   font-weight: inherit;
@@ -401,14 +401,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .dr-shipped__table thead th button:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .dr-shipped__table thead th[aria-sort="ascending"] button,
 .dr-shipped__table thead th[aria-sort="descending"] button {
   color: var(--color-info);
 }
 .dr-shipped__table tbody tr td {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border-hairline);
 }
 .dr-shipped__table tbody tr:first-child td { border-top: none; }
@@ -425,7 +425,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .dr-shipped__empty {
   text-align: center;
-  padding: 24px 12px;
+  padding: var(--space-6) var(--space-3);
   color: var(--text-secondary);
 }
 
