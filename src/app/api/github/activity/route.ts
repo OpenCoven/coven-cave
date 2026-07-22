@@ -17,7 +17,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
 
 export const dynamic = "force-dynamic";
@@ -91,14 +91,6 @@ async function ghFetch(path: string, token: string | null) {
   return { res, data, rateRemaining, rateLimit };
 }
 
-function resolveGitHubToken(): string | null {
-  return (
-    resolveSecret("GITHUB_PAT") ??
-    process.env.GITHUB_TOKEN?.trim() ??
-    process.env.COVEN_GITHUB_TOKEN?.trim() ??
-    null
-  );
-}
 
 function nextGitHubPagePath(link: string | null): string | null {
   const nextUrl = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1];

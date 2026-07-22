@@ -19,7 +19,7 @@ import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { stripAnsi } from "@/lib/ansi";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -420,7 +420,7 @@ function labelsFromGitHub(value: unknown): string[] {
 
 async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGitHubLink[]> {
   if (github.length === 0) return github;
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const token = resolveGitHubToken();
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",

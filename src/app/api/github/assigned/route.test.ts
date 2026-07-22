@@ -12,8 +12,13 @@ assert.match(
 
 assert.match(
   source,
-  /resolveSecret\("GITHUB_PAT"\)\s*\?\?\s*process\.env\.GITHUB_TOKEN\?\.trim\(\)\s*\?\?\s*process\.env\.COVEN_GITHUB_TOKEN\?\.trim\(\)/,
-  "assigned GitHub route should reuse the saved GitHub PAT before legacy token env vars",
+  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  "assigned GitHub route should use the shared token resolver",
+);
+assert.match(
+  source,
+  /const token = resolveGitHubToken\(\)/,
+  "assigned GitHub route should use the same installation-agnostic token as the activity route",
 );
 
 assert.doesNotMatch(

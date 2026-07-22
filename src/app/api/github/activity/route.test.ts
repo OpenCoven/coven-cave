@@ -32,8 +32,13 @@ assert.match(
 );
 assert.match(
   route,
-  /resolveSecret\("GITHUB_PAT"\)\s*\?\?\s*process\.env\.GITHUB_TOKEN\?\.trim\(\)\s*\?\?\s*process\.env\.COVEN_GITHUB_TOKEN\?\.trim\(\)/,
-  "activity should support tokens injected by supported installation harnesses",
+  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  "activity should use the shared token resolver for every supported installation harness",
+);
+assert.match(
+  route,
+  /const storedToken = resolveGitHubToken\(\)/,
+  "activity should resolve the token through the shared installation-agnostic resolver",
 );
 assert.match(
   route,

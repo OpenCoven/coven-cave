@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid method" }, { status: 400 });
   }
 
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const token = resolveGitHubToken();
   if (!token) {
     return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
   }
