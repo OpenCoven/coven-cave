@@ -3,6 +3,7 @@ import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -63,6 +64,11 @@ export async function POST(
 
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
+  // Familiar configs may retain an adapter package/legacy alias (or different
+  // casing) while Chat normalizes it before routing. Keep Board launches on
+  // that same canonical path so a bridge-backed adapter reaches its native
+  // path instead of falling through to the daemon.
+  binding.harness = canonicalHarnessId(binding.harness);
 
   // Resolve the project the task chat will run in. Security-critical: when the
   // card is assigned to a project we resolve the root SERVER-SIDE from
@@ -125,33 +131,6 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
 
-  // OpenClaw is a Cave-owned bridge, not a daemon harness. Reserve and link
-  // the conversation id here so the task cockpit can start the normal Chat
-  // stream with the full task context instead of asking the daemon to spawn an
-  // unsupported `openclaw` adapter.
-  if (binding.harness === "openclaw") {
-    const sessionId = crypto.randomUUID();
-    const updated = await updateCard(card.id, {
-      sessionId,
-      familiarId,
-      ...(card.projectId || body.projectRoot ? { cwd: projectRoot } : {}),
-    });
-    if (!updated) {
-      return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
-    }
-    await recordSessionFamiliar(sessionId, familiarId);
-    return NextResponse.json({
-      ok: true,
-      reused: false,
-      card: updated,
-      sessionId,
-      familiarId,
-      projectRoot,
-      initialPrompt: buildInitialTaskChatPrompt(card),
-      bridge: "openclaw",
-    });
-  }
-
   // ── Intelligent worktree isolation ────────────────────────────────────────
   // If another card already has a live session for a *different* issue in the
   // same GitHub repo, this issue gets its own dedicated git worktree so the
@@ -188,6 +167,38 @@ export async function POST(
         /* fall back to the shared checkout */
       }
     }
+  }
+
+  // OpenClaw is a Cave-owned bridge, not a daemon harness. It still follows
+  // the same worktree isolation as daemon-backed tasks, then reserves and
+  // links a conversation id for the task cockpit to start through Chat.
+  if (binding.harness === "openclaw") {
+    const sessionId = crypto.randomUUID();
+    const updated = await updateCard(card.id, {
+      sessionId,
+      familiarId,
+      ...(worktree
+        ? { cwd: sessionRoot }
+        : (card.projectId || body.projectRoot ? { cwd: projectRoot } : {})),
+    });
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
+    }
+    await Promise.all([
+      recordSessionFamiliar(sessionId, familiarId),
+      setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      reused: false,
+      card: updated,
+      sessionId,
+      familiarId,
+      projectRoot: sessionRoot,
+      worktree,
+      initialPrompt: buildInitialTaskChatPrompt(card),
+      bridge: "openclaw",
+    });
   }
 
   const res = await callDaemon<{ id: string; status: string }>({

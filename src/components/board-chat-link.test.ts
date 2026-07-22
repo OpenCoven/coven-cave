@@ -106,7 +106,7 @@ assert.match(
 );
 assert.match(
   route,
-  /if \(binding\.harness === "openclaw"\)[\s\S]{0,1200}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
+  /binding\.harness = canonicalHarnessId\(binding\.harness\);[\s\S]{0,6000}if \(binding\.harness === "openclaw"\)[\s\S]{0,1400}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
   "OpenClaw task cards reserve a bridge conversation before the daemon-only path",
 );
 assert.match(
@@ -115,9 +115,14 @@ assert.match(
   "OpenClaw bridge handling must run before the daemon-only session path",
 );
 assert.doesNotMatch(
-  route.match(/if \(binding\.harness === "openclaw"\)[\s\S]{0,1600}/)?.[0] ?? "",
+  route.match(/if \(binding\.harness === "openclaw"\)[\s\S]*?bridge: "openclaw",[\s\S]*?\n  }/)?.[0] ?? "",
   /callDaemon/,
   "OpenClaw task cards must never ask the daemon to spawn OpenClaw",
+);
+assert.match(
+  route,
+  /if \(binding\.harness === "openclaw"\)[\s\S]{0,700}worktree\s*\?\s*\{ cwd: sessionRoot \}/,
+  "OpenClaw task cards preserve Board worktree isolation before launching the bridge",
 );
 assert.match(
   boardView,
