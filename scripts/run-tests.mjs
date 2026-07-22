@@ -459,6 +459,7 @@ export const SUITES = {
     "src/lib/slash-model.test.ts",
     "src/lib/opencode-models.test.ts",
     "src/lib/opencode-stream.test.ts",
+    "src/lib/use-runtime-model-options.test.ts",
     "src/lib/slash-skill.test.ts",
     "src/lib/slash-prompt.test.ts",
     "src/lib/image-generation.test.ts",
