@@ -154,6 +154,10 @@ function runSync(fixture, extraArgs = []) {
   );
 }
 
+function normalizePathDiagnostics(text) {
+  return text.replaceAll("\\", "/");
+}
+
 function generatedDigest(root) {
   const out = [];
   function walk(dir) {
@@ -233,7 +237,10 @@ try {
   writeFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "stale\n");
   const stale = runSync(fixture, ["--check"]);
   assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/);
+  assert.match(
+    normalizePathDiagnostics(stale.stderr),
+    /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/,
+  );
   const repaired = runSync(fixture);
   assert.equal(repaired.status, 0, repaired.stderr);
 
@@ -241,7 +248,10 @@ try {
   writeFileSync(orphan, "this resource is no longer declared\n");
   const orphaned = runSync(fixture, ["--check"]);
   assert.notEqual(orphaned.status, 0);
-  assert.match(orphaned.stderr, /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/);
+  assert.match(
+    normalizePathDiagnostics(orphaned.stderr),
+    /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/,
+  );
   const cleaned = runSync(fixture);
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.equal(existsSync(orphan), false, "sync removes undeclared files from fully managed Craft packages");
