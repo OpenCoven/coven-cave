@@ -544,8 +544,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /Session not found:/,
-  "Transparent resume fallback should also handle Hermes session-store misses",
+  /Session not found\\b/,
+  "Transparent resume fallback should also handle Hermes and OpenCode session-store misses",
 );
 
 assert.match(

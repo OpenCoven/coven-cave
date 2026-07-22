@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const capabilities = await readFile(new URL("./chat-send-capabilities.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
@@ -28,6 +29,26 @@ assert.match(
   route,
   /command: openCodeCommand\(\), fixedArgs: \[\] as string\[\][\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)/,
   "OpenCode uses its scoped spawn environment, including the WSL runtime-dir fallback",
+);
+assert.match(
+  capabilities,
+  /openCodeSpawnEnv\(\),\s*\n\s*\)\);/,
+  "OpenCode probes its CLI with the same WSL-compatible environment as a chat run",
+);
+assert.match(
+  route,
+  /!openCodeDirect && binding\.harness !== "openclaw" && \(await covenRunSupportsPermission\(\)\)/,
+  "OpenCode does not require the Coven CLI to probe unrelated permission support",
+);
+assert.match(
+  route,
+  /!openCodeDirect && binding\.harness !== "openclaw" && \(await covenRunSupportsAddDir\(\)\)/,
+  "OpenCode does not require the Coven CLI to probe unrelated directory support",
+);
+assert.match(
+  route,
+  /Session not found\\b/,
+  "OpenCode's missing-session error triggers the existing fresh-session retry",
 );
 
 console.log("opencode harness routing tests passed");

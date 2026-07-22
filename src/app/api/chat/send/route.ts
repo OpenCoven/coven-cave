@@ -833,6 +833,9 @@ export async function POST(req: Request) {
   // OpenCode's direct CLI has neither Cave's permission nor add-dir flags.
   const permissionForwardingEnabled =
     !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+  // Same gating for directory grants (`--add-dir`). Without forwarding, the
+  // granted roots listed in the runtime-scope preamble are prompt-text-only
+  // and the harness denies every access to them.
   const addDirForwardingEnabled =
     !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
@@ -1201,11 +1204,12 @@ export async function POST(req: Request) {
   // id exists only in Cave's local transcript store. Copilot emits "No
   // session, task, or name matched '<id>'" on `--resume` misses — including
   // every conversation recorded before the direct-stream path existed, whose
-  // harnessSessionId lives only in coven's store. Hermes emits "Session not
-  // found: <id>" when its local session is gone. In these cases we retry once
-  // without the resume flag so the chat starts fresh instead of erroring.
+  // harnessSessionId lives only in coven's store. Hermes and OpenCode emit
+  // "Session not found" when their local session is gone. In these cases we
+  // retry once without the resume flag so the chat starts fresh instead of
+  // erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found:/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found\b/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
