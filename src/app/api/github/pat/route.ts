@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import { deleteLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
 
@@ -93,7 +94,14 @@ export async function GET() {
   const patFromVault = resolveSecret("GITHUB_PAT");
   const loginFromVault = resolveSecret("GITHUB_USERNAME");
 
-  const hasPat = !!(patFromVault ?? process.env.GITHUB_PAT?.trim());
+  // The activity and action routes also accept credentials supplied by the
+  // launcher (for example GH_TOKEN from a CLI/harness environment). Reflect
+  // that here so an already-authenticated installation is not prompted to add
+  // a duplicate Cave PAT.
+  const hasPat = !!resolveGitHubToken();
+  // Only a Cave-configured GITHUB_PAT can be removed from this UI. External
+  // launcher credentials must be managed where the app was started.
+  const canRemoveStoredPat = !!patFromVault;
   const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
   const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
     ? "encrypted"
@@ -103,7 +111,7 @@ export async function GET() {
         ? "env"
         : "none";
 
-  return NextResponse.json({ hasPat, login, source });
+  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat });
 }
 
 // POST — validate + save

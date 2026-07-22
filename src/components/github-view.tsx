@@ -89,13 +89,15 @@ function PatSetupModal({
   onClose,
   username,
   hasPat = false,
+  canRemoveStoredPat = false,
 }: {
   onSaved: (login: string, hasPat: boolean) => void;
   onClose: () => void;
   username: string | null;
-  /** A PAT is currently stored — offers the remove path (the DELETE route
-   *  had no caller anywhere; cave-cjgg). */
+  /** A GitHub credential is configured, including an external launcher token. */
   hasPat?: boolean;
+  /** Only Cave-managed credentials can be removed through the local API. */
+  canRemoveStoredPat?: boolean;
 }) {
   const [pat, setPat] = useState("");
   const [usernameInput, setUsernameInput] = useState(username ?? "");
@@ -253,7 +255,7 @@ function PatSetupModal({
           </div>
         </form>
 
-        {hasPat && (
+        {canRemoveStoredPat && (
           <div className="mt-3 border-t border-[var(--border-hairline)] pt-3">
             <Button
               variant="ghost"
@@ -290,6 +292,11 @@ function PatSetupModal({
               Drops back to public data for @{usernameInput.trim() || username || "…"}.
             </p>
           </div>
+        )}
+        {hasPat && !canRemoveStoredPat && (
+          <p className="mt-3 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+            GitHub authentication is supplied by the launch environment; manage that credential outside Cave.
+          </p>
         )}
       </div>
     </div>
@@ -2641,9 +2648,10 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
         <PatSetupModal
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
+          canRemoveStoredPat={patStatus?.canRemoveStoredPat ?? false}
           onSaved={(login, hasPat) => {
             invalidateSurfaceResources("github:pat", "github:activity");
-            setPatStatus({ hasPat, login });
+            setPatStatus({ hasPat, login, canRemoveStoredPat: hasPat });
             setShowPatModal(false);
             refreshActivity();
           }}
