@@ -19,11 +19,13 @@ import {
 } from "@/components/profile-card-data";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useHeatTip } from "@/components/ui/heat-tip";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Icon } from "@/lib/icon";
 import type { ProfileHeatmap, ProfileKind, ProfileSeriesPoint } from "@/lib/profile-card";
+import { formatHeatTip } from "@/lib/heat-tip";
 import { humanHandle } from "@/lib/profile-card";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -296,6 +298,7 @@ function avatarTint(familiar: Familiar | null): React.CSSProperties | undefined 
 
 function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
   const columns = heatmap.weeks.length;
+  const heatTip = useHeatTip();
   const summary = `Session activity, last 12 months: ${heatmap.total} session${heatmap.total === 1 ? "" : "s"} across ${heatmap.activeDays} active day${heatmap.activeDays === 1 ? "" : "s"}.`;
   return (
     <section className="pfc-heatmap-panel">
@@ -310,7 +313,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
         </span>
       </header>
       <div className="pfc-heatmap" role="img" aria-label={summary}>
-        <div className="pfc-heatmap-grid" aria-hidden>
+        <div className="pfc-heatmap-grid" aria-hidden {...heatTip.gridProps}>
           {heatmap.weeks.map((week, weekIndex) => (
             <div className="pfc-week" key={weekIndex}>
               {week.map((cell, dayIndex) =>
@@ -319,7 +322,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
                     key={cell.key}
                     className="pfc-cell"
                     data-level={cell.level}
-                    title={`${cell.key}: ${cell.count} session${cell.count === 1 ? "" : "s"}`}
+                    data-tip={formatHeatTip(cell.key, cell.count)}
                   />
                 ) : (
                   <i key={`pad-${dayIndex}`} className="pfc-cell pfc-cell--pad" />
@@ -328,6 +331,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
             </div>
           ))}
         </div>
+        {heatTip.tip}
         <div
           className="pfc-heatmap-months"
           aria-hidden
