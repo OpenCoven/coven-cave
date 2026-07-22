@@ -50,7 +50,10 @@ export async function POST(
     );
   }
 
-  if (card.sessionId) {
+  // Unscoped legacy tasks have no project authorization boundary to recheck.
+  // Project-backed cards are handled below, after their current familiar has
+  // been authorized for the assigned project.
+  if (card.sessionId && !card.projectId) {
     await recordSessionFamiliar(card.sessionId, familiarId);
     return NextResponse.json({
       ok: true,
@@ -105,6 +108,20 @@ export async function POST(
         return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
       }
       throw error;
+    }
+
+    // A persisted card/session link can outlive a permission change or a
+    // reassignment made by another Cave client. Never let that legacy link
+    // bypass the same authorization required to start a new session.
+    if (card.sessionId) {
+      await recordSessionFamiliar(card.sessionId, familiarId);
+      return NextResponse.json({
+        ok: true,
+        reused: true,
+        card,
+        sessionId: card.sessionId,
+        familiarId,
+      });
     }
   } else {
     const rawProjectRoot = body.projectRoot ?? card.cwd;

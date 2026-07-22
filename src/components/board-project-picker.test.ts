@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
-  "changing the inspector project picker clears the old familiar before persisting the new project root",
+  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
+  "changing the inspector project picker clears the old familiar and session before persisting the new project root",
 );
 assert.match(inspector, /\{ value: "", label: "No project" \}/, "inspector offers a No-project option");
 assert.match(
@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /!eligibleFamiliars\.some\([\s\S]{0,180}onPatch\(card\.id, \{ familiarId: null \}\)/,
-  "inspector clears an existing familiar that is ineligible for the selected project",
+  /!eligibleFamiliars\.some\([\s\S]{0,500}onPatch\(card\.id, \{ familiarId: null, sessionId: null \}\)/,
+  "inspector clears an existing familiar and its stale session when it is ineligible for the selected project",
 );
 
 // ── New-card modal can set a project at creation time ──────────────────────

@@ -1134,7 +1134,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   useEffect(() => {
     if (!card.projectId || !card.familiarId || !eligibleFamiliarsLoaded) return;
     if (!eligibleFamiliars.some((familiar) => familiar.id === card.familiarId)) {
-      onPatch(card.id, { familiarId: null });
+      // A linked session belongs to the prior familiar/project context. Keep
+      // it from being reopened after the task is reassigned to an authorized
+      // familiar, which can use a different runtime or harness.
+      onPatch(card.id, { familiarId: null, sessionId: null });
     }
   }, [card.familiarId, card.id, card.projectId, eligibleFamiliars, eligibleFamiliarsLoaded, onPatch]);
 
@@ -1284,6 +1287,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       projectId: selectedProject?.id ?? null,
                       cwd: selectedProject?.root ?? null,
                       familiarId: null,
+                      sessionId: null,
                     });
                   }}
                   options={[

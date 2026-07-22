@@ -94,6 +94,11 @@ assert.match(
 );
 assert.match(
   route,
+  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)[\s\S]{0,700}if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
+  "a project-linked session is reused only after the current familiar passes project authorization",
+);
+assert.match(
+  route,
   /project root does not match assigned task project/,
   "Board chat endpoint rejects a client-supplied root that disagrees with the assigned project",
 );
