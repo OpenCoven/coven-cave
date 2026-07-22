@@ -350,9 +350,8 @@
 /* ── Follow-up pills above the composer (chat-revamp 1b) ────────────────────
    The latest settled turn's suggestions render as a quiet pill row aligned to
    the reading column, directly above the composer. Reuses the shared
-   .cave-next-paths uniform-rows grammar (2 and 4 pair into two columns —
-   never a 3+1 orphan) with its own column rule, since the container-query
-   version is scoped to the in-turn chatturn container. */
+   .cave-next-paths scrollable single-row grammar (chips keep intrinsic width,
+   horizontal overflow scrolls with a hidden scrollbar). */
 .cave-chat-followups {
   width: 100%;
   max-width: var(--cave-chat-measure);
@@ -362,13 +361,6 @@
 .cave-chat-followups .cave-next-paths {
   margin-top: 0;
   margin-bottom: var(--space-2);
-}
-
-@media (min-width: 640px) {
-  .cave-chat-followups .cave-next-paths[data-count="2"],
-  .cave-chat-followups .cave-next-paths[data-count="4"] {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 /* Quieter grammar than the in-turn accent pills: 999px radius, hairline

@@ -1253,21 +1253,21 @@
 /* ── Chat next-path suggestion chips ─────────────────────────────────────────
    Clickable next-step chips under an assistant reply (parsed from the
    <coven:next-paths> block); clicking sends the suggestion as the next turn.
-   Rows stay UNIFORM, keyed off the row's chip count (data-count): 2 and 4
-   chips pair into two columns (4 = 2×2, never a 3+1 orphan); any other count
-   (legacy 3-chip transcripts predating the 2-or-4 directive) stacks
-   full-width. A three-column rule for exactly-3 rows can't work here: the
-   chatturn container is capped by the 46rem reading column (~672px inner),
-   below any breakpoint where three ~7-word chips fit. */
+   One scrollable single row: chips keep their intrinsic width and overflow
+   horizontally (scrollbar hidden — same grammar as .cave-chat-linked-context)
+   so any count reads as one quiet line instead of a growing grid. */
 .cave-next-paths {
-  display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; width: 100%;
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 6px;
+  margin-top: var(--space-3); width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-@container chatturn (min-width: 540px) {
-  .cave-next-paths[data-count="2"],
-  .cave-next-paths[data-count="4"] { grid-template-columns: repeat(2, 1fr); }
+.cave-next-paths::-webkit-scrollbar {
+  display: none;
 }
 .cave-next-path {
-  display: inline-flex; align-items: center; width: 100%; max-width: 100%;
+  display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 100%;
+  white-space: nowrap;
   padding: 7px var(--space-3); border-radius: 8px;
   border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);

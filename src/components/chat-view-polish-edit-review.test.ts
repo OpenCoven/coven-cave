@@ -12,27 +12,33 @@ import {
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
-// Suggestion pills lay out in UNIFORM rows keyed off the chip count: 2 and 4
-// chips pair into two columns (4 = 2×2, never a 3+1 orphan wrap); every other
-// count — legacy 3-chip transcripts included — stacks full-width (cave-wrso,
-// cave-98bs).
+// Suggestion pills lay out as ONE scrollable row: chips keep their intrinsic
+// width and overflow horizontally behind a hidden scrollbar, so any count
+// reads as a single quiet line instead of a growing grid (formerly the
+// data-count-keyed uniform-rows grid — cave-wrso, cave-98bs).
 assert.match(
   source,
   /className="cave-next-paths" data-count=\{nextPaths\.length\}/,
-  "the chip row stamps its count so CSS can key columns off it",
+  "the chip row still stamps its count (tooling/e2e hooks key off it)",
 );
 assert.match(
   globalsSrc,
-  /\.cave-next-paths\[data-count="2"\],\s*\n\s*\.cave-next-paths\[data-count="4"\] \{ grid-template-columns: repeat\(2, 1fr\); \}/,
-  "2 and 4 chips pair into two columns (4 renders 2×2)",
+  /\.cave-next-paths \{\s*\n\s*display: flex; flex-wrap: nowrap;[^}]*overflow-x: auto;\s*\n\s*scrollbar-width: none;/,
+  "the chip row is a no-wrap flex line that scrolls horizontally, scrollbar hidden",
+);
+assert.match(
+  globalsSrc,
+  /\.cave-next-paths::-webkit-scrollbar \{\s*\n\s*display: none;/,
+  "webkit scrollbar is hidden too (same grammar as .cave-chat-linked-context)",
+);
+assert.match(
+  globalsSrc,
+  /\.cave-next-path \{\s*\n\s*display: inline-flex; align-items: center; flex: 0 0 auto;[^}]*white-space: nowrap;/,
+  "chips keep intrinsic width (no flex-grow) and never wrap internally",
 );
 assert.ok(
-  !/\.cave-next-paths\[data-count="3"\]/.test(globalsSrc),
-  "no exactly-3 column rule: the chatturn container (46rem reading column, ~672px inner) can never reach a width where three chips fit, so legacy 3-chip rows stack (cave-98bs)",
-);
-assert.ok(
-  !/\.cave-next-paths \{ grid-template-columns: repeat\(/.test(globalsSrc),
-  "no count-blind multi-column rule survives (it produced 3+1 orphan wraps)",
+  !/\.cave-next-paths[^{]*\{[^}]*grid-template-columns/.test(globalsSrc) && !/\.cave-next-paths[^{]*\{[^}]*grid-template-columns/.test(styles),
+  "no grid column rules survive anywhere — the row never re-grows into 2×2",
 );
 
 // File picker resets its value synchronously so re-selecting the same file (or
