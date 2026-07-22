@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     : null;
   if (parsed && !parsed.ok) return parsed.response;
   const body = parsed?.body ?? null;
-  let options: { action?: ReconciliationAction; legacy?: string; confirmDiscard?: boolean } = {};
+  let options: { action?: ReconciliationAction; legacy?: string; confirmDiscard?: string } = {};
   if (body) {
     if (typeof body.action !== "string" || !ACTIONS.has(body.action as ReconciliationAction)) {
       return NextResponse.json({ ok: false, error: "Unsupported migration action" }, { status: 400 });
@@ -45,10 +45,14 @@ export async function POST(req: Request) {
     if (typeof body.legacy !== "string" || !CAVE_HOME_MIGRATIONS.some((entry) => entry.legacy === body.legacy)) {
       return NextResponse.json({ ok: false, error: "Unknown legacy migration entry" }, { status: 400 });
     }
-    if (body.confirm !== undefined && typeof body.confirm !== "boolean") {
-      return NextResponse.json({ ok: false, error: "Invalid confirm flag" }, { status: 400 });
+    if (body.confirm !== undefined && (typeof body.confirm !== "string" || !/^[0-9a-f]{64}$/.test(body.confirm))) {
+      return NextResponse.json({ ok: false, error: "Invalid confirm token" }, { status: 400 });
     }
-    options = { action: body.action as ReconciliationAction, legacy: body.legacy, confirmDiscard: body.confirm === true };
+    options = {
+      action: body.action as ReconciliationAction,
+      legacy: body.legacy,
+      confirmDiscard: typeof body.confirm === "string" ? body.confirm : undefined,
+    };
   }
   const result = await migrateCaveHome(options);
   const status = await caveHomeMigrationStatus();

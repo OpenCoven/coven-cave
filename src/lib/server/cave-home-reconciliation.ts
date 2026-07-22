@@ -54,6 +54,8 @@ type PathInfo = {
   hash?: string;
   mtimeMs?: number;
   size?: number;
+  /** Content bytes: the file size, or the recursive file-size sum for directories (lstat size is the inode size, not the contents). */
+  contentBytes?: number;
 };
 
 type MergeOutcome =
@@ -125,17 +127,25 @@ async function sha256File(target: string): Promise<string> {
   return createHash("sha256").update(await readFile(target)).digest("hex");
 }
 
-async function sha256Dir(target: string): Promise<string> {
+async function digestDir(target: string): Promise<{ hash: string; bytes: number }> {
   const hash = createHash("sha256");
+  let bytes = 0;
   for (const name of (await readdir(target)).sort()) {
     if (name === ".DS_Store") continue;
     const child = path.join(target, name);
     const info = await lstat(child);
     hash.update(name);
     if (info.isSymbolicLink()) hash.update(`l:${await readlink(child)}`);
-    else hash.update(info.isDirectory() ? `d:${await sha256Dir(child)}` : `f:${await sha256File(child)}`);
+    else if (info.isDirectory()) {
+      const nested = await digestDir(child);
+      hash.update(`d:${nested.hash}`);
+      bytes += nested.bytes;
+    } else {
+      hash.update(`f:${await sha256File(child)}`);
+      bytes += info.size;
+    }
   }
-  return hash.digest("hex");
+  return { hash: hash.digest("hex"), bytes };
 }
 
 async function pathInfo(target: string): Promise<PathInfo> {
@@ -150,8 +160,11 @@ async function pathInfo(target: string): Promise<PathInfo> {
         size: info.size,
       };
     }
-    if (info.isDirectory()) return { kind: "dir", hash: await sha256Dir(target), mtimeMs: info.mtimeMs, size: info.size };
-    return { kind: "file", hash: await sha256File(target), mtimeMs: info.mtimeMs, size: info.size };
+    if (info.isDirectory()) {
+      const digest = await digestDir(target);
+      return { kind: "dir", hash: digest.hash, mtimeMs: info.mtimeMs, size: info.size, contentBytes: digest.bytes };
+    }
+    return { kind: "file", hash: await sha256File(target), mtimeMs: info.mtimeMs, size: info.size, contentBytes: info.size };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
     throw error;
@@ -1305,12 +1318,15 @@ async function reconcileDirectory(
 }
 
 /**
- * Discard guard for explicit whole-file resolutions (cave-5ax2): a
- * keep-canonical/recover-legacy choice that would replace a dramatically
- * larger copy with a much smaller one is almost always a mistake (a stale
- * writer recreated one side nearly empty). Require explicit confirmation
- * before the smaller copy wins. Both copies are already preserved in the
- * verified recovery bundle when this check runs.
+ * Discard guard for explicit keep-canonical/recover-legacy resolutions
+ * (cave-5ax2): a choice that would replace a dramatically larger copy with a
+ * much smaller one is almost always a mistake (a stale writer recreated one
+ * side nearly empty). Directories are guarded by their recursive content
+ * size, the same class of loss at directory granularity. Confirmation is
+ * pinned to the discarded content: the caller must echo the discardToken
+ * issued with the block, so a copy that changed after the user saw the sizes
+ * re-blocks instead of being destroyed unseen. Both copies are already
+ * preserved in the verified recovery bundle when this check runs.
  */
 const DISCARD_GUARD_RATIO = 8;
 const DISCARD_GUARD_MIN_BYTES = 4096;
@@ -1321,21 +1337,26 @@ function formatByteSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function guardedPathInfo(info: PathInfo): info is PathInfo & { contentBytes: number; hash: string } {
+  return (info.kind === "file" || info.kind === "dir") && typeof info.contentBytes === "number" && typeof info.hash === "string";
+}
+
 function discardConfirmation(
   action: "keep-canonical" | "recover-legacy",
   legacyInfo: PathInfo,
   canonicalInfo: PathInfo,
-): { keptBytes: number; discardedBytes: number; summary: string } | null {
-  if (legacyInfo.kind !== "file" || canonicalInfo.kind !== "file") return null;
-  const discarded = action === "recover-legacy" ? canonicalInfo.size : legacyInfo.size;
-  const kept = action === "recover-legacy" ? legacyInfo.size : canonicalInfo.size;
-  if (typeof discarded !== "number" || typeof kept !== "number") return null;
+): { keptBytes: number; discardedBytes: number; discardToken: string; summary: string } | null {
+  if (!guardedPathInfo(legacyInfo) || !guardedPathInfo(canonicalInfo)) return null;
+  const [discardedInfo, keptInfo] = action === "recover-legacy" ? [canonicalInfo, legacyInfo] : [legacyInfo, canonicalInfo];
+  const discarded = discardedInfo.contentBytes;
+  const kept = keptInfo.contentBytes;
   if (discarded < DISCARD_GUARD_MIN_BYTES || discarded < DISCARD_GUARD_RATIO * Math.max(kept, 1)) return null;
   const discardedSide = action === "recover-legacy" ? "canonical" : "legacy";
   const keptSide = action === "recover-legacy" ? "legacy" : "canonical";
   return {
     keptBytes: kept,
     discardedBytes: discarded,
+    discardToken: discardedInfo.hash,
     summary:
       `Blocked without confirmation: this would discard the ${discardedSide} copy ` +
       `(${formatByteSize(discarded)}) in favor of a much smaller ${keptSide} copy ` +
@@ -1487,10 +1508,16 @@ async function reconcileEntry(
 
   if (options.action === "keep-canonical" || options.action === "recover-legacy") {
     const confirmation = discardConfirmation(options.action, legacyInfo, canonicalInfo);
-    if (confirmation && options.confirmDiscard !== true) {
-      result.confirmationRequired.push({ legacy: entry.legacy, action: options.action, ...confirmation });
+    if (confirmation && options.confirmDiscard !== confirmation.discardToken) {
+      // A supplied-but-mismatched token means the discarded side changed after
+      // the user saw the block: re-block with fresh numbers instead of
+      // destroying bytes the user never reviewed.
+      const summary = options.confirmDiscard === undefined
+        ? confirmation.summary
+        : `${confirmation.summary} The copy to be discarded changed after the previous confirmation was issued; review the new sizes and confirm again.`;
+      result.confirmationRequired.push({ legacy: entry.legacy, action: options.action, ...confirmation, summary });
       journalEntry.decision = "unresolved";
-      journalEntry.summary = confirmation.summary;
+      journalEntry.summary = summary;
       journal.entries[entry.legacy] = journalEntry;
       result.skipped.push(entry.legacy);
       return;
@@ -1650,8 +1677,8 @@ export async function caveHomeReconciliationStatus(
       canonicalHash: canonicalInfo.hash,
       legacyMtimeMs: legacyInfo.mtimeMs,
       canonicalMtimeMs: canonicalInfo.mtimeMs,
-      legacySize: legacyInfo.size,
-      canonicalSize: canonicalInfo.size,
+      legacySize: legacyInfo.contentBytes ?? legacyInfo.size,
+      canonicalSize: canonicalInfo.contentBytes ?? canonicalInfo.size,
       state: isPending ? "pending" : "unresolved",
       summary: legacyInfo.kind === "symlink"
         ? "Legacy symlink is not a valid compatibility bridge and requires review."

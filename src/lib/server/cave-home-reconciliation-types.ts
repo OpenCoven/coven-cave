@@ -84,13 +84,16 @@ export type CaveHomeReconciliationResult = {
   /**
    * Destructive resolutions blocked by the discard guard: the requested
    * action would replace a dramatically larger copy with a much smaller one
-   * (see cave-5ax2). Retry with `confirmDiscard: true` to proceed anyway.
+   * (see cave-5ax2). Retry with `confirmDiscard` set to the issued
+   * `discardToken` to proceed anyway.
    */
   confirmationRequired: Array<{
     legacy: string;
     action: "keep-canonical" | "recover-legacy";
     keptBytes: number;
     discardedBytes: number;
+    /** Content hash of the copy that would be discarded; pins the confirmation to the bytes the user reviewed. */
+    discardToken: string;
     summary: string;
   }>;
 };
@@ -109,9 +112,12 @@ export type ReconciliationOptions = {
   legacy?: string;
   /**
    * Explicit user acknowledgement for a keep-canonical/recover-legacy action
-   * that the discard guard flagged as destroying a much larger copy.
+   * that the discard guard flagged as destroying a much larger copy. Must
+   * echo the `discardToken` issued with the confirmation request; a token
+   * that no longer matches the live content re-blocks, because the copy
+   * changed after the user reviewed it.
    */
-  confirmDiscard?: boolean;
+  confirmDiscard?: string;
   /** Test-only fault boundary. Production callers must omit it. */
   faultAt?: string;
   /** Test-only compatibility bridge override. */
