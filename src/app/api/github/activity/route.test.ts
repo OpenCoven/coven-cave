@@ -27,8 +27,18 @@ assert.match(
 );
 assert.match(
   route,
-  /organizations,\n\s*items,/,
+  /organizations,\r?\n\s*items,/,
   "activity responses should expose memberships separately from open activity items",
+);
+assert.match(
+  route,
+  /resolveSecret\("GITHUB_PAT"\)\s*\?\?\s*process\.env\.GITHUB_TOKEN\?\.trim\(\)\s*\?\?\s*process\.env\.COVEN_GITHUB_TOKEN\?\.trim\(\)/,
+  "activity should support tokens injected by supported installation harnesses",
+);
+assert.match(
+  route,
+  /nextGitHubPagePath\(res\.headers\.get\("link"\)\)/,
+  "organization memberships should follow GitHub pagination",
 );
 assert.doesNotMatch(
   route,
@@ -49,4 +59,9 @@ assert.match(
   githubView,
   /\.\.\.\(activity\?\.organizations \?\? \[\]\)/,
   "organization options should include authenticated memberships even without open activity",
+);
+assert.match(
+  githubView,
+  /arrayContentEqual\(prev\.organizations, nextActivity\.organizations\)/,
+  "activity refreshes should retain changed organization memberships even when items are unchanged",
 );

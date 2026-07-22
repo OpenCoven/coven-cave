@@ -52,7 +52,7 @@ function formatAttachmentSize(size?: number): string {
   if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
 }
-const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
+const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,read:org,repo,notifications&description=Cave+local";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
 const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {

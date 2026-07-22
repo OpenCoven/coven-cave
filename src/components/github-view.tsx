@@ -2373,7 +2373,9 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
       }
       const nextActivity = data;
       setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
+        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
+          && arrayContentEqual(prev.organizations, nextActivity.organizations)
+          && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
           : nextActivity);
       setError(null);

@@ -4,8 +4,9 @@
  * Returns the authenticated user's live GitHub activity.
  *
  * Auth tiers (tried in order):
- *   1. GITHUB_PAT env var — user's own PAT, stored in .env.local only,
- *      NEVER committed, NEVER shared, NEVER logged. Private to this machine.
+ *   1. GITHUB_PAT — user's own PAT, stored in .env.local only, or a
+ *      GITHUB_TOKEN/COVEN_GITHUB_TOKEN supplied by an installed harness.
+ *      Tokens are NEVER committed, shared, or logged.
  *   2. Public unauthenticated GitHub API — rate-limited to 60 req/hr.
  *      Only public data accessible. Username must be provided via
  *      GITHUB_USERNAME env var or inferred from the PAT if present.
@@ -90,6 +91,26 @@ async function ghFetch(path: string, token: string | null) {
   return { res, data, rateRemaining, rateLimit };
 }
 
+function resolveGitHubToken(): string | null {
+  return (
+    resolveSecret("GITHUB_PAT") ??
+    process.env.GITHUB_TOKEN?.trim() ??
+    process.env.COVEN_GITHUB_TOKEN?.trim() ??
+    null
+  );
+}
+
+function nextGitHubPagePath(link: string | null): string | null {
+  const nextUrl = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1];
+  if (!nextUrl) return null;
+  try {
+    const parsed = new URL(nextUrl);
+    return parsed.origin === GH ? `${parsed.pathname}${parsed.search}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The activity searches below only describe current work. Fetch memberships
  * separately so an organization selector represents the account's scope, not
@@ -97,13 +118,18 @@ async function ghFetch(path: string, token: string | null) {
  */
 async function fetchOrganizations(token: string): Promise<string[]> {
   try {
-    const { res, data } = await ghFetch("/user/orgs?per_page=100", token);
-    if (!res.ok || !Array.isArray(data)) return [];
-    return Array.from(new Set(
+    const organizations = new Set<string>();
+    let path: string | null = "/user/orgs?per_page=100";
+    while (path) {
+      const { res, data } = await ghFetch(path, token);
+      if (!res.ok || !Array.isArray(data)) break;
       data
         .map((org) => typeof org?.login === "string" ? org.login : "")
-        .filter(Boolean),
-    )).sort((a, b) => a.localeCompare(b));
+        .filter(Boolean)
+        .forEach((org) => organizations.add(org));
+      path = nextGitHubPagePath(res.headers.get("link"));
+    }
+    return Array.from(organizations).sort((a, b) => a.localeCompare(b));
   } catch {
     // Memberships improve the selector but must not make activity unavailable.
     return [];
@@ -112,7 +138,7 @@ async function fetchOrganizations(token: string): Promise<string[]> {
 
 export async function GET() {
   // PAT is strictly local — read from env, never echoed back
-  const storedToken = resolveSecret("GITHUB_PAT") ?? null;
+  const storedToken = resolveGitHubToken();
   const envLogin = resolveSecret("GITHUB_USERNAME") ?? null;
 
   // ── Resolve login ────────────────────────────────────────────────────────

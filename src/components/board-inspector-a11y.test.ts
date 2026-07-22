@@ -43,6 +43,7 @@ assert.match(src, /@media \(prefers-reduced-motion: reduce\) \{ \.step-actions \
 
 assert.match(src, /import \{ openExternalUrl \} from "@\/lib\/open-external"/, "inline PAT setup imports the system-browser opener");
 assert.match(src, /onClick=\{\(\) => void openExternalUrl\(GITHUB_PAT_URL\)\}/, "inline PAT setup opens GitHub token creation outside the local app");
+assert.match(src, /read:user,read:org,repo,notifications/, "inline PAT setup requests organization-read access for the GitHub organization filter");
 assert.doesNotMatch(src, /href="https:\/\/github\.com\/settings\/tokens\/new/, "inline PAT setup no longer uses a plain localhost-bound anchor");
 
 // ── Attachments section: add/remove are accessible and go through onPatch ────
