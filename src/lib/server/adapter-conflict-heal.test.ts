@@ -3,7 +3,7 @@
 // registry error, which bricked every `coven run` (chat surfaced it as codex
 // turns ending "No assistant text returned").
 import assert from "node:assert/strict";
-import { mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -14,6 +14,8 @@ import {
   shadowedMarkerPath,
   SHADOWED_MANIFEST_SUFFIX,
 } from "./adapter-conflict-heal.ts";
+import { ensureAdapterManifestScaffold } from "./adapter-manifest-scaffold.ts";
+import { adapterManifestScaffoldForHarness } from "../harness-adapters.ts";
 
 const CLI_ERROR =
   "Error: external harness adapter `copilot` in /Users/buns/.coven/adapters/copilot.json conflicts with a built-in harness";
@@ -100,6 +102,29 @@ test("isManifestShadowedByBuiltin is false without the marker", async () => {
 test("marker suffix keeps quarantined files off the CLI's .json dir scan", () => {
   assert.ok(!shadowedMarkerPath("/x/copilot.json").endsWith(".json"));
   assert.ok(SHADOWED_MANIFEST_SUFFIX.startsWith("."));
+});
+
+test("Hermes manifest repair uses the active COVEN_HOME adapters directory", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  const legacyManifest = adapterManifestScaffoldForHarness("hermes", "linux");
+  assert.ok(legacyManifest);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, legacyManifest.contents, "utf8");
+  const previous = process.env.COVEN_HOME;
+  process.env.COVEN_HOME = covenHome;
+  try {
+    assert.equal(
+      await ensureAdapterManifestScaffold("hermes", { platform: "win32" }),
+      true,
+    );
+    const manifest = JSON.parse(await readFileFs(manifestPath, "utf8"));
+    assert.equal(manifest.adapters[0].executable, "hermes");
+    assert.equal(manifest.adapters[0].prompt_flag, "-q");
+  } finally {
+    if (previous === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = previous;
+  }
 });
 
 // Wiring pins: the chat send route must detect the conflict from harness
