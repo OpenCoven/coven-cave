@@ -138,14 +138,20 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy \|\| abortRef\.current\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
   "send() must queue a rich follow-up while busy instead of dropping it (CHAT-D5-01)",
 );
 
 assert.match(
   source,
-  /const sendRaw = async [\s\S]*?\|\| \(busy && !allowBusy\)\) return;/,
-  "sendRaw should keep its busy guard while allowing the queue drain to hand off exactly one settled item",
+  /const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?enqueueMessage\(/,
+  "sendRaw should queue all programmatic sends while any runtime is in flight, while allowing the queue drain to hand off exactly one settled item",
+);
+
+assert.match(
+  source,
+  /if \(command === "\/run" \|\| command === "\/codex" \|\| command === "\/claude"\)[\s\S]*?setTimeout\(\(\) => sendRaw\(args\), 0\);[\s\S]*?const sendRaw = async [\s\S]*?enqueueMessage\(/,
+  "slash sends for Codex, Claude, and other harness-backed commands must queue through sendRaw instead of being dropped mid-response",
 );
 
 assert.match(
@@ -192,8 +198,8 @@ assert.match(
 
 assert.match(
   source,
-  /if \(busy \|\| abortRef\.current\) \{[\s\S]*?announce\("Queued message will send next\.", "polite"\);/,
-  "send-next must only reprioritize while every supported runtime host is busy, including non-streaming hosts without an AbortController",
+  /if \(busy \|\| abortRef\.current\) \{[\s\S]*?announce\("Queued message will send next\.", "polite"\);[\s\S]*?const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\)/,
+  "send-next and normal sends must recognize every supported runtime as in flight, including non-streaming hosts and the render gap before busy updates",
 );
 
 assert.match(

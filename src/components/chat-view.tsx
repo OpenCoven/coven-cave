@@ -3829,7 +3829,44 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
-    if ((!trimmed && outgoingAttachments.length === 0) || (busy && !allowBusy)) return;
+    if (!trimmed && outgoingAttachments.length === 0) return;
+    // Slash commands and other programmatic sends also arrive here. Keep the
+    // queue at this boundary (rather than only in the composer click handler)
+    // so every harness follows the same sequential path, including runtimes
+    // whose busy state has not yet reached React but already own a controller.
+    if ((busy || abortRef.current) && !allowBusy) {
+      const queuedModelOverride =
+        opts?.modelOverride !== undefined
+          ? opts.modelOverride
+          : modelState?.source === "session" &&
+              modelState.effectiveModel &&
+              modelState.effectiveModel !== "unknown"
+            ? modelState.effectiveModel
+            : null;
+      enqueueMessage({
+        text,
+        attachments: outgoingAttachments,
+        mentionedFiles: outgoingMentions,
+        options: {
+          ...opts,
+          projectRoot: opts?.projectRoot ?? requestProjectRoot,
+          ...(outgoingMentions.length
+            ? { mentionedFilesRoot: opts?.mentionedFilesRoot ?? mentionRoot }
+            : {}),
+          modelOverride: queuedModelOverride,
+        },
+        controls: {
+          thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          queuedRuntimeHost:
+            controlsOverride && "queuedRuntimeHost" in controlsOverride
+              ? controlsOverride.queuedRuntimeHost
+              : (controlsOverride?.runtimeHost ?? runtimeHost),
+        },
+      });
+      return;
+    }
 
     // Omnigent fleet host chip: create a session on the control plane and open
     // it in Omnigent (does not stream into Cave chat transcript).
@@ -4563,7 +4600,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // doesn't linger over the now-empty composer and let Revert repopulate
     // the composer with the message the user already sent.
     promptEnhance.reset();
-    if (busy) {
+    if (busy || abortRef.current) {
       enqueueMessage({
         text: outgoingText,
         attachments: outgoingAttachments,
