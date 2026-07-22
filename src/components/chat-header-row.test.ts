@@ -63,8 +63,8 @@ assert.doesNotMatch(
 // pill + linked-work chip strip) alongside the grouped composer menu.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill[\s\S]*?\{linkedContextRow\}/,
-  "the footer band carries the context pill and the linked-context strip",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?\{linkedContextRow\}/,
+  "the footer band carries the context chips and the linked-context strip",
 );
 
 assert.match(

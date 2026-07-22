@@ -52,7 +52,7 @@ import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/co
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
-import { ComposerContextPill } from "@/components/composer-context-pill";
+import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -1079,20 +1079,15 @@ export function HomeComposer({
             ]}
           />
         </div>
-        {/* Footer band — the darker strip attached to the card's underside
-            carries the context pill (Project · Model; every picker opens from
-            it). Moved down from the control row (2026-07-21 home parity pass,
-            matching the chat composer) so the write surface above stays
-            minimal. Home has no git context or linked-work strip, so the
-            pill rides alone. */}
-        {/* Footer toolbar — refinement pass (2026-07-22): a clean bottom bar
-            inside the composer. Left cluster carries project + model as two
-            SEPARATE controls (no ambiguous "No project · Model" combined
-            label); the segmented Chat/Task control and attach live in the
-            control row above. Send hugs bottom-right, vertically aligned. */}
+        {/* Footer toolbar — a clean bottom bar inside the composer. The left
+            cluster carries project + model as two SEPARATE labelled chips
+            (shared ComposerContextChips grammar with the chat composer,
+            cave-g21f; home passes no git root, so no branch chip). The
+            segmented Chat/Task control and attach live in the control row
+            above. Send hugs bottom-right, vertically aligned. */}
         <div className="cave-composer-footer-band home-composer-toolbar">
           <div className="home-composer-toolbar__left">
-            <ComposerContextPill
+            <ComposerContextChips
               projects={projects}
               projectValue={selectedProjectId || null}
               onProjectChange={setSelectedProjectId}
@@ -1105,8 +1100,6 @@ export function HomeComposer({
               onPickRuntime={handleSelectRuntime}
               onPickModel={handleSelectModel}
               disabled={sending}
-              ariaLabel="Composer context: project and model"
-              splitControls
             />
           </div>
         </div>

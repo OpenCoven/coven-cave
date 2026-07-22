@@ -1,11 +1,11 @@
 // @ts-nocheck
-// Source pins for the chat composer's context grammar after the 2026-07-21
-// "both" reconciliation (user call): the wide-column pass's footer band STAYS
-// — context pill (project · runtime/model · git) left, linked-work strip
-// (tasks · GitHub · link/create) right — AND the minimal-composer pass's
-// grouped ComposerActionsMenu keeps all four groups (context · linked work ·
-// improve · response), accepting the duplication. The write surface stays
-// minimal: textarea, then attach · voice · grouped menu · circular send.
+// Source pins for the chat composer's context grammar after the 2026-07-22
+// split (cave-g21f): the footer band carries project · model · branch as
+// three separate chips (ComposerContextChips) on the left — each opening its
+// own picker — and the linked-work strip (tasks · GitHub · link/create) on
+// the right. The grouped ComposerActionsMenu keeps its four groups. The
+// write surface stays minimal: textarea, then attach · voice · grouped menu ·
+// circular send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -50,7 +50,7 @@ assert.doesNotMatch(
   "the standalone attach button is gone from the control row (it lives in the + menu now)",
 );
 assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions should no longer expose the legacy plus menu");
-assert.doesNotMatch(controlRow, /<ComposerContextPill/, "the context pill lives in the footer band, not the control row");
+assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips live in the footer band, not the control row");
 assert.doesNotMatch(controlRow, /<ComposerOptionsMenu/, "the composer actions should no longer expose the legacy options menu");
 assert.doesNotMatch(source, /<ComposerLinkedWorkActions\b/, "ChatView should not mount the menu-row linked-work actions directly — the band uses the chip strip");
 
@@ -62,37 +62,43 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill[\s\S]*?\{linkedContextRow\}\s*\n\s*<\/div>/,
-  "the band leads with the context pill, then the linked-context strip (tasks · GitHub · link/create)",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?<\/div>\s*\n\s*\{linkedContextRow\}\s*\n\s*<\/div>/,
+  "the band leads with the context-chips cluster, then the linked-context strip (tasks · GitHub · link/create)",
 );
 
-// ── The context pill folds project/runtime/git behind one control ───────────
+// ── Split chips (cave-g21f): project · model · branch as separate controls ──
 assert.match(
   source,
-  /<ComposerContextPill\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
-  "the pill shows the RESOLVED project selection (draft → task project → session cwd) and writes the draft",
+  /<ComposerContextChips\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
+  "the chips show the RESOLVED project selection (draft → task project → session cwd) and write the draft",
 );
 assert.match(
   source,
   /createProject=\{createProject\}[\s\S]{0,600}?projectRoot=\{activeProjectRoot\}[\s\S]{0,120}?onOpenUrl=\{onOpenUrl\}/,
-  "the pill folds in the add-project flow and the git/PR context (register + grant, branch, PR open)",
+  "the chips fold in the add-project flow and the git/PR context (register + grant, branch, PR open)",
 );
 assert.doesNotMatch(
   source,
-  /cave-composer-footer-band__context|<ProjectPicker\b|<ComposerRuntimeChip|<ComposerGitChip/,
-  "the band's old picker cluster is gone — project/runtime/git live behind the pill",
+  /cave-composer-footer-band__context|<ProjectPicker\b|<ComposerRuntimeChip|<ComposerGitChip|<ComposerContextPill\b/,
+  "neither the legacy picker cluster nor the combined pill render — the chips are the band's context grammar",
 );
 
-// ── The pill's hub popover has the three sections ───────────────────────────
+// ── Each chip opens its own picker; the hub popover is gone ─────────────────
 assert.match(
   pill,
-  /<PopoverLabel>Project<\/PopoverLabel>[\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?<PopoverLabel>Branch<\/PopoverLabel>/,
-  "the pill's hub popover sections read Project / Model / Branch in order",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}/,
+  "the chips read Project / Model / Branch as separately labelled controls in order",
+);
+assert.match(pill, /context\.hasGit \? \(/, "the branch chip elides for git-less composers (home, no-project chats)");
+assert.doesNotMatch(
+  pill,
+  /"hub"|<PopoverLabel>|ComposerContextActionRows|splitControls/,
+  "the combined pill's hub popover, action rows, and the splitControls flag are retired",
 );
 assert.match(
   pill,
-  /hasGit \? \(/,
-  "the Branch section elides for git-less composers (home, no-project chats)",
+  /<GitBranchMenuPopover[\s\S]*?\{\.\.\.branchPopoverExtras\(context\)\}/,
+  "the branch chip's menu carries the PR + Git-changes rows (hub parity)",
 );
 
 // ── The header no longer hosts the linked-context strip ─────────────────────
@@ -111,12 +117,23 @@ assert.match(
   "the band is the darker hairline-topped strip clipped into the panel's bottom corners",
 );
 
-// ── Pill chrome: control radius, hairline border, quiet 6% text tint ────────
+// ── Chip chrome: shared quiet 28px chips in the composer sheet ──────────────
 assert.match(
   css,
-  /\.cave-context-pill \{[\s\S]{0,400}?height: 30px;[\s\S]{0,200}?border: 1px solid var\(--border-hairline\);\s*\n\s*border-radius: var\(--radius-control\);\s*\n\s*background: color-mix\(in oklch, var\(--text-primary\) 6%, transparent\);\s*\n\s*color: var\(--text-secondary\);\s*\n\s*font-size: var\(--text-sm\);/,
-  "the context pill is the quiet 30px control-radius pill (hairline border, 6% text tint, 12px text token)",
+  /\.cave-composer-footer-band__cluster \{[\s\S]{0,200}?min-width: 0;[\s\S]{0,120}?flex: 1 1 auto;/,
+  "the band's chip cluster flexes and allows shrinking so three chips coexist with the linked strip",
 );
+assert.match(
+  css,
+  /\.cave-context-chip \{[\s\S]{0,400}?height: 28px;[\s\S]{0,300}?border-radius: var\(--radius-control\);\s*\n\s*background: transparent;\s*\n\s*color: var\(--text-secondary\);\s*\n\s*font-size: var\(--text-sm\);/,
+  "the context chips are the quiet 28px control-radius family, defined in the shared composer sheet",
+);
+assert.match(
+  css,
+  /\.cave-context-chip\[aria-expanded="true"\] \{[\s\S]{0,200}?--accent-presence/,
+  "an open chip shows the accent open-state (pill parity)",
+);
+assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is retired with it");
 
 // ── The wide reading measure: 64rem, shared by thread · follow-ups · composer
 assert.match(

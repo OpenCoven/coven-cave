@@ -250,46 +250,6 @@
   flex: 1 1 auto;
 }
 
-.cave-context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 42%;
-  min-width: 0;
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 450;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.cave-context-chip:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--text-primary);
-}
-.cave-context-chip:disabled { opacity: 0.55; cursor: default; }
-.cave-context-chip__lead {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-.cave-context-chip__text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cave-context-chip__chevron {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
 @container (max-width: 620px) {
   .cave-context-chip { max-width: 46%; height: var(--touch-target); }
 }

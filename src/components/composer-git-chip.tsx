@@ -106,6 +106,9 @@ export function GitBranchMenuPopover({
   anchorRef,
   projectRoot,
   onSwitched,
+  pr,
+  onOpenPr,
+  onOpenChanges,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -114,6 +117,12 @@ export function GitBranchMenuPopover({
   projectRoot: string | undefined;
   /** Called after a successful branch switch (e.g. reload the status poll). */
   onSwitched?: () => void;
+  /** Optional footer rows (post-hub grammar, cave-g21f): the branch's PR… */
+  pr?: BranchPr | null;
+  /** …opened via the host's URL handler… */
+  onOpenPr?: (url: string) => void;
+  /** …and the Git-changes drill-through. */
+  onOpenChanges?: () => void;
 }) {
   const root = projectRoot?.trim() ? projectRoot : undefined;
   const menuOpen = open;
@@ -301,6 +310,30 @@ export function GitBranchMenuPopover({
             New worktree…
           </PopoverItem>
         )}
+        {pr || onOpenChanges ? <PopoverSeparator /> : null}
+        {pr ? (
+          <PopoverItem
+            icon="ph:git-pull-request"
+            title={`Open PR #${pr.number} (${pr.isDraft ? "draft" : pr.state.toLowerCase()})`}
+            onSelect={() => {
+              closeMenu();
+              onOpenPr?.(pr.url);
+            }}
+          >
+            Open PR #{pr.number}
+          </PopoverItem>
+        ) : null}
+        {onOpenChanges ? (
+          <PopoverItem
+            icon="ph:git-diff"
+            onSelect={() => {
+              closeMenu();
+              onOpenChanges();
+            }}
+          >
+            Open Git changes
+          </PopoverItem>
+        ) : null}
         {menuError ? (
           <div className="cave-composer-git-chip__menu-error" role="alert">
             {menuError}

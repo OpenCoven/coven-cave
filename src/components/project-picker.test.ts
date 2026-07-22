@@ -39,7 +39,7 @@ assert.doesNotMatch(
 // The selector lets the user choose which project a new chat runs in (mirrors
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
-assert.match(homeComposer, /<ComposerContextPill[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context pill hosts the shared project picker");
+assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context chips host the shared project picker");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
@@ -51,13 +51,14 @@ assert.match(contextPill, /export function ComposerContextPickers\(/, "picker si
 assert.match(contextPill, /const context = useComposerContextActions\(props\);/, "the pill wrapper still builds one shared context controller");
 assert.match(
   contextPill,
-  /<ComposerContextActionRows[\s\S]*?onOpenProject=\{\(\) => setMenu\("project"\)\}/,
-  "the pill wrapper still renders the extracted project row entry point",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?<ProjectPickerPopover/,
+  "the project chip is a labelled control that opens the shared ProjectPickerPopover",
 );
+const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 assert.match(
-  contextPill,
+  actionsMenu,
   /<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "the pill wrapper still threads the extracted context into the shared pickers",
+  "the actions menu still threads the shared context into the extracted pickers",
 );
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");

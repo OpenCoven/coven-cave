@@ -150,12 +150,12 @@ assert.match(
   /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
   "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
-// The context pill (Project · Model · branch) lives in the footer band below
+// The context chips (project · model · branch) live in the footer band below
 // the controls (2026-07-21 wide-column pass) — not in the utility row.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
-  "the context pill anchors the footer band",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
+  "the context chips anchor the footer band",
 );
 assert.doesNotMatch(
   source,
@@ -173,12 +173,12 @@ assert.match(
   "the grouped Response section carries Host, Access, Model, Thinking, and Speed in order",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-// "Both" reconciliation (2026-07-21): the context pill returned with the
-// footer band — but only there, never back in the control row.
+// "Both" reconciliation (2026-07-21): the context chips ride the footer
+// band — but only there, never back in the control row.
 assert.equal(
-  source.match(/<ComposerContextPill/g)?.length,
+  source.match(/<ComposerContextChips/g)?.length,
   1,
-  "the context pill mounts exactly once — in the footer band",
+  "the context chips mount exactly once — in the footer band",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 assert.doesNotMatch(

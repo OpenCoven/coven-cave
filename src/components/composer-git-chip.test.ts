@@ -12,9 +12,9 @@ const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.
 const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 
 // ── The chat composer carries git context from the chat's active root ───────
-// Task 3's triggerless extraction moved branch/PR/change actions into shared
-// ComposerContextActionRows + ComposerContextPickers, with ComposerContextPill
-// staying as the wrapper that owns the anchor/menu state.
+// The 2026-07-22 split (cave-g21f) puts branch/PR/change actions on the
+// branch chip's GitBranchMenuPopover (via branchPopoverExtras);
+// ComposerContextPickers keeps the actions-menu flow on the same wiring.
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?projectRoot: activeProjectRoot,[\s\S]*?onOpenUrl,[\s\S]*?\}\}/,
@@ -27,7 +27,7 @@ assert.match(
   "the pill reads branch/worktree/dirty state from the shared changes-summary hook",
 );
 assert.match(pill, /const pr = useBranchPr\(root, branch\);/, "shared context actions derive the branch PR once from root + branch");
-assert.match(pill, /export function ComposerContextActionRows\(/, "branch/PR/change rows are extracted from the pill trigger");
+assert.match(pill, /function branchPopoverExtras\(context: ComposerContextController\)/, "the PR/changes rows are built once and shared by the chip and the actions-menu flow");
 assert.match(
   pill,
   /export function ComposerContextPickers\(/,
@@ -40,8 +40,8 @@ assert.match(
 );
 assert.match(
   pill,
-  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "ComposerContextPill still wraps the extracted branch rows/pickers on the shared anchor",
+  /const context = useComposerContextActions\(props\);[\s\S]*?<GitBranchMenuPopover[\s\S]*?\{\.\.\.branchPopoverExtras\(context\)\}/,
+  "the chips mount the branch menu with the PR/changes extras on the chip anchor",
 );
 assert.match(
   pill,
@@ -156,6 +156,31 @@ assert.match(
   chip,
   /onClick=\{\(event\) => \{\s*\n\s*event\.stopPropagation\(\);\s*\n\s*setMenuOpen/,
   "the branch trigger stops propagation so it never fires the chip's open-changes click",
+);
+
+// ── The branch menu carries PR + changes rows (post-hub grammar, cave-g21f) ──
+// The footer's branch chip opens this menu directly; the PR link and the
+// Git-changes drill-through that used to live in the pill's hub ride along as
+// optional footer rows so nothing regresses.
+assert.match(
+  chip,
+  /pr\?: BranchPr \| null;[\s\S]*?onOpenPr\?: \(url: string\) => void;[\s\S]*?onOpenChanges\?: \(\) => void;/,
+  "the branch menu takes optional PR/changes rows so the footer chip keeps hub parity",
+);
+assert.match(
+  chip,
+  /\{pr \|\| onOpenChanges \? <PopoverSeparator \/> : null\}/,
+  "the extra rows sit behind a separator and render only when provided",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenPr\?\.\(pr\.url\);[\s\S]{0,120}?Open PR #\{pr\.number\}/,
+  "the PR row closes the menu and defers to the host's URL opener",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenChanges\(\);[\s\S]{0,120}?Open Git changes/,
+  "the changes row closes the menu and fires the host's drill-through",
 );
 
 console.log("composer-git-chip.test.ts: ok");

@@ -69,7 +69,7 @@ import type { Card } from "@/lib/cave-board-types";
 import { openExternalUrl } from "@/lib/open-external";
 import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-work-actions";
 import { LinkedContextRow } from "@/components/composer-linked-work-actions";
-import { ComposerContextPill } from "@/components/composer-context-pill";
+import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   attachmentIcon,
   cleanImageDataUrl,
@@ -5829,7 +5829,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       modelDisabled: busy,
                       projectRoot: activeProjectRoot,
                       onOpenUrl,
-                      ariaLabel: "Chat context: project, model, and branch",
                     }}
                     linkedWork={{
                       linkedContext,
@@ -5901,29 +5900,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
             {/* Footer band — the darker strip attached to the panel's
-                underside carries the context pill (Project · Model/runtime ·
-                branch; every picker opens from it) on the left and the
-                linked-work strip (tasks · GitHub · link/create) on the
-                right. The pill moved down from the control row (2026-07-21
-                wide-column pass) so the write surface above stays minimal. */}
+                underside carries the context chips (project · model · branch
+                as separate controls, cave-g21f; each opens its own picker) on
+                the left and the linked-work strip (tasks · GitHub ·
+                link/create) on the right. */}
             <div className="cave-composer-footer-band">
-              <ComposerContextPill
-                projects={projects}
-                projectValue={resolvedProjectId}
-                onProjectChange={setProjectIdDraft}
-                allowNoProject
-                familiarId={familiar.id ?? null}
-                createProject={createProject}
-                runtime={modelHarness}
-                modelValue={composerModelValue}
-                modelOptions={composerModelOptions}
-                onPickRuntime={handleSelectRuntime}
-                onPickModel={handleSelectModel}
-                modelDisabled={busy}
-                projectRoot={activeProjectRoot}
-                onOpenUrl={onOpenUrl}
-                ariaLabel="Chat context: project, model, and branch"
-              />
+              <div className="cave-composer-footer-band__cluster">
+                <ComposerContextChips
+                  projects={projects}
+                  projectValue={resolvedProjectId}
+                  onProjectChange={setProjectIdDraft}
+                  allowNoProject
+                  familiarId={familiar.id ?? null}
+                  createProject={createProject}
+                  runtime={modelHarness}
+                  modelValue={composerModelValue}
+                  modelOptions={composerModelOptions}
+                  onPickRuntime={handleSelectRuntime}
+                  onPickModel={handleSelectModel}
+                  modelDisabled={busy}
+                  projectRoot={activeProjectRoot}
+                  onOpenUrl={onOpenUrl}
+                />
+              </div>
               {linkedContextRow}
             </div>
           </div>
