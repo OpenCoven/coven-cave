@@ -20,6 +20,17 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /const covenDir = covenHome\(\)/,
+  "setup should honor COVEN_HOME when writing familiar and adapter state",
+);
+assert.match(
+  source,
+  /await ensureAdapterManifestScaffold\(harness\)/,
+  "setup should use the shared platform-aware adapter writer",
+);
+
 // 1. The route must still load the existing config so we can carry over
 //    user-set fields when writing.
 assert.match(

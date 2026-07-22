@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import { caveHome } from "@/lib/coven-paths";
+import { caveHome, covenHome } from "@/lib/coven-paths";
 import {
   loadConfig,
   normalizeMultiHostConfig,
@@ -20,7 +19,7 @@ import {
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { isManifestShadowedByBuiltin } from "@/lib/server/adapter-conflict-heal";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,14 +70,12 @@ export async function POST(req: Request) {
   const model =
     (draft?.model ?? body.model ?? defaultModelForRuntime(harness)).trim() || defaultModelForRuntime(harness);
 
-  const home = homedir();
-  const covenDir = path.join(home, ".coven");
+  const covenDir = covenHome();
   const caveDir = caveHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const configJson = path.join(caveDir, "config.json");
   const conversationsDir = path.join(caveDir, "conversations");
   const memoryDir = path.join(covenDir, "memory");
-  const adaptersDir = path.join(covenDir, "adapters");
 
   const wrote: string[] = [];
 
@@ -86,21 +83,10 @@ export async function POST(req: Request) {
   await mkdir(caveDir, { recursive: true });
   await mkdir(conversationsDir, { recursive: true });
   await mkdir(memoryDir, { recursive: true });
-  await mkdir(adaptersDir, { recursive: true });
 
   const adapterManifest = adapterManifestScaffoldForHarness(harness);
-  if (adapterManifest) {
-    const manifestPath = path.join(adaptersDir, adapterManifest.filename);
-    // A quarantined manifest means the installed CLI ships this id as a
-    // built-in harness and fatally rejects the external copy — never
-    // resurrect it (cave-1c05).
-    if (
-      !(await isManifestShadowedByBuiltin(manifestPath)) &&
-      !(await pathExists(manifestPath))
-    ) {
-      await writeFile(manifestPath, adapterManifest.contents, "utf8");
-      wrote.push(`adapters/${adapterManifest.filename}`);
-    }
+  if (adapterManifest && await ensureAdapterManifestScaffold(harness)) {
+    wrote.push(`adapters/${adapterManifest.filename}`);
   }
 
   const familiarsExists = await pathExists(familiarsToml);

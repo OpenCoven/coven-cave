@@ -128,8 +128,8 @@ test("Hermes manifest repair uses the active COVEN_HOME adapters directory", asy
 });
 
 // Wiring pins: the chat send route must detect the conflict from harness
-// stderr and heal+retry; both scaffold sites must refuse to resurrect a
-// quarantined manifest.
+// stderr and heal+retry; every scaffold site must route through the shared
+// writer, which refuses to resurrect a quarantined manifest.
 test("chat send route wires conflict detection and heal-retry", async () => {
   const source = await readFileFs(
     path.join(process.cwd(), "src/app/api/chat/send/route.ts"),
@@ -141,16 +141,22 @@ test("chat send route wires conflict detection and heal-retry", async () => {
   assert.match(source, /pushProgress\(\s*"adapter-heal"/);
 });
 
-test("scaffold sites refuse to resurrect quarantined manifests", async () => {
+test("scaffold sites use the shared quarantine-aware manifest writer", async () => {
+  const helper = await readFileFs(
+    path.join(process.cwd(), "src/lib/server/adapter-manifest-scaffold.ts"),
+    "utf8",
+  );
+  assert.match(helper, /isManifestShadowedByBuiltin\(manifestPath\)/);
   for (const file of [
     "src/app/api/config/route.ts",
+    "src/app/api/familiars/route.ts",
     "src/app/api/onboarding/setup/route.ts",
   ]) {
     const source = await readFileFs(path.join(process.cwd(), file), "utf8");
     assert.match(
       source,
-      /isManifestShadowedByBuiltin\(manifestPath\)/,
-      `${file} must check the shadowed marker before scaffolding`,
+      /ensureAdapterManifestScaffold/,
+      `${file} must use the shared manifest writer`,
     );
   }
 });
