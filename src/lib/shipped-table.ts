@@ -14,7 +14,7 @@ export type ShippedSort = { key: ShippedSortKey; dir: ShippedSortDir } | null;
  * - Empty / whitespace → returns all rows.
  * - `#NNN` prefix → matches only against the PR number field.
  * - Bare query → case-insensitive substring match against title, full repo,
- *   short repo (part after the last "/"), and PR number.
+ *   and PR number.
  */
 export function filterShippedRows(rows: readonly MergedPr[], query: string): MergedPr[] {
   const q = query.trim().toLowerCase();
@@ -30,8 +30,6 @@ export function filterShippedRows(rows: readonly MergedPr[], query: string): Mer
     }
     if (row.title.toLowerCase().includes(q)) return true;
     if (row.repo.toLowerCase().includes(q)) return true;
-    const shortRepo = row.repo.slice(row.repo.lastIndexOf("/") + 1).toLowerCase();
-    if (shortRepo.includes(q)) return true;
     if (String(row.number).includes(q)) return true;
     return false;
   });

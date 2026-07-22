@@ -13,6 +13,7 @@ import {
   type DailyReportStats,
 } from "@/lib/daily-report";
 import { extractNextPaths } from "@/lib/next-paths";
+import { ShippedTable } from "@/components/shipped-table";
 
 export const dynamic = "force-dynamic";
 
@@ -267,35 +268,7 @@ export default async function DailyReportPage({ params }: Props) {
               title="Merged pull requests"
               count={report.prsMerged.length}
             />
-            <div className="dr-list">
-              {report.prsMerged.map((pr) => (
-                <a
-                  key={`${pr.repo}#${pr.number}`}
-                  className="dr-row"
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ ["--row-accent" as string]: "var(--color-info)" }}
-                >
-                  <span className="dr-row__icon">
-                    <Icon name="ph:git-pull-request" aria-hidden />
-                  </span>
-                  <span className="dr-row__body">
-                    <span className="dr-row__title">{pr.title}</span>
-                    <span className="dr-row__metaline">
-                      <span className="dr-tag">
-                        {pr.repo}#{pr.number}
-                      </span>
-                      <span className="dr-row__time">merged {relativeTime(pr.mergedAt)}</span>
-                    </span>
-                  </span>
-                  <span className="dr-row__open">
-                    <span>Open</span>
-                    <Icon name="ph:arrow-right-bold" aria-hidden />
-                  </span>
-                </a>
-              ))}
-            </div>
+            <ShippedTable rows={report.prsMerged} nowMs={Date.now()} />
           </section>
         ) : null}
 

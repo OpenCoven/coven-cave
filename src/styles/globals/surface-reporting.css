@@ -321,7 +321,111 @@ a.dr-row:active { transform: translateY(1px); }
 }
 a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: translateX(2px); }
 
-/* Empty states -------------------------------------------------------------- */
+/* ── Shipped table (merged PRs, /daily-report) ────────────────────────────── */
+.dr-shipped {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.dr-shipped__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.dr-shipped__search {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  color: var(--text-primary);
+  outline: none;
+}
+.dr-shipped__search:focus-visible {
+  border-color: var(--ring-focus);
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.dr-shipped__count {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dr-shipped__viewport {
+  max-height: 300px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  outline: none;
+}
+.dr-shipped__viewport:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.dr-shipped__table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+.dr-shipped__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-raised);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  font-weight: 600;
+}
+.dr-shipped__table thead th button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  color: var(--text-secondary);
+}
+.dr-shipped__table thead th button:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  border-radius: 3px;
+}
+.dr-shipped__table thead th[aria-sort="ascending"] button,
+.dr-shipped__table thead th[aria-sort="descending"] button {
+  color: var(--color-info);
+}
+.dr-shipped__table tbody tr td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-hairline);
+}
+.dr-shipped__table tbody tr:first-child td { border-top: none; }
+.dr-shipped__table td a {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.dr-shipped__table td a:hover { color: var(--color-info); }
+.dr-shipped__repo,
+.dr-shipped__time {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dr-shipped__empty {
+  text-align: center;
+  padding: 24px 12px;
+  color: var(--text-secondary);
+}
+
+
 .dr-empty {
   display: flex;
   align-items: center;

@@ -140,12 +140,17 @@ assert.deepEqual(filterShippedRows(ROWS, "   "), ROWS, "whitespace-only returns 
   assert.equal(sorted[1].number, 2);
 }
 
-// pr asc — title localeCompare ascending
+// pr asc — title localeCompare ascending; stable tie-break preserves input order
 {
   const sorted = sortShippedRows(ROWS, { key: "pr", dir: "asc" });
   const titles = sorted.map((r) => r.title);
   const expected = [...titles].sort((a, b) => a.localeCompare(b));
   assert.deepEqual(titles, expected, "pr asc sorts by title ascending");
+  // Two rows share title "Add dark mode support" (number 123 and 789).
+  // Stable tie-break must preserve their original input order (123 < 789).
+  const darkModeRows = sorted.filter((r) => r.title === "Add dark mode support");
+  assert.equal(darkModeRows[0].number, 123, "pr sort: duplicate-title rows keep input order (first)");
+  assert.equal(darkModeRows[1].number, 789, "pr sort: duplicate-title rows keep input order (second)");
 }
 
 // pr desc — title localeCompare descending
@@ -227,4 +232,44 @@ assert.equal(nextShippedSort({ key: "repo", dir: "desc" }, "repo"), null);
 assert.deepEqual(nextShippedSort({ key: "pr", dir: "asc" }, "repo"), { key: "repo", dir: "asc" }, "switch col jumps to new key first state");
 assert.deepEqual(nextShippedSort({ key: "merged", dir: "desc" }, "pr"), { key: "pr", dir: "asc" }, "switch to pr gives pr asc");
 
-// (Component/page/CSS wiring pins are added in Task 2.)
+// ── Source pins (Task 2 — component, page, CSS) ───────────────────────────────
+
+import { readFileSync } from "node:fs";
+
+const component = readFileSync(new URL("./shipped-table.tsx", import.meta.url), "utf8");
+const page = readFileSync(
+  new URL("../app/daily-report/[date]/page.tsx", import.meta.url),
+  "utf8",
+);
+const css = readFileSync(
+  new URL("../styles/globals/surface-reporting.css", import.meta.url),
+  "utf8",
+);
+
+// Component pins
+assert.match(component, /"use client"/, 'component has "use client"');
+assert.match(component, /role="status"/, "component has role=status on count");
+assert.match(component, /aria-sort=/, "component has aria-sort on th");
+assert.match(component, /scope="col"/, "component has scope=col on th");
+assert.match(component, /nextShippedSort/, "component calls nextShippedSort");
+assert.match(component, /rel="noreferrer"/, "component has rel=noreferrer on links");
+assert.match(component, /tabIndex=\{0\}/, "component has tabIndex={0} on viewport");
+assert.match(component, /No shipped work matches this filter\./, "component has empty state text");
+assert.match(component, /relativeTime\(pr\.mergedAt, nowMs\)/, "component calls relativeTime with nowMs");
+
+// Page pins
+assert.match(page, /<ShippedTable/, "page contains <ShippedTable");
+assert.match(page, /rows=\{report\.prsMerged\}/, "page passes rows={report.prsMerged}");
+assert.doesNotMatch(
+  page,
+  /report\.prsMerged\.map/,
+  "page no longer maps report.prsMerged into dr-row links",
+);
+
+// CSS pins
+assert.match(css, /\.dr-shipped__viewport[\s\S]*?max-height:\s*300px/, "CSS viewport has max-height: 300px");
+assert.match(css, /\.dr-shipped__viewport[\s\S]*?overflow:\s*auto/, "CSS viewport has overflow: auto");
+assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[\s\S]*?position:\s*sticky/, "CSS thead th has position: sticky");
+
+console.log("shipped-table.test.ts: ok");
+
