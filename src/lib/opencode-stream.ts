@@ -17,7 +17,16 @@ export function parseOpenCodeRunEvent(value: unknown): OpenCodeRunEvent | null {
   const sessionId = typeof event.sessionID === "string" ? event.sessionID : undefined;
   if (event.type === "error") {
     const error = record(event.error);
-    return { kind: "error", sessionId, message: String(error?.message ?? event.error ?? "OpenCode failed") };
+    const errorData = record(error?.data);
+    const message =
+      typeof error?.message === "string"
+        ? error.message
+        : typeof errorData?.message === "string"
+          ? errorData.message
+          : typeof event.error === "string"
+            ? event.error
+            : "OpenCode failed";
+    return { kind: "error", sessionId, message };
   }
   const part = record(event.part);
   if (event.type === "text" && typeof part?.text === "string") {

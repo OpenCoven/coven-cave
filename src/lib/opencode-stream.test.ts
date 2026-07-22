@@ -15,4 +15,13 @@ assert.deepEqual(
   { kind: "other", sessionId: undefined },
   "malformed events never produce assistant text",
 );
+assert.deepEqual(
+  parseOpenCodeRunEvent({
+    type: "error",
+    sessionID: "ses_123",
+    error: { name: "UnknownError", data: { message: "Selected model is unavailable" } },
+  }),
+  { kind: "error", sessionId: "ses_123", message: "Selected model is unavailable" },
+  "OpenCode nests command errors under error.data.message",
+);
 console.log("opencode-stream.test.ts: ok");
