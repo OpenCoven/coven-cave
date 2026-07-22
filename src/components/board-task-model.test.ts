@@ -17,6 +17,11 @@ assert.match(boardStore, /modelOverride: "modelOverride" in patch[\s\S]{0,140}no
 assert.match(createRoute, /modelOverride\?: string \| null/, "board create API accepts a task model override");
 assert.match(patchRoute, /modelOverride: string \| null/, "board patch API accepts a task model override");
 assert.match(inspector, /useRuntimeModelOptions\(modelHarness, currentFamiliar\?\.id \?\? null\)/, "inspector loads the selected familiar runtime's model options");
+assert.match(
+  inspector,
+  /runtimeModelOptions\.map\(\(option\) => \(\{ value: option\.id, label: option\.label \}\)\)/,
+  "the inspector renders every runtime-provided model option, including authenticated catalogs",
+);
 assert.match(inspector, /persistTaskModelPatch\(\{ familiarId: next \|\| null, modelOverride: null \}\)/, "changing familiar clears the prior task model override");
 assert.match(inspector, /label="Model"/, "inspector exposes a Model control");
 assert.match(taskRoute, /model: card\.modelOverride \?\? binding\.model/, "new task sessions prefer the card model override");
