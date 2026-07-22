@@ -106,15 +106,21 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
   // changes so a stale override never bleeds across familiars.
   const [freshManifest, setFreshManifest] = useState<HarnessCapabilityManifest | null>(null);
   const [rescanning, setRescanning] = useState(false);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<McpServerInfo[] | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [copied, setCopied] = useState<CopiedState>(null);
   const copyTimer = useRef<number | null>(null);
+  // Bumped on harness change and on each rescan start so a slow response for
+  // a previous harness (or a superseded click) can't apply a stale manifest.
+  const rescanGeneration = useRef(0);
 
   useEffect(() => {
+    rescanGeneration.current += 1;
     setFreshManifest(null);
+    setRescanError(null);
   }, [data.harnessId]);
 
   useEffect(() => {
@@ -148,32 +154,48 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
   // /api/capabilities?harness=… forwards refresh=1 to the daemon's per-harness
   // scanner, so this is a genuine rescan — not just a cache-busting refetch.
   const rescan = useCallback(async () => {
+    const generation = ++rescanGeneration.current;
     setRescanning(true);
+    setRescanError(null);
     try {
       const res = await fetch(`/api/capabilities?harness=${encodeURIComponent(data.harnessId)}&refresh=1`, {
         cache: "no-store",
       });
       const body = (await res.json()) as CapabilitiesResponse;
+      if (rescanGeneration.current !== generation) return; // superseded — drop stale result
       const next = body?.harness_capabilities?.[0];
-      if (next) setFreshManifest(next);
+      if (next) {
+        setFreshManifest(next);
+      } else {
+        setRescanError("Rescan returned no capability data — is the daemon running?");
+      }
     } catch {
-      // Daemon offline — keep showing the last snapshot.
+      if (rescanGeneration.current === generation) {
+        setRescanError("Rescan failed — daemon unreachable. Showing the last snapshot.");
+      }
     } finally {
-      setRescanning(false);
+      if (rescanGeneration.current === generation) setRescanning(false);
     }
   }, [data.harnessId]);
 
   const copyText = useCallback((value: string, field: "name" | "command" | "config") => {
     if (!value) return;
+    let write: Promise<void>;
     try {
-      navigator.clipboard?.writeText(value).catch(() => {});
+      write = navigator.clipboard.writeText(value);
     } catch {
-      // Clipboard unavailable (permissions, insecure context) — the visual
-      // confirmation still fires so the user knows what would have copied.
+      return; // Clipboard unavailable (permissions, insecure context) — don't claim success.
     }
-    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-    setCopied({ field, value });
-    copyTimer.current = window.setTimeout(() => setCopied(null), 2000);
+    write.then(
+      () => {
+        if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+        setCopied({ field, value });
+        copyTimer.current = window.setTimeout(() => setCopied(null), 2000);
+      },
+      () => {
+        // Write rejected — leave the UI untouched rather than show a false "Copied".
+      },
+    );
   }, []);
 
   const openConnect = useCallback((server?: McpServerInfo) => {
@@ -206,9 +228,15 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
 
       <div className="familiar-mcp__status">
         <span className="familiar-mcp__status-copy">
-          {hasPlugins
-            ? "From the latest capability scan — rescan after editing your runtime's MCP config."
-            : "No plugins or MCP servers yet — connect a well-known server below, or bring your own."}
+          {rescanError ? (
+            <span className="familiar-mcp__status-error" role="alert">
+              {rescanError}
+            </span>
+          ) : hasPlugins ? (
+            "From the latest capability scan — rescan after editing your runtime's MCP config."
+          ) : (
+            "No plugins or MCP servers yet — connect a well-known server below, or bring your own."
+          )}
         </span>
         <div className="familiar-mcp__status-actions">
           <Button

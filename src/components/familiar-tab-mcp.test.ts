@@ -55,11 +55,25 @@ test("rescan refetches /api/capabilities for this harness, uncached, with a busy
 });
 
 test("copy feedback: single timer, check + success flip, role=status band", () => {
-  assert.match(src, /navigator\.clipboard\?\.writeText\(value\)\.catch\(\(\) => \{\}\)/, "clipboard write with catch");
+  assert.match(src, /navigator\.clipboard\.writeText\(value\)/, "clipboard write goes through the async API");
+  // "Copied" must be earned: setCopied only fires in the promise's success
+  // handler — a rejected write (permissions, insecure context) shows nothing.
+  assert.match(src, /write\.then\(\s*\(\) => \{[\s\S]{0,240}?setCopied\(\{ field, value \}\)/, "success handler owns the Copied flip");
+  assert.doesNotMatch(src, /writeText\(value\)\.catch\(\(\) => \{\}\)/, "no swallowed failure with an unconditional Copied");
   const timerClears = src.match(/window\.clearTimeout\(copyTimer\.current\)/g) ?? [];
   assert.ok(timerClears.length >= 2, "one timer ref, cleared on re-copy and on unmount");
   assert.match(src, /copied\?\.field === "name" \? "ph:check" : "ph:copy"/, "icon flips to a check");
   assert.match(src, /role="status"/, "Copied confirmation is a live status region");
+});
+
+test("rescan failures surface in the status band and stale responses are dropped", () => {
+  assert.match(src, /const generation = \+\+rescanGeneration\.current/, "each rescan takes a generation ticket");
+  assert.match(src, /rescanGeneration\.current \+= 1;[\s\S]{0,80}?setFreshManifest\(null\)/, "harness switch retires in-flight rescans");
+  assert.match(src, /if \(rescanGeneration\.current !== generation\) return;/, "superseded responses can't apply a stale manifest");
+  assert.match(src, /Rescan failed — daemon unreachable\. Showing the last snapshot\./, "network failure is stated, not swallowed");
+  assert.match(src, /Rescan returned no capability data — is the daemon running\?/, "empty response is stated too");
+  assert.match(src, /familiar-mcp__status-error" role="alert"/, "error renders as an alert in the status band");
+  assert.match(css, /\.familiar-mcp__status-error \{[^}]*var\(--color-danger/, "error tone rides the danger token");
 });
 
 test("css: copy-pop animation has a reduced-motion guard; pills stay neutral", () => {

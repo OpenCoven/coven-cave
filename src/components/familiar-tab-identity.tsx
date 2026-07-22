@@ -332,6 +332,24 @@ function ContractCard({ data }: { data: FamiliarSectionData }) {
               </li>
             );
           })}
+          {(() => {
+            // Violations spanning multiple files carry file: "cross-file" and
+            // belong to no row above — without this they'd count in the pill
+            // but be impossible to locate.
+            const crossFile = contract.report.violations.filter((v) => v.file === "cross-file");
+            if (crossFile.length === 0) return null;
+            return (
+              <li className="familiar-identity__file">
+                <span className="familiar-identity__file-name font-mono">
+                  cross-file
+                  <span className="familiar-identity__file-tag familiar-identity__file-tag--missing">
+                    {crossFile.length} issue{crossFile.length === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <span className="familiar-identity__file-blurb">{crossFile[0].message}</span>
+              </li>
+            );
+          })()}
         </ul>
       )}
     </section>

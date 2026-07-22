@@ -125,6 +125,10 @@ test("identity contract card scans for real: fetches the contract route, renders
     /contract\.report\.violations\.length\} violation/,
     "non-compliance pill counts the report's real violations",
   );
+  // Violations spanning files carry file: "cross-file"; they count in the
+  // pill, so they must also be locatable in the file list (PR #3655 follow-up).
+  assert.match(src, /v\.file === "cross-file"/, "cross-file violations are collected");
+  assert.match(src, /cross-file[\s\S]{0,400}?\{crossFile\[0\]\.message\}/, "cross-file row surfaces the first message as its blurb");
 });
 
 test("identity CSS is component-owned: BEM prefix, tokens only, container-query collapse", () => {

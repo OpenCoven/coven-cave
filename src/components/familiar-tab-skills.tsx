@@ -93,6 +93,14 @@ function isInstallable(entry: DirectoryEntry): boolean {
   return Boolean((entry.owner && entry.repo) || entry.packageName);
 }
 
+/** Disambiguator the install route actually matches on (owner/repo or package
+ *  name) — NOT entry.source, which is a provenance enum the server would
+ *  never match, 404ing every install. */
+function installSource(entry: DirectoryEntry): string | undefined {
+  if (entry.owner && entry.repo) return `${entry.owner}/${entry.repo}`;
+  return entry.packageName ?? undefined;
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 
 export function FamiliarSkillsSection({ data }: { data: FamiliarSectionData }) {
@@ -176,7 +184,7 @@ export function FamiliarSkillsSection({ data }: { data: FamiliarSectionData }) {
         <div className="familiar-skills__list">
           {visible.map((row) => (
             <button
-              key={row.key}
+              key={`${row.sourceKind}:${row.key}`}
               type="button"
               className="familiar-skills__row focus-ring"
               onClick={() => setSelected(row)}
@@ -242,7 +250,7 @@ function FamiliarEmptyTeachState({ familiarName }: { familiarName: string }) {
     fetch("/api/skills/directory/install", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: entry.id, source: entry.source }),
+      body: JSON.stringify({ id: entry.id, source: installSource(entry) }),
     })
       .then((res) => res.json())
       .then((json: { ok?: boolean }) => {
@@ -330,7 +338,18 @@ function FamiliarEmptyTeachState({ familiarName }: { familiarName: string }) {
                       state === "done" ? (
                         <span className="familiar-skills__rec-installed">Installed</span>
                       ) : state === "error" ? (
-                        <span className="familiar-skills__rec-error">Install failed</span>
+                        <span className="familiar-skills__rec-retry">
+                          <span className="familiar-skills__rec-error">Install failed</span>
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            leadingIcon="ph:arrow-clockwise"
+                            onClick={() => install(entry)}
+                            aria-label={`Retry installing ${entry.name}`}
+                          >
+                            Retry
+                          </Button>
+                        </span>
                       ) : (
                         <Button
                           variant="ghost"
@@ -450,6 +469,7 @@ function SkillFilesPane({ dir }: { dir: string }) {
     setListError(null);
     setActive(null);
     setFileText(null);
+    setFileSize(undefined);
     setFileError(null);
     fetch(`/api/skills/files?dir=${encodeURIComponent(dir)}`)
       .then((res) => res.json())
@@ -475,6 +495,7 @@ function SkillFilesPane({ dir }: { dir: string }) {
   useEffect(() => {
     if (!active || active.kind !== "file") {
       setFileText(null);
+      setFileSize(undefined);
       setFileError(null);
       setFileLoading(false);
       return;
@@ -482,6 +503,7 @@ function SkillFilesPane({ dir }: { dir: string }) {
     let cancelled = false;
     setFileLoading(true);
     setFileText(null);
+    setFileSize(undefined);
     setFileError(null);
     fetch(`/api/skills/files?dir=${encodeURIComponent(dir)}&file=${encodeURIComponent(active.name)}`)
       .then((res) => res.json())
