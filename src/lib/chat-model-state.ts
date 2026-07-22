@@ -116,7 +116,7 @@ function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): 
   return { model, reason: "Inherited from Cave defaults." };
 }
 
-export function modelApplicationForHarness(input?: ModelApplicationInput): ModelApplicationResult {
+export function modelApplicationForHarness(input?: ModelApplicationInput | null): ModelApplicationResult {
   if (input?.failed) {
     return {
       state: "failed",
@@ -206,6 +206,20 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
       source: "familiar-default",
       applicationState: application?.state ?? "saved",
       reason: application?.reason ?? UNSUPPORTED_REASON,
+    });
+  }
+
+  // OpenCode's authenticated account chooses its own default model.  Its
+  // catalog deliberately has an empty default, so inheriting Cave's global
+  // (usually OpenAI) model here would make an untouched OpenCode familiar run
+  // `opencode --model <unconfigured-global-model>` instead of letting the CLI
+  // select its configured default.
+  if (input.harness === "opencode") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "global-default",
+      applicationState: "saved",
+      reason: "Using OpenCode's authenticated default model.",
     });
   }
 

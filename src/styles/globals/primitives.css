@@ -1504,6 +1504,28 @@ html[data-backdrop-on] .glass-overlay {
   background: var(--border-hairline);
   margin: var(--space-1) 0;
 }
+/* Cascading submenu (PopoverSubmenu): trigger row keeps the item look with a
+   trailing caret pushed to the far edge; the flyout reuses the .ui-popover
+   shell at a fixed position beside its row (computeSubmenuPosition). */
+.ui-popover-subtrigger__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-popover-subtrigger__hint {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.ui-popover-subtrigger__caret {
+  color: var(--text-muted);
+  flex: none;
+}
+.ui-popover-submenu {
+  overflow-y: auto;
+}
 .ui-popover-label {
   font-size: var(--text-2xs);
   text-transform: uppercase;

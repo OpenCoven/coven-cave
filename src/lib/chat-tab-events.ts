@@ -26,6 +26,23 @@ export function consumeCovenTabPending(): boolean {
   return pending;
 }
 
+// Same latch for the Skills tab (familiar scope): the composer "+" menu's
+// "Manage skills" lives on surfaces (Home) where ChatSurface may not be
+// mounted yet, so the mode flip + fire-and-forget event can race its listener.
+let skillsTabPending = false;
+export function markSkillsTabPending(): void {
+  skillsTabPending = true;
+}
+export function consumeSkillsTabPending(): boolean {
+  const pending = skillsTabPending;
+  skillsTabPending = false;
+  return pending;
+}
+
+/** Window event that asks the chat surface to select its Skills tab (the
+ *  `familiar` scope). Paired with the retained latch above for fresh mounts. */
+export const CHAT_OPEN_SKILLS_EVENT = "cave:chat-open-skills";
+
 // Same latch for the Projects tab: board→Projects handoffs (board-inspector,
 // ⌘9, /projects) dispatched CHAT_OPEN_PROJECTS_EVENT on a 0ms timeout while
 // ChatSurface — the only listener — was still mounting; a lost race landed on

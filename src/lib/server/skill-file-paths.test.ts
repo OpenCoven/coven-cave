@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isAllowedSkillFilePath, isRemovableSkillDir, MAX_SKILL_FILE_PREVIEW_BYTES } from "./skill-file-paths.ts";
+import {
+  isAllowedSkillFilePath,
+  isBrowsableSkillAuxName,
+  isRemovableSkillDir,
+  MAX_SKILL_FILE_PREVIEW_BYTES,
+  resolveBrowsableSkillDir,
+} from "./skill-file-paths.ts";
 
 const home = await mkdtemp(path.join(tmpdir(), "coven-skill-paths-"));
 const projectRoot = await mkdtemp(path.join(tmpdir(), "coven-skill-project-"));
@@ -198,6 +204,49 @@ assert.equal(
   "a directory outside the scan roots is rejected",
 );
 assert.equal(await isRemovableSkillDir("", home), false, "empty path is rejected");
+
+// ── /api/skills/files browser guards ─────────────────────────────────────────
+
+assert.equal(
+  await resolveBrowsableSkillDir(path.dirname(claudeSkill), home),
+  await realpath(path.dirname(claudeSkill)),
+  "a skill dir whose SKILL.md passes the descriptor allow-list is browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.dirname(codexAutomation), home),
+  await realpath(path.dirname(codexAutomation)),
+  "a codex automation dir proves itself via automation.toml",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.join(home, "secrets"), home),
+  null,
+  "a directory outside the skill roots is not browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.join(home, ".claude", "skills"), home),
+  null,
+  "the scan root itself (no descriptor) is not browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(claudeSkillSymlink, home),
+  null,
+  "a symlinked skill directory is rejected",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(claudeSkill, home),
+  null,
+  "a file path is not a browsable directory",
+);
+assert.equal(await resolveBrowsableSkillDir("", home), null, "empty dir is rejected");
+
+assert.equal(isBrowsableSkillAuxName("checklist.md"), true, "plain .md aux file is browsable");
+assert.equal(isBrowsableSkillAuxName("config.toml"), true, "plain .toml aux file is browsable");
+assert.equal(isBrowsableSkillAuxName("SKILL.md"), true, "the descriptor itself is browsable");
+assert.equal(isBrowsableSkillAuxName("run.sh"), false, "non-text extensions are rejected");
+assert.equal(isBrowsableSkillAuxName(".env"), false, "dotfiles are rejected");
+assert.equal(isBrowsableSkillAuxName("nested/notes.md"), false, "path separators are rejected");
+assert.equal(isBrowsableSkillAuxName("../escape.md"), false, "traversal is rejected");
+assert.equal(isBrowsableSkillAuxName(""), false, "empty name is rejected");
 
 process.chdir(originalCwd);
 console.log("skill-file-paths.test.ts: ok");

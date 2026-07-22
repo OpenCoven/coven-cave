@@ -25,8 +25,18 @@ assert.match(
   /<ComposerActionsMenu[\s\S]*?improve=\{\{[\s\S]*?promptSnippets:\s*\{[\s\S]*?enhance:\s*\{[\s\S]*?onEnhance: promptEnhance\.enhance/,
   "ChatView routes enhance through Chat options → Improve",
 );
-assert.match(actionsMenu, /Smart enhance/, "the Improve section exposes the Smart enhance action");
-assert.match(actionsMenu, /ENHANCE_INTENTS\.map\(\(intent\) => \(/, "Enhance options enumerate the shared enhance intents");
+const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
+assert.match(
+  actionsMenu,
+  /legacy=\{\{[\s\S]*?enhance: improve\.enhance/,
+  "the actions menu forwards enhance into the shared add-menu's utility group",
+);
+assert.match(addMenu, /Enhance prompt/, "the shared add-menu exposes the one-click Enhance prompt action");
+assert.match(
+  addMenu,
+  /PopoverSubmenu[\s\S]{0,200}?label="Enhance options"[\s\S]*?ENHANCE_INTENTS\.map\(\(intent\) => \(/,
+  "Enhance options is a cascade submenu enumerating the shared enhance intents",
+);
 assert.match(chatView, /<EnhanceStrip[\s\S]*?onRevert=\{promptEnhance\.revert\}/, "the shared strip carries the revert affordance");
 
 console.log("chat-prompt-enhance.test.ts: ok");

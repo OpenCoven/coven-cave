@@ -43,9 +43,28 @@ hosts/IPs default to `http://<host>:3000`.
 
 ```
 CovenCave/
-  Models/        Familiar, SessionRow, ChatTurn, StreamEvent (SSE decoding)
-  Networking/    CaveConnection (host/no-token), CaveClient (REST + SSE stream)
+  Models/        Familiar, SessionRow, ChatTurn, StreamEvent (SSE decoding),
+                 PermissionModels (grants, proposals, effective access)
+  Networking/    CaveConnection (host/no-token), CaveClient (REST + SSE stream),
+                 CaveClient+Permissions (grants console API)
   State/         AppModel (connection, familiars, threads), ChatThread (1:1 + group fan-out)
-  Views/         Connection, ChatsHome, NewChat (group picker), Chat, MessageBubble, Settings, Avatar
+  Views/         Connection, ChatsHome, NewChat (group picker), Chat, MessageBubble,
+                 Settings, Permissions (Access / Requests / Audit console), Avatar
   Theme/         per-familiar colour + initials
 ```
+
+## Familiar permissions & phone write access
+
+Settings → **Familiar permissions** opens the same permissions console the
+desktop has: per-familiar project access (read/write, including "via group"
+levels inherited from access groups), the grant-request inbox (accept/reject
+with the 30-second undo window), and the recent allow/deny audit log. Each
+familiar's screen also has a key toolbar button scoped to just that familiar.
+
+Changing anything from the phone is **off by default**. The desktop's
+Settings → Phone section has two opt-ins — "Allow permission changes from
+phone" and "Allow file edits from phone" (the Code tab's Save) — and they can
+only be flipped on the desktop itself: the server refuses the toggles' PATCH
+from any non-loopback origin, so a phone (or anything else on the tailnet) can
+never widen its own authority. Until the opt-in is enabled the iOS console
+renders read-only with a banner pointing at the desktop setting.

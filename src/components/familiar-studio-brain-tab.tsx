@@ -10,6 +10,7 @@ import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -242,8 +243,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
   // Grok Build exposes models from the authenticated local CLI. Prefer that
   // catalog over a compile-time seed so Studio never offers unavailable xAI
-  // models; other runtimes retain their existing curated menus.
-  const modelOptions = harnessId === "grok" ? liveRuntimeModels : modelCatalog?.models ?? [];
+  // models; OpenCode retains its own authenticated runtime inventory.
+  const runtimeModelOptions = useRuntimeModelOptions(harnessId, familiar.id);
+  const modelOptions = harnessId === "grok" ? liveRuntimeModels : runtimeModelOptions;
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user

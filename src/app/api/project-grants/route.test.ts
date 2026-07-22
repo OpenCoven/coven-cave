@@ -7,6 +7,14 @@ const proposalsRoute = await readFile(new URL("../grant-proposals/route.ts", imp
 const proposalItemRoute = await readFile(new URL("../grant-proposals/[id]/route.ts", import.meta.url), "utf8");
 const permissions = await readFile(new URL("../../../lib/project-permissions.ts", import.meta.url), "utf8");
 const targets = await readFile(new URL("../../../lib/server/project-grant-targets.ts", import.meta.url), "utf8");
+const trustedGate = await readFile(
+  new URL("../../../lib/server/trusted-grant-mutation.ts", import.meta.url),
+  "utf8",
+);
+const mobilePermissionsRoute = await readFile(
+  new URL("../mobile-permissions/route.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   permissions,
@@ -75,8 +83,37 @@ assert.match(grantsRoute, /export async function POST\(/, "project grants route 
 assert.match(grantsRoute, /export async function DELETE\(/, "project grants route should revoke human grants");
 assert.match(
   grantsRoute,
-  /requireLocalHumanGrantMutation\(req\)/,
-  "direct grant mutations should require a local human request",
+  /await requireTrustedHumanGrantMutation\(req\)/,
+  "direct grant mutations should require a trusted human request (desktop, or opted-in paired phone)",
+);
+// The trusted-human gate itself: desktop loopback always passes; a verified
+// mobile request passes ONLY behind the desktop opt-in; everything else 403s.
+assert.match(
+  trustedGate,
+  /if \(isLocalOrigin\(req\)\) return null;/,
+  "trusted-human gate should always admit the local desktop",
+);
+assert.match(
+  trustedGate,
+  /isVerifiedMobileRequest\(req\)[\s\S]*loadMobileWriteAccess\(\)[\s\S]*if \(allowMobileGrantMutations\) return null;/,
+  "trusted-human gate should admit the paired phone only behind the allowMobileGrantMutations opt-in",
+);
+assert.match(
+  trustedGate,
+  /req\.headers\.get\(MOBILE_ACCESS_HEADER\) === "1"/,
+  "verified-mobile detection must rely on the proxy-validated marker header",
+);
+assert.match(
+  trustedGate,
+  /status: 403/,
+  "trusted-human gate must reject untrusted origins with 403",
+);
+// The opt-in toggles themselves are desktop-only: the phone must never be able
+// to enable its own write access.
+assert.match(
+  mobilePermissionsRoute,
+  /export async function PATCH\(req: Request\) \{\s*if \(!isLocalOrigin\(req\)\)/,
+  "mobile write-access toggles must be mutable only from the local desktop",
 );
 assert.match(
   grantsRoute,
@@ -135,8 +172,8 @@ assert.match(
 assert.match(proposalItemRoute, /export async function PATCH\(/, "proposal item route should resolve proposals");
 assert.match(
   proposalItemRoute,
-  /isLocalOrigin\(req\)/,
-  "proposal resolution should require a local human request",
+  /await requireTrustedHumanGrantMutation\(req\)/,
+  "proposal resolution should require a trusted human request (desktop, or opted-in paired phone)",
 );
 assert.match(
   proposalItemRoute,

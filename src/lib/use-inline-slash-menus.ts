@@ -38,6 +38,7 @@ export function useInlineSlashMenus(opts: {
   text: string;
   setText: (t: string) => void;
   modelHarness: string;
+  modelOptionsOverride?: RuntimeModelOption[];
   onPickModel: (id: string) => void;
   onPickSkill: (s: SkillOption) => void;
   onInsertPrompt: (p: PromptOption) => void;
@@ -61,7 +62,7 @@ export function useInlineSlashMenus(opts: {
   dismiss: () => void;
   handleKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
 } {
-  const { text, setText, modelHarness } = opts;
+  const { text, setText, modelHarness, modelOptionsOverride } = opts;
   // Latest-ref for the pick callbacks (usePausablePoll pattern) so inline
   // arrows at the call site don't churn handleKeyDown's identity per render.
   const cbRef = useRef(opts);
@@ -130,8 +131,8 @@ export function useInlineSlashMenus(opts: {
   // While typing "/model <partial>", the menu shows model options instead of
   // commands (an inline picker). null ⇒ not in /model arg position.
   const modelOptions = useMemo(
-    () => (slashDismissed ? null : modelSlashOptions(text, modelHarness)),
-    [text, modelHarness, slashDismissed],
+    () => (slashDismissed ? null : modelSlashOptions(text, modelHarness, modelOptionsOverride)),
+    [text, modelHarness, modelOptionsOverride, slashDismissed],
   );
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
   // Inline `/skill` / `/skills` picker — null ⇒ not in a skill-picker position.

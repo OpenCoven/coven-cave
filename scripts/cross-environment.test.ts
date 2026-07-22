@@ -24,6 +24,7 @@ import path from "node:path";
 import { resolveSidecarTarget } from "./sidecar-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
 import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
+import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "../src/lib/opencode-bin.ts";
 
 const skips: string[] = [];
 function skip(reason: string): void {
@@ -173,6 +174,26 @@ function skip(reason: string): void {
     );
     skip("coven .cmd-shim host resolution: requires a Windows host (matrix runs it on windows-latest)");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Contract B2 — OpenCode direct-launch environment. The executable is shared
+// across desktop platforms; only the POSIX XDG runtime-dir setup diverges.
+// Keep Windows, Linux/WSL, and macOS decisions executable here even while the
+// hosted macOS PR matrix is suspended for Actions-minute capacity.
+// ---------------------------------------------------------------------------
+{
+  assert.equal(openCodeCommand(), "opencode", "OpenCode keeps one executable name across desktop platforms");
+  const windowsLaunch = openCodeLaunch(["run", "safe & literal"], "win32", { SystemRoot: "C:\\Windows" });
+  assert.match(windowsLaunch.command, /WindowsPowerShell\\v1\.0\\powershell\.exe$/i, "Windows runs npm's opencode.cmd shim through PowerShell");
+  assert.equal(windowsLaunch.input, JSON.stringify(["run", "safe & literal"]), "Windows shell wrapper keeps chat input out of command syntax");
+  assert.match(windowsLaunch.args.at(-1) ?? "", /\[Console\]::In\.ReadToEnd\(\)/, "Windows reads OpenCode argv from stdin so long prompts do not exceed its command-line limit");
+  assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not receive an XDG runtime directory");
+  assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives /tmp for OpenCode runtime files");
+  assert.equal(openCodeNeedsTmpRuntimeDir("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }), false, "native Linux preserves its XDG runtime directory");
+  assert.equal(openCodeNeedsTmpRuntimeDir("linux", { WSL_INTEROP: "/run/WSL/1_interop", XDG_RUNTIME_DIR: "/run/user/1000" }), true, "WSL overrides a stale inherited XDG runtime directory");
+  assert.equal(openCodeNeedsTmpRuntimeDir("darwin", {}), true, "headless macOS receives /tmp for OpenCode runtime files");
+  assert.equal(openCodeNeedsTmpRuntimeDir("darwin", { XDG_RUNTIME_DIR: "/var/folders/runtime" }), false, "native macOS preserves its XDG runtime directory");
 }
 
 // ---------------------------------------------------------------------------

@@ -14,8 +14,11 @@ const MODEL_ARG_RE = /^\/(?:model|m)\s+(.*)$/i;
 // cleanModelId in chat-model-state.ts, inlined to keep this client-safe).
 const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
-function modelsFor(harness: string | null | undefined): RuntimeModelOption[] {
-  return catalogForRuntime(harness ?? "claude")?.models ?? [];
+function modelsFor(
+  harness: string | null | undefined,
+  discoveredModels?: RuntimeModelOption[],
+): RuntimeModelOption[] {
+  return discoveredModels ?? catalogForRuntime(harness ?? "claude")?.models ?? [];
 }
 
 /** Model options for the inline autocomplete when the composer is in
@@ -24,11 +27,12 @@ function modelsFor(harness: string | null | undefined): RuntimeModelOption[] {
 export function modelSlashOptions(
   text: string,
   harness: string | null | undefined,
+  discoveredModels?: RuntimeModelOption[],
 ): RuntimeModelOption[] | null {
   const m = text.trimStart().match(MODEL_ARG_RE);
   if (!m) return null;
   const partial = m[1].trim().toLowerCase();
-  const models = modelsFor(harness);
+  const models = modelsFor(harness, discoveredModels);
   if (!partial) return models;
   return models.filter(
     (mm) => mm.id.toLowerCase().includes(partial) || mm.label.toLowerCase().includes(partial),
@@ -41,10 +45,11 @@ export function modelSlashOptions(
 export function resolveModelArg(
   arg: string,
   harness: string | null | undefined,
+  discoveredModels?: RuntimeModelOption[],
 ): string | null {
   const a = arg.trim();
   if (!a) return null;
-  const models = modelsFor(harness);
+  const models = modelsFor(harness, discoveredModels);
   const lower = a.toLowerCase();
   const exact = models.find(
     (m) => m.id.toLowerCase() === lower || m.label.toLowerCase() === lower,
@@ -61,8 +66,9 @@ export function resolveModelArg(
 export function formatModelList(
   harness: string | null | undefined,
   current: string | null | undefined,
+  discoveredModels?: RuntimeModelOption[],
 ): string {
-  const models = modelsFor(harness);
+  const models = modelsFor(harness, discoveredModels);
   const head = current ? `Current model: ${current}` : "No model set yet.";
   if (models.length === 0) {
     return `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`;

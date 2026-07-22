@@ -154,6 +154,10 @@ function runSync(fixture, extraArgs = []) {
   );
 }
 
+function normalizePathDiagnostics(text) {
+  return text.replaceAll("\\", "/");
+}
+
 function generatedDigest(root) {
   const out = [];
   function walk(dir) {
@@ -233,7 +237,10 @@ try {
   writeFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "stale\n");
   const stale = runSync(fixture, ["--check"]);
   assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/);
+  assert.match(
+    normalizePathDiagnostics(stale.stderr),
+    /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/,
+  );
   const repaired = runSync(fixture);
   assert.equal(repaired.status, 0, repaired.stderr);
 
@@ -241,7 +248,10 @@ try {
   writeFileSync(orphan, "this resource is no longer declared\n");
   const orphaned = runSync(fixture, ["--check"]);
   assert.notEqual(orphaned.status, 0);
-  assert.match(orphaned.stderr, /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/);
+  assert.match(
+    normalizePathDiagnostics(orphaned.stderr),
+    /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/,
+  );
   const cleaned = runSync(fixture);
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.equal(existsSync(orphan), false, "sync removes undeclared files from fully managed Craft packages");
@@ -278,10 +288,19 @@ try {
   const target = path.join(craftSymlinkFixture.marketplace, "outside-secret.md");
   writeFileSync(target, "outside\n");
   const skillRoot = path.join(craftSymlinkFixture.marketplace, "craft-sources", "seekers-lens", "brainstorming-research-ideas");
-  symlinkSync(target, path.join(skillRoot, "leak.md"));
-  const result = runSync(craftSymlinkFixture);
-  assert.notEqual(result.status, 0, "craft symlink source should be rejected");
-  assert.match(result.stderr, /craft skill source contains a symlink/i);
+  try {
+    symlinkSync(target, path.join(skillRoot, "leak.md"));
+    const result = runSync(craftSymlinkFixture);
+    assert.notEqual(result.status, 0, "craft symlink source should be rejected");
+    assert.match(result.stderr, /craft skill source contains a symlink/i);
+  } catch (error) {
+    // Windows developer-mode / elevation policy can forbid ordinary users from
+    // creating symlinks. The generator's rejection path runs on platforms that
+    // support the fixture; do not turn an unavailable OS capability into a
+    // false test failure on native Windows.
+    if (error?.code !== "EPERM") throw error;
+    console.log("sync-marketplace: skipped symlink fixture (Windows policy)");
+  }
 } finally {
   rmSync(craftSymlinkFixture.dir, { recursive: true, force: true });
 }

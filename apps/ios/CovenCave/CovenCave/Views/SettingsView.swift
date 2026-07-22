@@ -28,6 +28,7 @@ struct SettingsView: View {
                 themeSection
                 appearanceSection
                 chatsSection
+                permissionsSection
                 hostSection
                 disconnectSection
                 aboutSection
@@ -191,6 +192,23 @@ struct SettingsView: View {
             Text("Chats")
         } footer: {
             Text("Save every conversation as Markdown files in a single .zip.")
+        }
+    }
+
+    // MARK: - Permissions (familiar project access)
+
+    private var permissionsSection: some View {
+        Section {
+            NavigationLink {
+                PermissionsView()
+            } label: {
+                Label("Familiar permissions", systemImage: "key.fill")
+                    .foregroundStyle(.primary)
+            }
+        } header: {
+            Text("Permissions")
+        } footer: {
+            Text("See and manage which projects each familiar can read or change. Changing them from the phone requires the desktop opt-in.")
         }
     }
 

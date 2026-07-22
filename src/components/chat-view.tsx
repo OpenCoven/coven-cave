@@ -107,7 +107,9 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import {
@@ -2621,7 +2623,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
   // command runs the highlighted suggestion's intent — never the partially
   // typed text, and never recorded in ↑ history (send() owns that push).
-  const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
+  // Stable model menu for the composer chip (independent of the /model
+  // autocomplete below, which is null outside `/model <arg>` position).
+  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);
+  const composerModelValue =
+    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      ? modelState.effectiveModel
+      : modelHarness === "opencode"
+        ? ""
+        : composerModelOptions[0]?.id ?? "";
   const {
     skills,
     prompts,
@@ -2642,6 +2653,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: input,
     setText: setInput,
     modelHarness,
+    modelOptionsOverride: modelHarness === "opencode" ? composerModelOptions : undefined,
     onPickModel: (id) => {
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
@@ -2656,16 +2668,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
-  // Stable model menu for the composer chip (independent of the /model
-  // autocomplete above, which is null outside `/model <arg>` position).
-  const composerModelOptions = useMemo(
-    () => catalogForRuntime(modelHarness)?.models ?? [],
-    [modelHarness],
-  );
-  const composerModelValue =
-    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-      ? modelState.effectiveModel
-      : composerModelOptions[0]?.id ?? "";
   const composerResponseSections: ComposerOptionSection[] = [
     {
       id: "access",
@@ -3566,11 +3568,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ? modelState.effectiveModel
           : null;
       if (!args.trim()) {
-        appendSystem(formatModelList(modelHarness, current));
+        appendSystem(
+          formatModelList(
+            modelHarness,
+            current,
+            modelHarness === "opencode" ? composerModelOptions : undefined,
+          ),
+        );
         setInput("");
         return true;
       }
-      const id = resolveModelArg(args, modelHarness);
+      const id = resolveModelArg(
+        args,
+        modelHarness,
+        modelHarness === "opencode" ? composerModelOptions : undefined,
+      );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);
         setInput("");
@@ -5783,16 +5795,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     type="button"
                     className="cave-composer-footer-action focus-ring"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={busy || attachments.length >= 10}
-                    title={`Attach images, videos, or files (${keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A"})`}
-                    aria-label="Attach images, videos, or files"
-                  >
-                    <Icon name="ph:paperclip" width={15} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="cave-composer-footer-action focus-ring"
                     onClick={() => void openVoiceCall()}
                     disabled={voiceCallPending || (busy && !sessionId)}
                     title="Voice call"
@@ -5801,6 +5803,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <Icon name="ph:phone" width={15} aria-hidden />
                   </button>
                   <ComposerActionsMenu
+                    attach={{
+                      onSelect: () => fileInputRef.current?.click(),
+                      disabled: busy || attachments.length >= 10,
+                      hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                    }}
+                    skills={{
+                      onPickSkill: (skill) => {
+                        setInput(`/skill ${skill.id} `);
+                        inputRef.current?.focus();
+                      },
+                    }}
                     context={{
                       projects,
                       projectValue: resolvedProjectId,

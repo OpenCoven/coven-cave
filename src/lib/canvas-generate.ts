@@ -13,10 +13,24 @@ export type SketchStreamEvent = {
   message?: string;
 };
 
-/** Parse one SSE frame ("data: {...}") into its event object, or null. */
+/**
+ * Parse one SSE frame into its event object, or null.
+ *
+ * A frame is everything between blank-line separators and may carry `id:`,
+ * `event:`, and comment lines ahead of its `data:` payload — /api/chat/send
+ * frames every event as "id: N\ndata: {json}" so /api/chat/stream can resume
+ * from the last seen id. A parser that required the frame to *start with*
+ * "data:" dropped every id-carrying event, which read as "the familiar didn't
+ * return a reflection" in the journal and a blind stream everywhere else
+ * (cave-am2b). Multi-line data is joined with newlines per the SSE spec; CRLF
+ * line endings are tolerated for platform WebViews that normalize them.
+ */
 export function parseSseFrame(frame: string): SketchStreamEvent | null {
-  if (!frame.startsWith("data:")) return null;
-  const payload = frame.slice(5).trim();
+  const data: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  }
+  const payload = data.join("\n").trim();
   if (!payload) return null;
   try {
     return JSON.parse(payload) as SketchStreamEvent;

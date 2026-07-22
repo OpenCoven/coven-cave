@@ -15,7 +15,11 @@ assert.match(
   /LOCAL_HUMAN_READ_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set\(\[\s*"file-browse",\s*"file-read",\s*"project-api",\s*\]\)/,
   "defines the read-only surface allowlist",
 );
-assert.doesNotMatch(helper, /LOCAL_HUMAN_READ_SURFACES[\s\S]*"file-write"/, "writes are NOT in the local-human allowlist");
+const localHumanSet = helper.match(
+  /LOCAL_HUMAN_READ_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set\(\[[\s\S]*?\]\)/,
+)?.[0] ?? "";
+assert.ok(localHumanSet, "found the local-human allowlist set literal");
+assert.doesNotMatch(localHumanSet, /"file-write"/, "writes are NOT in the local-human allowlist");
 
 // The human-read predicate covers BOTH the loopback desktop (read surfaces) and
 // the phone (mobile surface, GET only — writes/POST fall through to the familiar
@@ -38,6 +42,26 @@ assert.match(
 // Registered-project reads use the predicate, and still throw without it.
 assert.match(helper, /if \(isHumanRead\(args\.request, surface\)\) \{\s*return;/, "registered-project reads gate on isHumanRead");
 assert.match(helper, /throw new ProjectAccessDeniedError\("missing familiarId for project access"\)/, "still throws for non-human / write");
+
+// The paired phone may WRITE without a familiar only behind the desktop
+// opt-in (allowMobileFileWrites), only on the file-write surface, and only
+// for verified-mobile requests. Familiar-scoped writes keep grant
+// enforcement; the shell surface never takes this branch.
+assert.match(
+  helper,
+  /async function isHumanMobileWrite\([\s\S]*?if \(surface !== "file-write"\) return false;[\s\S]*?MOBILE_ACCESS_HEADER\) !== "1"\) return false;[\s\S]*?allowMobileFileWrites[\s\S]*?\}/,
+  "human mobile writes are limited to the file-write surface on proxy-verified phone requests",
+);
+assert.match(
+  helper,
+  /if \(await isHumanMobileWrite\(args\.request, surface\)\) \{\s*return;/,
+  "registered-project no-familiar writes consult the opt-in mobile-write predicate",
+);
+assert.doesNotMatch(
+  helper,
+  /isHumanMobileWrite\(args\.request, surface\)[\s\S]*?resolveAllowedProjectPath/,
+  "unregistered paths (familiar workspaces, cwd) must stay read-only from the phone",
+);
 
 // A familiar's own workspace isn't a *registered* project, but the human may
 // still browse any path the traversal guard allows (resolveAllowedProjectPath).
