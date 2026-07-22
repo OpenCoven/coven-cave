@@ -1304,6 +1304,46 @@ async function reconcileDirectory(
   return { outcome: { ok: true, value: null, summary: `Merged ${files} legacy-only directory entr${files === 1 ? "y" : "ies"}.` }, files, collisions };
 }
 
+/**
+ * Discard guard for explicit whole-file resolutions (cave-5ax2): a
+ * keep-canonical/recover-legacy choice that would replace a dramatically
+ * larger copy with a much smaller one is almost always a mistake (a stale
+ * writer recreated one side nearly empty). Require explicit confirmation
+ * before the smaller copy wins. Both copies are already preserved in the
+ * verified recovery bundle when this check runs.
+ */
+const DISCARD_GUARD_RATIO = 8;
+const DISCARD_GUARD_MIN_BYTES = 4096;
+
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function discardConfirmation(
+  action: "keep-canonical" | "recover-legacy",
+  legacyInfo: PathInfo,
+  canonicalInfo: PathInfo,
+): { keptBytes: number; discardedBytes: number; summary: string } | null {
+  if (legacyInfo.kind !== "file" || canonicalInfo.kind !== "file") return null;
+  const discarded = action === "recover-legacy" ? canonicalInfo.size : legacyInfo.size;
+  const kept = action === "recover-legacy" ? legacyInfo.size : canonicalInfo.size;
+  if (typeof discarded !== "number" || typeof kept !== "number") return null;
+  if (discarded < DISCARD_GUARD_MIN_BYTES || discarded < DISCARD_GUARD_RATIO * Math.max(kept, 1)) return null;
+  const discardedSide = action === "recover-legacy" ? "canonical" : "legacy";
+  const keptSide = action === "recover-legacy" ? "legacy" : "canonical";
+  return {
+    keptBytes: kept,
+    discardedBytes: discarded,
+    summary:
+      `Blocked without confirmation: this would discard the ${discardedSide} copy ` +
+      `(${formatByteSize(discarded)}) in favor of a much smaller ${keptSide} copy ` +
+      `(${formatByteSize(kept)}). Both copies are preserved in the recovery bundle; ` +
+      `confirm the discard to proceed.`,
+  };
+}
+
 async function reconcileEntry(
   entry: CaveHomeReconciliationEntry,
   journal: MigrationJournal,
@@ -1446,6 +1486,15 @@ async function reconcileEntry(
   journalEntry.backupId = backup.id;
 
   if (options.action === "keep-canonical" || options.action === "recover-legacy") {
+    const confirmation = discardConfirmation(options.action, legacyInfo, canonicalInfo);
+    if (confirmation && options.confirmDiscard !== true) {
+      result.confirmationRequired.push({ legacy: entry.legacy, action: options.action, ...confirmation });
+      journalEntry.decision = "unresolved";
+      journalEntry.summary = confirmation.summary;
+      journal.entries[entry.legacy] = journalEntry;
+      result.skipped.push(entry.legacy);
+      return;
+    }
     if (options.action === "recover-legacy") {
       // Restore from the verified bundle, not the live legacy path, so an old
       // writer cannot change the selected bytes between backup and recovery.
@@ -1542,6 +1591,7 @@ export async function reconcileCaveHome(
 ): Promise<CaveHomeReconciliationResult> {
   const result: CaveHomeReconciliationResult = {
     moved: [], linked: [], skipped: [], merged: [], backedUp: [], resolved: [], errors: [],
+    confirmationRequired: [],
   };
   await mkdir(caveHome(), { recursive: true });
   const release = await acquireLock(options);
@@ -1600,6 +1650,8 @@ export async function caveHomeReconciliationStatus(
       canonicalHash: canonicalInfo.hash,
       legacyMtimeMs: legacyInfo.mtimeMs,
       canonicalMtimeMs: canonicalInfo.mtimeMs,
+      legacySize: legacyInfo.size,
+      canonicalSize: canonicalInfo.size,
       state: isPending ? "pending" : "unresolved",
       summary: legacyInfo.kind === "symlink"
         ? "Legacy symlink is not a valid compatibility bridge and requires review."

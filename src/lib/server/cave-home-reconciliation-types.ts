@@ -55,6 +55,8 @@ export type CaveHomeConflictDetail = {
   canonicalHash?: string;
   legacyMtimeMs?: number;
   canonicalMtimeMs?: number;
+  legacySize?: number;
+  canonicalSize?: number;
   state: "pending" | "unresolved" | "managed";
   summary: string;
   differences: string[];
@@ -79,6 +81,18 @@ export type CaveHomeReconciliationResult = {
   backedUp: string[];
   resolved: string[];
   errors: Array<{ legacy: string; error: string }>;
+  /**
+   * Destructive resolutions blocked by the discard guard: the requested
+   * action would replace a dramatically larger copy with a much smaller one
+   * (see cave-5ax2). Retry with `confirmDiscard: true` to proceed anyway.
+   */
+  confirmationRequired: Array<{
+    legacy: string;
+    action: "keep-canonical" | "recover-legacy";
+    keptBytes: number;
+    discardedBytes: number;
+    summary: string;
+  }>;
 };
 
 export type ReconciliationAction = "merge" | "keep-canonical" | "recover-legacy" | "defer";
@@ -93,6 +107,11 @@ export type ReconciliationLockDiagnostic = {
 export type ReconciliationOptions = {
   action?: ReconciliationAction;
   legacy?: string;
+  /**
+   * Explicit user acknowledgement for a keep-canonical/recover-legacy action
+   * that the discard guard flagged as destroying a much larger copy.
+   */
+  confirmDiscard?: boolean;
   /** Test-only fault boundary. Production callers must omit it. */
   faultAt?: string;
   /** Test-only compatibility bridge override. */
