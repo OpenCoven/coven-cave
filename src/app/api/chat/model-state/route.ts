@@ -4,6 +4,7 @@ import { loadConversation, saveConversation } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listOpenCodeModels } from "@/lib/server/opencode-models";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,11 @@ async function currentState(
 }
 
 export async function GET(req: Request) {
+  // OpenCode's model inventory is derived from local authenticated providers.
+  // Keep this older aggregate state endpoint under the same local-only boundary
+  // as /api/runtime-models/opencode before it can launch the local CLI.
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));

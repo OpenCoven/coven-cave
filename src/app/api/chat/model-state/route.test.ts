@@ -6,6 +6,11 @@ const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
+assert.match(
+  route,
+  /export async function GET\(req: Request\) \{[\s\S]*?rejectNonLocalRequest\(req\)/,
+  "OpenCode's local authenticated model inventory must not be reachable through this aggregate endpoint remotely",
+);
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
