@@ -91,7 +91,7 @@ function probeGrokModels(binary: string): Promise<{ models: RuntimeModelOption[]
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, ["models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, ["--no-auto-update", "models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve({ models: [], defaultModel: null });
       return;
