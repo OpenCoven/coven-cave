@@ -43,6 +43,21 @@ assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<Famili
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
+// Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
+// to the RIGHT of the bookmark button. The archive button flips to unarchive
+// on archived rows, and the Organize menu exposes the Show-archived option
+// (default-off wiring is pinned in chat-siderail-hide-archived.test.ts).
+assert.match(
+  workspaceSidebar,
+  /onClick=\{onTogglePin\}[\s\S]*?onClick=\{onToggleArchive\}[\s\S]*?onClick=\{onRequestDelete\}/,
+  "row actions must order bookmark → archive → delete",
+);
+assert.match(
+  workspaceSidebar,
+  /name=\{archived \? "ph:arrow-counter-clockwise" : "ph:archive"\}/,
+  "the archive button must flip to unarchive on archived rows",
+);
+assert.match(workspaceSidebar, /Show archived/, "the Organize menu must expose Show archived");
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
 assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");

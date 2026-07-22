@@ -32,8 +32,8 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /\{prStatus \? null : glyph \? \(/,
-  "real PR context suppresses the dot AND the title-heuristic glyph",
+  /\{prStatus \? null : leadGlyph \? \(/,
+  "real PR context suppresses the dot AND the title-heuristic/archive glyph",
 );
 
 // ── Pinned rail rows carry the badge too ─────────────────────────────────────

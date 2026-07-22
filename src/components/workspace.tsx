@@ -2660,6 +2660,7 @@ export function Workspace() {
 
         handleSessionsDeleted([session.id]);
       }}
+      onSessionsChanged={loadSessions}
       onOpenUrl={(url) => {
         shellRef.current?.dismissNavMobile();
         openUrlInApp(url);

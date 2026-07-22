@@ -33,7 +33,7 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
-import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -59,6 +59,9 @@ type Props = {
   onNavigate: (mode: WorkspaceSidebarMode) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
+  /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
+   *  the row leaves (or re-enters) the live list without waiting a cycle. */
+  onSessionsChanged?: () => void;
   /** Opens the thread's pull request in the in-app browser (PR badge click);
    *  without it the badge falls back to a new tab. Same chain as chat-list. */
   onOpenUrl?: (url: string) => void;
@@ -173,6 +176,10 @@ type ThreadRowProps = {
   /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
   onOpenInSplit?: () => void;
   onTogglePin: () => void;
+  /** Archive/unarchive via the sessions PATCH (same endpoint as chat-list). */
+  onToggleArchive: () => void;
+  /** True while any row's archive PATCH is in flight — disables the buttons. */
+  archiving: boolean;
   onRequestDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
@@ -191,6 +198,8 @@ function ThreadRow({
   onOpen,
   onOpenInSplit,
   onTogglePin,
+  onToggleArchive,
+  archiving,
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -200,8 +209,14 @@ function ThreadRow({
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = sessionPrStatus(session.pullRequest);
+  // Archived rows (visible via the "Show archived" option) read muted, and the
+  // leading slot shows the archive glyph so they can't pass for live threads.
+  const archived = Boolean(session.archived_at);
+  const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
   return (
-    <div className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}`}>
+    <div
+      className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+    >
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -237,8 +252,8 @@ function ThreadRow({
         }}
         className="cnav__thread-main focus-ring"
       >
-        {prStatus ? null : glyph ? (
-          <Icon name={glyph} width={13} className="cnav__lead" aria-hidden />
+        {prStatus ? null : leadGlyph ? (
+          <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
         ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
         )}
@@ -276,6 +291,16 @@ function ThreadRow({
           </button>
           <button
             type="button"
+            title={archived ? "Unarchive chat" : "Archive chat"}
+            aria-label={`${archived ? "Unarchive" : "Archive"} chat ${title}`}
+            disabled={archiving}
+            onClick={onToggleArchive}
+            className="cnav__icon-btn focus-ring"
+          >
+            <Icon name={archived ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
+          </button>
+          <button
+            type="button"
             title="Delete thread"
             aria-label={`Delete thread ${title}`}
             onClick={onRequestDelete}
@@ -301,6 +326,7 @@ export function WorkspaceSidebar({
   onNavigate,
   onNewChat,
   onDeleteSession,
+  onSessionsChanged,
   onOpenUrl,
   scheduledCount,
   onOpenSettings,
@@ -320,6 +346,14 @@ export function WorkspaceSidebar({
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Archived rows are excluded server-side by /api/sessions/list; the Organize
+  // menu's "Show archived" option opts in with its own includeArchived fetch,
+  // mirroring the chat list's toggle (the workspace poll stays archive-free).
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveNonce, setArchiveNonce] = useState(0);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
@@ -335,10 +369,41 @@ export function WorkspaceSidebar({
     setView(readChatSidebarView());
   }, []);
 
-  const visibleSessions = useMemo(
-    () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null),
-    [sessions, activeFamiliarId],
-  );
+  // Archived sessions only load while "Show archived" is on; archive/unarchive
+  // bumps archiveNonce so the opt-in list refetches after each change (same
+  // idiom as the chat list's toggle).
+  useEffect(() => {
+    if (!showArchived) {
+      setArchivedRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // Scope archived rows to the active familiar's projects, same as the
+        // live list — keeps forbidden-project sessions out of the archive view.
+        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
+        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
+        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+      } catch {
+        // keep whatever archived rows we already have
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showArchived, archiveNonce, activeFamiliarId]);
+
+  const visibleSessions = useMemo(() => {
+    let rows: SessionRow[] = sessions;
+    if (showArchived && archivedRows.length > 0) {
+      const seen = new Set(sessions.map((s) => s.id));
+      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
+    }
+    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
+  }, [sessions, showArchived, archivedRows, activeFamiliarId]);
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
@@ -433,6 +498,31 @@ export function WorkspaceSidebar({
     }
   }
 
+  // Archive/unarchive rides the same undo-safe sessions PATCH as the chat
+  // list; a success refreshes both the workspace poll and the opt-in list.
+  async function setSessionArchived(session: SessionRow, archived: boolean) {
+    setArchivingId(session.id);
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setArchiveError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
+        return;
+      }
+      setArchiveNonce((n) => n + 1);
+      onSessionsChanged?.();
+    } catch (err) {
+      setArchiveError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   async function handleRegister(group: ChatProjectGroup) {
     if (!group.projectRoot) return;
     setRegisteringRoot(group.projectRoot);
@@ -507,6 +597,17 @@ export function WorkspaceSidebar({
                 <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
                   By project
                 </PopoverItem>
+                <PopoverSeparator />
+                <PopoverItem
+                  icon="ph:archive"
+                  checked={showArchived}
+                  onSelect={() => {
+                    setShowArchived((v) => !v);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Show archived
+                </PopoverItem>
               </PopoverBody>
             </div>
           </Popover>
@@ -576,6 +677,15 @@ export function WorkspaceSidebar({
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="cnav__error-text">{deleteError}</span>
             <button type="button" onClick={() => setDeleteError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icon name="ph:x-bold" width={9} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {archiveError ? (
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{archiveError}</span>
+            <button type="button" onClick={() => setArchiveError(null)} aria-label="Dismiss" className="shrink-0">
               <Icon name="ph:x-bold" width={9} aria-hidden />
             </button>
           </div>
@@ -660,6 +770,8 @@ export function WorkspaceSidebar({
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                             }
                             onTogglePin={() => togglePin(session.id)}
+                            onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                            archiving={archivingId !== null}
                             onRequestDelete={() => setConfirmingSessionId(session.id)}
                             onCancelDelete={() => setConfirmingSessionId(null)}
                             onConfirmDelete={() => void handleDeleteSession(session)}
@@ -771,6 +883,8 @@ export function WorkspaceSidebar({
                                       : undefined
                                   }
                                   onTogglePin={() => togglePin(session.id)}
+                                  onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                                  archiving={archivingId !== null}
                                   onRequestDelete={() => setConfirmingSessionId(session.id)}
                                   onCancelDelete={() => setConfirmingSessionId(null)}
                                   onConfirmDelete={() => void handleDeleteSession(session)}
