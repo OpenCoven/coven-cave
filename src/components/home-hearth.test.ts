@@ -1,11 +1,12 @@
 // @ts-nocheck
-// Chat revamp 1a + ultra-minimal pass — the home hearth card. Pins:
+// Chat revamp 1a + cards-only pass (2026-07-22) — the home hearth card. Pins:
 //   (1) one centered card: kicker → heading → live-context subtitle →
-//       composer → cold-start pills. The Continue / Open work / Prompt
-//       snippets sections and the Ask Salem doorway were pulled OFF home
-//       (ChatGPT/Claude-grade minimal — the home is the composer, full stop);
-//   (2) suggestion pills are cold-start help: capped at one quiet row of two,
-//       hidden while a draft exists, uniform-rows grid (#2672);
+//       composer → Continue cards. The Continue / Open work / Prompt
+//       snippets sections and the Ask Salem doorway were pulled OFF home,
+//       then Continue came back as the sole section (reference parity);
+//   (2) the cold-start suggestion pills are REMOVED (cards-only home): the
+//       hearth is the composer plus the centered Continue cards. Cards are
+//       centered and follow the Appearance corner-radius token;
 //   (3) the From-task row is prop-driven and explicitly unwired (no task→home
 //       handoff exists yet).
 import assert from "node:assert/strict";
@@ -13,7 +14,6 @@ import { readFile } from "node:fs/promises";
 
 const composer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const fromTask = await readFile(new URL("./home/home-from-task.tsx", import.meta.url), "utf8");
-const pills = await readFile(new URL("./home/home-suggestion-pills.tsx", import.meta.url), "utf8");
 const disclosure = await readFile(new URL("./home/use-home-disclosure.ts", import.meta.url), "utf8");
 const boardHook = await readFile(new URL("./home/use-board-cards.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
@@ -21,8 +21,8 @@ const css = await readFile(new URL("../styles/home-composer.css", import.meta.ur
 // ── (1) One hearth card, in order ────────────────────────────────────────
 assert.match(
   composer,
-  /home-hearth-card[\s\S]*?home-composer-eyebrow[\s\S]*?What are we casting today\?[\s\S]*?home-composer-card-wrap[\s\S]*?<HomeSuggestionPills/,
-  "the hearth card stacks kicker → heading → composer → cold-start pills",
+  /home-hearth-card[\s\S]*?home-composer-eyebrow[\s\S]*?What are we casting today\?[\s\S]*?home-composer-card-wrap[\s\S]*?<HomeContinue/,
+  "the hearth card stacks kicker → heading → composer → Continue cards",
 );
 assert.match(
   css,
@@ -46,15 +46,29 @@ assert.doesNotMatch(composer, /<HomeSnippets/, "Prompt snippets no longer render
 assert.doesNotMatch(composer, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");
 assert.doesNotMatch(composer, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
 
-// ── (2) Suggestion pills — cold-start help, uniform rows (#2672) ───────────
-assert.match(pills, /data-count=\{suggestions\.length\}/, "the pill grid is keyed off the pill count");
-assert.match(pills, /buildHomeSuggestions\(\{ cards, projectName, max: projectName \? 3 : 2 \}\)/, "cold-start pills cap at 2 without a project, 3 with one");
+// ── (2) Cards-only home: pills removed; Continue cards centered ─────────────
+assert.doesNotMatch(composer, /HomeSuggestionPills|useBoardCards\(\)/, "the cold-start pills (and their board snapshot) are gone from home");
+assert.doesNotMatch(css, /home-suggest-pill/, "the pill CSS is removed with the component");
 assert.match(
   css,
-  /\.home-suggest-pills \{[\s\S]{0,300}?display: flex/,
-  "pills use flex layout",
+  /\.home-continue__label \{[\s\S]{0,300}?text-align: center/,
+  "the Continue label centers under the centered composer",
 );
-assert.match(css, /\.home-suggest-pill \{[\s\S]{0,400}?border-radius: var\(--radius-pill\);/, "pills are 999px with a hairline border");
+assert.match(
+  css,
+  /\.home-continue__cards \{[\s\S]{0,300}?justify-content: center/,
+  "the card grid centers its tracks",
+);
+assert.match(
+  css,
+  /\.home-continue__cards\[data-count="1"\] \{ grid-template-columns: minmax\(0, 30rem\); \}/,
+  "a lone card stays content-width and centered instead of stretching",
+);
+assert.match(
+  css,
+  /\.home-continue__card \{[\s\S]{0,700}?border-radius: var\(--radius-card\);/,
+  "cards use --radius-card so the Appearance corner-radius setting applies",
+);
 
 // ── (3) From-task row — built, conditional, explicitly unwired ────────────
 assert.match(fromTask, /if \(!origin\) return null/, "the row renders only with a task origin");
@@ -63,17 +77,16 @@ assert.match(fromTask, /From task/, "the accent 'From task' label renders");
 assert.match(composer, /const taskOrigin: HomeTaskOrigin \| null = null;/, "home passes null — no task→home handoff exists yet (see the NOTE)");
 assert.match(
   composer,
-  /taskOrigin \? \(\s*<HomeFromTaskRow origin=\{taskOrigin\} onPickSuggestion=\{insertPrompt\} \/>\s*\) : !text\.trim\(\) \? \(\s*<HomeSuggestionPills/,
-  "the From-task row outranks the pills; the pills render only while the draft is empty (progressive disclosure)",
+  /taskOrigin \? \(\s*<HomeFromTaskRow origin=\{taskOrigin\} onPickSuggestion=\{insertPrompt\} \/>\s*\) : null\}/,
+  "the From-task row is the only chip strip left under the composer",
 );
 
 // ── Shared plumbing ───────────────────────────────────────────────────
 // Disclosure prefs read AFTER mount (SSR-deterministic, like the greeting).
 assert.match(disclosure, /useState\(defaultOpen\);\s*useEffect\(\(\) => \{\s*setOpen\(readDisclosurePref\(key, defaultOpen\)\);/s, "stored prefs land post-mount so hydration can't drift");
-// One /api/board snapshot serves the pills (and the Task-create POST).
+// The board-snapshot hook remains shared plumbing (home-open-work helper).
 assert.match(boardHook, /fetch\("\/api\/board", \{ cache: "no-store" \}\)/, "the board snapshot is fetched once");
 const boardFetches = composer.match(/fetch\("\/api\/board"/g) ?? [];
 assert.equal(boardFetches.length, 1, "home-composer keeps exactly one /api/board call site (the Task-create POST)");
-assert.match(composer, /const boardCards = useBoardCards\(\);/, "sections share the hook's snapshot instead of refetching");
 
 console.log("home-hearth.test.ts: ok");
