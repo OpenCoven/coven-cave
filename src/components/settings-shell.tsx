@@ -2339,7 +2339,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   // mount, leaving the theme grid and token-row swatches stale until a full
   // reload (cave-hkfq). Follow the store. setCustomData keeps the previous
   // object when content is unchanged so the persist effect (which watches
-  // customData) doesn't echo a PUT for every unrelated store notify.
+  // customData) doesn't re-emit a PUT for every unrelated store notify.
   useEffect(() => {
     if (!appearanceHydrated) return;
     return subscribeAppPreferences(() => {
