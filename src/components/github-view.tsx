@@ -1405,7 +1405,7 @@ function GitHubComments({
                     )}
                   </div>
                   {thread.diffHunk && (
-                    <DiffHunk hunk={thread.diffHunk} previewLines={4} className="gh-thread-diff" />
+                    <DiffHunk hunk={thread.diffHunk} path={thread.path} previewLines={4} className="gh-thread-diff" />
                   )}
                   {thread.comments.map((c) => (
                     <div key={c.id} className="gh-comment gh-comment--inline">

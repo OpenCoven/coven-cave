@@ -329,11 +329,12 @@
   font:inherit; font-size:10.5px; color:var(--text-muted); border-radius:5px;
 }
 .gh-diff__expand:hover { color:var(--text-primary); background:var(--bg-hover); }
-.gh-diff__body { overflow-x:auto; }
+.gh-diff__body { overflow-x:hidden; }
 .gh-diff__line {
   display:grid;
   grid-template-columns:var(--gh-diff-gutter, 2.6em) var(--gh-diff-gutter, 2.6em) 1fr;
-  white-space:pre;
+  /* Wrap long code lines instead of forcing horizontal scroll. */
+  white-space:pre-wrap;
 }
 .gh-diff__no {
   padding:0 6px; text-align:right; user-select:none;
@@ -342,7 +343,11 @@
 }
 /* Color set on the line so it inherits to the component's <code> child AND
    applies to the markdown path where text sits directly in the line span. */
-.gh-diff__code { padding:0 8px; color:inherit; background:none; }
+.gh-diff__code {
+  padding:0 var(--space-2); color:inherit; background:none;
+  min-width:0; white-space:pre-wrap; overflow-wrap:anywhere;
+}
+.gh-diff__marker { user-select:none; opacity:0.75; }
 .gh-diff__line--ctx { color:var(--text-muted); }
 .gh-diff__line--add { background:color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent); color:var(--text-primary); }
 .gh-diff__line--del { background:color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent); color:var(--text-primary); }

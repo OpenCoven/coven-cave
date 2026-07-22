@@ -35,15 +35,14 @@ import { createPortal } from "react-dom";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
-import type { Highlighter } from "shiki";
-import moodCTheme from "@/styles/shiki/mood-c-dark.json";
+import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
+import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import {
   cacheRenderedMarkdown as renderCacheSet,
@@ -54,15 +53,6 @@ import {
 import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
 export { FileLinkResolverContext } from "./message-dom-wiring";
 export type { FileLinkResolver } from "./message-dom-wiring";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// The bundled grammar list lives in code-lang.ts alongside the
-// extension→grammar resolver, so the highlighter's loaded langs and the
-// resolution table can never drift apart.
-const LANGS = SHIKI_LANGS;
 
 // ---------------------------------------------------------------------------
 // Timestamp formatting
@@ -81,27 +71,10 @@ export function fmtBubbleTime(iso?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shiki singleton — lazy, client-only
+// Shiki singleton — lazy, client-only (shared app-wide via lib/shiki-highlighter)
 // ---------------------------------------------------------------------------
 
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = (async () => {
-      const { createHighlighter } = await import("shiki");
-      return createHighlighter({
-        // Shiki normalizes themes IN PLACE (e.g. prepends a scope-less global
-        // tokenColors entry). The JSON import is a shared module singleton —
-        // code-editor-theme.ts reads the same object — so hand Shiki a clone,
-        // never the module instance (cave-h1hi).
-        themes: [structuredClone(moodCTheme) as Parameters<typeof createHighlighter>[0]["themes"][number]],
-        langs: [...LANGS],
-      });
-    })();
-  }
-  return highlighterPromise;
-}
+const getHighlighter = getShikiHighlighter;
 
 // ---------------------------------------------------------------------------
 // Parse fence info → { lang, filename }
