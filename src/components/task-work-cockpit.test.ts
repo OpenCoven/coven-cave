@@ -26,3 +26,12 @@ assert.match(
   /<Group\s*\n(?:\s*(?:className|orientation)=[^\n]*\n|\s*\/\/[^\n]*\n)*\s*key=\{railController\.showInline \? "conversation-rail" : "conversation"\}/,
   "cockpit Group is keyed by the visible pane set so a solo conversation fills the cockpit",
 );
+// ChatView's root carries no width of its own; inside the conversation
+// Panel (a horizontal flex row) it shrink-wrapped to content and the thread
+// sat left-crammed beside dead space. The cockpit CSS must stretch it.
+const cockpitCss = await readFile(new URL("../styles/task-work-cockpit.css", import.meta.url), "utf8");
+assert.match(
+  cockpitCss,
+  /\.task-work-cockpit__group \.cave-chat-linear \{[\s\S]{0,200}?flex: 1;[\s\S]{0,200}?min-width: 0;/,
+  "the cockpit conversation fills its panel (task-chat alignment)",
+);
