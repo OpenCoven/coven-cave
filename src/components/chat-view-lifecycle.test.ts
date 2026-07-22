@@ -168,6 +168,12 @@ assert.match(
 
 assert.match(
   source,
+  /\.\.\.\(fleetHost \? \{ runtimeHost: fleetHost \} : \{\}\),/,
+  "the queued host choice must be forwarded to every chat bridge request, not only Omnigent runs",
+);
+
+assert.match(
+  source,
   /const projectRootForRequest = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?const modelOverrideForRequest =[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
   "delayed dispatch must use queued metadata rather than the latest composer state",
 );

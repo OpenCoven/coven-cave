@@ -4047,7 +4047,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
-          ...((controlsOverride?.runtimeHost ?? runtimeHost) ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+          ...(fleetHost ? { runtimeHost: fleetHost } : {}),
           // Forward the picked model explicitly so it reaches `coven run
           // --model` for THIS turn — don't rely on the PATCH to model-state
           // having persisted to the conversation file before this send (a
