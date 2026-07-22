@@ -57,6 +57,7 @@ assert.deepEqual(
   buildGrokBuildArgs({
     prompt: "fix it",
     resumeSessionId: null,
+    newSessionId: "11111111-2222-4333-8444-555555555555",
     model: null,
     permissionMode: "full",
     grantDirs: [],
@@ -64,6 +65,7 @@ assert.deepEqual(
   }),
   [
     "--no-auto-update", "--output-format", "streaming-json",
+    "--session-id", "11111111-2222-4333-8444-555555555555",
     "--permission-mode", "bypassPermissions", "--sandbox", "off",
     "--single", "fix it",
   ],

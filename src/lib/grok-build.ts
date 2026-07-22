@@ -84,6 +84,8 @@ export function grokIdentityRules(
 export function buildGrokBuildArgs(input: {
   prompt: string;
   resumeSessionId: string | null;
+  /** UUID Cave assigns to a new native session so it can survive a mid-stream stop. */
+  newSessionId?: string | null;
   model: string | null;
   permissionMode: "full" | "read";
   grantDirs: string[];
@@ -91,6 +93,7 @@ export function buildGrokBuildArgs(input: {
 }): string[] {
   const args = ["--no-auto-update", "--output-format", "streaming-json"];
   if (input.resumeSessionId) args.push("--resume", input.resumeSessionId);
+  else if (input.newSessionId) args.push("--session-id", input.newSessionId);
   const model = bareModel(input.model);
   if (model) args.push("--model", model);
   // Headless runs cannot wait for an interactive approval prompt. Full access

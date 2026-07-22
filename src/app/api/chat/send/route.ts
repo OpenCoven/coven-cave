@@ -1134,6 +1134,10 @@ export async function POST(req: Request) {
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
   let copilotSessionHint: string | null = null;
+  // Grok only emits its native session id in the final JSONL event. Assign a
+  // UUID for new native sessions so a stopped first turn can still be saved
+  // and resumed instead of disappearing with the unreceived end frame.
+  let grokSessionHint: string | null = null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1187,9 +1191,11 @@ export async function POST(req: Request) {
       return a;
     }
     if (grokDirect) {
+      grokSessionHint = resumeSessionId ? null : crypto.randomUUID();
       return buildGrokBuildArgs({
         prompt,
         resumeSessionId,
+        newSessionId: grokSessionHint,
         model: cleanModelId(desiredModel),
         permissionMode: body.permissionMode === "read" ? "read" : "full",
         grantDirs,
@@ -1544,6 +1550,15 @@ export async function POST(req: Request) {
         }
         try {
           const event = parseGrokStreamEvent(JSON.parse(line));
+          // A fresh native session's id is assigned by Cave because Grok only
+          // returns it in its final frame. Once its first response frame
+          // confirms the process is live, retain that id for a cancelled
+          // partial turn too. Do not persist an id for a startup error: Grok
+          // did not create a resumable session in that case.
+          if (event.kind === "text" || event.kind === "end") {
+            if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
+            if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
+          }
           switch (event.kind) {
             case "text":
               assistantText += event.text;

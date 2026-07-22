@@ -81,6 +81,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /grokSessionHint = resumeSessionId \? null : crypto\.randomUUID\(\);/,
+  "new Grok chats must preassign their native UUID so a stopped first turn remains resumable",
+);
+assert.match(
+  chatRoute,
   /grokDirect\s*\? \{\s*command: process\.platform === "win32" \? "grok\.exe" : "grok"/,
   "Windows uses grok.exe directly while Unix uses grok",
 );
