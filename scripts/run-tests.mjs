@@ -964,6 +964,7 @@ export const SUITES = {
     "src/lib/coven-identity-canon.test.ts",
     "src/lib/familiar-runtime.test.ts",
     "src/lib/harness-adapters.test.ts",
+    "src/lib/grok-bin.test.ts",
     "src/lib/grok-build.test.ts",
     "src/app/api/harnesses/route.test.ts",
     "src/lib/copilot-stream.test.ts",

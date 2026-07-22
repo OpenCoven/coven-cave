@@ -12,7 +12,8 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenLaunchCommand, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import { grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,15 @@ function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | nul
     const child = spawn(command, [binary], { env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
-    child.on("close", (code) => resolve(code === 0 ? out.trim() || null : null));
+    child.on("close", (code) => {
+      if (code !== 0) return resolve(null);
+      const found = out.trim();
+      resolve(
+        process.platform === "win32"
+          ? pickWindowsLauncher(found.split(/\r?\n/))
+          : found || null,
+      );
+    });
     child.on("error", () => resolve(null));
   });
 }
@@ -60,11 +69,15 @@ async function which(binary: string): Promise<string | null> {
   return whichWith(binary, refreshCovenSpawnEnv());
 }
 
-function probeVersion(binary: string, args: string[]): Promise<string | null> {
+function probeVersion(
+  binary: string,
+  args: string[],
+  fixedArgs: string[] = [],
+): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -87,11 +100,13 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
   });
 }
 
-function probeGrokModels(binary: string): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
+function probeGrokModels(
+  launch: CovenLaunchCommand,
+): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, ["--no-auto-update", "models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve({ models: [], defaultModel: null });
       return;
@@ -187,8 +202,13 @@ export async function GET() {
       if (!path) {
         return { ...h, installed: false, path: null, version: null };
       }
-      const version = await probeVersion(h.binary, h.versionArgs ?? ["--version"]);
-      const grokCatalog = h.id === "grok" ? await probeGrokModels(h.binary) : null;
+      const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
+      const version = await probeVersion(
+        grokLaunch?.command ?? h.binary,
+        h.versionArgs ?? ["--version"],
+        grokLaunch?.fixedArgs,
+      );
+      const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
       return {
         ...h,
         installed: true,

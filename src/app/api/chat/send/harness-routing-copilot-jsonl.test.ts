@@ -91,8 +91,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /grokDirect\s*\? \{\s*command: process\.platform === "win32" \? "grok\.exe" : "grok"/,
-  "Windows uses grok.exe directly while Unix uses grok",
+  /import \{ grokLaunchCommand \} from "@\/lib\/grok-bin"/,
+  "Grok direct chats must use the shared cross-platform launcher resolver",
+);
+assert.match(
+  chatRoute,
+  /grokDirect\s*\? grokLaunchCommand\(\)/,
+  "Grok direct chats must support native executables and Windows npm command shims",
 );
 assert.match(
   chatRoute,
@@ -108,7 +113,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: grokDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "grok\.exe" : "grok",[\s\S]*?: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
+  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: grokDirect\s*\n?\s*\? grokLaunchCommand\(\)[\s\S]*?: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
   "Copilot, Grok Build, and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 

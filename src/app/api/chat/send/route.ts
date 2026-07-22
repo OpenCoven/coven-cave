@@ -53,6 +53,7 @@ import {
   grokSandboxProfileForPermission,
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
+import { grokLaunchCommand } from "@/lib/grok-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -1814,10 +1815,7 @@ export async function POST(req: Request) {
                 const { command, fixedArgs } = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
                   : grokDirect
-                    ? {
-                        command: process.platform === "win32" ? "grok.exe" : "grok",
-                        fixedArgs: [] as string[],
-                      }
+                    ? grokLaunchCommand()
                   : hermesDirect
                     ? {
                         command: process.platform === "win32" ? "hermes.exe" : "hermes",
