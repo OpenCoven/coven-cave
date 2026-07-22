@@ -50,5 +50,10 @@ assert.match(
   /Session not found\\b/,
   "OpenCode's missing-session error triggers the existing fresh-session retry",
 );
+assert.match(
+  route,
+  /openCodeDirect && forwardModel && !result\.is_error[\s\S]*?confirmedModel = forwardModel/,
+  "a successful OpenCode run confirms its selected model even though its JSON events omit it",
+);
 
 console.log("opencode harness routing tests passed");

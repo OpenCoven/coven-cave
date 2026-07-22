@@ -2022,6 +2022,12 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
+      // OpenCode's JSON event protocol does not echo the selected model. A
+      // successful direct run is therefore the only runtime confirmation that
+      // its accepted `--model` value was applied.
+      if (openCodeDirect && forwardModel && !result.is_error) {
+        confirmedModel = forwardModel;
+      }
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
