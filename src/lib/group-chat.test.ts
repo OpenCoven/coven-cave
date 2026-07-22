@@ -119,6 +119,18 @@ test("parseSseBuffer: skips malformed frames without throwing", () => {
   assert.equal(events[0].kind, "error");
 });
 
+test("parseSseBuffer: tolerates id: lines ahead of the data payload (cave-am2b)", () => {
+  const buf =
+    'id: 1\ndata: {"kind":"session","sessionId":"s1"}\n\n' +
+    ': hb\n\n' +
+    'id: 2\ndata: {"kind":"assistant_chunk","text":"hi"}\n\n';
+  const { events, rest } = parseSseBuffer(buf);
+  assert.equal(events.length, 2);
+  assert.equal(events[0].kind, "session");
+  assert.deepEqual(events[1], { kind: "assistant_chunk", text: "hi" });
+  assert.equal(rest, "");
+});
+
 test("defaultGroupName: friendly summaries by participant count", () => {
   assert.equal(defaultGroupName([]), "New coven");
   assert.equal(defaultGroupName(["Aria"]), "Aria");
