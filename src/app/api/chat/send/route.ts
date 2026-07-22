@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
@@ -46,6 +46,8 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -91,6 +93,7 @@ import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
+  modelApplicationFromRun,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -144,6 +147,7 @@ import {
   covenRunSupportsModel,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  openCodeRunSupportsModel,
 } from "./chat-send-capabilities";
 import {
   buildPromptWithResponseControls,
@@ -817,23 +821,24 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
-  // Hermes runs directly, so it must advertise --model itself; every other
-  // bundled harness uses coven run's capability probe. OpenClaw's bridge has
-  // no CLI model passthrough.
+  // Hermes and OpenCode run directly, so each must advertise --model itself;
+  // every other bundled harness uses coven run's capability probe. OpenClaw's
+  // bridge has no CLI model passthrough.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
+  const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   const modelForwardingEnabled = hermesDirect
     ? await hermesChatSupportsModel()
-    : binding.harness !== "openclaw" && (await covenRunSupportsModel());
-  // Same gating for the sandbox/permission flag. Only "read" is forwarded
-  // (→ `--permission read-only`); "full" stays implicit so the harness keeps
-  // its own default sandbox instead of being widened to danger-full-access.
+    : openCodeDirect
+      ? await openCodeRunSupportsModel()
+      : binding.harness !== "openclaw" && (await covenRunSupportsModel());
+  // OpenCode's direct CLI has neither Cave's permission nor add-dir flags.
   const permissionForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsPermission());
   // Same gating for directory grants (`--add-dir`). Without forwarding, the
   // granted roots listed in the runtime-scope preamble are prompt-text-only
   // and the harness denies every access to them.
   const addDirForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
+    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -863,6 +868,19 @@ export async function POST(req: Request) {
         error: `Harness '${binding.harness}' is not trusted for native Cave chat.`,
       }),
       { status: 403, headers: { "content-type": "application/json" } },
+    );
+  }
+  // Cave's Read-only control is a security promise, not a prompt hint.
+  // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so spawning it
+  // directly would let its configured permissions write to the workspace.
+  // Refuse this combination until OpenCode offers an enforceable equivalent.
+  if (openCodeDirect && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "OpenCode does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
     );
   }
   if (sshRuntime && binding.harness === "openclaw") {
@@ -1155,6 +1173,15 @@ export async function POST(req: Request) {
       a.push("--query", prompt);
       return a;
     }
+    if (openCodeDirect) {
+      // OpenCode owns its durable session store. JSON mode is its documented
+      // non-interactive event protocol and includes the minted session id.
+      const a = ["run", "--format", "json"];
+      if (resumeSessionId) a.push("--session", resumeSessionId);
+      if (forwardModel) a.push("--model", forwardModel);
+      a.push(prompt);
+      return a;
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
@@ -1191,11 +1218,12 @@ export async function POST(req: Request) {
   // id exists only in Cave's local transcript store. Copilot emits "No
   // session, task, or name matched '<id>'" on `--resume` misses — including
   // every conversation recorded before the direct-stream path existed, whose
-  // harnessSessionId lives only in coven's store. Hermes emits "Session not
-  // found: <id>" when its local session is gone. In these cases we retry once
-  // without the resume flag so the chat starts fresh instead of erroring.
+  // harnessSessionId lives only in coven's store. Hermes and OpenCode emit
+  // "Session not found" when their local session is gone. In these cases we
+  // retry once without the resume flag so the chat starts fresh instead of
+  // erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found:/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found\b/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -1285,10 +1313,10 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE =
         /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
-      const recordStdoutErrorTail = (text: string) => {
+      const recordStdoutErrorTail = (text: string, force = false) => {
         for (const part of text.split(/\r?\n/)) {
           const trimmed = part.trim();
-          if (!trimmed || !ERR_LINE_RE.test(trimmed)) continue;
+          if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
         }
@@ -1463,6 +1491,46 @@ export async function POST(req: Request) {
         recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
       };
 
+      const handleOpenCodeLine = (line: string) => {
+        try {
+          const ev = parseOpenCodeRunEvent(JSON.parse(line));
+          if (!ev) return;
+          if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
+          if (ev.kind === "text") {
+            const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
+            assistantText += text;
+            push({ kind: "assistant_chunk", text });
+            return;
+          }
+          if (ev.kind === "tool") {
+            boundarySentinel?.observe(ev.name, ev.input);
+            const started = toolTracker.envelopeToolUse(
+              ev.id,
+              ev.name,
+              formatToolInputValue(ev.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const ended = toolTracker.envelopeToolResult(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+              ev.isError,
+            );
+            if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          if (ev.kind === "error") {
+            // This is an explicit error envelope, so preserve even messages
+            // such as "Selected model is unavailable" that do not match the
+            // generic stderr-like keyword filter.
+            recordStdoutErrorTail(ev.message, true);
+            result = { ...result, is_error: true };
+          }
+        } catch {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        }
+      };
+
       const handleLine = (rawLine: string) => {
         // stdout is split on bare \n; external adapters (copilot) emit CRLF,
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
@@ -1473,6 +1541,10 @@ export async function POST(req: Request) {
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
+          return;
+        }
+        if (openCodeDirect) {
+          handleOpenCodeLine(line);
           return;
         }
         if (isJson) {
@@ -1675,10 +1747,10 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot's JSONL mode and Hermes's documented one-shot mode
-                // are direct CLI integrations. Every other local harness goes
+                // Copilot, Hermes, and OpenCode use documented direct CLI
+                // integrations. Every other local harness goes
                 // through `coven run`.
-                const { command, fixedArgs } = copilotStream
+                const launch = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
                   : hermesDirect
                     ? {
@@ -1686,19 +1758,30 @@ export async function POST(req: Request) {
                         fixedArgs: [] as string[],
                       }
                     : covenLaunchCommand();
-                return spawn(command, [...fixedArgs, ...spawnArgs], {
+                const openCodeLaunchCommand = openCodeDirect ? openCodeLaunch(spawnArgs) : null;
+                const command = openCodeLaunchCommand
+                  ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                const child = spawn(command.command, command.args, {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
                   // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                   // from the familiar's home. When a project root IS supplied,
                   // honor that instead.
                   cwd: familiarCwd ?? cwd,
-                  stdio: ["ignore", "pipe", "pipe"],
+                  stdio: openCodeLaunchCommand?.input === undefined
+                    ? ["ignore", "pipe", "pipe"]
+                    : ["pipe", "pipe", "pipe"],
                   // Scoped vault keys the familiar is not granted are
                   // subtracted here — the harness only sees shared secrets
                   // plus its own grants (cave-4nu6).
-                  env: harnessSpawnEnv(body.familiarId),
-                });
+                  env: openCodeDirect
+                    ? openCodeSpawnEnv(body.familiarId)
+                    : harnessSpawnEnv(body.familiarId),
+                }) as ChildProcessWithoutNullStreams;
+                if (openCodeLaunchCommand) {
+                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                }
+                return child;
               })();
 
           currentChild = child;
@@ -1751,6 +1834,8 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : openCodeDirect
+                        ? "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again."
                       : hermesDirect
                         ? "Hermes CLI not found on PATH. Install Hermes, then try again."
                         : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
@@ -1763,8 +1848,14 @@ export async function POST(req: Request) {
             close();
           });
 
-          child.on("close", () => {
+          child.on("close", (code) => {
             captureHermesSessionFromStderr("", true);
+            // OpenCode normally emits a JSON error envelope, but older CLI
+            // builds can exit non-zero with only stderr. Do not mistake that
+            // failed invocation for a successful model application below.
+            if (openCodeDirect && code !== 0) {
+              result = { ...result, is_error: true };
+            }
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
@@ -1961,10 +2052,28 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
+      // OpenCode's JSON event protocol does not echo the selected model. Its
+      // direct argv proves the selection was forwarded, while a successful
+      // exit is the only confirmation it was applied. Preserve an explicit
+      // model rejection as failed rather than incorrectly reporting applied.
+      if (openCodeDirect && forwardModel) {
+        const application = modelApplicationForHarness(
+          modelApplicationFromRun({
+            confirmedModel: forwardModel,
+            isError: result.is_error === true,
+            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+          }),
+        );
+        if (!result.is_error) responseMetadata.confirmedModel = forwardModel;
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = application.reason;
+        modelState.applicationState = application.state;
+        modelState.reason = application.reason;
+      }
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
-      if (confirmedModel) {
+      else if (confirmedModel) {
         const application = modelApplicationForHarness({ supported: true, confirmed: true });
         responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;

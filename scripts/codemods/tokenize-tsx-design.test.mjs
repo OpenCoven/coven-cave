@@ -220,7 +220,12 @@ export const A = ({ variant }) => (
   assert.equal(tokenizeTsxDesign(once), once, "codemod must be idempotent");
 }
 
-assert.ok(resolveTsxTarget("src/components/chat-view.tsx").endsWith("src/components/chat-view.tsx"));
+assert.ok(
+  resolveTsxTarget("src/components/chat-view.tsx")
+    .replaceAll("\\", "/")
+    .endsWith("src/components/chat-view.tsx"),
+  "the resolved target stays comparable on Windows and POSIX paths",
+);
 assert.throws(() => resolveTsxTarget("package.json"), /must end in \.tsx/);
 assert.throws(
   () => resolveTsxTarget("src/app/layout.tsx"),

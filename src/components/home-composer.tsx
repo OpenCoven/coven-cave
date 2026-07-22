@@ -55,8 +55,8 @@ import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
 import { ComposerContextPill } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { catalogForRuntime } from "@/lib/runtime-models";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeContinue } from "@/components/home/home-continue";
@@ -235,19 +235,20 @@ export function HomeComposer({
     () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID),
     [projects, selectedProjectId],
   );
-  const selectedRuntime =
-    modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
-  const runtimeModelOptionsFor = useCallback(
-    (runtime: string) => catalogForRuntime(runtime)?.models ?? [],
-    [],
+  const selectedRuntime = canonicalHarnessId(
+    modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
-  const runtimeModelOptions = runtimeModelOptionsFor(selectedRuntime);
+  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
   const selectedModelId =
-    runtimeModelOptions.length === 0
-      ? ""
-      : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
-        ? modelState!.effectiveModel
-        : runtimeModelOptions[0]?.id ?? "";
+    selectedRuntime === "opencode"
+      ? modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+        ? modelState.effectiveModel
+        : ""
+      : runtimeModelOptions.length === 0
+        ? ""
+        : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
+          ? modelState!.effectiveModel
+          : runtimeModelOptions[0]?.id ?? "";
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
@@ -284,8 +285,9 @@ export function HomeComposer({
   // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
   // nothing highlighted) falls through to handleSubmit — home dispatches the
   // typed text, so slash commands also land in the ↑ history.
-  const modelHarness =
-    modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(
+    modelState?.harness ?? selectedFamiliar?.harness ?? "claude",
+  );
   const {
     skills,
     prompts,
@@ -306,6 +308,7 @@ export function HomeComposer({
     text,
     setText,
     modelHarness,
+    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
@@ -492,7 +495,11 @@ export function HomeComposer({
           onToast(current ? `Model: ${current}` : "Type /model <id> to pick a model.");
           return;
         }
-        const id = resolveModelArg(args, modelHarness);
+        const id = resolveModelArg(
+          args,
+          modelHarness,
+          modelHarness === "opencode" ? runtimeModelOptions : undefined,
+        );
         if (!id) {
           onToast(`Unknown model "${args.trim()}".`);
           return;

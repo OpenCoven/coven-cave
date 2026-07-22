@@ -82,7 +82,11 @@ export function ComposerRuntimePopover({
                 // one visit — the Model group re-renders for the new runtime.
                 // Menu-less runtimes (hermes/openclaw) have no model step, so
                 // the pick is complete and the menu closes.
-                if (catalog.models.length === 0) setOpen(false);
+                // OpenCode discovers the user's configured provider inventory
+                // asynchronously. Keep this menu open while that request
+                // resolves instead of treating its intentionally-empty static
+                // catalog as a terminal runtime choice.
+                if (catalog.models.length === 0 && catalog.runtime !== "opencode") setOpen(false);
               }}
             >
               {runtimeDisplayName(catalog.runtime)}

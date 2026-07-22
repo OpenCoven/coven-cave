@@ -7,7 +7,7 @@ const src = readFileSync(new URL("./use-inline-slash-menus.ts", import.meta.url)
 // ── Signature: pick semantics stay per-composer via callbacks ────────────────
 assert.match(
   src,
-  /export function useInlineSlashMenus\(opts: \{\s*text: string;\s*setText: \(t: string\) => void;\s*modelHarness: string;\s*onPickModel:[\s\S]*?onPickSkill:[\s\S]*?onInsertPrompt:[\s\S]*?onRunCommand:[\s\S]*?onNoMatchEnter\?:/,
+  /export function useInlineSlashMenus\(opts: \{\s*text: string;\s*setText: \(t: string\) => void;\s*modelHarness: string;\s*modelOptionsOverride\?: RuntimeModelOption\[\];\s*onPickModel:[\s\S]*?onPickSkill:[\s\S]*?onInsertPrompt:[\s\S]*?onRunCommand:[\s\S]*?onNoMatchEnter\?:/,
   "useInlineSlashMenus takes the text pair + pick callbacks — what a pick DOES stays per-composer",
 );
 assert.match(
@@ -48,7 +48,7 @@ assert.match(
 );
 assert.match(
   src,
-  /slashDismissed \? null : modelSlashOptions\(text, modelHarness\)/,
+  /slashDismissed \? null : modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
   "dismissal nulls the /model options",
 );
 assert.match(

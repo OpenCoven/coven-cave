@@ -112,9 +112,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-22 (composer add menu): the unified "+" menu splits the composer
   // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
   // CI traced 5,618–5,619 on Windows across runs. The merged tree lands
-  // around 5,626 on Windows; retain ten files of headroom over the jittering
-  // maximum without relaxing the byte ceiling.
-  fileCount: 5_636,
+  // around 5,644 on Ubuntu after the OpenCode direct-run, model-inventory,
+  // event-decoder, composer-add-menu, and subsequent alias/mobile fixes
+  // land. Retain ten files of headroom over that measured maximum without
+  // relaxing the byte ceiling.
+  fileCount: 5_654,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

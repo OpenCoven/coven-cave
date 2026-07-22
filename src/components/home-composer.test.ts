@@ -133,13 +133,13 @@ assert.match(
 assert.match(
   source,
   /\.\.\.\(runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?options: runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\),[\s\S]*?handleSelectModel\(id\)/,
-  "the Options menu Model section lists the selected runtime's catalog and is omitted for runtime-managed runtimes",
+  "the Options menu Model section lists the selected runtime's available inventory and is omitted for runtime-managed runtimes",
 );
 
 assert.match(
   source,
-  /const runtimeModelOptionsFor = useCallback\(\s*\(runtime: string\) => catalogForRuntime\(runtime\)\?\.models \?\? \[\],\s*\[\],\s*\)/,
-  "HomeComposer model options should be derived strictly from each runtime catalog",
+  /const runtimeModelOptions = useRuntimeModelOptions\(selectedRuntime, selectedFamiliarId\);/,
+  "HomeComposer discovers OpenCode models with the selected familiar's scoped credentials",
 );
 
 assert.match(
@@ -512,7 +512,7 @@ assert.match(
 
 assert.match(
   menusHook,
-  /modelSlashOptions\(text, modelHarness\)/,
+  /modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
   "the shared hook offers inline /model autocomplete",
 );
 assert.match(
@@ -717,7 +717,7 @@ assert.match(
 );
 assert.match(
   menusHook,
-  /slashDismissed \? null : modelSlashOptions\(text, modelHarness\)/,
+  /slashDismissed \? null : modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
   "the model menu respects the dismissed flag",
 );
 assert.match(
@@ -757,3 +757,9 @@ assert.match(
   const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
   assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the chat placeholder matches (one composer family)");
 }
+
+assert.match(
+  source,
+  /selectedRuntime === "opencode"[\s\S]*?modelState\?\.effectiveModel[\s\S]*?: ""[\s\S]*?runtimeModelOptions\.length === 0/,
+  "OpenCode without an explicit model keeps the CLI default instead of displaying the first discovered model",
+);

@@ -139,8 +139,8 @@ assert.match(
 // menu-less runtime with no model step, completes the visit.
 assert.match(
   chip,
-  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,400}?if \(catalog\.models\.length === 0\) setOpen\(false\);/,
-  "a runtime pick closes the menu only for menu-less runtimes (hermes/openclaw); curated runtimes keep it open until a model is picked",
+  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,700}?if \(catalog\.models\.length === 0 && catalog\.runtime !== "opencode"\) setOpen\(false\);/,
+  "a runtime pick closes the menu only for menu-less runtimes; curated runtimes and OpenCode's asynchronous inventory stay open until a model is picked",
 );
 const modelRowBlock = chip.match(/\{modelOptions\.map\(\(m\) =>[\s\S]*?\)\)\}/)?.[0] ?? "";
 assert.match(
@@ -167,5 +167,11 @@ assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "chip styles stay on semantic to
 assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the runtime chip uses the pill token, matching the composer icon buttons");
 const hostCss = readFileSync(new URL("../styles/composer-host-chip.css", import.meta.url), "utf8");
 assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the host chip matches the same pill token");
+
+assert.match(
+  chatView,
+  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: modelHarness === "opencode"[\s\S]*?\? ""/,
+  "an unconfigured OpenCode chat shows the runtime default rather than an unselected inventory entry",
+);
 
 console.log("composer-runtime-chip.test.ts: ok");

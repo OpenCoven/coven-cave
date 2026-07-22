@@ -97,6 +97,25 @@ assert.deepEqual(
   },
   "stale synthetic defaults should fall back to a real global model instead of being forwarded",
 );
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "nova",
+    harness: "opencode",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "nova",
+    harness: "opencode",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Using OpenCode's authenticated default model.",
+  },
+  "OpenCode must defer an unconfigured familiar to its authenticated CLI default",
+);
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
     .effectiveModel,

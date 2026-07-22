@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -232,7 +233,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // provider catalog the chat picker uses. allowCustom keeps the free-text
   // field as the escape hatch for ids not in the curated seed.
   const modelCatalog = catalogForRuntime(harnessId);
-  const modelOptions = modelCatalog?.models ?? [];
+  const modelOptions = useRuntimeModelOptions(harnessId, familiar.id);
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user

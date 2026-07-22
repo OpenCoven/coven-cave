@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -6,16 +6,20 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
+let openCodeModelFlagProbe: Promise<boolean> | null = null;
 
 function probeHelp(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
+  env = harnessSpawnEnv(),
+  input?: string,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -27,9 +31,10 @@ function probeHelp(
     };
     try {
       const child = spawn(command, args, {
-        env: harnessSpawnEnv(),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+        env,
+        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams;
+      if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       child.stderr.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
@@ -89,5 +94,17 @@ export function hermesChatSupportsModel(): Promise<boolean> {
     command,
     ["chat", "--help"],
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
+  ));
+}
+
+/** OpenCode is direct-spawned so its own documented capability is authoritative. */
+export function openCodeRunSupportsModel(): Promise<boolean> {
+  const launch = openCodeLaunch(["run", "--help"]);
+  return (openCodeModelFlagProbe ??= probeHelp(
+    launch.command,
+    launch.args,
+    (help) => /(^|\s)--model(?![\w-])/m.test(help),
+    openCodeSpawnEnv(),
+    launch.input,
   ));
 }

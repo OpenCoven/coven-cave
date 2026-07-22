@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import { loadConversation, saveConversation } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { listOpenCodeModels } from "@/lib/server/opencode-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,7 +55,7 @@ async function currentState(
   const conversation = sessionId ? await loadConversation(sessionId) : null;
   return resolveChatModelState({
     familiarId,
-    harness: binding.harness,
+    harness: canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -73,10 +76,19 @@ export async function GET(req: Request) {
   // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
   // reads the catalog directly. `allowCustom` means a free-typed id is valid.
   const catalog = catalogForRuntime(state.harness);
+  // OpenCode's inventory is derived from local authenticated providers. Keep
+  // that CLI call local-only without denying this aggregate state endpoint to
+  // iOS, which still needs the selected model and may free-type a model id.
+  const canReadOpenCodeInventory = state.harness === "opencode"
+    ? !rejectNonLocalRequest(req)
+    : false;
+  const options = canReadOpenCodeInventory
+    ? await listOpenCodeModels(familiarId)
+    : catalog?.models ?? [];
   return NextResponse.json({
     ok: true,
     state,
-    options: catalog?.models ?? [],
+    options,
     allowCustom: catalog?.allowCustom ?? true,
   });
 }
