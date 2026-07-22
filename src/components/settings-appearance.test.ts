@@ -15,7 +15,11 @@ const layout = await readFile(
   "utf8",
 );
 const globals = await readFile(
-  new URL("../app/globals.css", import.meta.url),
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
+const themes = await readFile(
+  new URL("../styles/globals/themes.css", import.meta.url),
   "utf8",
 );
 const fontSettings = await readFile(
@@ -401,7 +405,7 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  globals,
+  themes,
   /\[data-theme="pastel-dreams"\]\s*\{[\s\S]*--font-sans:\s*var\(--font-open-sans\)[\s\S]*--font-mono:\s*var\(--font-ibm-plex-mono\)[\s\S]*--radius:\s*1\.5rem[\s\S]*--radius-control:\s*18px[\s\S]*--shadow-popover:[\s\S]*--cave-reading-leading:\s*1\.7/,
   "Pastel Dreams should carry TweakCN typography, radius, shadow, and reading-spacing tokens, not just colors",
 );
