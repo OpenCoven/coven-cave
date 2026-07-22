@@ -31,13 +31,24 @@ assert.deepEqual(
     "--no-auto-update", "--output-format", "streaming-json",
     "--resume", "11111111-2222-4333-8444-555555555555",
     "--model", "grok-4.5",
-    "--sandbox", "read-only",
     "--disallowed-tools", "run_terminal_cmd,search_replace",
     "--allow", "Read(/work/project/**)",
     "--rules", "You are Nova.",
     "--single", "inspect this",
   ],
-  "resumed read runs use native Grok JSONL, sandbox, grants, system identity, and --resume (not --session-id)",
+  "resumed read runs use native Grok JSONL, grants, system identity, and --resume (not --session-id)",
+);
+
+assert.ok(
+  !buildGrokBuildArgs({
+    prompt: "continue",
+    resumeSessionId: "11111111-2222-4333-8444-555555555555",
+    model: null,
+    permissionMode: "full",
+    grantDirs: [],
+    identityRules: "",
+  }).includes("--sandbox"),
+  "resumed chats preserve Grok's session-bound sandbox instead of failing on a changed composer mode",
 );
 
 assert.deepEqual(

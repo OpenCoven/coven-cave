@@ -72,9 +72,14 @@ export function buildGrokBuildArgs(input: {
   // is an explicit user selection; read uses Grok's native read-only sandbox
   // and removes its documented write/shell tools.
   if (input.permissionMode === "full") {
-    args.push("--permission-mode", "bypassPermissions", "--sandbox", "off");
+    args.push("--permission-mode", "bypassPermissions");
+    // Grok persists a session's sandbox profile and refuses `--resume` when
+    // an explicit profile differs from that saved profile. Omit the flag on
+    // resumed turns so the CLI restores the session's original profile.
+    if (!input.resumeSessionId) args.push("--sandbox", "off");
   } else {
-    args.push("--sandbox", "read-only", "--disallowed-tools", "run_terminal_cmd,search_replace");
+    if (!input.resumeSessionId) args.push("--sandbox", "read-only");
+    args.push("--disallowed-tools", "run_terminal_cmd,search_replace");
     for (const directory of input.grantDirs) {
       if (directory) args.push("--allow", readAllowRule(directory));
     }
