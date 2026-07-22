@@ -471,18 +471,57 @@ assert.match(
   "editing the background must mirror the legacy --background alias legacy-vocab surfaces read",
 );
 
-// The picker fires per pointer-move; the token apply must be rAF-coalesced and
-// the daemon sync (onChange → persistThemeTokens PUT) must wait for commit —
-// one network write per finished edit, not one per move.
+// The picker fires per pointer-move. Drags must stay PAINT-ONLY: each rAF-
+// coalesced frame writes the edited key + companions inline (element.style
+// beats preset CSS), and the preferences store is untouched until commit.
+// Anything else write-amplifies: one measured ~1s drag as a store-write-per-
+// frame produced 8 PATCH /api/preferences + 4 PUT /api/theme, bumped
+// selectionRevision 0→12, and triggered 38 GETs + 58 accent setProperty calls
+// in a second open tab via the BroadcastChannel echo (cave-hkfq).
 assert.match(
   settings,
-  /frameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]{0,300}applyTokenOverride\(pending\.key, pending\.value/,
-  "live token applies are coalesced to one write per animation frame",
+  /function previewTokenOverride\(key: string, hex: string, mode: Mode\) \{[\s\S]{0,600}?\n\}/,
+  "a paint-only preview path exists for in-drag token edits",
+);
+{
+  const previewBody = settings.match(
+    /function previewTokenOverride\(key: string, hex: string, mode: Mode\) \{([\s\S]{0,600}?)\n\}/,
+  )?.[1] ?? "";
+  assert.match(
+    previewBody,
+    /html\.style\.setProperty\(key, hex\)/,
+    "the preview writes the edited token inline",
+  );
+  assert.match(
+    previewBody,
+    /deriveTokenCompanions\(key, hex, mode\)/,
+    "the preview keeps companion tokens (accent washes, legacy aliases) in step",
+  );
+  assert.doesNotMatch(
+    previewBody,
+    /updateAppPreferences|readAppPreferences|setAttribute/,
+    "the preview must not touch the preferences store or data-theme — no reconcile, no PATCH, no broadcast per frame",
+  );
+}
+assert.match(
+  settings,
+  /frameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]{0,300}previewTokenOverride\(pending\.key, pending\.value/,
+  "live token previews are coalesced to one paint per animation frame",
+);
+assert.doesNotMatch(
+  settings,
+  /requestAnimationFrame\(\(\) => \{[\s\S]{0,300}applyTokenOverride\(/,
+  "no rAF frame may persist to the store — drags write pixels, commits write preferences",
 );
 assert.match(
   settings,
-  /const handleCommit = [\s\S]{0,300}flushPendingApply\(\);[\s\S]{0,300}onChange\(\);/,
-  "the daemon sync fires on commit (popover close), not per pointer-move",
+  /const handleCommit = [\s\S]{0,200}flushPendingPreview\(\);\s*\n\s*if \(!dirtyRef\.current\.has\(key\)\) return;[\s\S]{0,400}applyTokenOverride\(key, committed, modeRef\.current\);[\s\S]{0,300}onChange\(\);/,
+  "commit persists the finished edit exactly once, and closing the picker without a pick is a no-op (no bogus custom fork)",
+);
+assert.match(
+  settings,
+  /for \(const key of dirtyRef\.current\)[\s\S]{0,200}applyTokenOverride\(key, value, modeRef\.current\)/,
+  "unmounting mid-drag still persists the un-committed edit",
 );
 assert.doesNotMatch(
   settings,

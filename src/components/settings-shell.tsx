@@ -2048,6 +2048,19 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
   html.setAttribute("data-theme", "custom");
 }
 
+/** Paint-only in-drag preview: writes the edited token + its companions inline
+ *  so the pick renders instantly, without touching the preferences store — no
+ *  reconcile, no PATCH, no cross-tab broadcast per pointer-move. Inline
+ *  element.style beats whichever preset/custom CSS block is active, so no
+ *  data-theme flip is needed; commit (applyTokenOverride) makes it durable. */
+function previewTokenOverride(key: string, hex: string, mode: Mode) {
+  const html = document.documentElement;
+  html.style.setProperty(key, hex);
+  for (const [name, value] of Object.entries(deriveTokenCompanions(key, hex, mode))) {
+    html.style.setProperty(name, value);
+  }
+}
+
 /** One editable token row — swatch button opening the in-app ColorPicker
  *  (spectrum + hex field + theme/recent swatches) in a popover. */
 function TokenColorRow({
@@ -2137,46 +2150,62 @@ function ThemeTokenOverrides({
     setRecents(getRecentColors());
   }, []);
 
-  // The picker fires onChange per pointer-move, and each apply rewrites ~20
-  // root CSS vars + localStorage — coalesce to one apply per animation frame
-  // (mirrors the removed editor's rAF throttle). The daemon sync (onChange →
-  // reloadCustomData → persistThemeTokens PUT) waits for commit: one network
-  // write per finished edit instead of one per move.
+  // The picker fires onChange per pointer-move. Drags stay paint-only — each
+  // rAF-coalesced frame calls previewTokenOverride (inline vars, store
+  // untouched), so nothing reconciles, PATCHes, or broadcasts mid-drag. The
+  // durable write (applyTokenOverride → store → PUT) happens once per finished
+  // edit, at commit (popover close) or unmount.
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ key: string; value: string } | null>(null);
-  const flushPendingApply = useCallback(() => {
+  const dirtyRef = useRef<Set<(typeof THEME_SYNC_KEYS)[number]>>(new Set());
+  const flushPendingPreview = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+    if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
   }, []);
-  // Flush on unmount so a drag-in-progress still persists.
-  useEffect(() => flushPendingApply, [flushPendingApply]);
+  // Persist any un-committed edit on unmount so a drag-in-progress isn't lost
+  // when the user navigates away with the picker still open.
+  useEffect(() => {
+    return () => {
+      flushPendingPreview();
+      for (const key of dirtyRef.current) {
+        const value = valuesRef.current[key];
+        if (value) applyTokenOverride(key, value, modeRef.current);
+      }
+      dirtyRef.current.clear();
+    };
+  }, [flushPendingPreview]);
 
   const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
     // Preserve the token's original alpha byte (hairline borders are washes).
     const next = withAlphaFrom(valuesRef.current[key], hex);
     setValues((v) => ({ ...v, [key]: next }));
+    dirtyRef.current.add(key);
     pendingRef.current = { key, value: next };
     if (frameRef.current === null) {
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
         const pending = pendingRef.current;
         pendingRef.current = null;
-        if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+        if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
       });
     }
   };
 
   const handleCommit = (key: (typeof THEME_SYNC_KEYS)[number]) => {
-    flushPendingApply();
-    const committed = (valuesRef.current[key] ?? "").slice(0, 7);
-    if (committed) setRecents(addRecentColor(committed));
+    flushPendingPreview();
+    if (!dirtyRef.current.has(key)) return; // opened + closed without a pick
+    dirtyRef.current.delete(key);
+    const committed = valuesRef.current[key];
+    if (!committed) return;
+    applyTokenOverride(key, committed, modeRef.current);
+    setRecents(addRecentColor(committed.slice(0, 7)));
     onChange();
   };
 
