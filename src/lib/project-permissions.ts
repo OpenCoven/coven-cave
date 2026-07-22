@@ -122,6 +122,13 @@ type HumanPermissionConfigFile = {
    * Familiar-scoped writes keep full grant enforcement regardless.
    */
   allowMobileFileWrites: boolean;
+  /**
+   * Desktop opt-in (default false): the human's paired phone may mutate the
+   * canvas (generate/refine/annotate/delete artifacts, move layout). Off
+   * keeps the iOS Canvas tab in view mode — the gallery and previews stay
+   * fully readable.
+   */
+  allowMobileCanvasWrites: boolean;
 };
 
 export type ProjectAccessContext = {
@@ -191,6 +198,7 @@ async function loadHumanPermissionConfigUnlocked(): Promise<HumanPermissionConfi
     supremeFamiliarId,
     allowMobileGrantMutations: parsed?.allowMobileGrantMutations === true,
     allowMobileFileWrites: parsed?.allowMobileFileWrites === true,
+    allowMobileCanvasWrites: parsed?.allowMobileCanvasWrites === true,
   };
 }
 
@@ -206,11 +214,13 @@ export async function loadHumanPermissionConfig(): Promise<HumanPermissionConfig
 export type MobileWriteAccessConfig = {
   allowMobileGrantMutations: boolean;
   allowMobileFileWrites: boolean;
+  allowMobileCanvasWrites: boolean;
 };
 
 export async function loadMobileWriteAccess(): Promise<MobileWriteAccessConfig> {
-  const { allowMobileGrantMutations, allowMobileFileWrites } = await loadHumanPermissionConfig();
-  return { allowMobileGrantMutations, allowMobileFileWrites };
+  const { allowMobileGrantMutations, allowMobileFileWrites, allowMobileCanvasWrites } =
+    await loadHumanPermissionConfig();
+  return { allowMobileGrantMutations, allowMobileFileWrites, allowMobileCanvasWrites };
 }
 
 /**
@@ -229,11 +239,13 @@ export async function updateMobileWriteAccess(
         allowMobileGrantMutations:
           patch.allowMobileGrantMutations ?? current.allowMobileGrantMutations,
         allowMobileFileWrites: patch.allowMobileFileWrites ?? current.allowMobileFileWrites,
+        allowMobileCanvasWrites: patch.allowMobileCanvasWrites ?? current.allowMobileCanvasWrites,
       };
       await writeJsonFile(humanPermissionConfigPath(), next);
       return {
         allowMobileGrantMutations: next.allowMobileGrantMutations,
         allowMobileFileWrites: next.allowMobileFileWrites,
+        allowMobileCanvasWrites: next.allowMobileCanvasWrites,
       };
     };
     if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return operation();

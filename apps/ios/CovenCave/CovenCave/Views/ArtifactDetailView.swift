@@ -22,6 +22,11 @@ struct ArtifactDetailView: View {
         self.familiarId = familiarId
     }
 
+    /// Desktop opt-in gate ("Allow canvas edits from phone"). View mode keeps
+    /// the live preview, code view, copy, and share; refine/comment/delete
+    /// affordances disappear — the server refuses those writes anyway.
+    private var canEdit: Bool { app.canvasWritesAllowed }
+
     var body: some View {
         ZStack {
             if showCode { codeView } else { previewView }
@@ -31,9 +36,11 @@ struct ArtifactDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 0) {
-                if selectedTarget != nil { commentBar }
-                refineBar
+            if canEdit {
+                VStack(spacing: 0) {
+                    if selectedTarget != nil { commentBar }
+                    refineBar
+                }
             }
         }
     }
@@ -44,6 +51,8 @@ struct ArtifactDetailView: View {
         ArtifactWebView(artifact: current,
                         serverBaseURL: app.connection?.baseURL,
                         interactive: true) { target in
+            // Component selection exists to write a comment — inert in view mode.
+            guard canEdit else { return }
             selectedTarget = target
             commentDraft = current.annotations?
                 .first(where: { $0.target.selector == target.selector })?.note ?? ""
@@ -93,7 +102,7 @@ struct ArtifactDetailView: View {
                 ShareLink(item: current.code) {
                     Label("Share code", systemImage: "square.and.arrow.up")
                 }
-                if !(current.annotations ?? []).isEmpty {
+                if canEdit && !(current.annotations ?? []).isEmpty {
                     Button { applyComments() } label: {
                         Label(
                             "Apply \(current.annotations?.count ?? 0) comments",
@@ -102,9 +111,11 @@ struct ArtifactDetailView: View {
                     }
                     .disabled(app.isGeneratingCanvas || familiarId.isEmpty)
                 }
-                Divider()
-                Button(role: .destructive) { delete() } label: {
-                    Label("Delete", systemImage: "trash")
+                if canEdit {
+                    Divider()
+                    Button(role: .destructive) { delete() } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")

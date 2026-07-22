@@ -2915,9 +2915,11 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
  *  /api/mobile-permissions). Both default off; the route only accepts the
  *  PATCH from this desktop (loopback), so the phone can never widen its own
  *  authority — flipping these here is the trust decision. */
+type MobileWriteFlagKey = "grantMutations" | "fileWrites" | "canvasWrites";
+
 function MobileWriteAccessCard() {
-  const [flags, setFlags] = useState<{ grantMutations: boolean; fileWrites: boolean } | null>(null);
-  const [busyKey, setBusyKey] = useState<"grantMutations" | "fileWrites" | null>(null);
+  const [flags, setFlags] = useState<Record<MobileWriteFlagKey, boolean> | null>(null);
+  const [busyKey, setBusyKey] = useState<MobileWriteFlagKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
@@ -2927,7 +2929,11 @@ function MobileWriteAccessCard() {
       .then((res) => res.json())
       .then((body) => {
         if (cancelled || !body?.ok) return;
-        setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+        setFlags({
+          grantMutations: body.grantMutations === true,
+          fileWrites: body.fileWrites === true,
+          canvasWrites: body.canvasWrites === true,
+        });
       })
       .catch(() => {
         if (!cancelled) setError("Couldn't load phone write access.");
@@ -2937,7 +2943,7 @@ function MobileWriteAccessCard() {
     };
   }, []);
 
-  const toggle = async (key: "grantMutations" | "fileWrites") => {
+  const toggle = async (key: MobileWriteFlagKey) => {
     if (!flags || busyKey) return;
     const next = !flags[key];
     setBusyKey(key);
@@ -2953,10 +2959,15 @@ function MobileWriteAccessCard() {
         setError(body?.error ?? "Couldn't update phone write access.");
         return;
       }
-      setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+      setFlags({
+        grantMutations: body.grantMutations === true,
+        fileWrites: body.fileWrites === true,
+        canvasWrites: body.canvasWrites === true,
+      });
       const labels: Record<typeof key, string> = {
         grantMutations: "Permission changes from phone",
         fileWrites: "File edits from phone",
+        canvasWrites: "Canvas edits from phone",
       };
       announce(`${labels[key]} ${next ? "enabled" : "disabled"}.`, "polite");
     } catch {
@@ -2966,7 +2977,7 @@ function MobileWriteAccessCard() {
     }
   };
 
-  const switchButton = (key: "grantMutations" | "fileWrites") => {
+  const switchButton = (key: MobileWriteFlagKey) => {
     const on = flags?.[key] === true;
     return (
       <button
@@ -2999,6 +3010,12 @@ function MobileWriteAccessCard() {
         description="Save files in the Code tab from your phone. Off keeps phone access read-only."
       >
         {switchButton("fileWrites")}
+      </SettingsRow>
+      <SettingsRow
+        label="Allow canvas edits from phone"
+        description="Generate, refine, comment on, and delete canvas artifacts from the Cave app. Off keeps the phone's Canvas tab view-only."
+      >
+        {switchButton("canvasWrites")}
       </SettingsRow>
       {error ? (
         <p role="status" className="px-4 pb-3 text-[length:var(--text-xs)] text-[var(--color-warning)]">

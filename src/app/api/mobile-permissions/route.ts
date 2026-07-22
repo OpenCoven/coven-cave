@@ -19,6 +19,7 @@ export async function GET() {
     ok: true,
     grantMutations: config.allowMobileGrantMutations,
     fileWrites: config.allowMobileFileWrites,
+    canvasWrites: config.allowMobileCanvasWrites,
   });
 }
 
@@ -35,7 +36,11 @@ export async function PATCH(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
   }
-  const patch: { allowMobileGrantMutations?: boolean; allowMobileFileWrites?: boolean } = {};
+  const patch: {
+    allowMobileGrantMutations?: boolean;
+    allowMobileFileWrites?: boolean;
+    allowMobileCanvasWrites?: boolean;
+  } = {};
   if (payload.grantMutations !== undefined) {
     if (typeof payload.grantMutations !== "boolean") {
       return NextResponse.json(
@@ -54,9 +59,22 @@ export async function PATCH(req: Request) {
     }
     patch.allowMobileFileWrites = payload.fileWrites;
   }
-  if (patch.allowMobileGrantMutations === undefined && patch.allowMobileFileWrites === undefined) {
+  if (payload.canvasWrites !== undefined) {
+    if (typeof payload.canvasWrites !== "boolean") {
+      return NextResponse.json(
+        { ok: false, error: "canvasWrites must be a boolean" },
+        { status: 400 },
+      );
+    }
+    patch.allowMobileCanvasWrites = payload.canvasWrites;
+  }
+  if (
+    patch.allowMobileGrantMutations === undefined
+    && patch.allowMobileFileWrites === undefined
+    && patch.allowMobileCanvasWrites === undefined
+  ) {
     return NextResponse.json(
-      { ok: false, error: "grantMutations or fileWrites is required" },
+      { ok: false, error: "grantMutations, fileWrites, or canvasWrites is required" },
       { status: 400 },
     );
   }
@@ -65,5 +83,6 @@ export async function PATCH(req: Request) {
     ok: true,
     grantMutations: next.allowMobileGrantMutations,
     fileWrites: next.allowMobileFileWrites,
+    canvasWrites: next.allowMobileCanvasWrites,
   });
 }

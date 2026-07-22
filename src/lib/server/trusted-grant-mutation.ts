@@ -43,3 +43,31 @@ export async function requireTrustedHumanGrantMutation(req: Request): Promise<Re
     { status: 403 },
   );
 }
+
+/**
+ * Gate for canvas mutations (generate/refine saves, annotations, layout,
+ * deletes). Same trust shape as grant mutations: the local desktop always
+ * qualifies; the human's paired phone qualifies ONLY behind the desktop
+ * opt-in `allowMobileCanvasWrites` (mutable only from loopback). With the
+ * flag off the phone's Canvas tab is view mode — GET /api/canvas stays open,
+ * every write lands here.
+ */
+export async function requireTrustedHumanCanvasMutation(req: Request): Promise<Response | null> {
+  if (isLocalOrigin(req)) return null;
+  if (isVerifiedMobileRequest(req)) {
+    const { allowMobileCanvasWrites } = await loadMobileWriteAccess();
+    if (allowMobileCanvasWrites) return null;
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "canvas edits from the phone are disabled — enable “Allow canvas edits from phone” in desktop Settings",
+      },
+      { status: 403 },
+    );
+  }
+  return NextResponse.json(
+    { ok: false, error: "canvas edits must come from the local desktop" },
+    { status: 403 },
+  );
+}

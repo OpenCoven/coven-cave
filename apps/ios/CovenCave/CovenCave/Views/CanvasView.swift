@@ -103,9 +103,15 @@ struct CanvasView: View {
             titleRow
                 .zIndex(1)
             if headerControlsVisible {
-                VStack(alignment: .leading, spacing: 12) {
-                    composer
-                    starterBar
+                Group {
+                    if app.canvasWritesAllowed {
+                        VStack(alignment: .leading, spacing: 12) {
+                            composer
+                            starterBar
+                        }
+                    } else {
+                        viewOnlyBanner
+                    }
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(0)
@@ -115,6 +121,17 @@ struct CanvasView: View {
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(.bar)
+    }
+
+    /// View mode: the desktop hasn't opted in to canvas edits from this
+    /// phone, so the composer stays hidden and the gallery is read-only.
+    /// Mirrors the Permissions console's read-only banner.
+    private var viewOnlyBanner: some View {
+        Label("View only — enable “Allow canvas edits from phone” in desktop Settings → Phone.",
+              systemImage: "lock.fill")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var titleRow: some View {
@@ -335,14 +352,16 @@ struct CanvasView: View {
             Label("Copy code", systemImage: "doc.on.doc")
         }
         ShareLink(item: artifact.code) { Label("Share code", systemImage: "square.and.arrow.up") }
-        Divider()
-        Button(role: .destructive) {
-            Task {
-                await app.deleteArtifact(artifact)
-                app.showToast("Deleted", systemImage: "trash", style: .info)
+        if app.canvasWritesAllowed {
+            Divider()
+            Button(role: .destructive) {
+                Task {
+                    await app.deleteArtifact(artifact)
+                    app.showToast("Deleted", systemImage: "trash", style: .info)
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
-        } label: {
-            Label("Delete", systemImage: "trash")
         }
     }
 
@@ -352,7 +371,9 @@ struct CanvasView: View {
         ContentUnavailableView {
             Label("Nothing on the canvas yet", systemImage: "wand.and.stars")
         } description: {
-            Text("Describe a UI above — a pricing page, a to-do app, a dashboard — and a familiar will sketch it live.")
+            Text(app.canvasWritesAllowed
+                ? "Describe a UI above — a pricing page, a to-do app, a dashboard — and a familiar will sketch it live."
+                : "Artifacts sketched on the desktop appear here, live and browsable.")
         }
         .frame(maxWidth: .infinity, minHeight: 320)
     }
@@ -383,6 +404,9 @@ struct CanvasView: View {
     }
 
     private func generate(_ text: String) {
+        // Belt over the hidden composer: the server refuses phone writes
+        // without the desktop opt-in regardless.
+        guard app.canvasWritesAllowed else { return }
         let toSend = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !toSend.isEmpty, !app.isGeneratingCanvas else { return }
         guard let familiarId = selectedFamiliarId ?? app.familiars.first?.id else {
