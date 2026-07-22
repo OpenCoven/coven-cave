@@ -19,8 +19,12 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Composed while the desktop was unreachable; waiting for reconnect.
     /// Optional so messages persisted before offline compose still decode.
     var queued: Bool?
+    /// Agent working steps (tool calls / progress lines) surfaced while this
+    /// assistant reply streamed. Optional so older persisted messages decode.
+    var activity: [ActivityStep]?
 
     var isQueued: Bool { queued == true }
+    var activitySteps: [ActivityStep] { activity ?? [] }
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
@@ -207,7 +211,7 @@ final class ChatThread: Identifiable, Hashable {
               let familiarId = messages[idx].familiarId else { return }
         let prompt = messages[..<idx].last(where: { $0.role == .user })?.text ?? ""
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true }
+        mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
         updatedAt = Date()
         onChange()
         Task { await self.stream(familiarId: familiarId, prompt: prompt,
@@ -254,7 +258,9 @@ final class ChatThread: Identifiable, Hashable {
             return DisplayMessage(role: role,
                                   familiarId: role == .assistant ? familiarId : nil,
                                   text: turn.text,
-                                  isError: turn.isError ?? false)
+                                  isError: turn.isError ?? false,
+                                  activity: role == .assistant
+                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
         }
         updatedAt = Date()
     }
@@ -307,7 +313,12 @@ final class ChatThread: Identifiable, Hashable {
                 if let id = frame.id { cursor = id }
             }
             flush(coalescer, into: messageId, onChange: onChange)
-            mutate(messageId) { $0.streaming = false }
+            mutate(messageId) {
+                $0.streaming = false
+                if let settled = ActivityFold.settle($0.activitySteps, success: true) {
+                    $0.activity = settled
+                }
+            }
         } catch {
             // Transport interruption (network handoff, backgrounding, desktop
             // blip). The run is usually STILL LIVE server-side — re-attach to
@@ -339,6 +350,9 @@ final class ChatThread: Identifiable, Hashable {
                     mutate(messageId) {
                         if $0.text.isEmpty { $0.text = error.localizedDescription }
                         $0.isError = true; $0.streaming = false
+                        if let settled = ActivityFold.settle($0.activitySteps, success: false) {
+                            $0.activity = settled
+                        }
                     }
                 }
             }
@@ -369,13 +383,37 @@ final class ChatThread: Identifiable, Hashable {
         case .done(let isError, let sid):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)
-            mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
+            mutate(messageId) {
+                $0.streaming = false
+                if isError { $0.isError = true }
+                // A persisted "running" step would spin forever after reload —
+                // the turn is over, so settle the trail with its outcome.
+                if let settled = ActivityFold.settle($0.activitySteps, success: !isError) {
+                    $0.activity = settled
+                }
+            }
             sawDone = true
+        case .toolUse, .progress:
+            // Agent activity: orders of magnitude rarer than tokens, so each
+            // event mutates directly (no coalescing) — but drain buffered
+            // prose first so the text a step interrupted lands before the
+            // activity chip advances past it.
+            flush(coalescer, into: messageId, onChange: onChange)
+            var changed = false
+            mutate(messageId) {
+                guard let folded = ActivityFold.fold($0.activitySteps, event: event) else { return }
+                $0.activity = folded
+                changed = true
+            }
+            if changed { onChange() }
         case .error(let message):
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) {
                 if $0.text.isEmpty { $0.text = message }
                 $0.isError = true; $0.streaming = false
+                if let settled = ActivityFold.settle($0.activitySteps, success: false) {
+                    $0.activity = settled
+                }
             }
         default:
             break
@@ -456,6 +494,10 @@ final class ChatThread: Identifiable, Hashable {
             $0.text = reply.text
             $0.isError = reply.isError ?? false
             $0.streaming = false
+            if let settled = ActivityFold.settle($0.activitySteps,
+                                                 success: !(reply.isError ?? false)) {
+                $0.activity = settled
+            }
         }
         return true
     }
@@ -490,7 +532,8 @@ final class ChatThread: Identifiable, Hashable {
         if let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" }) {
             let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
             messages.insert(DisplayMessage(role: .assistant, familiarId: familiarId,
-                                           text: reply.text, isError: reply.isError ?? false),
+                                           text: reply.text, isError: reply.isError ?? false,
+                                           activity: ActivityFold.steps(fromTools: reply.tools)),
                             at: insertAt)
             updatedAt = Date()
         }
