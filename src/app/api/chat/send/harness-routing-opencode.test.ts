@@ -27,13 +27,13 @@ assert.match(
 );
 assert.match(
   route,
-  /command: openCodeCommand\(\), fixedArgs: \[\] as string\[\][\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)/,
-  "OpenCode uses its scoped spawn environment, including the WSL runtime-dir fallback",
+  /const command = openCodeDirect\s*\? openCodeLaunch\(spawnArgs\)[\s\S]*?return spawn\(command\.command, command\.args, \{[\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)/,
+  "OpenCode uses its Windows-safe launcher and scoped spawn environment, including the WSL runtime-dir fallback",
 );
 assert.match(
   capabilities,
-  /openCodeSpawnEnv\(\),\s*\n\s*\)\);/,
-  "OpenCode probes its CLI with the same WSL-compatible environment as a chat run",
+  /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
+  "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",
 );
 assert.match(
   route,

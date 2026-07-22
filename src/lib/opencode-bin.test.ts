@@ -1,8 +1,19 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { openCodeCommand, openCodeNeedsTmpRuntimeDir } from "./opencode-bin.ts";
+import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "./opencode-bin.ts";
 
 assert.equal(openCodeCommand(), "opencode", "OpenCode uses the same executable name on all desktop platforms");
+
+const linuxLaunch = openCodeLaunch(["run", "--format", "json", "safe & literal"], "linux");
+assert.deepEqual(linuxLaunch, {
+  command: "opencode",
+  args: ["run", "--format", "json", "safe & literal"],
+}, "POSIX launches OpenCode directly");
+const windowsLaunch = openCodeLaunch(["run", "safe & literal", "percent%PATH%"], "win32", { SystemRoot: "C:\\Windows" });
+assert.equal(windowsLaunch.command, "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+assert.ok(windowsLaunch.args.includes("-NoProfile"), "Windows launch does not load profile aliases");
+const payload = windowsLaunch.args.at(-1)?.match(/FromBase64String\('([^']+)'\)/)?.[1];
+assert.equal(Buffer.from(payload ?? "", "base64").toString("utf8"), JSON.stringify(["run", "safe & literal", "percent%PATH%"]), "Windows launch preserves untrusted argv as data");
 
 assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not use XDG_RUNTIME_DIR");
 assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives OpenCode's /tmp fallback");

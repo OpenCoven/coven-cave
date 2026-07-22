@@ -6,7 +6,7 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
@@ -97,9 +97,10 @@ export function hermesChatSupportsModel(): Promise<boolean> {
 
 /** OpenCode is direct-spawned so its own documented capability is authoritative. */
 export function openCodeRunSupportsModel(): Promise<boolean> {
+  const launch = openCodeLaunch(["run", "--help"]);
   return (openCodeModelFlagProbe ??= probeHelp(
-    "opencode",
-    ["run", "--help"],
+    launch.command,
+    launch.args,
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
     openCodeSpawnEnv(),
   ));

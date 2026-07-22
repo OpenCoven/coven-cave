@@ -55,7 +55,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const launch = copilotStream[\s\S]*?: openCodeDirect[\s\S]*?command: openCodeCommand\(\)[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
+  /const launch = copilotStream[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);[\s\S]*?const command = openCodeDirect\s*\? openCodeLaunch\(spawnArgs\)/,
   "Copilot, OpenCode, and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 

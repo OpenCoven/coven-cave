@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { openCodeCommand, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseOpenCodeModels } from "@/lib/opencode-models";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 
@@ -16,7 +16,8 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
       resolve(models);
     };
     try {
-      const child = spawn(openCodeCommand(), ["models"], {
+      const launch = openCodeLaunch(["models"]);
+      const child = spawn(launch.command, launch.args, {
         // Match the chat spawn's vault scope. A provider key can be granted to
         // one familiar only, and listing its authenticated OpenCode models must
         // not silently drop that key by using the unscoped probe environment.

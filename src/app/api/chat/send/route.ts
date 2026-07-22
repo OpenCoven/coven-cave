@@ -46,7 +46,7 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
-import { openCodeCommand, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
@@ -1752,15 +1752,16 @@ export async function POST(req: Request) {
                 // through `coven run`.
                 const launch = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
-                  : openCodeDirect
-                    ? { command: openCodeCommand(), fixedArgs: [] as string[] }
                   : hermesDirect
                     ? {
                         command: process.platform === "win32" ? "hermes.exe" : "hermes",
                         fixedArgs: [] as string[],
                       }
                     : covenLaunchCommand();
-                return spawn(launch.command, [...launch.fixedArgs, ...spawnArgs], {
+                const command = openCodeDirect
+                  ? openCodeLaunch(spawnArgs)
+                  : { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                return spawn(command.command, command.args, {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
                   // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
