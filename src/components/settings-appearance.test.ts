@@ -481,8 +481,8 @@ assert.match(
 );
 assert.match(
   settings,
-  /for \(const \[name, value\] of Object\.entries\(group\)\) \{\s*\n\s*html\.style\.setProperty\(name, value\);[\s\S]{0,200}html\.setAttribute\("data-theme", "custom"\)/,
-  "the whole group is applied live before the data-theme flip so the selected theme's look survives",
+  /for \(const \[name, value\] of Object\.entries\(group\)\) \{\s*\n\s*html\.style\.setProperty\(name\.startsWith\("--"\) \? name : `--\$\{name\}`, value\);[\s\S]{0,200}html\.setAttribute\("data-theme", "custom"\)/,
+  "the whole group is applied live with keys normalized to custom properties — raw tweakcn keys like \"background\" must never set real CSS properties on <html> (cave-7eno) — before the data-theme flip so the selected theme's look survives",
 );
 assert.match(
   settings,
