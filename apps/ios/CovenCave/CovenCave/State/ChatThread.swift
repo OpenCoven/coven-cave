@@ -296,6 +296,8 @@ final class ChatThread: Identifiable, Hashable {
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
         // re-attach mid-turn after a transport drop.
         let runId = UUID().uuidString
+        ChatTurnNotifier.shared.turnStarted(thread: self, familiarId: familiarId,
+                                            messageId: messageId)
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
                                        sessionId: sessionIds[familiarId],
                                        attachments: attachments.isEmpty ? nil : attachments,
@@ -359,6 +361,7 @@ final class ChatThread: Identifiable, Hashable {
         }
         updatedAt = Date()
         onChange()
+        ChatTurnNotifier.shared.turnFinished(thread: self, messageId: messageId)
     }
 
     /// Apply one stream event to the thread — shared by the original send
@@ -400,12 +403,17 @@ final class ChatThread: Identifiable, Hashable {
             // activity chip advances past it.
             flush(coalescer, into: messageId, onChange: onChange)
             var changed = false
+            var stepLabel: String?
             mutate(messageId) {
                 guard let folded = ActivityFold.fold($0.activitySteps, event: event) else { return }
                 $0.activity = folded
                 changed = true
+                stepLabel = folded.currentStep?.title
             }
-            if changed { onChange() }
+            if changed {
+                onChange()
+                ChatTurnNotifier.shared.turnStatus(thread: self, label: stepLabel)
+            }
         case .error(let message):
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) {

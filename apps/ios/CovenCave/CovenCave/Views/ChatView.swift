@@ -228,8 +228,10 @@ struct ChatView: View {
             if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
                 draft = saved
             }
-            // Opening the chat clears the unread badge for its familiar(s).
+            // Opening the chat clears the unread badge for its familiar(s) and
+            // any delivered reply banner for this thread.
             app.markFamiliarViewed(thread.familiarIds)
+            ChatNotifications.removeDelivered(threadId: thread.id)
         }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce

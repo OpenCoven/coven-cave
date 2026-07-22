@@ -288,6 +288,7 @@ final class AppModel {
         loadFamiliarOrder()
         loadFamiliarViews()
         if connection != nil { connectionState = .checking }
+        ChatTurnNotifier.shared.app = self
     }
 
     func familiar(_ id: String) -> Familiar? {
@@ -554,6 +555,14 @@ final class AppModel {
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
             Task { await configure(host: invite.host, token: invite.token) }
+            return
+        }
+        // covencave://thread/<id> — a chat notification / Live Activity tap
+        // jumps straight into its thread via the existing one-shot intent.
+        if let threadId = ChatNotifications.threadId(fromDeepLink: url) {
+            if let thread = threads.first(where: { $0.id == threadId }) {
+                requestOpen(thread)
+            }
             return
         }
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
@@ -1741,7 +1750,7 @@ final class AppModel {
     }
 
     /// Mute or unmute a thread's notifications (persisted; honoured by the
-    /// notification path when it lands).
+    /// turn-completion notification path).
     func setThreadMuted(_ thread: ChatThread, _ muted: Bool) {
         guard let target = threads.first(where: { $0.id == thread.id }),
               target.muted != muted else { return }
