@@ -46,9 +46,11 @@ actor ConnectionRefreshCoordinator {
         // Only clear our own task: a cancel + relaunch while we await must
         // not blow away the successor's in-flight slot.
         defer {
-            guard activeNonce == nonce else { return }
-            inFlight = nil
-            activeNonce = nil
+            // `return` is not allowed inside `defer`, so use `if` rather than `guard`.
+            if activeNonce == nonce {
+                inFlight = nil
+                activeNonce = nil
+            }
         }
         let result = await task.value
         // Joiners that piled onto this probe set the flag while `inFlight` was
