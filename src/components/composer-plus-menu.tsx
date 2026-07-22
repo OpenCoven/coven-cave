@@ -45,7 +45,7 @@ export function ComposerPlusMenu({
     /** Platform-aware shortcut hint (e.g. "⌘⇧A"). */
     hint?: string;
   };
-  /** "Add to project ›" flyout — mirrors the footer-band context pill. */
+  /** "Add to project ›" flyout — mirrors the footer-band context chips. */
   projects?: AddMenuProjectsSection;
   /** Skills flyout; picking inserts `/skill <id> ` into the composer. */
   skills?: { onPickSkill: (skill: SkillOption) => void };

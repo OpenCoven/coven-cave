@@ -65,8 +65,8 @@ assert.match(
 // ───────── Command-bar hierarchy ─────────
 // Chat revamp 1d + 2026-07-21 home parity pass: one "+" menu (attach ·
 // dictation · call · enhance · Model & tuning) leads the utility row, then the
-// Chat/Task pills; the circular send hugs the right. The context pill
-// (Project · Model) anchors the footer band beneath — matching the chat
+// Chat/Task pills; the circular send hugs the right. The context chips
+// (Project · Model) anchor the footer band beneath — matching the chat
 // composer's grammar.
 assert.match(
   source,
@@ -75,7 +75,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
   "the context pill anchors the footer band beneath the control row",
 );
 assert.match(

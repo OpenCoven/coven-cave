@@ -138,22 +138,17 @@ assert.match(
 );
 assert.match(context, /export\s+type\s+ComposerContextProps\s*=\s*\{/);
 assert.match(context, /export\s+function\s+useComposerContextActions/);
-assert.match(context, /export\s+function\s+ComposerContextActionRows/);
+assert.match(context, /export\s+function\s+ComposerContextChips/);
 assert.match(
   context,
-  /itemSemantic\?: PopoverItemSemantic/,
-  "reusable context rows accept an optional item semantic",
-);
-assert.match(
-  context,
-  /<PopoverItem\s+semantic=\{itemSemantic\}/,
-  "context rows forward the requested semantic to their PopoverItems",
+  /className="cave-context-chip focus-ring"/,
+  "the context controls are native chip buttons (the semantic-forwarding hub rows retired with the split, cave-g21f)",
 );
 assert.match(context, /export\s+function\s+ComposerContextPickers/);
-assert.match(context, /context\.hasGit && context\.branch \? \[context\.branch\] : \[\]/);
-assert.match(context, /title=\{summary\}/);
-assert.match(context, /icon="ph:git-branch"[\s\S]*title=\{`Branch: \$\{context\.branch\} · \$\{context\.dirtyLabel\}/);
-assert.match(context, /icon="ph:git-branch"[\s\S]*>\s*\{context\.branch\}/);
+assert.match(context, /\{context\.hasGit \? \(/);
+assert.match(context, /modelLabel \?\? runtimeName,\s*\n\s*\]\.join\(" · "\);/);
+assert.match(context, /title=\{`Branch: \$\{context\.branch\} · \$\{context\.dirtyLabel\}[\s\S]*?name="ph:git-branch"/);
+assert.match(context, /name="ph:git-branch"[\s\S]*?>\s*\{context\.branch\}/);
 
 assert.match(linkedWork, /createSmartTaskFromChat/);
 assert.match(linkedWork, /TaskLinkPicker/);
@@ -210,7 +205,7 @@ assert.match(
 );
 
 assert.match(home, /<ComposerPlusMenu/);
-assert.match(home, /<ComposerContextPill/);
+assert.match(home, /<ComposerContextChips/);
 assert.match(home, /<ComposerOptionsMenu/);
 assert.doesNotMatch(home, /<ComposerActionsMenu/);
 

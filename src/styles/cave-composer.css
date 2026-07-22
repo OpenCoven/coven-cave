@@ -960,62 +960,69 @@
   .composer-actions__icon--live { animation: none; }
 }
 
-/* The one quiet context pill — project swatch · "Project · Model · branch" ·
-   chevron. Control radius, hairline border, 6% text tint, 12px text. */
-.cave-context-pill {
-  display: inline-flex;
+/* Footer context chips (cave-g21f) — project · model · branch ride as
+   separate quiet controls in the footer band; each opens its own picker
+   anchored to the chip. Shared by the chat and home composers. */
+.cave-composer-footer-band__cluster {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
+  gap: 6px;
   min-width: 0;
-  max-width: min(46vw, 340px);
-  flex: 0 1 auto;
-  padding: 0 10px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+  flex: 1 1 auto;
 }
 
-.cave-context-pill:hover:not(:disabled) {
-  background: var(--bg-raised);
+.cave-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 13rem;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 450;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.cave-context-chip:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
   color: var(--text-primary);
 }
 
-.cave-context-pill[aria-expanded="true"] {
+.cave-context-chip[aria-expanded="true"] {
   border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-strong));
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-primary);
 }
 
-.cave-context-pill:disabled {
+.cave-context-chip:disabled {
   cursor: default;
   opacity: 0.55;
 }
 
-.cave-context-pill__swatch {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
+.cave-context-chip__lead {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
-.cave-context-pill__text {
+.cave-context-chip__text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cave-context-pill__chevron {
-  flex: 0 0 auto;
+.cave-context-chip__chevron {
+  flex-shrink: 0;
   color: var(--text-muted);
+  opacity: 0.7;
 }
 
 /* Circular 32px send: accent outline on transparent at rest; ~18% accent tint
@@ -1077,9 +1084,10 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  .cave-context-pill {
+  .cave-context-chip {
     height: var(--touch-target);
     min-height: var(--touch-target);
+    max-width: 9rem;
     -webkit-tap-highlight-color: transparent;
   }
 

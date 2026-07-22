@@ -12,9 +12,9 @@ const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.
 const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 
 // ── The chat composer carries git context from the chat's active root ───────
-// Task 3's triggerless extraction moved branch/PR/change actions into shared
-// ComposerContextActionRows + ComposerContextPickers, with ComposerContextPill
-// staying as the wrapper that owns the anchor/menu state.
+// The 2026-07-22 split (cave-g21f) puts branch/PR/change actions on the
+// branch chip's GitBranchMenuPopover (via branchPopoverExtras);
+// ComposerContextPickers keeps the actions-menu flow on the same wiring.
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?projectRoot: activeProjectRoot,[\s\S]*?onOpenUrl,[\s\S]*?\}\}/,
@@ -27,7 +27,7 @@ assert.match(
   "the pill reads branch/worktree/dirty state from the shared changes-summary hook",
 );
 assert.match(pill, /const pr = useBranchPr\(root, branch\);/, "shared context actions derive the branch PR once from root + branch");
-assert.match(pill, /export function ComposerContextActionRows\(/, "branch/PR/change rows are extracted from the pill trigger");
+assert.match(pill, /function branchPopoverExtras\(context: ComposerContextController\)/, "the PR/changes rows are built once and shared by the chip and the actions-menu flow");
 assert.match(
   pill,
   /export function ComposerContextPickers\(/,
@@ -40,8 +40,8 @@ assert.match(
 );
 assert.match(
   pill,
-  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "ComposerContextPill still wraps the extracted branch rows/pickers on the shared anchor",
+  /const context = useComposerContextActions\(props\);[\s\S]*?<GitBranchMenuPopover[\s\S]*?\{\.\.\.branchPopoverExtras\(context\)\}/,
+  "the chips mount the branch menu with the PR/changes extras on the chip anchor",
 );
 assert.match(
   pill,

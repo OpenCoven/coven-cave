@@ -91,7 +91,7 @@ assert.match(
 // which project a new chat runs in (mirrors the chat composer).
 assert.match(
   source,
-  /<ComposerContextPill[\s\S]*projectValue=\{selectedProjectId \|\| null\}[\s\S]*onProjectChange=\{setSelectedProjectId\}/,
+  /<ComposerContextChips[\s\S]*projectValue=\{selectedProjectId \|\| null\}[\s\S]*onProjectChange=\{setSelectedProjectId\}/,
   "the context pill hosts the project picker, wired to selectedProjectId",
 );
 
@@ -469,12 +469,12 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
   "Control row: the + menu and Chat/Task pills lead; the circular send hugs the right; the context pill anchors the footer band beneath (2026-07-21 home parity pass)",
 );
 assert.doesNotMatch(
   source.match(/className="cave-composer-utility-row">[\s\S]*?hc-dest-pills hc-dest-pills--inline/)?.[0] ?? "",
-  /<ComposerContextPill/,
+  /<ComposerContextChips/,
   "the utility row stays pill-free — context moved down to the footer band",
 );
 // The "↵ send · ⇧↵ newline" typing hint is gone (2026-07-21 parity with the

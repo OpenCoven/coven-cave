@@ -2,25 +2,18 @@
 
 import "@/styles/cave-composer.css";
 
-// ComposerContextPill — the composer's one quiet context control (chat revamp
-// 1d): a single pill showing "Project · Model · branch" that replaces the
-// visible ProjectPicker + ComposerRuntimeChip + ComposerGitChip row. Clicking
-// it opens a hub popover with three sections; each section chains to the
-// existing picker popover (ProjectPickerPopover, ComposerRuntimePopover,
-// GitBranchMenuPopover) anchored to this same pill, so every existing flow —
-// project switching + add-project, runtime/model switching, branch switch /
-// new worktree / PR open / git-changes drill-through — survives relocation.
+// ComposerContextChips — the composer footer's context controls (cave-g21f):
+// project, model, and (for repo-rooted chats) branch ride as separate,
+// individually labelled chips. Each opens its own picker popover anchored to
+// the chip itself (ProjectPickerPopover, ComposerRuntimePopover,
+// GitBranchMenuPopover), so every existing flow — project switching +
+// add-project, runtime/model switching, branch switch / new worktree / PR
+// open / git-changes drill-through — stays one click away. This replaced the
+// combined "Project · Model · branch" pill and its hub popover (2026-07-22)
+// on both the chat and home composers.
 
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
-import {
-  Popover,
-  PopoverBody,
-  PopoverItem,
-  PopoverLabel,
-  PopoverSeparator,
-  type PopoverItemSemantic,
-} from "@/components/ui/popover";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import {
@@ -57,13 +50,12 @@ export type ComposerContextProps = {
   onPickModel: (id: string) => void;
   /** Chat disables model switching while streaming (runtime-chip parity). */
   modelDisabled?: boolean;
-  /** Enables the Branch section for repo-rooted chats (undefined/non-repo
+  /** Enables the branch chip for repo-rooted chats (undefined/non-repo
    *  roots elide it, git-chip parity). */
   projectRoot?: string;
   /** Opens the branch PR in the app's browser pane; falls back to window.open. */
   onOpenUrl?: (url: string) => void;
   disabled?: boolean;
-  ariaLabel: string;
 };
 
 export type ComposerContextController = ReturnType<typeof useComposerContextActions>;
@@ -126,112 +118,18 @@ export function useComposerContextActions(config: ComposerContextProps) {
   };
 }
 
-export function ComposerContextActionRows({
-  context,
-  onOpenProject,
-  onOpenModel,
-  onOpenBranch,
-  onClose,
-  showLabels = false,
-  itemSemantic,
-}: {
-  context: ComposerContextController;
-  onOpenProject: () => void;
-  onOpenModel: () => void;
-  onOpenBranch: () => void;
-  onClose: () => void;
-  showLabels?: boolean;
-  itemSemantic?: PopoverItemSemantic;
-}) {
-  return (
-    <>
-      {showLabels ? <PopoverLabel>Project</PopoverLabel> : null}
-      <PopoverItem
-        semantic={itemSemantic}
-        leading={
-          context.selectedProject ? (
-            <ProjectAvatar
-              name={context.selectedProject.name}
-              root={context.selectedProject.root}
-              color={context.selectedProject.color}
-              size="sm"
-            />
-          ) : (
-            <Icon name="ph:folder" width={13} aria-hidden />
-          )
-        }
-        title={context.selectedProject?.root}
-        onSelect={onOpenProject}
-      >
-        {context.selectedProject?.name ?? "No project"}
-      </PopoverItem>
-      {showLabels ? (
-        <>
-          <PopoverSeparator />
-          <PopoverLabel>Model</PopoverLabel>
-        </>
-      ) : null}
-      <PopoverItem
-        semantic={itemSemantic}
-        leading={
-          <span className="cave-runtime-chip__logo" aria-hidden>
-            <RuntimeLogo runtime={context.config.runtime} size={13} />
-          </span>
-        }
-        disabled={context.config.modelDisabled}
-        title={`Runtime: ${context.runtimeName}${context.modelLabel ? ` · Model: ${context.modelLabel}` : ""}`}
-        onSelect={onOpenModel}
-      >
-        {context.modelLabel
-          ? `${context.runtimeName} · ${context.modelLabel}`
-          : context.runtimeName}
-      </PopoverItem>
-      {context.hasGit ? (
-        <>
-          {showLabels ? (
-            <>
-              <PopoverSeparator />
-              <PopoverLabel>Branch</PopoverLabel>
-            </>
-          ) : null}
-          <PopoverItem
-            semantic={itemSemantic}
-            icon="ph:git-branch"
-            title={`Branch: ${context.branch} · ${context.dirtyLabel}${context.worktree ? ` · Worktree: ${context.worktree}` : ""} — switch branch or create a worktree`}
-            onSelect={onOpenBranch}
-          >
-            {context.branch}
-            {context.count > 0 ? ` · +${context.count}` : ""}
-            {context.worktree ? ` · ${context.worktree}` : ""}
-          </PopoverItem>
-          {context.pr ? (
-            <PopoverItem
-              semantic={itemSemantic}
-              icon="ph:git-pull-request"
-              title={`Open PR #${context.pr.number} (${context.pr.isDraft ? "draft" : context.pr.state.toLowerCase()})`}
-              onSelect={() => {
-                onClose();
-                if (context.config.onOpenUrl) context.config.onOpenUrl(context.pr!.url);
-                else window.open(context.pr!.url, "_blank", "noopener,noreferrer");
-              }}
-            >
-              PR #{context.pr.number}
-            </PopoverItem>
-          ) : null}
-          <PopoverItem
-            semantic={itemSemantic}
-            icon="ph:git-diff"
-            onSelect={() => {
-              onClose();
-              window.dispatchEvent(new CustomEvent("cave:changes-open"));
-            }}
-          >
-            Open Git changes
-          </PopoverItem>
-        </>
-      ) : null}
-    </>
-  );
+// The branch menu's footer rows (PR · Git changes) — shared by the footer's
+// branch chip and the actions-menu "Branch…" flow so both keep parity with
+// the retired hub's git section.
+function branchPopoverExtras(context: ComposerContextController) {
+  return {
+    pr: context.pr,
+    onOpenPr: (url: string) => {
+      if (context.config.onOpenUrl) context.config.onOpenUrl(url);
+      else window.open(url, "_blank", "noopener,noreferrer");
+    },
+    onOpenChanges: () => window.dispatchEvent(new CustomEvent("cave:changes-open")),
+  };
 }
 
 export function ComposerContextPickers({
@@ -275,6 +173,7 @@ export function ComposerContextPickers({
         anchorRef={anchorRef}
         projectRoot={context.root}
         onSwitched={context.reload}
+        {...branchPopoverExtras(context)}
       />
       {context.addFlow.addError ? (
         <span className="cave-project-picker__error" role="alert">
@@ -286,111 +185,29 @@ export function ComposerContextPickers({
   );
 }
 
-export function ComposerContextPill(props: ComposerContextProps & { splitControls?: boolean }) {
-  const [menu, setMenu] = useState<"hub" | ComposerContextView>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+export function ComposerContextChips(props: ComposerContextProps) {
+  const [menu, setMenu] = useState<ComposerContextView>(null);
   const projectRef = useRef<HTMLButtonElement | null>(null);
   const modelRef = useRef<HTMLButtonElement | null>(null);
+  const branchRef = useRef<HTMLButtonElement | null>(null);
   const context = useComposerContextActions(props);
-  const summary = [
-    context.summary,
-    ...(context.hasGit && context.branch ? [context.branch] : []),
-  ].join(" · ");
-
-  // Split mode (home refinement 2026-07-22): project and model ride as two
-  // distinct, separately-labelled trigger buttons instead of one ambiguous
-  // combined pill. Each opens its own picker; the anchor is the button itself
-  // so the popover lands under the control the user clicked.
-  if (props.splitControls) {
-    const projectLabel = context.selectedProject?.name ?? "No project";
-    const modelLabel = context.modelLabel ?? context.runtimeName;
-    return (
-      <>
-        <button
-          ref={projectRef}
-          type="button"
-          className="cave-context-chip focus-ring"
-          disabled={props.disabled}
-          aria-haspopup="dialog"
-          aria-expanded={menu === "project"}
-          aria-label={`Project: ${projectLabel} — change project`}
-          title={context.selectedProject?.root ?? "No project selected"}
-          onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
-        >
-          <span className="cave-context-chip__lead" aria-hidden>
-            {context.selectedProject ? (
-              <ProjectAvatar
-                name={context.selectedProject.name}
-                root={context.selectedProject.root}
-                color={context.selectedProject.color}
-                size="sm"
-              />
-            ) : (
-              <Icon name="ph:folder" width={13} aria-hidden />
-            )}
-          </span>
-          <span className="cave-context-chip__text">{projectLabel}</span>
-          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-        </button>
-        <button
-          ref={modelRef}
-          type="button"
-          className="cave-context-chip focus-ring"
-          disabled={props.disabled || context.config.modelDisabled}
-          aria-haspopup="dialog"
-          aria-expanded={menu === "model"}
-          aria-label={`Model: ${modelLabel} — change model`}
-          title={`Runtime: ${context.runtimeName}${context.modelLabel ? ` · Model: ${context.modelLabel}` : ""}`}
-          onClick={() => setMenu((c) => (c === "model" ? null : "model"))}
-        >
-          <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
-            <RuntimeLogo runtime={context.config.runtime} size={13} />
-          </span>
-          <span className="cave-context-chip__text">{modelLabel}</span>
-          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-        </button>
-
-        <ProjectPickerPopover
-          open={menu === "project"}
-          onOpenChange={(open) => setMenu(open ? "project" : null)}
-          anchorRef={projectRef}
-          projects={context.config.projects}
-          value={context.config.projectValue}
-          onChange={context.config.onProjectChange}
-          allowNoProject={context.config.allowNoProject}
-          onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
-          addingProject={context.addFlow.adding}
-          ariaLabel="Choose project"
-        />
-        <ComposerRuntimePopover
-          open={menu === "model"}
-          onOpenChange={(open) => setMenu(open ? "model" : null)}
-          anchorRef={modelRef}
-          runtime={context.config.runtime}
-          modelValue={context.config.modelValue}
-          modelOptions={context.config.modelOptions}
-          onPickRuntime={context.config.onPickRuntime}
-          onPickModel={context.config.onPickModel}
-        />
-        {context.config.createProject ? context.addFlow.addProjectModal : null}
-      </>
-    );
-  }
+  const projectLabel = context.selectedProject?.name ?? "No project";
+  const modelLabel = context.modelLabel ?? context.runtimeName;
 
   return (
     <>
       <button
-        ref={triggerRef}
+        ref={projectRef}
         type="button"
-        className="cave-context-pill focus-ring"
+        className="cave-context-chip focus-ring"
         disabled={props.disabled}
         aria-haspopup="dialog"
-        aria-expanded={menu !== null}
-        aria-label={props.ariaLabel}
-        title={summary}
-        onClick={() => setMenu((current) => (current === null ? "hub" : null))}
+        aria-expanded={menu === "project"}
+        aria-label={`Project: ${projectLabel} — change project`}
+        title={context.selectedProject?.root ?? "No project selected"}
+        onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
       >
-        <span className="cave-context-pill__swatch" aria-hidden>
+        <span className="cave-context-chip__lead" aria-hidden>
           {context.selectedProject ? (
             <ProjectAvatar
               name={context.selectedProject.name}
@@ -402,42 +219,88 @@ export function ComposerContextPill(props: ComposerContextProps & { splitControl
             <Icon name="ph:folder" width={13} aria-hidden />
           )}
         </span>
-        <span className="cave-context-pill__text">{summary}</span>
-        <Icon
-          name="ph:caret-down"
-          width={10}
-          aria-hidden
-          className="cave-context-pill__chevron"
-        />
+        <span className="cave-context-chip__text">{projectLabel}</span>
+        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
-
-      <Popover
-        open={menu === "hub"}
-        onOpenChange={(open) => setMenu(open ? "hub" : null)}
-        anchorRef={triggerRef}
-        placement="top-start"
-        minWidth={252}
-        ariaLabel={props.ariaLabel}
-        className="cave-context-pill__hub"
+      <button
+        ref={modelRef}
+        type="button"
+        className="cave-context-chip focus-ring"
+        disabled={props.disabled || context.config.modelDisabled}
+        aria-haspopup="dialog"
+        aria-expanded={menu === "model"}
+        aria-label={`Model: ${modelLabel} — change model`}
+        title={`Runtime: ${context.runtimeName}${context.modelLabel ? ` · Model: ${context.modelLabel}` : ""}`}
+        onClick={() => setMenu((c) => (c === "model" ? null : "model"))}
       >
-        <PopoverBody>
-          <ComposerContextActionRows
-            context={context}
-            onOpenProject={() => setMenu("project")}
-            onOpenModel={() => setMenu("model")}
-            onOpenBranch={() => setMenu("branch")}
-            onClose={() => setMenu(null)}
-            showLabels
-          />
-        </PopoverBody>
-      </Popover>
+        <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
+          <RuntimeLogo runtime={context.config.runtime} size={13} />
+        </span>
+        <span className="cave-context-chip__text">{modelLabel}</span>
+        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+      </button>
+      {context.hasGit ? (
+        <button
+          ref={branchRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="menu"
+          aria-expanded={menu === "branch"}
+          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
+          title={`Branch: ${context.branch} · ${context.dirtyLabel}${context.worktree ? ` · Worktree: ${context.worktree}` : ""}`}
+          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            <Icon name="ph:git-branch" width={13} aria-hidden />
+          </span>
+          <span className="cave-context-chip__text">
+            {context.branch}
+            {context.count > 0 ? ` · +${context.count}` : ""}
+            {context.worktree ? ` · ${context.worktree}` : ""}
+          </span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
 
-      <ComposerContextPickers
-        view={menu === "hub" ? null : menu}
-        onViewChange={setMenu}
-        anchorRef={triggerRef}
-        context={context}
+      <ProjectPickerPopover
+        open={menu === "project"}
+        onOpenChange={(open) => setMenu(open ? "project" : null)}
+        anchorRef={projectRef}
+        projects={context.config.projects}
+        value={context.config.projectValue}
+        onChange={context.config.onProjectChange}
+        allowNoProject={context.config.allowNoProject}
+        onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+        addingProject={context.addFlow.adding}
+        ariaLabel="Choose project"
       />
+      <ComposerRuntimePopover
+        open={menu === "model"}
+        onOpenChange={(open) => setMenu(open ? "model" : null)}
+        anchorRef={modelRef}
+        runtime={context.config.runtime}
+        modelValue={context.config.modelValue}
+        modelOptions={context.config.modelOptions}
+        onPickRuntime={context.config.onPickRuntime}
+        onPickModel={context.config.onPickModel}
+      />
+      {context.hasGit ? (
+        <GitBranchMenuPopover
+          open={menu === "branch"}
+          onOpenChange={(open) => setMenu(open ? "branch" : null)}
+          anchorRef={branchRef}
+          projectRoot={context.root}
+          onSwitched={context.reload}
+          {...branchPopoverExtras(context)}
+        />
+      ) : null}
+      {context.addFlow.addError ? (
+        <span className="cave-project-picker__error" role="alert">
+          {context.addFlow.addError}
+        </span>
+      ) : null}
+      {context.config.createProject ? context.addFlow.addProjectModal : null}
     </>
   );
 }

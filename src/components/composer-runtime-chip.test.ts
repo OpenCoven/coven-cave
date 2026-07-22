@@ -22,18 +22,18 @@ const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.m
 // revamp 1d) — same ComposerRuntimePopover, same live model state.
 assert.match(
   homeComposer,
-  /<ComposerContextPill[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
-  "the home composer's context pill hosts the runtime picker from its own model state",
+  /<ComposerContextChips[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "the home composer's context chips host the runtime picker from its own model state",
 );
 assert.match(
   homeComposer,
-  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
-  "the home pill anchors the composer footer band (2026-07-21 home parity pass moved it down from the utility row)",
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
+  "the chips anchor the composer footer band",
 );
 assert.match(
   contextPill,
-  /export function ComposerContextActionRows\(/,
-  "runtime/model rows are reusable outside the Home pill wrapper",
+  /aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  "the model chip is a separately labelled control (split grammar, cave-g21f)",
 );
 assert.match(
   contextPill,
@@ -47,8 +47,8 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "ComposerContextPill still wraps the extracted runtime/model rows and pickers",
+  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerRuntimePopover[\s\S]*?onPickModel=\{context\.config\.onPickModel\}/,
+  "the chips mount the shared runtime popover from the same context controller",
 );
 
 // ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────
@@ -83,7 +83,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
   "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
 );
 

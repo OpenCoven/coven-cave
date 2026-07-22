@@ -147,14 +147,14 @@ assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition s
 // "Both" reconciliation (2026-07-21): the context pill returned with the
 // footer band — but only there, never back in the control row.
 assert.equal(
-  source.match(/<ComposerContextPill/g)?.length,
+  source.match(/<ComposerContextChips/g)?.length,
   1,
-  "the context pill mounts exactly once — in the footer band",
+  "the context chips mount exactly once — in the footer band",
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
-  "the context pill lives in the footer band, not the control row",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
+  "the context chips live in the footer band, not the control row",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
