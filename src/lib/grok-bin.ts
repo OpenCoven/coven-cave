@@ -67,7 +67,10 @@ export function grokBin(): string {
 
   for (const directory of candidateDirs()) {
     for (const name of grokCandidateBinNames()) {
-      const candidate = path.join(directory, name);
+      // This is a runtime PATH probe, not a bundled file dependency. Keep
+      // Turbopack's output-file tracer from treating the dynamic directory as
+      // a project glob (which would package the whole checkout).
+      const candidate = path.join(/* turbopackIgnore: true */ directory, name);
       try {
         const stat = statSync(candidate);
         if (stat.isFile() || stat.isSymbolicLink()) {

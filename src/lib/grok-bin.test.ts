@@ -23,6 +23,11 @@ assert.match(
 );
 assert.match(
   source,
+  /path\.join\(\/\* turbopackIgnore: true \*\/ directory, name\)/,
+  "dynamic PATH probes must not make Turbopack trace the whole project into the sidecar",
+);
+assert.match(
+  source,
   /covenLaunchCommandForBinary\(binary\)/,
   "Windows npm shims must be converted to a direct Node launch, not spawned as .cmd files",
 );
