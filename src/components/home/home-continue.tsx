@@ -70,7 +70,7 @@ export function HomeContinue({ sessions, familiarNameById, onOpenSession }: Prop
                 <span className="home-continue__age">{ageLabel}</span>
               </span>
               <Icon
-                name="ph:arrow-right"
+                name="ph:arrow-right-bold"
                 width={14}
                 className="home-continue__go"
                 aria-hidden
