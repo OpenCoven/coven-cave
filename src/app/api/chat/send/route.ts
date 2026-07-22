@@ -870,6 +870,19 @@ export async function POST(req: Request) {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
+  // Cave's Read-only control is a security promise, not a prompt hint.
+  // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so spawning it
+  // directly would let its configured permissions write to the workspace.
+  // Refuse this combination until OpenCode offers an enforceable equivalent.
+  if (openCodeDirect && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "OpenCode does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   if (sshRuntime && binding.harness === "openclaw") {
     return new Response(
       JSON.stringify({

@@ -47,6 +47,11 @@ assert.match(
 );
 assert.match(
   route,
+  /if \(openCodeDirect && body\.permissionMode === "read"\)[\s\S]*?status: 501/,
+  "OpenCode refuses Cave's Read-only mode rather than running without enforceable sandboxing",
+);
+assert.match(
+  route,
   /Session not found\\b/,
   "OpenCode's missing-session error triggers the existing fresh-session retry",
 );
