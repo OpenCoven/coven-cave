@@ -36,6 +36,11 @@ export type Familiar = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  /** Image generation (Brain tab): "" inherit | "openai" | "gemini" | "off". */
+  imageProvider?: string;
+  imageModel?: string;
+  imageSize?: string;
+  imageQuality?: string;
   autoSelfReport?: boolean;
   /** Per-agent Asana assignment (see FamiliarBinding). Undefined = on when the
    *  app is connected; false opts this familiar out. */

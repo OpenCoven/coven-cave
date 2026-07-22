@@ -105,6 +105,10 @@ enum SlashCatalog {
                      description: "Show every prompt template to pick from.",
                      section: .chat,
                      availability: .desktopOnly, action: .desktopOnly("Prompts")),
+        SlashCommand(name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image",
+                     description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).",
+                     argPlaceholder: "describe an image…", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Image generation")),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",

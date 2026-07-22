@@ -138,6 +138,87 @@ Use this skill when {{the goal}} needs {{the stages|several coordinated steps}}.
 - {{how to prove the whole flow succeeded}}
 `,
   },
+  {
+    id: "image-prompt-crafter",
+    name: "Image prompt crafter",
+    description: "Turn a rough idea into a strong /image prompt.",
+    tags: ["image", "creative"],
+    source: "builtin",
+    instructions: `## When to use
+
+Use this skill when the user wants an image but gives only a rough idea — expand it into a strong /image prompt before generating.
+
+## Prompt recipe
+
+Build the prompt in this order:
+
+1. **Subject** — the main thing, specific: {{typical subjects|"a lighthouse keeper's desk"}}
+2. **Style** — {{default style|watercolor illustration, soft edges}}
+3. **Composition** — framing and viewpoint (close-up, wide shot, isometric…)
+4. **Lighting & mood** — {{default mood|warm candlelight, quiet evening}}
+5. **Constraints** — what to avoid: {{things to avoid|text, watermarks, extra limbs}}
+
+## Steps
+
+1. Draft the expanded prompt from the recipe above.
+2. Show it to the user for a quick yes/no before generating.
+3. Generate with \`/image <expanded prompt>\`.
+4. If the result misses, change ONE recipe line and regenerate — don't rewrite everything.
+
+## Never
+
+- Include artist names still under copyright when asked to imitate them exactly.
+`,
+  },
+  {
+    id: "brand-image-style",
+    name: "Brand image style",
+    description: "Keep every generated image on one visual identity.",
+    tags: ["image", "brand"],
+    source: "builtin",
+    instructions: `## When to use
+
+Use this skill whenever generating images for {{the project or brand}} so every /image result shares one visual identity.
+
+## Style constants
+
+Append these to EVERY image prompt for this brand:
+
+- Palette: {{brand colors|deep violet, candle-orange accents, charcoal background}}
+- Style: {{rendering style|flat vector with subtle grain}}
+- Mood: {{brand mood|mystical but friendly}}
+- Always: {{required elements|generous negative space}}
+- Never: {{banned elements|photorealism, stock-photo look, embedded text}}
+
+## Usage
+
+1. Take the user's subject.
+2. Compose: \`/image <subject>, <palette>, <style>, <mood>, <always>\`.
+3. On revisions, keep the style constants fixed — only the subject changes.
+`,
+  },
+  {
+    id: "diagram-illustrator",
+    name: "Diagram illustrator",
+    description: "Explain a concept with a generated illustration.",
+    tags: ["image", "docs"],
+    source: "builtin",
+    instructions: `## When to use
+
+Use this skill when a concept in {{the domain|the codebase or docs}} would land better as a picture than a paragraph.
+
+## Steps
+
+1. Reduce the concept to its 3-5 essential parts and their relationships.
+2. Pick a visual metaphor: {{preferred metaphors|flowchart, layered stack, orbit map}}.
+3. Generate: \`/image clean minimal diagram of <parts and relationships>, <metaphor>, flat design, high contrast, no text labels\`.
+4. Present the image WITH a one-paragraph caption naming each part — generated images cannot carry reliable text, so the caption does the labeling.
+
+## Verification
+
+- Every part listed in step 1 is visually distinguishable in the result.
+`,
+  },
 ];
 
 export function skillTemplateById(

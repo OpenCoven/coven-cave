@@ -166,6 +166,11 @@ export type FamiliarBinding = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  /** Image generation (Brain tab): "" inherit | "openai" | "gemini" | "off". */
+  imageProvider?: string;
+  imageModel?: string;
+  imageSize?: string;
+  imageQuality?: string;
   autoSelfReport?: boolean;
   /** Per-agent Asana assignment. The PAT is app-wide (one connection); this
    *  decides whether THIS familiar works with Asana tasks. Undefined = on when
@@ -576,6 +581,10 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     voiceProvider: f.voiceProvider,
     voiceModel: f.voiceModel,
     voiceName: f.voiceName,
+    imageProvider: f.imageProvider,
+    imageModel: f.imageModel,
+    imageSize: f.imageSize,
+    imageQuality: f.imageQuality,
     autoSelfReport: f.autoSelfReport ?? false,
     asanaEnabled: f.asanaEnabled,
     asanaWorkspaceGid: f.asanaWorkspaceGid,
