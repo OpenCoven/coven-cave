@@ -69,12 +69,23 @@ assert.deepEqual(
 
 assert.deepEqual(parseGrokStreamEvent({ type: "text", data: "Hello" }), { kind: "text", text: "Hello" });
 assert.deepEqual(
-  parseGrokStreamEvent({ type: "end", sessionId: "abc", usage: { input_tokens: 1 } }),
-  { kind: "end", sessionId: "abc", isError: false, usage: { input_tokens: 1 } },
+  parseGrokStreamEvent({
+    type: "end",
+    sessionId: "abc",
+    usage: { input_tokens: 1 },
+    total_cost_usd: 0.001,
+  }),
+  {
+    kind: "end",
+    sessionId: "abc",
+    isError: false,
+    usage: { input_tokens: 1 },
+    totalCostUsd: 0.001,
+  },
 );
 assert.deepEqual(
-  parseGrokStreamEvent({ type: "error", message: "not authenticated" }),
-  { kind: "error", message: "not authenticated", usage: undefined },
+  parseGrokStreamEvent({ type: "error", message: "not authenticated", total_cost_usd: 0 }),
+  { kind: "error", message: "not authenticated", usage: undefined, totalCostUsd: 0 },
 );
 assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { kind: "ignore" });
 

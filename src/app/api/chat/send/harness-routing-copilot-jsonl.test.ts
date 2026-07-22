@@ -66,6 +66,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /case "end":[\s\S]*?usage: parseStreamJsonUsage\(event\.usage\),[\s\S]*?costUsd: parseCostUsd\(event\.totalCostUsd\),/,
+  "Grok end events must preserve their usage and cost metadata for the transcript and done event",
+);
+assert.match(
+  chatRoute,
   /grokDirect\s*\? \{\s*command: process\.platform === "win32" \? "grok\.exe" : "grok"/,
   "Windows uses grok.exe directly while Unix uses grok",
 );

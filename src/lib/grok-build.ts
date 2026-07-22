@@ -8,8 +8,14 @@ export type RuntimeModelOption = { id: string; label: string };
 
 export type GrokStreamEvent =
   | { kind: "text"; text: string }
-  | { kind: "end"; sessionId?: string; isError: boolean; usage?: unknown }
-  | { kind: "error"; message: string; usage?: unknown }
+  | {
+      kind: "end";
+      sessionId?: string;
+      isError: boolean;
+      usage?: unknown;
+      totalCostUsd?: unknown;
+    }
+  | { kind: "error"; message: string; usage?: unknown; totalCostUsd?: unknown }
   | { kind: "ignore" };
 
 /** Parse the public, human-readable output of `grok models` without retaining
@@ -98,6 +104,7 @@ export function parseGrokStreamEvent(raw: unknown): GrokStreamEvent {
     sessionId?: unknown;
     message?: unknown;
     usage?: unknown;
+    total_cost_usd?: unknown;
   };
   if (event.type === "text" && typeof event.data === "string") {
     return { kind: "text", text: event.data };
@@ -108,6 +115,7 @@ export function parseGrokStreamEvent(raw: unknown): GrokStreamEvent {
       sessionId: typeof event.sessionId === "string" ? event.sessionId : undefined,
       isError: false,
       usage: event.usage,
+      totalCostUsd: event.total_cost_usd,
     };
   }
   if (event.type === "error") {
@@ -115,6 +123,7 @@ export function parseGrokStreamEvent(raw: unknown): GrokStreamEvent {
       kind: "error",
       message: typeof event.message === "string" ? event.message : "Grok Build returned an error.",
       usage: event.usage,
+      totalCostUsd: event.total_cost_usd,
     };
   }
   return { kind: "ignore" };

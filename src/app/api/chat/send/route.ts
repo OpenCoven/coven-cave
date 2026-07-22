@@ -1522,10 +1522,18 @@ export async function POST(req: Request) {
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
               if (!confirmedModel && cleanModelId(desiredModel)) confirmedModel = desiredModel;
-              result = { is_error: event.isError };
+              result = {
+                is_error: event.isError,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
               return;
             case "error":
-              result = { is_error: true };
+              result = {
+                is_error: true,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
               recordStdoutErrorTail(event.message);
               return;
             case "ignore":
