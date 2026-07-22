@@ -72,6 +72,7 @@ import {
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
@@ -912,6 +913,7 @@ export async function POST(req: Request) {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
+  await ensureAdapterManifestScaffold(binding.harness);
   // Cave's Read-only control is a security promise, not a prompt hint.
   // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so spawning it
   // directly would let its configured permissions write to the workspace.

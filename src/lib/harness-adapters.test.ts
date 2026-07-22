@@ -7,6 +7,7 @@ import {
   adapterSetupState,
   runtimeSourceSetupState,
   adapterManifestScaffoldForHarness,
+  isLegacyWindowsHermesManifest,
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
@@ -306,7 +307,7 @@ assert.deepEqual(
 // Scaffolds come straight from the synced coven-runtimes registry — the exact
 // conformance-tested adapter documents (cave-laxg retired the hand-written
 // copilot/hermes copies).
-const hermesManifest = adapterManifestScaffoldForHarness("hermes");
+const hermesManifest = adapterManifestScaffoldForHarness("hermes", "linux");
 assert.equal(hermesManifest?.filename, "hermes.json");
 {
   const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
@@ -316,6 +317,16 @@ assert.equal(hermesManifest?.filename, "hermes.json");
   assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"], "hermes keeps the coven-source chat entry; the shim maps the prompt to -q");
   assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q"]);
   assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
+}
+{
+  const windowsManifest = adapterManifestScaffoldForHarness("hermes", "win32");
+  const adapter = JSON.parse(windowsManifest?.contents ?? "{}").adapters?.[0];
+  assert.equal(adapter?.executable, "hermes", "Windows launches Hermes directly, never through a cmd shim");
+  assert.equal(adapter?.prompt_flag, "-q", "Windows binds the prompt as Hermes's query flag");
+  assert.equal(adapter?.interactive_prompt_flag, "-q", "interactive task startup uses the same safe prompt binding");
+  assert.ok(isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "win32"));
+  assert.ok(!isLegacyWindowsHermesManifest(windowsManifest?.contents ?? "", "win32"));
+  assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "linux"));
 }
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
 

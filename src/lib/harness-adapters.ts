@@ -52,6 +52,11 @@ export type AdapterManifestScaffold = {
   contents: string;
 };
 
+type AdapterManifestDocument = {
+  adapters?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
 // The hand-curated seed: Cave-specific labels, install copy, and probe args.
 // Curated entries win over registry entries with the same id.
 const CURATED_ADAPTERS: CompatibilityAdapter[] = [
@@ -380,13 +385,66 @@ export function runtimeSourceSetupState(
 // Cave copies were retired in favor of the registry versions, cave-laxg).
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
+  platform = process.platform,
 ): AdapterManifestScaffold | null {
   const registry = REGISTRY_RUNTIMES.find(
     (runtime) => runtime.id === canonicalHarnessId(harnessId),
   );
   if (!registry) return null;
+
+  // The registry's Hermes recipe uses a POSIX bash shim because the original
+  // generic adapter contract appended prompts positionally. Current Coven
+  // supports `prompt_flag`, which binds a prompt as one argv value instead.
+  // Use that native contract on Windows: a .cmd shim would route untrusted
+  // prompt text back through cmd.exe parsing.
+  const manifest = registry.adapterManifest as AdapterManifestDocument;
+  const windowsHermes = platform === "win32" && registry.id === "hermes";
+  const adapterManifest = windowsHermes
+    ? {
+        ...manifest,
+        adapters: manifest.adapters?.map((adapter) =>
+          adapter.id === "hermes"
+            ? {
+                ...adapter,
+                executable: "hermes",
+                prompt_flag: "-q",
+                interactive_prompt_flag: "-q",
+                install_hint:
+                  "Install Hermes Agent, add it to PATH, and complete Hermes setup before using this adapter.",
+                description:
+                  "Hermes adapter with native model forwarding and prompt-flag routing for Windows.",
+              }
+            : adapter,
+        ),
+      }
+    : manifest;
   return {
     filename: `${registry.id}.json`,
-    contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
+    contents: `${JSON.stringify(adapterManifest, null, 2)}\n`,
   };
+}
+
+/**
+ * A Cave-generated Hermes manifest from before the Windows prompt-flag route
+ * always invokes the POSIX-only `hermes-coven` shim. It is safe to replace
+ * that known shape, but never a user-authored manifest with another command.
+ */
+export function isLegacyWindowsHermesManifest(
+  contents: string,
+  platform = process.platform,
+): boolean {
+  if (platform !== "win32") return false;
+  try {
+    const parsed = JSON.parse(contents) as AdapterManifestDocument;
+    const adapters = parsed.adapters;
+    return (
+      Array.isArray(adapters) &&
+      adapters.length === 1 &&
+      adapters[0]?.id === "hermes" &&
+      adapters[0]?.executable === "hermes-coven" &&
+      typeof adapters[0]?.prompt_flag !== "string"
+    );
+  } catch {
+    return false;
+  }
 }

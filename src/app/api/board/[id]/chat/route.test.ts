@@ -58,4 +58,18 @@ assert.match(
   "task sessions forward the familiar's resolved model to the daemon",
 );
 
+// Windows Hermes configurations created before prompt_flag support point to a
+// POSIX-only launcher. The route must repair that known manifest before the
+// daemon creates its PTY, or retrying a task will fail before Hermes starts.
+assert.match(
+  source,
+  /import\s*\{[^}]*\bensureAdapterManifestScaffold\b[^}]*\}\s*from\s*"@\/lib\/server\/adapter-manifest-scaffold"/,
+  "route imports the adapter-manifest migration helper",
+);
+assert.match(
+  source,
+  /await\s+ensureAdapterManifestScaffold\(binding\.harness\)[\s\S]{0,2600}callDaemon/,
+  "route repairs the trusted harness manifest before daemon session creation",
+);
+
 console.log("board chat route.test.ts: ok");
