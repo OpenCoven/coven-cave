@@ -834,6 +834,14 @@ export function BoardView({
         setChatLinkError(`Could not switch harness (${res.status}).`);
         return;
       }
+      // A task override names a model for the familiar's previous runtime.
+      // Keep recovery portable across Codex, OpenClaw, Hermes, and registry
+      // adapters by falling back to the newly selected harness's configured
+      // default instead of forwarding a potentially incompatible model id.
+      if (!(await patchCard(id, { modelOverride: null }))) {
+        setChatLinkError("Could not clear the prior task model after switching harness.");
+        return;
+      }
       window.dispatchEvent(new Event("cave:familiars-refresh"));
       await openTaskWork(id);
     } catch {
