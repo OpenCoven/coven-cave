@@ -60,9 +60,7 @@ import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapte
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
-import { HomeSuggestionPills } from "@/components/home/home-suggestion-pills";
 import { HomeContinue } from "@/components/home/home-continue";
-import { useBoardCards } from "@/components/home/use-board-cards";
 import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -388,10 +386,6 @@ export function HomeComposer({
     for (const f of familiars) m.set(f.id, f.display_name);
     return m;
   }, [familiars]);
-
-  // One /api/board snapshot shared by the suggestion pills (task-derived
-  // prompts) and the Open work section (pending-task row).
-  const boardCards = useBoardCards();
 
   // Live-context subtitle under the heading: familiar · role only. The
   // runtime/model already reads verbatim in the composer's context pill one
@@ -1124,21 +1118,12 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Starter prompts — the one quiet affordance under the composer, and
-          only on a blank draft (progressive disclosure). ChatGPT/Claude-grade
-          minimal: a single row of cold-start pills, nothing else. Everything
-          that used to stack here (Continue, Open work, Prompt snippets, Ask
-          Salem) lives in the sidebar/other surfaces — the home is the
-          composer, full stop. The From-task row still wins when home opened
-          from a task so that hand-off keeps its context. */}
+      {/* From-task hand-off row — the only chip strip left under the
+          composer, and only when home opened from a task. The cold-start
+          suggestion pills were removed (cards-only home 2026-07-22): below
+          the composer there is nothing but the centered Continue cards. */}
       {taskOrigin ? (
         <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
-      ) : !text.trim() ? (
-        <HomeSuggestionPills
-          cards={boardCards}
-          projectName={selectedProject?.name ?? null}
-          onPick={insertPrompt}
-        />
       ) : null}
 
       {/* "Continue where you left off" (reference parity 2026-07-22): up to

@@ -197,7 +197,8 @@ assert.match(source, /<HomeContinue/, "Continue cards present (reference parity 
 assert.doesNotMatch(source, /<HomeOpenWork/, "the Open work section no longer renders on the minimal home");
 assert.doesNotMatch(source, /<HomeSnippets/, "the Prompt snippets section no longer renders on the minimal home");
 assert.doesNotMatch(source, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");
-// The one affordance that stays: starter suggestion pills on a blank draft.
-assert.match(source, /<HomeSuggestionPills/, "the starter suggestion pills stay on the minimal home");
+// Cards-only home (2026-07-22): the cold-start pills are gone too — below
+// the composer there is nothing but the centered Continue cards.
+assert.doesNotMatch(source, /<HomeSuggestionPills/, "the starter suggestion pills are removed (cards-only home)");
 
 console.log("home-composer-polish.test.ts: ok");

@@ -50,8 +50,13 @@ assert.doesNotMatch(
 );
 assert.match(
   composer,
-  /<HomeSuggestionPills[\s\S]*?onPick=\{insertPrompt\}/,
-  "suggestion picks insert into the composer (never auto-send)",
+  /<HomeFromTaskRow[\s\S]*?onPickSuggestion=\{insertPrompt\}/,
+  "from-task picks insert into the composer (never auto-send)",
+);
+assert.doesNotMatch(
+  composer,
+  /<HomeSuggestionPills/,
+  "the cold-start pills are gone (cards-only home 2026-07-22)",
 );
 assert.doesNotMatch(composer, /HomeNeedsYou|HomeSuggestions\b/, "the standalone strips stay gone");
 assert.match(digest, /kind: "needs"/, "the digest builder emits needs-you cards");
