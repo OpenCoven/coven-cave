@@ -73,6 +73,7 @@ import {
   flushAppPreferences,
   readAppPreferences,
   refreshAppPreferences,
+  subscribeAppPreferences,
   updateAppPreferences,
 } from "@/lib/app-preferences";
 import {
@@ -2310,6 +2311,28 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     setAppearanceHydrated(true);
   }, []);
 
+  // External theme changes — the 10s /api/theme poll, another tab via the
+  // preferences BroadcastChannel, a phone PATCH — land in the store and
+  // repaint the app, but this section hydrated its selection state once on
+  // mount, leaving the theme grid and token-row swatches stale until a full
+  // reload (cave-hkfq). Follow the store. setCustomData keeps the previous
+  // object when content is unchanged so the persist effect (which watches
+  // customData) doesn't echo a PUT for every unrelated store notify.
+  useEffect(() => {
+    if (!appearanceHydrated) return;
+    return subscribeAppPreferences(() => {
+      const theme = readAppPreferences().appearance.theme;
+      setActiveTheme(readPersistedTheme());
+      setMode(readPersistedMode());
+      const next = theme.id === "custom" ? theme.custom : null;
+      setCustomData((prev) => {
+        if (prev === next) return prev;
+        if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+        return next;
+      });
+    });
+  }, [appearanceHydrated]);
+
   const handleSelectPreset = (id: PresetTheme) => {
     setActiveTheme(id);
     setCustomData(null);
@@ -2508,7 +2531,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
-          reloadKey={`${activeTheme}:${mode}:${customData ? "c" : "p"}`}
+          reloadKey={`${activeTheme}:${mode}:${customData ? JSON.stringify(customData.cssVars) : "preset"}`}
           onChange={reloadCustomData}
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">

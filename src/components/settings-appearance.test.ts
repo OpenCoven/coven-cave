@@ -552,3 +552,30 @@ assert.doesNotMatch(
   /const raw = null;/,
   "applyTokenOverride's dead localStorage-era fork branch stays deleted",
 );
+
+// ── The section must follow the store, not its mount-time snapshot ───────────
+// External theme changes — the 10s /api/theme poll, another tab via the
+// preferences BroadcastChannel, a phone PATCH — land in the store and repaint
+// the app, but AppearanceSection hydrated activeTheme/mode/customData once on
+// mount, so the theme grid and token-row swatches kept showing stale values
+// until a full page reload (cave-hkfq).
+assert.match(
+  settings,
+  /if \(!appearanceHydrated\) return;\s*\n\s*return subscribeAppPreferences\(\(\) => \{[\s\S]{0,300}setActiveTheme\(readPersistedTheme\(\)\);\s*\n\s*setMode\(readPersistedMode\(\)\);[\s\S]{0,600}\}\);\s*\n\s*\}, \[appearanceHydrated\]\);/,
+  "the appearance section re-syncs its selection state on every preferences-store notify",
+);
+assert.match(
+  settings,
+  /setCustomData\(\(prev\) => \{[\s\S]{0,400}JSON\.stringify\(prev\) === JSON\.stringify\(next\)[\s\S]{0,100}return prev;/,
+  "custom-theme state keeps its object identity when content is unchanged — store notifies must not retrigger the persist effect (echo PUTs)",
+);
+assert.match(
+  settings,
+  /reloadKey=\{`\$\{activeTheme\}:\$\{mode\}:\$\{customData \? JSON\.stringify\(customData\.cssVars\) : "preset"\}`\}/,
+  "the token rows' reload key carries the custom payload's CONTENT, so external edits re-resolve the swatches",
+);
+assert.doesNotMatch(
+  settings,
+  /customData \? "c" : "p"/,
+  "the presence-flag reload key is gone — it never changed while staying on the custom theme",
+);
