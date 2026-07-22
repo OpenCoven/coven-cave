@@ -136,6 +136,19 @@ test("PROVIDER_ERROR without hint clears any stale hint", () => {
   assert.equal(next.hint, undefined);
 });
 
+test("PROVIDER_ERROR clears a stale missingKey so unrelated errors don't offer a key fix", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, {
+    type: "SESSION_FAILED",
+    errorCode: "vault_key_unresolved",
+    missingKey: "ELEVENLABS_API_KEY",
+  });
+  const next = reduce(s, { type: "PROVIDER_ERROR", errorCode: "connect_failed" });
+  assert.equal(next.state, "error");
+  assert.equal(next.missingKey, undefined);
+});
+
 test("error → requesting-mic on RETRY (clears errorCode)", () => {
   const errored = reduce(reduce(initialState, { type: "START" }), { type: "MIC_DENIED" });
   const next = reduce(errored, { type: "RETRY" });

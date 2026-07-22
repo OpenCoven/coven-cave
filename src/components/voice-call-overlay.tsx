@@ -10,6 +10,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine } from "@/lib/voice/types";
 import { voiceErrorHint } from "@/lib/voice/types";
+import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 
 type Props = {
@@ -64,8 +65,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           dispatch({ type: "SESSION_FAILED", errorCode: "network" });
         }
       } else if (state.state === "connecting") {
-        const provider = getVoiceProvider(familiar.voiceProvider ?? "");
         const grant = grantRef.current;
+        // The grant names the provider that actually minted — trust it over
+        // the familiar prop, which can be stale right after an in-place
+        // settings fix (cave-xz57).
+        const provider = getVoiceProvider(grant?.provider ?? familiar.voiceProvider ?? "");
         const mic = micStreamRef.current;
         const callId = state.callId;
         if (!provider || !grant || !mic || !callId) {
@@ -138,6 +142,53 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
     return () => clearInterval(id);
   }, [state.state]);
 
+  // In-place recovery (cave-xz57): a key-shaped failure offers a vault
+  // editor right in the error card — save the key and retry without leaving
+  // the call.
+  const [keyDraft, setKeyDraft] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+  const [keySaveError, setKeySaveError] = useState<string | null>(null);
+  useEffect(() => {
+    if (state.state !== "error") {
+      setKeyDraft("");
+      setKeySaveError(null);
+    }
+  }, [state.state]);
+
+  const fixableKey = state.state === "error"
+    ? voiceRecoveryVaultKey({
+        errorCode: state.errorCode,
+        missingKey: state.missingKey,
+        providerId: familiar.voiceProvider,
+      })
+    : null;
+
+  const saveKeyAndRetry = async () => {
+    const key = fixableKey;
+    const value = keyDraft.trim();
+    if (!key || !value || savingKey) return;
+    setSavingKey(true);
+    setKeySaveError(null);
+    try {
+      const res = await fetch("/api/vault", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, storage: "encrypted", value }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!json?.ok) {
+        setKeySaveError(`Couldn't save the key${json?.error ? ` — ${json.error}` : ` (http ${res.status})`}.`);
+        return;
+      }
+      setKeyDraft("");
+      dispatch({ type: "RETRY" });
+    } catch {
+      setKeySaveError("Couldn't save the key — is the daemon running?");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   const cleanup = () => {
     micStreamRef.current?.getTracks().forEach(t => t.stop());
     micStreamRef.current = null;
@@ -175,6 +226,38 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             <div className="voice-call-overlay__error" role="alert">
               <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
               {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
+              {fixableKey && (
+                <form
+                  className="voice-call-overlay__fix"
+                  onSubmit={(e) => { e.preventDefault(); void saveKeyAndRetry(); }}
+                >
+                  <label className="voice-call-overlay__fix-label" htmlFor="voice-call-overlay-key">
+                    Update {fixableKey} and retry
+                  </label>
+                  <div className="voice-call-overlay__fix-row">
+                    <input
+                      id="voice-call-overlay-key"
+                      className="voice-call-overlay__fix-input focus-ring"
+                      type="password"
+                      autoComplete="off"
+                      placeholder="Paste a new key"
+                      value={keyDraft}
+                      onChange={(e) => setKeyDraft(e.target.value)}
+                      disabled={savingKey}
+                    />
+                    <button
+                      type="submit"
+                      className="voice-call-overlay__retry focus-ring"
+                      disabled={savingKey || keyDraft.trim() === ""}
+                    >
+                      {savingKey ? "Saving…" : "Save & retry"}
+                    </button>
+                  </div>
+                  {keySaveError && (
+                    <div className="voice-call-overlay__fix-error" role="alert">{keySaveError}</div>
+                  )}
+                </form>
+              )}
               <button
                 type="button"
                 className="voice-call-overlay__retry focus-ring"
@@ -261,6 +344,8 @@ function errorMessage(code: string | undefined): string {
       return "A required API key isn't set up in your Vault.";
     case "voice_not_configured":
       return "This familiar has no voice provider configured.";
+    case "not_implemented":
+      return "This voice provider isn't available yet.";
     // ElevenLabs-specific
     case "elevenlabs_key_invalid":
     case "elevenlabs_key_missing":
@@ -272,8 +357,9 @@ function errorMessage(code: string | undefined): string {
       return "ElevenLabs speech synthesis failed.";
     // Brain / familiar runtime issues
     case "familiar_brain_failed":
-    case "provider_mint_failed":
       return "The familiar's voice brain couldn't start.";
+    case "provider_mint_failed":
+      return "The voice provider couldn't start the call.";
     default:
       return "The call ran into a problem. Please try again.";
   }

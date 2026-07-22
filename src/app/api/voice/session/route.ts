@@ -11,15 +11,14 @@ import {
   DEFAULT_ELEVENLABS_VOICE_ID,
 } from "../../../../lib/voice/elevenlabs-shared.ts";
 import { isSafeConversationSessionId } from "../../../../lib/cave-conversations.ts";
+import {
+  VOICE_VAULT_KEY_BY_PROVIDER,
+  isVoiceKeyErrorMessage,
+  voiceRecoveryVaultKey,
+} from "../../../../lib/voice/vault-key-recovery.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  gemini: "GOOGLE_API_KEY",
-  elevenlabs: "ELEVENLABS_API_KEY",
-};
 
 // Providers whose brain lives on this machine (or behind our own chat bridge)
 // and therefore mint without any vault secret.
@@ -105,7 +104,7 @@ export async function POST(req: Request) {
   // needs a vault key.
   let apiKey = "";
   if (!KEYLESS_PROVIDERS.has(provider.id)) {
-    const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
+    const vaultKey = VOICE_VAULT_KEY_BY_PROVIDER[provider.id];
     if (!vaultKey) {
       return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
     }
@@ -142,10 +141,24 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // Providers throw `machine_code: human detail` for known failures
+    // (elevenlabs_key_invalid, not_implemented, …). Surface the code so the
+    // overlay can map it to actionable copy instead of a generic mint
+    // failure, and name the vault key when the failure is key-shaped so the
+    // error card can offer an in-place fix. (cave-xz57)
+    const structured = /^([a-z][a-z0-9_]*):\s*([\s\S]+)$/.exec(msg);
+    const code = structured ? structured[1] : "provider_mint_failed";
+    const vaultKey = VOICE_VAULT_KEY_BY_PROVIDER[provider.id];
+    const keyFixable = Boolean(vaultKey) && (
+      voiceRecoveryVaultKey({ errorCode: code, providerId: provider.id }) !== null ||
+      isVoiceKeyErrorMessage(msg)
+    );
     return NextResponse.json({
       ok: false,
-      error: "provider_mint_failed",
+      error: code,
       providerMessage: msg,
+      ...(structured ? { hint: structured[2] } : {}),
+      ...(keyFixable ? { missingKey: vaultKey } : {}),
     }, { status: 502 });
   }
 

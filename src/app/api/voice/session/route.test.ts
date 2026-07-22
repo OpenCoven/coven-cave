@@ -120,6 +120,41 @@ test("502 provider_mint_failed surfaces provider message verbatim", async () => 
   assert.equal(res.status, 502);
   assert.equal(json.error, "provider_mint_failed");
   assert.match(json.providerMessage, /quota exhausted/);
+  // Not a credentials failure — the overlay must not offer a key editor.
+  assert.equal(json.missingKey, undefined);
+});
+
+test("502 surfaces the machine code + vault key when ElevenLabs rejects the key (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  process.env.ELEVENLABS_API_KEY = "xi-bad";
+  nextFetchResponse = new Response("{}", { status: 401 });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  delete process.env.ELEVENLABS_API_KEY;
+  assert.equal(res.status, 502);
+  // The probe's `code: detail` shape splits into an overlay-mappable error
+  // plus a human hint, and names the key so the error card can fix it in
+  // place.
+  assert.equal(json.error, "elevenlabs_key_invalid");
+  assert.match(json.hint, /rejected the API key/);
+  assert.equal(json.missingKey, "ELEVENLABS_API_KEY");
+});
+
+test("502 names the vault key when OpenAI rejects credentials as free text (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-bad";
+  nextFetchResponse = new Response(
+    JSON.stringify({ error: { message: "Incorrect API key provided: sk-bad" } }),
+    { status: 401 },
+  );
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(json.error, "provider_mint_failed");
+  assert.match(json.providerMessage, /Incorrect API key/);
+  assert.equal(json.missingKey, "OPENAI_API_KEY");
 });
 
 test("200 happy path returns grant and ULID-shaped callId", async () => {
