@@ -90,10 +90,16 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
 
   // No stored preference: land on the desk when missions exist (or are still
   // loading — the desk shows its own loading state), otherwise start at the
-  // Prompt intake. Only explicit selections persist, so the default keeps
-  // tracking reality instead of freezing the first visit's answer.
+  // Prompt intake. The answer latches once loading settles: a mission
+  // appearing later (an automation firing mid-visit) or the list emptying
+  // must not flip tabs under the user and discard an in-progress prompt
+  // draft (cave-9589). Only explicit selections persist to storage.
   const activeTab: ResearchDeskTab =
     tab ?? (research.loading || research.missions.length > 0 ? "desk" : "prompt");
+  useEffect(() => {
+    if (tab !== null || research.loading) return;
+    setTab(research.missions.length > 0 ? "desk" : "prompt");
+  }, [tab, research.loading, research.missions.length]);
 
   const selectTab = useCallback((next: ResearchDeskTab) => {
     setTab(next);

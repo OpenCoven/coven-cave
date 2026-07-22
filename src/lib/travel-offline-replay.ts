@@ -21,7 +21,7 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import { flowRunRedactsData } from "@/lib/flow/flow-doc";
 import type { FlowRunStepStatus } from "@/lib/flows";
 import { startAutomationRun } from "@/lib/server/automation-runner";
-import { recordFlowRun } from "@/lib/server/flow-store";
+import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
@@ -251,10 +251,10 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const customData = extractFlowCustomData(flow);
   const redacted = flowRunRedactsData(flow, options.mode as never);
   const seenActiveAgentStep = { value: false };
-  await recordFlowRun({
+  const runFields = {
     flowId: flow.id,
     flowName: flow.name,
-    status: "running",
+    status: "running" as const,
     mode: flowExecutionMode(options.mode),
     ...(Object.keys(customData).length > 0 ? { customData } : {}),
     ...(redacted ? { redacted: true } : {}),
@@ -265,10 +265,20 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
       status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
     })),
     summary: `replayed agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
+    source: "cave" as const,
     sessionId,
     flowSnapshot: flow,
-  });
+  };
+  // The queued placeholder run's id rides in the payload — update that run in
+  // place so callers that stored it (research mission iterations, the runs
+  // list) keep pointing at the run that actually executes. Fall back to a
+  // fresh record for legacy queue items or a placeholder evicted by the cap.
+  const placeholderRunId = stringValue(payload.placeholderRunId);
+  if (placeholderRunId) {
+    const updated = await updateFlowRun(placeholderRunId, runFields);
+    if (updated) return;
+  }
+  await recordFlowRun(runFields);
 }
 
 async function replayJob(item: CaveTravelQueueItem): Promise<void> {

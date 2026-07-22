@@ -515,3 +515,34 @@ test("createAndStart cannot resurrect a mission cancelled during launch", async 
     "the launch-result save must not overwrite a concurrent cancel",
   );
 });
+
+test("continue and refine are refused while the linked automation is ACTIVE", async () => {
+  const activeAutomation = {
+    id: "automation-1",
+    rrule: "RRULE:FREQ=DAILY",
+    status: "ACTIVE" as const,
+    checkpointFingerprint: "fp",
+  };
+  let stored = checkpointMission({ automation: activeAutomation });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+  }));
+  // Two agents writing one mission workspace: manual iterations are refused
+  // until the schedule is paused (cave-7had).
+  await assert.rejects(
+    runner.act(stored.id, { action: "continue" }),
+    /pause the linked automation before running manually/,
+  );
+  await assert.rejects(
+    runner.act(stored.id, { action: "refine", direction: "dig deeper" }),
+    /pause the linked automation before running manually/,
+  );
+  assert.equal(stored.iterations.length, 1, "no manual iteration may start under an ACTIVE schedule");
+
+  stored = checkpointMission({
+    automation: { ...activeAutomation, status: "PAUSED" as const },
+  });
+  const result = await runner.act(stored.id, { action: "continue" });
+  assert.equal(result.iterations.length, 2, "a paused schedule releases the manual-run guard");
+});

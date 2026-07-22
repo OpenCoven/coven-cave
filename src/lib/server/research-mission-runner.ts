@@ -598,6 +598,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
 
       if (!allowedResearchActions(mission).includes(input.action)) return mission;
+      // A manual iteration would run concurrently with the linked ACTIVE
+      // autoresearch schedule — two agents writing one mission workspace
+      // (cave-7had). Require pausing the automation first.
+      if (
+        (input.action === "refine" || input.action === "continue") &&
+        mission.automation?.status === "ACTIVE"
+      ) {
+        throw new Error("pause the linked automation before running manually");
+      }
       if (input.action === "refine") {
         const direction = input.direction?.trim().slice(0, 2_000) ?? "";
         if (!direction) throw new Error("refined direction required");

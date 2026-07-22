@@ -43,6 +43,9 @@ const VALIDATION_ERRORS = new Set([
 
 function actionErrorStatus(message: string): number {
   if (message === "research mission not found") return 404;
+  // Manual runs are refused while the linked automation is ACTIVE — a state
+  // conflict the user resolves by pausing the schedule, not a bad request.
+  if (message === "pause the linked automation before running manually") return 409;
   if (
     VALIDATION_ERRORS.has(message) ||
     // Retry project-root rejections carry the offending path; source-patch
