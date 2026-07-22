@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   homeComposer,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
   "the home pill anchors the composer footer band (2026-07-21 home parity pass moved it down from the utility row)",
 );
 assert.match(
@@ -83,7 +83,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
   "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
 );
 

@@ -71,8 +71,8 @@ assert.match(
 );
 assert.match(
   menuBar,
-  /placeholder=\{`Search or ask \$\{searchTarget\}\.\.\.`\}/,
-  'the field reads "Search or ask <active familiar>…"',
+  /placeholder="Search Cave\.\.\."/,
+  'the field reads "Search Cave…" so it does not compete with the Nova composer',
 );
 assert.match(
   menuBar,

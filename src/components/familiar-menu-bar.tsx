@@ -107,9 +107,9 @@ export function FamiliarMenuBar({
           className="menu-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder={`Search or ask ${searchTarget}...`}
-          aria-label={`Search anything or ask ${searchTarget}`}
-          title={`Search everything — or ask ${searchTarget} (⌘K opens the command palette)`}
+          placeholder="Search Cave..."
+          aria-label="Search Cave"
+          title="Search everything in your Cave (⌘K opens the command palette)"
           autoComplete="off"
           spellCheck={false}
         />

@@ -75,7 +75,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
   "the context pill anchors the footer band beneath the control row",
 );
 assert.match(
@@ -177,21 +177,27 @@ assert.doesNotMatch(
   "the solid accent-filled active pill treatment is retired",
 );
 
-// ── "Jump back in" recent-chats strip REMOVED ──
-// The standalone recents strip was dropped from the home surface; resume now
-// lives in the hearth card's Continue section.
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue section)");
+// ── Below-composer stack REMOVED (ultra-minimal home) ──
+// The home surface is now the composer, full stop — ChatGPT/Claude-grade
+// minimal. The Continue / Open work / Prompt snippets sections and the
+// Ask Salem doorway were pulled off home (they live in the sidebar / their
+// own surfaces). Only the starter suggestion pills remain, and only on a
+// blank draft. HomeComposer still accepts the resume handler prop for
+// callers/other surfaces even though home no longer renders Continue.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler");
 assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Chat revamp 1a: the digest carousel is HIDDEN from the default home (the
-// component file survives); its signal folds into Continue + Open work.
+// Chat revamp 1a: the digest carousel is HIDDEN from the default home.
 assert.doesNotMatch(source, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
-assert.match(
-  source,
-  /<HomeContinue[\s\S]*?sessions=\{sessions\}[\s\S]*?familiarNameById=\{familiarNameById\}[\s\S]*?onOpenSession=\{onOpenSession\}/,
-  "the Continue section receives the resume handler",
-);
+// Minimal pass: the stacked sections and the Ask Salem doorway are gone.
+// HomeContinue re-added in reference parity pass (2026-07-22): assert.doesNotMatch(source, /<HomeContinue/, "...");
+assert.match(source, /<HomeContinue/, "Continue cards present (reference parity pass 2026-07-22)");
+assert.doesNotMatch(source, /<HomeOpenWork/, "the Open work section no longer renders on the minimal home");
+assert.doesNotMatch(source, /<HomeSnippets/, "the Prompt snippets section no longer renders on the minimal home");
+assert.doesNotMatch(source, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");
+// The one affordance that stays: starter suggestion pills on a blank draft.
+assert.match(source, /<HomeSuggestionPills/, "the starter suggestion pills stay on the minimal home");
 
 console.log("home-composer-polish.test.ts: ok");

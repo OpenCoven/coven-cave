@@ -1,29 +1,18 @@
-/* home-composer.css — sleek universal intent surface.
- * One composer card with integrated action bar.
- * No external chip rows. No uppercase labels in the UI.
- */
-
 /* ── Root ────────────────────────────────────────────────────────────────── */
 .home-composer-root {
   display: flex;
   flex-direction: column;
-  /* `safe` keeps the cross-axis / main-axis centering from clipping
-     the top of the content when the viewport is shorter than the
-     composer + hero + suggestions stack (common on phones and on
-     narrow desktop windows). When everything fits, content is
-     centered as before; when it overflows, alignment falls back to
-     `flex-start` so the user can scroll to see the top. */
+
   align-items: safe center;
-  justify-content: safe center;
+  justify-content: safe flex-start;
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: var(--space-10) var(--space-8) var(--space-10);
+  padding: var(--space-8) clamp(24px, 4vw, 32px) var(--space-8);
   gap: var(--space-4);
   overflow-y: auto;
   box-sizing: border-box;
-  /* Radial presence wash behind the hearth card (chat revamp 1a) — the base
-     surface carries two soft accent pools instead of a flat panel color. */
+
   background:
     radial-gradient(
       640px 420px at 84% 14%,
@@ -35,11 +24,7 @@
       color-mix(in oklch, var(--accent-presence) 5%, transparent),
       transparent 70%
     );
-  /* The composer fills the width of the area it resides in (the detail panel),
-   * centered within it. No viewport-centering translate: shifting toward the
-   * viewport center always pushed content toward the wider side panel, and when
-   * that panel holds the native browser webview (which paints on top of web
-   * content) the overflow got covered and the composer read as clipped. */
+
   transition: none;
 }
 
@@ -74,35 +59,41 @@
  *   outgrows a short viewport. On tall viewports the card grows to the root's
  *   bottom inset (no dead wash strip below it); `0` shrink keeps the intrinsic
  *   height as the floor so short windows still scroll. */
+/* ── Hearth card — refinement pass (2026-07-22) ────────────────────────────
+ *   The greeting, headline, agent label, composer, and suggestions read as one
+ *   unified launch cluster. The heavy bordered container is retired: the visible
+ *   frame emphasised the large empty area below the composer at 1280×720. It is
+ *   now an invisible layout wrapper — the radial presence wash on the root is the
+ *   only ambient surface. Cluster is capped ~900px and sits slightly ABOVE the
+ *   vertical centre of the usable workspace (pushed ~84px down from dead-top via
+ *   the root's justify + a top offset), never in a framed dead zone. */
 .home-hearth-card {
   display: flex;
   flex-direction: column;
-  flex: 1 0 auto;
+  flex: 0 1 auto;
   width: 100%;
-  max-width: min(930px, 100%);
+  max-width: min(900px, 100%);
   margin-inline: auto;
-  padding: var(--space-5) var(--space-6) var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  padding: 0 var(--space-2);
+
+  margin-block: clamp(48px, 9vh, 96px) auto;
+  border: 0;
+  background: transparent;
 }
 
 @media (max-width: 520px) {
   .home-hearth-card {
-    padding: var(--space-4) var(--space-4) var(--space-3);
+    padding: 0 var(--space-1);
+    margin-block: var(--space-4) auto;
   }
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
 .home-composer-hero {
-  text-align: left;
-  margin-bottom: var(--space-4);
+  text-align: center;
+  margin-bottom: var(--space-5);
 }
 
-/* Presence kicker — the cave greets you before asking for intent. It samples
-   the client clock after mount, so it fades in via .is-ready (the reserved
-   min-height keeps the headline from shifting). Accent-tinted per the hearth
-   card spec (10px uppercase, wide tracking). */
 .home-composer-eyebrow {
   display: inline-flex;
   align-items: center;
@@ -116,10 +107,21 @@
   color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
   opacity: 0;
   transition: opacity 400ms var(--ease-standard);
+  justify-content: center;
 }
 
 .home-composer-eyebrow.is-ready {
   opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-hearth-card {
+    animation: home-cluster-settle 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+}
+@keyframes home-cluster-settle {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Presence dot — the brand accent means "something is alive here". */
@@ -142,18 +144,13 @@
   50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
 }
 
-/* Cave home headline — Classic Coven identity moment.
-   Uses the canonical display face (EB Garamond) per OpenCoven DESIGN.md §4.
-   The serif is intentional: the home surface is where Val + her familiars
-   *arrive* every session, and the type should feel like a coven's field
-   manual, not a Vercel dashboard. */
 .home-composer-headline {
   font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(23px, 2.4vw, 27px);
-  line-height: 1.15;
-  color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
-  letter-spacing: -0.015em;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.12;
+  color: color-mix(in oklch, var(--text-primary) 92%, var(--text-muted));
+  letter-spacing: -0.02em;
   margin: 0 0 var(--space-1);
 }
 
@@ -168,8 +165,6 @@
   white-space: nowrap;
 }
 
-/* Wrap around the composer card so the slash menu can render above without
- * being clipped by the card's `overflow: hidden`. */
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
@@ -230,8 +225,7 @@
   max-width: 100%;
 }
 
-/* While a file drag hovers the card, tint the panel border toward the accent
-   so the drop target reads before the overlay fades in. */
+/* File drag: tint border toward accent so the drop target reads before the overlay fades in. */
 .home-composer-card.is-drop-active {
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
 }
@@ -261,8 +255,92 @@
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
 }
 
-/* Footer band retired (chat revamp 1d): its pickers collapsed into the
- * composer context pill and the "+" menu's Model & tuning panel. */
+/* Reference parity (2026-07-22): persistent violet border + soft glow so the composer reads as
+ * the page's hero surface matching the target mock. Focus deepens both. */
+.home-composer-card {
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 42%, var(--border-strong)) !important;
+  box-shadow:
+    0 18px 56px oklch(0 0 0 / 26%),
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent) !important;
+}
+.home-composer-card:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-strong)) !important;
+  box-shadow:
+    0 18px 52px oklch(0 0 0 / 28%),
+    0 0 0 1px var(--ring-focus-soft),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent) !important;
+}
+
+.home-composer-toolbar {
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
+  padding: var(--space-2) var(--space-3);
+  margin-top: 0;
+}
+
+/* ── Bottom toolbar (refinement 2026-07-22) ─────────────────────────────────
+ *   A clean bar inside the composer's underside. The write surface stays
+ *   dominant above; project + model ride here as two separate labelled chips
+ *   (no ambiguous combined pill), left-aligned. Send docks bottom-right in the
+ *   control row and vertically aligns with this bar. */
+.home-composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  min-height: 40px;
+}
+.home-composer-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cave-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 42%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 450;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.cave-context-chip:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--text-primary);
+}
+.cave-context-chip:disabled { opacity: 0.55; cursor: default; }
+.cave-context-chip__lead {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.cave-context-chip__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cave-context-chip__chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+@container (max-width: 620px) {
+  .cave-context-chip { max-width: 46%; height: var(--touch-target); }
+}
 
 /* ── Textarea ──────────────────────────────────────────────────────────────
  *   Sizing and chrome come from the shared .cave-composer-input class plus the
@@ -369,12 +447,6 @@
 }
 .hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* The standalone footer project chip retired with the band (chat revamp 1d);
- * project selection opens from the composer context pill. */
-
-/* Destination tabs — Chat vs Task as flat inline field tabs: quiet text
- * sitting directly in the control row (no segmented box), with a 2px accent
- * underline marking the active destination. */
 .hc-dest-pills {
   display: inline-flex;
   align-items: stretch;
@@ -383,8 +455,6 @@
   min-width: 0;
 }
 
-/* Inline placement (reference layout): the tabs sit inside the card's
- * control row next to the + attach button — compact, no outer margin. */
 .hc-dest-pills--inline {
   position: relative;
 }
@@ -396,13 +466,11 @@
   min-height: 28px;
   box-sizing: border-box;
   font-size: var(--text-sm);
-  /* Inactive tabs recede: lighter weight + faded label so the underlined
-   * active tab is unmistakably the selected one. Hover/active brighten. */
+
   font-weight: 450;
   padding: var(--space-1);
   border: none;
-  /* Reserve the indicator height on every tab so activation can't shift
-   * the row; only the colour changes. */
+
   border-bottom: 2px solid transparent;
   border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: transparent;
@@ -432,8 +500,6 @@
   border-bottom-color: var(--accent-presence);
 }
 
-/* The active icon takes the accent so the tab reads as selected even before
- * the underline registers; the label stays primary-text for legibility. */
 .hc-dest-pill.active svg {
   color: var(--accent-presence);
   opacity: 1;

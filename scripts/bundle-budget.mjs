@@ -46,10 +46,11 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // HOME CSS is the complete first-load stylesheet set for `/`. The Phase A
 // stylesheet facades preserve the same cascade, but Turbopack emits the
 // imported home/chat/markdown modules as independently optimized chunks:
-// current measurements are 665 KiB root / 886 KiB home. Keep a narrow 900 KiB
-// home ceiling so a surface sheet re-entering the startup graph still fails.
+// current measurements are 665 KiB root / 904 KiB home. Budget raised 900→910
+// in the home-minimal PR (2026-07-22): new home Continue cards + context-chip
+// styles are home-startup surface CSS (not cross-route), +~18 KiB net.
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 900) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 910) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
