@@ -86,9 +86,14 @@ function cleanEffectiveModelId(model: unknown, harness: unknown): string | null 
 function effectiveModelForHarness(model: unknown, harness: string): string | null {
   const cleanModel = cleanEffectiveModelId(model, harness);
   // A familiar can retain its old model after its runtime is switched in
-  // Studio. Do not pass a Codex/Claude/Copilot id to Grok Build; selecting
-  // Grok's default is preferable to making every subsequent chat fail.
-  if (harness === "grok" && cleanModel && !/^(?:xai\/)?grok-/i.test(cleanModel)) {
+  // Studio. Do not pass Cave's provider-qualified Codex/Claude/Copilot ids
+  // to Grok Build, but preserve unqualified custom Grok model ids: Grok's
+  // local catalog may expose user-defined models such as "my-model".
+  if (
+    harness === "grok" &&
+    cleanModel &&
+    /^(?:openai|anthropic|github|nous)\//i.test(cleanModel)
+  ) {
     return null;
   }
   return cleanModel;

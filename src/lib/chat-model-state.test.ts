@@ -160,6 +160,17 @@ assert.equal(
   "an explicitly configured familiar Grok model remains selectable",
 );
 assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "my-model",
+  }).effectiveModel,
+  "my-model",
+  "unqualified custom Grok model ids must not be mistaken for stale Cave provider models",
+);
+assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
     .effectiveModel,
   "anthropic/claude-sonnet-4-6",
