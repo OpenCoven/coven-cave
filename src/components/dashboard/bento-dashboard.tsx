@@ -16,6 +16,8 @@ import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profi
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import { buildFamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { AuthedImage } from "@/components/ui/authed-image";
+import { useHeatTip } from "@/components/ui/heat-tip";
+import { formatHeatTip } from "@/lib/heat-tip";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   MATRIX_COLUMNS,
@@ -147,6 +149,7 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
   const pipsFilled = streakPips(streak, bestStreak);
 
   const heat = useMemo(() => heatmapCells(data.sessions, nowMs), [data.sessions, nowMs]);
+  const heatTip = useHeatTip();
 
   const feed = useMemo(
     () =>
@@ -368,15 +371,16 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
               </button>
               {heatOpen ? (
                 <>
-                  <div className="bd-heat-grid">
+                  <div className="bd-heat-grid" {...heatTip.gridProps}>
                     {heat.cells.map((c) => (
                       <div
                         key={c.date}
                         className={`bd-heat-cell${c.future ? " bd-heat-cell--future" : ` bd-heat-l${c.level}`}`}
-                        title={c.future ? undefined : `${c.date} · ${c.count} session${c.count === 1 ? "" : "s"}`}
+                        data-tip={c.future ? undefined : formatHeatTip(c.date, c.count)}
                       />
                     ))}
                   </div>
+                  {heatTip.tip}
                   <div className="bd-heat-months" aria-hidden>
                     {heat.monthLabels.map((m, i) => (
                       <span key={`${m}-${i}`}>{m}</span>

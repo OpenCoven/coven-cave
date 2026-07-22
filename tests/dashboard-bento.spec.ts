@@ -103,8 +103,8 @@ test("heatmap is an aria-expanded collapsible with a full year of cells", async 
   await expect(head).toHaveAttribute("aria-expanded", "true");
   // 53 week columns × 7 days.
   await expect(page.locator(".bd-heat-cell")).toHaveCount(53 * 7);
-  // Cells carry human tooltips ("N sessions · <date>").
-  await expect(page.locator(".bd-heat-cell[title*='session']").first()).toBeAttached();
+  // Cells carry human tooltip labels ("N sessions on <date>") via data-tip.
+  await expect(page.locator(".bd-heat-cell[data-tip*='session']").first()).toBeAttached();
 
   await head.click();
   await expect(head).toHaveAttribute("aria-expanded", "false");

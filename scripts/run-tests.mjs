@@ -263,6 +263,7 @@ export const SUITES = {
     "src/lib/dashboard-model.test.ts",
     "src/lib/dashboard-analytics.test.ts",
     "src/lib/bento-dashboard.test.ts",
+    "src/lib/heat-tip.test.ts",
     "src/lib/coven-analytics.test.ts",
     "src/app/dashboard-page.test.ts",
     "src/app/route-inventory.test.ts",
