@@ -8,6 +8,7 @@ import {
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
+import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -585,10 +586,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       { value: "", label: `Inherit workspace default: ${defaultHarnessLabel}` },
                       {
                         label: "Available runtimes",
-                        options: harnesses.map((h) => ({
-                          value: h.id,
-                          label: `${h.label}${h.installed ? "" : " (not installed)"}`,
-                        })),
+                        // Binding-picker policy: the daemon's adapter list
+                        // includes tool installs (Coven Code) that aren't
+                        // per-familiar runtime choices.
+                        options: harnesses
+                          .filter((h) => isBindableRuntimeChoice(h.id))
+                          .map((h) => ({
+                            value: h.id,
+                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
+                          })),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />

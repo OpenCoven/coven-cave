@@ -78,8 +78,8 @@ assert.match(
 );
 assert.match(
   source,
-  /label: "Available runtimes"[\s\S]{0,240}harnesses\.map/,
-  "Other available runtimes should be grouped below the inherited default option",
+  /label: "Available runtimes"[\s\S]{0,360}harnesses\s*\.filter\(\(h\) => isBindableRuntimeChoice\(h\.id\)\)[\s\S]{0,120}\.map/,
+  "Other available runtimes group below the inherited default, filtered to bindable choices (no Coven Code)",
 );
 assert.match(
   source,
