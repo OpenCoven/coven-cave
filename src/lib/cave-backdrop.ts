@@ -27,7 +27,8 @@ import {
   createBackdropImageState,
   type BackdropMigrationResult,
 } from "@/lib/backdrop-image-state";
-import { MAX_FAMILIAR_BACKDROPS } from "@/lib/preferences-schema";
+import { MAX_FAMILIAR_BACKDROPS, type CaveMode } from "@/lib/preferences-schema";
+import { activeCustomThemeVariables } from "@/lib/theme-runtime";
 
 const PREFS_KEY = "cave:backdrop:v1";
 const DB_NAME = "cave-backdrop";
@@ -375,6 +376,19 @@ export function fitAccentToBackground(seed: BackdropAccentSeed, bgCss: string): 
 
 // ── applying to the document ─────────────────────────────────────────────────
 
+/** The active custom theme's own `--accent-presence`, if it installs one.
+ *  Custom/forked themes carry their accent as an inline property (there is no
+ *  preset CSS behind them), so the backdrop layer must hand the token back to
+ *  the theme rather than blind-remove it (#3672). */
+function customThemeAccent(): string | null {
+  const theme = readAppPreferences().appearance.theme;
+  if (theme.id !== "custom" || !theme.custom) return null;
+  const attr =
+    typeof document !== "undefined" ? document.documentElement.getAttribute("data-mode") : null;
+  const mode: CaveMode = attr === "light" || attr === "dark" ? attr : theme.resolvedMode;
+  return activeCustomThemeVariables(theme.custom, mode)["--accent-presence"] ?? null;
+}
+
 /** Applies prefs (and optionally the image object URL) to <html>. Pass
  *  `imageUrl: undefined` to leave the current image untouched (pref-only
  *  updates); `null` clears it. */
@@ -393,7 +407,12 @@ export function applyBackdropToDocument(prefs: BackdropPrefs, imageUrl?: string 
     const bg = getComputedStyle(root).getPropertyValue("--bg-base").trim() || "oklch(0.13 0.022 293)";
     root.style.setProperty("--accent-presence", fitAccentToBackground(prefs.accentSeed, bg));
   } else {
-    root.style.removeProperty("--accent-presence");
+    // Restore the theme's own accent. For presets that means removing the
+    // inline override so the theme CSS shows; a custom theme's accent IS an
+    // inline property, so removal would revert the user's edit (#3672).
+    const themeAccent = customThemeAccent();
+    if (themeAccent) root.style.setProperty("--accent-presence", themeAccent);
+    else root.style.removeProperty("--accent-presence");
   }
 }
 
