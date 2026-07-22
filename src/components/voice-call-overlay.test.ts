@@ -169,4 +169,69 @@ assert.match(
   "the provider hint renders under the headline when present",
 );
 
+// ── In-place recovery: key-shaped failures are fixable without leaving the
+// call (cave-xz57). Was: every connect failure dead-ended at "Try again" —
+// a missing/rejected ElevenLabs (or any provider) key sent the user hunting
+// through Vault settings while the call overlay sat useless.
+assert.match(
+  component,
+  /import\s+\{[^}]*voiceRecoveryVaultKey[^}]*\}\s+from\s+["']@\/lib\/voice\/vault-key-recovery["']/,
+  "overlay derives key-fixability from the shared recovery module",
+);
+assert.match(
+  component,
+  /voiceRecoveryVaultKey\(\{\s*errorCode:\s*state\.errorCode,\s*missingKey:\s*state\.missingKey,\s*providerId:\s*familiar\.voiceProvider,\s*\}\)/,
+  "fixable key resolution threads the server's missingKey and the familiar's provider",
+);
+assert.match(
+  component,
+  /\{fixableKey && \([\s\S]{0,80}<form[\s\S]{0,80}className="voice-call-overlay__fix"/,
+  "a key-shaped failure renders the in-place vault editor form",
+);
+assert.match(
+  component,
+  /type="password"[\s\S]{0,120}autoComplete="off"/,
+  "the key input is a password field that never autocompletes",
+);
+assert.match(
+  component,
+  /fetch\("\/api\/vault",\s*\{\s*method:\s*"POST",[\s\S]{0,200}storage:\s*"encrypted"/,
+  "saving writes the key to the vault as a local encrypted secret",
+);
+assert.match(
+  component,
+  /setKeyDraft\(""\);\s*dispatch\(\{\s*type:\s*"RETRY"\s*\}\)/,
+  "a successful save clears the draft and retries the call in place",
+);
+assert.match(
+  component,
+  /setKeySaveError\("Couldn't save the key — is the daemon running\?"\)/,
+  "a failed vault write degrades to an inline message, never a crash",
+);
+assert.match(
+  component,
+  /\{keySaveError && \([\s\S]{0,120}role="alert"/,
+  "vault save failures are announced to assistive tech",
+);
+assert.match(
+  component,
+  /getVoiceProvider\(grant\?\.provider \?\? familiar\.voiceProvider \?\? ""\)/,
+  "the connect phase trusts the minted grant's provider over the possibly-stale familiar prop",
+);
+assert.match(
+  component,
+  /case "not_implemented":[\s\S]{0,80}isn't available yet/,
+  "unshipped providers fail with honest copy instead of a generic error",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__fix\s*\{[\s\S]*?display:\s*grid;/,
+  "the in-place fix form has overlay styling",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__retry:disabled\s*\{[\s\S]*?opacity:/,
+  "the save button reads as disabled while the draft is empty or saving",
+);
+
 console.log("voice-call-overlay.test.ts: ok");

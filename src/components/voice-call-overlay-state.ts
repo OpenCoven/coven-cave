@@ -62,7 +62,9 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       if (s.state !== "connecting") return s;
       return { ...s, state: "live", startedAt: ev.startedAt, earsEngine: ev.earsEngine };
     case "PROVIDER_ERROR":
-      return { ...s, state: "error", errorCode: ev.errorCode, hint: ev.hint };
+      // Explicitly clear missingKey — a stale key name from an earlier mint
+      // failure must not dress an unrelated connect error as key-fixable.
+      return { ...s, state: "error", errorCode: ev.errorCode, missingKey: undefined, hint: ev.hint };
     case "CLOSE_REQUEST":
       if (s.state === "live") return { ...s, state: "ending" };
       return { ...s, state: "closed" };

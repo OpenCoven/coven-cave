@@ -915,6 +915,48 @@ details[open] > .cave-tool-summary::before {
   line-height: 1.45;
 }
 
+/* In-place recovery (cave-xz57): a key-shaped failure offers a vault editor
+   right in the error card — fix the setting and retry without leaving the
+   call. */
+.voice-call-overlay__fix {
+  display: grid;
+  width: min(300px, 100%);
+  gap: 6px;
+  justify-items: stretch;
+  text-align: left;
+}
+
+.voice-call-overlay__fix-label {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.voice-call-overlay__fix-row {
+  display: flex;
+  gap: 6px;
+}
+
+.voice-call-overlay__fix-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 70%, transparent);
+  padding: 6px var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.voice-call-overlay__fix-input:disabled {
+  opacity: 0.55;
+}
+
+.voice-call-overlay__fix-error {
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
 .voice-call-overlay__footer {
   display: flex;
   align-items: center;
@@ -948,13 +990,14 @@ details[open] > .cave-tool-summary::before {
 }
 
 .voice-call-overlay__control:hover:not(:disabled),
-.voice-call-overlay__retry:hover {
+.voice-call-overlay__retry:hover:not(:disabled) {
   border-color: color-mix(in oklch, var(--border-strong) 70%, transparent);
   background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
   color: var(--text-primary);
 }
 
-.voice-call-overlay__control:disabled {
+.voice-call-overlay__control:disabled,
+.voice-call-overlay__retry:disabled {
   cursor: default;
   opacity: 0.45;
 }

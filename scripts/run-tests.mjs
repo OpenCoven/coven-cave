@@ -1069,6 +1069,7 @@ export const SUITES = {
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
     "src/lib/voice/elevenlabs.test.ts",
+    "src/lib/voice/vault-key-recovery.test.ts",
     "src/lib/voice/hydrate-instructions.test.ts",
     "src/lib/voice/append-voice-turn.test.ts",
     "src/lib/voice/openai-realtime.test.ts",
