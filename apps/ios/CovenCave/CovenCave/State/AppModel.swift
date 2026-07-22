@@ -5,7 +5,20 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, canvas, tasks, calendar, dev, settings, search }
+enum AppTab: String, CaseIterable { case chats, canvas, tasks, calendar, dev, settings, search }
+
+extension AppTab {
+    /// Tabs pinned to the tab bar. Search is separate — it's declared with
+    /// `role: .search` so the system gives it the trailing search treatment.
+    static let barTabs: [AppTab] = [.chats, .tasks, .canvas]
+    /// Occasional surfaces grouped under "More": shown in the sidebar on iPad
+    /// (`.sidebarAdaptable`), hidden from the iPhone tab bar. Still reachable
+    /// there via the chat drawer, the avatar button (Settings), ⌘ shortcuts,
+    /// slash commands, and deep links — hidden tabs remain selectable.
+    static let moreTabs: [AppTab] = [.calendar, .dev, .settings]
+    /// ⌘1–N keyboard-shortcut order: bar tabs, then search, then More.
+    static let shortcutOrder: [AppTab] = barTabs + [.search] + moreTabs
+}
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
