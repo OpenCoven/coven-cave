@@ -8,8 +8,8 @@ assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
 assert.match(
   route,
-  /export async function GET\(req: Request\) \{[\s\S]*?rejectNonLocalRequest\(req\)/,
-  "OpenCode's local authenticated model inventory must not be reachable through this aggregate endpoint remotely",
+  /state\.harness === "opencode"[\s\S]*?!rejectNonLocalRequest\(req\)[\s\S]*?await listOpenCodeModels\(familiarId\)/,
+  "OpenCode's authenticated inventory is local-only while iOS keeps the aggregate model-state endpoint",
 );
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);

@@ -66,11 +66,6 @@ async function currentState(
 }
 
 export async function GET(req: Request) {
-  // OpenCode's model inventory is derived from local authenticated providers.
-  // Keep this older aggregate state endpoint under the same local-only boundary
-  // as /api/runtime-models/opencode before it can launch the local CLI.
-  const forbidden = rejectNonLocalRequest(req);
-  if (forbidden) return forbidden;
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
@@ -81,7 +76,13 @@ export async function GET(req: Request) {
   // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
   // reads the catalog directly. `allowCustom` means a free-typed id is valid.
   const catalog = catalogForRuntime(state.harness);
-  const options = state.harness === "opencode"
+  // OpenCode's inventory is derived from local authenticated providers. Keep
+  // that CLI call local-only without denying this aggregate state endpoint to
+  // iOS, which still needs the selected model and may free-type a model id.
+  const canReadOpenCodeInventory = state.harness === "opencode"
+    ? !rejectNonLocalRequest(req)
+    : false;
+  const options = canReadOpenCodeInventory
     ? await listOpenCodeModels(familiarId)
     : catalog?.models ?? [];
   return NextResponse.json({
