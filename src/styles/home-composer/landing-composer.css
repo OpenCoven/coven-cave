@@ -132,6 +132,22 @@
   opacity: 1;
 }
 
+/* Submit settle (refinement 2026-07-22): the home cluster is a distinct view
+   from the chat/board it hands off to — there is no in-place composer dock to
+   morph into. Instead of a jarring hard unmount, the cluster gets a restrained
+   160ms ease-out entrance so returning to an empty home settles gently rather
+   than snapping. No dramatic movement, no glow burst. Honoured only when the
+   user allows motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .home-hearth-card {
+    animation: home-cluster-settle 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+}
+@keyframes home-cluster-settle {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* Presence dot — the brand accent means "something is alive here". */
 .home-composer-eyebrow-dot {
   width: 6px;

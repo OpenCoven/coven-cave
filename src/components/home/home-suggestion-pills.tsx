@@ -25,7 +25,7 @@ type Props = {
 // Small contextual glyph so chips read as clearly-clickable actions, not
 // disabled text fields. Keyed off the suggestion id prefix + prompt shape.
 function iconFor(id: string, prompt: string): IconName {
-  if (id.startsWith("task:")) return "ph:arrow-bend-down-right";
+  if (id.startsWith("task:")) return "ph:arrow-bend-up-right";
   const p = prompt.toLowerCase();
   if (p.startsWith("give me a tour")) return "ph:compass";
   if (p.startsWith("review")) return "ph:magnifying-glass";
