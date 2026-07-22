@@ -106,9 +106,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // without relaxing the expanded-byte ceiling.
   // 2026-07-22 (mobile write access): the mobile-permissions route plus the
   // shared trusted-grant-mutation lib add traced files; CI measured 5,621 on
-  // Ubuntu and 5,623 on Windows. Keep the exact cross-platform maximum
-  // without relaxing the expanded-byte ceiling.
-  fileCount: 5_623,
+  // Ubuntu and 5,623 on Windows, then hermes (#3636) landed one more traced
+  // file on Windows (5,624). Keep the exact cross-platform maximum without
+  // relaxing the expanded-byte ceiling.
+  fileCount: 5_624,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
