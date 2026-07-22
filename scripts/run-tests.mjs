@@ -1217,6 +1217,7 @@ export const SUITES = {
     "scripts/ios-message-bubble-equatable.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
+    "scripts/ios-chat-hides-tab-bar.test.mjs",
     "scripts/ios-development-code-title.test.mjs",
     "scripts/ios-development-github-title.test.mjs",
     "scripts/ios-development-terminal-chrome.test.mjs",
