@@ -372,9 +372,16 @@ export async function updateCard(
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
+    // A task model belongs to its familiar's runtime. All assignment paths
+    // (table, bulk toolbar, and API clients) converge here, so clear an
+    // inherited override whenever the familiar actually changes. An explicit
+    // override in the same patch is intentional and may be supplied by an
+    // integration that knows the new familiar accepts it.
     modelOverride: "modelOverride" in patch
       ? normalizeModelOverride(patch.modelOverride)
-      : current.modelOverride ?? null,
+      : "familiarId" in patch && patch.familiarId !== current.familiarId
+        ? null
+        : current.modelOverride ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
     endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,

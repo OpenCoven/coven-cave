@@ -18,6 +18,15 @@ assert.equal(created.modelOverride, "openai/gpt-5.6-sol", "creation trims a task
 const updated = await board.updateCard(created.id, { modelOverride: "anthropic/claude-opus-4-8" });
 assert.equal(updated?.modelOverride, "anthropic/claude-opus-4-8", "card patches replace the task model override");
 
+const reassigned = await board.updateCard(created.id, { familiarId: "other-familiar" });
+assert.equal(reassigned?.modelOverride, null, "changing familiar clears an incompatible task model override");
+
+const reassignedWithModel = await board.updateCard(created.id, {
+  familiarId: "another-familiar",
+  modelOverride: "openai/gpt-5.6-sol",
+});
+assert.equal(reassignedWithModel?.modelOverride, "openai/gpt-5.6-sol", "an explicit model survives an intentional combined reassignment");
+
 const cleared = await board.updateCard(created.id, { modelOverride: null });
 assert.equal(cleared?.modelOverride, null, "card patches can return to the familiar default model");
 
