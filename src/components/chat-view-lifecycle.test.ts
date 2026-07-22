@@ -156,8 +156,14 @@ assert.match(
 
 assert.match(
   source,
-  /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,/,
-  "queued messages must retain queue-time model, project, file-mention, and access metadata",
+  /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,[\s\S]*?queuedRuntimeHost: runtimeHost/,
+  "queued messages must retain queue-time model, project, file-mention, access, and host metadata",
+);
+
+assert.match(
+  source,
+  /"queuedRuntimeHost" in controlsOverride[\s\S]*?\? controlsOverride\.queuedRuntimeHost[\s\S]*?: \(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
+  "a queued automatic host choice must not be replaced by a later host picker change",
 );
 
 assert.match(

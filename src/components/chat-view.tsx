@@ -312,6 +312,9 @@ type ChatSendControls = {
   responseSpeed: ComposerResponseSpeed;
   permissionMode: CommandPermissionMode;
   runtimeHost?: string;
+  /** Present only for queued messages: null means preserve the queue-time
+   *  automatic host choice rather than reading a later composer selection. */
+  queuedRuntimeHost?: string | null;
 };
 /** A follow-up held until the active turn settles successfully. Kept outside
  *  the transcript until delivery so a queued prompt is never mistaken for a
@@ -3826,7 +3829,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
     // Omnigent fleet host chip: create a session on the control plane and open
     // it in Omnigent (does not stream into Cave chat transcript).
-    const fleetHost = controlsOverride?.runtimeHost ?? runtimeHost;
+    // A queued message must retain even an automatic (null) host choice. The
+    // regular controls override remains optional for existing direct sends.
+    const fleetHost =
+      controlsOverride && "queuedRuntimeHost" in controlsOverride
+        ? controlsOverride.queuedRuntimeHost
+        : (controlsOverride?.runtimeHost ?? runtimeHost);
     if (isOmnigentHostOptionId(fleetHost) && submitPrompt) {
       setBusy(true);
       setError(null);
@@ -4561,7 +4569,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           thinkingEffort,
           responseSpeed,
           permissionMode,
-          ...(runtimeHost ? { runtimeHost } : {}),
+          queuedRuntimeHost: runtimeHost,
         },
       });
       return;
