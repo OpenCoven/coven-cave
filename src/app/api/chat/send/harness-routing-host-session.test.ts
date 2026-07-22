@@ -77,7 +77,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled = hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
+  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
   "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
 );
 

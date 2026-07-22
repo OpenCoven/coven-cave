@@ -12,7 +12,9 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenLaunchCommand, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
+import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,9 @@ type HarnessReport = HarnessSpec & {
   installed: boolean;
   path: string | null;
   version: string | null;
+  /** Live authenticated catalog where the runtime exposes one. */
+  models?: RuntimeModelOption[];
+  defaultModel?: string | null;
 };
 
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
@@ -41,7 +46,15 @@ function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | nul
     const child = spawn(command, [binary], { env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
-    child.on("close", (code) => resolve(code === 0 ? out.trim() || null : null));
+    child.on("close", (code) => {
+      if (code !== 0) return resolve(null);
+      const found = out.trim();
+      resolve(
+        process.platform === "win32"
+          ? pickWindowsLauncher(found.split(/\r?\n/))
+          : found || null,
+      );
+    });
     child.on("error", () => resolve(null));
   });
 }
@@ -56,11 +69,15 @@ async function which(binary: string): Promise<string | null> {
   return whichWith(binary, refreshCovenSpawnEnv());
 }
 
-function probeVersion(binary: string, args: string[]): Promise<string | null> {
+function probeVersion(
+  binary: string,
+  args: string[],
+  fixedArgs: string[] = [],
+): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -79,6 +96,35 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
     child.on("error", () => {
       clearTimeout(t);
       resolve(null);
+    });
+  });
+}
+
+function probeGrokModels(
+  launch: CovenLaunchCommand,
+): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve({ models: [], defaultModel: null });
+      return;
+    }
+    let output = "";
+    child.stdout.on("data", (data) => (output += data.toString()));
+    child.stderr.on("data", (data) => (output += data.toString()));
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      resolve({ models: [], defaultModel: null });
+    }, 2500);
+    child.on("close", () => {
+      clearTimeout(timeout);
+      resolve(parseGrokModels(output));
+    });
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve({ models: [], defaultModel: null });
     });
   });
 }
@@ -152,12 +198,32 @@ export async function GET() {
       if (h.id === "openclaw") {
         return openClawAdapterReport(openclawAgentCount);
       }
-      const path = await which(h.binary);
+      // Native Grok resolution also recognizes `grok.exe` from an imported
+      // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
+      // using only the generic probe would hide a runnable Windows install
+      // from the summoning circle even though the chat launcher can execute it.
+      const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
+      const path =
+        h.id === "grok" && resolvedBinary !== h.binary
+          ? resolvedBinary
+          : await which(h.binary);
       if (!path) {
         return { ...h, installed: false, path: null, version: null };
       }
-      const version = await probeVersion(h.binary, h.versionArgs ?? ["--version"]);
-      return { ...h, installed: true, path, version };
+      const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
+      const version = await probeVersion(
+        grokLaunch?.command ?? h.binary,
+        h.versionArgs ?? ["--version"],
+        grokLaunch?.fixedArgs,
+      );
+      const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
+      return {
+        ...h,
+        installed: true,
+        path,
+        version,
+        ...(grokCatalog ? grokCatalog : {}),
+      };
     }),
   );
   const covenReports = (await covenSupportsAdapterList()) ? await loadCovenAdapterSummaries() : [];

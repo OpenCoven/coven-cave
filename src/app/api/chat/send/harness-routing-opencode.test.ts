@@ -37,13 +37,13 @@ assert.match(
 );
 assert.match(
   route,
-  /!openCodeDirect && binding\.harness !== "openclaw" && \(await covenRunSupportsPermission\(\)\)/,
-  "OpenCode does not require the Coven CLI to probe unrelated permission support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsPermission\(\)\)/,
+  "OpenCode and Grok do not require the Coven CLI to probe unrelated permission support",
 );
 assert.match(
   route,
-  /!openCodeDirect && binding\.harness !== "openclaw" && \(await covenRunSupportsAddDir\(\)\)/,
-  "OpenCode does not require the Coven CLI to probe unrelated directory support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsAddDir\(\)\)/,
+  "OpenCode and Grok do not require the Coven CLI to probe unrelated directory support",
 );
 assert.match(
   route,

@@ -133,6 +133,9 @@ function buildConversation(args: {
   return {
     sessionId: args.id,
     ...(args.existing?.harnessSessionId ? { harnessSessionId: args.existing.harnessSessionId } : {}),
+    ...(args.existing?.grokSandboxProfile
+      ? { grokSandboxProfile: args.existing.grokSandboxProfile }
+      : {}),
     familiarId,
     harness,
     ...(args.existing?.model ? { model: args.existing.model } : {}),

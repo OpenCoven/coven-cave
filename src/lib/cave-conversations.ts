@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
@@ -69,6 +70,8 @@ export type ConversationFile = {
    * `--continue` targets it. Never used as the conversation's identity.
    */
   harnessSessionId?: string;
+  /** Grok pins its OS sandbox when a native session is created. */
+  grokSandboxProfile?: GrokSandboxProfile;
   familiarId: string;
   harness: string;
   model?: string;

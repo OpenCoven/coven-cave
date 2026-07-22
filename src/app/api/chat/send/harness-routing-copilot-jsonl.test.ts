@@ -47,6 +47,74 @@ assert.match(
   "Chat send should source copilot stream wiring from the shared copilot-stream lib",
 );
 
+// ── Grok Build JSONL stream wiring ─────────────────────────────────────────
+
+assert.match(
+  chatRoute,
+  /const grokDirect = !sshRuntime && binding\.harness === "grok";/,
+  "Grok Build must use its native local JSONL path, not coven run",
+);
+assert.match(
+  chatRoute,
+  /buildGrokBuildArgs\(\{[\s\S]*?resumeSessionId,[\s\S]*?identityRules: grokIdentityRules\(/,
+  "Grok argv must carry native resume semantics and system identity",
+);
+assert.match(
+  chatRoute,
+  /const grokForwardModel = grokShouldUseCliDefault\([\s\S]*?\? null\s*:\s*cleanModelId\(desiredModel\);[\s\S]*?buildGrokBuildArgs\(\{[\s\S]*?model: grokForwardModel,/,
+  "an inherited non-Grok global model must omit --model so the installed Grok CLI chooses its authenticated default",
+);
+assert.match(
+  chatRoute,
+  /if \(!confirmedModel && grokForwardModel\) confirmedModel = desiredModel;/,
+  "Cave must not claim an inherited fallback model was applied when it deliberately used Grok's CLI default",
+);
+assert.match(
+  chatRoute,
+  /if \(grokDirect\) \{\s*handleGrokLine\(line, isJson\);\s*return;/,
+  "Grok stdout routes through the native JSONL parser, never generic stream-json parsing",
+);
+assert.match(
+  chatRoute,
+  /case "end":[\s\S]*?usage: parseStreamJsonUsage\(event\.usage\),[\s\S]*?costUsd: parseCostUsd\(event\.totalCostUsd\),/,
+  "Grok end events must preserve their usage and cost metadata for the transcript and done event",
+);
+assert.match(
+  chatRoute,
+  /case "end":\s*if \(event\.sessionId\) grokSessionId = event\.sessionId;/,
+  "Grok end events must retain the native session id even when Cave is resuming a stable conversation id",
+);
+assert.match(
+  chatRoute,
+  /const harnessSessionId = grokDirect \? grokSessionId : sessionId;/,
+  "a failed Grok resume must not overwrite the native resume id with Cave's stable conversation id",
+);
+assert.match(
+  chatRoute,
+  /if \(grokDirect && grokSessionId\) conv\.grokSandboxProfile = grokSandboxProfile;/,
+  "a failed sandbox-switch attempt must retain the profile of the native session it will resume next",
+);
+assert.match(
+  chatRoute,
+  /grokSessionHint = resumeSessionId \? null : crypto\.randomUUID\(\);/,
+  "new Grok chats must preassign their native UUID so a stopped first turn remains resumable",
+);
+assert.match(
+  chatRoute,
+  /import \{ grokLaunchCommand \} from "@\/lib\/grok-bin"/,
+  "Grok direct chats must use the shared cross-platform launcher resolver",
+);
+assert.match(
+  chatRoute,
+  /grokDirect\s*\? grokLaunchCommand\(\)/,
+  "Grok direct chats must support native executables and Windows npm command shims",
+);
+assert.match(
+  chatRoute,
+  /Grok Build chats currently run on this Cave host/,
+  "SSH Grok must fail explicitly instead of falling back to coven run",
+);
+
 assert.match(
   chatRoute,
   /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
@@ -55,8 +123,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const launch = copilotStream[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);[\s\S]*?const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;/,
-  "Copilot, OpenCode, and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
+  /const launch = copilotStream[\s\S]*?: grokDirect\s*\? grokLaunchCommand\(\)[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);[\s\S]*?const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;/,
+  "Copilot, Grok Build, Hermes, and OpenCode direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 
 assert.match(

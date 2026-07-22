@@ -87,6 +87,16 @@ assert.match(
 );
 assert.match(
   source,
+  /v\.kind === "ssh" && harness === "grok"\) setHarness\(null\)/,
+  "switching a selected local Grok runtime to SSH clears the unsupported selection",
+);
+assert.match(
+  source,
+  /harness !== null &&\s*harness !== "grok" &&\s*sshHost\.trim\(\)\.length > 0/,
+  "a persisted SSH draft cannot submit an unsupported Grok runtime",
+);
+assert.match(
+  source,
   /vessel === "local"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
   "summoning a local familiar explicitly binds it to the Cave host",
 );

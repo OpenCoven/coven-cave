@@ -68,4 +68,3 @@ only be flipped on the desktop itself: the server refuses the toggles' PATCH
 from any non-loopback origin, so a phone (or anything else on the tailnet) can
 never widen its own authority. Until the opt-in is enabled the iOS console
 renders read-only with a banner pointing at the desktop setting.
-

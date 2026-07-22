@@ -46,6 +46,15 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import {
+  buildGrokBuildArgs,
+  grokIdentityRules,
+  grokResumeNeedsNewSandboxSession,
+  grokSandboxProfileForPermission,
+  grokShouldUseCliDefault,
+  parseGrokStreamEvent,
+} from "@/lib/grok-build";
+import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
@@ -821,24 +830,47 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
-  // Hermes and OpenCode run directly, so each must advertise --model itself;
-  // every other bundled harness uses coven run's capability probe. OpenClaw's
-  // bridge has no CLI model passthrough.
+  // Grok Build is a direct local integration. Do not silently send it through
+  // `coven run --stream-json` on SSH: its native JSONL/session protocol is
+  // different and the proposed registry manifest is not accepted upstream.
+  if (binding.harness === "grok" && sshRuntime) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Grok Build chats currently run on this Cave host. Select a local runtime; SSH Grok is not routed through coven run.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
+  // Hermes, Grok Build, and OpenCode run directly. Hermes and OpenCode must
+  // advertise `--model` themselves, while Grok Build's documented direct
+  // protocol supports it.
+  // OpenClaw's bridge has no CLI model passthrough; every other bundled
+  // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
-  const modelForwardingEnabled = hermesDirect
-    ? await hermesChatSupportsModel()
-    : openCodeDirect
-      ? await openCodeRunSupportsModel()
-      : binding.harness !== "openclaw" && (await covenRunSupportsModel());
-  // OpenCode's direct CLI has neither Cave's permission nor add-dir flags.
+  const modelForwardingEnabled =
+    hermesDirect
+      ? await hermesChatSupportsModel()
+      : openCodeDirect
+        ? await openCodeRunSupportsModel()
+        : binding.harness === "grok" ||
+          (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
+  // Grok and OpenCode are direct integrations, so neither may wait on coven
+  // capability probes for flags it does not execute.
   const permissionForwardingEnabled =
-    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    (await covenRunSupportsPermission());
   // Same gating for directory grants (`--add-dir`). Without forwarding, the
   // granted roots listed in the runtime-scope preamble are prompt-text-only
   // and the harness denies every access to them.
   const addDirForwardingEnabled =
-    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -846,6 +878,16 @@ export async function POST(req: Request) {
     existingConversation,
     modelForwardingEnabled,
   });
+  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
+  // live `grok models` catalog is account-specific and may not contain the
+  // compile-time fallback, while omitting --model reliably selects the CLI's
+  // current authenticated default on every supported host.
+  const grokForwardModel = grokShouldUseCliDefault({
+    modelSource: modelState.source,
+    globalDefaultModel: config.defaults.model,
+  })
+    ? null
+    : cleanModelId(desiredModel);
 
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
@@ -1117,10 +1159,19 @@ export async function POST(req: Request) {
   // beside Hermes's Windows executable, which left Cave showing only a timer.
   // Spawn Hermes directly for native local chats, as we already do for the
   // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  // Grok Build has a documented streaming-json headless protocol. It is a
+  // direct local integration, deliberately independent of coven's generic
+  // `run --stream-json` adapter protocol.
+  const grokDirect = !sshRuntime && binding.harness === "grok";
+  const grokSandboxProfile = grokSandboxProfileForPermission(body.permissionMode);
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
   let copilotSessionHint: string | null = null;
+  // Grok only emits its native session id in the final JSONL event. Assign a
+  // UUID for new native sessions so a stopped first turn can still be saved
+  // and resumed instead of disappearing with the unreceived end frame.
+  let grokSessionHint: string | null = null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1173,6 +1224,22 @@ export async function POST(req: Request) {
       a.push("--query", prompt);
       return a;
     }
+    if (grokDirect) {
+      grokSessionHint = resumeSessionId ? null : crypto.randomUUID();
+      return buildGrokBuildArgs({
+        prompt,
+        resumeSessionId,
+        newSessionId: grokSessionHint,
+        model: grokForwardModel,
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
+        grantDirs,
+        identityRules: grokIdentityRules(
+          body.familiarId,
+          binding.display_name,
+          binding.role,
+        ),
+      });
+    }
     if (openCodeDirect) {
       // OpenCode owns its durable session store. JSON mode is its documented
       // non-interactive event protocol and includes the minted session id.
@@ -1205,7 +1272,23 @@ export async function POST(req: Request) {
   const resumeTarget = body.sessionId
     ? existingConversation?.harnessSessionId ?? body.sessionId
     : null;
-  const args = buildArgs(resumeTarget);
+  // Grok deliberately refuses to change a resumed session's sandbox. Persist
+  // the profile used for the previous native session and transparently start a
+  // fresh one (with recent context replayed) when the access chip changed. An
+  // older conversation without this metadata also starts fresh, rather than
+  // risking a read-only request inheriting an unrestricted old session.
+  const grokFreshSessionForSandbox = grokDirect && grokResumeNeedsNewSandboxSession({
+    resumeSessionId: resumeTarget,
+    savedProfile: existingConversation?.grokSandboxProfile,
+    requestedProfile: grokSandboxProfile,
+  });
+  const grokSandboxRetry = grokFreshSessionForSandbox
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
+  const args = buildArgs(
+    grokFreshSessionForSandbox ? null : resumeTarget,
+    grokSandboxRetry?.prompt,
+  );
 
   // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
@@ -1271,8 +1354,21 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (grokFreshSessionForSandbox) {
+        pushProgress(
+          "grok-sandbox-restart",
+          "Access mode changed; starting a fresh Grok session with recent context",
+          "done",
+        );
+      }
 
       let sessionId: string | null = body.sessionId ?? null;
+      // Cave keeps `sessionId` as the stable conversation id for resumed
+      // chats. Grok's end frame still carries the native session id, which
+      // may change when an access-mode switch starts a fresh native session.
+      // Keep it separately so the next Grok turn resumes the actual CLI
+      // session rather than Cave's conversation id.
+      let grokSessionId: string | null = null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -1491,6 +1587,55 @@ export async function POST(req: Request) {
         recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
       };
 
+      const handleGrokLine = (line: string, isJson: boolean) => {
+        if (!isJson) {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          return;
+        }
+        try {
+          const event = parseGrokStreamEvent(JSON.parse(line));
+          // A fresh native session's id is assigned by Cave because Grok only
+          // returns it in its final frame. Once its first response frame
+          // confirms the process is live, retain that id for a cancelled
+          // partial turn too. Do not persist an id for a startup error: Grok
+          // did not create a resumable session in that case.
+          if (event.kind === "text" || event.kind === "end") {
+            if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
+            if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
+          }
+          switch (event.kind) {
+            case "text":
+              assistantText += event.text;
+              push({ kind: "assistant_chunk", text: event.text });
+              return;
+            case "end":
+              if (event.sessionId) grokSessionId = event.sessionId;
+              if (!sessionId && event.sessionId) announceSession(event.sessionId);
+              // Grok's end event does not echo model, but successful native
+              // launch means its --model contract accepted the selected id.
+              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
+              result = {
+                is_error: event.isError,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
+              return;
+            case "error":
+              result = {
+                is_error: true,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
+              recordStdoutErrorTail(event.message);
+              return;
+            case "ignore":
+              return;
+          }
+        } catch {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        }
+      };
+
       const handleOpenCodeLine = (line: string) => {
         try {
           const ev = parseOpenCodeRunEvent(JSON.parse(line));
@@ -1541,6 +1686,10 @@ export async function POST(req: Request) {
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
+          return;
+        }
+        if (grokDirect) {
+          handleGrokLine(line, isJson);
           return;
         }
         if (openCodeDirect) {
@@ -1747,11 +1896,13 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot, Hermes, and OpenCode use documented direct CLI
-                // integrations. Every other local harness goes
+                // Copilot, Grok Build, Hermes, and OpenCode use documented
+                // direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const launch = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  : grokDirect
+                    ? grokLaunchCommand()
                   : hermesDirect
                     ? {
                         command: process.platform === "win32" ? "hermes.exe" : "hermes",
@@ -1834,6 +1985,8 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : grokDirect
+                        ? "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again."
                       : openCodeDirect
                         ? "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again."
                       : hermesDirect
@@ -2051,7 +2204,12 @@ export async function POST(req: Request) {
       // is tracked on the file for the next resume but never becomes the
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
-      const harnessSessionId = sessionId;
+      // A Grok resume can fail before producing a native event. In that case
+      // `sessionId` is Cave's stable conversation id, not a CLI resume id;
+      // do not overwrite the previous native id (or record a changed sandbox
+      // profile) and accidentally let a later read turn resume the old full
+      // access session.
+      const harnessSessionId = grokDirect ? grokSessionId : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
@@ -2164,6 +2322,7 @@ export async function POST(req: Request) {
         const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
+        if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);

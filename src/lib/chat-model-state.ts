@@ -44,11 +44,13 @@ export type ResolveChatModelStateInput = {
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
+const GROK_DEFAULT_MODEL = "grok-4.5";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
   "copilot-local",
   "hermes-local",
+  "grok-local",
   "openclaw-local",
 ]);
 
@@ -79,6 +81,39 @@ function cleanEffectiveModelId(model: unknown, harness: unknown): string | null 
   const cleanModel = cleanModelId(model);
   if (!cleanModel || isSyntheticLocalModel(cleanModel, harness)) return null;
   return cleanModel;
+}
+
+function effectiveModelForHarness(model: unknown, harness: string): string | null {
+  const cleanModel = cleanEffectiveModelId(model, harness);
+  // A familiar can retain its old model after its runtime is switched in
+  // Studio. Do not pass Cave's provider-qualified Codex/Claude/Copilot ids
+  // to Grok Build, but preserve unqualified custom Grok model ids: Grok's
+  // local catalog may expose user-defined models such as "my-model".
+  if (
+    harness === "grok" &&
+    cleanModel &&
+    /^(?:openai|anthropic|github|nous)\//i.test(cleanModel)
+  ) {
+    return null;
+  }
+  return cleanModel;
+}
+
+function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): {
+  model: string;
+  reason: string;
+} {
+  const model = effectiveModelForHarness(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
+  // Grok Build cannot run Cave's default OpenAI model. A Grok familiar with no
+  // explicit model (for example, one switched to Grok in Familiar Studio)
+  // must use the CLI's own default instead of forwarding `gpt-5.6-sol`.
+  if (harness === "grok" && !/^(?:xai\/)?grok-/i.test(model)) {
+    return {
+      model: GROK_DEFAULT_MODEL,
+      reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+    };
+  }
+  return { model, reason: "Inherited from Cave defaults." };
 }
 
 export function modelApplicationForHarness(input?: ModelApplicationInput | null): ModelApplicationResult {
@@ -142,7 +177,7 @@ export function modelApplicationFromRun(input: {
 }
 
 export function resolveChatModelState(input: ResolveChatModelStateInput): ChatModelState {
-  const nextMessageModel = cleanEffectiveModelId(input.nextMessageModel, input.harness);
+  const nextMessageModel = effectiveModelForHarness(input.nextMessageModel, input.harness);
   if (nextMessageModel) {
     return chatModelState(input, {
       effectiveModel: nextMessageModel,
@@ -152,7 +187,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const sessionModel = cleanEffectiveModelId(input.sessionModel, input.harness);
+  const sessionModel = effectiveModelForHarness(input.sessionModel, input.harness);
   if (sessionModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -163,7 +198,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const familiarModel = cleanEffectiveModelId(input.familiarModel, input.harness);
+  const familiarModel = effectiveModelForHarness(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -188,11 +223,12 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
+  const globalDefault = globalDefaultForHarness(input.globalDefaultModel, input.harness);
   return chatModelState(input, {
-    effectiveModel: cleanEffectiveModelId(input.globalDefaultModel, input.harness) ?? GLOBAL_DEFAULT_MODEL,
+    effectiveModel: globalDefault.model,
     source: "global-default",
     applicationState: "saved",
-    reason: "Inherited from Cave defaults.",
+    reason: globalDefault.reason,
   });
 }
 

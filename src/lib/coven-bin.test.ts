@@ -19,6 +19,12 @@ assert.match(
 
 assert.match(
   source,
+  /path\.join\([^\n]*HOME, "\.grok", "bin"\)/,
+  "spawn PATH includes Grok Build's official ~/.grok/bin install location on macOS, Linux, and Windows",
+);
+
+assert.match(
+  source,
   /process\.platform === "win32"[\s\S]*"coven\.cmd"/,
   "Windows discovery checks the npm coven.cmd shim, not only the POSIX coven file",
 );

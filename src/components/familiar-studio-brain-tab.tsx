@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import type { RuntimeModelOption } from "@/lib/grok-build";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
@@ -36,7 +37,13 @@ import {
 
 type Props = { familiar: ResolvedFamiliar };
 
-type HarnessReport = { id: string; label: string; installed: boolean };
+type HarnessReport = {
+  id: string;
+  label: string;
+  installed: boolean;
+  models?: RuntimeModelOption[];
+  defaultModel?: string | null;
+};
 
 type CapabilitiesResponse = {
   ok: boolean;
@@ -233,7 +240,12 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // provider catalog the chat picker uses. allowCustom keeps the free-text
   // field as the escape hatch for ids not in the curated seed.
   const modelCatalog = catalogForRuntime(harnessId);
-  const modelOptions = useRuntimeModelOptions(harnessId, familiar.id);
+  const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
+  // Grok Build exposes models from the authenticated local CLI. Prefer that
+  // catalog over a compile-time seed so Studio never offers unavailable xAI
+  // models; OpenCode retains its own authenticated runtime inventory.
+  const runtimeModelOptions = useRuntimeModelOptions(harnessId, familiar.id);
+  const modelOptions = harnessId === "grok" ? liveRuntimeModels : runtimeModelOptions;
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user

@@ -99,6 +99,79 @@ assert.deepEqual(
 );
 assert.deepEqual(
   resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "grok-4.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+  },
+  "a Grok familiar that inherits Cave's OpenAI default must not forward it to Grok",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "xai/grok-code-fast-1",
+    familiarModel: null,
+  }).effectiveModel,
+  "xai/grok-code-fast-1",
+  "an explicitly configured global Grok model remains selectable",
+);
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "anthropic/claude-opus-4-8",
+    sessionModel: "github/gpt-5.6-sol",
+    nextMessageModel: "openai/gpt-5.5",
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "grok-4.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+  },
+  "stale models from a prior runtime must not be forwarded after switching a familiar to Grok",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "xai/grok-code-fast-1",
+  }).effectiveModel,
+  "xai/grok-code-fast-1",
+  "an explicitly configured familiar Grok model remains selectable",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "my-model",
+  }).effectiveModel,
+  "my-model",
+  "unqualified custom Grok model ids must not be mistaken for stale Cave provider models",
+);
+assert.deepEqual(
+  resolveChatModelState({
     familiarId: "nova",
     harness: "opencode",
     runtime: "local:/tmp/coven-cave",

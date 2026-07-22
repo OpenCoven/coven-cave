@@ -12,7 +12,7 @@
 // runtime's CLI" branch. Hermes is the exception: its adapter forwards the
 // authenticated Codex model ids below through its supported `--model` flag.
 
-export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | null;
+export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | null;
 
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 
@@ -95,6 +95,16 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     runtime: "hermes",
     provider: "openai",
     models: HERMES_AUTHENTICATED_MODELS,
+    allowCustom: true,
+  },
+  // Grok's authenticated catalog is discovered live by `/api/harnesses` for
+  // Familiar Studio; this fallback keeps non-web surfaces on a valid known
+  // default without pretending Cave owns a static xAI catalog.
+  grok: {
+    runtime: "grok",
+    provider: "xai",
+    models: [],
+    defaultModel: "grok-4.5",
     allowCustom: true,
   },
   // OpenCode authenticates a user-selected set of providers. Its menu is
