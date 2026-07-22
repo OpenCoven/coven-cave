@@ -261,6 +261,11 @@ final class AppModel {
     var canvasArtifacts: [CanvasArtifact] = []
     var canvasError: String?
     var canvasLoaded = false
+    /// Desktop opt-in ("Allow canvas edits from phone"). Fails closed: the
+    /// Canvas tab is view mode until the desktop says otherwise — the server
+    /// enforces the same gate on every canvas write, so this flag only shapes
+    /// the UI (composer/refine/delete affordances), never grants authority.
+    var canvasWritesAllowed = false
     /// True while a generate/refine stream is in flight.
     var isGeneratingCanvas = false
     /// The familiar's reply text as it streams in (for the "sketching…" preview).
@@ -654,6 +659,11 @@ final class AppModel {
 
     func loadCanvas() async {
         guard let client else { return }
+        // The write opt-in rides along with every gallery load so the tab's
+        // mode tracks the desktop toggle without its own refresh path. A
+        // failed permissions read keeps the last known value — the server
+        // gate stays authoritative either way.
+        async let permissionsCall = try? client.mobilePermissions()
         do {
             canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
             canvasError = nil
@@ -664,6 +674,9 @@ final class AppModel {
             // transient first-load error heals instead of leaving the gallery
             // permanently empty behind the view's one-shot load guard.
             canvasError = handleSurfaceError(error)
+        }
+        if let permissions = await permissionsCall {
+            canvasWritesAllowed = permissions.canvasWrites
         }
         canvasLoaded = true
     }

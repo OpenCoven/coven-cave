@@ -353,13 +353,21 @@ try {
   const defaults = await loadMobileWriteAccess();
   assert.deepEqual(
     defaults,
-    { allowMobileGrantMutations: false, allowMobileFileWrites: false },
+    {
+      allowMobileGrantMutations: false,
+      allowMobileFileWrites: false,
+      allowMobileCanvasWrites: false,
+    },
     "mobile write access defaults to fully off",
   );
   const enabled = await updateMobileWriteAccess({ allowMobileGrantMutations: true });
   assert.deepEqual(
     enabled,
-    { allowMobileGrantMutations: true, allowMobileFileWrites: false },
+    {
+      allowMobileGrantMutations: true,
+      allowMobileFileWrites: false,
+      allowMobileCanvasWrites: false,
+    },
     "a partial patch flips only the addressed flag",
   );
   const persisted = await loadMobileWriteAccess();
@@ -370,11 +378,17 @@ try {
   assert.equal(bothOff.allowMobileGrantMutations, false, "the opt-in can be revoked");
   await writeFile(
     process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE,
-    JSON.stringify({ version: 1, supremeFamiliarId: "supreme", allowMobileFileWrites: "yes" }),
+    JSON.stringify({
+      version: 1,
+      supremeFamiliarId: "supreme",
+      allowMobileFileWrites: "yes",
+      allowMobileCanvasWrites: 1,
+    }),
     "utf8",
   );
   const junk = await loadMobileWriteAccess();
   assert.equal(junk.allowMobileFileWrites, false, "non-boolean flag values fail closed");
+  assert.equal(junk.allowMobileCanvasWrites, false, "non-boolean canvas flag fails closed");
 
   console.log("project-permissions.test.ts: ok");
 } finally {

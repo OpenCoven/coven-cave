@@ -7,12 +7,17 @@ import { after, test } from "node:test";
 const testHome = path.join(process.cwd(), ".test-artifacts", `canvas-route-${process.pid}`);
 mkdirSync(testHome, { recursive: true });
 process.env.COVEN_CAVE_HOME = testHome;
+// Hermetic write-gate inputs: no sidecar token, permission config in the
+// test home (fail-closed defaults — canvas writes from the phone are off).
+delete process.env.COVEN_CAVE_AUTH_TOKEN;
+process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE = path.join(testHome, "permission-config.json");
 
 after(() => {
+  delete process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE;
   rmSync(testHome, { recursive: true, force: true });
 });
 
-const { DELETE, PATCH, POST } = await import("./route.ts");
+const { DELETE, PATCH, POST, PUT } = await import("./route.ts");
 
 function artifact(code: string, updatedAt: string, annotations?: unknown[]) {
   return {
@@ -38,9 +43,11 @@ function annotation(id: string, updatedAt: string, note = id) {
 }
 
 function request(method: string, body: unknown) {
-  return new Request("http://test/api/canvas", {
+  // Mutating verbs are gated by requireTrustedHumanCanvasMutation — these
+  // behavioral tests exercise the store, so they call as the loopback desktop.
+  return new Request("http://127.0.0.1/api/canvas", {
     method,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", host: "127.0.0.1:3000" },
     body: JSON.stringify(body),
   });
 }
@@ -202,4 +209,43 @@ test("POST protects ambiguous create retries with expected-absent", async () => 
     expectedUpdatedAt: createdAt,
   }));
   assert.equal(invalid.status, 400, "create and revision preconditions are mutually exclusive");
+});
+
+test("every mutating verb is view-mode gated: verified phone 403s until the desktop opts in", async () => {
+  const { MOBILE_ACCESS_HEADER } = await import("../../../proxy-helpers.ts");
+  const { updateMobileWriteAccess } = await import("../../../lib/project-permissions.ts");
+  const { GET } = await import("./route.ts");
+
+  const mobileRequest = (method: string, body: unknown) =>
+    new Request("http://100.101.102.103:8443/api/canvas", {
+      method,
+      headers: {
+        "content-type": "application/json",
+        host: "100.101.102.103:8443",
+        [MOBILE_ACCESS_HEADER]: "1",
+      },
+      body: JSON.stringify(body),
+    });
+
+  const attempts: Array<[string, Promise<Response>]> = [
+    ["PUT", PUT(mobileRequest("PUT", { positions: {} }))],
+    ["POST", POST(mobileRequest("POST", { artifact: artifact("<main>phone</main>", "2026-07-22T00:00:00Z") }))],
+    ["PATCH", PATCH(mobileRequest("PATCH", { id: "route-revision", annotation: annotation("a1", "2026-07-22T00:00:00Z") }))],
+    ["DELETE", DELETE(mobileRequest("DELETE", { id: "route-revision" }))],
+  ];
+  for (const [verb, pending] of attempts) {
+    const res = await pending;
+    assert.equal(res.status, 403, `${verb} from the phone is refused while the opt-in is off`);
+    assert.match((await res.json()).error, /Allow canvas edits from phone/, `${verb} 403 names the toggle`);
+  }
+
+  // Reading never gates — view mode keeps the gallery alive.
+  const read = await GET();
+  assert.equal(read.status, 200, "GET stays open regardless of the opt-in");
+
+  // The desktop opt-in unlocks the same phone request.
+  await updateMobileWriteAccess({ allowMobileCanvasWrites: true });
+  const unlocked = await PUT(mobileRequest("PUT", { positions: {} }));
+  assert.equal(unlocked.status, 200, "opted-in phone layout writes reach the store");
+  await updateMobileWriteAccess({ allowMobileCanvasWrites: false });
 });

@@ -9,6 +9,7 @@ import {
 } from "@/lib/cave-canvas";
 import type { CanvasArtifact } from "@/lib/canvas-artifacts";
 import type { CanvasPositions } from "@/lib/canvas-layout";
+import { requireTrustedHumanCanvasMutation } from "@/lib/server/trusted-grant-mutation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,10 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  // Every mutating verb is desktop-trusted or phone-opt-in; reading stays
+  // open so the phone's Canvas tab keeps working in view mode.
+  const denied = await requireTrustedHumanCanvasMutation(req);
+  if (denied) return denied;
   let body: { positions?: CanvasPositions };
   try {
     body = await req.json();
@@ -48,6 +53,8 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const denied = await requireTrustedHumanCanvasMutation(req);
+  if (denied) return denied;
   let body: {
     artifact?: CanvasArtifact;
     expectedUpdatedAt?: unknown;
@@ -105,6 +112,8 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const denied = await requireTrustedHumanCanvasMutation(req);
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await req.json();
@@ -137,6 +146,8 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const denied = await requireTrustedHumanCanvasMutation(req);
+  if (denied) return denied;
   let body: { id?: string };
   try {
     body = await req.json();

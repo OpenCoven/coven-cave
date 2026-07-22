@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Behavioral coverage for the desktop-opt-in mobile trust chain:
 //   - requireTrustedHumanGrantMutation (grant/proposal mutation gate)
+//   - requireTrustedHumanCanvasMutation (canvas write gate → iOS view mode)
 //   - /api/mobile-permissions (the toggles route: GET open, PATCH loopback-only)
 //   - assertProjectApiAccess human-mobile file-write branch
 // The phone must never be able to widen its own authority; every mobile
@@ -18,9 +19,11 @@ delete process.env.COVEN_CAVE_AUTH_TOKEN;
 
 try {
   const { MOBILE_ACCESS_HEADER } = await import("../../proxy-helpers.ts");
-  const { requireTrustedHumanGrantMutation, isVerifiedMobileRequest } = await import(
-    "./trusted-grant-mutation.ts"
-  );
+  const {
+    requireTrustedHumanGrantMutation,
+    requireTrustedHumanCanvasMutation,
+    isVerifiedMobileRequest,
+  } = await import("./trusted-grant-mutation.ts");
   const { updateMobileWriteAccess } = await import("../project-permissions.ts");
   const { GET: getMobilePermissions, PATCH: patchMobilePermissions } = await import(
     "../../app/api/mobile-permissions/route.ts"
@@ -84,8 +87,8 @@ try {
   const initial = await (await getMobilePermissions(mobile())).json();
   assert.deepEqual(
     initial,
-    { ok: true, grantMutations: false, fileWrites: false },
-    "GET is readable from the phone and reports both flags off",
+    { ok: true, grantMutations: false, fileWrites: false, canvasWrites: false },
+    "GET is readable from the phone and reports every flag off",
   );
 
   const phonePatch = await patchMobilePermissions(
@@ -108,7 +111,12 @@ try {
     ),
   );
   assert.equal(desktopPatch.status, 200);
-  assert.deepEqual(await desktopPatch.json(), { ok: true, grantMutations: true, fileWrites: false });
+  assert.deepEqual(await desktopPatch.json(), {
+    ok: true,
+    grantMutations: true,
+    fileWrites: false,
+    canvasWrites: false,
+  });
 
   assert.equal(
     await requireTrustedHumanGrantMutation(mobile()),
@@ -119,6 +127,55 @@ try {
     request({ host: "evil.example" }),
   );
   assert.equal(relockedSpoof?.status, 403, "the opt-in trusts only proxy-verified phone requests");
+
+  // --- the canvas gate ----------------------------------------------------
+
+  assert.equal(
+    await requireTrustedHumanCanvasMutation(loopback()),
+    null,
+    "loopback desktop mutates the canvas with every opt-in off",
+  );
+  const canvasDenied = await requireTrustedHumanCanvasMutation(mobile());
+  assert.equal(canvasDenied?.status, 403, "phone canvas writes are refused while the opt-in is off");
+  assert.match(
+    (await canvasDenied.json()).error,
+    /Allow canvas edits from phone/,
+    "the 403 names the desktop toggle to flip",
+  );
+  const canvasStranger = await requireTrustedHumanCanvasMutation(request({ host: "evil.example" }));
+  assert.equal(canvasStranger?.status, 403, "non-loopback, non-mobile canvas writers are refused");
+
+  // The canvas opt-in is its own flag — the grant opt-in flipped above must
+  // not leak canvas authority, and vice versa.
+  assert.equal((await requireTrustedHumanCanvasMutation(mobile()))?.status, 403);
+  const canvasPatch = await patchMobilePermissions(
+    loopback(
+      { "content-type": "application/json" },
+      { method: "PATCH", body: JSON.stringify({ canvasWrites: true }) },
+    ),
+  );
+  assert.equal(canvasPatch.status, 200);
+  assert.deepEqual(await canvasPatch.json(), {
+    ok: true,
+    grantMutations: true,
+    fileWrites: false,
+    canvasWrites: true,
+  });
+  assert.equal(
+    await requireTrustedHumanCanvasMutation(mobile()),
+    null,
+    "once the desktop opts in, the verified phone may mutate the canvas",
+  );
+  const phoneCanvasPatch = await patchMobilePermissions(
+    mobile(
+      { "content-type": "application/json" },
+      { method: "PATCH", body: JSON.stringify({ canvasWrites: true }) },
+    ),
+  );
+  assert.equal(phoneCanvasPatch.status, 403, "the phone can never flip the canvas opt-in itself");
+  // Relock for the file-write section below (its flag must start clean).
+  await updateMobileWriteAccess({ allowMobileCanvasWrites: false });
+  assert.equal((await requireTrustedHumanCanvasMutation(mobile()))?.status, 403, "relocked");
 
   // --- human mobile file writes -----------------------------------------
 

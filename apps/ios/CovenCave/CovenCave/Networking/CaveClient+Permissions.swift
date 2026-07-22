@@ -72,13 +72,18 @@ extension CaveClient {
     }
 
     /// The desktop's opt-ins for what this phone may write.
-    func mobilePermissions() async throws -> (grantMutations: Bool, fileWrites: Bool) {
+    func mobilePermissions() async throws
+        -> (grantMutations: Bool, fileWrites: Bool, canvasWrites: Bool) {
         let data = try await permissionsData(try permissionsRequest("api/mobile-permissions"))
         let decoded = try permissionsDecode(MobilePermissionsResponse.self, data)
         guard decoded.ok else {
             throw CaveError.transport(decoded.error ?? "Couldn’t load mobile permissions.")
         }
-        return (decoded.grantMutations == true, decoded.fileWrites == true)
+        return (
+            decoded.grantMutations == true,
+            decoded.fileWrites == true,
+            decoded.canvasWrites == true
+        )
     }
 
     // MARK: - Mutations (server-gated behind the desktop opt-in)

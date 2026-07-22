@@ -174,6 +174,7 @@ struct MobilePermissionsResponse: Codable, Sendable {
     var ok: Bool
     var grantMutations: Bool?
     var fileWrites: Bool?
+    var canvasWrites: Bool?
     var error: String?
 }
 
