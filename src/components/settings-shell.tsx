@@ -2005,15 +2005,10 @@ function withAlphaFrom(prev: string | undefined, hex: string): string {
  *  companions) changes on the selected theme. */
 function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const html = document.documentElement;
-  const themePreferences = readAppPreferences().appearance.theme;
-  let existing: CustomThemeData | null =
+  const preferences = readAppPreferences();
+  const themePreferences = preferences.appearance.theme;
+  const existing: CustomThemeData | null =
     themePreferences.id === "custom" ? themePreferences.custom : null;
-  try {
-    const raw = null;
-    if (raw) existing = JSON.parse(raw) as CustomThemeData;
-  } catch {
-    /* malformed — treat as none */
-  }
   const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
   const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
   // Seed from the current computed look while the preset CSS is still applied
@@ -2031,8 +2026,18 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
     name: existing?.name ?? forkName,
     cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
   };
+  // An explicit accent pick is a statement of intent: disarm the backdrop's
+  // auto-match in the same atomic patch, or applyBackdropToDocument re-fits
+  // --accent-presence to the image seed on the very next reconcile and the
+  // pick never renders (the backdrop settings toggle re-arms matching).
+  const backdrop = preferences.appearance.backdrop;
+  const disarmBackdropAccent =
+    key === "--accent-presence" && backdrop.enabled && backdrop.matchAccent;
   updateAppPreferences({
-    appearance: { theme: { id: "custom", resolvedMode: mode, custom: data } },
+    appearance: {
+      theme: { id: "custom", resolvedMode: mode, custom: data },
+      ...(disarmBackdropAccent ? { backdrop: { matchAccent: false } } : {}),
+    },
   });
   // Live-apply the whole group — not just the edited key — so the selected
   // theme's look survives the data-theme flip. Boot (theme-init.js) replays

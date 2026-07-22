@@ -489,3 +489,27 @@ assert.doesNotMatch(
   /const handlePick = [\s\S]{0,600}onChange\(\);\n {2}\};/,
   "handlePick must not trigger the per-move daemon sync",
 );
+
+// ── An explicit accent pick must disarm the backdrop auto-match (cave-hkfq) ──
+// With a backdrop enabled and matchAccent armed (the default), every theme
+// reconcile re-fits --accent-presence to the image seed via
+// applyBackdropToDocument — silently overriding the user's pick during the
+// drag, recording the fit color in the synced tokens, and reverting the swatch
+// on reload. An explicit accent edit is a statement of intent: fold
+// matchAccent: false into the SAME preferences patch as the token edit so no
+// reconcile window exists between them. The backdrop settings toggle re-arms.
+assert.match(
+  settings,
+  /const disarmBackdropAccent =\s*\n?\s*key === "--accent-presence" && backdrop\.enabled && backdrop\.matchAccent;/,
+  "an explicit accent edit detects an armed backdrop auto-match",
+);
+assert.match(
+  settings,
+  /updateAppPreferences\(\{\s*\n\s*appearance: \{\s*\n\s*theme: \{ id: "custom", resolvedMode: mode, custom: data \},\s*\n\s*\.\.\.\(disarmBackdropAccent \? \{ backdrop: \{ matchAccent: false \} \} : \{\}\),\s*\n\s*\},\s*\n\s*\}\);/,
+  "the disarm rides the token edit's own atomic patch — no reconcile can re-fit in between",
+);
+assert.doesNotMatch(
+  settings,
+  /const raw = null;/,
+  "applyTokenOverride's dead localStorage-era fork branch stays deleted",
+);
