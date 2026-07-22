@@ -103,5 +103,9 @@ const boardInspector = await readFile(new URL("../components/board-inspector.tsx
 assert.match(boardInspector, /link-item-anchor/, "Task inspector should render task links");
 assert.match(boardInspector, /card\.sessionId/, "Task inspector should render task session context");
 assert.match(boardInspector, /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>/, "Task inspector should expose the task project selector");
-assert.match(boardInspector, /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/, "Task project changes should set the persisted cwd");
+assert.match(
+  boardInspector,
+  /onPatch\(card\.id, \{[\s\S]{0,160}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,160}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,160}familiarId: null,[\s\S]{0,160}\}\)/,
+  "Task project changes should set the persisted cwd and clear the prior familiar",
+);
 assert.doesNotMatch(boardInspector, /function openCwdInExplorer|aria-label="Open CWD in directory explorer"/, "Task inspector should not expose a separate CWD open action");
