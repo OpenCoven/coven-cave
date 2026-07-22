@@ -2937,6 +2937,104 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
   );
 }
 
+/** Desktop opt-ins for what the paired phone may change (GET/PATCH
+ *  /api/mobile-permissions). Both default off; the route only accepts the
+ *  PATCH from this desktop (loopback), so the phone can never widen its own
+ *  authority — flipping these here is the trust decision. */
+function MobileWriteAccessCard() {
+  const [flags, setFlags] = useState<{ grantMutations: boolean; fileWrites: boolean } | null>(null);
+  const [busyKey, setBusyKey] = useState<"grantMutations" | "fileWrites" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/mobile-permissions", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled || !body?.ok) return;
+        setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load phone write access.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggle = async (key: "grantMutations" | "fileWrites") => {
+    if (!flags || busyKey) return;
+    const next = !flags[key];
+    setBusyKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/mobile-permissions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [key]: next }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        setError(body?.error ?? "Couldn't update phone write access.");
+        return;
+      }
+      setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+      const labels: Record<typeof key, string> = {
+        grantMutations: "Permission changes from phone",
+        fileWrites: "File edits from phone",
+      };
+      announce(`${labels[key]} ${next ? "enabled" : "disabled"}.`, "polite");
+    } catch {
+      setError("Couldn't reach the desktop API.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const switchButton = (key: "grantMutations" | "fileWrites") => {
+    const on = flags?.[key] === true;
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={() => void toggle(key)}
+        disabled={!flags || busyKey !== null}
+        className={`settings-mobile-switch focus-ring shrink-0 rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
+          on
+            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+        }`}
+      >
+        {busyKey === key ? "Updating..." : on ? "On" : "Off"}
+      </button>
+    );
+  };
+
+  return (
+    <>
+      <SettingsRow
+        label="Allow permission changes from phone"
+        description="Grant or revoke familiar project access, and decide grant requests, from the Cave app. Off keeps those desktop-only."
+      >
+        {switchButton("grantMutations")}
+      </SettingsRow>
+      <SettingsRow
+        label="Allow file edits from phone"
+        description="Save files in the Code tab from your phone. Off keeps phone access read-only."
+      >
+        {switchButton("fileWrites")}
+      </SettingsRow>
+      {error ? (
+        <p role="status" className="px-4 pb-3 text-[length:var(--text-xs)] text-[var(--color-warning)]">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   return (
     <SettingsPage
@@ -2946,6 +3044,10 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
     >
       <SettingsGroup label="Pair">
         <MobileModeToggle onUseAsHub={onUseAsHub} />
+      </SettingsGroup>
+
+      <SettingsGroup label="Phone write access">
+        <MobileWriteAccessCard />
       </SettingsGroup>
 
       <SettingsGroup label="Why there’s no password">
