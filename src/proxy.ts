@@ -76,21 +76,11 @@ async function mobileAccessVerification(
   return null;
 }
 
-async function mobileAccessGate(req: NextRequest) {
+async function mobileAccessGate(req: NextRequest, trustedLocalPeer: boolean) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
 
   const suppliedTokens = mobileAccessSuppliedTokens(req);
-  // A direct loopback connection (server.ts verified the TCP peer and the
-  // absence of forwarding headers, then stamped the per-boot secret) is the
-  // local desktop app or a local browser — it needs no mobile invite even
-  // while the pairing secret is armed. Tailscale-Serve-forwarded phones also
-  // arrive over loopback but always carry x-forwarded-* headers, so they are
-  // never stamped and stay token-gated.
-  const trustedLocalPeer = isTrustedLocalPeer(
-    req.headers.get(LOCAL_PEER_HEADER),
-    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
-  );
   if (
     !shouldRequireMobileAccessCredential(
       req.headers.get("host"),
@@ -184,7 +174,17 @@ function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated:
 
 export async function proxy(req: NextRequest) {
   const mobileAccessToken = configuredMobileAccessToken();
-  const mobileRes = await mobileAccessGate(req);
+  // A direct loopback connection (server.ts verified the TCP peer and the
+  // absence of forwarding headers, then stamped the per-boot secret) is the
+  // local desktop app or a local browser — it needs no mobile invite even
+  // while the pairing secret is armed. Tailscale-Serve-forwarded phones also
+  // arrive over loopback but always carry x-forwarded-* headers, so they are
+  // never stamped and stay token-gated.
+  const trustedLocalPeer = isTrustedLocalPeer(
+    req.headers.get(LOCAL_PEER_HEADER),
+    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
+  );
+  const mobileRes = await mobileAccessGate(req, trustedLocalPeer);
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -208,9 +208,17 @@ export async function proxy(req: NextRequest) {
     req.nextUrl.protocol,
     requestHost,
   );
-  const mobileAccessAuthenticated = mobileAccessToken
-    ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
-    : false;
+  // The mobile-access marker classifies MOBILE INGRESS, not merely "a valid
+  // mobile credential was presented". A trusted local peer is this machine's
+  // desktop app or a local browser; a mobile invite cookie riding along
+  // (e.g. a pairing link once opened in the desktop browser writes the
+  // auto-sent access cookie) must not reclassify it as a phone — that marker
+  // makes isLocalOrigin() 403 every desktop-only route (research missions,
+  // links, automations) for a genuinely local user.
+  const mobileAccessAuthenticated =
+    !trustedLocalPeer && mobileAccessToken
+      ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
+      : false;
   // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
   // mobile access credential, so a remote-looking (Tailscale Serve) Host is
   // accepted only when that credential verifies. COVEN_CAVE_TAILNET_TRUST no

@@ -170,6 +170,21 @@ assert.match(
   /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,?\s*\)/,
   "the mobile gate must consult the verified local-peer stamp",
 );
+// The marker classifies mobile INGRESS, not credential possession: a mobile
+// invite cookie in a local desktop browser (auto-sent after a pairing link
+// was once opened there) must not reclassify a trusted local peer as a
+// phone — that marker makes isLocalOrigin() 403 every desktop-only route
+// (research missions/links, automations) for a genuinely local user.
+assert.match(
+  source,
+  /const mobileAccessAuthenticated =\s*!trustedLocalPeer && mobileAccessToken\s*\?/,
+  "a trusted local peer must never be marked as mobile ingress, even when a mobile access cookie rides along",
+);
+assert.match(
+  source,
+  /mobileAccessGate\(req, trustedLocalPeer\)/,
+  "the local-peer stamp is verified once in proxy() and shared with the mobile gate",
+);
 
 // ── HTML access gate for unauthenticated browser navigations ──────────────
 // Same 401 fail-closed posture; only the body differs by client. The page's
