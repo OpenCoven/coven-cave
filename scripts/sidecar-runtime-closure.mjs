@@ -100,7 +100,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // daemon-probe libs add traced files; CI measured 5,608 on Windows and
   // 5,606 on Ubuntu. Keep the exact cross-platform maximum with the same
   // ten-file headroom convention.
-  fileCount: 5_608,
+  // 2026-07-22 (/image command): the images/generate route chunk adds eight
+  // traced files (CI measured 5,602 Windows on the pre-Tailscale base and
+  // 5,616 Windows on the combined tree). Pin the combined exact maximum
+  // without relaxing the expanded-byte ceiling.
+  fileCount: 5_616,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

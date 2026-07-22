@@ -72,6 +72,7 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextPill } from "@/components/composer-context-pill";
 import {
   attachmentIcon,
+  cleanImageDataUrl,
   extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
@@ -194,7 +195,7 @@ import {
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, formatAttachmentBytes } from "./chat-attachment-cards";
+import { AttachmentList, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 
 // CHAT-D3-07 perf: `replyFor` runs for every row on every render and parses the
 // turn text (strip reasoning + Next paths) to decide whether the Reply action
@@ -3362,6 +3363,140 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
+  // /image (cave-i6dx): generate an image via POST /api/images/generate and
+  // land it as a real user→assistant turn pair with the picture attached —
+  // rendered inline and persisted to the conversation (unlike appendSystem's
+  // ephemeral output). The generation is deliberately outside the busy/stream
+  // machinery: it's a bounded fetch, not a harness stream.
+  const runImageGeneration = async (prompt: string) => {
+    const targetSessionId = currentSessionRef.current;
+    const now = new Date().toISOString();
+    // Mid-stream, the registry's leaf is fresher than this view's state
+    // (same reasoning as appendSystem).
+    const live = targetSessionId ? readLiveChatGeneration(targetSessionId) : null;
+    const parentId = (live?.activeLeafId ?? activeLeafId) || null;
+    const userTurn: Turn = {
+      id: crypto.randomUUID(),
+      parentId,
+      role: "user",
+      text: `/image ${prompt}`,
+      createdAt: now,
+    };
+    const assistantTurn: Turn = {
+      id: crypto.randomUUID(),
+      parentId: userTurn.id,
+      role: "assistant",
+      text: "",
+      pending: true,
+      createdAt: now,
+      progress: [
+        { id: "image-gen", label: "Generating image", status: "running", createdAt: now },
+      ],
+    };
+    appendTurn([userTurn, assistantTurn]);
+    updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+    setActiveLeafId(assistantTurn.id);
+    announce("Generating image");
+
+    // Settle the pending assistant turn in place (success or failure).
+    const settle = (settled: Turn) => {
+      updateLiveTurns(
+        (prev) => prev.map((t) => (t.id === assistantTurn.id ? settled : t)),
+        settled.id,
+      );
+    };
+
+    let settledTurn: Turn;
+    try {
+      const res = await fetch("/api/images/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt, familiarId: familiar.id }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        dataUrl?: string;
+        mime?: string;
+        provider?: string;
+        model?: string;
+        size?: string;
+        error?: string;
+        hint?: string;
+        providerMessage?: string;
+      } | null;
+      if (!res.ok || !json?.ok || !json.dataUrl) {
+        const detail = json?.hint ?? json?.providerMessage ?? json?.error ?? `HTTP ${res.status}`;
+        settledTurn = {
+          ...assistantTurn,
+          pending: false,
+          text: `Couldn't generate the image: ${detail}`,
+          progress: [
+            { id: "image-gen", label: "Image generation failed", status: "error", createdAt: now },
+          ],
+        };
+      } else {
+        // Validate + bound the payload exactly like user-attached images; an
+        // oversized image degrades to a note instead of a broken turn.
+        const image = cleanImageDataUrl(json.dataUrl);
+        const ext = (json.mime ?? "image/png").split("/")[1] ?? "png";
+        const detailBits = [json.model, json.size].filter(Boolean).join(", ");
+        if (image) {
+          settledTurn = {
+            ...assistantTurn,
+            pending: false,
+            text: `Generated image — “${prompt}”${detailBits ? ` (${detailBits})` : ""}`,
+            attachments: [
+              {
+                name: `image-${Date.now()}.${ext}`,
+                mimeType: image.mimeType,
+                dataUrl: image.dataUrl,
+              },
+            ],
+            progress: [],
+          };
+        } else {
+          settledTurn = {
+            ...assistantTurn,
+            pending: false,
+            text: `The generated image was too large to attach${detailBits ? ` (${detailBits})` : ""}. Try a smaller size in Familiar Studio → Brain → Image generation.`,
+            progress: [],
+          };
+        }
+      }
+    } catch (err) {
+      settledTurn = {
+        ...assistantTurn,
+        pending: false,
+        text: `Couldn't generate the image: ${err instanceof Error ? err.message : "network error"}`,
+        progress: [
+          { id: "image-gen", label: "Image generation failed", status: "error", createdAt: now },
+        ],
+      };
+    }
+    settle(settledTurn);
+    announce(settledTurn.attachments?.length ? "Image ready" : "Image generation failed");
+
+    // Persist both turns so the image survives reloads. Brand-new chats have
+    // no session id yet — the turns stay view-local there (same as /doctor).
+    if (targetSessionId) {
+      invalidateConversation(targetSessionId);
+      try {
+        await fetch(`/api/chat/conversation/${encodeURIComponent(targetSessionId)}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            turns: [userTurn, settledTurn],
+            activeLeafId: settledTurn.id,
+            familiarId: familiar.id,
+            harness: modelHarness,
+          }),
+        });
+      } catch {
+        // Optimistic — the transcript already shows the image.
+      }
+    }
+  };
+
   // Drop a prompt template into the composer for editing — never a send. When
   // the body carries a {{placeholder}}, select the first one so typing
   // replaces it; otherwise park the caret at the end.
@@ -3535,6 +3670,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (command === "/doctor" || command === "/daemon") {
       setInput("");
       void runCovenExec(command === "/doctor" ? "doctor" : "daemon");
+      return true;
+    }
+    if (command === "/image") {
+      if (!args.trim()) {
+        appendSystem(
+          "Describe the image to generate — e.g. /image a watercolor fox reading by candlelight. Provider and model come from Familiar Studio → Brain → Image generation.",
+        );
+        setInput("");
+        return true;
+      }
+      setInput("");
+      void runImageGeneration(args.trim());
       return true;
     }
     if (command === "/canvas") {
@@ -6473,8 +6620,17 @@ function TurnRowImpl({
                 )}
               </div>
             ) : null}
-            {/* Agent-produced inline attachments (file chips → lightbox). */}
-            {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+            {/* Agent-produced inline attachments: images render full-bleed
+                (e.g. /image generations), everything else stays a file chip
+                that opens the lightbox. */}
+            {turn.attachments?.length ? (
+              <>
+                <InlineImageAttachments attachments={turn.attachments} />
+                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
+                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                ) : null}
+              </>
+            ) : null}
             {/* Skill stage cards (design §5): one per skill name per turn,
                 updated in place by repeated <coven:skill> markers — live
                 while streaming, settled state after. */}

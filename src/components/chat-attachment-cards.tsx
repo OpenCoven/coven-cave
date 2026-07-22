@@ -95,3 +95,44 @@ export function AttachmentList({ attachments }: { attachments: ChatAttachment[] 
     </>
   );
 }
+
+/** True when the attachment is an image that can render inline (has a data URL). */
+export function isInlineImageAttachment(attachment: ChatAttachment): boolean {
+  return Boolean(
+    (attachment.mimeType ?? attachment.type)?.startsWith("image/") && attachment.dataUrl,
+  );
+}
+
+/**
+ * Full-bleed inline rendering for image attachments a familiar produced
+ * (e.g. /image generations) — a bounded picture in the transcript instead of
+ * a filename chip. Click opens the same lightbox as the chip list.
+ */
+export function InlineImageAttachments({ attachments }: { attachments: ChatAttachment[] }) {
+  const [selected, setSelected] = useState<ChatAttachment | null>(null);
+  const images = attachments.filter(isInlineImageAttachment);
+  if (images.length === 0) return null;
+  return (
+    <>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {images.map((attachment, index) => (
+          <button
+            type="button"
+            key={`${attachment.name}-${index}`}
+            className="block max-w-full cursor-zoom-in overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-0 transition-colors hover:border-[var(--accent-presence)]/40"
+            title={`View ${attachment.name}`}
+            onClick={() => setSelected(attachment)}
+          >
+            <img
+              src={attachment.dataUrl}
+              alt={attachment.name}
+              loading="lazy"
+              className="block max-h-80 max-w-full object-contain"
+            />
+          </button>
+        ))}
+      </div>
+      {selected ? <AttachmentLightbox attachment={selected} onClose={() => setSelected(null)} /> : null}
+    </>
+  );
+}

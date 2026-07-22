@@ -286,8 +286,8 @@ const imeSafeVoiceEnterHandlers =
   ) ?? [];
 assert.equal(
   imeSafeVoiceEnterHandlers.length,
-  2,
-  "both free-text voice inputs ignore Enter while an IME composition is active",
+  3,
+  "the free-text voice inputs and the custom image-model input all ignore Enter while an IME composition is active",
 );
 
 // 5. Successful saves catch the roster up immediately — every surface gating
@@ -297,4 +297,58 @@ assert.match(
   source,
   /reportDaemonSyncSuccess\(\);[\s\S]{0,400}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
   "a successful config save dispatches cave:familiars-refresh (parity with the other /api/config writers)",
+);
+
+// ── Image generation card (cave-i6dx) ────────────────────────────────────────
+assert.match(
+  source,
+  /familiar-studio-brain__card-title">Image generation<\/h3>/,
+  "Brain tab should have an Image generation card in the sidecar",
+);
+assert.match(
+  source,
+  /\{ value: "", label: "Auto \(match chat model\)" \}/,
+  "the image provider select defaults to Auto (provider inferred from the chat model)",
+);
+assert.match(
+  source,
+  /\{ value: IMAGE_GEN_OFF, label: "Off" \}/,
+  "image generation can be turned off per familiar",
+);
+// Provider switches clear the dependent picks in the SAME save patch, so a
+// stale model/size/quality can never ride along to the wrong provider.
+assert.match(
+  source,
+  /imageProvider: next \|\| null,\s*imageModel: null,\s*imageSize: null,\s*imageQuality: null,/,
+  "switching image provider clears model, size, and quality together",
+);
+// The custom image model mode mirrors the runtime model select's explicit
+// Custom... state ("" must stay representable as Provider default).
+assert.match(
+  source,
+  /const \[imageModelCustomMode, setImageModelCustomMode\] = useState\(false\)/,
+  "custom image model mode must be explicit state, not inferred from an empty draft",
+);
+assert.match(
+  source,
+  /imageModelCustomMode \|\| \(draftImageModel !== "" && !draftImageModelIsListed\)/,
+  "only a non-empty unlisted id (or explicit Custom...) switches the image model select to Custom",
+);
+// Per-field draft sync (the cave-32er convention) covers the image fields too.
+assert.match(
+  source,
+  /setDraftImageProvider\(familiar\.imageProvider \?\? ""\);\s*\}, \[familiar\.imageProvider\]\);/,
+  "draftImageProvider follows its own backing field only",
+);
+assert.match(
+  source,
+  /setDraftImageSize\(familiar\.imageSize \?\? ""\);\s*\}, \[familiar\.imageSize\]\);/,
+  "draftImageSize follows its own backing field only",
+);
+// The blur-committed custom image model rides the same unmount-flush guard as
+// the voice text fields (a typed id must survive closing the Studio).
+assert.match(
+  source,
+  /const pendingImageModel = draftImageModel\.trim\(\);\s*if \(pendingImageModel !== \(familiar\.imageModel \?\? ""\)\) patch\.imageModel = pendingImageModel \|\| null;/,
+  "a dirty custom image model id is tracked for the unmount flush",
 );

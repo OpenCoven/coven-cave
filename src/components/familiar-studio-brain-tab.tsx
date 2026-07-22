@@ -24,6 +24,14 @@ import {
   type ElevenLabsModelOption,
   type ElevenLabsVoiceOption,
 } from "@/lib/voice/elevenlabs-shared";
+import {
+  DEFAULT_IMAGE_GEN_MODELS,
+  IMAGE_GEN_OFF,
+  imageGenModelsForProvider,
+  imageGenQualitiesForModel,
+  imageGenSizesForModel,
+  isImageGenProvider,
+} from "@/lib/image-generation";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -63,6 +71,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
+  const [draftImageProvider, setDraftImageProvider] = useState(familiar.imageProvider ?? "");
+  const [draftImageModel, setDraftImageModel] = useState(familiar.imageModel ?? "");
+  // Same disambiguation as the runtime model select: "" is both "Provider
+  // default" and "custom id being typed", so Custom... needs an explicit flag.
+  const [imageModelCustomMode, setImageModelCustomMode] = useState(false);
+  const [draftImageSize, setDraftImageSize] = useState(familiar.imageSize ?? "");
+  const [draftImageQuality, setDraftImageQuality] = useState(familiar.imageQuality ?? "");
   const [draftAutoSelfReport, setDraftAutoSelfReport] = useState(Boolean(familiar.autoSelfReport));
   const [toast, setToast] = useState<string | null>(null);
   const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
@@ -99,6 +114,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     if (pendingVoiceModel !== (familiar.voiceModel ?? "")) patch.voiceModel = pendingVoiceModel || null;
     const pendingVoiceName = draftVoiceName.trim();
     if (pendingVoiceName !== (familiar.voiceName ?? "")) patch.voiceName = pendingVoiceName || null;
+    // The custom image-model input is the card's only blur-committed text field.
+    const pendingImageModel = draftImageModel.trim();
+    if (pendingImageModel !== (familiar.imageModel ?? "")) patch.imageModel = pendingImageModel || null;
     dirtyTextRef.current = { familiarId: familiar.id, patch };
   }
 
@@ -116,6 +134,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
     setDraftVoiceName(familiar.voiceName ?? "");
+    setDraftImageProvider(familiar.imageProvider ?? "");
+    setDraftImageModel(familiar.imageModel ?? "");
+    setImageModelCustomMode(false);
+    setDraftImageSize(familiar.imageSize ?? "");
+    setDraftImageQuality(familiar.imageQuality ?? "");
     setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
     setToast(null);
     return () => {
@@ -172,6 +195,19 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   useEffect(() => {
     setDraftVoiceName(familiar.voiceName ?? "");
   }, [familiar.voiceName]);
+  useEffect(() => {
+    setDraftImageProvider(familiar.imageProvider ?? "");
+  }, [familiar.imageProvider]);
+  useEffect(() => {
+    setDraftImageModel(familiar.imageModel ?? "");
+    setImageModelCustomMode(false);
+  }, [familiar.imageModel]);
+  useEffect(() => {
+    setDraftImageSize(familiar.imageSize ?? "");
+  }, [familiar.imageSize]);
+  useEffect(() => {
+    setDraftImageQuality(familiar.imageQuality ?? "");
+  }, [familiar.imageQuality]);
   useEffect(() => {
     setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
   }, [familiar.autoSelfReport]);
@@ -244,6 +280,22 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     );
   }, [manifest]);
 
+  // Image generation derivations: pinning a provider unlocks model/size/quality
+  // pickers; "" (auto) resolves the provider from the chat model at /image time.
+  const imageProviderPinned = isImageGenProvider(draftImageProvider) ? draftImageProvider : null;
+  const imageModelOptions = imageProviderPinned ? imageGenModelsForProvider(imageProviderPinned) : [];
+  const draftImageModelIsListed = imageModelOptions.some((option) => option.id === draftImageModel);
+  const imageModelIsCustom = imageModelCustomMode || (draftImageModel !== "" && !draftImageModelIsListed);
+  const settledImageModel = imageProviderPinned
+    ? (draftImageModel || DEFAULT_IMAGE_GEN_MODELS[imageProviderPinned])
+    : "";
+  const imageSizeOptions = imageProviderPinned
+    ? imageGenSizesForModel(settledImageModel, imageProviderPinned)
+    : [];
+  const imageQualityOptions = imageProviderPinned
+    ? imageGenQualitiesForModel(settledImageModel, imageProviderPinned)
+    : [];
+
   async function save(patch: Record<string, unknown>) {
     setToast(null);
     try {
@@ -271,6 +323,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
         if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
         if ("voiceName" in patch) setDraftVoiceName(familiar.voiceName ?? "");
+        if ("imageProvider" in patch) setDraftImageProvider(familiar.imageProvider ?? "");
+        if ("imageModel" in patch) {
+          setDraftImageModel(familiar.imageModel ?? "");
+          setImageModelCustomMode(false);
+        }
+        if ("imageSize" in patch) setDraftImageSize(familiar.imageSize ?? "");
+        if ("imageQuality" in patch) setDraftImageQuality(familiar.imageQuality ?? "");
         if ("autoSelfReport" in patch) setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
       } else {
         reportDaemonSyncSuccess();
@@ -685,7 +744,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
         </div>
 
-        <aside className="familiar-studio-brain__sidecar" aria-label="Voice, reflection, and capabilities">
+        <aside className="familiar-studio-brain__sidecar" aria-label="Voice, image generation, reflection, and capabilities">
           <section className="familiar-studio-brain__card">
             <h3 className="familiar-studio-brain__card-title">Voice</h3>
             <label className="familiar-studio-brain__row">
@@ -873,6 +932,161 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 {previewNote ? (
                   <p className="familiar-studio-brain__hint" role="status">{previewNote}</p>
                 ) : null}
+              </>
+            )}
+          </section>
+
+          <section className="familiar-studio-brain__card">
+            <h3 className="familiar-studio-brain__card-title">Image generation</h3>
+            <label className="familiar-studio-brain__row">
+              <span className="familiar-studio-brain__label">Provider</span>
+              <div className="familiar-studio-brain__control">
+                <StandardSelect
+                  label="Image provider"
+                  value={draftImageProvider}
+                  onChange={(next) => {
+                    setDraftImageProvider(next);
+                    setImageModelCustomMode(false);
+                    // Model/size/quality are provider-specific — clear them
+                    // together so a stale pick can't ride along.
+                    setDraftImageModel("");
+                    setDraftImageSize("");
+                    setDraftImageQuality("");
+                    void save({
+                      imageProvider: next || null,
+                      imageModel: null,
+                      imageSize: null,
+                      imageQuality: null,
+                    });
+                  }}
+                  className="familiar-studio-brain__input"
+                  options={[
+                    { value: "", label: "Auto (match chat model)" },
+                    { value: "openai", label: "OpenAI" },
+                    { value: "gemini", label: "Google Gemini" },
+                    { value: IMAGE_GEN_OFF, label: "Off" },
+                  ]}
+                />
+              </div>
+            </label>
+
+            {draftImageProvider === "" && (
+              <p className="familiar-studio-brain__hint">
+                The /image chat command picks OpenAI or Gemini to match this
+                familiar&apos;s chat model, using whichever API key is in your Vault.
+              </p>
+            )}
+
+            {draftImageProvider === IMAGE_GEN_OFF && (
+              <p className="familiar-studio-brain__hint">
+                /image is disabled for this familiar.
+              </p>
+            )}
+
+            {imageProviderPinned && (
+              <>
+                <label className="familiar-studio-brain__row">
+                  <span className="familiar-studio-brain__label">Model</span>
+                  <div className="familiar-studio-brain__control">
+                    <StandardSelect
+                      label="Image model"
+                      value={imageModelIsCustom ? "__custom__" : draftImageModel}
+                      onChange={(next) => {
+                        if (next === "__custom__") {
+                          setImageModelCustomMode(true);
+                          setDraftImageModel("");
+                          return;
+                        }
+                        setImageModelCustomMode(false);
+                        setDraftImageModel(next);
+                        // Sizes/qualities are model-specific; reset with the pick.
+                        setDraftImageSize("");
+                        setDraftImageQuality("");
+                        void save({ imageModel: next || null, imageSize: null, imageQuality: null });
+                      }}
+                      className="familiar-studio-brain__input"
+                      options={[
+                        {
+                          value: "",
+                          label: `Default (${DEFAULT_IMAGE_GEN_MODELS[imageProviderPinned]})`,
+                        },
+                        ...imageModelOptions.map((option) => ({
+                          value: option.id,
+                          label: option.label,
+                        })),
+                        { value: "__custom__", label: "Custom..." },
+                      ]}
+                    />
+                    {imageModelIsCustom ? (
+                      <input
+                        type="text"
+                        value={draftImageModel}
+                        onChange={(e) => setDraftImageModel(e.target.value)}
+                        onBlur={() => {
+                          const trimmed = draftImageModel.trim();
+                          // Blurring an empty custom field falls back to the
+                          // provider default instead of a blank Custom row.
+                          if (!trimmed) setImageModelCustomMode(false);
+                          void save({ imageModel: trimmed || null });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
+                          // Enter commits (via the blur handler).
+                          if (e.key === "Enter") e.currentTarget.blur();
+                        }}
+                        placeholder={DEFAULT_IMAGE_GEN_MODELS[imageProviderPinned]}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        className="familiar-studio-brain__input"
+                      />
+                    ) : null}
+                  </div>
+                </label>
+
+                {imageSizeOptions.length > 0 && (
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">
+                      {imageProviderPinned === "gemini" ? "Aspect ratio" : "Size"}
+                    </span>
+                    <div className="familiar-studio-brain__control">
+                      <StandardSelect
+                        label={imageProviderPinned === "gemini" ? "Aspect ratio" : "Image size"}
+                        value={draftImageSize}
+                        onChange={(next) => {
+                          setDraftImageSize(next);
+                          void save({ imageSize: next || null });
+                        }}
+                        className="familiar-studio-brain__input"
+                        options={[
+                          { value: "", label: `Default (${imageSizeOptions[0]})` },
+                          ...imageSizeOptions.map((size) => ({ value: size, label: size })),
+                        ]}
+                      />
+                    </div>
+                  </label>
+                )}
+
+                {imageQualityOptions.length > 0 && (
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">Quality</span>
+                    <div className="familiar-studio-brain__control">
+                      <StandardSelect
+                        label="Image quality"
+                        value={draftImageQuality}
+                        onChange={(next) => {
+                          setDraftImageQuality(next);
+                          void save({ imageQuality: next || null });
+                        }}
+                        className="familiar-studio-brain__input"
+                        options={[
+                          { value: "", label: `Default (${imageQualityOptions[0]})` },
+                          ...imageQualityOptions.map((quality) => ({ value: quality, label: quality })),
+                        ]}
+                      />
+                    </div>
+                  </label>
+                )}
               </>
             )}
           </section>

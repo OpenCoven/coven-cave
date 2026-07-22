@@ -31,6 +31,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt", description: "Drop a starter prompt into the composer for editing.", argPlaceholder: "name", section: "chat" },
   { name: "/prompts", hint: "browse prompts", description: "Show every prompt template to pick from.", section: "chat" },
   { name: "/save", aliases: ["/link"], hint: "save links", description: "Save one or more links to the Research desk, auto-organized by kind.", argPlaceholder: "url…", section: "chat" },
+  { name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image", description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).", argPlaceholder: "describe an image…", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },
