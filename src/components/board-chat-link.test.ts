@@ -125,6 +125,11 @@ assert.match(
   "Board keeps the first OpenClaw task prompt until its local conversation appears",
 );
 assert.match(
+  boardView,
+  /if \(isMobile && started\.bridge !== "openclaw"\)/,
+  "Mobile OpenClaw task launches stay in the cockpit until the bridge sends its first prompt",
+);
+assert.match(
   taskWorkCockpit,
   /initialPrompt && familiar[\s\S]{0,600}autoSendInitialPrompt/,
   "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",

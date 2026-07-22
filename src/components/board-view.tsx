@@ -833,7 +833,10 @@ export function BoardView({
     if (started.bridge === "openclaw" && started.initialPrompt) {
       setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
     }
-    if (isMobile) {
+    // The OpenClaw bridge needs TaskWorkCockpit to hand the first prompt to
+    // ChatView. Jumping straight to the mobile session view would discard that
+    // one-shot handoff before a local conversation exists.
+    if (isMobile && started.bridge !== "openclaw") {
       onJumpToSession?.(started.sessionId, started.familiarId);
       return;
     }
