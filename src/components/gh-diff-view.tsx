@@ -36,7 +36,7 @@ export function DiffHunk({
   const lines = useMemo(() => parseDiff(hunk), [hunk]);
   const stats = useMemo(() => diffStats(lines), [lines]);
   const [expanded, setExpanded] = useState(false);
-  const lang = resolveShikiLang(path ? path.split(".").pop() : null);
+  const lang = resolveShikiLang(pathLangToken(path));
   // tokens[i] = Shiki tokens for lines[i]'s content (marker stripped); null
   // until the async highlight lands or when the grammar is unknown.
   const [tokens, setTokens] = useState<ThemedToken[][] | null>(null);
@@ -115,6 +115,19 @@ function splitMarker(text: string): { marker: string; content: string } {
   return /^[+\- ]/.test(text)
     ? { marker: text[0], content: text.slice(1) }
     : { marker: "", content: text };
+}
+
+/**
+ * Grammar token for a file path: the basename's extension when it has one,
+ * otherwise the bare basename itself (so extensionless-but-known names like
+ * `infra/Dockerfile` still resolve — resolveShikiLang owns the mapping).
+ */
+function pathLangToken(path: string | null | undefined): string | null {
+  if (!path) return null;
+  const base = path.split("/").pop() ?? "";
+  if (!base) return null;
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(dot + 1) : base;
 }
 
 function renderLine(line: DiffLine, lineTokens: ThemedToken[] | undefined) {

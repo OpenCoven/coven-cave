@@ -67,8 +67,18 @@ assert.match(
 assert.doesNotMatch(diffView, /createHighlighter\(/, "DiffHunk must not create its own Shiki instance");
 assert.match(
   diffView,
-  /resolveShikiLang\(path \? path\.split\("\."\)\.pop\(\) : null\)/,
-  "the diff grammar resolves from the file path's extension",
+  /resolveShikiLang\(pathLangToken\(path\)\)/,
+  "the diff grammar resolves from the file path via the basename-aware token helper",
+);
+assert.match(
+  diffView,
+  /const base = path\.split\("\/"\)\.pop\(\) \?\? "";/,
+  "pathLangToken extracts the basename first so extensionless names in subdirs (infra/Dockerfile) still resolve",
+);
+assert.match(
+  diffView,
+  /return dot > 0 \? base\.slice\(dot \+ 1\) : base;/,
+  "pathLangToken falls back to the bare basename when there is no extension",
 );
 assert.match(
   diffView,
