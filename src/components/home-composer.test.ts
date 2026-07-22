@@ -80,10 +80,10 @@ assert.match(
   /home-composer-eyebrow\$\{greeting \? " is-ready" : ""\}/,
   "the eyebrow fades in via .is-ready once the client greeting lands",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /className="home-halo" aria-hidden/,
-  "the hearth-glow halo renders behind the composer card and is hidden from AT",
+  /home-halo/,
+  "the hearth-glow halo is retired — its breathing radial oval read as blurry background color",
 );
 
 // Project selection lives in the composer's context pill (chat revamp 1d):
