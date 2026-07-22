@@ -13,6 +13,14 @@ export function openCodeCommand(): string {
  */
 export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
   const env = harnessSpawnEnv(familiarId);
-  if (process.platform !== "win32" && !env.XDG_RUNTIME_DIR) env.XDG_RUNTIME_DIR = "/tmp";
+  // WSL commonly exports XDG_RUNTIME_DIR=/run/user/<uid> even when that
+  // directory belongs to the Windows login and cannot be created from this
+  // distro. OpenCode then fails before it can start. Always use its documented
+  // /tmp fallback under WSL instead of preserving that stale inherited value.
+  const isWsl = process.platform === "linux" &&
+    Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+  if (isWsl || (process.platform !== "win32" && !env.XDG_RUNTIME_DIR)) {
+    env.XDG_RUNTIME_DIR = "/tmp";
+  }
   return env;
 }

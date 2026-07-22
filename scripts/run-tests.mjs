@@ -458,6 +458,7 @@ export const SUITES = {
     "src/lib/slash-commands.test.ts",
     "src/lib/slash-model.test.ts",
     "src/lib/opencode-models.test.ts",
+    "src/lib/opencode-bin.test.ts",
     "src/lib/opencode-stream.test.ts",
     "src/lib/use-runtime-model-options.test.ts",
     "src/lib/slash-skill.test.ts",
