@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
-import { PopoverItem, type PopoverItemSemantic } from "@/components/ui/popover";
+import { Fragment, useMemo, useRef, useState } from "react";
+import { Popover, PopoverItem, PopoverBody, type PopoverItemSemantic } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
@@ -76,6 +76,12 @@ function useLinkedWorkController({
   const canLink = Boolean(sessionId && onLinkedContextChange);
 
   const linkedIds = useMemo(() => new Set(tasks.map((t) => t.id)), [tasks]);
+
+  // Show only the primary (first) linked task inline; the rest ride a
+  // dropdown viewer so the composer surfaces one task at a time instead of a
+  // stack of near-duplicate rows (e.g. the same request at every priority).
+  const primaryTask = tasks[0] ?? null;
+  const overflowTasks = useMemo(() => tasks.slice(1), [tasks]);
 
   const markDone = async (t: (typeof tasks)[number]) => {
     setMarkingId(t.id);
@@ -158,6 +164,8 @@ function useLinkedWorkController({
     github,
     canLink,
     linkedIds,
+    primaryTask,
+    overflowTasks,
     pickerOpen,
     setPickerOpen,
     markingId,
@@ -185,6 +193,8 @@ export function ComposerLinkedWorkActions({
     github,
     canLink,
     linkedIds,
+    primaryTask,
+    overflowTasks,
     pickerOpen,
     setPickerOpen,
     markingId,
@@ -193,6 +203,7 @@ export function ComposerLinkedWorkActions({
     createTaskFromConversation,
     onAssigned,
   } = useLinkedWorkController({ linkedContext, sessionId, onLinkedContextChange, handoff });
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   if (!task && github.length === 0 && !canLink) {
     return (
@@ -202,40 +213,63 @@ export function ComposerLinkedWorkActions({
     );
   }
 
+  const renderMenuTask = (t: (typeof tasks)[number]) => {
+    const statusLine = [t.status, t.priority].filter(Boolean).join(" · ");
+    return (
+      <Fragment key={t.id}>
+        <PopoverItem
+          semantic={itemSemantic}
+          icon="ph:kanban"
+          title={`Open task: ${t.title}`}
+          onSelect={() => {
+            onCloseMenu?.();
+            onOpenTask?.(t.id);
+          }}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate">{t.title}</span>
+            {statusLine ? <span className="shrink-0 text-[var(--text-muted)]">{statusLine}</span> : null}
+          </span>
+        </PopoverItem>
+        {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
+          <PopoverItem
+            semantic={itemSemantic}
+            icon="ph:check-bold"
+            disabled={markingId === t.id}
+            title={`Mark task done: ${t.title}`}
+            onSelect={() => void markDone(t)}
+          >
+            {markingId === t.id ? "Marking…" : "Mark done"}
+          </PopoverItem>
+        ) : null}
+      </Fragment>
+    );
+  };
+
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1">
-      {tasks.map((t) => {
-        const statusLine = [t.status, t.priority].filter(Boolean).join(" · ");
-        return (
-          <Fragment key={t.id}>
-            <PopoverItem
-              semantic={itemSemantic}
-              icon="ph:kanban"
-              title={`Open task: ${t.title}`}
-              onSelect={() => {
-                onCloseMenu?.();
-                onOpenTask?.(t.id);
-              }}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate">{t.title}</span>
-                {statusLine ? <span className="shrink-0 text-[var(--text-muted)]">{statusLine}</span> : null}
-              </span>
-            </PopoverItem>
-            {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
-              <PopoverItem
-                semantic={itemSemantic}
-                icon="ph:check-bold"
-                disabled={markingId === t.id}
-                title={`Mark task done: ${t.title}`}
-                onSelect={() => void markDone(t)}
-              >
-                {markingId === t.id ? "Marking…" : "Mark done"}
-              </PopoverItem>
-            ) : null}
-          </Fragment>
-        );
-      })}
+      {/* Surface one task at a time: the primary linked task renders inline and
+          the rest fold into a dropdown viewer to keep the composer uncluttered. */}
+      {primaryTask ? renderMenuTask(primaryTask) : null}
+      {overflowTasks.length > 0 ? (
+        <>
+          <PopoverItem
+            semantic={itemSemantic}
+            icon="ph:dots-three"
+            title={`Show ${overflowTasks.length} more linked ${overflowTasks.length === 1 ? "task" : "tasks"}`}
+            onSelect={() => setOverflowOpen((open) => !open)}
+          >
+            {`${overflowOpen ? "Hide" : "Show"} +${overflowTasks.length} more ${
+              overflowTasks.length === 1 ? "task" : "tasks"
+            }`}
+          </PopoverItem>
+          {overflowOpen ? (
+            <div className="flex min-w-0 flex-col gap-1 border-l border-[var(--border-hairline)] pl-2">
+              {overflowTasks.map(renderMenuTask)}
+            </div>
+          ) : null}
+        </>
+      ) : null}
       {canLink && handoff ? (
         <PopoverItem
           semantic={itemSemantic}
@@ -357,6 +391,8 @@ export function LinkedContextRow({
     github,
     canLink,
     linkedIds,
+    primaryTask,
+    overflowTasks,
     pickerOpen,
     setPickerOpen,
     markingId,
@@ -365,28 +401,63 @@ export function LinkedContextRow({
     createTaskFromConversation,
     onAssigned,
   } = useLinkedWorkController({ linkedContext, sessionId, onLinkedContextChange, handoff });
+  const overflowAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
   if (!task && github.length === 0 && !canLink) return null;
+
+  const renderTaskChip = (t: (typeof tasks)[number]) => (
+    <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
+      <TaskChip task={t} onOpenTask={onOpenTask} />
+      {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
+        <button
+          type="button"
+          onClick={() => void markDone(t)}
+          disabled={markingId === t.id}
+          title={`Mark task done: ${t.title}`}
+          aria-label={`Mark task done: ${t.title}`}
+          className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
+        >
+          <Icon name="ph:check-bold" width={10} className="shrink-0" />
+          {markingId === t.id ? "Marking…" : "Mark done"}
+        </button>
+      ) : null}
+    </span>
+  );
 
   return (
     <div className="cave-chat-linked-context">
-      {tasks.map((t) => (
-        <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
-          <TaskChip task={t} onOpenTask={onOpenTask} />
-          {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
-            <button
-              type="button"
-              onClick={() => void markDone(t)}
-              disabled={markingId === t.id}
-              title={`Mark task done: ${t.title}`}
-              aria-label={`Mark task done: ${t.title}`}
-              className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
-            >
-              <Icon name="ph:check-bold" width={10} className="shrink-0" />
-              {markingId === t.id ? "Marking…" : "Mark done"}
-            </button>
-          ) : null}
+      {/* One task at a time: the primary linked task rides the footer band and
+          the rest collapse into a "+N more" dropdown viewer. */}
+      {primaryTask ? renderTaskChip(primaryTask) : null}
+      {overflowTasks.length > 0 ? (
+        <span className="relative inline-flex">
+          <button
+            ref={overflowAnchorRef}
+            type="button"
+            onClick={() => setOverflowOpen((open) => !open)}
+            title={`Show ${overflowTasks.length} more linked ${overflowTasks.length === 1 ? "task" : "tasks"}`}
+            aria-label={`Show ${overflowTasks.length} more linked ${
+              overflowTasks.length === 1 ? "task" : "tasks"
+            }`}
+            aria-expanded={overflowOpen}
+            className="cave-chat-linked-chip cave-chat-linked-chip--more focus-ring inline-flex items-center gap-1 border border-dashed border-[var(--border-strong)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:dots-three" width={11} className="shrink-0" />
+            {`+${overflowTasks.length}`}
+          </button>
+          <Popover
+            open={overflowOpen}
+            onOpenChange={setOverflowOpen}
+            anchorRef={overflowAnchorRef}
+            placement="top-start"
+            ariaLabel="More linked tasks"
+          >
+            <PopoverBody>
+              <div className="flex min-w-0 flex-col gap-1 p-1">{overflowTasks.map(renderTaskChip)}</div>
+            </PopoverBody>
+          </Popover>
         </span>
-      ))}
+      ) : null}
       {canLink && handoff ? (
         <button
           type="button"
