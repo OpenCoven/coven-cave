@@ -3,7 +3,7 @@
 //
 // Source: OpenCoven/coven-runtimes canonical registry index
 //   ref:      main
-//   blob sha: 051805ae24056d3efee0b93b73fee75e0d737b52
+//   blob sha: b1c23ce0d8577f2e808472c39795c6a726b75a7b
 //
 // Every entry passed coven-runtimes acceptance (conformance + review), so
 // Cave treats these as trusted runtimes (see harness-adapters.ts). New
@@ -35,7 +35,7 @@ export type RegistryRuntime = {
 export const REGISTRY_SOURCE = {
   repo: "OpenCoven/coven-runtimes",
   ref: "main",
-  blobSha: "051805ae24056d3efee0b93b73fee75e0d737b52",
+  blobSha: "b1c23ce0d8577f2e808472c39795c6a726b75a7b",
 } as const;
 
 export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
@@ -105,13 +105,94 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     }
   },
   {
+    "id": "grok",
+    "label": "Grok Build",
+    "binary": "grok",
+    "installHint": "Install Grok Build by following xAI's official instructions at https://docs.x.ai/build/overview. Make sure `grok` is on PATH and run `grok login` (or set XAI_API_KEY for headless auth), then retry `coven adapter doctor grok`.",
+    "version": "1.0.0",
+    "homepage": "https://docs.x.ai/build/cli/headless-scripting",
+    "description": "xAI Grok Build adapter. Finite one-shot headless runs via `--single=<prompt>` in Grok's plain output mode (`--output-format plain`, its own default): stdout carries only the final response text, reasoning is dropped at the source, and errors go to stderr — no event protocol or translation layer. Session pre-assignment via `--session-id`, cold-start resume via `--resume`. Permission mapping uses the argv-list sandbox form to drive both `--permission-mode` and `--sandbox`. No stream mode: every turn is a fresh process.",
+    "modelFlag": "--model",
+    "capabilities": {
+      "stream": false,
+      "preassignedSessionId": true,
+      "think": false,
+      "speed": false
+    },
+    "adapterManifest": {
+      "adapters": [
+        {
+          "id": "grok",
+          "label": "Grok Build",
+          "executable": "grok",
+          "interactive_prompt_prefix_args": [
+            "--no-auto-update",
+            "--no-alt-screen",
+            "--output-format",
+            "plain"
+          ],
+          "non_interactive_prompt_prefix_args": [
+            "--no-auto-update",
+            "--no-alt-screen",
+            "--output-format",
+            "plain"
+          ],
+          "prompt_flag": "--single",
+          "interactive_prompt_flag": "--single",
+          "install_hint": "Install Grok Build by following xAI's official instructions at https://docs.x.ai/build/overview. Make sure `grok` is on PATH and run `grok login` (or set XAI_API_KEY for headless auth), then retry `coven adapter doctor grok`.",
+          "system_prompt_flag": "--rules",
+          "model_flag": "--model",
+          "capabilities": {
+            "stream": false,
+            "preassigned_session_id": true,
+            "think": false,
+            "speed": false
+          },
+          "sandbox": {
+            "full_args": [
+              "--permission-mode",
+              "bypassPermissions",
+              "--sandbox",
+              "off"
+            ],
+            "read_only_args": [
+              "--permission-mode",
+              "default",
+              "--sandbox",
+              "read-only"
+            ]
+          },
+          "continuity_args": {
+            "init_prefix_args": [
+              "--no-auto-update",
+              "--no-alt-screen",
+              "--output-format",
+              "plain"
+            ],
+            "resume_prefix_args": [
+              "--no-auto-update",
+              "--no-alt-screen",
+              "--output-format",
+              "plain"
+            ],
+            "session_id_flag": "--session-id",
+            "resume_flag": "--resume"
+          },
+          "version": "1.0.0",
+          "homepage": "https://docs.x.ai/build/cli/headless-scripting",
+          "description": "xAI Grok Build adapter. Finite one-shot headless runs via `--single=<prompt>` in Grok's plain output mode (`--output-format plain`, its own default): stdout carries only the final response text, reasoning is dropped at the source, and errors go to stderr — no event protocol or translation layer. Session pre-assignment via `--session-id`, cold-start resume via `--resume`. Permission mapping uses the argv-list sandbox form to drive both `--permission-mode` and `--sandbox`. No stream mode: every turn is a fresh process."
+        }
+      ]
+    }
+  },
+  {
     "id": "hermes",
     "label": "Hermes Agent",
     "binary": "hermes-coven",
     "installHint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
-    "version": "1.0.1",
-    "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot).",
-    "modelFlag": null,
+    "version": "1.0.2",
+    "description": "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    "modelFlag": "--model",
     "capabilities": {
       "stream": false,
       "preassignedSessionId": false,
@@ -136,14 +217,15 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
             "-Q"
           ],
           "install_hint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+          "model_flag": "--model",
           "capabilities": {
             "stream": false,
             "preassigned_session_id": false,
             "think": false,
             "speed": false
           },
-          "version": "1.0.1",
-          "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot)."
+          "version": "1.0.2",
+          "description": "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments."
         }
       ]
     }
