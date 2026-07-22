@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-22
+
+> 🏠 **Refined home, richer iOS, and new runtimes.** The launch home gets a unified hearth cluster with Continue cards and a split composer toolbar. iOS gains a focused 4-tab bar, turn-completion notifications, Live Activity, Canvas view mode, and motion polish. New runtimes: Grok Build, OpenCode, and a native Tailscale Server Hub connection.
+
+### Added
+- **Refined launch home** — unified hearth cluster, split composer toolbar (utility row + submit row), Continue cards for reference parity, violet persistent composer border, context pill in footer band, and a settle animation for a calmer cold-start (#3670, #3662, #3664).
+- **iOS tab bar & Live Activity** — a focused 4-tab bar with a sidebar-adaptable More section, bottom tab bar hides while a conversation is open, turn-completion notifications, chat Live Activity, and live agent tool/progress activity in chat (#3666, #3667, #3661, #3658).
+- **New runtimes** — native Grok Build and OpenCode chat runtimes; Tailscale Server Hub connection synced with the desktop daemon (#3649, #3647, #3641).
+- **iOS Canvas & polish** — Canvas view mode behind a fail-closed desktop opt-in; iOS transcript micro-polish (unread divider, draft badges, day chip); zoom-push-to-chat and subdued queued-send entrance motion (#3657, #3668, #3669).
+- **Chat & composer improvements** — `/image` command, familiar image-gen settings, image skill templates; unified ComposerAddMenu with cascading submenus; rail code preview wraps flush; `/image` familiar-level settings (#3648, #3651, #3645).
+- **Familiar redesign** — five-section rebuild from skills-page design handoff (#3655).
+
+### Fixed
+- **Mobile & pairing** — pairing status self-heals with TTL half-open on retry breaker; forward request in project-file POST so phone saves honor the opt-in; smart iOS connect screen + desktop handoff ladder; don't classify trusted local peers as mobile ingress (#3665, #3663, #3654, #3646).
+- **Chat resilience** — parse SSE frames carrying `id:` lines; env panel gates at 2xl width; popover submenu click after hover-intent no longer re-closes flyout; draft flush-on-unmount and adapter-heal early settle (#3656, #3642, #3653, #3637).
+- **Hermes & stream** — expose authenticated models and repair Debug events (#3636).
+- **Misc** — launch OpenClaw npm shims without cmd; hide Coven Code from runtime binding pickers (#3660, #3659).
+
 ## [0.1.4] - 2026-07-19
 
 > 🏠 **Home-first, safer, and calmer.** The Cave now opens on Home with a redesigned navigation and chat interface, a broad security-hardening pass locks down mobile and project surfaces, iOS chat gets noticeably smoother, and a neutral-graphite repaint unifies the whole design system.
