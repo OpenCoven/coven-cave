@@ -13,6 +13,11 @@ assert.match(
   /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*background: color-mix\(in oklch, var\(--bg-base\) 72%, transparent\);[^}]*\}/,
   "Home uses one uniform theme-derived hearth surface while a backdrop is active",
 );
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*border-radius: var\(--radius-xl\);[^}]*\}/,
+  "the hearth surface rounds with the Appearance corner-radius tokens, not square corners",
+);
 assert.doesNotMatch(
   css,
   /html\[data-backdrop-on\] \.home-composer-root::before/,
