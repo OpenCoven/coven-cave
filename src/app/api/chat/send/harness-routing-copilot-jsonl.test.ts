@@ -76,8 +76,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const harnessSessionId = grokDirect \? grokSessionId \?\? sessionId : sessionId;/,
-  "a fresh Grok session created after an access-mode switch must be persisted as the next resume target",
+  /const harnessSessionId = grokDirect \? grokSessionId : sessionId;/,
+  "a failed Grok resume must not overwrite the native resume id with Cave's stable conversation id",
+);
+assert.match(
+  chatRoute,
+  /if \(grokDirect && grokSessionId\) conv\.grokSandboxProfile = grokSandboxProfile;/,
+  "a failed sandbox-switch attempt must retain the profile of the native session it will resume next",
 );
 assert.match(
   chatRoute,

@@ -2100,7 +2100,12 @@ export async function POST(req: Request) {
       // is tracked on the file for the next resume but never becomes the
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
-      const harnessSessionId = grokDirect ? grokSessionId ?? sessionId : sessionId;
+      // A Grok resume can fail before producing a native event. In that case
+      // `sessionId` is Cave's stable conversation id, not a CLI resume id;
+      // do not overwrite the previous native id (or record a changed sandbox
+      // profile) and accidentally let a later read turn resume the old full
+      // access session.
+      const harnessSessionId = grokDirect ? grokSessionId : sessionId;
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
@@ -2195,7 +2200,7 @@ export async function POST(req: Request) {
         const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
-        if (grokDirect) conv.grokSandboxProfile = grokSandboxProfile;
+        if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
