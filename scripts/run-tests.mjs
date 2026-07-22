@@ -599,6 +599,7 @@ export const SUITES = {
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/daily-summary-notifications.test.ts",
     "src/app/daily-report-page.test.ts",
+    "src/components/shipped-table.test.ts",
     "src/components/reminder-link-field.test.ts",
     "src/components/new-reminder-modal.test.ts",
     "src/components/board-enrich-steps.test.ts",
