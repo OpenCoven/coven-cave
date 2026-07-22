@@ -1,522 +1,92 @@
 // @ts-nocheck
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// The Projects surface is a master-detail hub split into a small component
-// tree (shell + project-list + project-detail + session-row + shared helpers).
-// These source-text assertions run against the COMBINED source, so each keeps
-// verifying behavior regardless of which file a given piece now lives in.
-const projectsViewSource = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
-const projectListSource = readFileSync(new URL("./projects/project-list.tsx", import.meta.url), "utf8");
-const projectDetailSource = readFileSync(new URL("./projects/project-detail.tsx", import.meta.url), "utf8");
-const sessionRowSource = readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8");
-// The list-pane chrome (Refresh / New project / filter / All-Active / sort)
-// lives in the shared SurfaceRail now — slice the rail-chrome JSX so the
-// control pins keep pointing at the right block.
-const projectsViewRail = projectsViewSource.slice(
-  projectsViewSource.indexOf("const railActions"),
-  projectsViewSource.indexOf("\n  return ("),
-);
-const projectsView = [
-  projectsViewSource,
-  projectListSource,
-  projectDetailSource,
-  sessionRowSource,
-  readFileSync(new URL("./projects/projects-shared.ts", import.meta.url), "utf8"),
-].join("\n\n");
-const projectsCss = readFileSync(new URL("../styles/projects.css", import.meta.url), "utf8");
-const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
-const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
-// globals.css is a stable entry stub now — the primitive rules live in the
-// split module sheets, so the render-virtualization pin reads primitives.css.
-const globalsCss = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
+// Source contracts for the Chat → Projects "Project access" page: one
+// familiar's access map over every registered project, cycled per row against
+// /api/project-grants. Pure derivations (sections, cycle, counts, filter,
+// bulk ops) are behaviorally tested in src/lib/projects/access-page.test.ts;
+// these pins guard the React wiring and the page's cave-styled shell.
 
-assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
-assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
-assert.match(
-  projectsView,
-  /createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\)/,
-  "ProjectsView should preserve actionable API errors while deferring its registry notification until the scoped familiar grant completes",
-);
-assert.match(
-  projectsView,
-  /addChatProject\(\{[\s\S]{0,220}?familiarId: activeFamiliarId,[\s\S]{0,220}?existingProjectId: project\.id,[\s\S]{0,220}?projectJustCreated: true/,
-  "Creating a project should also grant it to the scoped familiar and mark partial grant failures as newly-created registry entries",
-);
-assert.match(projectsView, /const \[projectError, setProjectError\] = useState<string \| null>\(null\)/, "project-creation failures track their own alert state");
-assert.match(
-  projectsView,
-  /setCreating\(true\);[\s\S]*try \{[\s\S]*const project = await createProjectOrThrow\(name, root, \{ emitMutation: !activeFamiliarId \}\);[\s\S]*\} catch \(error\) \{[\s\S]*const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]*setCreateError\(message\);[\s\S]*\} finally \{[\s\S]*setCreating\(false\);[\s\S]*\}/,
-  "handleCreate uses try/finally so the busy state always clears, even if create or grant unexpectedly throws",
-);
-assert.match(projectsView, /if \(!granted\.ok\) \{[\s\S]{0,160}?const message = `Project created, but grant failed: \$\{granted\.error\}`;[\s\S]{0,120}?setProjectError\(message\);/, "grant failures still surface as explicit project alerts");
-assert.match(
-  projectsView,
-  /projectError \? \([\s\S]{0,500}?<span className="min-w-0 truncate">\{projectError\}<\/span>[\s\S]{0,260}?onClick=\{\(\) => setProjectError\(null\)\}/,
-  "project alerts render independently from chat-delete errors and can be dismissed",
-);
-assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
-assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
-assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");
-assert.match(projectsView, /const \[createError, setCreateError\] = useState<string \| null>\(null\)/, "new-project flow tracks inline create errors");
-assert.match(projectsView, /function openCreateProjectForm\(\)[\s\S]{0,120}?setCreateError\(null\)/, "opening the quick-create form clears any prior create error");
-assert.match(projectsView, /const handleCreate = async \(event: FormEvent<HTMLFormElement>\) => \{[\s\S]{0,160}?setCreating\(true\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?try \{/, "create starts a guarded submit flow with inline error reset");
-assert.match(projectsView, /if \(!granted\.ok\) \{[\s\S]{0,160}?setSessionError\(message\);[\s\S]{0,400}?setShowForm\(false\);[\s\S]{0,240}?selectProject\(project\.id\);/, "grant failures after creation stay on the success path: close the form, select the project, and report through the banner channel");
-assert.match(projectsView, /catch \(error\) \{[\s\S]{0,240}?const message = error instanceof Error \? error\.message : "Could not create that project\.";[\s\S]{0,80}?setCreateError\(message\);[\s\S]{0,80}?setProjectError\(message\);/, "create failures stay inline with the thrown error message (and mirror to the project alert)");
-assert.match(projectsView, /finally \{[\s\S]{0,120}?setCreating\(false\);[\s\S]{0,120}?\}/, "create always clears the busy state in finally");
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+const view = read("./projects-view.tsx");
+const css = read("../styles/projects.css");
+const chatSurface = read("./chat-surface.tsx");
 
-// ── Master-detail: persisted selection replaces per-card expansion ────────────
-assert.match(
-  projectsView,
-  /import \{\s*PROJECTS_SELECTED_KEY,\s*parseStoredProjectId,\s*resolveSelectedProjectId,?\s*\} from "@\/lib\/projects\/selected-project"/,
-  "selection persistence goes through the pure selected-project helpers",
-);
-assert.match(
-  projectsView,
-  /parseStoredProjectId\(window\.localStorage\.getItem\(PROJECTS_SELECTED_KEY\)\)/,
-  "the stored selection hydrates in an effect (SSR-safe)",
-);
-assert.match(
-  projectsView,
-  /window\.localStorage\.setItem\(PROJECTS_SELECTED_KEY, id\)/,
-  "selecting a project persists the id",
-);
-assert.match(
-  projectsView,
-  /resolveSelectedProjectId\(\s*storedSelection,/,
-  "the render-time selection resolves stale/deleted ids to the activity default",
-);
-assert.doesNotMatch(projectsView, /useProjectsUiState|isExpanded\(project\.id\)|PROJECTS_EXPANDED_KEY/, "per-card expansion state is gone — selection replaced it");
-assert.doesNotMatch(projectsView, /ProjectsDensity|setDensity/, "the density toggle is gone — list and detail each have one style");
+test("the surface keeps its mount contract with ChatSurface", () => {
+  // Direct CSS import: the surface is reachable straight from the Chat →
+  // Projects tab, before any other surface has ever mounted.
+  assert.match(view, /import "@\/styles\/projects\.css"/, "styles are imported by the component itself");
+  assert.match(view, /export function ProjectsView\(/, "keeps the ProjectsView export ChatSurface lazy-loads");
+  // Props stay the full historical contract so ChatSurface compiles untouched.
+  assert.match(view, /sessions\?: SessionRow\[\]/);
+  assert.match(view, /familiars\?: Familiar\[\]/);
+  assert.match(view, /onSessionsDeleted: \(sessionIds: readonly string\[\]\) => void/);
+  assert.match(view, /activeFamiliarId\?: string \| null/);
+  assert.match(chatSurface, /scope === "projects" \? \(/, "ChatSurface still branches to the Projects surface");
+});
 
-// ── Master-detail: dnd is gone; the manual order is still read ────────────────
-assert.doesNotMatch(projectsView, /@dnd-kit/, "the Projects hub no longer ships drag-and-drop");
-assert.match(projectsView, /applyManualOrder\(list, order\)/, "the chat rail's manual session order still shapes the detail list");
-assert.doesNotMatch(projectsView, /writeSessionOrder/, "this surface no longer writes the shared session order (the chat rail owns dnd)");
-assert.match(projectsView, /Move to project…/, "the session context menu still moves chats across projects");
+test("the header is the cave-typography access hero", () => {
+  assert.match(view, /className="projects-access-eyebrow">Familiars</, "eyebrow reads Familiars");
+  assert.match(view, /className="projects-access-title">Project access</, "serif display title");
+  assert.match(view, /Choose what each familiar can see and touch\./, "subtitle explains the page");
+  assert.match(css, /\.projects-access-title \{[^}]*font-family: var\(--font-serif, ui-serif, serif\)/, "title uses the cave serif");
+  assert.match(css, /\.projects-access-eyebrow \{[^}]*font-family: var\(--font-mono, ui-monospace, monospace\)/, "eyebrow is mono");
+  assert.match(css, /\.projects-access-eyebrow \{[^}]*text-transform: uppercase/, "eyebrow is uppercase");
+  assert.match(css, /\.projects-access-eyebrow \{[^}]*color: var\(--accent-presence\)/, "eyebrow carries the accent");
+});
 
-// ── Hub layout + narrow collapse ─────────────────────────────────────────────
-assert.match(projectsViewSource, /import "@\/styles\/projects\.css"/, "ProjectsView imports its own stylesheet so the hub is always styled");
-assert.doesNotMatch(projectsViewSource, /styles\/board\.css/, "Projects no longer leans on board.css");
-assert.match(projectsViewSource, /<div className="projects-hub" data-pane=\{pane\}>/, "the hub renders list + detail panes, with data-pane driving the narrow collapse");
-assert.match(projectsCss, /container:\s*projects \/ inline-size/, "the hub is a size container so the collapse follows the pane, not the viewport");
-assert.match(projectsCss, /@container projects \(max-width: 640px\)/, "narrow hubs collapse to a single pane");
-assert.match(projectsCss, /\.projects-hub\[data-pane="detail"\] \.surface-rail \{ display: none; \}/, "in detail pane mode the rail (list pane) hides");
-assert.match(projectDetailSource, /aria-label="Back to project list"/, "the narrow detail pane has a labeled back affordance");
-assert.match(projectsView, /onBack=\{\(\) => setPane\("list"\)\}/, "back returns to the list pane");
+test("the toolbar carries picker, search, tally, and reset", () => {
+  assert.match(view, /<StandardSelect[\s\S]{0,200}label="Familiar"/, "familiar picker is the shared select");
+  assert.match(view, /onChange=\{\(id\) => setPickedFamiliarId\(id\)\}/, "picking a familiar switches the matrix");
+  assert.match(view, /if \(activeFamiliarId\) setPickedFamiliarId\(activeFamiliarId\)/, "follows the chat's active familiar");
+  assert.match(view, /placeholder="Find a project…"/, "search placeholder matches the design");
+  assert.match(view, /e\.key !== "\/"/, "the / shortcut jumps to search");
+  assert.match(view, /accessCounts\(/, "tally uses the pure counts helper");
+  assert.match(view, /counts\.none[\s\S]*counts\.read[\s\S]*counts\.write/, "renders all three tallies");
+  assert.match(view, />\s*Reset all\s*</, "offers Reset all");
+  assert.match(view, /await confirm\(\{[\s\S]{0,200}title: `Reset \$\{familiarLabel\(familiar\)\}’s access\?`/, "reset is confirm-gated");
+});
 
-// The list-pane chrome rides the shared SurfaceRail: persisted width/collapse
-// under "cave:projects:rail", header actions (Refresh + accent New project),
-// and the filter/sort controls in the rail's search slot. Narrow panes flip
-// the rail into forceOpen so the single-pane "list page" is never a 56px
-// collapsed strip.
-assert.match(projectsViewSource, /className="projects-view flex h-full min-w-0 flex-col/, "the full Projects surface owns a named size container");
-assert.match(projectsViewSource, /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/, "the list pane reuses the shared SurfaceRail primitive");
-assert.match(projectsViewSource, /storageKey="cave:projects:rail"/, "rail width/collapse persist under the projects rail key");
-assert.match(projectsViewSource, /<SurfaceRail\s[\s\S]{0,240}?title="Projects"/, "the rail titles itself Projects");
-assert.match(projectsViewSource, /forceOpen=\{narrow\}/, "narrow panes force the rail open (no 56px list page)");
-assert.match(projectsViewSource, /new ResizeObserver/, "the shell mirrors the 640px container query in React for the rail override");
-assert.match(projectsViewSource, /setNarrow\(width <= 640\)/, "the React narrow flag matches the CSS collapse breakpoint");
-assert.match(projectsViewRail, /aria-label="Refresh projects"/, "the rail header keeps the Refresh action");
-assert.match(projectsViewRail, /aria-label="New project"/, "the rail header keeps the New project action");
-assert.match(projectsViewRail, /projects-rail-action--new/, "New project wears the accent treatment");
-assert.match(projectsViewRail, /placeholder="Filter projects…"/, "the rail filter uses the canonical Filter placeholder");
-assert.match(projectsViewRail, /projects-rail-search__kbd/, 'the filter shows its "/" shortcut hint');
-assert.match(projectsCss, /\.projects-view\s*\{[^}]*container:\s*projects-view \/ inline-size;/, "the whole surface queries its pane width, not the viewport");
-assert.match(
-  projectsCss,
-  /@container projects \(max-width: 640px\)\s*\{[\s\S]*?\.projects-hub \.surface-rail \{ width: auto; border-right: 0; \}/,
-  "narrow panes stretch the forced-open rail to the single grid column",
-);
+test("rows cycle a direct grant against /api/project-grants", () => {
+  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
+  assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
+  assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
+  assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
+  assert.match(view, /nextAccessState\(row\.state\)/, "click advances the none → read → full cycle");
+  assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
+  assert.match(view, /setOptimistic\(/, "mutations render optimistically");
+  assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
+  assert.match(view, /splitProjectsBySection\(filtered\)/, "sections derive from the pure splitter");
+  assert.match(view, /setAllOps\(/, "bulk actions compute the minimal op set");
+  assert.match(view, /keeps \$\{accessStateMeta\(row\.state\)\.label\} via/, "group-held access explains itself instead of firing a no-op revoke");
+});
 
-// ── List pane rows ───────────────────────────────────────────────────────────
-assert.match(projectListSource, /role="listbox" aria-label="Projects"/, "the list pane is a labeled listbox");
-assert.match(projectListSource, /role="option"[\s\S]{0,80}?aria-selected=\{selected\}/, "each project row is an option reporting selection");
-assert.match(projectsView, /selectedId=\{selectedProjectId\}/, "the list highlights the hub's selection");
-assert.match(projectsView, /onSelect=\{selectProject\}/, "clicking a row selects it");
-assert.match(
-  projectListSource,
-  /e\.key === "Enter" \|\| e\.key === " "/,
-  "rows select on Enter/Space",
-);
-assert.match(
-  projectListSource,
-  /e\.key === "ArrowRight"[\s\S]{0,120}?onSelect\(\);\s*onEnterDetail\?\.\(\)/,
-  "ArrowRight selects and hands focus into the detail pane",
-);
+test("the supreme familiar renders locked at Full", () => {
+  assert.match(view, /isSupreme\(familiar\.id, grantsData\?\.supremeFamiliarId \?\? null\)/, "supreme comes from the console API");
+  assert.match(view, /state: "write", direct: "write", groupNames: \[\] \}/, "supreme rows pin to Full");
+  assert.match(view, /supreme familiar — full access to everything, always\./, "explains the lock");
+  assert.match(view, /disabled=\{pending \|\| supreme\}/, "supreme rows don't cycle");
+});
 
-// ── Detail pane wiring ───────────────────────────────────────────────────────
-assert.match(projectsView, /onRename=\{renameProject\}/, "ProjectsView should wire inline rename");
-assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should wire root updates");
-assert.match(projectsView, /onDelete=\{deleteProject\}/, "ProjectsView should wire deletion");
-assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "the detail pane starts chats with the selected project root");
-assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(selectedProject\.root\)\)/, "the detail pane receives its chats grouped by normalized project root");
-assert.match(projectsView, /<ProjectDetail\s+key=\{selectedProject\.id\}/, "the detail pane is keyed by project so edit drafts never leak across selections");
-// New-chat is the follow-up action after create — the detail pane replaces the
-// old "Created X" banner.
-assert.match(projectsView, /selectProject\(project\.id\)/, "creating a project selects it (detail pane is the follow-up surface)");
-assert.doesNotMatch(projectsView, /createdProject/, "the created-project banner is gone");
+test("command-palette focus scrolls and flashes the row", () => {
+  assert.match(view, /CHAT_FOCUS_PROJECT_EVENT/, "keeps the palette Open-project listener");
+  assert.match(view, /setFlashId\(match\.id\)/, "flashes the focused row");
+  assert.match(view, /scrollIntoView\(\{ block: "center", behavior: smoothScrollBehavior\(\) \}\)/, "respects reduced motion");
+});
 
-// ── Sessions in the detail pane ──────────────────────────────────────────────
-assert.match(projectsView, /function ProjectChatRow/, "chats render as rows in the detail pane");
-assert.match(
-  projectsView,
-  /role=\{selectMode \? "checkbox" : "button"\}/,
-  "the chat row is a button normally and a checkbox in select mode",
-);
-assert.match(
-  projectsView,
-  /const activate = \(\) => \(selectMode \? onToggleSelect\(session\.id\) : onOpen\(\)\)/,
-  "activate toggles selection in select mode, otherwise opens the chat",
-);
-assert.match(
-  projectsView,
-  /e\.key === "Enter" \|\| e\.key === " "[\s\S]{0,120}?activate\(\)/,
-  "the chat row activates on both Enter and Space",
-);
-assert.match(
-  projectsView,
-  /role=\{selectMode \? "checkbox" : "button"\}[\s\S]{0,900}?className=\{?["`]focus-ring /,
-  "the chat row has a visible keyboard focus ring",
-);
+test("pills and states are token-driven for both themes", () => {
+  assert.match(css, /\.projects-access-pill\.is-write \{[^}]*background: var\(--accent-presence\)/, "Full pill fills with the accent");
+  assert.match(css, /\.projects-access-pill\.is-write \{[^}]*color: var\(--accent-presence-foreground\)/, "Full pill text uses the paired foreground token");
+  assert.match(css, /\.projects-access-pill\.is-read \{[^}]*color-mix\(in oklch, var\(--accent-presence\) 12%, transparent\)/, "Read pill is an accent tint");
+  assert.match(css, /\.projects-access-pill\.is-none \{[^}]*color: var\(--text-muted\)/, "No-access pill stays muted");
+  assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "no hard-coded hex colors — theme tokens only");
+  assert.match(css, /\.projects-access-row\.is-flash/, "flash state is styled");
+  assert.match(css, /\.projects-access-rule \{[^}]*background: var\(--border-hairline\)/, "section rules are hairlines");
+});
 
-// Bulk multiselect: a Select toggle puts the section into select mode, each
-// chat row becomes a checkbox, and a toolbar deletes all selected chats.
-assert.match(projectsView, /const \[selectMode, setSelectMode\] = useState\(false\)/, "the detail pane tracks select mode");
-assert.match(projectsView, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids are held in a Set");
-assert.match(projectsView, /onDeleteSessions: \(sessionIds: string\[\]\) => Promise<void>/, "the detail pane receives a bulk-delete callback");
-assert.match(projectsView, /const handleDeleteSessions = async \(sessionIds: string\[\]\)/, "ProjectsView implements a bulk-delete handler");
-assert.match(
-  projectsView,
-  /Promise\.all\(removed\.map\(\(s\) => deleteOneSession\(s\.id\)\)\)/,
-  "bulk delete runs the per-chat deletes in parallel",
-);
-assert.match(projectsView, /successfulSessionIds\(removed\.map\(\(session\) => session\.id\), results\)/, "bulk delete selects only confirmed ids");
-assert.match(projectsView, /if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/, "bulk delete reports confirmed ids once");
-// Bulk delete is deferred + undoable (shared useUndoDelete + UndoToast).
-assert.match(projectsView, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
-assert.match(projectsView, /scheduleSessionDelete\(\s*removed,/, "the batch is scheduled through the undo window");
-assert.match(projectsView, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted chats are hidden until commit");
-assert.match(projectsView, /undoSessionDelete\(\);[\s\S]{0,80}?onDismiss=\{commitSessionDelete\}/, "an undo toast restores the batch (and announces the undo)");
-assert.match(projectsView, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "the select toolbar offers select-all / clear");
-assert.match(projectsView, /\{selectedIds\.size\} selected/, "the toolbar shows how many chats are selected");
-assert.match(projectsView, /onDeleteSessions=\{handleDeleteSessions\}/, "the bulk-delete handler is wired into the detail pane");
-// Selection resets whenever the chat set or selected project changes.
-assert.match(
-  projectsView,
-  /const chatIdKey = `\$\{project\.id\}:\$\{chats\.map\(\(c\) => c\.id\)\.join\(","\)\}`/,
-  "selection is keyed to the current project + chat ids",
-);
-assert.match(projectsView, /applyProjectOverrides\(visible, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied (after hiding pending-deleted)");
-assert.match(projectsView, /setProjectOverride\(sessionId, targetRoot\)/, "cross-project move applies a Cave-local project override");
-assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
-// Long chat lists are capped with a Show all / Show less toggle.
-assert.match(projectsView, /const CHAT_CAP =/, "nested chat lists are capped");
-assert.match(projectsView, /chats\.slice\(0, CHAT_CAP\)/, "only the first CHAT_CAP chats render until expanded");
-assert.match(projectsView, /Show all \$\{chats\.length\} sessions/, "a toggle reveals the rest");
-assert.match(projectsView, /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/, "uses EmptyState primitive");
-assert.match(projectsView, /import \{ ErrorState \} from "@\/components\/ui\/error-state"/, "uses ErrorState primitive");
-assert.match(projectsView, /import \{ SkeletonRows \} from "@\/components\/ui\/skeleton"/, "uses SkeletonRows for first load");
-assert.match(projectsView, /<SkeletonRows/, "first load renders skeleton rows");
-assert.match(projectsView, /<EmptyState/, "empty state renders EmptyState");
-assert.match(projectsView, /<ErrorState/, "error renders ErrorState");
-assert.doesNotMatch(projectsView, /Loading projects\.\.\./, "bare loading text replaced by skeletons");
-assert.match(projectsView, /error && projects\.length === 0 \?/, "full-screen error only when there is no list to fall back to");
-
-const chatTabEvents = readFileSync(new URL("../lib/chat-tab-events.ts", import.meta.url), "utf8");
-
-assert.doesNotMatch(workspaceMode, /\| "projects"/, "projects is no longer a top-level workspace mode");
-assert.doesNotMatch(workspace, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "workspace no longer renders ProjectsView directly");
-assert.doesNotMatch(workspace, /mode === "projects" \?/, "workspace has no projects render branch");
-assert.match(chatTabEvents, /CHAT_OPEN_PROJECTS_EVENT/, "reroute event exists");
-assert.match(workspace, /case "\/projects":[\s\S]*?setMode\("chat"\)[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes: setMode(chat) + chat-open-projects event");
-
-assert.doesNotMatch(sidebar, /id: "projects"/, "Sidebar no longer shows a Projects entry — Projects lives only in the Chat tab");
-assert.match(chatProjectSidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Chat rail can jump to the dedicated Projects tab through the shared reroute event");
-
-for (const icon of [
-  "ph:folders-bold",
-  "ph:folder-open-bold",
-  "ph:folder-simple-dashed",
-  "ph:chat-circle-dots-bold",
-  "ph:trash-bold",
-  "ph:pencil-simple-bold",
-  "ph:list-checks-bold",
-  "ph:check-bold",
-]) {
-  assert.match(iconSource, new RegExp(`"${icon}"`), `${icon} should be in the icon allowlist`);
-}
-
-assert.match(projectsView, /aria-label=\{`New session in /, "new-session action is labeled per project");
-assert.doesNotMatch(projectsView, /Open terminal|cave:terminal-open|mode: "terminal"/, "project actions stay focused on chat actions");
-assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
-assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
-
-assert.match(projectsView, /PROJECT_ROOT_WORKSPACE_HELP/, "ProjectsView imports the shared workspace guidance copy");
-assert.match(projectsView, /id="project-root-help"/, "the root field renders proactive workspace guidance");
-assert.match(projectsView, /aria-invalid=\{Boolean\(createError\)\}/, "the root field reports invalid state when create fails");
-assert.match(
-  projectsView,
-  /aria-describedby=\{createError \? "project-root-help project-root-error" : "project-root-help"\}/,
-  "the root field links the inline error only while that element is rendered",
-);
-assert.match(projectsView, /onChange=\{\(event\) => \{[\s\S]{0,80}?setRootDraft\(event\.target\.value\);[\s\S]{0,120}?setCreateError\(null\);[\s\S]{0,120}?\}\}/, "editing the root field clears the inline create error");
-assert.match(projectsView, /\{createError \? \(\s*<p id="project-root-error" role="alert"/, "create failures render as an inline alert under the root field");
-assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{json\.error \?\? "delete failed"\}`\)/, "delete API failures add their own contextualized banner prefix");
-assert.match(projectsView, /setSessionError\(`Couldn.t delete chat: \$\{err instanceof Error \? err\.message : "delete failed"\}`\)/, "delete exceptions add their own contextualized banner prefix");
-assert.match(projectsView, /<span className="min-w-0 truncate">\{sessionError\}<\/span>/, "the banner renders already-contextualized action errors verbatim");
-
-// The "New project" inline form closes on Escape (parity with its Cancel button + inline edits).
-assert.match(
-  projectsView,
-  /onSubmit=\{handleCreate\}[\s\S]{0,200}?onKeyDown[\s\S]{0,120}?"Escape"[\s\S]{0,80}?setShowForm\(false\)/,
-  "new-project form closes on Escape",
-);
-assert.match(projectsViewSource, /import \{ Button \}/, "Projects rail/form actions use the shared Button primitive");
-assert.doesNotMatch(projectsViewRail, /<button\b/, "Projects rail/form should not hand-roll button controls");
-assert.doesNotMatch(
-  projectsViewRail,
-  /rounded-md|rounded-lg|rounded(?=\s|")/,
-  "Projects rail/form controls should use radius tokens instead of hard-coded radii",
-);
-assert.doesNotMatch(projectsViewSource, /<button\b/, "ProjectsView container should not hand-roll button controls");
-assert.doesNotMatch(
-  projectsViewSource,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "ProjectsView container should use tokenized radii instead of hard-coded rounded classes",
-);
-assert.match(projectDetailSource, /import \{ Button \}/, "detail pane actions use the shared Button primitive");
-assert.doesNotMatch(projectDetailSource, /<button\b/, "detail pane should not hand-roll button controls");
-assert.doesNotMatch(
-  projectDetailSource,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "detail pane controls should use tokenized radii instead of hard-coded rounded classes",
-);
-assert.doesNotMatch(projectListSource, /<button\b/, "list rows should not hand-roll button controls");
-assert.match(sessionRowSource, /import \{ Button \}/, "session row actions use the shared Button primitive");
-assert.doesNotMatch(sessionRowSource, /<button\b/, "session row should not hand-roll button controls");
-assert.doesNotMatch(
-  sessionRowSource,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "session row controls should use tokenized radii instead of hard-coded rounded classes",
-);
-
-// Projects are ordered alphabetically by project name/root, not API order or
-// most-recent session activity. Sessions inside the detail pane still keep
-// their own recency/manual ordering.
-assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
-assert.match(projectsView, /sortProjectsAlphabetically\(projects\)/, "Projects tab uses the shared alphabetical project order");
-assert.doesNotMatch(projectsView, /b\.score - a\.score/, "Projects tab must not sort project rows by session recency");
-
-// A filter box narrows the (sorted) list by name or path; the filtered list
-// drives the list pane and an empty result shows a no-match message.
-assert.match(projectsView, /const visibleProjects = useMemo/, "projects are filtered after sorting");
-assert.match(
-  projectsView,
-  /p\.name\.toLowerCase\(\)\.includes\(q\) \|\| p\.root\.toLowerCase\(\)\.includes\(q\)/,
-  "the filter matches on project name or path",
-);
-assert.match(projectsView, /projects=\{visibleProjects\}/, "the filtered list drives the list pane");
-assert.match(projectsView, /aria-label="Filter projects"/, "there is a labeled filter input");
-assert.match(projectsView, /No projects match/, "a no-match message shows when the filter excludes everything");
-
-// An opt-in Active filter narrows to projects with a live signal WITHOUT
-// reordering — the alphabetical stability is preserved (only the visible set
-// shrinks). Active-ness derives from the shared deriveProjectStatus helper.
-assert.match(
-  projectsView,
-  /const \[statusFilter, setStatusFilter\] = useState<"all" \| "active">\("all"\)/,
-  "there is an opt-in active/all view filter, defaulting to all",
-);
-assert.match(
-  projectsView,
-  /const activeRoots = useMemo[\s\S]{0,240}?deriveProjectStatus\(list\) !== null/,
-  "active projects are derived from deriveProjectStatus over each project's chats",
-);
-assert.match(
-  projectsView,
-  /statusFilter === "active"[\s\S]{0,160}?activeRoots\.has\(normalizeProjectRoot\(p\.root\)\)/,
-  "the Active filter narrows visibleProjects to active roots",
-);
-assert.match(projectsViewRail, /aria-label="Filter by activity"/, "the rail exposes a labeled activity filter control");
-assert.match(projectsViewRail, /aria-pressed=\{statusFilter === opt\.value\}/, "the activity filter reflects the active option");
-// The Active option carries the live count in its label.
-assert.match(projectsViewRail, /`Active \$\{activeCount\}`/, "the Active filter surfaces the active-project count");
-
-// The detail head carries the four-cell stat strip, every cell bound to data
-// the pane already loads (sessions, board cards, grants, recency).
-assert.match(projectsView, /className="projects-stat-strip"/, "the detail renders the stat strip");
-assert.match(
-  projectsView,
-  /aria-label=\{`Stats for \$\{project\.name\}`\}/,
-  "the stat strip is a named group",
-);
-assert.match(projectsView, /import \{ deriveStatStrip, openTaskCount \} from "@\/lib\/projects\/detail-stats"/, "stat derivation is the pure lib helper");
-for (const label of ["Sessions", "Open tasks", "Familiars", "Last active"]) {
-  assert.match(projectsView, new RegExp(`>${label}<`), `the strip labels the ${label} cell`);
-}
-
-// Project rows and the detail head carry a glanceable status dot: accent when
-// a session is running, danger when the most-recent session failed.
-assert.match(projectsView, /const projectStatus = deriveProjectStatus\(chats\)/, "detail status comes from the shared deriveProjectStatus helper");
-assert.match(projectsView, /import \{ deriveProjectStatus \} from "@\/lib\/project-status"/, "imports the status helper");
-assert.match(projectListSource, /const status = deriveProjectStatus\(chats\)/, "list rows derive the same status — zero extra fetches");
-
-// Paths are home-collapsed + truncated so the identical absolute prefix stops
-// dominating; the full path stays in the title and the editor.
-assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path is shortened");
-assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
-assert.match(projectsView, /relativeTime\(/, "the detail head shows a relative last-active label (shared relative-time helper)");
-
-// Rich session rows: each leads with a derived status glyph (running spinner /
-// failed / task / chat dot), drops the "Task: " text prefix in favor of that
-// glyph, and carries trailing metadata (model · branch · diff · time).
-assert.match(
-  projectsView,
-  /import \{ sessionGlyph, glyphToneClass, stripTaskPrefix \} from "@\/lib\/projects\/session-glyph"/,
-  "session rows use the pure glyph helper",
-);
-assert.match(projectsView, /const glyph = sessionGlyph\(session\)/, "each chat row derives its leading glyph");
-assert.match(projectsView, /stripTaskPrefix\(/, 'the "Task: " label is stripped (shown as a glyph instead)');
-assert.match(projectsView, /glyph\.spin \? "animate-spin"/, "a running glyph spins");
-assert.match(projectsView, /import \{ RelativeTime \} from "@\/components\/ui\/relative-time"/, "rows use the RelativeTime primitive (exact-time tooltip)");
-assert.match(projectsView, /<RelativeTime iso=\{session\.updated_at\}/, "every session row shows a consistent relative timestamp");
-assert.match(projectsView, /import \{ modelIcon, modelLabel \} from "@\/lib\/model-label"/, "rows render a model chip via the shared model-label helper");
-assert.match(projectsView, /modelLabel\(session\.model\)/, "the model chip shows the shortened model label");
-
-// The chip row: status word + dot, git branch+state, copyable path. Status
-// still derives from the shared helper; git state comes from the single
-// /api/changes poll — never fabricated.
-assert.match(projectsView, /className=\{`projects-status-dot \$\{chatDotClass\(projectStatus\)\}`\}/, "the status chip pairs its dot with the derived status");
-assert.match(projectsView, /aria-label=\{`Copy path \$\{project\.root\}`\}/, "the path chip copies with a named action");
-assert.match(projectsView, /\{copiedRoot \? "Copied" : "Copy"\}/, "the path chip shows a transient Copied label");
-assert.match(projectsView, /changes\.loaded && changes\.notARepo \? null/, "non-repos render no git chip instead of fabricated state");
-
-// The project identity tile is the shared ProjectAvatar (uploaded image or
-// monogram), tinted by the project's color when set.
-assert.match(projectsView, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\}/, "the identity tile is the shared ProjectAvatar, fed the project color");
-
-// The command palette's "Open project" navigation selects that project in the
-// hub (CHAT_FOCUS_PROJECT_EVENT) and scrolls its list row into view — the
-// listener lives in the shell now, not per-row.
-assert.match(projectsViewSource, /addEventListener\(CHAT_FOCUS_PROJECT_EVENT/, "the shell listens for the focus-project event");
-assert.match(
-  projectsViewSource,
-  /const match = projects\.find\(\(p\) => normalizeProjectRoot\(p\.root\) === rootKey\)[\s\S]{0,120}?selectProject\(match\.id\)/,
-  "a matching focus event selects the project",
-);
-assert.match(projectListSource, /id=\{`pcard-el:\$\{normalizeProjectRoot\(project\.root\)\}`\}/, "list rows carry a stable id so they can be scrolled into view");
-assert.match(
-  projectsViewSource,
-  /scrollIntoView\(\{ block: "nearest", behavior: smoothScrollBehavior\(\) \}\)/,
-  "the focus scroll honors reduced motion via smoothScrollBehavior",
-);
-
-// Keyboard navigation: a roving tabindex (WAI-ARIA) over the project rows in
-// the list pane. ↑/↓ + Home/End move focus (shared hook); Enter/Space select.
-assert.match(projectsView, /import \{ useRovingTabIndex \} from "@\/lib\/use-roving-tabindex"/, "reuses the shared roving-tabindex hook");
-assert.match(
-  projectsView,
-  /useRovingTabIndex\(\{ containerRef: listRef, itemSelector: "\[data-proj-nav\]", orientation: "vertical" \}\)/,
-  "rove vertically over [data-proj-nav] items in the list pane",
-);
-assert.match(projectsViewSource, /<div ref=\{listRef\} className="projects-hub__list">/, "the list pane hosts the roving keydown handler");
-assert.match(projectListSource, /data-proj-nav/, "project rows are rove stops");
-
-// Touch: row actions stay visible on coarse pointers, where there is no hover.
-assert.match(projectsView, /\[@media\(pointer:coarse\)\]:opacity-100/, "row actions stay visible on touch/coarse-pointer devices");
-
-// Right-click context menus on project rows and session rows, built on the
-// shared ContextMenu/Popover primitives.
-assert.match(
-  projectsView,
-  /import \{ ContextMenu, openContextMenuAt, type ContextMenuState \} from "@\/components\/ui\/context-menu"/,
-  "uses the shared ContextMenu primitive",
-);
-assert.match(
-  projectsView,
-  /import \{ PopoverItem, PopoverSeparator \} from "@\/components\/ui\/popover"/,
-  "menu items use the shared Popover item/separator",
-);
-assert.ok(
-  (projectsView.match(/openContextMenuAt\(setMenu\)/g) ?? []).length >= 2,
-  "both the project list row and session rows open a context menu at the cursor",
-);
-assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project row has a context menu");
-assert.doesNotMatch(projectsView, /openTerminalHere/, "the project menu stays focused on project actions");
-assert.match(projectsView, /Remove project…/, "the detail overflow offers remove (routes through the confirm dialog)");
-assert.match(projectsView, /onSelect=\{\(\) => setConfirmDelete\(true\)\}/, "menu remove shows the two-step confirm");
-assert.match(projectsView, /aria-label="Remove project from list"/, "the header trash action names its consequence");
-assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
-assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
-assert.match(
-  projectsView,
-  /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?leadingIcon="ph:x-bold"/,
-  "each thread row exposes a close-button delete affordance inline",
-);
-
-// Cross-project-move undo (the context-menu path is now the only mover).
-assert.match(projectsView, /import \{ applyProjectOverrides, setProjectOverride, clearProjectOverride \}/, "imports clearProjectOverride for undo");
-assert.match(projectsView, /import \{ UndoToast \} from "@\/components\/ui\/undo-toast"/, "uses the shared UndoToast primitive");
-assert.match(projectsView, /const prevRoot = projectOverrides\[sessionId\] \?\? null/, "the move captures the prior override for a precise undo");
-assert.match(projectsView, /setMoveToast\(\{ sessionId, prevRoot, label:/, "a cross-project move raises the undo toast");
-assert.match(
-  projectsView,
-  /moveToast\.prevRoot\) setProjectOverride\(moveToast\.sessionId, moveToast\.prevRoot\)[\s\S]{0,90}?clearProjectOverride\(moveToast\.sessionId\)/,
-  "undo restores the prior override, or clears it when there wasn't one",
-);
-assert.match(
-  projectsView,
-  /<UndoToast\s+key=\{moveToast\.sessionId\}[\s\S]{0,400}?autoDismiss/,
-  "the toast renders (keyed, self-dismissing) via the shared UndoToast",
-);
-
-// Render-virtualization: off-screen session rows skip layout/paint via
-// content-visibility (the repo's established strategy), staying in the DOM so
-// keyboard nav / find still work.
-assert.match(projectsView, /focus-ring projects-session-row/, "each session row carries the render-virtualization class");
-assert.match(
-  globalsCss,
-  /\.projects-session-row \{[\s\S]*?content-visibility:\s*auto;[\s\S]*?contain-intrinsic-size:\s*auto 32px;[\s\S]*?\}/,
-  "session rows set content-visibility:auto with a cached intrinsic-size",
-);
-
-// Type-ahead jump: typing letters moves focus to the next project whose label
-// matches, staying in sync with the roving tab stop (pure matcher).
-assert.match(projectsView, /import \{ nextTypeAheadIndex \} from "@\/lib\/projects\/type-ahead"/, "uses the pure type-ahead matcher");
-assert.match(projectsView, /const \{ setActiveIndex \} = useRovingTabIndex/, "captures the roving setActiveIndex to keep nav in sync");
-assert.match(projectsView, /data-proj-label=\{project\.name\}/, "project rows expose their name for type-ahead");
-assert.match(projectsView, /e\.key\.length !== 1 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/, "type-ahead only handles plain printable keys");
-assert.match(projectsView, /state\.buffer \+= e\.key/, "keystrokes accumulate into a type-ahead buffer");
-assert.match(projectsView, /typeAheadRef\.current\.buffer = ""/, "the buffer resets after a pause");
-assert.match(projectsView, /const next = nextTypeAheadIndex\(labels, current, state\.buffer\)/, "the next focus comes from the pure matcher");
-assert.match(projectsView, /items\[next\]\.focus\(\);\s*setActiveIndex\(next\)/, "a match focuses the item and updates the roving tab stop");
-
-// "Move to project" submenu: the session context menu drills into a list of the
-// other projects; selecting one moves the chat there (same move+undo path),
-// shared via the extracted moveSessionToProject.
-assert.match(projectsView, /const moveSessionToProject = \(sessionId: string, targetRoot: string\)/, "the cross-project move is a shared helper");
-assert.match(projectsView, /onMoveSession=\{moveSessionToProject\}/, "the move helper is wired into the detail pane");
-assert.match(
-  projectsView,
-  /allProjects[\s\S]{0,160}?normalizeProjectRoot\(p\.root\) !== rootKey/,
-  "the detail pane offers the OTHER projects as move targets",
-);
-assert.match(projectsView, /const \[menuView, setMenuView\] = useState<"root" \| "move">/, "the session menu tracks a root/move drill-in view");
-assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("move"\)\}/, '"Move to project…" drills into the project picker');
-assert.match(
-  projectsView,
-  /moveTargets\.map\(\(target\)[\s\S]{0,260}?onMoveSession\(session\.id, target\.root\)/,
-  "picking a target project moves the chat there",
-);
-assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("root"\)\}[\s\S]{0,40}?Back/, "the picker has a Back affordance");
-
-// (cave-psp8) Board-card loads abort the in-flight request per refetch —
-// mount + every window refocus fired overlapping fetches that could land out
-// of order (stale cards) or setState after unmount.
-assert.match(projectsView, /boardAbortRef\.current\?\.abort\(\);/, "each board-cards load aborts the in-flight one");
-assert.match(projectsView, /fetch\("\/api\/board", \{ cache: "no-store", signal: controller\.signal \}\)/, "the board-cards fetch carries an abort signal");
-console.log("projects-view.test.ts: ok");
+test("empty projects offer Ask Salem", () => {
+  assert.match(view, /Ask Salem/, "projects empty state offers Ask Salem");
+  assert.match(view, /cave:salem-open/, "Ask Salem opens the Salem rail");
+});

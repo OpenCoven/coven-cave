@@ -4,20 +4,18 @@ import { readFileSync } from "node:fs";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-// The New-project form gains a "Browse…" button: native OS folder dialog on
-// desktop, an in-app $HOME browser on the web build.
+// Adding a project offers a "Browse…" folder picker: native OS dialog on
+// desktop, an in-app $HOME browser on the web build. The flow lives in the
+// shared add-project hook (chat composer picker + first-project gate).
 
-test("projects-view wires a Browse button that picks native vs web per platform", () => {
-  const src = read("./projects-view.tsx");
+test("the add-project flow wires a folder picker that goes native vs web per platform", () => {
+  const src = read("./project-picker.tsx");
   assert.match(src, /import \{ DirectoryPickerModal \}/, "imports the web folder browser");
   assert.match(src, /import \{ isTauri \} from "@\/lib\/tauri-platform"/, "imports the platform check");
-  assert.match(src, /onClick=\{\(\) => void handleBrowse\(\)\}/, "form renders a Browse button");
   // Desktop → native OS dialog; web → in-app browser.
   assert.match(src, /if \(isTauri\(\)\)[\s\S]*invoke<string \| null>\("shell_pick_directory"\)/, "desktop uses the native picker");
   assert.match(src, /setPickerOpen\(true\)/, "web falls back to the in-app browser");
   assert.match(src, /<DirectoryPickerModal[\s\S]*onSelect=\{\(dir\) =>/, "mounts the modal");
-  // Picking a folder seeds the name from the folder basename when empty.
-  assert.match(src, /setNameDraft\(\(current\) => \(current\.trim\(\) \? current : pathBasename\(trimmed\)\)\)/, "auto-fills name from folder");
 });
 
 test("the fs-browse route is loopback-gated and $HOME-rooted", () => {
