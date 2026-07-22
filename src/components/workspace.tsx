@@ -127,6 +127,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
+import { RunningSessionsPopover } from "@/components/running-sessions-popover";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import { sessionStatusTone } from "@/lib/session-status";
@@ -2427,12 +2428,12 @@ export function Workspace() {
     [openTaskCards, activeId],
   );
 
-  // Live daemon activity for the top bar's "N running" pill: sessions whose
-  // status reads as running (shared sessionStatusTone vocabulary — running /
-  // starting / working), excluding archived rows. Derived from the same
-  // 4s-polled sessions list every other chrome badge uses.
-  const runningSessionCount = useMemo(
-    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running").length,
+  // Live daemon activity for the top bar's running-processes control: sessions
+  // whose status reads as running (shared sessionStatusTone vocabulary —
+  // running / starting / working), excluding archived rows. Derived from the
+  // same 4s-polled sessions list every other chrome badge uses.
+  const runningSessions = useMemo(
+    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running"),
     [sessions],
   );
 
@@ -3014,7 +3015,15 @@ export function Workspace() {
             <FamiliarMenuBar
               activeFamiliarId={activeId}
               activeFamiliarName={active?.display_name ?? null}
-              runningCount={runningSessionCount}
+              // Running processes: clicking the waveform trigger lists each
+              // live daemon session; a row jumps into that chat.
+              runningStatus={
+                <RunningSessionsPopover
+                  sessions={runningSessions}
+                  familiars={familiars}
+                  onOpenSession={openFamiliarSession}
+                />
+              }
               // Desktop notifications: the same NotificationBell the mobile
               // TopBar hosts, mounted in this bar's right status cluster.
               bell={

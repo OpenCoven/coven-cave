@@ -128,20 +128,44 @@ assert.match(
   /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
   "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
+// The running-processes control is workspace-owned (it needs the sessions
+// state and chat navigation): the bar renders it as the `runningStatus` slot
+// in the right status cluster, exactly like the bell — no hand-rolled markup.
 assert.match(
   source,
-  /typeof runningCount === "number" && runningCount > 0 \? \(\s*<span\s+className="menu-bar__status"[^>]*role="status"[^>]*aria-label=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*title=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*>[\s\S]{0,260}?<Icon name="ph:waveform"[\s\S]{0,250}?<span className="menu-bar__badge" aria-hidden>\s*\{fmtBadge\(runningCount\)\}\s*<\/span>[\s\S]{0,120}?\)\s*:\s*null/,
-  "running sessions render as a compact status control that hides at zero and carries the exact label",
+  /<div className="menu-bar__group menu-bar__group--status">\s*\{runningStatus\}\s*\{bell\}\s*<\/div>/,
+  "the status cluster hosts the workspace-owned running-processes control beside the bell",
+);
+assert.doesNotMatch(
+  source,
+  /menu-bar__status|runningCount|ph:waveform/,
+  "the bar no longer hand-rolls the running-status markup (it lives in RunningSessionsPopover)",
 );
 assert.doesNotMatch(
   source,
   /menu-bar__running-dot/,
   "the running status no longer uses a presence dot",
 );
-assert.doesNotMatch(
-  source,
-  /\{runningCount\} running/,
-  "the running status no longer renders the literal running pill text",
+// Clicking the waveform trigger must SHOW the running processes: the workspace
+// feeds the popover the live running-session rows and the chat-open handler.
+const runningSessionsPopover = readFileSync(
+  new URL("./running-sessions-popover.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  workspace,
+  /runningStatus=\{\s*<RunningSessionsPopover\s+sessions=\{runningSessions\}\s+familiars=\{familiars\}\s+onOpenSession=\{openFamiliarSession\}\s*\/>\s*\}/,
+  "workspace mounts RunningSessionsPopover in the menu bar's runningStatus slot, fed live running sessions and the session-open handler",
+);
+assert.match(
+  workspace,
+  /runningSessions = useMemo\(\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)/,
+  "running rows use the shared sessionStatusTone vocabulary and exclude archived sessions",
+);
+assert.match(
+  runningSessionsPopover,
+  /className="menu-bar__status focus-ring"[\s\S]{0,200}?aria-haspopup="dialog"[\s\S]{0,120}?aria-expanded=\{open\}/,
+  "the popover trigger keeps the menu-bar status chrome and announces the popover",
 );
 assert.match(
   notificationBell,
