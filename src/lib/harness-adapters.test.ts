@@ -332,12 +332,12 @@ assert.equal(hermesManifest?.filename, "hermes.json");
       JSON.stringify({
         adapters: [{
           ...JSON.parse(hermesManifest?.contents ?? "{}").adapters?.[0],
-          model_flag: "--custom-model",
+          environment: { HERMES_PROFILE: "custom" },
         }],
       }),
       "win32",
     ),
-    "a user-authored Hermes adapter is never replaced during migration",
+    "a user-authored Hermes adapter with custom setup is never replaced during migration",
   );
 }
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");

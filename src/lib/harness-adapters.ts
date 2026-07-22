@@ -57,19 +57,35 @@ type AdapterManifestDocument = {
   [key: string]: unknown;
 };
 
-const LEGACY_HERMES_INTERACTIVE_PREFIX_ARGS = ["chat", "--source", "coven"];
-const LEGACY_HERMES_NON_INTERACTIVE_PREFIX_ARGS = [
-  "chat",
-  "--source",
-  "coven",
-  "-Q",
-];
-
-function hasExactStringArray(value: unknown, expected: readonly string[]): boolean {
+function isExactJsonValue(actual: unknown, expected: unknown): boolean {
+  if (actual === expected) return true;
+  if (Array.isArray(actual) || Array.isArray(expected)) {
+    return (
+      Array.isArray(actual) &&
+      Array.isArray(expected) &&
+      actual.length === expected.length &&
+      actual.every((entry, index) => isExactJsonValue(entry, expected[index]))
+    );
+  }
+  if (
+    !actual ||
+    !expected ||
+    typeof actual !== "object" ||
+    typeof expected !== "object"
+  ) {
+    return false;
+  }
+  const actualRecord = actual as Record<string, unknown>;
+  const expectedRecord = expected as Record<string, unknown>;
+  const actualKeys = Object.keys(actualRecord).sort();
+  const expectedKeys = Object.keys(expectedRecord).sort();
   return (
-    Array.isArray(value) &&
-    value.length === expected.length &&
-    value.every((entry, index) => entry === expected[index])
+    actualKeys.length === expectedKeys.length &&
+    actualKeys.every(
+      (key, index) =>
+        key === expectedKeys[index] &&
+        isExactJsonValue(actualRecord[key], expectedRecord[key]),
+    )
   );
 }
 
@@ -452,24 +468,9 @@ export function isLegacyWindowsHermesManifest(
   if (platform !== "win32") return false;
   try {
     const parsed = JSON.parse(contents) as AdapterManifestDocument;
-    const adapters = parsed.adapters;
-    return (
-      Array.isArray(adapters) &&
-      adapters.length === 1 &&
-      adapters[0]?.id === "hermes" &&
-      adapters[0]?.executable === "hermes-coven" &&
-      adapters[0]?.label === "Hermes Agent" &&
-      adapters[0]?.model_flag === "--model" &&
-      hasExactStringArray(
-        adapters[0]?.interactive_prompt_prefix_args,
-        LEGACY_HERMES_INTERACTIVE_PREFIX_ARGS,
-      ) &&
-      hasExactStringArray(
-        adapters[0]?.non_interactive_prompt_prefix_args,
-        LEGACY_HERMES_NON_INTERACTIVE_PREFIX_ARGS,
-      ) &&
-      typeof adapters[0]?.prompt_flag !== "string"
-    );
+    const legacyManifest = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "hermes")
+      ?.adapterManifest;
+    return !!legacyManifest && isExactJsonValue(parsed, legacyManifest);
   } catch {
     return false;
   }
