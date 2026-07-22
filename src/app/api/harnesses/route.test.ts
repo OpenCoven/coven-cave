@@ -20,5 +20,10 @@ assert.match(
   /grokLaunchCommandForBinary\(path\)/,
   "Grok probes must run npm .cmd shims through their spawn-safe launch command",
 );
+assert.match(
+  source,
+  /const resolvedBinary = h\.id === "grok" \? grokBin\(\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: await which\(h\.binary\)/,
+  "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
+);
 
 console.log("harness route tests passed");

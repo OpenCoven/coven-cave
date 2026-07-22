@@ -13,7 +13,7 @@ import {
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
-import { grokLaunchCommandForBinary } from "@/lib/grok-bin";
+import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 
 export const dynamic = "force-dynamic";
@@ -198,7 +198,15 @@ export async function GET() {
       if (h.id === "openclaw") {
         return openClawAdapterReport(openclawAgentCount);
       }
-      const path = await which(h.binary);
+      // Native Grok resolution also recognizes `grok.exe` from an imported
+      // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
+      // using only the generic probe would hide a runnable Windows install
+      // from the summoning circle even though the chat launcher can execute it.
+      const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
+      const path =
+        h.id === "grok" && resolvedBinary !== h.binary
+          ? resolvedBinary
+          : await which(h.binary);
       if (!path) {
         return { ...h, installed: false, path: null, version: null };
       }
