@@ -45,6 +45,12 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: showsReconnectPill)
+        // Brief "Connected" confirmation over the freshly mounted tabs when a
+        // connection lands — the connect screen's success is no longer an
+        // abrupt teleport into the app. Purely decorative and self-dismissing.
+        .overlay {
+            ConnectedMomentOverlay()
+        }
         // While the pill is up over the tabs, quietly re-probe so a desktop
         // that comes back (restarted, woke from sleep) reconnects on its own.
         // The Connect screen has its own ticker for the pre-surfaces case;
@@ -81,6 +87,52 @@ struct RootView: View {
         switch app.connectionState {
         case .unreachable, .checking: return true
         default: return false
+        }
+    }
+}
+
+/// Brief celebratory "Connected" chip that fades in over the tab tree the
+/// moment a connection lands (fresh pairing or reconnect from the Connect
+/// screen), then self-dismisses. Skips entirely when the connection predates
+/// this view (normal warm launches) and collapses to a plain fade under
+/// Reduce Motion.
+private struct ConnectedMomentOverlay: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
+
+    var body: some View {
+        ZStack {
+            if visible {
+                Label("Connected", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.green)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .glass(.elevated, in: Capsule())
+                    .transition(
+                        reduceMotion
+                            ? .opacity.animation(.easeInOut(duration: 0.2))
+                            : .scale(scale: 0.86).combined(with: .opacity)
+                    )
+                    .accessibilityAddTraits(.isStaticText)
+            }
+        }
+        .allowsHitTesting(false)
+        .task(id: app.connectedAt) {
+            // Only celebrate a connection that landed just now — not one
+            // restored long before this overlay appeared (warm launch).
+            guard let connectedAt = app.connectedAt,
+                  Date().timeIntervalSince(connectedAt) < 3
+            else { return }
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.35)) {
+                visible = true
+            }
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(.easeOut(duration: 0.3)) {
+                visible = false
+            }
         }
     }
 }

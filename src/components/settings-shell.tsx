@@ -4,7 +4,7 @@ import "@/styles/dashboard.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import type { PairingStep } from "@/lib/mobile-handoff";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -18,6 +18,7 @@ import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
+import { PairingStepsList } from "@/components/pairing-steps-list";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
@@ -2655,14 +2656,6 @@ type MobileHandoffCardState = {
   lastSeenAt: number | null;
 };
 
-/** One glyph per checklist state — never color alone (cave-jr4r.1). */
-const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; className: string; announce: string }> = {
-  ok: { icon: "ph:check-circle-bold", className: "text-[var(--color-success)]", announce: "done" },
-  fail: { icon: "ph:x-circle", className: "text-[var(--color-warning)]", announce: "failed" },
-  skipped: { icon: "ph:minus-circle", className: "text-[var(--text-muted)]", announce: "skipped" },
-  pending: { icon: "ph:circle-dashed", className: "text-[var(--text-muted)]", announce: "waiting" },
-};
-
 function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
@@ -2786,26 +2779,7 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
 
       {/* The proven ladder — which rung broke, and what to do about it. */}
       {mobileModeEnabled && steps ? (
-        <ol className="flex flex-col gap-1.5 rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-3" aria-label="Pairing checklist">
-          {steps.map((step) => {
-            const glyph = PAIRING_STEP_GLYPH[step.state];
-            return (
-              <li key={step.id} className="flex items-start gap-2 text-[length:var(--text-sm)]">
-                <Icon name={glyph.icon} className={`mt-[1px] shrink-0 ${glyph.className}`} aria-hidden />
-                <span className="min-w-0">
-                  <span className={step.state === "skipped" ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}>
-                    {step.label}
-                  </span>
-                  <span className="sr-only"> — {glyph.announce}</span>
-                  {step.detail && (step.state === "fail" || step.state === "pending") ? (
-                    <span className={`block text-[length:var(--text-xs)] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
-                      {step.detail}
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            );
-          })}
+        <PairingStepsList steps={steps}>
           {steps.some((step) => step.state === "fail") ? (
             <li className="mt-1 flex items-center gap-2" aria-hidden={false}>
               <Button
@@ -2825,7 +2799,7 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
               ) : null}
             </li>
           ) : null}
-        </ol>
+        </PairingStepsList>
       ) : null}
 
       {/* Humanized failure — the jargon lives behind a disclosure now. Only
@@ -2937,6 +2911,104 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
   );
 }
 
+/** Desktop opt-ins for what the paired phone may change (GET/PATCH
+ *  /api/mobile-permissions). Both default off; the route only accepts the
+ *  PATCH from this desktop (loopback), so the phone can never widen its own
+ *  authority — flipping these here is the trust decision. */
+function MobileWriteAccessCard() {
+  const [flags, setFlags] = useState<{ grantMutations: boolean; fileWrites: boolean } | null>(null);
+  const [busyKey, setBusyKey] = useState<"grantMutations" | "fileWrites" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/mobile-permissions", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled || !body?.ok) return;
+        setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load phone write access.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggle = async (key: "grantMutations" | "fileWrites") => {
+    if (!flags || busyKey) return;
+    const next = !flags[key];
+    setBusyKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/mobile-permissions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [key]: next }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        setError(body?.error ?? "Couldn't update phone write access.");
+        return;
+      }
+      setFlags({ grantMutations: body.grantMutations === true, fileWrites: body.fileWrites === true });
+      const labels: Record<typeof key, string> = {
+        grantMutations: "Permission changes from phone",
+        fileWrites: "File edits from phone",
+      };
+      announce(`${labels[key]} ${next ? "enabled" : "disabled"}.`, "polite");
+    } catch {
+      setError("Couldn't reach the desktop API.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const switchButton = (key: "grantMutations" | "fileWrites") => {
+    const on = flags?.[key] === true;
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={() => void toggle(key)}
+        disabled={!flags || busyKey !== null}
+        className={`settings-mobile-switch focus-ring shrink-0 rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
+          on
+            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+        }`}
+      >
+        {busyKey === key ? "Updating..." : on ? "On" : "Off"}
+      </button>
+    );
+  };
+
+  return (
+    <>
+      <SettingsRow
+        label="Allow permission changes from phone"
+        description="Grant or revoke familiar project access, and decide grant requests, from the Cave app. Off keeps those desktop-only."
+      >
+        {switchButton("grantMutations")}
+      </SettingsRow>
+      <SettingsRow
+        label="Allow file edits from phone"
+        description="Save files in the Code tab from your phone. Off keeps phone access read-only."
+      >
+        {switchButton("fileWrites")}
+      </SettingsRow>
+      {error ? (
+        <p role="status" className="px-4 pb-3 text-[length:var(--text-xs)] text-[var(--color-warning)]">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   return (
     <SettingsPage
@@ -2946,6 +3018,10 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
     >
       <SettingsGroup label="Pair">
         <MobileModeToggle onUseAsHub={onUseAsHub} />
+      </SettingsGroup>
+
+      <SettingsGroup label="Phone write access">
+        <MobileWriteAccessCard />
       </SettingsGroup>
 
       <SettingsGroup label="Why there’s no password">

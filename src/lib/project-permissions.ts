@@ -109,6 +109,19 @@ type ProjectPermissionsFile = {
 type HumanPermissionConfigFile = {
   version: 1;
   supremeFamiliarId: string;
+  /**
+   * Desktop opt-in (default false): verified-mobile requests — the human's
+   * paired phone — may grant/revoke projects and decide grant proposals.
+   * Mutable only from a loopback (desktop) origin; the phone can never flip
+   * its own write access on.
+   */
+  allowMobileGrantMutations: boolean;
+  /**
+   * Desktop opt-in (default false): the human's paired phone may write
+   * project files without a familiar context (the iOS Code editor's Save).
+   * Familiar-scoped writes keep full grant enforcement regardless.
+   */
+  allowMobileFileWrites: boolean;
 };
 
 export type ProjectAccessContext = {
@@ -172,14 +185,60 @@ function withProjectPermissionsStore<T>(operation: () => Promise<T>): Promise<T>
 async function loadHumanPermissionConfigUnlocked(): Promise<HumanPermissionConfigFile> {
   const parsed = await readJsonFile<Partial<HumanPermissionConfigFile>>(humanPermissionConfigPath());
   const supremeFamiliarId = parsed?.supremeFamiliarId?.trim() || DEFAULT_SUPREME_FAMILIAR_ID;
-  return { version: 1, supremeFamiliarId };
+  // The mobile write-access flags fail closed: anything but literal true is off.
+  return {
+    version: 1,
+    supremeFamiliarId,
+    allowMobileGrantMutations: parsed?.allowMobileGrantMutations === true,
+    allowMobileFileWrites: parsed?.allowMobileFileWrites === true,
+  };
 }
 
 export async function loadHumanPermissionConfig(): Promise<HumanPermissionConfigFile> {
+  const config = process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE
+    ? await loadHumanPermissionConfigUnlocked()
+    : await withCaveHomeReconciledStore("cave-permission-config.json", loadHumanPermissionConfigUnlocked);
   const fromEnv = process.env.CAVE_SUPREME_FAMILIAR_ID?.trim();
-  if (fromEnv) return { version: 1, supremeFamiliarId: fromEnv };
-  if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return loadHumanPermissionConfigUnlocked();
-  return withCaveHomeReconciledStore("cave-permission-config.json", loadHumanPermissionConfigUnlocked);
+  if (fromEnv) return { ...config, supremeFamiliarId: fromEnv };
+  return config;
+}
+
+export type MobileWriteAccessConfig = {
+  allowMobileGrantMutations: boolean;
+  allowMobileFileWrites: boolean;
+};
+
+export async function loadMobileWriteAccess(): Promise<MobileWriteAccessConfig> {
+  const { allowMobileGrantMutations, allowMobileFileWrites } = await loadHumanPermissionConfig();
+  return { allowMobileGrantMutations, allowMobileFileWrites };
+}
+
+/**
+ * Persist the desktop's mobile write-access opt-ins. Callers are responsible
+ * for gating this behind a loopback-origin check — the phone must never be
+ * able to enable its own write access.
+ */
+export async function updateMobileWriteAccess(
+  patch: Partial<MobileWriteAccessConfig>,
+): Promise<MobileWriteAccessConfig> {
+  return withWriteMutex(async () => {
+    const operation = async () => {
+      const current = await loadHumanPermissionConfigUnlocked();
+      const next: HumanPermissionConfigFile = {
+        ...current,
+        allowMobileGrantMutations:
+          patch.allowMobileGrantMutations ?? current.allowMobileGrantMutations,
+        allowMobileFileWrites: patch.allowMobileFileWrites ?? current.allowMobileFileWrites,
+      };
+      await writeJsonFile(humanPermissionConfigPath(), next);
+      return {
+        allowMobileGrantMutations: next.allowMobileGrantMutations,
+        allowMobileFileWrites: next.allowMobileFileWrites,
+      };
+    };
+    if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return operation();
+    return withCaveHomeReconciledStore("cave-permission-config.json", operation);
+  });
 }
 
 function normalizeGrant(grant: Partial<ProjectGrant>): ProjectGrant | null {

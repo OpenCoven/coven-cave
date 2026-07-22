@@ -432,6 +432,7 @@ export function PopoverSubmenu({
   const rowRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const hoverTimer = useRef<number | null>(null);
+  const lastPointerType = useRef("");
   const [selfOpen, setSelfOpen] = useState(false);
   // Pre-measure style carries minWidth so the flip/clamp math measures the
   // panel at its real rendered width (the CSS floor is narrower than the
@@ -560,9 +561,16 @@ export function PopoverSubmenu({
         aria-expanded={open}
         disabled={disabled}
         data-active={open || undefined}
+        onPointerDown={(e) => {
+          lastPointerType.current = e.pointerType;
+        }}
         onClick={() => {
           clearHoverTimer();
-          setOpen(!open);
+          // Mouse: click always opens — hover intent may have opened the
+          // flyout mid-press, and a toggle would immediately shut what the
+          // user is aiming at. Touch/pen taps (and keyboard) still toggle.
+          if (!open) setOpen(true);
+          else if (lastPointerType.current !== "mouse") setOpen(false);
         }}
         onPointerEnter={(e) => {
           if (disabled || e.pointerType !== "mouse") return;

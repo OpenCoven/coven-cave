@@ -5,6 +5,7 @@ import type { CaveProject } from "@/lib/cave-projects-types";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  loadMobileWriteAccess,
   type ProjectPermissionSurface,
 } from "@/lib/project-permissions";
 import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
@@ -63,6 +64,28 @@ function isHumanRead(req: Request | undefined, surface: ProjectPermissionSurface
   return false;
 }
 
+/**
+ * True when this is the human operator WRITING from their own paired phone —
+ * a verified-mobile request on the file-write surface — and the desktop has
+ * opted in (`allowMobileFileWrites`, mutable only from loopback via
+ * /api/mobile-permissions). Deliberately narrow:
+ *   - only the `file-write` surface (shell stays familiar-gated);
+ *   - only requests the proxy marked as the paired phone;
+ *   - callers apply it only on the no-familiarId path of REGISTERED projects —
+ *     familiar-scoped writes keep full grant enforcement, and unregistered
+ *     paths (familiar workspaces, cwd) stay read-only from the phone.
+ */
+async function isHumanMobileWrite(
+  req: Request | undefined,
+  surface: ProjectPermissionSurface,
+): Promise<boolean> {
+  if (!req) return false;
+  if (surface !== "file-write") return false;
+  if (req.headers.get(MOBILE_ACCESS_HEADER) !== "1") return false;
+  const { allowMobileFileWrites } = await loadMobileWriteAccess();
+  return allowMobileFileWrites;
+}
+
 export async function assertProjectApiAccess(args: {
   familiarId: string | null | undefined;
   path: string | null | undefined;
@@ -95,8 +118,12 @@ export async function assertProjectApiAccess(args: {
   if (!familiarId) {
     // The human (their own desktop, or their phone) may read a registered
     // project's files without a familiar. Familiars stay gated; writes still
-    // need one.
+    // need one — except the paired phone's own saves when the desktop has
+    // opted in to mobile file writes.
     if (isHumanRead(args.request, surface)) {
+      return;
+    }
+    if (await isHumanMobileWrite(args.request, surface)) {
       return;
     }
     throw new ProjectAccessDeniedError("missing familiarId for project access");

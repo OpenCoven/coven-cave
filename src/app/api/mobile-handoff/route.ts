@@ -575,6 +575,12 @@ export async function POST(req: Request) {
     }, { status: reset.ok ? 200 : 500 });
   }
 
+  // Cheap paired-signal read for the handoff modal's "phone seen" poll: no
+  // Tailscale spawn, no Serve reconcile — just the last token-refresh beat.
+  if (action === "status") {
+    return NextResponse.json({ ok: true, lastSeenAt: await readMobileLastSeen() });
+  }
+
   if (action === "app-start") {
     return ensureNativeAppServe(req, chatId);
   }
