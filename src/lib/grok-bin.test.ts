@@ -13,8 +13,8 @@ assert.match(
 
 assert.match(
   source,
-  /export function grokCandidateBinNames[\s\S]*platform === "win32"[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\][\s\S]*microsoft\|wsl[\s\S]*\["grok", "grok\.exe", "grok\.cmd", "grok\.bat"\]/,
-  "WSL finds native Windows executables and npm command shims while Windows supports the same shims",
+  /export function grokCandidateBinNames[\s\S]*platform === "win32"[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\][\s\S]*microsoft\|wsl[\s\S]*\["grok\.exe", "grok\.cmd", "grok\.bat", "grok"\]/,
+  "WSL must prefer native Windows executables and npm command shims over their incompatible POSIX wrappers",
 );
 assert.match(
   source,
@@ -33,8 +33,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const shimPlatform = \/\\\.\(cmd\|bat\)\$\/i\.test\(binary\) \? "win32" : process\.platform;[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
-  "Windows npm shims discovered from either Windows or WSL must be converted to a direct Node launch, not spawned as .cmd files",
+  /const windowsShim = \/\\\.\(cmd\|bat\)\$\/i\.test\(binary\);[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)[\s\S]*process\.platform !== "win32"[\s\S]*microsoft\|wsl[\s\S]*command: "node\.exe"/,
+  "WSL must run Windows npm Grok shims with Windows Node so their Windows optional package is selected without spawning cmd.exe",
 );
 
 console.log("grok-bin tests passed");

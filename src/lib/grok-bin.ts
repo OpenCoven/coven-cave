@@ -62,10 +62,12 @@ export function grokCandidateBinNames(
     return ["grok.exe", "grok.cmd", "grok.bat", "grok"];
   }
   return /(?:microsoft|wsl)/i.test(release)
-    // A Windows global npm install only guarantees a .cmd shim (rather than
-    // grok.exe). WSL can read its JS entry point, so recognize that launcher
-    // too instead of requiring a second Linux-side Grok installation.
-    ? ["grok", "grok.exe", "grok.cmd", "grok.bat"]
+    // A Windows global npm install leaves an extensionless POSIX shim beside
+    // its .cmd shim. In WSL the former runs with Linux Node and then looks
+    // for the *Linux* optional package, which a Windows npm install does not
+    // contain. Prefer the executable/.cmd launchers so the CLI keeps using
+    // its Windows runtime and platform package.
+    ? ["grok.exe", "grok.cmd", "grok.bat", "grok"]
     : ["grok"];
 }
 
@@ -119,8 +121,23 @@ export function grokLaunchCommandForBinary(binary: string): CovenLaunchCommand {
   // imported Windows PATH. Treat that shim like its native-Windows counterpart
   // so we execute its JavaScript target with argv (never through cmd.exe,
   // which would re-parse untrusted chat prompts as shell syntax).
-  const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
-  return covenLaunchCommandForBinary(binary, shimPlatform);
+  const windowsShim = /\.(cmd|bat)$/i.test(binary);
+  const shimPlatform = windowsShim ? "win32" : process.platform;
+  const launch = covenLaunchCommandForBinary(binary, shimPlatform);
+  // The npm wrapper selects its bundled Grok executable from
+  // `process.platform`. A WSL Node process would select a Linux package that
+  // is absent from a Windows global install, so run the parsed JS entry point
+  // with Windows Node instead. This also avoids routing a chat prompt through
+  // cmd.exe's shell parser.
+  if (
+    windowsShim &&
+    process.platform !== "win32" &&
+    /(?:microsoft|wsl)/i.test(os.release()) &&
+    !launch.unresolvedWindowsShim
+  ) {
+    return { command: "node.exe", fixedArgs: launch.fixedArgs };
+  }
+  return launch;
 }
 
 /** A spawn-safe command for the native executable or an npm Windows shim. */
