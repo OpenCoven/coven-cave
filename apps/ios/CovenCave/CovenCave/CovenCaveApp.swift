@@ -31,8 +31,8 @@ struct CovenCaveApp: App {
                 .preferredColorScheme(resolved.scheme)
                 .task {
                     app.startConnectionSupervisor()
-                    // Route notification taps to the reminders list, and show
-                    // reminder banners while the app is foregrounded.
+                    // Route notification taps (reminders, chat replies) to the
+                    // deep-link handler, and show banners while foregrounded.
                     notificationDelegate.onOpen = { app.handleDeepLink($0) }
                     UNUserNotificationCenter.current().delegate = notificationDelegate
                     if app.connection != nil {

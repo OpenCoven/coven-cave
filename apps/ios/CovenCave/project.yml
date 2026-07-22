@@ -92,9 +92,9 @@ targets:
     dependencies:
       - target: CovenCave
 
-  # Widget extension hosting the "task running" Live Activity (Lock Screen +
-  # Dynamic Island) and the home-screen "Up Next" widget. Shares
-  # TaskActivityAttributes.swift + WidgetSnapshot.swift with the app target;
+  # Widget extension hosting the "task running" + "chat turn" Live Activities
+  # (Lock Screen + Dynamic Island) and the home-screen "Up Next" widget. Shares
+  # the ActivityAttributes files + WidgetSnapshot.swift with the app target;
   # the App Group lets the widget read the snapshot the app publishes.
   CovenCaveWidgets:
     type: app-extension
@@ -102,6 +102,7 @@ targets:
     sources:
       - path: CovenCaveWidgets
       - path: CovenCave/LiveActivity/TaskActivityAttributes.swift
+      - path: CovenCave/LiveActivity/ChatActivityAttributes.swift
       - path: CovenCave/LiveActivity/WidgetSnapshot.swift
       - path: CovenCave/Intents/WidgetReminderIntents.swift
     settings:

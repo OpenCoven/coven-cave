@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
+    @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
     @State private var editingHost: String = ""
     @State private var showDisconnectConfirm = false
     @State private var exportArchive: ExportArchive?
@@ -177,6 +178,14 @@ struct SettingsView: View {
 
     private var chatsSection: some View {
         Section {
+            Toggle(isOn: $chatNotificationsEnabled) {
+                Label("Reply notifications", systemImage: "bell.badge")
+                    .foregroundStyle(.primary)
+            }
+            .onChange(of: chatNotificationsEnabled) { _, enabled in
+                guard enabled else { return }
+                Task { await ChatNotifications.requestAuthorizationIfNeeded() }
+            }
             Button {
                 do {
                     exportArchive = ExportArchive(url: try app.exportAllThreadsZip())
@@ -191,7 +200,7 @@ struct SettingsView: View {
         } header: {
             Text("Chats")
         } footer: {
-            Text("Save every conversation as Markdown files in a single .zip.")
+            Text("Get notified when a familiar finishes replying while you're away. Muted chats stay silent. Export saves every conversation as Markdown files in a single .zip.")
         }
     }
 
