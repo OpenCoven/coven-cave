@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /**
  * Persist a composer's in-progress text so a page reload doesn't eat a
@@ -47,13 +47,31 @@ export function useDraftPersistence(
   value: string,
   delayMs = 250,
 ): { clearNow: () => void } {
+  // Latest key/value for the unmount flush below, kept current by the
+  // debounce effect (which runs after every value change) and by clearNow.
+  const latestRef = useRef({ key, value });
+
   useEffect(() => {
+    latestRef.current = { key, value };
     const timer = window.setTimeout(() => {
       writeComposerDraft(key, value);
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [key, value, delayMs]);
 
-  const clearNow = useCallback(() => writeComposerDraft(key, ""), [key]);
+  // Flush on unmount: the debounce cleanup above CANCELS a pending write, so
+  // unmounting within delayMs of the last keystroke dropped the draft's tail
+  // (pane-set remounts, mode switches). Safe against sent-prompt
+  // resurrection: send paths call clearNow before any same-tick unmount, and
+  // clearNow updates latestRef, so the flush writes "" — never pre-send text.
+  useEffect(
+    () => () => writeComposerDraft(latestRef.current.key, latestRef.current.value),
+    [],
+  );
+
+  const clearNow = useCallback(() => {
+    latestRef.current = { key, value: "" };
+    writeComposerDraft(key, "");
+  }, [key]);
   return { clearNow };
 }
