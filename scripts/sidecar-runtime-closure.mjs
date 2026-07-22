@@ -104,7 +104,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // traced files (CI measured 5,602 Windows on the pre-Tailscale base and
   // 5,616 Windows on the combined tree). Pin the combined exact maximum
   // without relaxing the expanded-byte ceiling.
-  fileCount: 5_616,
+  // 2026-07-22 (mobile write access): the mobile-permissions route plus the
+  // shared trusted-grant-mutation lib add traced files; CI measured 5,621 on
+  // Ubuntu and 5,623 on Windows. Keep the exact cross-platform maximum
+  // without relaxing the expanded-byte ceiling.
+  fileCount: 5_623,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
