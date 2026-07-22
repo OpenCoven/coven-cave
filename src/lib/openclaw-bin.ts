@@ -11,6 +11,7 @@ import {
   covenSpawnEnv,
   type CovenLaunchCommand,
 } from "./coven-bin";
+import { GITHUB_TOKEN_ENV_KEYS } from "./github-token";
 
 let cachedBin: string | null = null;
 
@@ -152,6 +153,18 @@ export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[]
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
+
+  // covenSpawnEnv deliberately strips every GitHub token alias before a
+  // generic child process starts. OpenClaw is the narrow exception: an owner
+  // can explicitly opt its own CLI into one launcher-provided alias. Do not
+  // restore GITHUB_PAT here because it may have been resolved from Cave's
+  // local vault rather than supplied by the launch environment.
+  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+    if (!allowed.has(key)) continue;
+    const value = process.env[key]?.trim();
+    if (value) env[key] = value;
+  }
+
   for (const key of Object.keys(env)) {
     if (
       (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&

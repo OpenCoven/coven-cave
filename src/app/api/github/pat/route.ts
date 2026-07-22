@@ -15,10 +15,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { deleteLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
+import { deleteLocalEncryptedSecret, getLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
-import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
+import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,6 +91,8 @@ async function usernameExists(username: string): Promise<boolean> {
 // GET — just reports presence, never exposes the value
 export async function GET() {
   // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
+  const localEnvPat = readEnvLocalValue(PAT_KEY);
+  const hasEncryptedPat = hasLocalEncryptedSecret(PAT_KEY);
   const patFromVault = resolveSecret("GITHUB_PAT");
   const loginFromVault = resolveSecret("GITHUB_USERNAME");
 
@@ -99,13 +101,16 @@ export async function GET() {
   // that here so an already-authenticated installation is not prompted to add
   // a duplicate Cave PAT.
   const hasPat = !!resolveGitHubToken();
-  // Only a Cave-configured GITHUB_PAT can be removed from this UI. External
-  // launcher credentials must be managed where the app was started.
-  const canRemoveStoredPat = !!patFromVault;
+  // Only storage Cave can actually delete is removable from this UI. A
+  // launcher GITHUB_PAT or a vault reference can resolve through
+  // resolveSecret(), but deleting it here would only disable it until restart.
+  const canRemoveStoredPat = hasEncryptedPat || !!localEnvPat;
   const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
-  const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
+  const source: "encrypted" | "vault" | "env" | "none" = hasEncryptedPat
     ? "encrypted"
-    : patFromVault
+    : localEnvPat
+      ? "env"
+      : patFromVault
       ? "vault"
       : hasPat
         ? "env"
@@ -176,6 +181,16 @@ export async function POST(req: NextRequest) {
 
 // DELETE — remove PAT
 export async function DELETE() {
+  // Preserve a launcher-provided GITHUB_PAT when it wins over an older local
+  // value. resolveSecret caches local values in process.env, so clear only a
+  // cached local token rather than blindly removing every inherited value.
+  const localEnvPat = readEnvLocalValue(PAT_KEY);
+  let encryptedPat: string | null = null;
+  try {
+    encryptedPat = getLocalEncryptedSecret(PAT_KEY);
+  } catch {
+    // Deletion still removes the malformed local entry below.
+  }
   applyEnvUpdates({ [PAT_KEY]: null });
   deleteLocalEncryptedSecret(PAT_KEY);
   const map = loadVaultMap(true);
@@ -183,6 +198,9 @@ export async function DELETE() {
     delete map[PAT_KEY];
     saveVaultMap(map);
   }
-  delete process.env[PAT_KEY];
+  const processPat = process.env[PAT_KEY]?.trim();
+  if (processPat && (processPat === localEnvPat || processPat === encryptedPat)) {
+    delete process.env[PAT_KEY];
+  }
   return NextResponse.json({ ok: true });
 }

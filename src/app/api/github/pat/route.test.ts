@@ -17,8 +17,18 @@ assert.match(
 );
 assert.match(
   route,
-  /const canRemoveStoredPat = !!patFromVault;/,
-  "only Cave-managed credentials should offer the local removal action",
+  /const canRemoveStoredPat = hasEncryptedPat \|\| !!localEnvPat;/,
+  "only encrypted or local-env credentials Cave can delete should offer the removal action",
+);
+assert.match(
+  route,
+  /const localEnvPat = readEnvLocalValue\(PAT_KEY\);[\s\S]*const hasEncryptedPat = hasLocalEncryptedSecret\(PAT_KEY\);/,
+  "an external launcher GITHUB_PAT must not be mistaken for Cave-managed storage",
+);
+assert.match(
+  route,
+  /if \(processPat && \(processPat === localEnvPat \|\| processPat === encryptedPat\)\) \{[\s\S]*delete process\.env\[PAT_KEY\]/,
+  "removing a local token must retain a distinct launcher-provided GITHUB_PAT",
 );
 assert.match(
   githubView,
