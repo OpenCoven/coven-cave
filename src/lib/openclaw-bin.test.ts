@@ -37,6 +37,11 @@ assert.match(
 );
 assert.match(
   src,
+  /export function openClawLaunchCommandForBinary\(binary: string\): CovenLaunchCommand[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
+  "OpenClaw Windows npm shims should launch their JavaScript target with Node instead of cmd.exe",
+);
+assert.match(
+  src,
   /quoteWindowsShellArg\(arg: string\)[\s\S]*return `"\$\{escaped\}"`/,
   "OpenClaw Windows shell quoting should preserve a multi-word --message as one CLI argument",
 );

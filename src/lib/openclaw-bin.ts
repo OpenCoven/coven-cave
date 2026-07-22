@@ -6,7 +6,11 @@
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { covenSpawnEnv } from "./coven-bin";
+import {
+  covenLaunchCommandForBinary,
+  covenSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin";
 
 let cachedBin: string | null = null;
 
@@ -95,6 +99,21 @@ export function openClawNeedsShell(bin = openClawBin()): boolean {
 
 export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
   return !openClawNeedsShell(bin);
+}
+
+/**
+ * Start OpenClaw without routing a chat prompt through cmd.exe. npm's Windows
+ * shims are batch files, but their final target is a JavaScript entry point;
+ * resolve that target and execute it with the running Node binary instead.
+ */
+export function openClawLaunchCommandForBinary(binary: string): CovenLaunchCommand {
+  const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
+  return covenLaunchCommandForBinary(binary, shimPlatform);
+}
+
+/** A spawn-safe OpenClaw command for either a native executable or npm shim. */
+export function openClawLaunchCommand(): CovenLaunchCommand {
+  return openClawLaunchCommandForBinary(openClawBin());
 }
 
 const WINDOWS_SHELL_META_RE = /[\s"&|<>()^%!]/;

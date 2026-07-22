@@ -197,13 +197,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv, openClawSupportsUntrustedArgs \} from "@\/lib\/openclaw-bin";/,
-  "OpenClaw native chat should use the Windows-aware binary resolver instead of spawning a bare command",
+  /import \{ openClawLaunchCommand, openClawSpawnEnv \} from "@\/lib\/openclaw-bin";/,
+  "OpenClaw native chat should use the spawn-safe Windows-aware launcher",
 );
 assert.match(
   chatRoute,
-  /if \(!openClawSupportsUntrustedArgs\(openclawCommand\)\)[\s\S]*openclaw_unsafe_shell/,
-  "OpenClaw chat should fail closed before passing untrusted prompts to shell-only Windows shims",
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*if \(openclawLaunch\.unresolvedWindowsShim\)[\s\S]*openclaw_unsafe_shell/,
+  "OpenClaw chat should fail closed when it cannot resolve a Windows npm shim's JavaScript target",
 );
 
 assert.match(
@@ -238,8 +238,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const openclawCommand = openClawBin\(\);[\s\S]*const spawnArgv = openClawSpawnArgs\(argv, openclawCommand\);[\s\S]*spawn\(openclawCommand, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(openclawCommand\)/,
-  "OpenClaw chat should only spawn an OpenClaw command that can receive untrusted prompt argv safely",
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
+  "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
 // Session persistence contract (regression: chats forked into new sessions
