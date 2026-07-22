@@ -97,6 +97,36 @@ assert.deepEqual(
   },
   "stale synthetic defaults should fall back to a real global model instead of being forwarded",
 );
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "grok-4.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+  },
+  "a Grok familiar that inherits Cave's OpenAI default must not forward it to Grok",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "xai/grok-code-fast-1",
+    familiarModel: null,
+  }).effectiveModel,
+  "xai/grok-code-fast-1",
+  "an explicitly configured global Grok model remains selectable",
+);
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
     .effectiveModel,
