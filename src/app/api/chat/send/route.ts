@@ -1149,7 +1149,11 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
-      if (forwardModel) a.push("--model", forwardModel);
+      // Cave stores provider-qualified IDs, while Hermes accepts the bare id.
+      const hermesModel = forwardModel?.includes("/")
+        ? forwardModel.slice(forwardModel.lastIndexOf("/") + 1)
+        : forwardModel;
+      if (hermesModel) a.push("--model", hermesModel);
       a.push("--query", prompt);
       return a;
     }

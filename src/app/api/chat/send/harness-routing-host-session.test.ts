@@ -83,8 +83,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(hermesDirect\) \{[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?a\.push\("--query", prompt\)/,
-  "An advertised Hermes --model flag must receive the selected model before the query",
+  /if \(hermesDirect\) \{[\s\S]*?const hermesModel = forwardModel\?\.includes\("\/"\)[\s\S]*?forwardModel\.slice\(forwardModel\.lastIndexOf\("\/"\) \+ 1\)[\s\S]*?if \(hermesModel\) a\.push\("--model", hermesModel\);[\s\S]*?a\.push\("--query", prompt\)/,
+  "An advertised Hermes --model flag must receive Cave's bare model id before the query",
 );
 
 assert.match(
