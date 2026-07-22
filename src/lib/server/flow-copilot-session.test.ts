@@ -64,6 +64,13 @@ test("spawns with the prompt as one argv element and persists the transcript", a
   assert.equal(argv.length, promptIndex + 1, "nothing trails the prompt argument");
   assert.ok(argv.includes("--session-id"), "fresh session id is pre-assigned");
   assert.ok(!argv.includes("--add-dir"), "no trust flags when addDirs is omitted");
+  // One-shot flow runs can't answer approval prompts — without pre-approved
+  // tools the CLI auto-denies every write and research iterations end with
+  // "completed without artifacts/primary.md". Path verification must stay on.
+  assert.ok(argv.includes("--allow-all-tools"), "unattended runs pre-approve tools");
+  assert.ok(argv.includes("--allow-all-urls"), "unattended runs pre-approve URL fetches");
+  assert.ok(!argv.includes("--allow-all"), "path verification stays on (no blanket --allow-all)");
+  assert.ok(!argv.includes("--allow-all-paths"), "writes stay confined to cwd + --add-dir grants");
 
   // The finished transcript is a Cave conversation under the session id, with
   // the assistant's final content (trailing control markers intact).

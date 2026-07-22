@@ -73,7 +73,7 @@ export type ResearchMissionRunnerDeps = {
   saveMission(mission: ResearchMission): Promise<void>;
   startFlow(
     flow: FlowDoc,
-    options: { projectRoot: string | null },
+    options: { projectRoot: string | null; addDirs?: string[] },
   ): Promise<ResearchFlowStartResult>;
   loadFlowRun(id: string): Promise<FlowRunRecord | null>;
   loadConversation(sessionId: string): Promise<ConversationFile | null>;
@@ -326,6 +326,22 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   };
 
   /**
+   * Start options for one iteration: the resolved run root plus the mission
+   * workspace as a harness-level trust grant. When a configured project root
+   * makes the spawn cwd differ from the workspace, a non-interactive run
+   * cannot prompt for permission — without the grant every workspace write
+   * hard-fails and the iteration ends without artifacts/primary.md. A grant
+   * equal to the spawn cwd is dropped by the flow spawn itself.
+   */
+  const missionStartOptions = (
+    mission: ResearchMission,
+    projectRoot: string,
+  ): { projectRoot: string; addDirs: string[] } => ({
+    projectRoot,
+    addDirs: [deps.missionWorkspacePath(mission.id)],
+  });
+
+  /**
    * Apply a retry-time project root override: a string is validated and
    * persisted, null/empty clears the configured root so the mission falls
    * back to its own workspace.
@@ -381,7 +397,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await deps.saveMission(next);
     const target = await missionStartTarget(next);
     const result = target.ok
-      ? await deps.startFlow(buildResearchMissionFlow(next, number), { projectRoot: target.projectRoot })
+      ? await deps.startFlow(buildResearchMissionFlow(next, number), missionStartOptions(next, target.projectRoot))
       : { ok: false, error: target.error };
     next = applyStartResult(next, result, deps.now());
     await deps.saveMission(next);
@@ -423,9 +439,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await deps.saveMission(retried);
     const target = await missionStartTarget(retried);
     const result = target.ok
-      ? await deps.startFlow(buildResearchMissionFlow(retried, current.number), {
-        projectRoot: target.projectRoot,
-      })
+      ? await deps.startFlow(
+        buildResearchMissionFlow(retried, current.number),
+        missionStartOptions(retried, target.projectRoot),
+      )
       : { ok: false, error: target.error };
     retried = applyStartResult(retried, result, deps.now());
     await deps.saveMission(retried);
@@ -782,7 +799,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       await deps.saveMission(mission);
       const target = await missionStartTarget(mission);
       const result = target.ok
-        ? await deps.startFlow(buildResearchMissionFlow(mission, 1), { projectRoot: target.projectRoot })
+        ? await deps.startFlow(buildResearchMissionFlow(mission, 1), missionStartOptions(mission, target.projectRoot))
         : { ok: false, error: target.error };
       mission = applyStartResult(mission, result, deps.now());
       await deps.saveMission(mission);
@@ -894,7 +911,10 @@ export function makeProductionResearchMissionRunner() {
     saveMission: saveResearchMission,
     startFlow: async (flow, options) => {
       const { startFlowSession } = await import("./flow-executor.ts");
-      return startFlowSession(flow, { projectRoot: options.projectRoot });
+      return startFlowSession(flow, {
+        projectRoot: options.projectRoot,
+        addDirs: options.addDirs,
+      });
     },
     loadFlowRun: async (id) => {
       const { listFlowRuns } = await import("./flow-store.ts");

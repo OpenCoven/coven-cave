@@ -106,6 +106,13 @@ export async function startFlowSession(
     targetNodeId?: string;
     triggerInput?: FlowTriggerInput;
     mode?: FlowExecutionMode;
+    /**
+     * Extra directories to trust at the harness level alongside the
+     * familiar's own workspace (e.g. a research mission workspace when the
+     * flow runs in a different project root). Non-interactive runs can't
+     * prompt, so an untrusted workspace write hard-fails.
+     */
+    addDirs?: string[];
   } = {},
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
@@ -237,7 +244,10 @@ export async function startFlowSession(
         familiarId,
         familiarName: "display_name" in binding ? binding.display_name : undefined,
         familiarRole: "role" in binding ? binding.role : undefined,
-        addDirs: await flowFamiliarAddDirs(familiarId, projectRoot),
+        addDirs: [
+          ...(options.addDirs ?? []),
+          ...await flowFamiliarAddDirs(familiarId, projectRoot),
+        ],
       });
       return finishStart(sessionId);
     }
