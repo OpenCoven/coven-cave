@@ -600,10 +600,21 @@ struct ThreadRow: View {
                     Text(thread.updatedAt, format: .relative(presentation: .numeric))
                         .font(.caption).foregroundStyle(.tertiary)
                 }
-                Text(previewText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if let draftText = app.threadDrafts[thread.id] {
+                    // A persisted unsent draft outranks the last-message
+                    // preview (standard messenger affordance — makes drafts
+                    // discoverable from the list).
+                    (Text("Draft: ").foregroundStyle(Color.accentColor)
+                        + Text(draftText.replacingOccurrences(of: "\n", with: " ")))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Text(previewText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -620,7 +631,11 @@ struct ThreadRow: View {
         if thread.pinned { parts.append("pinned") }
         if thread.muted { parts.append("muted") }
         parts.append("last active " + Self.relativeFormatter.localizedString(for: thread.updatedAt, relativeTo: Date()))
-        parts.append(previewText)
+        if let draftText = app.threadDrafts[thread.id] {
+            parts.append("draft: " + draftText)
+        } else {
+            parts.append(previewText)
+        }
         return parts.joined(separator: ", ")
     }
 

@@ -293,6 +293,12 @@ final class AppModel {
     /// "unread" when its latest activity is newer than this. Persisted.
     var familiarViews: [String: Date] = [:]
 
+    /// threadId → the operator's unsent composer draft, mirrored from the
+    /// per-thread UserDefaults keys so list rows can badge drafted threads
+    /// without hitting UserDefaults on every row render. Seeded on hydrate,
+    /// kept current by the composer's debounced persistence.
+    var threadDrafts: [String: String] = [:]
+
     init() {
         connection = CaveConnection.load()
         // Threads hydrate off-main via the store — no file I/O in init.
@@ -1432,12 +1438,41 @@ final class AppModel {
         return activity > seen
     }
 
+    /// Earliest "last viewed" date across a thread's familiars — the boundary
+    /// the "New Messages" divider is placed against. nil when untracked.
+    func seenBoundary(for thread: ChatThread) -> Date? {
+        thread.familiarIds.compactMap { familiarViews[$0] }.min()
+    }
+
     /// Mark a familiar's chats as read (call when opening them).
     func markFamiliarViewed(_ ids: [String]) {
         guard !ids.isEmpty else { return }
         let now = Date()
         for id in ids { familiarViews[id] = now }
         persistFamiliarViews()
+    }
+
+    /// Per-thread UserDefaults key for the composer's unsent draft.
+    static func draftKey(_ threadId: String) -> String { "cave.chat.draft.\(threadId)" }
+
+    /// Keep the observable draft mirror in step with the composer's debounced
+    /// UserDefaults persistence; list rows read this to badge drafted threads.
+    func setThreadDraft(_ threadId: String, text: String?) {
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if threadDrafts[threadId] != text { threadDrafts[threadId] = text }
+        } else if threadDrafts[threadId] != nil {
+            threadDrafts.removeValue(forKey: threadId)
+        }
+    }
+
+    /// Load persisted drafts for restored threads into the observable mirror.
+    private func seedThreadDrafts() {
+        for thread in threads where threadDrafts[thread.id] == nil {
+            if let saved = UserDefaults.standard.string(forKey: Self.draftKey(thread.id)),
+               !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                threadDrafts[thread.id] = saved
+            }
+        }
     }
 
     /// Baseline any not-yet-tracked familiar as seen "now" so existing history
@@ -1967,6 +2002,7 @@ final class AppModel {
             .map { ChatThread(snapshot: $0) }
         guard !restored.isEmpty else { return }
         threads = (threads + restored).sorted { $0.updatedAt > $1.updatedAt }
+        seedThreadDrafts()
     }
 
     private var cardLinksFileURL: URL {
