@@ -89,4 +89,16 @@ for (const rel of [
   assert.match(src, /request: req,/, `${rel} should forward the request to assertProjectApiAccess`);
 }
 
+// The save handler must forward it too — the human-mobile file-write branch
+// reads the proxy marker off the request, and a GET-only match masked its
+// omission once already (review of #3652).
+{
+  const src = await readFile(new URL("./project-file/route.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /surface: projectPermissionSurfaceForRequest\(req, "file-write"\),\s*request: req,/,
+    "project-file POST should forward the request so mobile file writes can be authorized",
+  );
+}
+
 console.log("project-local-human-read.test.ts: ok");

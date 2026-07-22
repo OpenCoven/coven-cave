@@ -7,7 +7,7 @@
 // The phone must never be able to widen its own authority; every mobile
 // capability here is off until the desktop (loopback) enables it.
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -212,6 +212,42 @@ try {
     /not registered/,
     "unregistered paths stay unwritable from the phone even with the opt-in on",
   );
+
+  // --- the real save route ------------------------------------------------
+  // Regression (review of #3652): POST /api/project-file omitted
+  // `request: req` from its assertProjectApiAccess args, so the branch above
+  // never saw the proxy marker and phone saves stayed blocked with the
+  // opt-in on. Exercise the actual handler, not a hand-built arg shape.
+  const { POST: postProjectFile } = await import("../../app/api/project-file/route.ts");
+  await mkdir(projectRoot, { recursive: true });
+  await writeFile(filePath, "original\n", "utf8");
+  const saveBody = (content) =>
+    ({ method: "POST", body: JSON.stringify({ path: filePath, content }) });
+
+  const phoneSave = await postProjectFile(
+    mobile({ "content-type": "application/json" }, saveBody("saved from phone\n")),
+  );
+  assert.equal(phoneSave.status, 200, "the route forwards the request to the trust chain");
+  assert.equal((await phoneSave.json()).ok, true);
+  const { readFile } = await import("node:fs/promises");
+  assert.equal(await readFile(filePath, "utf8"), "saved from phone\n");
+
+  const desktopSave = await postProjectFile(
+    loopback({ "content-type": "application/json" }, saveBody("nope\n")),
+  );
+  assert.equal(
+    desktopSave.status,
+    403,
+    "no-familiar loopback saves keep the familiar requirement — only the marked phone is exempt",
+  );
+
+  await updateMobileWriteAccess({ allowMobileFileWrites: false });
+  const relockedSave = await postProjectFile(
+    mobile({ "content-type": "application/json" }, saveBody("stale\n")),
+  );
+  assert.equal(relockedSave.status, 403, "relocking the opt-in blocks the route again");
+  assert.match((await relockedSave.json()).error, /missing familiarId/);
+  assert.equal(await readFile(filePath, "utf8"), "saved from phone\n", "denied save wrote nothing");
 
   console.log("trusted-grant-mutation.test.ts: ok");
 } finally {
