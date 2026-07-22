@@ -1,21 +1,11 @@
-/* ── Hearth card sections (chat revamp 1a) ────────────────────────────────────
+/* ── Hearth card sections (chat revamp 1a, minimal pass) ─────────────────────
  *   Everything below the composer inside .home-hearth-card: the demoted
- *   suggestion pills / From-task row, the Continue resume cards, and the
- *   Open work + Prompt snippets disclosures. */
+ *   suggestion pills / From-task row, then three matching persisted
+ *   disclosures — Continue, Open work, Prompt snippets. */
 
-/* Shared 10px uppercase section label (Continue). */
-.home-section-label {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* Suggestion pills — demoted below the composer; the grid is keyed off
-   data-count so rows stay UNIFORM (1, 2, or 3 per row; 4 = 2×2 — never a
-   3+1 orphan; #2672 rule). */
+/* Suggestion pills — two cold-start prompts below the composer, hidden once
+   a draft exists. The grid is keyed off data-count so rows stay UNIFORM
+   (1, 2, or 3 per row; 4 = 2×2 — never a 3+1 orphan; #2672 rule). */
 .home-suggest-pills {
   display: grid;
   grid-template-columns: 1fr;
@@ -109,14 +99,13 @@
   color: var(--text-primary);
 }
 
-/* Continue — two side-by-side resume cards. */
-.home-continue {
-  margin-top: var(--space-4);
-}
+/* Continue — a persisted disclosure (like Open work below) whose open state
+   shows two side-by-side resume cards. */
 .home-continue__cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+  padding-top: var(--space-2);
 }
 .home-continue__cards[data-count="1"] {
   grid-template-columns: 1fr;

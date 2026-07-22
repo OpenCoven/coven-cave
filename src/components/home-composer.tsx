@@ -395,19 +395,17 @@ export function HomeComposer({
   // prompts) and the Open work section (pending-task row).
   const boardCards = useBoardCards();
 
-  // Live-context subtitle under the heading: active familiar · role · model.
+  // Live-context subtitle under the heading: familiar · role only. The
+  // runtime/model already reads verbatim in the composer's context pill one
+  // line below — repeating it in the hero was chrome, not information.
   const contextLine = useMemo(() => {
-    const model = selectedModelId
-      ? `${selectedRuntime}/${selectedModelId}`
-      : selectedRuntime;
     return [
       selectedFamiliar?.display_name ?? null,
       selectedFamiliar?.role?.trim() || null,
-      model,
     ]
       .filter(Boolean)
       .join(" · ");
-  }, [selectedFamiliar, selectedRuntime, selectedModelId]);
+  }, [selectedFamiliar]);
 
   // From-task row (chat revamp 1a): prop-driven and ready, but UNWIRED — no
   // surface routes a task into the home composer today (board cards open
@@ -1120,23 +1118,23 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Suggestions demoted below the composer (chat revamp 1a): the
-          From-task row when home opened from a task (unwired today — see
-          home-from-task.tsx), else the quick-action pill row. The digest
-          carousel is hidden from the default home; its signal folds into
-          the sections below. */}
+      {/* Suggestions demoted below the composer (chat revamp 1a, minimal
+          pass): the From-task row when home opened from a task (unwired today
+          — see home-from-task.tsx), else two cold-start pills — and only
+          while the draft is empty. The moment you're typing you don't need
+          prompts for the blank page (progressive disclosure). */}
       {taskOrigin ? (
         <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
-      ) : (
+      ) : !text.trim() ? (
         <HomeSuggestionPills
           cards={boardCards}
           projectName={selectedProject?.name ?? null}
           onPick={insertPrompt}
         />
-      )}
+      ) : null}
 
-      {/* Continue — the two most recent resumable sessions as side-by-side
-          resume cards. */}
+      {/* Continue — the two most recent resumable sessions, behind the same
+          persisted disclosure as the sections below (default open). */}
       <HomeContinue
         sessions={sessions}
         familiarNameById={familiarNameById}
@@ -1163,7 +1161,8 @@ export function HomeComposer({
       />
 
       {/* Ask Salem — quiet doorway to the dedicated docs section (mode
-          "salem"). Deliberately not a sidebar row; Home is its front door. */}
+          "salem"). Deliberately not a sidebar row; Home is its front door.
+          Just the name — the what-it-covers hint lives in the tooltip. */}
       <div className="home-ask-salem">
         <button
           type="button"
@@ -1173,11 +1172,11 @@ export function HomeComposer({
               new CustomEvent("cave:navigate-mode", { detail: { mode: "salem" } }),
             )
           }
+          title="Grounded answers from the Coven index — docs, your Cave, your models"
           aria-label="Open Ask Salem — grounded answers from the Coven index"
         >
           <Icon name="ph:cat" width={14} aria-hidden />
           <span>Ask Salem</span>
-          <span className="home-ask-salem__hint">docs · your Cave · your models</span>
         </button>
       </div>
 

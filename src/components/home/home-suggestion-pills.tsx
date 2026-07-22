@@ -1,12 +1,13 @@
 "use client";
 
-// Demoted suggestion pills (chat revamp 1a): the quick-action prompts that
-// used to drift on the digest carousel now sit as a quiet pill row BELOW the
-// composer. Same pure heuristic (buildHomeSuggestions: open board tasks +
-// curated starters), same insert-never-send contract.
+// Demoted suggestion pills (chat revamp 1a, minimal pass): two cold-start
+// prompts in one quiet row below the composer — open board tasks first, then
+// curated starters (buildHomeSuggestions). Same insert-never-send contract.
+// The composer hides the row entirely once a draft exists: suggestions are
+// for the blank-page moment, not for reading around while you type.
 //
 // Row layout obeys the uniform-rows rule (#2672): the grid is keyed off
-// data-count so pills lay out 1, 2, or 3 per row and never orphan a 3+1.
+// data-count so pills lay out 1 or 2 per row and never orphan.
 
 import { useMemo } from "react";
 import { buildHomeSuggestions, type SuggestionCard } from "@/lib/home-suggestions";
@@ -22,7 +23,7 @@ type Props = {
 
 export function HomeSuggestionPills({ cards, projectName, onPick }: Props) {
   const suggestions = useMemo(
-    () => buildHomeSuggestions({ cards, projectName }),
+    () => buildHomeSuggestions({ cards, projectName, max: 2 }),
     [cards, projectName],
   );
   if (suggestions.length === 0) return null;
