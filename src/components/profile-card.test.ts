@@ -80,4 +80,17 @@ describe("Profile card wiring (cave-ujbr)", () => {
       assert.match(css, new RegExp(`\\.pfc-cell\\[data-level="${level}"\\]`));
     }
   });
+
+  it("stretches the card to fill the page height and width (no 1200px island)", () => {
+    const css = readFileSync(new URL("../styles/profile-card.css", import.meta.url), "utf8");
+    // The page is a flex column so the card can absorb the remaining height…
+    assert.match(css, /\.pfc-page \{[^}]*display: flex;[^}]*flex-direction: column;/s);
+    // …and the card takes it, pinning the footer row to the card's bottom edge.
+    assert.match(css, /\.pfc-card \{[^}]*flex: 1;/s);
+    assert.match(css, /\.pfc-card \{[^}]*grid-template-rows: 1fr auto;/s);
+    // The metric panels absorb vertical growth inside the main column.
+    assert.match(css, /\.pfc-panels \{[^}]*flex: 1;/s);
+    // No fixed width caps anywhere — the card, topnav and callout track the page.
+    assert.doesNotMatch(css, /max-width: 1200px/);
+  });
 });

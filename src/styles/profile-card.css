@@ -22,6 +22,8 @@
   --pfc-mint-4: #83e3b4;
 
   min-height: 100%;
+  display: flex;
+  flex-direction: column;
   padding: clamp(12px, 3vw, 40px);
   background: var(--pfc-bg);
   color: var(--pfc-text);
@@ -47,8 +49,7 @@
 .pfc-topnav {
   display: flex;
   justify-content: space-between;
-  max-width: 1200px;
-  margin: 0 auto 10px;
+  margin: 0 0 10px;
 }
 
 .pfc-topnav-link {
@@ -66,8 +67,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: 1200px;
-  margin: 0 auto 10px;
+  margin: 0 0 10px;
   padding: var(--space-2) var(--space-3);
   border: 1px solid #4d3a1e;
   border-radius: 10px;
@@ -81,11 +81,14 @@
 .pfc-card {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;
+  /* Fill the page: the rail/main row absorbs the height, the footer pins to
+     the card's bottom edge (max h + w, matching the human profile treatment). */
+  grid-template-rows: 1fr auto;
   grid-template-areas:
     "rail main"
     "foot foot";
-  max-width: 1200px;
-  margin: 0 auto;
+  flex: 1;
+  width: 100%;
   border: 1px solid var(--pfc-border);
   border-radius: 18px;
   background: var(--pfc-card);
@@ -312,6 +315,8 @@
 .pfc-panels {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  /* Absorb the card's vertical stretch; sparklines sink via margin-top: auto. */
+  flex: 1;
   border-bottom: 1px solid var(--pfc-border-soft);
 }
 .pfc-panel {
@@ -443,6 +448,7 @@
 @media (max-width: 840px) {
   .pfc-card {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
     grid-template-areas:
       "rail"
       "main"
