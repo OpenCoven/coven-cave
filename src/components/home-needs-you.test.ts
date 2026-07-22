@@ -39,14 +39,14 @@ assert.match(
   "the overflow affordance jumps to the Schedules surface",
 );
 
-// ── Folded into the hearth card's Open work section (chat revamp 1a) ─────────
-// The digest carousel is hidden from the default home; the needs-you tier now
-// surfaces as an Open work row, one click from its target (single item) or
-// from Rituals (several). Suggestions insert through the demoted pill row.
-assert.match(
+// ── Minimal home pass (2026-07-21): Open work section removed ───────────────
+// The minimal home PR (cody/home-minimal → main) retired the HomeOpenWork
+// section from the composer card. The needs-you tier remains wired through
+// workspace.tsx; the hearth card simply no longer renders it on the default view.
+assert.doesNotMatch(
   composer,
-  /<HomeOpenWork[\s\S]*?needsYou=\{needsYou\}[\s\S]*?onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*?onOpenSchedules=\{onOpenSchedules\}/,
-  "home forwards the needs-you tier into the Open work section",
+  /<HomeOpenWork/,
+  "the Open work section is removed from the minimal home (2026-07-21)",
 );
 assert.match(
   composer,

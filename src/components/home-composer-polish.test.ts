@@ -75,7 +75,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextPill/,
   "the context pill anchors the footer band beneath the control row",
 );
 assert.match(
@@ -192,7 +192,8 @@ assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
 // Chat revamp 1a: the digest carousel is HIDDEN from the default home.
 assert.doesNotMatch(source, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
 // Minimal pass: the stacked sections and the Ask Salem doorway are gone.
-assert.doesNotMatch(source, /<HomeContinue/, "the Continue section no longer renders on the minimal home");
+// HomeContinue re-added in reference parity pass (2026-07-22): assert.doesNotMatch(source, /<HomeContinue/, "...");
+assert.match(source, /<HomeContinue/, "Continue cards present (reference parity pass 2026-07-22)");
 assert.doesNotMatch(source, /<HomeOpenWork/, "the Open work section no longer renders on the minimal home");
 assert.doesNotMatch(source, /<HomeSnippets/, "the Prompt snippets section no longer renders on the minimal home");
 assert.doesNotMatch(source, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");

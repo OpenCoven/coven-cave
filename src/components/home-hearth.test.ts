@@ -26,8 +26,8 @@ assert.match(
 );
 assert.match(
   css,
-  /\.home-hearth-card \{[\s\S]{0,600}?max-width: min\(930px, 100%\);[\s\S]{0,600}?border-radius: var\(--radius-xl\);[\s\S]{0,600}?color-mix\(in oklch, var\(--bg-panel\) 55%, transparent\)/,
-  "the card is ~930px, radius-xl, hairline border, 55% panel fill (tokens only)",
+  /\.home-hearth-card \{[\s\S]{0,600}?max-width: min\(900px, 100%\)/,
+  "the card is capped at 900px wide (minimal pass — borderless, transparent wrapper)",
 );
 assert.match(
   css,
@@ -38,7 +38,9 @@ assert.match(
 assert.doesNotMatch(composer, /casting today, /, "no invented user name in the heading");
 
 // ── Ultra-minimal pass: the stacked sections + Ask Salem are OFF home ───────
-assert.doesNotMatch(composer, /<HomeContinue/, "Continue no longer renders on the minimal home");
+// Note: HomeContinue was re-added in the reference parity pass (2026-07-22).
+// assert.doesNotMatch(composer, /<HomeContinue/, "Continue no longer renders on the minimal home");
+assert.match(composer, /<HomeContinue/, "Continue cards render (reference parity pass 2026-07-22)");
 assert.doesNotMatch(composer, /<HomeOpenWork/, "Open work no longer renders on the minimal home");
 assert.doesNotMatch(composer, /<HomeSnippets/, "Prompt snippets no longer renders on the minimal home");
 assert.doesNotMatch(composer, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");
@@ -46,16 +48,11 @@ assert.doesNotMatch(composer, /<HomeDigestCarousel/, "the digest carousel no lon
 
 // ── (2) Suggestion pills — cold-start help, uniform rows (#2672) ───────────
 assert.match(pills, /data-count=\{suggestions\.length\}/, "the pill grid is keyed off the pill count");
-assert.match(pills, /buildHomeSuggestions\(\{ cards, projectName, max: 2 \}\)/, "cold-start pills cap at one quiet row of two (minimal pass)");
+assert.match(pills, /buildHomeSuggestions\(\{ cards, projectName, max: projectName \? 3 : 2 \}\)/, "cold-start pills cap at 2 without a project, 3 with one");
 assert.match(
   css,
-  /\.home-suggest-pills\[data-count="2"\],\s*\.home-suggest-pills\[data-count="4"\] \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
-  "2 and 4 pills pair into two columns (4 = 2×2, never 3+1)",
-);
-assert.match(
-  css,
-  /\.home-suggest-pills\[data-count="3"\] \{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
-  "3 pills fill one uniform row of three",
+  /\.home-suggest-pills \{[\s\S]{0,300}?display: flex/,
+  "pills use flex layout",
 );
 assert.match(css, /\.home-suggest-pill \{[\s\S]{0,400}?border-radius: var\(--radius-pill\);/, "pills are 999px with a hairline border");
 
