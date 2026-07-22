@@ -45,7 +45,7 @@ describe("useHeatTip wiring", () => {
 
   it("clamps into the viewport and flips below at the top edge", () => {
     assert.match(hook, /Math\.min\(Math\.max\(tipState\.x/, "horizontal clamp");
-    assert.match(hook, /above >= EDGE_GAP \? above : tipState\.y \+/, "vertical flip");
+    assert.match(hook, /above >= EDGE_GAP \? above : tipState\.bottom \+/, "vertical flip");
   });
 });
 

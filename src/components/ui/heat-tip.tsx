@@ -21,6 +21,8 @@ type HeatTipState = {
   x: number;
   /** Viewport y of the hovered cell's top edge. */
   y: number;
+  /** Viewport y of the hovered cell's bottom edge. */
+  bottom: number;
 };
 
 const EDGE_GAP = 8;
@@ -41,7 +43,7 @@ export function useHeatTip() {
       return;
     }
     const rect = cell.getBoundingClientRect();
-    setTipState({ text, x: rect.left + rect.width / 2, y: rect.top });
+    setTipState({ text, x: rect.left + rect.width / 2, y: rect.top, bottom: rect.bottom });
   }, []);
 
   // Fixed positioning goes stale the moment the page (or the grid's own
@@ -67,7 +69,7 @@ export function useHeatTip() {
     el.style.left = `${Math.round(left - half)}px`;
     const above = tipState.y - CELL_GAP - el.offsetHeight;
     // Flip below the cell when the row is flush with the viewport top.
-    el.style.top = `${Math.round(above >= EDGE_GAP ? above : tipState.y + CELL_GAP + 14)}px`;
+    el.style.top = `${Math.round(above >= EDGE_GAP ? above : tipState.bottom + CELL_GAP)}px`;
   }, [tipState]);
 
   const tip =
