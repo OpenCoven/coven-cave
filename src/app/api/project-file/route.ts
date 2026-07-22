@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server.js";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
@@ -260,6 +260,7 @@ export async function POST(req: NextRequest) {
       familiarId: typeof payload.familiarId === "string" ? payload.familiarId : null,
       path: filePath,
       surface: projectPermissionSurfaceForRequest(req, "file-write"),
+      request: req,
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
