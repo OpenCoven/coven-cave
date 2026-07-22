@@ -210,6 +210,16 @@
   flex: 1;
 }
 
+/* The conversation Panel is a horizontal flex row; ChatView's root
+ * (.cave-chat-linear) carries no width of its own, so as a flex item it
+ * shrink-wrapped to its content — the thread + composer sat left-crammed
+ * beside dead space when viewing a task's chat. Fill the panel so the
+ * cockpit conversation aligns exactly like the standalone chat surface. */
+.task-work-cockpit__group .cave-chat-linear {
+  flex: 1;
+  min-width: 0;
+}
+
 .task-work-cockpit__state {
   display: flex;
   width: min(420px, calc(100% - 32px));
