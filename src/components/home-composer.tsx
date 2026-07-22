@@ -56,7 +56,7 @@ import { ComposerContextPill } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeContinue } from "@/components/home/home-continue";
@@ -235,8 +235,9 @@ export function HomeComposer({
     () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID),
     [projects, selectedProjectId],
   );
-  const selectedRuntime =
-    modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
+  const selectedRuntime = canonicalHarnessId(
+    modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
+  );
   const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
   const selectedModelId =
     selectedRuntime === "opencode"
@@ -284,8 +285,9 @@ export function HomeComposer({
   // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
   // nothing highlighted) falls through to handleSubmit — home dispatches the
   // typed text, so slash commands also land in the ↑ history.
-  const modelHarness =
-    modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(
+    modelState?.harness ?? selectedFamiliar?.harness ?? "claude",
+  );
   const {
     skills,
     prompts,

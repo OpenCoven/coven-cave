@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
 
 type ModelResponse = { ok?: boolean; models?: RuntimeModelOption[] };
@@ -14,7 +15,15 @@ export function useRuntimeModelOptions(
   runtime: string,
   familiarId?: string | null,
 ): RuntimeModelOption[] {
-  const staticModels = useMemo(() => catalogForRuntime(runtime)?.models ?? [], [runtime]);
+  // Configs created by older/package-based setup flows can retain an alias
+  // such as `opencode-ai`. Keep the local inventory on the same canonical
+  // runtime that the send route uses, rather than falling back to an empty
+  // static menu for that alias.
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const staticModels = useMemo(
+    () => catalogForRuntime(canonicalRuntime)?.models ?? [],
+    [canonicalRuntime],
+  );
   const [openCodeInventory, setOpenCodeInventory] = useState<OpenCodeInventory>({
     familiarId: null,
     models: [],
@@ -22,7 +31,7 @@ export function useRuntimeModelOptions(
   const inventoryFamiliarId = familiarId ?? null;
 
   useEffect(() => {
-    if (runtime !== "opencode") return;
+    if (canonicalRuntime !== "opencode") return;
     let cancelled = false;
     const params = new URLSearchParams();
     if (inventoryFamiliarId) params.set("familiarId", inventoryFamiliarId);
@@ -40,11 +49,11 @@ export function useRuntimeModelOptions(
         if (!cancelled) setOpenCodeInventory({ familiarId: inventoryFamiliarId, models: [] });
       });
     return () => { cancelled = true; };
-  }, [runtime, inventoryFamiliarId]);
+  }, [canonicalRuntime, inventoryFamiliarId]);
 
   // A selected familiar can have a different vault scope. Do not briefly show
   // its predecessor's inventory while this scope's request is in flight.
-  return runtime === "opencode" && openCodeInventory.familiarId === inventoryFamiliarId
+  return canonicalRuntime === "opencode" && openCodeInventory.familiarId === inventoryFamiliarId
     ? openCodeInventory.models
     : staticModels;
 }

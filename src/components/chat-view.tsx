@@ -108,6 +108,7 @@ import {
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -2622,7 +2623,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
   // command runs the highlighted suggestion's intent — never the partially
   // typed text, and never recorded in ↑ history (send() owns that push).
-  const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
   const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);

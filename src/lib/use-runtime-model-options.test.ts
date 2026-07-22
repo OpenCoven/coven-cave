@@ -11,6 +11,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const canonicalRuntime = canonicalHarnessId\(runtime\);[\s\S]*?canonicalRuntime !== "opencode"/,
+  "package aliases such as opencode-ai use OpenCode's authenticated inventory",
+);
+assert.match(
+  source,
   /setOpenCodeInventory\(\{ familiarId: inventoryFamiliarId, models: json\.models \}\)/,
   "a completed inventory request remains associated with the familiar scope that issued it",
 );

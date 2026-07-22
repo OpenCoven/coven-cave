@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import { loadConversation, saveConversation } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { listOpenCodeModels } from "@/lib/server/opencode-models";
 
@@ -53,7 +54,7 @@ async function currentState(
   const conversation = sessionId ? await loadConversation(sessionId) : null;
   return resolveChatModelState({
     familiarId,
-    harness: binding.harness,
+    harness: canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,

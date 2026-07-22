@@ -27,6 +27,7 @@ import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { formatModelList, resolveModelArg } from "@/lib/slash-model";
@@ -331,7 +332,7 @@ export function QuickChatComposer({
   // Slash commands are live only when the host wires all three handlers (the
   // tray does); otherwise a leading "/" just sends as plain text, as before.
   const slashEnabled = Boolean(onNewThread && onLocalNote && onSendText);
-  const modelHarness = familiar?.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(familiar?.harness ?? "claude");
   const runtimeModelOptions = useRuntimeModelOptions(modelHarness, familiar?.id);
   // Shared inline menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — same hook as the home/chat composers so the keyboard
