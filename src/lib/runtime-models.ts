@@ -9,8 +9,8 @@
 // providers ship new models, and `allowCustom` is the safety valve so the menu
 // never blocks an id that isn't listed yet. Runtime-managed adapters get
 // `provider: null` and render a free-text field only — the literal "else the
-// runtime's CLI" branch. That includes Hermes: Cave's Hermes mode means the
-// installed Hermes Agent runtime, not a bundled Nous/Hermes model selection.
+// runtime's CLI" branch. Hermes is the exception: its adapter forwards the
+// authenticated Codex model ids below through its supported `--model` flag.
 
 export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | null;
 
@@ -29,6 +29,19 @@ export type RuntimeModelCatalog = {
   /** User may type any model id not present in `models`. */
   allowCustom: boolean;
 };
+
+// Models exposed by the authenticated Codex account. Hermes forwards the bare
+// id through `--model`; the stored id stays namespaced for Cave consistency.
+const HERMES_AUTHENTICATED_MODELS: RuntimeModelOption[] = [
+  { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
+  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
+  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna" },
+  { id: "openai/gpt-5.5", label: "GPT-5.5" },
+  { id: "openai/gpt-5.4", label: "GPT-5.4" },
+  { id: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini" },
+  { id: "openai/gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
+  { id: "openai/codex-auto-review", label: "Codex Auto Review" },
+];
 
 export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   codex: {
@@ -80,9 +93,8 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   },
   hermes: {
     runtime: "hermes",
-    provider: null,
-    models: [],
-    defaultModel: "hermes-local",
+    provider: "openai",
+    models: HERMES_AUTHENTICATED_MODELS,
     allowCustom: true,
   },
   // No clean provider → defer to the runtime's own CLI: free-text only, no menu.

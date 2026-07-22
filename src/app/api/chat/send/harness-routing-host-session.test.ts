@@ -75,10 +75,16 @@ assert.match(
   "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
 );
 
-assert.doesNotMatch(
+assert.match(
   chatRoute,
-  /const hermesModel = cleanModelId\(desiredModel\);/,
-  "Hermes does not advertise a model flag, so a custom Cave model must not become invalid CLI args",
+  /const modelForwardingEnabled = hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
+  "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
+);
+
+assert.match(
+  chatRoute,
+  /if \(hermesDirect\) \{[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?a\.push\("--query", prompt\)/,
+  "An advertised Hermes --model flag must receive Cave's provider-qualified model id before the query",
 );
 
 assert.match(

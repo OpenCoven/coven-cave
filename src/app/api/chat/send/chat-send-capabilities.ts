@@ -10,8 +10,13 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
+let hermesModelFlagProbe: Promise<boolean> | null = null;
 
-function probeRunHelp(matches: (help: string) => boolean): Promise<boolean> {
+function probeHelp(
+  command: string,
+  args: string[],
+  matches: (help: string) => boolean,
+): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
     let settled = false;
@@ -21,8 +26,7 @@ function probeRunHelp(matches: (help: string) => boolean): Promise<boolean> {
       resolve(value);
     };
     try {
-      const { command, fixedArgs } = covenLaunchCommand();
-      const child = spawn(command, [...fixedArgs, "run", "--help"], {
+      const child = spawn(command, args, {
         env: harnessSpawnEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -52,13 +56,38 @@ function probeRunHelp(matches: (help: string) => boolean): Promise<boolean> {
 
 /** Capability probes are cached because old Coven CLIs reject unknown flags. */
 export function covenRunSupportsModel(): Promise<boolean> {
-  return (modelFlagProbe ??= probeRunHelp(covenRunSupportsModelFlag));
+  const { command, fixedArgs } = covenLaunchCommand();
+  return (modelFlagProbe ??= probeHelp(
+    command,
+    [...fixedArgs, "run", "--help"],
+    covenRunSupportsModelFlag,
+  ));
 }
 
 export function covenRunSupportsPermission(): Promise<boolean> {
-  return (permissionFlagProbe ??= probeRunHelp(covenRunSupportsPermissionFlag));
+  const { command, fixedArgs } = covenLaunchCommand();
+  return (permissionFlagProbe ??= probeHelp(
+    command,
+    [...fixedArgs, "run", "--help"],
+    covenRunSupportsPermissionFlag,
+  ));
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {
-  return (addDirFlagProbe ??= probeRunHelp(covenRunSupportsAddDirFlag));
+  const { command, fixedArgs } = covenLaunchCommand();
+  return (addDirFlagProbe ??= probeHelp(
+    command,
+    [...fixedArgs, "run", "--help"],
+    covenRunSupportsAddDirFlag,
+  ));
+}
+
+/** Hermes runs directly, so probe its own CLI rather than coven run. */
+export function hermesChatSupportsModel(): Promise<boolean> {
+  const command = process.platform === "win32" ? "hermes.exe" : "hermes";
+  return (hermesModelFlagProbe ??= probeHelp(
+    command,
+    ["chat", "--help"],
+    (help) => /(^|\s)--model(?![\w-])/m.test(help),
+  ));
 }

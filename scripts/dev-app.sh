@@ -53,6 +53,17 @@ TAURI_OVERRIDE_CONFIG="$(mktemp)"
 cleanup() { rm -f "$TAURI_OVERRIDE_CONFIG"; }
 trap cleanup EXIT
 
+# A Tauri dev process and its `beforeDevCommand` inherit this secret together.
+# The server therefore requires the browser-side bridge token too; carry it in
+# the URL fragment so it never participates in Next's module URL resolution or
+# reaches the HTTP server. The bridge stores it in sessionStorage, strips it,
+# and attaches the header to same-origin `/api/` calls.
+dev_url="http://127.0.0.1:${dev_port}"
+if [ -n "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  sidecar_token_fragment="$(node -p 'encodeURIComponent(process.env.COVEN_CAVE_AUTH_TOKEN)')"
+  dev_url+="#covenCaveToken=${sidecar_token_fragment}"
+fi
+
 if [ "$should_start_server" = true ]; then
   # The desktop shell always uses a loopback devUrl. A host-provided HOSTNAME
   # (for example Docker/WSL's machine name) would bind the server elsewhere
@@ -64,12 +75,12 @@ if [ "$should_start_server" = true ]; then
   esac
   # Use beforeDevCommand but set PORT so it uses our free port.
   cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
-{"build":{"beforeDevCommand":"${before_dev_command}","devUrl":"http://127.0.0.1:${dev_port}"}}
+{"build":{"beforeDevCommand":"${before_dev_command}","devUrl":"${dev_url}"}}
 CONF
 else
   # Skip beforeDevCommand since the server is already running
   cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
-{"build":{"beforeDevCommand":null,"devUrl":"http://127.0.0.1:${dev_port}"}}
+{"build":{"beforeDevCommand":null,"devUrl":"${dev_url}"}}
 CONF
 fi
 
