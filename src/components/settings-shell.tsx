@@ -91,6 +91,7 @@ import {
 type DaemonStatus = {
   running: boolean;
   reason?: string;
+  checkedAt?: string;
   covenVersion?: string;
   apiVersion?: string;
   workspacePath?: string;
@@ -126,6 +127,25 @@ type DaemonStatus = {
 
 type MultiHostMode = "local" | "hub";
 
+type TailscaleDevice = {
+  name: string;
+  dnsName: string | null;
+  hostName: string | null;
+  tailnetIp: string | null;
+  os: string | null;
+  online: boolean;
+  lastSeen: string | null;
+  isSelf: boolean;
+};
+
+type DaemonProbe = {
+  reachable: boolean;
+  status: number;
+  latencyMs: number;
+  reason?: string;
+  url: string;
+};
+
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
 export function SettingsShell() {
@@ -133,6 +153,7 @@ export function SettingsShell() {
   const isMobile = useIsMobile();
 
   const [section, setSection] = useState<Section>("general");
+  const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
   // render that section. Hash-deep-link (`/settings#familiars`) skips the
@@ -371,14 +392,14 @@ export function SettingsShell() {
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
-          {section === "daemon"   && <DaemonSection />}
+          {section === "daemon"   && <DaemonSection suggestedHubUrl={suggestedHubUrl} onSuggestionConsumed={() => setSuggestedHubUrl(null)} />}
           {section === "familiars" && (
             <FamiliarsSection
               tabTarget={familiarsTabTarget}
               onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
             />
           )}
-          {section === "mobile"   && <MobileSection />}
+          {section === "mobile"   && <MobileSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -907,7 +928,13 @@ function OmnigentSettingsGroup() {
   );
 }
 
-function DaemonSection() {
+function DaemonSection({
+  suggestedHubUrl,
+  onSuggestionConsumed,
+}: {
+  suggestedHubUrl: string | null;
+  onSuggestionConsumed: () => void;
+}) {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -918,6 +945,11 @@ function DaemonSection() {
   const [executorText, setExecutorText] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<TailscaleDevice[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [probe, setProbe] = useState<DaemonProbe | null>(null);
+  const [probing, setProbing] = useState(false);
   const { announce } = useAnnouncer();
   const [savingTravel, setSavingTravel] = useState(false);
   const [travelError, setTravelError] = useState<string | null>(null);
@@ -927,6 +959,8 @@ function DaemonSection() {
   // response can land after a newer one and flash a stale pre-action status
   // (same guard FamiliarsSection uses for its loads).
   const refreshCtlRef = useRef<AbortController | null>(null);
+  const devicesCtlRef = useRef<AbortController | null>(null);
+  const suggestionAppliedRef = useRef(false);
   const refresh = () => {
     refreshCtlRef.current?.abort();
     const ctl = new AbortController();
@@ -960,6 +994,7 @@ function DaemonSection() {
         if (ctl.signal.aborted) return;
         const multiHost = j.config?.multiHost;
         if (!j.ok || !multiHost) return;
+        if (suggestionAppliedRef.current) return;
         setMode(multiHost.mode === "hub" ? "hub" : "local");
         setHubUrl(multiHost.hubUrl ?? "");
         setExecutorText((multiHost.executorUrls ?? []).join("\n"));
@@ -968,7 +1003,50 @@ function DaemonSection() {
     return () => ctl.abort();
   }, []);
 
-  const saveConnection = async (nextMode = mode) => {
+  useEffect(() => {
+    if (!suggestedHubUrl) return;
+    suggestionAppliedRef.current = true;
+    setMode("hub");
+    setHubUrl(suggestedHubUrl);
+    setProbe(null);
+    onSuggestionConsumed();
+  }, [onSuggestionConsumed, suggestedHubUrl]);
+
+  const loadDevices = useCallback(() => {
+    devicesCtlRef.current?.abort();
+    const ctl = new AbortController();
+    devicesCtlRef.current = ctl;
+    setDevicesLoading(true);
+    setDevicesError(null);
+    fetch("/api/tailscale/devices", { cache: "no-store", signal: ctl.signal })
+      .then((response) => response.json())
+      .then((result: { ok?: boolean; devices?: TailscaleDevice[]; reason?: string }) => {
+        if (ctl.signal.aborted) return;
+        if (!result.ok) {
+          setDevices([]);
+          setDevicesError(result.reason || "Tailscale status unavailable");
+        } else {
+          setDevices(result.devices ?? []);
+        }
+        setDevicesLoading(false);
+      })
+      .catch((error) => {
+        if (ctl.signal.aborted) return;
+        setDevicesError(error instanceof Error ? error.message : "Tailscale status unavailable");
+        setDevicesLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "hub") {
+      devicesCtlRef.current?.abort();
+      return;
+    }
+    loadDevices();
+    return () => devicesCtlRef.current?.abort();
+  }, [loadDevices, mode]);
+
+  const persistConnection = async (nextMode = mode) => {
     setSavingConnection(true);
     setConnectionError(null);
     try {
@@ -993,8 +1071,61 @@ function DaemonSection() {
     }
   };
 
+  const probeHub = async (candidate: string, saveWhenReachable: boolean) => {
+    const url = candidate.trim();
+    if (!url) {
+      setConnectionError("Enter a Server Hub URL.");
+      return;
+    }
+    setProbing(true);
+    setConnectionError(null);
+    try {
+      const response = await fetch("/api/daemon/probe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const result = await response.json().catch(() => ({})) as Partial<DaemonProbe> & { ok?: boolean; error?: string };
+      if (!response.ok || result.ok === false || typeof result.reachable !== "boolean") {
+        throw new Error(result.error || `probe failed (${response.status})`);
+      }
+      const nextProbe: DaemonProbe = {
+        reachable: result.reachable,
+        status: result.status ?? 0,
+        latencyMs: result.latencyMs ?? 0,
+        reason: result.reason,
+        url,
+      };
+      setProbe(nextProbe);
+      if (nextProbe.reachable && saveWhenReachable) await persistConnection("hub");
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : "could not probe Server Hub");
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  const saveConnection = async (nextMode = mode) => {
+    if (nextMode === "hub") {
+      await probeHub(hubUrl, true);
+      return;
+    }
+    await persistConnection(nextMode);
+  };
+
   const chooseMode = (nextMode: MultiHostMode) => {
-    void saveConnection(nextMode);
+    setMode(nextMode);
+    if (nextMode === "local") void persistConnection(nextMode);
+  };
+
+  const selectDevice = (device: TailscaleDevice) => {
+    const host = device.tailnetIp || device.dnsName;
+    if (!host) return;
+    const url = `http://${host}:8787`;
+    setMode("hub");
+    setHubUrl(url);
+    setProbe(null);
+    void probeHub(url, false);
   };
 
   const startDaemon = async () => {
@@ -1071,22 +1202,80 @@ function DaemonSection() {
             ariaLabel="Daemon runtime target"
           />
         </SettingControlRow>
+        {mode === "hub" ? (
+          <SettingControlRow label="Tailnet devices" hint="Choose a machine on your private Tailscale network, or enter an address manually below.">
+            <div className="w-full min-w-[260px] max-w-md space-y-2">
+              <div className="flex items-center justify-end">
+                <Button variant="ghost" size="xs" onClick={loadDevices} disabled={devicesLoading} leadingIcon="ph:arrows-clockwise">
+                  {devicesLoading ? "Finding devices..." : "Refresh devices"}
+                </Button>
+              </div>
+              {devicesError ? (() => {
+                const friendly = classifyTailscaleFailure(devicesError);
+                return (
+                  <div role="status" className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
+                    <p className="text-[length:var(--text-xs)] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
+                    <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{friendly.hint}</p>
+                  </div>
+                );
+              })() : null}
+              {!devicesError && !devicesLoading && devices.length === 0 ? (
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No tailnet devices found.</p>
+              ) : null}
+              {devices.length > 0 ? (
+                <div className="overflow-hidden rounded-md border border-[var(--border-hairline)]">
+                  {devices.map((device) => {
+                    const selectable = Boolean(device.tailnetIp || device.dnsName);
+                    return (
+                      <button
+                        key={`${device.isSelf ? "self" : "peer"}:${device.dnsName || device.name}`}
+                        type="button"
+                        onClick={() => selectDevice(device)}
+                        disabled={!selectable}
+                        className="focus-ring flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left last:border-b-0 hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${device.online ? "bg-[var(--color-success)]" : "bg-[var(--text-muted)]"}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+                            {device.name}{device.isSelf ? " · This device" : ""}
+                          </span>
+                          <span className="block truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                            {device.tailnetIp || device.dnsName || "No hub address"}{device.os ? ` · ${device.os}` : ""}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </SettingControlRow>
+        ) : null}
         <SettingControlRow label="Server hub URL" hint="HTTP endpoint for the Linux/server hub on your private network.">
           <input
             value={hubUrl}
-            onChange={(event) => setHubUrl(event.target.value)}
+            onChange={(event) => { setHubUrl(event.target.value); setProbe(null); }}
             onBlur={() => void saveConnection()}
             aria-label="Server hub URL"
             placeholder="http://server.tailnet:8787"
             disabled={mode !== "hub"}
             className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
           />
+          {mode === "hub" && (probing || probe?.url === hubUrl.trim()) ? (
+            <p className={`mt-1 text-[length:var(--text-xs)] ${probe?.reachable ? "text-[var(--color-success)]" : probe ? "text-[var(--color-danger)]" : "text-[var(--text-muted)]"}`} role="status">
+              {probing
+                ? "Checking reachability..."
+                : probe?.reachable
+                  ? `Reachable · ${probe.latencyMs} ms`
+                  : `Unreachable${probe?.reason ? ` · ${probe.reason}` : ""}`}
+            </p>
+          ) : null}
         </SettingControlRow>
         <SettingControlRow label="Executor addresses" hint="Advanced, optional: addresses of extra machines that can run familiar sessions, one per line. Leave empty unless you run a multi-machine setup.">
           <textarea
             value={executorText}
             onChange={(event) => setExecutorText(event.target.value)}
-            onBlur={() => void saveConnection()}
+            onBlur={() => void persistConnection(mode)}
             aria-label="Executor addresses, one per line"
             placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
             disabled={mode !== "hub"}
@@ -1098,6 +1287,11 @@ function DaemonSection() {
             control height — same as the Status row's Refresh button. */}
         <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-2.5 pt-0.5">
           {connectionError && <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{connectionError}</span>}
+          {mode === "hub" && probe?.url === hubUrl.trim() && !probe.reachable ? (
+            <Button variant="ghost" size="xs" onClick={() => void persistConnection("hub")} disabled={savingConnection} leadingIcon="ph:warning">
+              Save anyway
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="xs"
@@ -1165,10 +1359,15 @@ function DaemonSection() {
               hub {status.target.url}
             </span>
           )}
+          {!loading && status?.target?.mode === "hub" && status.running ? (
+            <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-success)]">
+              Connected · last seen <RelativeTime iso={status.checkedAt} fallback="just now" />
+            </p>
+          ) : null}
           {startError && <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">{startError}</p>}
           {!loading && !status?.running && mode === "hub" && status?.target?.mode === "hub" && (
             <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">
-              {status.target.url} is not reachable from this Cave.
+              Configured but unreachable · {status.target.url}{status.reason ? ` · ${status.reason}` : ""}
             </p>
           )}
           {mode === "hub" && (status?.executors?.length ?? 0) > 0 && (
@@ -2396,7 +2595,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
 
 /** Plain-language framing for handoff failures. The raw error stays available
  *  behind a disclosure; the headline tells a person what to actually do. */
-function describeMobileHandoffError(raw: string): { headline: string; hint: string } {
+function classifyTailscaleFailure(raw: string): { headline: string; hint: string } {
   const text = raw.toLowerCase();
   if (text.includes("pnpm dev") || text.includes("access token") || text.includes("pairing secret")) {
     return {
@@ -2461,7 +2660,7 @@ const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; classNa
   pending: { icon: "ph:circle-dashed", className: "text-[var(--text-muted)]", announce: "waiting" },
 };
 
-function MobileModeToggle() {
+function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
   // The proven probe ladder from the route (cave-jr4r.1) — present on success
@@ -2528,7 +2727,7 @@ function MobileModeToggle() {
     });
   };
 
-  const friendly = error ? describeMobileHandoffError(error) : null;
+  const friendly = error ? classifyTailscaleFailure(error) : null;
   const statusLine = busy
     ? "Updating…"
     : !mobileModeEnabled
@@ -2714,6 +2913,14 @@ function MobileModeToggle() {
                 >
                   {copied === "host" ? "Copied" : "Copy"}
                 </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  leadingIcon="ph:desktop"
+                  onClick={() => onUseAsHub(`http://${handoff.nativeHost}:8787`)}
+                >
+                  Use this device as hub
+                </Button>
               </div>
             ) : null}
             <p>
@@ -2727,7 +2934,7 @@ function MobileModeToggle() {
   );
 }
 
-function MobileSection() {
+function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   return (
     <SettingsPage
       section="mobile"
@@ -2735,7 +2942,7 @@ function MobileSection() {
       description="One scan pairs your phone over your private Tailscale network — no typing, no password."
     >
       <SettingsGroup label="Pair">
-        <MobileModeToggle />
+        <MobileModeToggle onUseAsHub={onUseAsHub} />
       </SettingsGroup>
 
       <SettingsGroup label="Why there’s no password">
