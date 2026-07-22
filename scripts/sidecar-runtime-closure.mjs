@@ -108,7 +108,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
   // CI traced 5,618–5,619 on Windows across runs. Retain ten files of
   // headroom over the jittering maximum without relaxing the byte ceiling.
-  fileCount: 5_628,
+  // 2026-07-22 (OpenCode runtime): the direct-run, model-inventory, and
+  // event-decoder modules raise the combined Ubuntu closure to 5,625 files.
+  // Keep ten files of cross-platform headroom without relaxing the
+  // expanded-byte ceiling.
+  fileCount: 5_635,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
