@@ -57,6 +57,22 @@ type AdapterManifestDocument = {
   [key: string]: unknown;
 };
 
+const LEGACY_HERMES_INTERACTIVE_PREFIX_ARGS = ["chat", "--source", "coven"];
+const LEGACY_HERMES_NON_INTERACTIVE_PREFIX_ARGS = [
+  "chat",
+  "--source",
+  "coven",
+  "-Q",
+];
+
+function hasExactStringArray(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((entry, index) => entry === expected[index])
+  );
+}
+
 // The hand-curated seed: Cave-specific labels, install copy, and probe args.
 // Curated entries win over registry entries with the same id.
 const CURATED_ADAPTERS: CompatibilityAdapter[] = [
@@ -442,6 +458,16 @@ export function isLegacyWindowsHermesManifest(
       adapters.length === 1 &&
       adapters[0]?.id === "hermes" &&
       adapters[0]?.executable === "hermes-coven" &&
+      adapters[0]?.label === "Hermes Agent" &&
+      adapters[0]?.model_flag === "--model" &&
+      hasExactStringArray(
+        adapters[0]?.interactive_prompt_prefix_args,
+        LEGACY_HERMES_INTERACTIVE_PREFIX_ARGS,
+      ) &&
+      hasExactStringArray(
+        adapters[0]?.non_interactive_prompt_prefix_args,
+        LEGACY_HERMES_NON_INTERACTIVE_PREFIX_ARGS,
+      ) &&
       typeof adapters[0]?.prompt_flag !== "string"
     );
   } catch {

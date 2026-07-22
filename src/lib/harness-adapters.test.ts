@@ -327,6 +327,18 @@ assert.equal(hermesManifest?.filename, "hermes.json");
   assert.ok(isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "win32"));
   assert.ok(!isLegacyWindowsHermesManifest(windowsManifest?.contents ?? "", "win32"));
   assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "linux"));
+  assert.ok(
+    !isLegacyWindowsHermesManifest(
+      JSON.stringify({
+        adapters: [{
+          ...JSON.parse(hermesManifest?.contents ?? "{}").adapters?.[0],
+          model_flag: "--custom-model",
+        }],
+      }),
+      "win32",
+    ),
+    "a user-authored Hermes adapter is never replaced during migration",
+  );
 }
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
 
