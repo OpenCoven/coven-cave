@@ -4,6 +4,7 @@
 // are user content with no undo — the load path must never let a bad read turn
 // into an empty save that destroys them (see loadCanvas).
 
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
@@ -85,8 +86,11 @@ export async function loadCanvas(): Promise<CanvasFile> {
     // The file holds bytes that aren't a canvas store (torn write, foreign
     // content). This store now carries user sketches with no undo — reading
     // it as empty made the NEXT save silently destroy all of them. Move the
-    // bad file aside (bytes preserved for recovery) and start fresh.
-    const aside = `${CANVAS_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    // bad file aside (bytes preserved for recovery) and start fresh. The
+    // timestamp is for humans; the random suffix keeps two corruption events
+    // in the same millisecond from renaming onto the SAME aside path (rename
+    // clobbers, so the second capture silently destroyed the first).
+    const aside = `${CANVAS_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
     try {
       await rename(CANVAS_PATH, aside);
       console.error(`cave-canvas: unreadable store moved aside to ${aside}`);

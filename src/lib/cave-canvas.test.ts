@@ -717,6 +717,33 @@ const art = (id, code, extra = {}) => ({
   const fresh = await loadCanvas();
   assert.equal(fresh.artifacts.length, 0, "a missing file is an empty fresh start");
   assert.equal(corruptFiles().length, 2, "a missing file mints no corrupt-aside");
+
+  // Rapid back-to-back corruption events used to collide (cave-z8je): the
+  // aside name had millisecond resolution, so a second rename in the same
+  // millisecond renamed onto the SAME path — rename clobbers, and the second
+  // capture silently destroyed the first ("expects 2 files" flaked on fast
+  // CI). Freeze the clock so every capture lands in one millisecond — the
+  // random suffix must still keep them all.
+  const RealDate = Date;
+  const frozenMs = new RealDate("2026-01-01T00:00:00.000Z").getTime();
+  globalThis.Date = class extends RealDate {
+    constructor() {
+      super(frozenMs);
+    }
+  } as DateConstructor;
+  try {
+    for (let burst = 0; burst < 5; burst++) {
+      writeFileSync(storePath, `{{{ burst ${burst}`);
+      await loadCanvas();
+    }
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  assert.equal(
+    corruptFiles().length,
+    7,
+    "same-millisecond corruption events each keep their own aside capture",
+  );
 }
 
 rmSync(tmpHome, { recursive: true, force: true });
