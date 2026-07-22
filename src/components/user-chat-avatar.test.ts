@@ -19,4 +19,24 @@ assert.match(chat, /<UserChatAvatar className="cave-linear-turn-avatar cave-line
 assert.match(group, /import \{ UserChatAvatar \} from "@\/components\/user-chat-avatar"/, "Group chat imports the user avatar component");
 assert.match(group, /<UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human"/, "Group user turns render the clickable user avatar");
 
+// The operator photo fills its ring edge-to-edge, so at the familiars' 28px it
+// read a size up from their inset 22px glyphs. The human ring renders at that
+// optical 22px (32px on the roomier mobile column), centered on the same axis.
+const css = readFileSync(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /\.cave-linear-turn-avatar--human \{[^}]*width: 22px;[^}]*height: 22px;[^}]*\}/,
+  "solo-chat human avatar ring is compact (22px) to match the familiars' inset glyph size",
+);
+assert.match(
+  css,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-linear-turn-avatar--human \{[^}]*width: 32px;[^}]*height: 32px;[^}]*\}/,
+  "mobile keeps the human ring proportionally inset (32px in the 38px column)",
+);
+assert.match(
+  css,
+  /\.cave-linear-turn-avatar--human svg \{[^}]*width: 14px;[^}]*\}/,
+  "the ph:user fallback glyph scales down to the compact ring",
+);
+
 console.log("user-chat-avatar.test.ts: ok");
