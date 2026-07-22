@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-22
+
+> 🏡 **Calmer hearth, sharper GitHub surfaces, and a quieter API footprint.** The launch home settles into a cards-only hearth with appearance-radius theming, Projects becomes a per-familiar access matrix, and GitHub surfaces gain diff syntax highlighting and an instant activity-heatmap tooltip. Under the hood, session PR context now resolves over REST instead of GraphQL, migrations gain stronger destructive-action guards, and the research desk gets a wide stability sweep.
+
+### Added
+- **Cards-only hearth** — the launch home drops the pill row, centers Continue cards, and adopts appearance radius tokens; hearth centered vertically with radius-token chat glass (#3673, #3679).
+- **Projects as access matrix** — chats › Projects rebuilt as a per-familiar access matrix; profile cards stretch to fill the page (#3689, #3692).
+- **GitHub surfaces** — GitHub-style instant hover tooltip on the session activity heatmap; a shared Shiki singleton powering review-thread diff syntax highlighting (#3697, #3694).
+- **Composer & chat** — footer context pill split into project · model · branch chips; composer linked-work shows one task at a time with an overflow dropdown; sidepanel hover-archive button plus a Show archived option (#3696, #3693, #3688).
+
+### Fixed
+- **Session PR context over REST** — branch/PR lookups on the sessions-list poll now use GitHub REST instead of `gh pr view` (GraphQL), so the 4s poll can no longer exhaust the GraphQL rate-limit budget (#3698).
+- **Migration guards** — destructive keep/recover resolutions gated behind size-imbalance confirmation; discard guard extended to directories with confirms pinned to content tokens (#3683, #3691).
+- **Research desk sweep** — desk-wide bug sweep (reconcile crashes, stuck missions, silent action failures), travel-replay run re-pointing, ACTIVE-automation guard, default-tab latch, and pre-approved tools for unattended copilot flow spawns (#3680, #3684, #3676).
+- **Theme fidelity** — normalize unprefixed custom-theme keys in live apply, de-finick appearance color overrides, and restore custom theme accent when the backdrop releases `--accent-presence` (#3695, #3686, #3674).
+- **Home & chat polish** — flatten the launch background (retire radial washes and hearth halo), round the hearth backdrop scrim with appearance radius tokens, and compact the operator avatar to the familiars' optical size (#3690, #3681, #3687).
+- **Familiar tab** — landed the 12 post-merge review follow-ups from #3655 (#3682).
+- **Task-work & dashboard** — fill the conversation panel with task-chat alignment; open familiar profile pages from the top-collaborators footer (#3677, #3675).
+- **Voice & canvas** — voice connect fails gracefully with an in-place vault key fix; canvas uniquifies corrupt-aside capture names (#3685, #3678).
+
 ## [0.1.5] - 2026-07-22
 
 > 🏠 **Refined home, richer iOS, and new runtimes.** The launch home gets a unified hearth cluster with Continue cards and a split composer toolbar. iOS gains a focused 4-tab bar, turn-completion notifications, Live Activity, Canvas view mode, and motion polish. New runtimes: Grok Build, OpenCode, and a native Tailscale Server Hub connection.
