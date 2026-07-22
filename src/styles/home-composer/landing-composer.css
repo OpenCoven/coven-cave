@@ -95,8 +95,8 @@
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
 .home-composer-hero {
-  text-align: left;
-  margin-bottom: var(--space-4);
+  text-align: center;
+  margin-bottom: var(--space-5);
 }
 
 /* Presence kicker — the cave greets you before asking for intent. It samples
@@ -116,6 +116,7 @@
   color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
   opacity: 0;
   transition: opacity 400ms var(--ease-standard);
+  justify-content: center;
 }
 
 .home-composer-eyebrow.is-ready {
@@ -150,10 +151,10 @@
 .home-composer-headline {
   font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(23px, 2.4vw, 27px);
-  line-height: 1.15;
-  color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
-  letter-spacing: -0.015em;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.12;
+  color: color-mix(in oklch, var(--text-primary) 92%, var(--text-muted));
+  letter-spacing: -0.02em;
   margin: 0 0 var(--space-1);
 }
 

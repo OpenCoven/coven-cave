@@ -59,9 +59,6 @@ import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
-import { HomeContinue } from "@/components/home/home-continue";
-import { HomeOpenWork } from "@/components/home/home-open-work";
-import { HomeSnippets } from "@/components/home/home-snippets";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
 import { HomeSuggestionPills } from "@/components/home/home-suggestion-pills";
 import { useBoardCards } from "@/components/home/use-board-cards";
@@ -1118,11 +1115,13 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Suggestions demoted below the composer (chat revamp 1a, minimal
-          pass): the From-task row when home opened from a task (unwired today
-          — see home-from-task.tsx), else two cold-start pills — and only
-          while the draft is empty. The moment you're typing you don't need
-          prompts for the blank page (progressive disclosure). */}
+      {/* Starter prompts — the one quiet affordance under the composer, and
+          only on a blank draft (progressive disclosure). ChatGPT/Claude-grade
+          minimal: a single row of cold-start pills, nothing else. Everything
+          that used to stack here (Continue, Open work, Prompt snippets, Ask
+          Salem) lives in the sidebar/other surfaces — the home is the
+          composer, full stop. The From-task row still wins when home opened
+          from a task so that hand-off keeps its context. */}
       {taskOrigin ? (
         <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
       ) : !text.trim() ? (
@@ -1132,53 +1131,6 @@ export function HomeComposer({
           onPick={insertPrompt}
         />
       ) : null}
-
-      {/* Continue — the two most recent resumable sessions, behind the same
-          persisted disclosure as the sections below (default open). */}
-      <HomeContinue
-        sessions={sessions}
-        familiarNameById={familiarNameById}
-        onOpenSession={onOpenSession}
-      />
-
-      {/* Open work — collapsible ledger: branch PR, pending tasks, the
-          needs-you tier, uncommitted changes. */}
-      <HomeOpenWork
-        projectRoot={selectedProject?.root ?? null}
-        boardCards={boardCards}
-        needsYou={needsYou}
-        onOpenBoard={onNavigateToBoard}
-        onOpenInboxItem={onOpenInboxItem}
-        onOpenSchedules={onOpenSchedules}
-      />
-
-      {/* Prompt snippets — collapsed by default; top three saved prompts
-          insert into the composer, Show all opens the snippets browser. */}
-      <HomeSnippets
-        prompts={prompts}
-        onInsert={insertPromptTemplate}
-        onShowAll={() => setSnippetsBrowserOpen(true)}
-      />
-
-      {/* Ask Salem — quiet doorway to the dedicated docs section (mode
-          "salem"). Deliberately not a sidebar row; Home is its front door.
-          Just the name — the what-it-covers hint lives in the tooltip. */}
-      <div className="home-ask-salem">
-        <button
-          type="button"
-          className="home-ask-salem__btn focus-ring"
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent("cave:navigate-mode", { detail: { mode: "salem" } }),
-            )
-          }
-          title="Grounded answers from the Coven index — docs, your Cave, your models"
-          aria-label="Open Ask Salem — grounded answers from the Coven index"
-        >
-          <Icon name="ph:cat" width={14} aria-hidden />
-          <span>Ask Salem</span>
-        </button>
-      </div>
 
       </div>{/* /.home-hearth-card */}
 
