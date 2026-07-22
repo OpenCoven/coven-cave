@@ -174,6 +174,20 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
+  // OpenCode's authenticated account chooses its own default model.  Its
+  // catalog deliberately has an empty default, so inheriting Cave's global
+  // (usually OpenAI) model here would make an untouched OpenCode familiar run
+  // `opencode --model <unconfigured-global-model>` instead of letting the CLI
+  // select its configured default.
+  if (input.harness === "opencode") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "global-default",
+      applicationState: "saved",
+      reason: "Using OpenCode's authenticated default model.",
+    });
+  }
+
   return chatModelState(input, {
     effectiveModel: cleanEffectiveModelId(input.globalDefaultModel, input.harness) ?? GLOBAL_DEFAULT_MODEL,
     source: "global-default",
