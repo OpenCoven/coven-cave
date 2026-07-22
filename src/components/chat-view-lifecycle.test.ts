@@ -138,14 +138,32 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?clearAttachments\(\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
-  "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
+  "send() must queue a rich follow-up while busy instead of dropping it (CHAT-D5-01)",
 );
 
 assert.match(
   source,
-  /const sendRaw = async [\s\S]*?\|\| busy\) return;/,
-  "sendRaw should keep its own busy guard as the backstop behind send()'s",
+  /const sendRaw = async [\s\S]*?\|\| \(busy && !allowBusy\)\) return;/,
+  "sendRaw should keep its busy guard while allowing the queue drain to hand off exactly one settled item",
+);
+
+assert.match(
+  source,
+  /const drainNextQueuedMessage = useCallback\(\(\) => \{[\s\S]*?const \[next, \.\.\.rest\] = queuedMessagesRef\.current;[\s\S]*?void sendQueuedMessageRef\.current\(next\);[\s\S]*?if \(sawDone && !streamFailed && !controller\.signal\.aborted\) \{[\s\S]*?drainNextQueuedMessage\(\);/,
+  "only a naturally successful stream completion should drain one queued follow-up",
+);
+
+assert.match(
+  source,
+  /aria-label="Queued messages"[\s\S]*?steerQueuedMessage\(message\.id\)[\s\S]*?removeQueuedMessage\(message\.id\)/,
+  "queued messages should remain visible with send-next and remove controls",
+);
+
+assert.match(
+  source,
+  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
+  "a live response must expose both Queue and Cancel controls",
 );
 
 assert.match(
