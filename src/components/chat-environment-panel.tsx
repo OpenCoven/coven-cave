@@ -21,8 +21,9 @@
 //   anchors the shared GitBranchMenuPopover from the composer git chip.
 // - The panel hides while the inline code rail is open
 //   (cave:code-rail-visibility) — the rail is the full surface this HUD
-//   abbreviates — and on panes narrower than ENV_PANEL_MIN_WIDTH, where the
-//   composer git chip already carries the context.
+//   abbreviates — and on panes narrower than ENV_PANEL_MIN_WIDTH (2xl), where
+//   the card would overlap the conversation column instead of floating in the
+//   spare margin (the composer git chip already carries the context there).
 // - Width gating measures the panel's own sticky wrapper (which spans the
 //   transcript content box), so split panes gate independently and no
 //   ancestor needs container-type containment.
@@ -145,7 +146,7 @@ export function ChatEnvironmentPanel({ projectRoot, runtime, hasTurns, onOpenUrl
       {!visible ? null : collapsed ? (
         <button
           type="button"
-          className="focus-ring pointer-events-auto mt-0.5 flex items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] shadow-md transition-colors hover:text-[var(--text-primary)]"
+          className="focus-ring pointer-events-auto mt-0.5 flex items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] shadow-md backdrop-blur-md transition-colors hover:text-[var(--text-primary)]"
           aria-expanded={false}
           aria-label="Show environment panel"
           onClick={() => setCollapsedPersist(false)}
@@ -156,7 +157,12 @@ export function ChatEnvironmentPanel({ projectRoot, runtime, hasTurns, onOpenUrl
       ) : (
         <section
           aria-label="Environment"
-          className="pointer-events-auto flex w-[240px] flex-col rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-lg"
+          // Explicit card bg + blur: translucent themes / backdrop mode give
+          // --bg-raised alpha, and a see-through HUD ghosts the transcript
+          // underneath. The gradient pins an opaque --bg-base floor under the
+          // raised tint; the blur keeps it frosted if even the floor carries
+          // alpha.
+          className="pointer-events-auto flex w-[240px] flex-col rounded-xl border border-[var(--border-hairline)] shadow-lg backdrop-blur-md [background:linear-gradient(var(--bg-raised),_var(--bg-raised)),_var(--bg-base)]!"
         >
           <header className="flex items-center justify-between px-3 pb-1 pt-2">
             <span className="text-[length:var(--text-2xs)] font-medium uppercase tracking-wide text-[var(--text-muted)]">
