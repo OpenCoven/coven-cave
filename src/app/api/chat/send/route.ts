@@ -848,12 +848,16 @@ export async function POST(req: Request) {
   // (→ `--permission read-only`); "full" stays implicit so the harness keeps
   // its own default sandbox instead of being widened to danger-full-access.
   const permissionForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    (await covenRunSupportsPermission());
   // Same gating for directory grants (`--add-dir`). Without forwarding, the
   // granted roots listed in the runtime-scope preamble are prompt-text-only
   // and the harness denies every access to them.
   const addDirForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
