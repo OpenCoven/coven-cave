@@ -192,6 +192,12 @@ assert.match(
 
 assert.match(
   source,
+  /if \(busy \|\| abortRef\.current\) \{[\s\S]*?announce\("Queued message will send next\.", "polite"\);/,
+  "send-next must only reprioritize while every supported runtime host is busy, including non-streaming hosts without an AbortController",
+);
+
+assert.match(
+  source,
   /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
   "a live response must expose both Queue and Cancel controls",
 );

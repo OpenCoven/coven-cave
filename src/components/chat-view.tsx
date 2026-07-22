@@ -2327,7 +2327,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const next = queuedMessagesRef.current[index];
       if (!next) return;
       const rest = queuedMessagesRef.current.filter((message) => message.id !== id);
-      if (abortRef.current) {
+      // Most chat streams have an AbortController, but some supported runtime
+      // hosts (for example Omnigent) are busy before they expose one. Treat
+      // either case as in-flight so Send next only reprioritizes rather than
+      // starting a concurrent request.
+      if (busy || abortRef.current) {
         queuedMessagesRef.current = [next, ...rest];
         setQueuedMessages(queuedMessagesRef.current);
         announce("Queued message will send next.", "polite");
@@ -2338,7 +2342,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce("Sending queued message.", "polite");
       void sendQueuedMessageRef.current(next);
     },
-    [announce],
+    [announce, busy],
   );
   /** Keys for POST /api/chat/stop — a deliberate Stop must be an explicit
    *  server call; a bare fetch abort now reads as a transport drop and the
