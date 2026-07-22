@@ -176,6 +176,7 @@ export function TaskWorkCockpit({
             projectRoot={railProjectRoot ?? undefined}
             initialPrompt={initialPrompt}
             autoSendInitialPrompt
+            startNewConversation
             daemonRunning={daemonRunning}
             sessions={sessions}
             onSessionsChanged={onRefreshSessions}

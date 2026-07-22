@@ -186,6 +186,10 @@ type SendBody = {
    *  before the server has assigned/echoed a conversation id. */
   runId?: string;
   sessionId?: string;
+  /** A Board native-chat handoff reserves Cave's stable id before any harness
+   * session exists. Start its first turn fresh instead of treating that id as
+   * a harness resume token. */
+  startNewConversation?: boolean;
   projectRoot?: string;
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
@@ -1269,9 +1273,11 @@ export async function POST(req: Request) {
   };
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
-  const resumeTarget = body.sessionId
-    ? existingConversation?.harnessSessionId ?? body.sessionId
-    : null;
+  const resumeTarget = body.startNewConversation && !existingConversation
+    ? null
+    : body.sessionId
+      ? existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An

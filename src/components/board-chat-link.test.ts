@@ -149,6 +149,16 @@ assert.match(
   "ChatView only auto-sends into an existing session for the explicit task-bridge handoff",
 );
 assert.match(
+  taskWorkCockpit,
+  /autoSendInitialPrompt\s+startNewConversation/,
+  "A reserved Board conversation marks its first ChatView send as a fresh native session",
+);
+assert.match(
+  chatSendRoute,
+  /body\.startNewConversation && !existingConversation[\s\S]{0,160}\? null/,
+  "A reserved Board id must not be passed as a resume token to direct or registry runtimes",
+);
+assert.match(
   route,
   /updateCard\(card\.id, \{\s*sessionId/,
   "Board chat endpoint should persist the relation on the board card",

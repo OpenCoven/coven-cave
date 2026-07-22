@@ -225,6 +225,9 @@ type Props = {
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
   autoSendInitialPrompt?: boolean;
+  /** The Board reserved this Cave conversation id before any native harness
+   * session exists, so the first send must not pass it as a resume token. */
+  startNewConversation?: boolean;
   /** Files handed off from the home composer alongside `initialPrompt`; included
    *  in the auto-sent first message. */
   initialAttachments?: ChatAttachment[];
@@ -1630,7 +1633,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, autoSendInitialPrompt = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3934,6 +3937,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
+          ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: requestProjectRoot,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
