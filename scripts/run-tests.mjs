@@ -828,6 +828,7 @@ export const SUITES = {
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
+    "src/components/running-sessions-popover.test.ts",
     "src/components/top-bar-polish.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",

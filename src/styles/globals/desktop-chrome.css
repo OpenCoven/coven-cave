@@ -776,9 +776,17 @@ button:active > .edge-rail-chip {
   cursor: pointer;
 }
 
+/* The running-processes control is interactive now (it opens the process
+   list popover) — same affordance as its .menu-bar__task neighbors. */
 .menu-bar__status {
-  cursor: default;
+  cursor: pointer;
   color: var(--text-secondary);
+}
+
+.menu-bar__status:hover {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 /* Live enrich progress is visible text (information, not chrome) — let that

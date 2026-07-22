@@ -11,9 +11,10 @@ type Props = {
   /** Active familiar display name — personalizes the command-bar placeholder
    *  ("Search or ask <name>…"). Falls back to Salem, the docs familiar. */
   activeFamiliarName?: string | null;
-  /** Live count of running daemon sessions — drives the compact status control
-   *  (hidden at zero). */
-  runningCount?: number;
+  /** Running-processes control (waveform trigger + popover), rendered by the
+   *  workspace (it owns the sessions state and chat navigation) so this bar
+   *  stays markup-thin. Hidden at zero by the control itself. */
+  runningStatus?: ReactNode;
   /** Notification bell, rendered by the workspace (it owns the inbox state)
    *  so this bar stays markup-thin. Joins the right-side status controls. */
   bell?: ReactNode;
@@ -59,7 +60,7 @@ function fmtBadge(n: number): string {
 export function FamiliarMenuBar({
   activeFamiliarId,
   activeFamiliarName,
-  runningCount,
+  runningStatus,
   bell,
   taskCount,
   scheduleNeedsCount,
@@ -176,22 +177,11 @@ export function FamiliarMenuBar({
         </button>
       </div>
 
-      {/* Right edge (chat-revamp phase D): compact running-session status
-          (waveform + count, hidden at zero) and the notification bell. */}
+      {/* Right edge (chat-revamp phase D): the running-processes control
+          (waveform + count trigger opening the process list, hidden at zero)
+          and the notification bell. */}
       <div className="menu-bar__group menu-bar__group--status">
-        {typeof runningCount === "number" && runningCount > 0 ? (
-          <span
-            className="menu-bar__status"
-            role="status"
-            aria-label={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
-            title={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
-          >
-            <Icon name="ph:waveform" width={22} height={22} aria-hidden />
-            <span className="menu-bar__badge" aria-hidden>
-              {fmtBadge(runningCount)}
-            </span>
-          </span>
-        ) : null}
+        {runningStatus}
         {bell}
       </div>
     </nav>

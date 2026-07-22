@@ -76,8 +76,8 @@ assert.match(
 );
 assert.match(
   menuBar,
-  /<div className="menu-bar__group menu-bar__group--status">[\s\S]*?className="menu-bar__status"[\s\S]*?\{bell\}\s*<\/div>/,
-  "the right cluster hosts the compact running status before the bell slot",
+  /<div className="menu-bar__group menu-bar__group--status">\s*\{runningStatus\}\s*\{bell\}\s*<\/div>/,
+  "the right cluster hosts the running-processes slot before the bell slot",
 );
 assert.doesNotMatch(
   menuBar,
@@ -89,17 +89,18 @@ assert.doesNotMatch(
   /menu-bar__running-dot/,
   "the right cluster no longer uses the old running dot",
 );
-// Detailed waveform, badge, zero-hide, and accessibility contracts live in
-// familiar-menu-bar.test.ts. This suite keeps only the shell-level wiring.
+// Detailed waveform trigger, badge, zero-hide, popover, and accessibility
+// contracts live in running-sessions-popover.test.ts. This suite keeps only
+// the shell-level wiring.
 assert.match(
   workspace,
-  /const runningSessionCount = useMemo\(\s*\n\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)\.length,\s*\n\s*\[sessions\],\s*\n\s*\);/,
-  "runningSessionCount derives from sessionStatusTone over the live sessions list",
+  /const runningSessions = useMemo\(\s*\n\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\),\s*\n\s*\[sessions\],\s*\n\s*\);/,
+  "runningSessions derives from sessionStatusTone over the live sessions list",
 );
 assert.match(
   workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}\s*\n\s*activeFamiliarName=\{active\?\.display_name \?\? null\}\s*\n\s*runningCount=\{runningSessionCount\}/,
-  "the menu bar receives the active familiar name and the running count",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}\s*\n\s*activeFamiliarName=\{active\?\.display_name \?\? null\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
+  "the menu bar receives the active familiar name and the running-processes popover",
 );
 assert.match(
   workspace,
