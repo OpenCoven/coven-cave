@@ -36,7 +36,7 @@ assert.match(
 );
 assert.match(
   src,
-  /case \.familiar\(let familiar\):\s*\n\s*FamiliarThreadsView\(familiar: familiar, path: \$detailPath\)/,
+  /case \.familiar\(let familiar\):\s*\n\s*FamiliarThreadsView\(familiar: familiar, path: \$detailPath[,)]/,
   "selecting a familiar should show its threads in the detail column",
 );
 assert.match(

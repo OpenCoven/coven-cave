@@ -330,10 +330,14 @@ struct ChatView: View {
                             .id(message.id)
                             // New bubbles settle in with a soft rise-and-fade
                             // (native Messages behaviour) instead of popping;
+                            // queued-offline sends enter subdued (opacity
+                            // only) so they read as parked, not sent;
                             // deletions fade out. Driven by the count-keyed
                             // animation below; Reduce Motion turns it off.
                             .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                                insertion: message.isQueued
+                                    ? .opacity
+                                    : .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
                                 removal: .opacity))
                         }
                     }

@@ -9,6 +9,9 @@ struct FamiliarThreadsView: View {
     @Environment(AppModel.self) private var app
     let familiar: Familiar
     @Binding var path: [ChatRoute]
+    /// Namespace owned by `ChatsHomeView`; local thread rows register as
+    /// zoom-transition sources so the pushed conversation grows out of them.
+    var zoomNamespace: Namespace.ID
     @State private var renamingThread: ChatThread?
     /// An on-device thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
@@ -310,6 +313,7 @@ struct FamiliarThreadsView: View {
         switch entry {
         case .local(let thread):
             ThreadRow(thread: thread)
+                .matchedTransitionSource(id: thread.id, in: zoomNamespace)
         case .server(let session):
             ServerSessionRow(session: session)
         }

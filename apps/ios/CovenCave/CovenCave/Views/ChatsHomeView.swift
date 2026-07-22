@@ -35,6 +35,9 @@ struct ChatsHomeView: View {
     /// Left slide-out drawer (menu button in the header).
     @State private var drawerOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
+    /// sources; the pushed conversation zooms out of its row.
+    @Namespace private var zoomNamespace
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -115,7 +118,8 @@ struct ChatsHomeView: View {
             Group {
                 switch selection {
                 case .familiar(let familiar):
-                    FamiliarThreadsView(familiar: familiar, path: $detailPath)
+                    FamiliarThreadsView(familiar: familiar, path: $detailPath,
+                                        zoomNamespace: zoomNamespace)
                 case .thread(let thread):
                     ChatView(thread: thread)
                 case nil:
@@ -129,11 +133,26 @@ struct ChatsHomeView: View {
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case .familiar(let familiar):
-                    FamiliarThreadsView(familiar: familiar, path: $detailPath)
+                    FamiliarThreadsView(familiar: familiar, path: $detailPath,
+                                        zoomNamespace: zoomNamespace)
                 case .thread(let thread):
-                    ChatView(thread: thread)
+                    chatDestination(thread)
                 }
             }
+        }
+    }
+
+    /// The pushed conversation, zooming out of its thread row (iOS 18 zoom
+    /// transition; the row is the `matchedTransitionSource`). Reduce Motion
+    /// keeps the standard push. Selection-driven opens (home list) have no
+    /// row source and use the default presentation either way.
+    @ViewBuilder
+    private func chatDestination(_ thread: ChatThread) -> some View {
+        if reduceMotion {
+            ChatView(thread: thread)
+        } else {
+            ChatView(thread: thread)
+                .navigationTransition(.zoom(sourceID: thread.id, in: zoomNamespace))
         }
     }
 
