@@ -288,10 +288,19 @@ try {
   const target = path.join(craftSymlinkFixture.marketplace, "outside-secret.md");
   writeFileSync(target, "outside\n");
   const skillRoot = path.join(craftSymlinkFixture.marketplace, "craft-sources", "seekers-lens", "brainstorming-research-ideas");
-  symlinkSync(target, path.join(skillRoot, "leak.md"));
-  const result = runSync(craftSymlinkFixture);
-  assert.notEqual(result.status, 0, "craft symlink source should be rejected");
-  assert.match(result.stderr, /craft skill source contains a symlink/i);
+  try {
+    symlinkSync(target, path.join(skillRoot, "leak.md"));
+    const result = runSync(craftSymlinkFixture);
+    assert.notEqual(result.status, 0, "craft symlink source should be rejected");
+    assert.match(result.stderr, /craft skill source contains a symlink/i);
+  } catch (error) {
+    // Windows developer-mode / elevation policy can forbid ordinary users from
+    // creating symlinks. The generator's rejection path runs on platforms that
+    // support the fixture; do not turn an unavailable OS capability into a
+    // false test failure on native Windows.
+    if (error?.code !== "EPERM") throw error;
+    console.log("sync-marketplace: skipped symlink fixture (Windows policy)");
+  }
 } finally {
   rmSync(craftSymlinkFixture.dir, { recursive: true, force: true });
 }
