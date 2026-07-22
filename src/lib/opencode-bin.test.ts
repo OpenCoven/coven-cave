@@ -1,13 +1,14 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { openCodeCommand, openCodeNeedsTmpRuntimeDir } from "./opencode-bin.ts";
 
-const source = readFileSync(new URL("./opencode-bin.ts", import.meta.url), "utf8");
+assert.equal(openCodeCommand(), "opencode", "OpenCode uses the same executable name on all desktop platforms");
 
-assert.match(
-  source,
-  /const isWsl = process\.platform === "linux" &&\s*Boolean\(process\.env\.WSL_DISTRO_NAME \|\| process\.env\.WSL_INTEROP\);[\s\S]*?if \(isWsl \|\| \(process\.platform !== "win32" && !env\.XDG_RUNTIME_DIR\)\) \{\s*env\.XDG_RUNTIME_DIR = "\/tmp";/,
-  "WSL OpenCode spawns replace a stale inherited XDG runtime directory with /tmp",
-);
+assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not use XDG_RUNTIME_DIR");
+assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives OpenCode's /tmp fallback");
+assert.equal(openCodeNeedsTmpRuntimeDir("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }), false, "native Linux preserves a valid runtime directory");
+assert.equal(openCodeNeedsTmpRuntimeDir("linux", { WSL_DISTRO_NAME: "Ubuntu", XDG_RUNTIME_DIR: "/run/user/1000" }), true, "WSL replaces a stale inherited runtime directory");
+assert.equal(openCodeNeedsTmpRuntimeDir("darwin", {}), true, "headless macOS receives OpenCode's /tmp fallback");
+assert.equal(openCodeNeedsTmpRuntimeDir("darwin", { XDG_RUNTIME_DIR: "/var/folders/runtime" }), false, "native macOS preserves a valid runtime directory");
 
 console.log("opencode-bin.test.ts: ok");
