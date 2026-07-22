@@ -1149,11 +1149,9 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
-      // Cave stores provider-qualified IDs, while Hermes accepts the bare id.
-      const hermesModel = forwardModel?.includes("/")
-        ? forwardModel.slice(forwardModel.lastIndexOf("/") + 1)
-        : forwardModel;
-      if (hermesModel) a.push("--model", hermesModel);
+      // Hermes uses the provider-qualified model ID (for example
+      // `openai/gpt-5.6-sol`) to select the provider as well as the model.
+      if (forwardModel) a.push("--model", forwardModel);
       a.push("--query", prompt);
       return a;
     }
