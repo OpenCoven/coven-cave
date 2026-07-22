@@ -15,7 +15,7 @@ import {
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
 import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
@@ -340,6 +340,21 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_COVEN_EVENT, open);
   }, []);
 
+  // Composer "+" menu → "Manage skills" lands on the Skills tab (familiar
+  // scope), including from Home where this surface mounts fresh (latch).
+  useEffect(() => {
+    if (consumeSkillsTabPending()) setScope("familiar");
+    // Consume in the live path too: when chat is already mounted the
+    // navigate-mode hop doesn't remount this surface, so a latch left set
+    // here would hijack a LATER fresh mount onto the Skills tab.
+    const open = () => {
+      consumeSkillsTabPending();
+      setScope("familiar");
+    };
+    window.addEventListener(CHAT_OPEN_SKILLS_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_SKILLS_EVENT, open);
+  }, []);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -364,7 +379,7 @@ export function ChatSurface({
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
               { id: "canvas", label: "Canvas" },
-              { id: "familiar", label: "Familiar" },
+              { id: "familiar", label: "Skills" },
               { id: "settings", label: "Settings" },
             ]}
           />

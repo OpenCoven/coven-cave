@@ -26,7 +26,7 @@ const css = [
   .map((sheet) => read(sheet))
   .join("\n");
 
-// ── The control row: attach · voice · grouped menu · send ───────────────────
+// ── The control row: voice · grouped menu (attach folded inside) · send ─────
 const controlRowMatch = source.match(
   /<div className="cave-composer-control-row">[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<\/div>\s*<\/div>/,
 );
@@ -36,8 +36,18 @@ const controlRow = controlRowMatch[0];
 
 assert.match(
   controlRow,
-  /aria-label="Attach images, videos, or files"[\s\S]*?aria-label="Voice call"[\s\S]*?<ComposerActionsMenu[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
-  "the control row should keep direct attachment, direct Voice call, grouped ComposerActionsMenu, and then the submit control in order",
+  /aria-label="Voice call"[\s\S]*?<ComposerActionsMenu[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
+  "the control row should keep direct Voice call, grouped ComposerActionsMenu, and then the submit control in order",
+);
+assert.match(
+  controlRow,
+  /<ComposerActionsMenu\s*\n\s*attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
+  "attachment moved into the actions menu ('Add files or photos') — no standalone attach button",
+);
+assert.doesNotMatch(
+  controlRow,
+  /aria-label="Attach images, videos, or files"/,
+  "the standalone attach button is gone from the control row (it lives in the + menu now)",
 );
 assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions should no longer expose the legacy plus menu");
 assert.doesNotMatch(controlRow, /<ComposerContextPill/, "the context pill lives in the footer band, not the control row");
@@ -133,8 +143,8 @@ assert.match(
 // ── Footer action family + circular send ────────────────────────────────────
 assert.match(
   controlRow,
-  /className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:paperclip"[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:phone"/,
-  "the direct attachment and Voice call buttons should share the compact footer action family",
+  /className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:phone"/,
+  "the direct Voice call button should keep the compact footer action family",
 );
 assert.match(
   css,

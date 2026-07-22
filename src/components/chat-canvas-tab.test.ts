@@ -24,8 +24,8 @@ assert.match(
 );
 assert.match(
   surface,
-  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \}/,
-  "Canvas is a first-class scope tab between Projects and Familiar",
+  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \}/,
+  "Canvas is a first-class scope tab between Projects and Skills (familiar scope)",
 );
 assert.match(
   surface,
