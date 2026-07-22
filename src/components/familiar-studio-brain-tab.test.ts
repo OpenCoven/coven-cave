@@ -6,7 +6,7 @@ const source = readFileSync(
   new URL("./familiar-studio-brain-tab.tsx", import.meta.url),
   "utf8",
 );
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
