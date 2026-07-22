@@ -1126,11 +1126,15 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
     currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
   );
   const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const [modelCustomMode, setModelCustomMode] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
   const taskModelIsCustom = Boolean(
     card.modelOverride && !runtimeModelOptions.some((option) => option.id === card.modelOverride),
   );
-  const [modelCustomMode, setModelCustomMode] = useState(false);
-  const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
+  // OpenCode and Grok discover model catalogs asynchronously. Keep a custom
+  // input mounted while it contains an unsaved edit, otherwise a late catalog
+  // response can replace the input with a select and discard what was typed.
+  const hasUnsavedCustomModelDraft = customModelDraft !== (card.modelOverride ?? "");
   // Starting a task creates its session from the persisted card. Keep a model
   // save queue in flight until it settles so selecting a model and immediately
   // pressing Start work cannot create the session with the prior default. The
@@ -1297,7 +1301,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
 
             <div className="board-drawer-field">
               <div className="board-drawer-field-label">Model</div>
-              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom ? (
+              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom && !hasUnsavedCustomModelDraft ? (
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className="board-drawer-project-icon" aria-hidden>
                     <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />

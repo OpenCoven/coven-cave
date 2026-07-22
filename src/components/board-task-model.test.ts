@@ -24,6 +24,16 @@ assert.match(
 );
 assert.match(inspector, /persistTaskModelPatch\(\{ familiarId: next \|\| null, modelOverride: null \}\)/, "changing familiar clears the prior task model override");
 assert.match(inspector, /label="Model"/, "inspector exposes a Model control");
+assert.match(
+  inspector,
+  /const hasUnsavedCustomModelDraft = customModelDraft !== \(card\.modelOverride \?\? ""\)/,
+  "an in-progress custom model survives an asynchronously discovered catalog",
+);
+assert.match(
+  inspector,
+  /!taskModelIsCustom && !hasUnsavedCustomModelDraft/,
+  "a late catalog response cannot replace an active custom model input",
+);
 assert.match(taskRoute, /model: card\.modelOverride \?\? binding\.model/, "new task sessions prefer the card model override");
 assert.match(inspector, /const pendingModelSaveRef = useRef<Promise<boolean> \| null>\(null\)/, "the inspector tracks a pending model save");
 assert.match(inspector, /const previous = pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)/, "model saves serialize back-to-back blur and familiar changes");
