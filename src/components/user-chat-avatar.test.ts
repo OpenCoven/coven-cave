@@ -20,7 +20,7 @@ assert.match(group, /import \{ UserChatAvatar \} from "@\/components\/user-chat-
 assert.match(group, /<UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human"/, "Group user turns render the clickable user avatar");
 
 // The operator photo fills its ring edge-to-edge, so at the familiars' 28px it
-// reads a size up from their inset 22px glyphs. The human ring renders at that
+// reads as a size up from their inset 22px glyphs. The human ring renders at that
 // optical 22px (32px on the roomier mobile column), centered on the same axis.
 const css = readFileSync(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
 assert.match(
