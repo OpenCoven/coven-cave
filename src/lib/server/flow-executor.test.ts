@@ -59,3 +59,23 @@ assert.match(
 );
 
 console.log("flow-executor.test.ts: ok");
+
+// Travel-queued flows: the placeholder run is recorded BEFORE enqueueing so
+// its id rides in the payload — replay then updates that run in place instead
+// of recording a second one, keeping research mission iterations (which store
+// the id) pointed at the run that actually executes (cave-qdf2).
+assert.match(
+  source,
+  /const run = await recordFlowRun\(\{[\s\S]*?status: "queued",[\s\S]*?\}\);[\s\S]*?await enqueueOfflineTravelItem\(/,
+  "queued placeholder run must exist before the travel item that references it",
+);
+assert.match(
+  source,
+  /placeholderRunId: run\.id,/,
+  "queued travel payload must carry the placeholder run id",
+);
+assert.match(
+  source,
+  /status: "failed",[\s\S]*?summary: "offline enqueue failed",/,
+  "an enqueue failure must not leave an un-replayable queued run behind",
+);

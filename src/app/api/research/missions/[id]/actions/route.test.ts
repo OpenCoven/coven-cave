@@ -53,6 +53,12 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   assert.match(source, /return 400;/);
   assert.match(source, /return 500;/);
   assert.match(source, /status: actionErrorStatus\(message\)/);
+  // Manual runs vs an ACTIVE linked automation is a state conflict (409),
+  // resolved by pausing the schedule — not a client error (cave-7had).
+  assert.match(
+    source,
+    /if \(message === "pause the linked automation before running manually"\) return 409;/,
+  );
   // The classified messages are the runner's real validation throws.
   for (const known of [
     "Source id and title are required",

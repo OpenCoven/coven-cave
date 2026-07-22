@@ -407,3 +407,14 @@ test("forms expose errors and narrow outputs become keyboard tabs", () => {
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /@container research-desk \(max-width: 760px\)/);
 });
+
+test("no-preference default tab latches once loading settles", () => {
+  // A mission appearing mid-visit (automation firing) or the list emptying
+  // must not flip tabs under the user and discard an in-progress prompt
+  // draft (cave-9589) — the derived default is committed to state once.
+  assert.match(surface, /if \(tab !== null \|\| research\.loading\) return;/);
+  assert.match(
+    surface,
+    /setTab\(research\.missions\.length > 0 \? "desk" : "prompt"\);\s*\n\s*\}, \[tab, research\.loading, research\.missions\.length\]\);/,
+  );
+});

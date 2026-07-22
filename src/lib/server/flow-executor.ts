@@ -26,7 +26,7 @@ import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
-import { recordFlowRun } from "@/lib/server/flow-store";
+import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
@@ -144,38 +144,59 @@ export async function startFlowSession(
   if (travelStatus) {
     const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
     const byId = new Map(flow.nodes.map((node) => [node.id, node]));
-    const queued = await enqueueOfflineTravelItem({
-      kind: "workflow",
-      summary: options.targetNodeId ? `Flow step: ${flow.name} / ${options.targetNodeId}` : `Flow: ${flow.name}`,
-      payload: {
-        route: "flow-session",
-        flow,
-        options,
-        familiarId,
-        harness: binding.harness,
-      },
-    });
+    // Record the queued placeholder run BEFORE enqueueing so its id can ride
+    // in the travel payload: replay then updates this run in place instead of
+    // recording a second one, keeping callers that stored the id (research
+    // mission iterations) pointed at the run that actually executes.
     const run = await recordFlowRun({
       flowId: flow.id,
       flowName: flow.name,
       status: "queued",
       mode: options.mode ?? "manual",
-      startedAt: queued.createdAt,
+      startedAt: new Date().toISOString(),
       steps: order.map((stepId) => ({
         id: stepId,
         type: byId.get(stepId)?.type ?? "unknown",
         status: "pending",
       })),
-      summary: `queued offline ${queued.id}`,
+      summary: "queued offline",
       source: "cave",
       flowSnapshot: flow,
+    });
+    let queued: CaveTravelQueueItem;
+    try {
+      queued = await enqueueOfflineTravelItem({
+        kind: "workflow",
+        summary: options.targetNodeId ? `Flow step: ${flow.name} / ${options.targetNodeId}` : `Flow: ${flow.name}`,
+        payload: {
+          route: "flow-session",
+          flow,
+          options,
+          familiarId,
+          harness: binding.harness,
+          placeholderRunId: run.id,
+        },
+      });
+    } catch (error) {
+      // Never leave an un-replayable queued run behind — it would sit in the
+      // runs list (and hold a research iteration) forever.
+      await updateFlowRun(run.id, {
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+        summary: "offline enqueue failed",
+      });
+      throw error;
+    }
+    const stamped = await updateFlowRun(run.id, {
+      startedAt: queued.createdAt,
+      summary: `queued offline ${queued.id}`,
     });
     return {
       ok: true,
       executor: "travel-queue",
       queued: true,
       queueItem: queued,
-      run,
+      run: stamped ?? run,
     };
   }
 

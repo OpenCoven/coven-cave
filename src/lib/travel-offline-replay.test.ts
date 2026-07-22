@@ -97,3 +97,11 @@ assert.match(
 );
 
 console.log("travel-offline-replay.test.ts: ok");
+
+assert.match(
+  replay,
+  /const placeholderRunId = stringValue\(payload\.placeholderRunId\);[\s\S]*?if \(placeholderRunId\) \{[\s\S]*?await updateFlowRun\(placeholderRunId, runFields\);[\s\S]*?if \(updated\) return;[\s\S]*?await recordFlowRun\(runFields\);/,
+  "flow replay must update the queued placeholder run in place (mission iterations keep its id), falling back to a fresh record only for legacy/evicted items",
+);
+
+console.log("travel-offline-replay.test.ts: placeholder-run pin ok");
