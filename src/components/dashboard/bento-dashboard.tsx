@@ -610,10 +610,16 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
             {collaborators.map((f) => {
               const name = f.display_name || f.name || f.id;
               return (
-                <a key={f.id} href={`/dashboard/familiars/${encodeURIComponent(f.id)}`} className="focus-ring" title={name}>
+                <a
+                  key={f.id}
+                  href={`/dashboard/familiars/${encodeURIComponent(f.id)}/profile`}
+                  className="focus-ring"
+                  title={name}
+                  aria-label={`Open profile for ${name}`}
+                >
                   <AuthedImage
                     src={f.avatarUrl}
-                    alt={name}
+                    alt=""
                     fallback={<span className="bd-footer-letter" aria-hidden>{name.slice(0, 1).toLowerCase()}</span>}
                   />
                 </a>

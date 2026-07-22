@@ -60,6 +60,12 @@ assert.match(bento, /matrixRows\(/, "matrix derives from matrixRows");
 assert.match(bento, /githubByRepo\(/, "github rail groups by repo");
 assert.match(bento, /ciSummary\(/, "github footer rolls up CI status");
 assert.match(bento, /topCollaborators\(/, "footer ranks collaborators by session volume");
+assert.match(
+  bento,
+  /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/profile`\}/,
+  "footer collaborator avatars open the familiar profile page (bare /dashboard/familiars/[id] has no route)",
+);
+assert.match(bento, /aria-label=\{`Open profile for \$\{name\}`\}/, "footer avatar links carry an accessible name");
 assert.match(bento, /useUserProfile\(\)/, "human card reads the operator profile store");
 assert.match(bento, /userAvatarUrl\(/, "human avatar uses the authed object URL, never a raw /api src");
 

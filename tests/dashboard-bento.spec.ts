@@ -231,6 +231,6 @@ test("activity feed merges sources with machine-readable times; footer ranks col
   // All four familiars fit under the cap of 7; busiest first.
   const foot = page.locator(".bd-footer");
   await expect(foot.locator("a[href^='/dashboard/familiars/']")).toHaveCount(4);
-  await expect(foot.locator("a[href^='/dashboard/familiars/']").first()).toHaveAttribute("href", "/dashboard/familiars/sage");
+  await expect(foot.locator("a[href^='/dashboard/familiars/']").first()).toHaveAttribute("href", "/dashboard/familiars/sage/profile");
   await expect(foot.locator(".bd-footer-stamp")).toContainText("COVEN CAVE");
 });
