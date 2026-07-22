@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8")
 const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -146,6 +146,24 @@ assert.match(
   source,
   /const sendRaw = async [\s\S]*?\|\| \(busy && !allowBusy\)\) return;/,
   "sendRaw should keep its busy guard while allowing the queue drain to hand off exactly one settled item",
+);
+
+assert.match(
+  source,
+  /type ChatSendControls = \{[\s\S]*?permissionMode: CommandPermissionMode;/,
+  "queued messages must preserve the selected access level",
+);
+
+assert.match(
+  source,
+  /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,/,
+  "queued messages must retain queue-time model, project, file-mention, and access metadata",
+);
+
+assert.match(
+  source,
+  /const projectRootForRequest = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?const modelOverrideForRequest =[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  "delayed dispatch must use queued metadata rather than the latest composer state",
 );
 
 assert.match(

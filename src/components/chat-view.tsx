@@ -301,10 +301,16 @@ type FailedSend = {
 type ChatSendOptions = {
   promptOverride?: string;
   parentTurnId?: string | null;
+  /** Explicit queue-time metadata. `undefined` keeps the direct-send default;
+   *  `null` intentionally preserves that no session model was selected. */
+  modelOverride?: string | null;
+  projectRoot?: string;
+  mentionedFilesRoot?: string;
 };
 type ChatSendControls = {
   thinkingEffort: ComposerThinkingEffort;
   responseSpeed: ComposerResponseSpeed;
+  permissionMode: CommandPermissionMode;
   runtimeHost?: string;
 };
 /** A follow-up held until the active turn settles successfully. Kept outside
@@ -3859,6 +3865,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
     };
+    const projectRootForRequest = opts?.projectRoot ?? requestProjectRoot;
+    const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
+    const modelOverrideForRequest =
+      opts?.modelOverride !== undefined
+        ? opts.modelOverride
+        : modelState?.source === "session" &&
+            modelState.effectiveModel &&
+            modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : null;
     setBusy(true);
     setError(null);
     setDebugError(null);
@@ -4015,12 +4031,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
-          projectRoot: requestProjectRoot,
+          projectRoot: projectRootForRequest,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
-          permissionMode,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
           ...((controlsOverride?.runtimeHost ?? runtimeHost) ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
@@ -4030,20 +4046,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // race), and so a brand-new chat (no sessionId yet) still pins its
           // session model. Only session-scoped picks need this; familiar- and
           // global-default models already resolve server-side from config.
-          ...(modelState?.source === "session" &&
-          modelState.effectiveModel &&
-          modelState.effectiveModel !== "unknown"
+          ...(modelOverrideForRequest
             ? {
-                modelOverride: modelState.effectiveModel,
+                modelOverride: modelOverrideForRequest,
                 modelOverrideScope: "session" as const,
               }
             : {}),
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
-          ...(outgoingMentions.length && mentionRoot
+          ...(outgoingMentions.length && mentionedFilesRootForRequest
             ? {
                 mentionedFiles: outgoingMentions.slice(0, MAX_FILE_MENTIONS),
-                mentionedFilesRoot: mentionRoot,
+                mentionedFilesRoot: mentionedFilesRootForRequest,
               }
             : {}),
           // Branching: when regenerating or re-editing from a non-leaf
@@ -4511,8 +4525,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Read-and-clear atomically so it only applies to THIS send or queue item.
     const branchParent = pendingBranchParent;
     setPendingBranchParent(undefined);
-    const sendOptions =
-      branchParent !== undefined ? { parentTurnId: branchParent } satisfies ChatSendOptions : undefined;
+    const sendOptions: ChatSendOptions = {
+      ...(branchParent !== undefined ? { parentTurnId: branchParent } : {}),
+      // Queue-time metadata must not be re-read after a host, access, model,
+      // or project selection changes while the current turn is streaming.
+      projectRoot: requestProjectRoot,
+      ...(outgoingMentions.length ? { mentionedFilesRoot: mentionRoot } : {}),
+      modelOverride:
+        modelState?.source === "session" &&
+        modelState.effectiveModel &&
+        modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : null,
+    };
     setReplyTarget(null);
     setInput("");
     // Clear the persisted draft synchronously. The debounced writer (250ms) is
@@ -4531,10 +4556,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         text: outgoingText,
         attachments: outgoingAttachments,
         mentionedFiles: outgoingMentions,
-        ...(sendOptions ? { options: sendOptions } : {}),
+        options: sendOptions,
         controls: {
           thinkingEffort,
           responseSpeed,
+          permissionMode,
           ...(runtimeHost ? { runtimeHost } : {}),
         },
       });
@@ -4589,7 +4615,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         [],
         undefined,
         normalized
-          ? { ...normalized, runtimeHost: initialControls?.runtimeHost }
+          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
           : undefined,
       );
     }, 0);
