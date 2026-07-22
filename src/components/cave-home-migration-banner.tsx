@@ -45,6 +45,7 @@ type RunPayload = StatusPayload & {
       action: MigrationAction;
       keptBytes: number;
       discardedBytes: number;
+      discardToken: string;
       summary: string;
     }>;
   };
@@ -114,7 +115,7 @@ export function CaveHomeMigrationBannerTrigger() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [confirmRequest, setConfirmRequest] = useState<{ legacy: string; action: MigrationAction; summary: string } | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<{ legacy: string; action: MigrationAction; summary: string; discardToken: string } | null>(null);
 
   const publish = useCallback((next: MigrationStatus) => {
     setStatus(next);
@@ -165,15 +166,15 @@ export function CaveHomeMigrationBannerTrigger() {
     };
   }, [dismissBanner, publish]);
 
-  const runAction = async (detail: MigrationDetail, action: MigrationAction, confirm = false) => {
+  const runAction = async (detail: MigrationDetail, action: MigrationAction, confirmToken?: string) => {
     setWorking(`${detail.legacy}:${action}`);
     setNotice(null);
     try {
       const response = await fetch("/api/cave-home-migration", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(confirm
-          ? { legacy: detail.legacy, action, confirm: true }
+        body: JSON.stringify(confirmToken
+          ? { legacy: detail.legacy, action, confirm: confirmToken }
           : { legacy: detail.legacy, action }),
       });
       const payload = await response.json() as RunPayload;
@@ -181,7 +182,9 @@ export function CaveHomeMigrationBannerTrigger() {
       publish(payload.status);
       const guard = payload.result?.confirmationRequired?.find((entry) => entry.legacy === detail.legacy);
       if (guard) {
-        setConfirmRequest({ legacy: guard.legacy, action: guard.action, summary: guard.summary });
+        // A re-blocked confirm carries a fresh token/summary (the copy changed
+        // after the user reviewed it); always adopt the latest.
+        setConfirmRequest({ legacy: guard.legacy, action: guard.action, summary: guard.summary, discardToken: guard.discardToken });
         setNotice(guard.summary);
         return;
       }
@@ -234,7 +237,7 @@ export function CaveHomeMigrationBannerTrigger() {
                     <button
                       type="button"
                       disabled={working !== null}
-                      onClick={() => void runAction(detail, confirmRequest.action, true)}
+                      onClick={() => void runAction(detail, confirmRequest.action, confirmRequest.discardToken)}
                     >
                       {working === `${detail.legacy}:${confirmRequest.action}` ? "Working…" : "Discard larger copy anyway"}
                     </button>

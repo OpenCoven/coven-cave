@@ -6,7 +6,7 @@ const src = await readFile(new URL("./cave-home-migration-banner.tsx", import.me
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const status = await readFile(new URL("../lib/server/cave-home-migration-status.ts", import.meta.url), "utf8");
 const reconciliation = await readFile(new URL("../lib/server/cave-home-reconciliation.ts", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
 const runner = await readFile(new URL("../../scripts/run-tests.mjs", import.meta.url), "utf8");
 
 assert.match(src, /export function CaveHomeMigrationBannerTrigger/, "exports the shell migration trigger");
@@ -24,8 +24,10 @@ assert.match(src, /Open backup folder/, "review exposes verified recovery bundle
 assert.match(src, /return "Defer"/, "review lets users defer ambiguous decisions");
 assert.match(src, /shell_open_path/, "desktop opens the absolute backup directory through the validated command");
 assert.match(src, /usePausablePoll\(\(\) => void refresh\(\), 5 \* 60_000/, "managed mirrors are rechecked for stale legacy writes while Cave remains open — at a gentle 5min cadence (the endpoint rescans the legacy home per hit; cave-v8hh)");
-assert.match(src, /JSON\.stringify\(confirm\s*\?\s*\{ legacy: detail\.legacy, action, confirm: true \}\s*:\s*\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry and only send confirm after the guard asked for it");
+assert.match(src, /JSON\.stringify\(confirmToken\s*\?\s*\{ legacy: detail\.legacy, action, confirm: confirmToken \}\s*:\s*\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry and only send the issued token after the guard asked for it");
 assert.match(src, /confirmationRequired\?\.find/, "a guard-blocked resolution surfaces its confirmation request");
+assert.match(src, /discardToken: guard\.discardToken/, "a re-blocked confirmation adopts the fresh token issued for the changed copy");
+assert.match(src, /runAction\(detail, confirmRequest\.action, confirmRequest\.discardToken\)/, "the confirmed retry echoes the exact content token the guard issued (cave-foc2)");
 assert.match(src, /Discard larger copy anyway/, "the destructive retry is an explicit, labeled second step (cave-5ax2)");
 assert.match(src, /setConfirmRequest\(null\)/, "the confirmation request can be cancelled");
 assert.match(src, /detail\.legacySize/, "review shows the legacy copy size");
