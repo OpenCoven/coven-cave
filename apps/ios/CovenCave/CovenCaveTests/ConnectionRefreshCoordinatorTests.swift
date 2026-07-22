@@ -48,7 +48,7 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
         let joiner = Task {
             await coordinator.refresh {
                 await probes.increment()
-                return ConnectionRefreshResult.unreachable
+                return ConnectionRefreshResult.unreachable(nil)
             }
         }
 
@@ -70,14 +70,14 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
 
         let first = await coordinator.refresh {
             await probes.increment()
-            return ConnectionRefreshResult.unreachable
+            return ConnectionRefreshResult.unreachable(nil)
         }
         let second = await coordinator.refresh {
             await probes.increment()
             return ConnectionRefreshResult.unauthorized
         }
 
-        XCTAssertEqual(first.result, .unreachable)
+        XCTAssertEqual(first.result, .unreachable(nil))
         XCTAssertEqual(second.result, .unauthorized)
         XCTAssertTrue(first.launched)
         XCTAssertTrue(second.launched)
@@ -109,7 +109,7 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
         let joiner = Task {
             await coordinator.refresh(requestSurfaceReload: true) {
                 XCTFail("joiner must not launch its own probe")
-                return ConnectionRefreshResult.unreachable
+                return ConnectionRefreshResult.unreachable(nil)
             }
         }
 
@@ -128,13 +128,13 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
 
         // A launcher's own intent carries through…
         let first = await coordinator.refresh(requestSurfaceReload: true) {
-            ConnectionRefreshResult.unreachable
+            ConnectionRefreshResult.unreachable(nil)
         }
         XCTAssertTrue(first.surfaceReloadRequested)
 
         // …and must not leak into the next, unrelated launch.
         let second = await coordinator.refresh(requestSurfaceReload: false) {
-            ConnectionRefreshResult.unreachable
+            ConnectionRefreshResult.unreachable(nil)
         }
         XCTAssertTrue(second.launched)
         XCTAssertFalse(second.surfaceReloadRequested)
@@ -155,7 +155,7 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
                 // path parks the test here for the full five seconds and then
                 // fails the `.cancelled` assertion below.
                 try? await Task.sleep(for: .seconds(5))
-                return Task.isCancelled ? .cancelled : .unreachable
+                return Task.isCancelled ? .cancelled : .unreachable(nil)
             }
         }
         await probeStarted.wait()

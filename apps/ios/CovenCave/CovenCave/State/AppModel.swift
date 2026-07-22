@@ -23,7 +23,10 @@ final class AppModel {
         case unconfigured
         case checking
         case connected
-        case unreachable(String)
+        /// Discovery failed everywhere. Carries the classified diagnosis so
+        /// the connect screen can say WHICH way it failed (DNS vs refused vs
+        /// timeout…) instead of one generic shrug.
+        case unreachable(ConnectionDiagnosis)
         /// The desktop answered but rejected our credential (401/403) — the
         /// device needs pairing, not a different address. Distinct from
         /// `unreachable` so onboarding can say what to actually do.
@@ -40,8 +43,16 @@ final class AppModel {
             if oldValue == .connected, connectionState != .connected {
                 lastConnectedAt = Date()
             }
+            if oldValue != .connected, connectionState == .connected {
+                connectedAt = Date()
+            }
         }
     }
+    /// Stamped each time the state ENTERS `.connected`. RootView uses it to
+    /// show a brief "Connected" confirmation over the freshly mounted tabs
+    /// when pairing just succeeded, so the connect screen's success isn't an
+    /// abrupt teleport.
+    private(set) var connectedAt: Date?
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
@@ -1103,7 +1114,7 @@ final class AppModel {
             switch outcome {
             case .found(let url): return .found(url)
             case .unauthorized: return .unauthorized
-            case .none: return .unreachable
+            case .unreachable(let failure): return .unreachable(failure)
             }
         }
         guard refresh.launched else { return }
@@ -1147,8 +1158,8 @@ final class AppModel {
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
-        case .unreachable:
-            connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
+        case .unreachable(let failure):
+            connectionState = .unreachable(.diagnosis(for: failure))
         }
     }
 
@@ -1230,7 +1241,12 @@ final class AppModel {
         /// At least one candidate was a live Cave server that rejected our
         /// credential — pairing is the fix, not another address.
         case unauthorized
-        case none
+        /// No candidate answered as Cave. Carries the strongest failure class
+        /// seen across candidates ("an HTTP server answered but wasn't Cave"
+        /// beats "connection refused" beats "DNS failure" beats "timeout") so
+        /// the user hears the most actionable story, or nil when nothing was
+        /// classified.
+        case unreachable(ProbeFailure?)
     }
 
     /// Probe candidate base URLs and adjudicate strictly in candidate order: the
@@ -1245,7 +1261,7 @@ final class AppModel {
     /// already succeeded or rejected it. Unpaired probes carry no secret, so they
     /// may still run concurrently for the cold-launch wall-clock win.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        guard !candidates.isEmpty else { return .none }
+        guard !candidates.isEmpty else { return .unreachable(nil) }
         if CaveConnection.accessToken != nil {
             return await discoverBaseURLSequentially(candidates)
         }
@@ -1262,25 +1278,47 @@ final class AppModel {
     }
 
     private static func discoverBaseURLSequentially(_ candidates: [URL]) async -> DiscoveryOutcome {
+        var strongest: ProbeFailure?
         for base in candidates {
             switch await Self.probe(base) {
             case .ok: return .found(base)
             case .unauthorized: return .unauthorized
-            case .failed: continue
+            case .failed(let failure): strongest = max(strongest ?? failure, failure)
             }
         }
-        return .none
+        return .unreachable(strongest)
     }
 
     private static func adjudicateDiscoveryResults(_ results: [ProbeResult?], candidates: [URL]) -> DiscoveryOutcome {
+        var strongest: ProbeFailure?
         for (index, result) in results.enumerated() {
             switch result {
             case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
+            case .failed(let failure): strongest = max(strongest ?? failure, failure)
             default: continue
             }
         }
-        return .none
+        return .unreachable(strongest)
+    }
+
+    /// Credential-free concurrent sweep for the connect screen's live
+    /// as-you-type reachability preview. Never sends the paired token — the
+    /// field may point anywhere — so a token-gated desktop reads as
+    /// `.unauthorized`, which the preview renders as "desktop found, pairing
+    /// required". Kept separate from `discoverBaseURL` so the paired
+    /// sequential path keeps its credential-safety semantics untouched.
+    static func previewDiscoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
+        guard !candidates.isEmpty else { return .unreachable(nil) }
+        let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
+            for (index, base) in candidates.enumerated() {
+                group.addTask { (index, await Self.probe(base, sendCredential: false)) }
+            }
+            var collected = [ProbeResult?](repeating: nil, count: candidates.count)
+            for await (index, result) in group { collected[index] = result }
+            return collected
+        }
+        return adjudicateDiscoveryResults(results, candidates: candidates)
     }
 
     /// Persist a relocated endpoint as `host:port` when the default scheme
@@ -1292,7 +1330,7 @@ final class AppModel {
         return CaveConnection(host: compact).baseURL == url ? compact : url.absoluteString
     }
 
-    private enum ProbeResult { case ok, unauthorized, failed }
+    private enum ProbeResult { case ok, unauthorized, failed(ProbeFailure) }
 
     /// Shared session for discovery probes — ephemeral (no cache/cookie
     /// carry-over) and never recreated, so repeated discovery rounds don't
@@ -1312,20 +1350,27 @@ final class AppModel {
     /// `200..<500` test latched onto it. Decoding the payload guarantees we only
     /// adopt an actual Cave server. Sends the paired credential when one exists
     /// and reports a 401/403 distinctly — that's a Cave token gate talking.
-    private static func probe(_ base: URL) async -> ProbeResult {
+    private static func probe(_ base: URL, sendCredential: Bool = true) async -> ProbeResult {
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if sendCredential, let token = CaveConnection.accessToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        guard let (data, resp) = try? await probeSession.data(for: req),
-              let http = resp as? HTTPURLResponse
-        else { return .failed }
+        let data: Data
+        let resp: URLResponse
+        do {
+            (data, resp) = try await probeSession.data(for: req)
+        } catch {
+            // Classify the transport failure so adjudication can tell the
+            // user WHICH way discovery failed (DNS vs refused vs timeout…).
+            return .failed(ProbeFailure(classifying: error))
+        }
+        guard let http = resp as? HTTPURLResponse else { return .failed(.transport) }
         if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
         guard (200..<300).contains(http.statusCode),
               (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil
-        else { return .failed }
+        else { return .failed(.wrongServer) }
         return .ok
     }
 

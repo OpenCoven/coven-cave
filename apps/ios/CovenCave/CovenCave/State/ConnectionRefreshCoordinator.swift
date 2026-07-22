@@ -7,7 +7,9 @@ import Foundation
 enum ConnectionRefreshResult: Equatable, Sendable {
     case found(URL)
     case unauthorized
-    case unreachable
+    /// Discovery failed everywhere; carries the strongest classified probe
+    /// failure (nil when nothing was classified) for the diagnosis copy.
+    case unreachable(ProbeFailure?)
     case cancelled
 }
 

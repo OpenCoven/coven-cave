@@ -1913,3 +1913,10 @@ a.mobile-handoff__link:hover {
   font-size: var(--text-sm);
   line-height: 1.45;
 }
+
+/* The pairing ladder inside the handoff modal (shared PairingStepsList) —
+   quiet card treatment so it reads as diagnostics, not another CTA. */
+.mobile-handoff__steps {
+  margin: 0;
+  background: color-mix(in srgb, var(--surface-raised, transparent) 55%, transparent);
+}

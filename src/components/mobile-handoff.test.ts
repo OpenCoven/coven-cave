@@ -6,6 +6,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
@@ -81,6 +82,35 @@ assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should pr
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
 assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
+
+// ── Handoff modal renders the ladder too (pairing overhaul W6) ───────────────
+// The route already reported PairingStep[] on success and failure; the modal
+// used to discard it and show one opaque string.
+assert.match(modal, /steps\?: PairingStep\[\]/, "modal payload types carry the route's pairing ladder");
+assert.match(modal, /errorSteps \? \(/, "a failed handoff renders the ladder — which rung broke — not just an error string");
+assert.match(modal, /<PairingStepsList steps=\{errorSteps\}/, "the failure ladder uses the shared renderer");
+assert.match(modal, /<PairingStepsList steps=\{displaySteps\}/, "the success body shows the compact ladder with the live phone rung");
+assert.match(
+  modal,
+  /step\.id === "phone" \? \{ \.\.\.step, state: "ok" as const, detail: undefined \} : step/,
+  "the polled paired signal flips the phone rung to done without refetching the whole handoff",
+);
+assert.match(modal, /action: "status"/, "the phone-seen poll uses the cheap status action, not the Tailscale-spawning handoff");
+assert.match(
+  modal,
+  /usePausablePoll\(\(\) => void pollPhoneSeen\(\), 5000, \{ enabled: open && phoneRungPending \}\)/,
+  "the poll runs only while the modal is open and the phone rung is still pending, pausing in hidden tabs",
+);
+assert.match(
+  modal,
+  /Don’t type your Mac’s 127\.0\.0\.1 or Wi‑Fi LAN address/,
+  "the host card warns against typing loopback/LAN addresses into the phone (aligns with the iOS-side advice)",
+);
+assert.match(
+  handoffRoute,
+  /action === "status"[\s\S]{0,200}readMobileLastSeen\(\)/,
+  "the route exposes a cheap paired-signal read that never spawns tailscale",
+);
 // cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
 // so the canonical field is the fragment-aware inviteUrl.
 assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
@@ -184,12 +214,17 @@ assert.match(
   /phoneSeenAt: lastSeenAt,\s*\}\)/,
   "the success response carries the full ladder including the phone rung",
 );
-assert.match(settings, /aria-label="Pairing checklist"/, "the Phone card renders the ladder as a labelled checklist");
+// The ladder renderer is shared between the Settings Phone card and the
+// handoff modal (src/components/pairing-steps-list.tsx) so both surfaces tell
+// the same story about which rung broke.
+assert.match(stepsList, /aria-label="Pairing checklist"/, "the shared ladder renders as a labelled checklist");
 assert.match(
-  settings,
+  stepsList,
   /PAIRING_STEP_GLYPH: Record<PairingStep\["state"\], \{ icon: IconName; className: string; announce: string \}>/,
   "each checklist state pairs an icon with screen-reader text — never color alone",
 );
+assert.match(settings, /<PairingStepsList steps=\{steps\}>/, "the Phone card renders the ladder through the shared component");
+assert.doesNotMatch(settings, /PAIRING_STEP_GLYPH/, "settings no longer owns a private glyph map — the shared component does");
 assert.match(
   settings,
   /mobileModeEnabled && friendly && error && !steps/,
