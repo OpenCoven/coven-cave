@@ -58,4 +58,10 @@ assert.match(
   "task sessions prefer a card model override and otherwise forward the familiar's resolved model",
 );
 
+assert.match(
+  source,
+  /binding\.harness\s*=\s*canonicalHarnessId\(binding\.harness\)/,
+  "task launch canonicalizes package and binary harness aliases before daemon validation",
+);
+
 console.log("board chat route.test.ts: ok");

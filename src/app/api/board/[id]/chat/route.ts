@@ -3,6 +3,7 @@ import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -63,6 +64,12 @@ export async function POST(
 
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
+  // Familiar bindings can retain a package or binary alias from older setup
+  // flows (for example `hermes-agent` or `opencode-ai`). The task inspector
+  // already resolves those aliases to load the correct model catalog, so the
+  // launch path must use the same canonical daemon harness rather than
+  // rejecting a valid installation as unsupported.
+  binding.harness = canonicalHarnessId(binding.harness);
 
   // Resolve the project the task chat will run in. Security-critical: when the
   // card is assigned to a project we resolve the root SERVER-SIDE from
