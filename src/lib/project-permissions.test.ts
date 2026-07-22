@@ -20,6 +20,7 @@ try {
     createGrantProposal,
     deleteAccessGroup,
     effectiveProjectAccess,
+    filterFamiliarsForProject,
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
     listAccessibleProjects,
@@ -67,6 +68,11 @@ try {
     (await filterProjectsForFamiliar(projects, "nova")).map((project) => project.id),
     ["cave"],
     "project picker results are filtered server-side for normal familiars",
+  );
+  assert.deepEqual(
+    filterFamiliarsForProject(permissions, [{ id: "nova" }, { id: "sage" }], "cave"),
+    [{ id: "nova" }],
+    "familiar picker results use session-launch access for the selected project",
   );
   assert.deepEqual(
     (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),

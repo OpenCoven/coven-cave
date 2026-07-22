@@ -6,6 +6,7 @@ import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
+import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
@@ -30,7 +31,7 @@ export type DaemonFamiliar = {
   memory_freshness?: string;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   const rosterResult = await loadVisibleFamiliarRoster();
   if (!rosterResult.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
@@ -56,6 +57,19 @@ export async function GET() {
     );
   }
   const { config } = rosterResult;
+  const projectId = new URL(req.url).searchParams.get("projectId")?.trim();
+  // Board task creation selects the project first. Restrict its familiar
+  // picker using the same read-level session-launch rule enforced by
+  // /api/board/:id/chat; the route's final assertProjectAccess remains the
+  // authority for a launch request.
+  const roster = projectId
+    ? filterFamiliarsForProject(
+        await loadProjectPermissions(),
+        rosterResult.roster,
+        projectId,
+        "session-launch",
+      )
+    : rosterResult.roster;
   // Pass `emoji` through — it's the daemon-provided default glyph the
   // glyph picker uses as the starting value. The Cave-local override store
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
@@ -65,7 +79,7 @@ export async function GET() {
   // content changes and server-side encoding changes refetch in desktop
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
   const familiars = await Promise.all(
-    rosterResult.roster.map(async (f) => {
+    roster.map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);

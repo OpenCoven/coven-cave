@@ -55,7 +55,17 @@ assert.match(
 );
 assert.match(
   source,
-  /rosterResult\.roster\.map\(/,
+  /const roster = projectId[\s\S]*?filterFamiliarsForProject\([\s\S]*?"session-launch"[\s\S]*?: rosterResult\.roster/,
+  "a project-scoped familiar request filters the roster with session-launch access",
+);
+assert.match(
+  source,
+  /const projectId = new URL\(req\.url\)\.searchParams\.get\("projectId"\)/,
+  "Familiars API accepts a projectId scope for dependent task pickers",
+);
+assert.match(
+  source,
+  /roster\.map\(/,
   "daemon roster and declared-only familiars still flow through the same enrichment path",
 );
 assert.match(

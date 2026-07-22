@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
@@ -73,11 +74,15 @@ export function NewCardModal({
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
 
-  // Only offer projects the assigned familiar can actually reach — the board
-  // POST starts the card's chat under that familiar, which the server rejects
-  // (403) for an ungranted project. Re-scopes when the Familiar picker below
-  // changes; a null familiar ("Default familiar") loads the operator-wide list.
-  const { projects, loading: projectsLoading } = useProjects({ familiarId, enabled: open });
+  // The project comes first. Familiar choices are then fetched server-side
+  // with the session-launch access requirement, matching the final launch
+  // authorization boundary.
+  const { projects, loading: projectsLoading } = useProjects({ enabled: open });
+  const {
+    familiars: eligibleFamiliars,
+    loading: eligibleFamiliarsLoading,
+    loadedSuccessfully: eligibleFamiliarsLoaded,
+  } = useProjectFamiliars({ projectId, enabled: open });
 
   useEffect(() => {
     if (!open) return;
@@ -95,6 +100,14 @@ export function NewCardModal({
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId, defaultTitle, defaultLinks, defaultNotes, defaultLabels]);
 
+  useEffect(() => {
+    if (!projectId || !familiarId || !eligibleFamiliarsLoaded) return;
+    if (!eligibleFamiliars.some((familiar) => familiar.id === familiarId)) {
+      setFamiliarId(null);
+      setSessionId(null);
+    }
+  }, [eligibleFamiliars, eligibleFamiliarsLoaded, familiarId, projectId]);
+
   const eligibleSessions = familiarId
     ? sessions.filter((s) => s.familiarId === familiarId)
     : sessions;
@@ -102,6 +115,20 @@ export function NewCardModal({
   // The selected project drives the card's working directory — there is no
   // free-form cwd field, so drafts never carry machine-specific paths.
   const selectedProject = projects.find((p) => p.id === projectId) ?? null;
+  const familiarPickerReady = Boolean(projectId) && eligibleFamiliarsLoaded && !eligibleFamiliarsLoading;
+  const familiarOptions = !projectId
+    ? [{ value: "", label: "Choose a project first", disabled: true }]
+    : eligibleFamiliarsLoading
+      ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+      : !eligibleFamiliarsLoaded
+        ? [{ value: "", label: "Could not load authorized familiars", disabled: true }]
+        : [
+            { value: "", label: "Unassigned" },
+            ...eligibleFamiliars.map((familiar) => ({
+              value: familiar.id,
+              label: `${familiar.display_name} · ${familiar.harness ?? "?"}`,
+            })),
+          ];
 
   const create = async () => {
     if (!title.trim() || busy) return;
@@ -224,38 +251,26 @@ export function NewCardModal({
           />
         </Field>
 
-        <Field label="Familiar">
-          <Select
-            value={familiarId ?? ""}
-            onChange={(v) => {
-              setFamiliarId(v || null);
-              setSessionId(null);
-              // The project list re-scopes to the new familiar; a project the
-              // previous familiar could reach may not be granted to this one.
-              setProjectId(null);
-            }}
-            options={[
-              { value: "", label: "Default familiar" },
-              ...familiars.map((f) => ({
-                value: f.id,
-                label: `${f.display_name} · ${f.harness ?? "?"}`,
-              })),
-            ]}
-          />
-        </Field>
-
         <Field label="Project">
           <Select
             value={projectId ?? ""}
             onChange={(v) => setProjectId(v || null)}
             options={[
-              // While the familiar-scoped list is in flight, suppress the
-              // options entirely: the retained list belongs to the *previous*
-              // familiar, so offering it lets the user pick a project this
-              // familiar can't reach (the board chat-launch then 403s).
               { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
               ...(projectsLoading ? [] : projects.map((p) => ({ value: p.id, label: p.name }))),
             ]}
+          />
+        </Field>
+
+        <Field label="Familiar">
+          <Select
+            value={familiarPickerReady ? familiarId ?? "" : ""}
+            onChange={(v) => {
+              setFamiliarId(v || null);
+              setSessionId(null);
+            }}
+            options={familiarOptions}
+            disabled={!familiarPickerReady}
           />
         </Field>
       </div>

@@ -42,6 +42,7 @@ import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-at
 import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -1122,6 +1123,32 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
+  const {
+    familiars: eligibleFamiliars,
+    loading: eligibleFamiliarsLoading,
+    loadedSuccessfully: eligibleFamiliarsLoaded,
+  } = useProjectFamiliars({ projectId: card.projectId ?? null });
+
+  // Preserve an assignment that remains authorized, but fail closed if a
+  // project edit makes the card's familiar ineligible for its task launch.
+  useEffect(() => {
+    if (!card.projectId || !card.familiarId || !eligibleFamiliarsLoaded) return;
+    if (!eligibleFamiliars.some((familiar) => familiar.id === card.familiarId)) {
+      onPatch(card.id, { familiarId: null });
+    }
+  }, [card.familiarId, card.id, card.projectId, eligibleFamiliars, eligibleFamiliarsLoaded, onPatch]);
+
+  const familiarPickerReady = Boolean(card.projectId) && eligibleFamiliarsLoaded && !eligibleFamiliarsLoading;
+  const familiarOptions = !card.projectId
+    ? [{ value: "", label: "Choose a project first", disabled: true }]
+    : eligibleFamiliarsLoading
+      ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+      : !eligibleFamiliarsLoaded
+        ? [{ value: "", label: "Could not load authorized familiars", disabled: true }]
+        : [
+            { value: "", label: "Unassigned" },
+            ...eligibleFamiliars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+          ];
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
@@ -1227,52 +1254,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Familiar</div>
-              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
-                <span className="board-drawer-familiar-avatar" aria-hidden>
-                  {resolvedFamiliar ? (
-                    <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
-                  ) : (
-                    <Icon name="ph:user" width={12} className="text-[var(--text-muted)]" />
-                  )}
-                </span>
-                <StandardSelect
-                  label="Familiar"
-                  className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.familiarId ?? ""}
-                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
-                  options={[
-                    { value: "", label: "Unassigned" },
-                    ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
-                  ]}
-                  showCaret={false}
-                />
-                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
-              </div>
-            </div>
-
-            <div className="board-drawer-grid-2">
-              <div className="board-drawer-field">
-                <div className="board-drawer-field-label">Start date</div>
-                <input
-                  className="board-drawer-field-input"
-                  type="date"
-                  value={card.startDate ?? ""}
-                  onChange={(e) => onPatch(card.id, { startDate: e.target.value || null })}
-                />
-              </div>
-              <div className="board-drawer-field">
-                <div className="board-drawer-field-label">End date</div>
-                <input
-                  className="board-drawer-field-input"
-                  type="date"
-                  value={card.endDate ?? ""}
-                  onChange={(e) => onPatch(card.id, { endDate: e.target.value || null })}
-                />
-              </div>
-            </div>
-
-            <div className="board-drawer-field">
               <div className="board-drawer-field-label board-drawer-field-label--split">
                 <span>Project</span>
                 <button
@@ -1317,6 +1298,51 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 </p>
               ) : null}
             </div>
+
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label">Familiar</div>
+              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                <span className="board-drawer-familiar-avatar" aria-hidden>
+                  {resolvedFamiliar ? (
+                    <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
+                  ) : (
+                    <Icon name="ph:user" width={12} className="text-[var(--text-muted)]" />
+                  )}
+                </span>
+                <StandardSelect
+                  label="Familiar"
+                  className="board-drawer-field-select board-drawer-field-select--styled"
+                  value={familiarPickerReady ? card.familiarId ?? "" : ""}
+                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                  options={familiarOptions}
+                  disabled={!familiarPickerReady}
+                  showCaret={false}
+                />
+                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+              </div>
+            </div>
+
+            <div className="board-drawer-grid-2">
+              <div className="board-drawer-field">
+                <div className="board-drawer-field-label">Start date</div>
+                <input
+                  className="board-drawer-field-input"
+                  type="date"
+                  value={card.startDate ?? ""}
+                  onChange={(e) => onPatch(card.id, { startDate: e.target.value || null })}
+                />
+              </div>
+              <div className="board-drawer-field">
+                <div className="board-drawer-field-label">End date</div>
+                <input
+                  className="board-drawer-field-input"
+                  type="date"
+                  value={card.endDate ?? ""}
+                  onChange={(e) => onPatch(card.id, { endDate: e.target.value || null })}
+                />
+              </div>
+            </div>
+
           </div>
 
           <div className="board-drawer-field">
