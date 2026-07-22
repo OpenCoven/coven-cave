@@ -43,6 +43,19 @@ struct ChatView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
     @State private var draftPersistenceTask: Task<Void, Never>?
+    /// "New Messages" divider: computed once per visit, *before*
+    /// `markFamiliarViewed` moves the seen boundary, then left in place for
+    /// the whole visit (re-appears from pushes must not dissolve it).
+    @State private var unreadDividerId: String?
+    @State private var unreadRunLength = 0
+    @State private var unreadComputed = false
+    /// Day dates whose separators have scrolled above the viewport top —
+    /// max() names the day the reader is currently inside.
+    @State private var daysAboveTop: Set<Date> = []
+    /// Floating day chip shows only while the transcript is actively
+    /// scrolling (Telegram behaviour), fading shortly after it settles.
+    @State private var dayChipActive = false
+    @State private var dayChipIdleTask: Task<Void, Never>?
     /// How many images one message can carry.
     private let maxAttachments = 4
     private let draftPersistenceDelay: UInt64 = 250_000_000
@@ -57,7 +70,7 @@ struct ChatView: View {
     @State private var zoomTarget: ZoomTarget?
 
     /// Per-thread key for the persisted unsent draft.
-    private var draftKey: String { "cave.chat.draft.\(thread.id)" }
+    private var draftKey: String { AppModel.draftKey(thread.id) }
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -81,8 +94,10 @@ struct ChatView: View {
     private func writeDraftPersistence(_ value: String, key: String) {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             UserDefaults.standard.removeObject(forKey: key)
+            app.setThreadDraft(thread.id, text: nil)
         } else {
             UserDefaults.standard.set(value, forKey: key)
+            app.setThreadDraft(thread.id, text: value)
         }
     }
 
@@ -99,6 +114,18 @@ struct ChatView: View {
         draftPersistenceTask?.cancel()
         draftPersistenceTask = nil
         writeDraftPersistence(draft, key: draftKey)
+    }
+
+    /// Compute the divider once per visit against the pre-visit seen boundary.
+    /// Idempotent: both the scroll reader's onAppear (which needs it first for
+    /// the initial scroll target) and the view's onAppear call it.
+    private func computeUnreadDividerIfNeeded() {
+        guard !unreadComputed else { return }
+        unreadComputed = true
+        unreadDividerId = UnreadMarker.firstUnseenId(messages: thread.messages,
+                                                     seenBoundary: app.seenBoundary(for: thread))
+        unreadRunLength = UnreadMarker.unseenRunLength(messages: thread.messages,
+                                                       firstUnseenId: unreadDividerId)
     }
 
     var body: some View {
@@ -231,6 +258,9 @@ struct ChatView: View {
             if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
                 draft = saved
             }
+            // Place the "New Messages" divider from the seen boundary BEFORE
+            // marking viewed moves it.
+            computeUnreadDividerIfNeeded()
             // Opening the chat clears the unread badge for its familiar(s) and
             // any delivered reply banner for this thread.
             app.markFamiliarViewed(thread.familiarIds)
@@ -268,7 +298,22 @@ struct ChatView: View {
                         switch row {
                         case .day(_, let date):
                             DaySeparator(date: date)
+                                // Track which day sections have scrolled past
+                                // the top edge: the transform runs per frame
+                                // but the action (a state write) only fires on
+                                // the Bool transition, keeping the hot scroll
+                                // path allocation-free.
+                                .onGeometryChange(for: Bool.self) { proxy in
+                                    proxy.frame(in: .scrollView).maxY < 0
+                                } action: { above in
+                                    if above { daysAboveTop.insert(date) }
+                                    else { daysAboveTop.remove(date) }
+                                }
                         case .message(let message):
+                            if message.id == unreadDividerId {
+                                UnreadDividerView()
+                                    .id("unread-divider")
+                            }
                             MessageBubble(message: message,
                                           isGroup: thread.isGroup,
                                           familiar: message.familiarId.flatMap(app.familiar),
@@ -349,6 +394,29 @@ struct ChatView: View {
                 }
             }
             .animation(.snappy(duration: 0.2), value: atBottom)
+            // Floating day chip (Telegram-style): while scrolling, name the
+            // day the reader is inside — the newest day whose separator has
+            // passed the top edge. Fades out shortly after scrolling settles.
+            .overlay(alignment: .top) {
+                if dayChipActive, let day = daysAboveTop.max() {
+                    DayChip(date: day)
+                        .padding(.top, 8)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: dayChipActive)
+            .onScrollPhaseChange { _, newPhase in
+                dayChipIdleTask?.cancel()
+                if newPhase == .idle {
+                    dayChipIdleTask = Task {
+                        try? await Task.sleep(nanoseconds: 900_000_000)
+                        guard !Task.isCancelled else { return }
+                        dayChipActive = false
+                    }
+                } else if !dayChipActive {
+                    dayChipActive = true
+                }
+            }
             // Follow the stream only while the reader is parked at the bottom.
             // Scrolling up to reread must never be yanked back down by each
             // arriving token — the native Messages contract; returning to the
@@ -372,7 +440,17 @@ struct ChatView: View {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onAppear {
+                computeUnreadDividerIfNeeded()
+                // A long unseen run lands the reader on the divider so nothing
+                // is skipped; short runs keep the familiar bottom landing
+                // (the divider sits within the first screenful anyway).
+                if unreadDividerId != nil && unreadRunLength >= 6 {
+                    proxy.scrollTo("unread-divider", anchor: .center)
+                } else {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
         }
     }
 
@@ -1094,7 +1172,7 @@ final class ScrollCoalescer {
 private struct DaySeparator: View {
     let date: Date
 
-    private var label: String {
+    static func label(for date: Date) -> String {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "Today" }
         if cal.isDateInYesterday(date) { return "Yesterday" }
@@ -1106,13 +1184,53 @@ private struct DaySeparator: View {
     }
 
     var body: some View {
-        Text(label)
+        Text(Self.label(for: date))
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 4)
             .glass(.control, in: Capsule())
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
+    }
+}
+
+/// The floating "current day" pill shown at the top of the transcript while
+/// it scrolls — same label rules as `DaySeparator`, lifted with a shadow so
+/// it reads as chrome above the messages rather than a row among them.
+private struct DayChip: View {
+    let date: Date
+
+    var body: some View {
+        Text(DaySeparator.label(for: date))
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .glassFill(.control, in: Capsule())
+            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+            .accessibilityLabel("Viewing \(DaySeparator.label(for: date))")
+    }
+}
+
+/// iMessage/Telegram-style marker above the first reply that arrived since
+/// the operator last viewed this familiar's chats.
+private struct UnreadDividerView: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            hairline
+            Text("New Messages")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .fixedSize()
+            hairline
+        }
+        .padding(.vertical, 2)
+        .accessibilityLabel("New messages below")
+    }
+
+    private var hairline: some View {
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.35))
+            .frame(height: 1)
     }
 }
 
