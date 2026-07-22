@@ -846,6 +846,8 @@ export const SUITES = {
     "src/lib/board-card-ops.test.ts",
     "src/lib/cave-board-ops.test.ts",
     "src/components/salem/salem-home-entry.test.ts",
+    "src/lib/salem/ask-salem-thread.test.ts",
+    "src/components/salem/ask-salem-view.test.ts",
     "src/lib/salem/pathfinder-evals.test.ts",
     "src/components/salem/salem-feedback-capture.test.ts",
     "src/lib/salem/pathfinder-feedback.test.ts",

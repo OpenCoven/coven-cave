@@ -1039,6 +1039,146 @@
   cursor: not-allowed;
 }
 
+/* ── Ask Salem — dedicated full-screen section (mode "salem") ────────────────
+   Reuses .salem-msg bubbles and the panel input row inside a centered reading
+   column; the section fills the workspace surface with no chrome of its own. */
+.ask-salem {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+.ask-salem__column {
+  width: 100%;
+  max-width: 760px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ask-salem__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+}
+.ask-salem__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.ask-salem__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.ask-salem__subtitle {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.ask-salem__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ask-salem__picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ask-salem__picker-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ask-salem__picker-select {
+  max-width: 260px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+}
+.ask-salem__picker-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.ask-salem__messages {
+  /* Column padding beats the compact panel padding for a full page. */
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+.ask-salem__messages .salem-msg {
+  max-width: 92%;
+}
+.ask-salem__messages .salem-msg--user {
+  align-self: flex-end;
+}
+.ask-salem__input-row {
+  background: transparent;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+@media (max-width: 640px) {
+  .ask-salem__header {
+    padding: var(--space-3) var(--space-3) var(--space-2);
+  }
+  .ask-salem__messages {
+    padding: var(--space-3);
+  }
+  .ask-salem__input-row {
+    padding: var(--space-2) var(--space-3) var(--space-3);
+  }
+  .ask-salem__picker-select {
+    max-width: 180px;
+  }
+}
+
+/* Home doorway to the Ask Salem section — quiet, hairline, muted-until-hover. */
+.home-ask-salem {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+.home-ask-salem__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+.home-ask-salem__btn:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+}
+.home-ask-salem__hint {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+
+
 /* Foundations PR — visually-hidden utility for screen-reader-only content.
    Standard pattern: positioned offscreen, zero size, but still in the
    accessibility tree. */

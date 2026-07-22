@@ -20,7 +20,8 @@ export type CanonicalWorkspaceMode =
   | "github"
   | "marketplace"
   | "submissions"
-  | "grimoire";
+  | "grimoire"
+  | "salem";
 
 export type AliasWorkspaceMode =
   | "groupchat"
@@ -44,6 +45,9 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "marketplace",
   "submissions",
   "grimoire",
+  // Ask Salem — a full standalone surface, reachable via the ⌘K palette, Home,
+  // deep links, and cave:navigate-mode; navHidden in the sidebar (no nav row).
+  "salem",
 ];
 
 /**

@@ -1124,6 +1124,25 @@ export function HomeComposer({
         onShowAll={() => setSnippetsBrowserOpen(true)}
       />
 
+      {/* Ask Salem — quiet doorway to the dedicated docs section (mode
+          "salem"). Deliberately not a sidebar row; Home is its front door. */}
+      <div className="home-ask-salem">
+        <button
+          type="button"
+          className="home-ask-salem__btn focus-ring"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("cave:navigate-mode", { detail: { mode: "salem" } }),
+            )
+          }
+          aria-label="Open Ask Salem — grounded answers from the Coven index"
+        >
+          <Icon name="ph:cat" width={14} aria-hidden />
+          <span>Ask Salem</span>
+          <span className="home-ask-salem__hint">docs · your Cave · your models</span>
+        </button>
+      </div>
+
       </div>{/* /.home-hearth-card */}
 
       <PromptSnippetsModal

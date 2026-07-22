@@ -67,6 +67,14 @@ assert.match(route, /modelOverride:\s*args\.model/, "local Salem synthesis must 
 assert.match(route, /modelOverrideScope:\s*"next-message"/, "Salem must not persist the one-off model override as a session default");
 assert.match(route, /askChatApiAnswer\(messageForApi\)/, "Salem must keep a hosted-answer fallback when the backend does not serve context mode, so it never regresses to weak local retrieval");
 assert.match(route, /localContextUsed/, "Salem API response should disclose whether local context was included");
+// Ask Salem section: prior turns ride the synthesis prompt as quoted data only.
+assert.match(route, /sanitizeHistory\(body\.history\)/, "Salem API must sanitize client-sent history through one capped choke point");
+assert.match(route, /HISTORY_TURN_CAP\s*=\s*8/, "history must cap turn count server-side regardless of client input");
+assert.match(route, /HISTORY_TURN_CHAR_CAP\s*=\s*600/, "history must cap per-turn length server-side");
+assert.match(route, /<prior_conversation>/, "history must be quoted as untrusted data, mirroring retrieved context");
+assert.match(route, /buildLocalSalemPrompt\(messageForApi, apiContext, history\)/, "history feeds local synthesis only");
+assert.match(route, /askChatApiContext\(messageForApi\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(messageForApi\)/, "retrieval stays keyed on the question + local context");
+assert.doesNotMatch(route, /messageForApi\s*=[^;]*history/, "history must never pollute the retrieval query");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
 assert.match(route, /plugin|Plugin/, "must know about plugins");

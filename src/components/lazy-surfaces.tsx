@@ -195,6 +195,13 @@ export const SalemChatPanel = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
+export const AskSalemView = dynamic(
+  timed("ask-salem", () =>
+    import("@/components/salem/ask-salem-view").then((m) => m.AskSalemView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
 // Modal hosts are conditionally rendered by workspace.tsx, so `loading: null`
 // never paints an empty overlay at boot and the chunk is requested only after
 // the corresponding open intent.
