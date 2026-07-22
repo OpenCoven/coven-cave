@@ -1179,6 +1179,8 @@ export const SUITES = {
     "scripts/ios-operator-profile.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-connect-screen-ux.test.mjs",
+    "scripts/ios-host-advice.test.mjs",
+    "scripts/ios-live-check.test.mjs",
     "scripts/ios-theme-list-background.test.mjs",
     "scripts/ios-presence-dots.test.mjs",
     "scripts/ios-swipe-reply.test.mjs",
