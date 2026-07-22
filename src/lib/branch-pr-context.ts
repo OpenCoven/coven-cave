@@ -61,7 +61,7 @@ export function parseBranchPr(
   } catch {
     return null;
   }
-  // REST list endpoint returns an array; the head filter yields 0 or 1 open PR.
+  // REST list endpoint returns an array; with `state=all` + `per_page=1` this yields at most one PR of any state.
   if (Array.isArray(parsed)) {
     const first = parsed[0];
     return first ? normalizePull(first as Parameters<typeof normalizePull>[0], branch) : null;
