@@ -83,11 +83,22 @@ function cleanEffectiveModelId(model: unknown, harness: unknown): string | null 
   return cleanModel;
 }
 
+function effectiveModelForHarness(model: unknown, harness: string): string | null {
+  const cleanModel = cleanEffectiveModelId(model, harness);
+  // A familiar can retain its old model after its runtime is switched in
+  // Studio. Do not pass a Codex/Claude/Copilot id to Grok Build; selecting
+  // Grok's default is preferable to making every subsequent chat fail.
+  if (harness === "grok" && cleanModel && !/^(?:xai\/)?grok-/i.test(cleanModel)) {
+    return null;
+  }
+  return cleanModel;
+}
+
 function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): {
   model: string;
   reason: string;
 } {
-  const model = cleanEffectiveModelId(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
+  const model = effectiveModelForHarness(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
   // Grok Build cannot run Cave's default OpenAI model. A Grok familiar with no
   // explicit model (for example, one switched to Grok in Familiar Studio)
   // must use the CLI's own default instead of forwarding `gpt-5.6-sol`.
@@ -161,7 +172,7 @@ export function modelApplicationFromRun(input: {
 }
 
 export function resolveChatModelState(input: ResolveChatModelStateInput): ChatModelState {
-  const nextMessageModel = cleanEffectiveModelId(input.nextMessageModel, input.harness);
+  const nextMessageModel = effectiveModelForHarness(input.nextMessageModel, input.harness);
   if (nextMessageModel) {
     return chatModelState(input, {
       effectiveModel: nextMessageModel,
@@ -171,7 +182,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const sessionModel = cleanEffectiveModelId(input.sessionModel, input.harness);
+  const sessionModel = effectiveModelForHarness(input.sessionModel, input.harness);
   if (sessionModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -182,7 +193,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const familiarModel = cleanEffectiveModelId(input.familiarModel, input.harness);
+  const familiarModel = effectiveModelForHarness(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {

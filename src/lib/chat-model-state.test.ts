@@ -127,6 +127,38 @@ assert.equal(
   "xai/grok-code-fast-1",
   "an explicitly configured global Grok model remains selectable",
 );
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "anthropic/claude-opus-4-8",
+    sessionModel: "github/gpt-5.6-sol",
+    nextMessageModel: "openai/gpt-5.5",
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "grok-4.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+  },
+  "stale models from a prior runtime must not be forwarded after switching a familiar to Grok",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "xai/grok-code-fast-1",
+  }).effectiveModel,
+  "xai/grok-code-fast-1",
+  "an explicitly configured familiar Grok model remains selectable",
+);
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
     .effectiveModel,
