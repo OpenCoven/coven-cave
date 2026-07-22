@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -6,7 +6,7 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
@@ -19,6 +19,7 @@ function probeHelp(
   args: string[],
   matches: (help: string) => boolean,
   env = harnessSpawnEnv(),
+  input?: string,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -31,8 +32,9 @@ function probeHelp(
     try {
       const child = spawn(command, args, {
         env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams;
+      if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       child.stderr.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
@@ -103,5 +105,6 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
     launch.args,
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
     openCodeSpawnEnv(),
+    launch.input,
   ));
 }

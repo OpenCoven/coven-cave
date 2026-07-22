@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import { parseOpenCodeModels } from "@/lib/opencode-models";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 
@@ -22,8 +22,9 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
         // one familiar only, and listing its authenticated OpenCode models must
         // not silently drop that key by using the unscoped probe environment.
         env: openCodeSpawnEnv(familiarId),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+        stdio: launch.input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams;
+      writeOpenCodeLaunchInput(child, launch);
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch { /* inventory stays unavailable */ }

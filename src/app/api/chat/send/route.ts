@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
@@ -46,7 +46,7 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
-import { openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
@@ -1758,24 +1758,30 @@ export async function POST(req: Request) {
                         fixedArgs: [] as string[],
                       }
                     : covenLaunchCommand();
-                const command = openCodeDirect
-                  ? openCodeLaunch(spawnArgs)
-                  : { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
-                return spawn(command.command, command.args, {
+                const openCodeLaunchCommand = openCodeDirect ? openCodeLaunch(spawnArgs) : null;
+                const command = openCodeLaunchCommand
+                  ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                const child = spawn(command.command, command.args, {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
                   // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                   // from the familiar's home. When a project root IS supplied,
                   // honor that instead.
                   cwd: familiarCwd ?? cwd,
-                  stdio: ["ignore", "pipe", "pipe"],
+                  stdio: openCodeLaunchCommand?.input === undefined
+                    ? ["ignore", "pipe", "pipe"]
+                    : ["pipe", "pipe", "pipe"],
                   // Scoped vault keys the familiar is not granted are
                   // subtracted here — the harness only sees shared secrets
                   // plus its own grants (cave-4nu6).
                   env: openCodeDirect
                     ? openCodeSpawnEnv(body.familiarId)
                     : harnessSpawnEnv(body.familiarId),
-                });
+                }) as ChildProcessWithoutNullStreams;
+                if (openCodeLaunchCommand) {
+                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                }
+                return child;
               })();
 
           currentChild = child;

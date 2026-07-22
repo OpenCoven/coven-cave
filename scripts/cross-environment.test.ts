@@ -186,8 +186,8 @@ function skip(reason: string): void {
   assert.equal(openCodeCommand(), "opencode", "OpenCode keeps one executable name across desktop platforms");
   const windowsLaunch = openCodeLaunch(["run", "safe & literal"], "win32", { SystemRoot: "C:\\Windows" });
   assert.match(windowsLaunch.command, /WindowsPowerShell\\v1\.0\\powershell\.exe$/i, "Windows runs npm's opencode.cmd shim through PowerShell");
-  const payload = windowsLaunch.args.at(-1)?.match(/FromBase64String\('([^']+)'\)/)?.[1];
-  assert.equal(Buffer.from(payload ?? "", "base64").toString("utf8"), JSON.stringify(["run", "safe & literal"]), "Windows shell wrapper keeps chat input out of command syntax");
+  assert.equal(windowsLaunch.input, JSON.stringify(["run", "safe & literal"]), "Windows shell wrapper keeps chat input out of command syntax");
+  assert.match(windowsLaunch.args.at(-1) ?? "", /\[Console\]::In\.ReadToEnd\(\)/, "Windows reads OpenCode argv from stdin so long prompts do not exceed its command-line limit");
   assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not receive an XDG runtime directory");
   assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives /tmp for OpenCode runtime files");
   assert.equal(openCodeNeedsTmpRuntimeDir("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }), false, "native Linux preserves its XDG runtime directory");

@@ -12,8 +12,12 @@ assert.deepEqual(linuxLaunch, {
 const windowsLaunch = openCodeLaunch(["run", "safe & literal", "percent%PATH%"], "win32", { SystemRoot: "C:\\Windows" });
 assert.equal(windowsLaunch.command, "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
 assert.ok(windowsLaunch.args.includes("-NoProfile"), "Windows launch does not load profile aliases");
-const payload = windowsLaunch.args.at(-1)?.match(/FromBase64String\('([^']+)'\)/)?.[1];
-assert.equal(Buffer.from(payload ?? "", "base64").toString("utf8"), JSON.stringify(["run", "safe & literal", "percent%PATH%"]), "Windows launch preserves untrusted argv as data");
+assert.equal(windowsLaunch.input, JSON.stringify(["run", "safe & literal", "percent%PATH%"]), "Windows launch preserves untrusted argv as JSON data");
+assert.match(windowsLaunch.args.at(-1) ?? "", /\[Console\]::In\.ReadToEnd\(\)/, "Windows launch reads argv from stdin instead of a shell command");
+const longPrompt = "x".repeat(40_000);
+const longWindowsLaunch = openCodeLaunch(["run", longPrompt], "win32", { SystemRoot: "C:\\Windows" });
+assert.equal(longWindowsLaunch.input, JSON.stringify(["run", longPrompt]), "Windows preserves a long prompt outside the command line");
+assert.ok(!longWindowsLaunch.args.join(" ").includes(longPrompt), "Windows command line stays bounded for long prompts");
 
 assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not use XDG_RUNTIME_DIR");
 assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives OpenCode's /tmp fallback");

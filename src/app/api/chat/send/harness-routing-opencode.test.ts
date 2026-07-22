@@ -27,8 +27,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const command = openCodeDirect\s*\? openCodeLaunch\(spawnArgs\)[\s\S]*?return spawn\(command\.command, command\.args, \{[\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)/,
-  "OpenCode uses its Windows-safe launcher and scoped spawn environment, including the WSL runtime-dir fallback",
+  /const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
+  "OpenCode uses its Windows-safe launcher, passes its argv over stdin, and keeps the scoped WSL-compatible spawn environment",
 );
 assert.match(
   capabilities,
