@@ -67,7 +67,8 @@ struct ChatsHomeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
             // Search + compose live in a floating bottom bar (iMessage-style),
-            // not the top toolbar; Settings is now its own tab.
+            // not the top toolbar; Settings lives behind the avatar button in
+            // the header (and in the drawer / iPad sidebar).
             .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
@@ -195,6 +196,18 @@ struct ChatsHomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            // Telegram-style profile entry: Settings moved off the tab bar
+            // and lives behind the operator's avatar here.
+            Button {
+                app.selectedTab = .settings
+            } label: {
+                AvatarView(familiar: nil,
+                           url: app.operatorAvatarURL,
+                           size: ChatChrome.control,
+                           fallbackName: app.operatorDisplayName)
+            }
+            .buttonStyle(.glassPress)
+            .accessibilityLabel("Settings")
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
                 showNewChat = true

@@ -33,7 +33,7 @@ const assertOrdered = (source, markers, label) => {
   }
 };
 
-assert.match(model, /enum AppTab: String \{[^}]*\bcanvas\b[^}]*\}/, "AppTab includes Canvas");
+assert.match(model, /enum AppTab: String[^{]*\{[^}]*\bcanvas\b[^}]*\}/, "AppTab includes Canvas");
 assert.match(root, /Tab\("Canvas"[\s\S]*CanvasView\(\)/, "RootView mounts the native Canvas tab");
 assert.match(client, /expectedUpdatedAt[\s\S]*expectedAbsent[\s\S]*resolvedAnnotations/, "Canvas saves use guarded revisions");
 assert.match(client, /method: "PATCH"[\s\S]*Canvas annotation save/, "component comments use annotation-only PATCH");

@@ -174,7 +174,11 @@ private struct ReconnectPill: View {
     }
 }
 
-/// Bottom tab bar shown once connected: Chats, Tasks, Developer, Settings.
+/// Bottom tab bar shown once connected: Chats, Tasks, Canvas, Search, with
+/// Calendar / Developer / Settings grouped in a "More" section — a real
+/// sidebar group on iPad (`.sidebarAdaptable`), hidden from the iPhone tab
+/// bar (reached via the chat drawer, the avatar button, ⌘5–7, slash commands,
+/// and deep links; hidden tabs stay programmatically selectable).
 ///
 /// Uses the modern `Tab(value:)` API (iOS 18+). The legacy `.tabItem`/`.tag`
 /// TabView on the iOS 26 SDK reset the selection to the first tab on a cold
@@ -184,41 +188,44 @@ struct MainTabView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Tab order, used to map ⌘1–7 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .canvas, .tasks, .calendar, .dev, .settings, .search]
-
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
             }
-            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
-                CanvasView()
-            }
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
-            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                CalendarView()
-            }
-            Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
-                DeveloperView()
-            }
-            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                SettingsView()
+            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
+                CanvasView()
             }
             Tab(value: .search, role: .search) {
                 SearchView()
             }
+            TabSection("More") {
+                Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
+                    CalendarView()
+                }
+                Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
+                    DeveloperView()
+                }
+                Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
+                    SettingsView()
+                }
+            }
+            // Keep occasional surfaces out of the iPhone tab bar; they stay
+            // visible in the iPad/Mac sidebar.
+            .defaultVisibility(.hidden, for: .tabBar)
         }
+        .tabViewStyle(.sidebarAdaptable)
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–6.
+        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–7.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
-            ForEach(Array(tabOrder.enumerated()), id: \.element) { index, tab in
+            ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
                 Button {
                     app.selectedTab = tab
                 } label: { EmptyView() }

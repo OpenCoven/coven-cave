@@ -75,6 +75,7 @@ struct ChatDrawer: View {
                     DrawerRow(systemImage: "book.closed", label: "Diary") {
                         close(); app.diaryPresented = true
                     }
+                    DrawerRow(systemImage: "chevron.left.forwardslash.chevron.right", label: "Developer") { go(.dev) }
                     DrawerRow(systemImage: "gearshape", label: "Settings") { go(.settings) }
 
                     if !pinnedThreads.isEmpty {
