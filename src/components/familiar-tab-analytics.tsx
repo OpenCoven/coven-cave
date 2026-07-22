@@ -182,6 +182,13 @@ function Slide({ hidden, children }: { hidden: boolean; children: React.ReactNod
 const RECENT_RUNS_SHOWN = 7;
 const HEAL_REQUESTS_SHOWN = 5;
 
+// Remounting this section (tab flips, familiar switches back and forth) used
+// to re-fire all eight analytics endpoints every time. Cache the last landed
+// snapshot per familiar for one poll interval and serve it on mount; the 60s
+// quiet poll keeps it honest.
+const ANALYTICS_CACHE_TTL_MS = 60_000;
+const analyticsCache = new Map<string, { data: FamiliarAnalyticsData; at: number }>();
+
 export function FamiliarAnalyticsSection({ familiar }: { familiar: Familiar }) {
   const [data, setData] = useState<FamiliarAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -204,6 +211,7 @@ export function FamiliarAnalyticsSection({ familiar }: { familiar: Familiar }) {
     try {
       const next = await loadFamiliarAnalyticsData(familiar.id);
       if (generation.current !== gen) return;
+      analyticsCache.set(familiar.id, { data: next, at: Date.now() });
       setData(next);
       setUpdatedAt(new Date().toISOString());
     } catch (err) {
@@ -218,10 +226,17 @@ export function FamiliarAnalyticsSection({ familiar }: { familiar: Familiar }) {
   }, [familiar.id]);
 
   useEffect(() => {
+    const cached = analyticsCache.get(familiar.id);
+    if (cached && Date.now() - cached.at < ANALYTICS_CACHE_TTL_MS) {
+      setData(cached.data);
+      setUpdatedAt(new Date(cached.at).toISOString());
+      setLoading(false);
+      return;
+    }
     setData(null);
     setUpdatedAt(null);
     void load();
-  }, [load]);
+  }, [familiar.id, load]);
 
   usePausablePoll(() => void load({ quiet: true }), 60_000);
 
@@ -325,7 +340,7 @@ function AnalyticsBody({
   const sessionsNote = delta.current + delta.previous > 0
     ? delta.delta === 0 ? "steady" : `${delta.delta > 0 ? "+" : "−"}${Math.abs(delta.delta)} wk`
     : null;
-  const sessionsNoteTone = delta.delta > 0 ? "up" : "flat";
+  const sessionsNoteTone = delta.delta > 0 ? "up" : delta.delta < 0 ? "down" : "flat";
 
   return (
     <div className="familiar-analytics-tab">

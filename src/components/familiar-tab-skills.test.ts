@@ -46,6 +46,9 @@ test("no-match query gets the compact EmptyState, not a bare gap", () => {
 
 test("provenance pills: role grants get the accent, familiar/global stay quiet", () => {
   assert.match(src, /familiar-skills__source-pill--\$\{kind\}/, "pill variant keyed by sourceKind");
+  // The same on-disk skill can appear as a role grant AND an install in the
+  // "all" tab — the path alone is not a unique React key.
+  assert.match(src, /key=\{`\$\{row\.sourceKind\}:\$\{row\.key\}`\}/, "row keys are sourceKind-qualified");
   assert.match(css, /\.familiar-skills__source-pill--role \{[^}]*var\(--accent-presence\)/, "role pill is accent");
   assert.match(css, /\.familiar-skills__source-pill--global \{[^}]*color: var\(--text-muted\)/, "global pill is muted");
   assert.match(css, /\.familiar-skills__source-pill \{[^}]*border: 1px solid var\(--border-hairline\)/, "hairline base border");
@@ -57,6 +60,15 @@ test("familiar-empty teach state: marketplace CTA + live directory recommendatio
   assert.match(src, /fetch\("\/api\/skills\/directory"\)/, "recommendations come from the real directory route");
   assert.match(src, /\.filter\(\(e\) => !e\.installed\)\.slice\(0, 6\)/, "up to 6 uninstalled entries, no padding with fakes");
   assert.match(src, /fetch\("\/api\/skills\/directory\/install"/, "Install wires to the real install route");
+  // The install body must send what the route can actually match — owner/repo
+  // or the package name. entry.source is a provenance enum ("registry" |
+  // "local" | …) the server compares against neither; sending it 404s every
+  // install (PR #3655 follow-up).
+  assert.match(src, /source: installSource\(entry\)/, "install body goes through installSource");
+  assert.match(src, /return `\$\{entry\.owner\}\/\$\{entry\.repo\}`;[\s\S]{0,60}?entry\.packageName \?\? undefined/, "installSource = owner/repo, else packageName");
+  assert.doesNotMatch(src, /source: entry\.source/, "provenance enum never rides the install body");
+  // A failed install keeps a way forward.
+  assert.match(src, /Install failed[\s\S]{0,400}?onClick=\{\(\) => install\(entry\)\}[\s\S]{0,200}?Retry/, "error state offers a Retry that re-runs the install");
   assert.match(src, /entry\.installsAllTime > 0\s*\? `\$\{entry\.installsAllTime\.toLocaleString\(\)\} installs`\s*: ""/, "install counts render only when the API provides them");
   assert.match(css, /\.familiar-skills__rec-card--featured \{[^}]*var\(--accent-presence\)/, "first pick is accent-tinted");
   assert.match(src, /Couldn't reach the marketplace directory/, "directory failure is an honest line, not a spinner");

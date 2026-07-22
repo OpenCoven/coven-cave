@@ -2,7 +2,7 @@
 
 import "@/styles/familiar-tab-memory.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { Segmented } from "@/components/ui/settings-controls";
@@ -103,6 +103,7 @@ export function FamiliarMemorySection({ familiar }: { familiar: Familiar }) {
 
   // Fetch the selected file. Redacted text renders as-is — no reveal here.
   useEffect(() => {
+    committedDraftRef.current = null;
     if (!selectedPath) {
       setFile(EMPTY_FILE_STATE);
       return;
@@ -145,11 +146,28 @@ export function FamiliarMemorySection({ familiar }: { familiar: Familiar }) {
     [list.entries, selectedPath],
   );
 
+  // Tracks the live selection so a save response that lands after the user
+  // switched files can't clobber the new file's state or mtime baseline.
+  const selectedPathRef = useRef(selectedPath);
+  useEffect(() => {
+    selectedPathRef.current = selectedPath;
+  }, [selectedPath]);
+
+  // The same draft can reach commitEdit twice (blur + the edit pane's unmount
+  // cleanup, or Esc after a blur save). Records the in-flight/last-committed
+  // draft so the duplicate collapses instead of racing the first PUT into a
+  // spurious mtime conflict. Reset when the file is (re)fetched.
+  const committedDraftRef = useRef<{ path: string; text: string } | null>(null);
+
   /** Persist an edit. Resolves true when the pane may leave the draft behind. */
   const commitEdit = useCallback(
     async (nextText: string): Promise<boolean> => {
       if (!selectedPath) return true;
       if (nextText === (file.text ?? "")) return true; // untouched draft — nothing to save
+      if (committedDraftRef.current?.path === selectedPath && committedDraftRef.current.text === nextText) {
+        return true; // identical commit already in flight or already saved
+      }
+      committedDraftRef.current = { path: selectedPath, text: nextText };
       try {
         const res = await fetch("/api/memory/file", {
           method: "PUT",
@@ -161,33 +179,45 @@ export function FamiliarMemorySection({ familiar }: { familiar: Familiar }) {
           }),
         });
         const json = (await res.json()) as { ok: boolean; mtimeMs?: number; error?: string };
+        // Late responses for a file the user already left must not touch the
+        // newly selected file's pane state or concurrency baseline.
+        const stillSelected = selectedPathRef.current === selectedPath;
         if (res.status === 409) {
-          setSaveError({ kind: "conflict", message: "File changed on disk — reload before editing." });
+          committedDraftRef.current = null;
+          if (stillSelected) setSaveError({ kind: "conflict", message: "File changed on disk — reload before editing." });
           return false;
         }
         if (!json.ok) {
-          setSaveError({ kind: "plain", message: json.error ?? "Save failed" });
+          committedDraftRef.current = null;
+          if (stillSelected) setSaveError({ kind: "plain", message: json.error ?? "Save failed" });
           return false;
         }
         // Success: the preview and the concurrency baseline both move to what
         // was just written, and the list row's freshness follows.
-        setFile((prev) => ({
-          ...prev,
-          text: nextText,
-          mtimeMs: typeof json.mtimeMs === "number" ? json.mtimeMs : prev.mtimeMs,
-        }));
+        if (stillSelected) {
+          setFile((prev) => ({
+            ...prev,
+            text: nextText,
+            mtimeMs: typeof json.mtimeMs === "number" ? json.mtimeMs : prev.mtimeMs,
+          }));
+          setSaveError(null);
+        }
         setList((prev) => ({
           ...prev,
           entries: sortMemoryEntries(
             prev.entries.map((entry) =>
-              entry.fullPath === selectedPath ? { ...entry, modified: new Date().toISOString(), size: nextText.length } : entry,
+              entry.fullPath === selectedPath
+                ? { ...entry, modified: new Date().toISOString(), size: new TextEncoder().encode(nextText).length }
+                : entry,
             ),
           ),
         }));
-        setSaveError(null);
         return true;
       } catch (err) {
-        setSaveError({ kind: "plain", message: err instanceof Error ? err.message : "Save failed" });
+        committedDraftRef.current = null;
+        if (selectedPathRef.current === selectedPath) {
+          setSaveError({ kind: "plain", message: err instanceof Error ? err.message : "Save failed" });
+        }
         return false;
       }
     },
@@ -201,6 +231,29 @@ export function FamiliarMemorySection({ familiar }: { familiar: Familiar }) {
   }, []);
 
   const readOnly = file.redactionCount > 0;
+
+  // Blur is the only save trigger the textarea has, so an unmount without a
+  // blur (switching tab, familiar, file, or view) would silently drop the
+  // draft. React detaches element refs BEFORE passive cleanups run on
+  // unmount, so reading the textarea from a ref here would always see null —
+  // instead every keystroke mirrors the draft into a value ref and the effect
+  // cleanup commits from that; the committedDraftRef dedupe collapses the
+  // blur+cleanup pair into a single PUT.
+  const draftRef = useRef<{ path: string; text: string } | null>(null);
+  const commitEditRef = useRef(commitEdit);
+  useEffect(() => {
+    commitEditRef.current = commitEdit;
+  }, [commitEdit]);
+  useEffect(() => {
+    if (view !== "edit" || readOnly) return;
+    return () => {
+      const draft = draftRef.current;
+      draftRef.current = null;
+      // Cleanup runs before commitEditRef is repointed, so on a file switch
+      // this still commits against the departed file's path and baseline.
+      if (draft) void commitEditRef.current(draft.text);
+    };
+  }, [view, readOnly, selectedPath, refreshToken]);
 
   // ── Empty / loading / error shells ────────────────────────────────────────
   if (list.loaded && !list.error && list.entries.length === 0) {
@@ -336,6 +389,11 @@ export function FamiliarMemorySection({ familiar }: { familiar: Familiar }) {
                 autoFocus
                 aria-label="Edit memory file"
                 className="focus-ring familiar-memory-tab__textarea"
+                onChange={(event) => {
+                  if (!readOnly && selectedPath) {
+                    draftRef.current = { path: selectedPath, text: event.currentTarget.value };
+                  }
+                }}
                 onBlur={(event) => {
                   if (!readOnly) void commitEdit(event.currentTarget.value);
                 }}

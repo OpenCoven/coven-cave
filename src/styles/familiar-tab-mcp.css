@@ -55,6 +55,10 @@
   text-wrap: pretty;
 }
 
+.familiar-mcp__status-error {
+  color: var(--color-danger-soft, var(--color-danger));
+}
+
 .familiar-mcp__status-actions {
   display: flex;
   flex: none;

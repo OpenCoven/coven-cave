@@ -25,6 +25,12 @@ test("reuses the shared analytics data layer — no parallel fetch stack", () =>
   assert.doesNotMatch(src, /\bfetch\(/, "no hand-rolled fetch — the loader owns all requests");
   assert.match(src, /usePausablePoll\(\(\) => void load\(\{ quiet: true \}\), 60_000\)/, "60s pausable poll like the analytics page");
   assert.match(src, /const generation = useRef\(0\)/, "generation counter retires stale loads");
+  // Remounts inside one poll interval (tab flips) serve the cached snapshot
+  // instead of re-firing all eight endpoints (PR #3655 follow-up).
+  assert.match(src, /const ANALYTICS_CACHE_TTL_MS = 60_000/, "cache TTL matches the poll cadence");
+  assert.match(src, /analyticsCache\.set\(familiar\.id, \{ data: next, at: Date\.now\(\) \}\)/, "landed loads populate the cache");
+  assert.match(src, /Date\.now\(\) - cached\.at < ANALYTICS_CACHE_TTL_MS/, "mount serves only fresh snapshots");
+  assert.match(src, /setUpdatedAt\(new Date\(cached\.at\)\.toISOString\(\)\)/, "freshness stamp stays truthful — it reports when the data landed");
 });
 
 test("no token KPI and no fabricated numbers", () => {
@@ -41,6 +47,9 @@ test("no token KPI and no fabricated numbers", () => {
     /delta\.current \+ delta\.previous > 0\s*\?/,
     "delta note renders only when the window has anything to compare",
   );
+  // A falling week is a real signal — it must not render as "flat".
+  assert.match(src, /delta\.delta > 0 \? "up" : delta\.delta < 0 \? "down" : "flat"/, "negative deltas get the down tone");
+  assert.match(css, /\.familiar-analytics-tab__kpi-note--down \{[^}]*var\(--color-danger/, "down tone rides the danger token");
   assert.match(src, /attempted > 0 \? `\$\{Math\.round\(\(outcomes\.completed \/ attempted\) \* 100\)\}%` : "—"/,
     "success rate guards divide-by-zero with an em dash");
 });

@@ -108,6 +108,10 @@
   color: var(--color-success);
 }
 
+.familiar-analytics-tab__kpi-note--down {
+  color: var(--color-danger-soft, var(--color-danger));
+}
+
 /* ── Card grid ────────────────────────────────────────────────────────── */
 
 .familiar-analytics-tab__grid {

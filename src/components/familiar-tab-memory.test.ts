@@ -57,6 +57,26 @@ test("successful saves advance the stored mtime and the preview text", () => {
     /setFile\(\(prev\) => \(\{\s*\.\.\.prev,\s*text: nextText,\s*mtimeMs: typeof json\.mtimeMs === "number" \? json\.mtimeMs : prev\.mtimeMs,/,
     "text + mtime baseline both move to what was written",
   );
+  // A save response that lands after the user switched files must not write
+  // the old file's text/baseline into the new file's pane (PR #3655 follow-up).
+  assert.match(src, /const stillSelected = selectedPathRef\.current === selectedPath;/, "responses check the live selection");
+  assert.match(src, /if \(stillSelected\) \{\s*setFile/, "pane state only moves for the still-selected file");
+  // The list row's size column is bytes on disk, not UTF-16 code units.
+  assert.match(src, /size: new TextEncoder\(\)\.encode\(nextText\)\.length/, "row size counts UTF-8 bytes");
+  assert.doesNotMatch(src, /size: nextText\.length/, "no code-unit size");
+});
+
+test("drafts survive an unmount without a blur, without double-saving", () => {
+  // Tab/familiar/file switches unmount the textarea before blur fires — and
+  // React detaches element refs before passive cleanups, so the only reliable
+  // copy of the draft at cleanup time is a value ref fed by onChange.
+  assert.match(src, /draftRef\.current = \{ path: selectedPath, text: event\.currentTarget\.value \}/, "every keystroke mirrors the draft into a value ref");
+  assert.match(src, /return \(\) => \{\s*const draft = draftRef\.current;[\s\S]{0,280}?commitEditRef\.current\(draft\.text\)/, "effect cleanup commits the mirrored draft");
+  assert.match(src, /\}, \[view, readOnly, selectedPath, refreshToken\]\);/, "cleanup re-arms per file/view, not per commit identity");
+  // Blur + cleanup can both fire for the same draft — the committed-draft ref
+  // collapses the pair to one PUT instead of racing into a 409.
+  assert.match(src, /committedDraftRef\.current\?\.path === selectedPath && committedDraftRef\.current\.text === nextText/, "identical in-flight/settled commits dedupe");
+  assert.match(src, /committedDraftRef\.current = \{ path: selectedPath, text: nextText \}/, "commit records itself before the PUT");
 });
 
 test("Esc returns to preview (saving first), and only a failed save holds the draft", () => {
