@@ -97,6 +97,15 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     models: HERMES_AUTHENTICATED_MODELS,
     allowCustom: true,
   },
+  // OpenCode authenticates a user-selected set of providers. Its menu is
+  // loaded from `opencode models` at runtime instead of freezing a catalog.
+  opencode: {
+    runtime: "opencode",
+    provider: null,
+    models: [],
+    defaultModel: "",
+    allowCustom: true,
+  },
   // No clean provider → defer to the runtime's own CLI: free-text only, no menu.
   openclaw: {
     runtime: "openclaw",

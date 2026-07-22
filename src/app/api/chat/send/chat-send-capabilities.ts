@@ -6,16 +6,19 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { openCodeSpawnEnv } from "@/lib/opencode-bin";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
+let openCodeModelFlagProbe: Promise<boolean> | null = null;
 
 function probeHelp(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
+  env = harnessSpawnEnv(),
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -27,7 +30,7 @@ function probeHelp(
     };
     try {
       const child = spawn(command, args, {
-        env: harnessSpawnEnv(),
+        env,
         stdio: ["ignore", "pipe", "pipe"],
       });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
@@ -89,5 +92,15 @@ export function hermesChatSupportsModel(): Promise<boolean> {
     command,
     ["chat", "--help"],
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
+  ));
+}
+
+/** OpenCode is direct-spawned so its own documented capability is authoritative. */
+export function openCodeRunSupportsModel(): Promise<boolean> {
+  return (openCodeModelFlagProbe ??= probeHelp(
+    "opencode",
+    ["run", "--help"],
+    (help) => /(^|\s)--model(?![\w-])/m.test(help),
+    openCodeSpawnEnv(),
   ));
 }

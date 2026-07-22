@@ -55,7 +55,7 @@ import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
 import { ComposerContextPill } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
@@ -237,11 +237,7 @@ export function HomeComposer({
   );
   const selectedRuntime =
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
-  const runtimeModelOptionsFor = useCallback(
-    (runtime: string) => catalogForRuntime(runtime)?.models ?? [],
-    [],
-  );
-  const runtimeModelOptions = runtimeModelOptionsFor(selectedRuntime);
+  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime);
   const selectedModelId =
     runtimeModelOptions.length === 0
       ? ""
@@ -306,6 +302,7 @@ export function HomeComposer({
     text,
     setText,
     modelHarness,
+    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
@@ -492,7 +489,11 @@ export function HomeComposer({
           onToast(current ? `Model: ${current}` : "Type /model <id> to pick a model.");
           return;
         }
-        const id = resolveModelArg(args, modelHarness);
+        const id = resolveModelArg(
+          args,
+          modelHarness,
+          modelHarness === "opencode" ? runtimeModelOptions : undefined,
+        );
         if (!id) {
           onToast(`Unknown model "${args.trim()}".`);
           return;

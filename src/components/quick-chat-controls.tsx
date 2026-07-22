@@ -26,6 +26,7 @@ import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { formatModelList, resolveModelArg } from "@/lib/slash-model";
@@ -331,6 +332,7 @@ export function QuickChatComposer({
   // tray does); otherwise a leading "/" just sends as plain text, as before.
   const slashEnabled = Boolean(onNewThread && onLocalNote && onSendText);
   const modelHarness = familiar?.harness ?? "claude";
+  const runtimeModelOptions = useRuntimeModelOptions(modelHarness);
   // Shared inline menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — same hook as the home/chat composers so the keyboard
   // grammar transfers. The pick callbacks reference the helpers declared just
@@ -340,6 +342,7 @@ export function QuickChatComposer({
     text: draft,
     setText: onDraftChange,
     modelHarness,
+    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
     onPickModel: (id) => {
       onModelOverrideChange?.(id);
       onLocalNote?.(`Model set to \`${id}\` for this thread.`);
@@ -413,10 +416,20 @@ export function QuickChatComposer({
         case "/model": {
           onDraftChange("");
           if (!args) {
-            onLocalNote?.(formatModelList(modelHarness, modelOverride ?? null));
+            onLocalNote?.(
+              formatModelList(
+                modelHarness,
+                modelOverride ?? null,
+                modelHarness === "opencode" ? runtimeModelOptions : undefined,
+              ),
+            );
             return;
           }
-          const id = resolveModelArg(args, modelHarness);
+          const id = resolveModelArg(
+            args,
+            modelHarness,
+            modelHarness === "opencode" ? runtimeModelOptions : undefined,
+          );
           if (!id) {
             onLocalNote?.(`Unknown model "${args}".`);
             return;

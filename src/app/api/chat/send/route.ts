@@ -46,6 +46,8 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import { openCodeCommand, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -144,6 +146,7 @@ import {
   covenRunSupportsModel,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  openCodeRunSupportsModel,
 } from "./chat-send-capabilities";
 import {
   buildPromptWithResponseControls,
@@ -817,23 +820,21 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
-  // Hermes runs directly, so it must advertise --model itself; every other
-  // bundled harness uses coven run's capability probe. OpenClaw's bridge has
-  // no CLI model passthrough.
+  // Hermes and OpenCode run directly, so each must advertise --model itself;
+  // every other bundled harness uses coven run's capability probe. OpenClaw's
+  // bridge has no CLI model passthrough.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
-  const modelForwardingEnabled = hermesDirect
-    ? await hermesChatSupportsModel()
-    : binding.harness !== "openclaw" && (await covenRunSupportsModel());
-  // Same gating for the sandbox/permission flag. Only "read" is forwarded
-  // (→ `--permission read-only`); "full" stays implicit so the harness keeps
-  // its own default sandbox instead of being widened to danger-full-access.
+  const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  const modelForwardingEnabled = openCodeDirect
+    ? await openCodeRunSupportsModel()
+    : hermesDirect
+      ? await hermesChatSupportsModel()
+      : binding.harness !== "openclaw" && (await covenRunSupportsModel());
+  // OpenCode's direct CLI has neither Cave's permission nor add-dir flags.
   const permissionForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsPermission());
-  // Same gating for directory grants (`--add-dir`). Without forwarding, the
-  // granted roots listed in the runtime-scope preamble are prompt-text-only
-  // and the harness denies every access to them.
+    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsPermission());
   const addDirForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
+    !openCodeDirect && binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1155,6 +1156,15 @@ export async function POST(req: Request) {
       a.push("--query", prompt);
       return a;
     }
+    if (openCodeDirect) {
+      // OpenCode owns its durable session store. JSON mode is its documented
+      // non-interactive event protocol and includes the minted session id.
+      const a = ["run", "--format", "json"];
+      if (resumeSessionId) a.push("--session", resumeSessionId);
+      if (forwardModel) a.push("--model", forwardModel);
+      a.push(prompt);
+      return a;
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
@@ -1463,6 +1473,43 @@ export async function POST(req: Request) {
         recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
       };
 
+      const handleOpenCodeLine = (line: string) => {
+        try {
+          const ev = parseOpenCodeRunEvent(JSON.parse(line));
+          if (!ev) return;
+          if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
+          if (ev.kind === "text") {
+            const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
+            assistantText += text;
+            push({ kind: "assistant_chunk", text });
+            return;
+          }
+          if (ev.kind === "tool") {
+            boundarySentinel?.observe(ev.name, ev.input);
+            const started = toolTracker.envelopeToolUse(
+              ev.id,
+              ev.name,
+              formatToolInputValue(ev.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const ended = toolTracker.envelopeToolResult(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+              ev.isError,
+            );
+            if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          if (ev.kind === "error") {
+            recordStdoutErrorTail(ev.message);
+            result = { ...result, is_error: true };
+          }
+        } catch {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        }
+      };
+
       const handleLine = (rawLine: string) => {
         // stdout is split on bare \n; external adapters (copilot) emit CRLF,
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
@@ -1473,6 +1520,10 @@ export async function POST(req: Request) {
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
+          return;
+        }
+        if (openCodeDirect) {
+          handleOpenCodeLine(line);
           return;
         }
         if (isJson) {
@@ -1675,18 +1726,20 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot's JSONL mode and Hermes's documented one-shot mode
-                // are direct CLI integrations. Every other local harness goes
+                // Copilot, Hermes, and OpenCode use documented direct CLI
+                // integrations. Every other local harness goes
                 // through `coven run`.
-                const { command, fixedArgs } = copilotStream
+                const launch = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  : openCodeDirect
+                    ? { command: openCodeCommand(), fixedArgs: [] as string[] }
                   : hermesDirect
                     ? {
                         command: process.platform === "win32" ? "hermes.exe" : "hermes",
                         fixedArgs: [] as string[],
                       }
                     : covenLaunchCommand();
-                return spawn(command, [...fixedArgs, ...spawnArgs], {
+                return spawn(launch.command, [...launch.fixedArgs, ...spawnArgs], {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
                   // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
@@ -1697,7 +1750,9 @@ export async function POST(req: Request) {
                   // Scoped vault keys the familiar is not granted are
                   // subtracted here — the harness only sees shared secrets
                   // plus its own grants (cave-4nu6).
-                  env: harnessSpawnEnv(body.familiarId),
+                  env: openCodeDirect
+                    ? openCodeSpawnEnv(body.familiarId)
+                    : harnessSpawnEnv(body.familiarId),
                 });
               })();
 
@@ -1751,6 +1806,8 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : openCodeDirect
+                        ? "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again."
                       : hermesDirect
                         ? "Hermes CLI not found on PATH. Install Hermes, then try again."
                         : "Coven CLI not found on PATH. Open Setup to install it, then try again.",

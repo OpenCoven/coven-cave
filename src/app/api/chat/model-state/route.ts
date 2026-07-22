@@ -3,6 +3,7 @@ import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import { loadConversation, saveConversation } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import { listOpenCodeModels } from "@/lib/server/opencode-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,10 +74,13 @@ export async function GET(req: Request) {
   // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
   // reads the catalog directly. `allowCustom` means a free-typed id is valid.
   const catalog = catalogForRuntime(state.harness);
+  const options = state.harness === "opencode"
+    ? await listOpenCodeModels()
+    : catalog?.models ?? [];
   return NextResponse.json({
     ok: true,
     state,
-    options: catalog?.models ?? [],
+    options,
     allowCustom: catalog?.allowCustom ?? true,
   });
 }

@@ -1,0 +1,40 @@
+import { spawn } from "node:child_process";
+import { openCodeCommand, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { parseOpenCodeModels } from "@/lib/opencode-models";
+import type { RuntimeModelOption } from "@/lib/runtime-models";
+
+const MODEL_LIST_TIMEOUT_MS = 8_000;
+
+/** Read only the authenticated local OpenCode model inventory; never refresh it. */
+export function listOpenCodeModels(): Promise<RuntimeModelOption[]> {
+  return new Promise((resolve) => {
+    let output = "";
+    let settled = false;
+    const done = (models: RuntimeModelOption[]) => {
+      if (settled) return;
+      settled = true;
+      resolve(models);
+    };
+    try {
+      const child = spawn(openCodeCommand(), ["models"], {
+        env: openCodeSpawnEnv(),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.stdout.on("data", (chunk) => (output += chunk.toString()));
+      const timeout = setTimeout(() => {
+        try { child.kill("SIGTERM"); } catch { /* inventory stays unavailable */ }
+        done([]);
+      }, MODEL_LIST_TIMEOUT_MS);
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        done(code === 0 ? parseOpenCodeModels(output) : []);
+      });
+      child.on("error", () => {
+        clearTimeout(timeout);
+        done([]);
+      });
+    } catch {
+      done([]);
+    }
+  });
+}

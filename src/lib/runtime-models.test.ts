@@ -8,7 +8,7 @@ import {
 } from "./runtime-models.ts";
 
 // Every bundled chat runtime has a catalog entry.
-for (const runtime of ["codex", "claude", "copilot", "hermes", "openclaw"]) {
+for (const runtime of ["codex", "claude", "copilot", "hermes", "opencode", "openclaw"]) {
   const catalog = catalogForRuntime(runtime);
   assert.ok(catalog, `${runtime} should have a catalog entry`);
   assert.equal(catalog.runtime, runtime);
@@ -148,14 +148,15 @@ assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);
 
-// Registry-synced runtimes without a curated list get the runtime-managed
-// treatment: free-text only, custom allowed (opencode is in the registry).
+// OpenCode is a runtime-managed catalog: the browser replaces this empty seed
+// with the authenticated `opencode models` inventory.
 {
   const opencode = catalogForRuntime("opencode");
-  assert.ok(opencode, "registry runtimes always have a catalog");
+  assert.ok(opencode, "OpenCode has a catalog entry for runtime discovery");
   assert.equal(opencode.provider, null);
-  assert.equal(opencode.models.length, 0, "no curated menu for registry runtimes");
+  assert.equal(opencode.models.length, 0, "OpenCode must not ship a stale static model list");
   assert.equal(opencode.allowCustom, true);
+  assert.equal(defaultModelForRuntime("opencode"), "", "OpenCode defers its default to the authenticated CLI");
 }
 
 // isModelInCatalog only matches curated ids; allowCustom covers the rest.

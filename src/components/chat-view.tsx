@@ -107,7 +107,8 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import {
@@ -2622,6 +2623,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // command runs the highlighted suggestion's intent — never the partially
   // typed text, and never recorded in ↑ history (send() owns that push).
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
+  // Stable model menu for the composer chip (independent of the /model
+  // autocomplete below, which is null outside `/model <arg>` position).
+  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude");
+  const composerModelValue =
+    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      ? modelState.effectiveModel
+      : composerModelOptions[0]?.id ?? "";
   const {
     skills,
     prompts,
@@ -2642,6 +2650,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: input,
     setText: setInput,
     modelHarness,
+    modelOptionsOverride: modelHarness === "opencode" ? composerModelOptions : undefined,
     onPickModel: (id) => {
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
@@ -2656,16 +2665,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
-  // Stable model menu for the composer chip (independent of the /model
-  // autocomplete above, which is null outside `/model <arg>` position).
-  const composerModelOptions = useMemo(
-    () => catalogForRuntime(modelHarness)?.models ?? [],
-    [modelHarness],
-  );
-  const composerModelValue =
-    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-      ? modelState.effectiveModel
-      : composerModelOptions[0]?.id ?? "";
   const composerResponseSections: ComposerOptionSection[] = [
     {
       id: "access",
@@ -3566,11 +3565,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ? modelState.effectiveModel
           : null;
       if (!args.trim()) {
-        appendSystem(formatModelList(modelHarness, current));
+        appendSystem(
+          formatModelList(
+            modelHarness,
+            current,
+            modelHarness === "opencode" ? composerModelOptions : undefined,
+          ),
+        );
         setInput("");
         return true;
       }
-      const id = resolveModelArg(args, modelHarness);
+      const id = resolveModelArg(
+        args,
+        modelHarness,
+        modelHarness === "opencode" ? composerModelOptions : undefined,
+      );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);
         setInput("");

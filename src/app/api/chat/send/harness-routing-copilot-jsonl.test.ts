@@ -55,8 +55,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
-  "Copilot and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
+  /const launch = copilotStream[\s\S]*?: openCodeDirect[\s\S]*?command: openCodeCommand\(\)[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
+  "Copilot, OpenCode, and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 
 assert.match(
