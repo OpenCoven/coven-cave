@@ -237,7 +237,7 @@ export function HomeComposer({
   );
   const selectedRuntime =
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
-  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime);
+  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
   const selectedModelId =
     runtimeModelOptions.length === 0
       ? ""

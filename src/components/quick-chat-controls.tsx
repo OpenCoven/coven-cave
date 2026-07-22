@@ -332,7 +332,7 @@ export function QuickChatComposer({
   // tray does); otherwise a leading "/" just sends as plain text, as before.
   const slashEnabled = Boolean(onNewThread && onLocalNote && onSendText);
   const modelHarness = familiar?.harness ?? "claude";
-  const runtimeModelOptions = useRuntimeModelOptions(modelHarness);
+  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, familiar?.id);
   // Shared inline menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — same hook as the home/chat composers so the keyboard
   // grammar transfers. The pick callbacks reference the helpers declared just

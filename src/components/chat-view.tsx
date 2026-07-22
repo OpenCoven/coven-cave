@@ -2625,7 +2625,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
-  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude");
+  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel

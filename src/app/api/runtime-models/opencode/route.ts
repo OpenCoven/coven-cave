@@ -8,5 +8,6 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
-  return NextResponse.json({ ok: true, models: await listOpenCodeModels() });
+  const familiarId = new URL(req.url).searchParams.get("familiarId");
+  return NextResponse.json({ ok: true, models: await listOpenCodeModels(familiarId) });
 }

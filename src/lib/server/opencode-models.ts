@@ -6,7 +6,7 @@ import type { RuntimeModelOption } from "@/lib/runtime-models";
 const MODEL_LIST_TIMEOUT_MS = 8_000;
 
 /** Read only the authenticated local OpenCode model inventory; never refresh it. */
-export function listOpenCodeModels(): Promise<RuntimeModelOption[]> {
+export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeModelOption[]> {
   return new Promise((resolve) => {
     let output = "";
     let settled = false;
@@ -17,7 +17,10 @@ export function listOpenCodeModels(): Promise<RuntimeModelOption[]> {
     };
     try {
       const child = spawn(openCodeCommand(), ["models"], {
-        env: openCodeSpawnEnv(),
+        // Match the chat spawn's vault scope. A provider key can be granted to
+        // one familiar only, and listing its authenticated OpenCode models must
+        // not silently drop that key by using the unscoped probe environment.
+        env: openCodeSpawnEnv(familiarId),
         stdio: ["ignore", "pipe", "pipe"],
       });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));

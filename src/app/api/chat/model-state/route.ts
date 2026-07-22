@@ -75,7 +75,7 @@ export async function GET(req: Request) {
   // reads the catalog directly. `allowCustom` means a free-typed id is valid.
   const catalog = catalogForRuntime(state.harness);
   const options = state.harness === "opencode"
-    ? await listOpenCodeModels()
+    ? await listOpenCodeModels(familiarId)
     : catalog?.models ?? [];
   return NextResponse.json({
     ok: true,
