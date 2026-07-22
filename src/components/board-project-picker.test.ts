@@ -53,6 +53,11 @@ assert.match(
   /!eligibleFamiliars\.some\([\s\S]{0,500}onPatch\(card\.id, \{ familiarId: null, sessionId: null \}\)/,
   "inspector clears an existing familiar and its stale session when it is ineligible for the selected project",
 );
+assert.match(
+  inspector,
+  /label="Familiar"[\s\S]{0,500}onChange=\{\(next\) => onPatch\(card\.id, \{ familiarId: next \|\| null, sessionId: null \}\)\}/,
+  "changing an authorized familiar also unlinks its prior runtime session",
+);
 
 // ── New-card modal can set a project at creation time ──────────────────────
 assert.match(newCard, /projectId: string \| null;/, "NewCardDraft carries projectId");

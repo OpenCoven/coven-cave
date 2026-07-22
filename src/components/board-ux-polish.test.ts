@@ -153,6 +153,11 @@ assert.match(
   "quick-add inherits the swimlane's familiar so the card lands in the right lane",
 );
 assert.match(view, /onQuickAdd=\{quickAdd\}/, "BoardView wires the quick-add create path");
+assert.match(
+  view,
+  /familiarId: lane\.projectId \? null : \(lane\.familiarId !== undefined \? lane\.familiarId : \(activeFamiliarId \?\? null\)\)/,
+  "quick-add leaves project-lane tasks unassigned until their authorized familiar is selected",
+);
 
 // ── WIP limits per column (#3) ──
 assert.match(kanban, /wipLimits\?:\s*WipLimits/, "BoardKanban accepts WIP limits");

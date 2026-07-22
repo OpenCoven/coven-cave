@@ -277,7 +277,9 @@ function GitHubAttachSection({
     const fam = familiars.find(
       (f) => f.display_name?.toLowerCase() === item.repo?.toLowerCase()
     );
-    if (fam) onPatch(card.id, { familiarId: fam.id });
+    // A session carries the prior familiar's harness/runtime context. Do not
+    // relabel it as this familiar merely because a GitHub assignment matched.
+    if (fam) onPatch(card.id, { familiarId: fam.id, sessionId: null });
   }
 
   const iconName = (k: string) => (KIND_ICON[k] ?? "ph:link") as IconName;
@@ -1325,7 +1327,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={familiarPickerReady ? card.familiarId ?? "" : ""}
-                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                  onChange={(next) => onPatch(card.id, { familiarId: next || null, sessionId: null })}
                   options={familiarOptions}
                   disabled={!familiarPickerReady}
                   showCaret={false}

@@ -516,7 +516,10 @@ export function BoardView({
 
   // Inline quick-add from a kanban column: title-only card in that column's
   // status, scoped to the swimlane it was dropped under (familiar/project) or
-  // the active familiar when ungrouped.
+  // the active familiar when ungrouped. Project lanes deliberately begin
+  // unassigned: the active familiar may use a different harness/runtime and
+  // lack that project's session-launch grant, so the dependent picker must
+  // choose an authorized familiar first.
   const quickAdd = async (
     status: CardStatus,
     title: string,
@@ -527,7 +530,7 @@ export function BoardView({
       notes: "",
       status,
       priority: "medium",
-      familiarId: lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null),
+      familiarId: lane.projectId ? null : (lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null)),
       sessionId: null,
       projectId: lane.projectId !== undefined ? lane.projectId : null,
       cwd: null,

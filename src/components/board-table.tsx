@@ -507,7 +507,10 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                                   label={`Assign familiar for ${card.title}`}
                                   className="board-table-familiar-select"
                                   value={card.familiarId ?? ""}
-                                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                                  // A linked session was created with the prior familiar's
+                                  // harness/runtime. Reassignment must start fresh instead
+                                  // of relabelling that session under a different runtime.
+                                  onChange={(next) => onPatch(card.id, { familiarId: next || null, sessionId: null })}
                                   options={familiarOptions}
                                 />
                               </span>
