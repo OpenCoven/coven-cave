@@ -143,11 +143,15 @@ test.describe("prompt enhance", () => {
     await page.getByRole("button", { name: "Composer actions" }).click();
     const menu = page.getByRole("menu", { name: "Composer actions" });
     await expect(menu).toBeVisible();
-    await menu.getByRole("menuitem", { name: "Enhance options…" }).click();
+    // Enhance options is a cascading flyout now: the submenu panel portals to
+    // <body> as its own role=menu named after the trigger row.
+    await menu.getByRole("menuitem", { name: "Enhance options" }).click();
+    const flyout = page.getByRole("menu", { name: "Enhance options" });
+    await expect(flyout).toBeVisible();
     for (const label of ["Smart enhance", "Clarify", "Expand", "Make specific", "Shorten", "Add acceptance criteria"]) {
-      await expect(menu.getByText(label, { exact: true })).toBeVisible();
+      await expect(flyout.getByText(label, { exact: true })).toBeVisible();
     }
-    await menu.getByText("Shorten", { exact: true }).click();
+    await flyout.getByText("Shorten", { exact: true }).click();
 
     await expect(draft).toHaveValue("Shorter.", { timeout: 15_000 });
     expect(String(sends[0].prompt)).toContain("Compress to the essential ask");
