@@ -13,18 +13,36 @@ import {
   covenLaunchCommandForBinary,
   covenSpawnEnv,
   pickWindowsLauncher,
+  refreshCovenSpawnEnv,
   type CovenLaunchCommand,
 } from "./coven-bin";
 
 let cachedBin: string | null = null;
 
-function candidateDirs(): string[] {
-  const env = covenSpawnEnv();
+function candidateDirs(env: NodeJS.ProcessEnv): string[] {
   return (env.PATH ?? "")
     .split(path.delimiter)
     .filter((directory, index, dirs) =>
       !!directory && dirs.indexOf(directory) === index && existsSync(directory),
     );
+}
+
+function grokBinFromPath(env: NodeJS.ProcessEnv): string | null {
+  for (const directory of candidateDirs(env)) {
+    for (const name of grokCandidateBinNames()) {
+      // This is a runtime PATH probe, not a bundled file dependency. Keep
+      // Turbopack's output-file tracer from treating the dynamic directory as
+      // a project glob (which would package the whole checkout).
+      const candidate = path.join(/* turbopackIgnore: true */ directory, name);
+      try {
+        const stat = statSync(candidate);
+        if (stat.isFile() || stat.isSymbolicLink()) return candidate;
+      } catch {
+        /* try the next launcher */
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -65,22 +83,10 @@ export function grokBin(): string {
     }
   }
 
-  for (const directory of candidateDirs()) {
-    for (const name of grokCandidateBinNames()) {
-      // This is a runtime PATH probe, not a bundled file dependency. Keep
-      // Turbopack's output-file tracer from treating the dynamic directory as
-      // a project glob (which would package the whole checkout).
-      const candidate = path.join(/* turbopackIgnore: true */ directory, name);
-      try {
-        const stat = statSync(candidate);
-        if (stat.isFile() || stat.isSymbolicLink()) {
-          cachedBin = candidate;
-          return cachedBin;
-        }
-      } catch {
-        /* try the next launcher */
-      }
-    }
+  const fromPath = grokBinFromPath(covenSpawnEnv()) ?? grokBinFromPath(refreshCovenSpawnEnv());
+  if (fromPath) {
+    cachedBin = fromPath;
+    return cachedBin;
   }
 
   // `where` preserves Windows' PATHEXT/PATH lookup, including Node's global

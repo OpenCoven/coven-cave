@@ -18,8 +18,13 @@ assert.match(
 );
 assert.match(
   source,
-  /covenSpawnEnv\(\)[\s\S]*split\(path\.delimiter\)/,
+  /function candidateDirs\(env: NodeJS\.ProcessEnv\)[\s\S]*split\(path\.delimiter\)/,
   "Grok discovery must use Cave's cross-platform augmented PATH",
+);
+assert.match(
+  source,
+  /grokBinFromPath\(covenSpawnEnv\(\)\) \?\? grokBinFromPath\(refreshCovenSpawnEnv\(\)\)/,
+  "Grok discovery must refresh a stale desktop PATH before reporting a newly installed WSL, npm, or native launcher as absent",
 );
 assert.match(
   source,
