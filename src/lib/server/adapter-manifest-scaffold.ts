@@ -3,8 +3,8 @@ import path from "node:path";
 import {
   adapterManifestScaffoldForHarness,
   isLegacyWindowsHermesManifest,
-} from "@/lib/harness-adapters";
-import { covenAdaptersDir, isManifestShadowedByBuiltin } from "./adapter-conflict-heal";
+} from "../harness-adapters.ts";
+import { covenAdaptersDir, isManifestShadowedByBuiltin } from "./adapter-conflict-heal.ts";
 
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
