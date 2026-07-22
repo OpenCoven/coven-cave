@@ -742,6 +742,16 @@ export function BoardView({
     projectRoot?: string,
   ): Promise<{ sessionId: string; familiarId: string | null } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
+    // Project-backed tasks must retain an explicit familiar chosen from the
+    // project's authorized roster. Falling back to the active/default
+    // familiar here would bypass the Project → Familiar picker and produce a
+    // late `project access denied` for installations whose active runtime is
+    // not granted this project.
+    if (card?.projectId && !card.familiarId) {
+      setChatLinkError("Choose an authorized familiar before starting work in this project.");
+      setChatLinkErrorCardId(id);
+      return null;
+    }
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);

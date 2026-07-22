@@ -254,7 +254,15 @@ export function NewCardModal({
         <Field label="Project">
           <Select
             value={projectId ?? ""}
-            onChange={(v) => setProjectId(v || null)}
+            onChange={(v) => {
+              // A project change invalidates the prior familiar scope until
+              // the project-authorized roster has loaded. Do not let a quick
+              // submit carry the modal's default/previous familiar into an
+              // unrelated project.
+              setProjectId(v || null);
+              setFamiliarId(null);
+              setSessionId(null);
+            }}
             options={[
               { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
               ...(projectsLoading ? [] : projects.map((p) => ({ value: p.id, label: p.name }))),
@@ -358,10 +366,12 @@ function Select({
   value,
   onChange,
   options,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
+  disabled?: boolean;
 }) {
   return (
     <StandardSelect
@@ -369,6 +379,7 @@ function Select({
       value={value}
       onChange={onChange}
       options={options}
+      disabled={disabled}
       className="w-full border-border bg-background px-3 py-2 text-sm text-foreground focus:border-border-strong"
     />
   );

@@ -1276,7 +1276,15 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   value={card.projectId ?? ""}
                   onChange={(next) => {
                     const selectedProject = projects.find((project) => project.id === next) ?? null;
-                    onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
+                    // A Project → Familiar assignment is only valid after the
+                    // target project's authorized roster resolves. Clear an
+                    // existing familiar immediately so Start work cannot race
+                    // that lookup with the old project's assignment.
+                    onPatch(card.id, {
+                      projectId: selectedProject?.id ?? null,
+                      cwd: selectedProject?.root ?? null,
+                      familiarId: null,
+                    });
                   }}
                   options={[
                     { value: "", label: "No project" },

@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
-  "changing the inspector project picker patches projectId and its persisted cwd",
+  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
+  "changing the inspector project picker clears the old familiar before persisting the new project root",
 );
 assert.match(inspector, /\{ value: "", label: "No project" \}/, "inspector offers a No-project option");
 assert.match(
@@ -80,6 +80,11 @@ assert.match(
   newCard,
   /value=\{familiarPickerReady \? familiarId \?\? "" : ""\}[\s\S]{0,200}disabled=\{!familiarPickerReady\}/,
   "new-card modal requires a selected and authorized project before Familiar is available",
+);
+assert.match(
+  newCard,
+  /onChange=\{\(v\) => \{[\s\S]{0,700}setProjectId\(v \|\| null\);[\s\S]{0,180}setFamiliarId\(null\);[\s\S]{0,180}setSessionId\(null\);/,
+  "changing a new task's project immediately clears the prior familiar while its authorized roster loads",
 );
 assert.match(
   newCard,

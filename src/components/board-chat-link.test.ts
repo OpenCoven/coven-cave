@@ -17,6 +17,11 @@ assert.match(
   /fetch\(`\/api\/board\/\$\{id\}\/chat`, \{[\s\S]*method: "POST"/,
   "Task chat action should POST to the board chat link endpoint",
 );
+assert.match(
+  boardView,
+  /if \(card\?\.projectId && !card\.familiarId\) \{[\s\S]{0,260}Choose an authorized familiar before starting work in this project\.[\s\S]{0,180}return null;[\s\S]{0,260}const fallbackFamiliarId = card\?\.familiarId \?\? activeFamiliarId/,
+  "project-backed task work must not fall back to an unrelated active familiar when no authorized familiar is assigned",
+);
 assert.doesNotMatch(
   boardView,
   /onJumpToSession\?\.\(json\.sessionId, json\.familiarId/,

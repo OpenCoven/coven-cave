@@ -32,5 +32,10 @@ assert.match(
   /eligibleFamiliars\.map\(\(familiar\)/,
   "new-card modal renders only the server-authorized familiar list",
 );
+assert.match(
+  modal,
+  /function Select\(\{[\s\S]{0,180}disabled = false,[\s\S]{0,500}<StandardSelect[\s\S]{0,360}disabled=\{disabled\}/,
+  "the modal Select wrapper forwards the familiar picker's disabled state to StandardSelect",
+);
 
 console.log("new-card-modal.test.ts: ok");
