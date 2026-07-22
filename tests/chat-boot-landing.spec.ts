@@ -168,7 +168,8 @@ test.describe("chat boot landing", () => {
     await voiceDialog.getByRole("button", { name: "End call" }).click();
     await expect(voiceDialog).toHaveCount(0);
     await page.getByRole("button", { name: "Chat options" }).click();
-    await expect(page.getByText("Improve")).toBeVisible();
+    // The unified + menu folds the old Improve section into enhance rows.
+    await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
     await page.keyboard.press("Escape");
 
     // Dosed discoverability: the ready line mentions the slash entry point.

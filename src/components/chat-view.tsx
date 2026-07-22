@@ -5783,16 +5783,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     type="button"
                     className="cave-composer-footer-action focus-ring"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={busy || attachments.length >= 10}
-                    title={`Attach images, videos, or files (${keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A"})`}
-                    aria-label="Attach images, videos, or files"
-                  >
-                    <Icon name="ph:paperclip" width={15} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="cave-composer-footer-action focus-ring"
                     onClick={() => void openVoiceCall()}
                     disabled={voiceCallPending || (busy && !sessionId)}
                     title="Voice call"
@@ -5801,6 +5791,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <Icon name="ph:phone" width={15} aria-hidden />
                   </button>
                   <ComposerActionsMenu
+                    attach={{
+                      onSelect: () => fileInputRef.current?.click(),
+                      disabled: busy || attachments.length >= 10,
+                      hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                    }}
+                    skills={{
+                      onPickSkill: (skill) => {
+                        setInput(`/skill ${skill.id} `);
+                        inputRef.current?.focus();
+                      },
+                    }}
                     context={{
                       projects,
                       projectValue: resolvedProjectId,

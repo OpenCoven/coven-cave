@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Security regression tests for the daemon session API hardening.
 // Verifies that session endpoints reject non-local requests, validate session
-// IDs against the UUID pattern, and confirm session ownership before proxying
+// IDs against the shared safe session-id grammar, and confirm session ownership before proxying
 // to the daemon — preventing unauthenticated access and SSRF via crafted IDs.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

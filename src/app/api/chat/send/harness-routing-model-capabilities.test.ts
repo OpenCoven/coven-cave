@@ -45,6 +45,11 @@ assert.match(
   /covenRunSupportsModelFlag/,
   "Model forwarding must gate on the coven run --model capability probe",
 );
+assert.match(
+  capabilityProbes,
+  /export function hermesChatSupportsModel\(\)/,
+  "Direct Hermes model forwarding must probe hermes chat --help independently of coven run",
+);
 
 assert.match(
   chatRoute,

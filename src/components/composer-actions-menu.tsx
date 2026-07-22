@@ -2,9 +2,16 @@
 
 import "@/styles/cave-composer.css";
 
+// ComposerActionsMenu — the chat composer's "+" menu, now the shared
+// hierarchical ComposerAddMenu cascade (reference design): attach on top,
+// then "Add to project ›", "Add from GitHub ›" (linked work), Skills ›,
+// Connectors ›, the improve utilities, and a chat-specific footer (Model &
+// tuning / Branch via the chained context pickers, Response options ›,
+// Save as template). The old four stacked sections (Context / Linked Work /
+// Improve / Response) fold into this one compact root menu.
+
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import {
-  ComposerContextActionRows,
   ComposerContextPickers,
   useComposerContextActions,
   type ComposerContextProps,
@@ -23,13 +30,15 @@ import { ConnectHostDialog } from "@/components/composer-host-chip";
 import {
   Popover,
   PopoverBody,
-  PopoverItem,
-  PopoverLabel,
   PopoverSeparator,
+  PopoverSubmenu,
   usePopoverInitialFocus,
 } from "@/components/ui/popover";
+import { AddMenuRow, ComposerAddMenu } from "@/components/composer-add-menu";
 import { Icon } from "@/lib/icon";
-import { ENHANCE_INTENTS, type EnhanceIntent } from "@/lib/prompt-enhancer";
+import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import type { SkillOption } from "@/lib/slash-skill";
+import type { EnhanceIntent } from "@/lib/prompt-enhancer";
 
 export function ComposerLinkedWorkActions(props: ComposerLinkedWorkActionsProps) {
   return <LinkedWorkActions {...props} />;
@@ -70,6 +79,14 @@ export type ComposerActionsMenuProps = {
   linkedWork: ComposerLinkedWorkActionsProps;
   improve: ComposerImproveActions;
   response: ComposerResponseActions;
+  /** "Add files or photos" — relocated from the standalone attach button. */
+  attach: {
+    onSelect: () => void;
+    disabled?: boolean;
+    hint?: string;
+  };
+  /** Skills flyout; picking inserts `/skill <id> ` into the composer. */
+  skills?: { onPickSkill: (skill: SkillOption) => void };
   disabled?: boolean;
 };
 
@@ -78,11 +95,12 @@ export function ComposerActionsMenu({
   linkedWork,
   improve,
   response,
+  attach,
+  skills,
   disabled,
 }: ComposerActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [contextView, setContextView] = useState<ComposerContextView>(null);
-  const [enhanceView, setEnhanceView] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const hostRefreshPending = useRef(false);
@@ -106,10 +124,7 @@ export function ComposerActionsMenu({
     };
   }, [load, open]);
 
-  const closePanel = () => {
-    setOpen(false);
-    setEnhanceView(false);
-  };
+  const closePanel = () => setOpen(false);
   const closeAll = () => {
     closePanel();
     setContextView(null);
@@ -128,6 +143,14 @@ export function ComposerActionsMenu({
   const showIndicator = hasLinkedContext || Boolean(response.indicator);
   const expanded = open || contextView !== null;
 
+  // The effective project selection (radio check in "Add to project ›"):
+  // an explicit No-project choice maps to NO_PROJECT_ID, else the resolved
+  // project (null value falls back to the first project, pill parity).
+  const selectedProjectId =
+    contextProps.projectValue === NO_PROJECT_ID
+      ? NO_PROJECT_ID
+      : context.selectedProject?.id ?? null;
+
   return (
     <>
       <button
@@ -136,7 +159,7 @@ export function ComposerActionsMenu({
         className="cave-composer-plus composer-actions__trigger focus-ring"
         disabled={disabled}
         aria-label="Chat options"
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={expanded}
         title={`Chat options · ${context.summary}`}
         onClick={() => {
@@ -144,7 +167,6 @@ export function ComposerActionsMenu({
             closeAll();
             return;
           }
-          setEnhanceView(false);
           setOpen(true);
         }}
       >
@@ -160,150 +182,81 @@ export function ComposerActionsMenu({
         }}
         anchorRef={triggerRef}
         placement="top-start"
-        minWidth={320}
+        minWidth={260}
         ariaLabel="Chat options"
         className="composer-actions__panel"
       >
-        <PopoverBody ariaLabel="Chat options" className="composer-actions__body">
-          {enhanceView ? (
-            <div className="composer-actions__enhance">
-              <PopoverItem semantic="button" icon="ph:caret-left" onSelect={() => setEnhanceView(false)}>
-                Enhance options
-              </PopoverItem>
-              <PopoverSeparator />
-              {ENHANCE_INTENTS.map((intent) => (
-                <PopoverItem
-                  semantic="button"
-                  key={intent.id}
-                  icon="ph:sparkle"
-                  disabled={improve.enhance.disabled && !improve.enhance.loading}
-                  onSelect={() => {
-                    closePanel();
-                    improve.enhance.onEnhance(intent.id);
-                  }}
-                >
-                  {intent.label}
-                </PopoverItem>
-              ))}
-            </div>
-          ) : (
-            <>
-              <section
-                className="composer-actions__section composer-actions__context"
-                role="group"
-                aria-labelledby="composer-actions-context-label"
-              >
-                <PopoverLabel id="composer-actions-context-label">Context</PopoverLabel>
-                <ComposerContextActionRows
-                  context={context}
-                  onOpenProject={() => openContextPicker("project")}
-                  onOpenModel={() => openContextPicker("model")}
-                  onOpenBranch={() => openContextPicker("branch")}
-                  onClose={closePanel}
-                  itemSemantic="button"
-                />
-              </section>
-
-              <section
-                className="composer-actions__section composer-actions__linked"
-                role="group"
-                aria-labelledby="composer-actions-linked-work-label"
-              >
-                <PopoverLabel id="composer-actions-linked-work-label">Linked Work</PopoverLabel>
-                <ComposerLinkedWorkActions
+        <PopoverBody role="menu" ariaLabel="Chat options" className="composer-actions__body">
+          <ComposerAddMenu
+            open={open}
+            onClose={closePanel}
+            attach={attach}
+            projects={{
+              projects: context.sortedProjects.map((p) => ({ id: p.id, name: p.name })),
+              selectedId: selectedProjectId,
+              onPick: contextProps.onProjectChange,
+              noProjectId: contextProps.allowNoProject ? NO_PROJECT_ID : undefined,
+              onStartNewProject: contextProps.createProject
+                ? context.addFlow.beginAddProject
+                : undefined,
+            }}
+            github={{
+              submenu: (
+                <LinkedWorkActions
                   {...linkedWork}
                   embedded
-                  itemSemantic="button"
                   onCloseMenu={() => {
                     closePanel();
                     linkedWork.onCloseMenu?.();
                   }}
                 />
-              </section>
-
-              <section
-                className="composer-actions__section composer-actions__improve"
-                role="group"
-                aria-labelledby="composer-actions-improve-label"
-              >
-                <PopoverLabel id="composer-actions-improve-label">Improve</PopoverLabel>
-                {improve.dictation ? (
-                  <button
-                    type="button"
-                    className="ui-popover-item composer-actions__item"
-                    aria-pressed={improve.dictation.listening}
-                    disabled={improve.dictation.disabled}
-                    onClick={() => {
-                      closePanel();
-                      improve.dictation?.toggle();
-                    }}
-                  >
-                    <Icon
-                      name="ph:microphone"
-                      width={13}
-                      aria-hidden
-                      className={improve.dictation.listening ? "composer-actions__icon--live" : undefined}
-                    />
-                    <span>{improve.dictation.listening ? "Stop dictation" : "Voice message"}</span>
-                  </button>
-                ) : null}
-                <PopoverItem
-                  semantic="button"
-                  icon="ph:chat-centered-text"
-                  disabled={improve.promptSnippets.disabled}
-                  onSelect={() => {
-                    closePanel();
-                    improve.promptSnippets.onSelect();
-                  }}
-                >
-                  Prompt snippets
-                </PopoverItem>
-                <PopoverItem
-                  semantic="button"
-                  icon="ph:sparkle"
-                  disabled={improve.enhance.disabled && !improve.enhance.loading}
-                  onSelect={() => {
-                    closePanel();
-                    improve.enhance.onEnhance("auto");
-                  }}
-                >
-                  {improve.enhance.loading ? "Enhancing…" : "Smart enhance"}
-                </PopoverItem>
-                <PopoverItem
-                  semantic="button"
-                  icon="ph:caret-right"
-                  disabled={improve.enhance.disabled && !improve.enhance.loading}
-                  onSelect={() => setEnhanceView(true)}
-                >
-                  Enhance options…
-                </PopoverItem>
-              </section>
-
-              <section
-                className="composer-actions__section composer-actions__response"
-                role="group"
-                aria-labelledby="composer-actions-response-label"
-              >
-                <PopoverLabel id="composer-actions-response-label">Response</PopoverLabel>
-                <ComposerResponseSections
-                  hostValue={response.hostValue}
-                  hostOptions={hostOptions}
-                  onHostPick={response.onHostPick}
-                  onRemoveHost={(host) => void removeHost(host)}
-                  sections={response.sections}
-                  onConnectNew={() => {
-                    closePanel();
-                    setConnectOpen(true);
-                  }}
-                  onSaveAsTemplate={() => {
-                    closePanel();
-                    response.onSaveAsTemplate();
-                  }}
-                  saveAsTemplateDisabled={response.saveAsTemplateDisabled}
+              ),
+            }}
+            skills={skills}
+            connectors
+            legacy={{
+              dictation: improve.dictation,
+              promptSnippets: improve.promptSnippets,
+              enhance: improve.enhance,
+            }}
+            footer={
+              <>
+                <PopoverSeparator />
+                <AddMenuRow
+                  icon="ph:sliders-horizontal"
+                  label="Model & tuning…"
+                  title={context.summary}
+                  onSelect={() => openContextPicker("model")}
                 />
-              </section>
-            </>
-          )}
+                {context.hasGit ? (
+                  <AddMenuRow
+                    icon="ph:git-branch"
+                    label="Branch…"
+                    hint={context.branch ?? undefined}
+                    onSelect={() => openContextPicker("branch")}
+                  />
+                ) : null}
+                <PopoverSubmenu icon="ph:gear-six" label="Response options" minWidth={300}>
+                  <ResponseSections
+                    hostValue={response.hostValue}
+                    hostOptions={hostOptions}
+                    onHostPick={response.onHostPick}
+                    onRemoveHost={(host) => void removeHost(host)}
+                    sections={response.sections}
+                    onConnectNew={() => {
+                      closePanel();
+                      setConnectOpen(true);
+                    }}
+                    onSaveAsTemplate={() => {
+                      closePanel();
+                      response.onSaveAsTemplate();
+                    }}
+                    saveAsTemplateDisabled={response.saveAsTemplateDisabled}
+                  />
+                </PopoverSubmenu>
+              </>
+            }
+          />
         </PopoverBody>
       </Popover>
 

@@ -107,9 +107,14 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-22 (mobile write access): the mobile-permissions route plus the
   // shared trusted-grant-mutation lib add traced files; CI measured 5,621 on
   // Ubuntu and 5,623 on Windows, then hermes (#3636) landed one more traced
-  // file on Windows (5,624). Keep the exact cross-platform maximum without
-  // relaxing the expanded-byte ceiling.
-  fileCount: 5_624,
+  // file on Windows (5,624) — about seven traced files over the pre-branch
+  // base.
+  // 2026-07-22 (composer add menu): the unified "+" menu splits the composer
+  // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
+  // CI traced 5,618–5,619 on Windows across runs. The merged tree lands
+  // around 5,626 on Windows; retain ten files of headroom over the jittering
+  // maximum without relaxing the byte ceiling.
+  fileCount: 5_636,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

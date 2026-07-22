@@ -220,8 +220,16 @@ assert.doesNotMatch(
 // between Projects and Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},\s*\{ id: "settings", label: "Settings" \},/,
-  "the Familiar tab sits immediately left of Settings (after Canvas)",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \},\s*\{ id: "settings", label: "Settings" \},/,
+  "the Skills tab (familiar scope) sits immediately left of Settings (after Canvas)",
+);
+// The skills-tab latch must be consumed on the LIVE event path too: "Manage
+// skills" from an already-mounted chat doesn't remount this surface, so a
+// latch consumed only at mount would linger and hijack a later fresh mount.
+assert.match(
+  chatSurface,
+  /if \(consumeSkillsTabPending\(\)\) setScope\("familiar"\);[\s\S]*?const open = \(\) => \{\s*consumeSkillsTabPending\(\);\s*setScope\("familiar"\);\s*\};[\s\S]*?addEventListener\(CHAT_OPEN_SKILLS_EVENT, open\)/,
+  "skills latch is consumed both at mount and in the live event handler",
 );
 assert.match(
   chatSurface,

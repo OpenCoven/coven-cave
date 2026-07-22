@@ -6,7 +6,7 @@ const source = readFileSync(
   new URL("./familiar-studio-brain-tab.tsx", import.meta.url),
   "utf8",
 );
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
@@ -22,6 +22,11 @@ assert.match(
   source,
   /modelOptions\.map/,
   "Brain tab should render a model select from the catalog options",
+);
+assert.match(
+  source,
+  /modelOptions\.length > 0[\s\S]{0,160}<StandardSelect/,
+  "A runtime with catalog models, including Hermes, must render the dropdown instead of only free text",
 );
 assert.match(
   source,

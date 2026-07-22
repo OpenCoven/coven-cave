@@ -142,6 +142,7 @@ import {
 import {
   covenRunSupportsAddDir,
   covenRunSupportsModel,
+  hermesChatSupportsModel,
   covenRunSupportsPermission,
 } from "./chat-send-capabilities";
 import {
@@ -816,11 +817,13 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
-  // OpenClaw runs through its own agent bridge (no `coven run`), so it never
-  // forwards `--model`; every other bundled harness gates on the capability
-  // probe so this stays a no-op until the companion CLI ships the flag.
-  const modelForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsModel());
+  // Hermes runs directly, so it must advertise --model itself; every other
+  // bundled harness uses coven run's capability probe. OpenClaw's bridge has
+  // no CLI model passthrough.
+  const hermesDirect = !sshRuntime && binding.harness === "hermes";
+  const modelForwardingEnabled = hermesDirect
+    ? await hermesChatSupportsModel()
+    : binding.harness !== "openclaw" && (await covenRunSupportsModel());
   // Same gating for the sandbox/permission flag. Only "read" is forwarded
   // (→ `--permission read-only`); "full" stays implicit so the harness keeps
   // its own default sandbox instead of being widened to danger-full-access.
@@ -1096,7 +1099,6 @@ export async function POST(req: Request) {
   // beside Hermes's Windows executable, which left Cave showing only a timer.
   // Spawn Hermes directly for native local chats, as we already do for the
   // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
-  const hermesDirect = !sshRuntime && binding.harness === "hermes";
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
@@ -1147,6 +1149,9 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
+      // Hermes uses the provider-qualified model ID (for example
+      // `openai/gpt-5.6-sol`) to select the provider as well as the model.
+      if (forwardModel) a.push("--model", forwardModel);
       a.push("--query", prompt);
       return a;
     }

@@ -116,12 +116,25 @@ for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {
   }
 }
 
-// Runtime-managed adapters are free-text only (no model menu). Hermes here means
-// the installed Hermes Agent runtime, not a Nous/Hermes model selection.
+// Hermes forwards authenticated Codex models through its adapter, so it has a
+// concrete menu while retaining Custom for an explicitly supplied model id.
 const hermes = catalogForRuntime("hermes");
-assert.equal(hermes.provider, null);
-assert.equal(hermes.models.length, 0, "hermes is runtime-managed, not a Hermes model menu");
-assert.equal(hermes.allowCustom, true, "runtime-managed Hermes still accepts explicit user model ids");
+assert.equal(hermes.provider, "openai");
+assert.deepEqual(
+  hermes.models.map((model) => model.id),
+  [
+    "openai/gpt-5.6-sol",
+    "openai/gpt-5.6-terra",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "openai/gpt-5.3-codex-spark",
+    "openai/codex-auto-review",
+  ],
+  "Hermes should expose the authenticated Codex model dropdown",
+);
+assert.equal(hermes.allowCustom, true, "Hermes still accepts explicit user model ids");
 
 // null-provider runtimes are free-text only (no menu).
 const openclaw = catalogForRuntime("openclaw");
@@ -129,7 +142,7 @@ assert.equal(openclaw.provider, null);
 assert.equal(openclaw.models.length, 0, "openclaw renders free-text only");
 assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there is no menu");
 assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.6-sol");
-assert.equal(defaultModelForRuntime("hermes"), "hermes-local", "Hermes should default to the runtime marker, not a Hermes model");
+assert.equal(defaultModelForRuntime("hermes"), "openai/gpt-5.6-sol", "Hermes should default to the first authenticated model");
 assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw should inherit a real global default, not openclaw-local");
 
 // Unknown runtimes have no catalog.
@@ -148,6 +161,7 @@ assert.equal(catalogForRuntime("nonexistent"), null);
 // isModelInCatalog only matches curated ids; allowCustom covers the rest.
 assert.equal(isModelInCatalog("claude", "anthropic/claude-opus-4-7"), true);
 assert.equal(isModelInCatalog("claude", "anthropic/not-listed-yet"), false);
+assert.equal(isModelInCatalog("hermes", "openai/gpt-5.6-terra"), true);
 assert.equal(isModelInCatalog("hermes", "nous/hermes-4"), false);
 assert.equal(isModelInCatalog("openclaw", "anything"), false);
 assert.equal(isModelInCatalog("nonexistent", "openai/gpt-5.5"), false);
