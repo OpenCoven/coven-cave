@@ -1,328 +1,235 @@
 "use client";
 
-import "@/styles/cave-chat.css";
-
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-
-// The Projects hub's styling (every `projects-hub`/`projects-list-row`/
-// `projects-detail-*` class) lives in projects.css. Import it directly so the
-// surface is always styled — it's reachable straight from the Chat → Projects
-// tab, before any other surface has ever mounted.
+// The access page's styling (every `projects-access-*` class) lives in
+// projects.css. Import it directly so the surface is always styled — it's
+// reachable straight from the Chat → Projects tab, before any other surface
+// has ever mounted.
 import "@/styles/projects.css";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 import { Icon } from "@/lib/icon";
-import { useDateTimePrefs } from "@/lib/datetime-format";
-import { successfulSessionIds } from "@/lib/session-list-deletes";
-import { useMinuteTick } from "@/lib/use-minute-tick";
-import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import { deriveProjectStatus } from "@/lib/project-status";
-import { addChatProject } from "@/lib/chat-add-project";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
-import { stripTaskPrefix } from "@/lib/projects/session-glyph";
-import { applyManualOrder, readSessionOrder } from "@/lib/chat-session-order";
-import { applyProjectOverrides, setProjectOverride, clearProjectOverride } from "@/lib/chat-project-overrides";
-import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import type { Card } from "@/lib/cave-board-types";
-import {
-  PROJECTS_SELECTED_KEY,
-  parseStoredProjectId,
-  resolveSelectedProjectId,
-} from "@/lib/projects/selected-project";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
-import { UndoToast } from "@/components/ui/undo-toast";
+import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
+import {
+  normalizeAccessLevel,
+  resolveEffectiveAccess,
+  type ProjectAccessLevel,
+} from "@/lib/project-access-levels";
+import {
+  SECTION_LABELS,
+  SECTION_ORDER,
+  accessCounts,
+  accessStateMeta,
+  filterProjectsByQuery,
+  nextAccessState,
+  setAllOps,
+  splitProjectsBySection,
+  type AccessOp,
+  type AccessState,
+  type ProjectSection,
+} from "@/lib/projects/access-page";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import { Modal } from "@/components/ui/modal";
-import { SurfaceRail } from "@/components/ui/surface-rail";
-
-import { ProjectList } from "./projects/project-list";
-import { ProjectDetail } from "./projects/project-detail";
-import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
-import { DirectoryPickerModal } from "@/components/directory-picker-modal";
-import { isTauri } from "@/lib/tauri-platform";
-import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
-
-/** Last path segment of an absolute path (handles both / and \ separators). */
-function pathBasename(p: string): string {
-  return p.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).pop() ?? "";
-}
+import { StandardSelect } from "@/components/ui/select";
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
-  /** Familiar roster for the detail pane's Grants section. */
+  /** Familiar roster the access matrix is edited against. */
   familiars?: Familiar[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
-  /** When set, only projects this familiar has been granted are shown. */
+  /** Pre-selects that familiar's column of the access matrix. */
   activeFamiliarId?: string | null;
 };
 
-export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, onSessionsDeleted, activeFamiliarId = null }: ProjectsViewProps) {
-  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
-  // Mutations that only show visually (create, undo) get announced here; move
-  // and bulk-delete already speak through the UndoToast's role="status".
-  const { announce } = useAnnouncer();
-  const {
-    projects,
-    loading,
-    error,
-    createProject,
-    createProjectOrThrow,
-    renameProject,
-    updateRoot,
-    updateColor,
-    deleteProject,
-    reload,
-  } = useProjects({ familiarId: activeFamiliarId });
-  const [showForm, setShowForm] = useState(false);
-  const [query, setQuery] = useState("");
-  // Opt-in "Active" view filter (ephemeral — resets each visit so a project is
-  // never surprisingly hidden). It only narrows the list; it never reorders it,
-  // so the alphabetical order stays stable.
-  const [statusFilter, setStatusFilter] = useState<"all" | "active">("all");
-  // List order: alphabetical (stable, scannable) or most-recently-active first
-  // (find what you were just working on). Persisted per machine.
-  const [sortMode, setSortMode] = useState<"az" | "recent">(() => {
-    if (typeof window === "undefined") return "az";
-    try {
-      return window.localStorage.getItem("cave:projects:sort") === "recent" ? "recent" : "az";
-    } catch {
-      return "az";
-    }
+type GrantsSnapshot = {
+  grants: ConsoleGrant[];
+  groups: ConsoleAccessGroup[];
+  supremeFamiliarId: string | null;
+};
+
+type RowModel = {
+  project: CaveProject;
+  state: AccessState;
+  direct: ProjectAccessLevel | null;
+  /** Names of member groups whose grants feed the effective level. */
+  groupNames: string[];
+};
+
+function familiarLabel(f: Familiar): string {
+  return f.display_name || f.name || f.id;
+}
+
+async function runAccessOp(familiarId: string, op: AccessOp): Promise<void> {
+  const res = await fetch("/api/project-grants", {
+    method: op.op === "grant" ? "POST" : "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(
+      op.op === "grant"
+        ? { targetFamiliarId: familiarId, projectId: op.projectId, access: op.access }
+        : { targetFamiliarId: familiarId, projectId: op.projectId },
+    ),
   });
-  const changeSortMode = (mode: "az" | "recent") => {
-    setSortMode(mode);
+  if (!res.ok) throw new Error(String(res.status));
+}
+
+/**
+ * The Chat → Projects surface: one familiar's project-access map. Pick a
+ * familiar, see every registered project split into workspaces and
+ * repositories, and click a row to cycle its direct grant — no access → read
+ * → full → none — against /api/project-grants. Effective levels fold in
+ * access-group grants (union-max), and the supreme familiar renders locked
+ * at Full everywhere.
+ */
+export function ProjectsView({ familiars = [], activeFamiliarId = null }: ProjectsViewProps) {
+  const { announce } = useAnnouncer();
+  const confirm = useConfirm();
+  // Unscoped: access is managed over EVERY registered project, not just the
+  // ones the active familiar can already see.
+  const { projects, loading: projectsLoading, error: projectsError, reload } = useProjects();
+
+  const [grantsData, setGrantsData] = useState<GrantsSnapshot | null>(null);
+  const [grantsLoading, setGrantsLoading] = useState(true);
+  const [grantsError, setGrantsError] = useState<string | null>(null);
+  const [mutateError, setMutateError] = useState<string | null>(null);
+
+  const loadGrants = useCallback(async () => {
     try {
-      window.localStorage.setItem("cave:projects:sort", mode);
+      const res = await fetch("/api/project-grants", { cache: "no-store" });
+      const data = await res.json();
+      setGrantsData({
+        grants: Array.isArray(data?.grants) ? (data.grants as ConsoleGrant[]) : [],
+        groups: Array.isArray(data?.accessGroups) ? (data.accessGroups as ConsoleAccessGroup[]) : [],
+        supremeFamiliarId:
+          typeof data?.supremeFamiliarId === "string" ? data.supremeFamiliarId : null,
+      });
+      setGrantsError(null);
     } catch {
-      /* private mode — sort stays session-only */
+      setGrantsError("Couldn’t load project access. Is the desktop reachable?");
+    } finally {
+      setGrantsLoading(false);
     }
-  };
-  const searchRef = useRef<HTMLInputElement>(null);
-  const rootInputRef = useRef<HTMLInputElement>(null);
-  const [nameDraft, setNameDraft] = useState("");
-  const [rootDraft, setRootDraft] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [projectError, setProjectError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
-  // Bulk delete is deferred + undoable: the rows hide immediately, the actual
-  // DELETEs fire only after the undo window, and Undo restores the batch.
-  const { pending: deletePending, scheduleDelete: scheduleSessionDelete, undo: undoSessionDelete, commit: commitSessionDelete } = useUndoDelete<SessionRow[]>();
-  const projectOverrides = useProjectOverrides();
-
-  // ── Narrow single-pane collapse ─────────────────────────────────────────────
-  // The hub pages between rail and detail below 640px of ITS OWN width (split
-  // tiles can be phone-narrow on a desktop viewport). The paging itself stays
-  // CSS-driven (@container projects), but the SurfaceRail needs the same
-  // boolean in React to switch into its forceOpen layout override — narrow
-  // panes must never show a 56px collapsed strip as the whole list "page".
-  const shellRef = useRef<HTMLElement>(null);
-  const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
-    const el = shellRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const update = (width: number) => setNarrow(width <= 640);
-    update(el.clientWidth);
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? el.clientWidth;
-      update(width);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
   }, []);
 
-  // ── Master-detail selection ─────────────────────────────────────────────────
-  // The selected project id persists across reloads; when nothing (valid) is
-  // stored, the most recently active project wins. Under the narrow single-pane
-  // collapse `pane` decides which side shows; wide layouts always show both.
-  const [storedSelection, setStoredSelection] = useState<string | null>(null);
-  const [pane, setPane] = useState<"list" | "detail">("list");
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setStoredSelection(parseStoredProjectId(window.localStorage.getItem(PROJECTS_SELECTED_KEY)));
-  }, []);
-  const selectProject = (id: string) => {
-    setStoredSelection(id);
-    setPane("detail");
-    try {
-      window.localStorage.setItem(PROJECTS_SELECTED_KEY, id);
-    } catch {
-      // Storage unavailable (private mode / quota) — keep the in-memory value.
-    }
-  };
+    void loadGrants();
+  }, [loadGrants]);
 
-  // Roving keyboard navigation (WAI-ARIA) over the project rows in the list
-  // pane: ↑/↓ + Home/End move focus, Enter/Space select (per-row handlers).
-  // ArrowRight on a row hands focus INTO the detail pane; ArrowLeft anywhere in
-  // the detail (outside a text field) hands it back to the selected row.
-  const listRef = useRef<HTMLDivElement>(null);
-  const detailRef = useRef<HTMLDivElement>(null);
-  const focusDetailPane = () => {
-    // After selection the detail may still be re-rendering (and, under the
-    // narrow collapse, display:none until data-pane flips) — focus next frame.
-    window.requestAnimationFrame(() => detailRef.current?.focus());
-  };
-  const { setActiveIndex } = useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
-  // Type-ahead: typing letters jumps focus to the next project whose label
-  // starts with what you typed (Finder-style), staying in sync with the roving
-  // tab stop. The buffer resets after a short pause.
-  const typeAheadRef = useRef<{ buffer: string; timer: number }>({ buffer: "", timer: 0 });
+  useRefreshOnFocus(() => {
+    reload();
+    void loadGrants();
+  });
+
+  // ── Familiar picker ────────────────────────────────────────────────────
+  const [pickedFamiliarId, setPickedFamiliarId] = useState<string | null>(activeFamiliarId);
   useEffect(() => {
-    const container = listRef.current;
-    if (!container) return;
-    function onKey(e: KeyboardEvent) {
-      // Only printable single characters, no modifiers; never while typing in a
-      // field, and only when focus is on a navigable item in the list.
-      if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (!t || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-      if (!t.closest("[data-proj-nav]")) return;
-      const root = listRef.current;
-      if (!root) return;
-      const items = Array.from(root.querySelectorAll<HTMLElement>("[data-proj-nav]"));
-      if (items.length === 0) return;
-      e.preventDefault();
-      const state = typeAheadRef.current;
-      window.clearTimeout(state.timer);
-      state.buffer += e.key;
-      state.timer = window.setTimeout(() => {
-        typeAheadRef.current.buffer = "";
-      }, 600);
-      const labels = items.map((el) => el.getAttribute("data-proj-label") ?? el.textContent ?? "");
-      const current = items.indexOf(t.closest("[data-proj-nav]") as HTMLElement);
-      const next = nextTypeAheadIndex(labels, current, state.buffer);
-      if (next >= 0) {
-        items[next].focus();
-        setActiveIndex(next);
-      }
-    }
-    container.addEventListener("keydown", onKey);
-    return () => container.removeEventListener("keydown", onKey);
-  }, [setActiveIndex]);
-  // The shared manual session order is read (so the detail list matches the
-  // chat rail's drag order) but no longer written here — the rail owns dnd.
-  const [order, setOrder] = useState<string[]>([]);
+    if (activeFamiliarId) setPickedFamiliarId(activeFamiliarId);
+  }, [activeFamiliarId]);
+  const familiar = useMemo(
+    () => familiars.find((f) => f.id === pickedFamiliarId) ?? familiars[0] ?? null,
+    [familiars, pickedFamiliarId],
+  );
+  const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
+
+  // ── Mutation state ─────────────────────────────────────────────────────
+  // projectId → optimistic direct level (null = revoked), layered over the
+  // server snapshot until the post-mutation refetch lands.
+  const [optimistic, setOptimistic] = useState<Map<string, ProjectAccessLevel | null>>(new Map());
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [busyAll, setBusyAll] = useState(false);
+
+  // Reset transient edit state when the matrix switches familiars.
+  const familiarId = familiar?.id ?? null;
   useEffect(() => {
-    setOrder(readSessionOrder());
-  }, []);
+    setOptimistic(new Map());
+    setPendingIds(new Set());
+    setMutateError(null);
+  }, [familiarId]);
 
-  // Board cards for the detail pane's Tasks section: ONE fetch per mount, then
-  // refetch on window refocus (throttled) — never per selection switch. The
-  // Tasks section filters client-side by projectId/cwd.
-  const [boardCards, setBoardCards] = useState<Card[]>([]);
-  // Abort the in-flight load per refetch (mount + every refocus): overlapping
-  // loads could land out of order and show stale board cards, and an unmount
-  // mid-flight leaked the setState (cave-psp8; mirrors useProjects.load).
-  const boardAbortRef = useRef<AbortController | null>(null);
-  const loadBoardCards = async () => {
-    boardAbortRef.current?.abort();
-    const controller = new AbortController();
-    boardAbortRef.current = controller;
-    try {
-      const res = await fetch("/api/board", { cache: "no-store", signal: controller.signal });
-      const json = await res.json();
-      if (controller.signal.aborted) return;
-      if (json?.ok && Array.isArray(json.cards)) setBoardCards(json.cards as Card[]);
-    } catch {
-      /* transient — the Tasks section keeps the last known cards */
+  /** The picked familiar's direct grants with optimistic edits applied. */
+  const directByProject = useMemo(() => {
+    const map = new Map<string, ProjectAccessLevel>();
+    if (!familiar || !grantsData) return map;
+    for (const grant of grantsData.grants) {
+      if (grant.familiarId !== familiar.id) continue;
+      map.set(grant.projectId, normalizeAccessLevel(grant.access));
     }
-  };
-  useEffect(() => {
-    void loadBoardCards();
-    return () => boardAbortRef.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useRefreshOnFocus(loadBoardCards);
-
-  // "/" jumps to the projects filter (GitHub-style) while this surface is shown,
-  // unless the user is already typing in a field or holding a modifier.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      const el = searchRef.current;
-      if (!el) return;
-      e.preventDefault();
-      el.focus();
+    for (const [projectId, level] of optimistic) {
+      if (level === null) map.delete(projectId);
+      else map.set(projectId, level);
     }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Group sessions under their (override-aware) project root, applying the
-  // shared manual order, so the detail pane lists chats in the rail's order.
-  const chatsByRoot = useMemo(() => {
-    // Hide chats whose delete is pending in the undo window (still on the
-    // server; restored if the user hits Undo).
-    const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
-    const visible = hidden.size ? sessions.filter((s) => !hidden.has(s.id)) : sessions;
-    const overridden = applyProjectOverrides(visible, projectOverrides);
-    const byRoot = new Map<string, SessionRow[]>();
-    for (const session of overridden) {
-      const root = normalizeProjectRoot(session.project_root);
-      const list = byRoot.get(root) ?? [];
-      list.push(session);
-      byRoot.set(root, list);
-    }
-    for (const [root, list] of byRoot) byRoot.set(root, applyManualOrder(list, order));
-    return byRoot;
-  }, [sessions, projectOverrides, order, deletePending]);
-
-  const lastActiveByRootKey = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [root, list] of chatsByRoot) map.set(root, lastActiveMs(list));
     return map;
-  }, [chatsByRoot]);
+  }, [familiar, grantsData, optimistic]);
 
-  // List order per the sort toggle: alphabetical (stable, scannable) or by
-  // last session activity, newest first (alphabetical tiebreak so idle
-  // projects don't shuffle). Session rows inside the detail pane keep their
-  // own manual/recency ordering either way.
-  const sortedProjects = useMemo(() => {
-    const az = sortProjectsAlphabetically(projects);
-    if (sortMode === "az") return az;
-    return [...az].sort(
-      (a, b) =>
-        (lastActiveByRootKey.get(normalizeProjectRoot(b.root)) ?? 0) -
-        (lastActiveByRootKey.get(normalizeProjectRoot(a.root)) ?? 0),
-    );
-  }, [projects, sortMode, lastActiveByRootKey]);
+  /** Every project's row model: effective state + where it comes from. */
+  const rowByProject = useMemo(() => {
+    const map = new Map<string, RowModel>();
+    if (!familiar) return map;
+    const directGrants = [...directByProject].map(([projectId, access]) => ({
+      familiarId: familiar.id,
+      projectId,
+      access,
+    }));
+    const groups = grantsData?.groups ?? [];
+    for (const project of projects) {
+      if (supreme) {
+        map.set(project.id, { project, state: "write", direct: "write", groupNames: [] });
+        continue;
+      }
+      const effective = resolveEffectiveAccess({
+        directGrants,
+        groups,
+        familiarId: familiar.id,
+        projectId: project.id,
+      });
+      map.set(project.id, {
+        project,
+        state: effective.level ?? "none",
+        direct: effective.direct,
+        groupNames: effective.groups.map((g) => g.groupName),
+      });
+    }
+    return map;
+  }, [projects, familiar, directByProject, grantsData, supreme]);
 
-  // Resolve the selection each render: the stored id when it still exists,
-  // otherwise the most recently active project (then the first). Deleting the
-  // selected project or a familiar-scope change re-runs this automatically.
-  const selectedProjectId = useMemo(
-    () =>
-      resolveSelectedProjectId(
-        storedSelection,
-        sortedProjects.map((p) => ({ id: p.id, rootKey: normalizeProjectRoot(p.root) })),
-        lastActiveByRootKey,
-      ),
-    [storedSelection, sortedProjects, lastActiveByRootKey],
+  // Toolbar tally always spans the whole map, never the filtered subset.
+  const counts = useMemo(
+    () => accessCounts([...rowByProject.values()].map((row) => row.state)),
+    [rowByProject],
   );
-  const selectedProject = useMemo(
-    () => sortedProjects.find((p) => p.id === selectedProjectId) ?? null,
-    [sortedProjects, selectedProjectId],
-  );
 
-  // The command palette's "Open project" rows land here: select that project,
-  // reveal the detail pane, and scroll its list row into view.
+  // ── Search ─────────────────────────────────────────────────────────────
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
+  const sections = useMemo(() => splitProjectsBySection(filtered), [filtered]);
+
+  // "/" jumps to the search box (unless focus is already in an editable).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Command palette "Open project" → scroll the row into view and flash it.
+  const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const onFocus = (e: Event) => {
       const detail = (e as CustomEvent<{ root?: string }>).detail;
@@ -330,588 +237,347 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
       const rootKey = normalizeProjectRoot(detail.root);
       const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
       if (!match) return;
-      selectProject(match.id);
+      setQuery("");
+      setFlashId(match.id);
       window.requestAnimationFrame(() => {
         document
-          .getElementById(`pcard-el:${rootKey}`)
-          ?.scrollIntoView({ block: "nearest", behavior: smoothScrollBehavior() });
+          .getElementById(`project-access-row:${match.id}`)
+          ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
       });
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
     return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
   }, [projects]);
+  useEffect(() => {
+    if (!flashId) return;
+    const timer = window.setTimeout(() => setFlashId(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [flashId]);
 
-  // Roots with a live signal (running / recently-failed / active ≤24h) — powers
-  // the header's active count and the opt-in Active filter. Recomputed each
-  // minute (minuteTick) so "recent" ages out. Never reorders the list.
-  const activeRoots = useMemo(() => {
-    void minuteTick;
-    const set = new Set<string>();
-    for (const [root, list] of chatsByRoot) {
-      if (deriveProjectStatus(list) !== null) set.add(root);
-    }
-    return set;
-  }, [chatsByRoot, minuteTick]);
-  const activeCount = useMemo(
-    () => sortedProjects.reduce((n, p) => n + (activeRoots.has(normalizeProjectRoot(p.root)) ? 1 : 0), 0),
-    [sortedProjects, activeRoots],
+  // ── Mutations ──────────────────────────────────────────────────────────
+  const cycleRow = useCallback(
+    async (row: RowModel) => {
+      if (!familiar || supreme || pendingIds.has(row.project.id)) return;
+      const next = nextAccessState(row.state);
+      if (next === "none" && !row.direct) {
+        // Nothing to revoke — the level is inherited from a group.
+        announce(
+          `${row.project.name} keeps ${accessStateMeta(row.state).label} via ${row.groupNames.join(", ") || "an access group"}. Edit the group to change it.`,
+        );
+        return;
+      }
+      const op: AccessOp =
+        next === "none"
+          ? { projectId: row.project.id, op: "revoke" }
+          : { projectId: row.project.id, op: "grant", access: next };
+      setPendingIds((prev) => new Set(prev).add(row.project.id));
+      setOptimistic((prev) => new Map(prev).set(row.project.id, next === "none" ? null : next));
+      try {
+        await runAccessOp(familiar.id, op);
+        setMutateError(null);
+        await loadGrants();
+        announce(`${row.project.name}: ${accessStateMeta(next).label}`);
+      } catch {
+        setMutateError(`Couldn’t update access for ${row.project.name}.`);
+      } finally {
+        // Drop the optimistic layer either way — the snapshot (fresh on
+        // success, unchanged on failure) is the truth again.
+        setOptimistic((prev) => {
+          const copy = new Map(prev);
+          copy.delete(row.project.id);
+          return copy;
+        });
+        setPendingIds((prev) => {
+          const copy = new Set(prev);
+          copy.delete(row.project.id);
+          return copy;
+        });
+      }
+    },
+    [familiar, supreme, pendingIds, announce, loadGrants],
   );
 
-  // Filter by name or path so the alphabetical list stays scannable when there
-  // are many projects, then (opt-in) narrow to active projects only. Filtering
-  // only narrows the list pane — the detail keeps showing the selection.
-  const visibleProjects = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = q
-      ? sortedProjects.filter(
-          (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
-        )
-      : sortedProjects;
-    if (statusFilter === "active") {
-      list = list.filter((p) => activeRoots.has(normalizeProjectRoot(p.root)));
-    }
-    return list;
-  }, [sortedProjects, query, statusFilter, activeRoots]);
-
-  // Move a session to another project (via the row's "Move to project" context
-  // menu). targetRoot must be normalized. Captures the prior override first so
-  // the move can be undone precisely (restore the old override, or clear it if
-  // there wasn't one), then raises the undo toast.
-  const moveSessionToProject = (sessionId: string, targetRoot: string) => {
-    const prevRoot = projectOverrides[sessionId] ?? null;
-    const moved = sessions.find((s) => s.id === sessionId);
-    const destName =
-      projects.find((p) => normalizeProjectRoot(p.root) === targetRoot)?.name ?? shortRoot(targetRoot);
-    const movedTitle = moved ? stripLeadingTrailingEmoji(stripTaskPrefix(moved.title)) || "chat" : "chat";
-    setProjectOverride(sessionId, targetRoot);
-    setMoveToast({ sessionId, prevRoot, label: `Moved “${movedTitle}” to ${destName}` });
-  };
-
-  const undoMove = () => {
-    if (!moveToast) return;
-    if (moveToast.prevRoot) setProjectOverride(moveToast.sessionId, moveToast.prevRoot);
-    else clearProjectOverride(moveToast.sessionId);
-    setMoveToast(null);
-    announce("Move undone.");
-  };
-
-  function openCreateProjectForm() {
-    setShowForm(true);
-    setCreateError(null);
-    window.setTimeout(() => rootInputRef.current?.focus(), 0);
-  }
-
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const name = nameDraft.trim();
-    const root = rootDraft.trim();
-    if (!name || !root) return;
-    setCreating(true);
-    setProjectError(null);
-    setCreateError(null);
-    try {
-      const project = await createProjectOrThrow(name, root, { emitMutation: !activeFamiliarId });
-      if (project && activeFamiliarId) {
-        // Register alone leaves the project 403ing in chat for this familiar —
-        // grant it here so "New project" is usable the moment it's created.
-        const granted = await addChatProject({
-          root,
-          familiarId: activeFamiliarId,
-          createProject,
-          existingProjectId: project.id,
-          projectJustCreated: true,
-        });
-        if (!granted.ok) {
-          const message = `Project created, but grant failed: ${granted.error}`;
-          setSessionError(message);
-          setProjectError(message);
+  const applyOps = useCallback(
+    async (ops: AccessOp[], doneMessage: string) => {
+      if (!familiar || ops.length === 0 || busyAll) return;
+      setBusyAll(true);
+      setPendingIds(new Set(ops.map((op) => op.projectId)));
+      setOptimistic((prev) => {
+        const copy = new Map(prev);
+        for (const op of ops) copy.set(op.projectId, op.op === "grant" ? op.access : null);
+        return copy;
+      });
+      let failed = 0;
+      // Sequential on purpose: the grants store is a single document, so
+      // parallel writes could interleave.
+      for (const op of ops) {
+        try {
+          await runAccessOp(familiar.id, op);
+        } catch {
+          failed += 1;
         }
       }
-      if (!project) return;
-      setNameDraft("");
-      setRootDraft("");
-      setShowForm(false);
-      setQuery("");
-      // Land on the new project's detail pane — its New chat button is the
-      // follow-up action (replaces the old "Created X" banner).
-      selectProject(project.id);
-      announce(`Created project ${name}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not create that project.";
-      setCreateError(message);
-      setProjectError(message);
-    } finally {
-      setCreating(false);
-    }
-  };
+      await loadGrants();
+      setOptimistic(new Map());
+      setPendingIds(new Set());
+      setBusyAll(false);
+      if (failed > 0) setMutateError(`Couldn’t update ${failed} of ${ops.length} projects.`);
+      else {
+        setMutateError(null);
+        announce(doneMessage);
+      }
+    },
+    [familiar, busyAll, loadGrants, announce],
+  );
 
-  // A folder was chosen (native dialog or in-app browser) → fill the path, and
-  // seed the name from the folder when the user hasn't typed one yet.
-  const applyPickedDir = (dir: string) => {
-    const trimmed = dir.trim();
-    if (!trimmed) return;
-    setRootDraft(trimmed);
-    setCreateError(null);
-    setNameDraft((current) => (current.trim() ? current : pathBasename(trimmed)));
-    setProjectError(null);
-    rootInputRef.current?.focus();
-  };
-
-  // "Browse…" — native OS folder dialog on desktop, in-app $HOME browser on web.
-  const handleBrowse = async () => {
-    if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const picked = await invoke<string | null>("shell_pick_directory");
-        if (picked) applyPickedDir(picked);
+  const setAllInSection = useCallback(
+    (section: ProjectSection, target: AccessState) => {
+      const ids = sections[section].map((p) => p.id);
+      const ops = setAllOps(ids, directByProject, target);
+      if (ops.length === 0) {
+        announce("Nothing to change.");
         return;
-      } catch {
-        // Native dialog unavailable on this build — fall back to the web browser.
       }
-    }
-    setPickerOpen(true);
-  };
+      void applyOps(
+        ops,
+        `${SECTION_LABELS[section]}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+      );
+    },
+    [sections, directByProject, applyOps, announce],
+  );
 
-  // Delete one chat, mirroring the Chats list delete (DELETE
-  // /api/chat/conversation/:id). Returns whether it succeeded; callers report
-  // confirmed ids to the Workspace-owned deletion boundary.
-  const deleteOneSession = async (sessionId: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-      const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
-        setSessionError(`Couldn't delete chat: ${json.error ?? "delete failed"}`);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      setSessionError(`Couldn't delete chat: ${err instanceof Error ? err.message : "delete failed"}`);
-      return false;
-    }
-  };
-
-  // Delete a single chat from the detail pane, then report it so Workspace
-  // removes the row from every shared-session surface before reloading.
-  const handleDeleteSession = async (sessionId: string) => {
-    setSessionError(null);
-    if (await deleteOneSession(sessionId)) onSessionsDeleted([sessionId]);
-  };
-
-  // Bulk-delete the chats selected in the detail pane — deferred + undoable:
-  // hide them now, then report only confirmed ids after the undo window.
-  const handleDeleteSessions = async (sessionIds: string[]) => {
-    setSessionError(null);
-    if (sessionIds.length === 0) return;
-    const ids = new Set(sessionIds);
-    const removed = sessions.filter((s) => ids.has(s.id));
-    if (removed.length === 0) return;
-    setMoveToast(null); // one bottom toast at a time
-    scheduleSessionDelete(
-      removed,
-      `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
-      async () => {
-        const results = await Promise.all(removed.map((s) => deleteOneSession(s.id)));
-        const deletedIds = successfulSessionIds(removed.map((session) => session.id), results);
-        if (deletedIds.length > 0) onSessionsDeleted(deletedIds);
-      },
+  const resetAll = useCallback(async () => {
+    if (!familiar) return;
+    const ops = setAllOps(
+      projects.map((p) => p.id),
+      directByProject,
+      "none",
     );
-  };
+    if (ops.length === 0) {
+      announce("No direct grants to reset.");
+      return;
+    }
+    const ok = await confirm({
+      title: `Reset ${familiarLabel(familiar)}’s access?`,
+      body: `Removes ${ops.length === 1 ? "its 1 direct project grant" : `all ${ops.length} direct project grants`}. Access inherited from groups stays.`,
+      confirmLabel: "Reset all",
+      danger: true,
+    });
+    if (!ok) return;
+    void applyOps(ops, `${familiarLabel(familiar)}: all direct grants removed.`);
+  }, [familiar, projects, directByProject, confirm, applyOps, announce]);
 
-  const openBoard = () => {
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
-  };
+  // ── Render ─────────────────────────────────────────────────────────────
+  const isLoading = (projectsLoading && projects.length === 0) || (grantsLoading && !grantsData);
+  const controlsDisabled = !familiar || supreme || busyAll;
 
-  // ArrowLeft in the detail pane returns focus to the selected list row (and,
-  // under the narrow collapse, brings the list pane back). Guarded so it never
-  // steals the caret from a text field; menus render in portals, so their own
-  // arrow navigation never bubbles here.
-  const onDetailKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "ArrowLeft" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    e.preventDefault();
-    setPane("list");
-    if (!selectedProject) return;
-    const rootKey = normalizeProjectRoot(selectedProject.root);
-    window.requestAnimationFrame(() => document.getElementById(`pcard-el:${rootKey}`)?.focus());
-  };
-
-  // ── Rail chrome (design-handoff): header actions + filter/sort controls ────
-  const railActions = (
-    <>
-      <IconButton
-        icon="ph:arrows-clockwise-bold"
-        size="sm"
-        onClick={() => void reload()}
-        disabled={loading}
-        aria-label="Refresh projects"
-        title="Refresh projects"
-        className="projects-rail-action"
+  let body: React.ReactNode;
+  if (isLoading) {
+    body = <SkeletonRows count={8} className="projects-access-skeleton" />;
+  } else if (projectsError || (grantsError && !grantsData)) {
+    body = (
+      <ErrorState
+        headline="Couldn’t load project access"
+        subtitle={projectsError ?? grantsError}
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => {
+              reload();
+              setGrantsLoading(true);
+              void loadGrants();
+            }}
+          >
+            Try again
+          </Button>
+        }
       />
-      <IconButton
-        icon="ph:plus-bold"
-        size="sm"
-        onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
-        aria-label="New project"
-        title="New project"
-        className="projects-rail-action projects-rail-action--new"
+    );
+  } else if (familiars.length === 0) {
+    body = (
+      <EmptyState
+        icon="ph:users-three"
+        headline="No familiars yet"
+        subtitle="Summon a familiar first — project access is granted per familiar."
       />
-    </>
-  );
-
-  const railSearch = (
-    <div className="projects-rail-controls">
-      <div className="projects-rail-search">
-        <Icon name="ph:magnifying-glass" width={13} className="projects-rail-search__icon" aria-hidden />
-        <input
-          ref={searchRef}
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && query) {
-              event.preventDefault();
-              setQuery("");
-            }
-          }}
-          placeholder="Filter projects…"
-          aria-label="Filter projects"
-          className="focus-ring projects-rail-search__input"
-        />
-        {!query && (
-          <kbd aria-hidden className="projects-rail-search__kbd">
-            /
-          </kbd>
+    );
+  } else if (projects.length === 0) {
+    body = (
+      <EmptyState
+        icon="ph:folder"
+        headline="No projects yet"
+        subtitle="Register a project from the chat composer and it will show up here."
+        actions={
+          <Button
+            variant="secondary"
+            leadingIcon="ph:sparkle"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:salem-open"))}
+          >
+            Ask Salem
+          </Button>
+        }
+      />
+    );
+  } else {
+    const visibleSections = SECTION_ORDER.filter((section) => sections[section].length > 0);
+    body = (
+      <>
+        {supreme && familiar ? (
+          <p className="projects-access-supreme" role="note">
+            <Icon name="ph:lock-simple" width={13} aria-hidden />
+            {familiarLabel(familiar)} is the supreme familiar — full access to everything, always.
+          </p>
+        ) : null}
+        {mutateError ? (
+          <p className="projects-access-error" role="alert">
+            {mutateError}
+          </p>
+        ) : null}
+        {visibleSections.length === 0 ? (
+          <p className="projects-access-nomatch" role="status">
+            No projects match “{query.trim()}”.
+          </p>
+        ) : (
+          visibleSections.map((section) => (
+            <section key={section} className="projects-access-section" aria-label={SECTION_LABELS[section]}>
+              <header className="projects-access-section-head">
+                <h2 className="projects-access-section-title">
+                  {SECTION_LABELS[section]}
+                  <span className="projects-access-section-count">{sections[section].length}</span>
+                </h2>
+                <span className="projects-access-rule" aria-hidden />
+                <span className="projects-access-setall">
+                  <span className="projects-access-setall-label">Set all:</span>
+                  {(["none", "read", "write"] as const).map((target) => (
+                    <button
+                      key={target}
+                      type="button"
+                      className="projects-access-setall-btn"
+                      disabled={controlsDisabled}
+                      onClick={() => setAllInSection(section, target)}
+                    >
+                      {target === "none" ? "None" : accessStateMeta(target).label}
+                    </button>
+                  ))}
+                </span>
+              </header>
+              <ul className="projects-access-list">
+                {sections[section].map((project) => {
+                  const row = rowByProject.get(project.id) ?? {
+                    project,
+                    state: "none" as AccessState,
+                    direct: null,
+                    groupNames: [],
+                  };
+                  const meta = accessStateMeta(row.state);
+                  const pending = pendingIds.has(project.id);
+                  const viaGroups =
+                    row.groupNames.length > 0 && !supreme
+                      ? ` — via ${row.groupNames.join(", ")}`
+                      : "";
+                  return (
+                    <li key={project.id}>
+                      <button
+                        id={`project-access-row:${project.id}`}
+                        type="button"
+                        className={`projects-access-row is-${row.state}${pending ? " is-pending" : ""}${flashId === project.id ? " is-flash" : ""}`}
+                        disabled={pending || supreme}
+                        onClick={() => void cycleRow(row)}
+                        title={
+                          supreme
+                            ? `${project.name} — Full (supreme familiar)`
+                            : `${project.name} — ${meta.label}${viaGroups}. Click to ${accessStateMeta(row.state).action}.`
+                        }
+                        aria-label={`${project.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
+                      >
+                        <Icon className="projects-access-row-icon" name="ph:folder" width={15} aria-hidden />
+                        <span className="projects-access-row-name">{project.name}</span>
+                        {row.groupNames.length > 0 && !supreme ? (
+                          <Icon
+                            className="projects-access-row-group"
+                            name="ph:users-three"
+                            width={13}
+                            aria-hidden
+                          />
+                        ) : null}
+                        <span className={`projects-access-pill is-${row.state}`}>
+                          <span className="projects-access-dot" aria-hidden />
+                          {meta.label}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
         )}
-      </div>
-      <div className="projects-rail-filterrow">
-        {/* Opt-in Active filter — narrows without reordering. */}
-        <div role="group" aria-label="Filter by activity" className="flex min-w-0 items-center gap-1">
-          {([
-            { value: "all", label: "All" },
-            { value: "active", label: `Active ${activeCount}` },
-          ] as const).map((opt) => (
-            <Button
-              key={opt.value}
-              variant="ghost"
-              size="xs"
-              onClick={() => setStatusFilter(opt.value)}
-              aria-pressed={statusFilter === opt.value}
-              className={`h-6 rounded-[var(--radius-control)] px-2 text-[length:var(--text-xs)] font-medium ${
-                statusFilter === opt.value
-                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              {opt.label}
-            </Button>
-          ))}
-        </div>
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={() => changeSortMode(sortMode === "az" ? "recent" : "az")}
-          aria-label="Sort projects"
-          title={
-            sortMode === "az"
-              ? "Alphabetical — switch to most recently active first"
-              : "Most recently active first — switch to alphabetical"
-          }
-          leadingIcon="ph:sort-ascending"
-          className="ml-auto h-6 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-        >
-          {sortMode === "az" ? "A–Z" : "Recent"}
-        </Button>
-      </div>
-    </div>
-  );
+      </>
+    );
+  }
 
   return (
-    <div className="projects-view flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <Modal open={showForm} onClose={() => setShowForm(false)} breadcrumb={["Projects", "New project"]}>
-        <form
-          onSubmit={handleCreate}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setShowForm(false);
-          }}
-          className="flex min-w-0 flex-col gap-3"
-        >
-          <label className="flex flex-col gap-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-            Name
+    <div className="projects-access" data-surface="projects">
+      <div className="projects-access-inner">
+        <header className="projects-access-header">
+          <p className="projects-access-eyebrow">Familiars</p>
+          <h1 className="projects-access-title">Project access</h1>
+          <p className="projects-access-subtitle">
+            Choose what each familiar can see and touch. Click any project to cycle its access —
+            none, read, or full.
+          </p>
+        </header>
+
+        <div className="projects-access-toolbar">
+          {familiars.length > 0 && familiar ? (
+            <StandardSelect
+              label="Familiar"
+              value={familiar.id}
+              onChange={(id) => setPickedFamiliarId(id)}
+              options={familiars.map((f) => ({ value: f.id, label: familiarLabel(f) }))}
+              className="projects-access-familiar"
+            />
+          ) : null}
+          <label className="projects-access-search">
+            <Icon name="ph:magnifying-glass" width={14} aria-hidden />
             <input
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              placeholder="e.g., Coven Scrolls"
-              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-base)] font-normal text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find a project…"
+              aria-label="Find a project"
             />
           </label>
-          <div className="space-y-1">
-            <label className="flex flex-col gap-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-              Folder
-              <span className="flex items-center gap-2">
-                <input
-                  ref={rootInputRef}
-                  value={rootDraft}
-                  onChange={(event) => {
-                    setRootDraft(event.target.value);
-                    setCreateError(null);
-                    setProjectError(null);
-                  }}
-                  placeholder="/absolute/path/to/project"
-                  aria-invalid={Boolean(createError)}
-                  aria-describedby={createError ? "project-root-help project-root-error" : "project-root-help"}
-                  className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[length:var(--text-sm)] font-normal text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void handleBrowse()}
-                  title="Browse for a project folder"
-                  className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
-                  leadingIcon="ph:folder-open"
-                >
-                  Browse
-                </Button>
-              </span>
-            </label>
-            <p id="project-root-help" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              {PROJECT_ROOT_WORKSPACE_HELP}
-            </p>
-            {createError ? (
-              <p id="project-root-error" role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
-                {createError}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowForm(false)}
-              className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={creating || !nameDraft.trim() || !rootDraft.trim()}
-              className="h-9 rounded-[var(--radius-control)] px-3 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
-            >
-              {creating ? "Creating…" : "Create project"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <DirectoryPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(dir) => {
-          applyPickedDir(dir);
-          setPickerOpen(false);
-        }}
-      />
-
-      {(error && projects.length > 0) || projectError || sessionError ? (
-        <div className="shrink-0 space-y-2 px-4 pt-3 sm:px-6">
-          {error && projects.length > 0 ? (
-            <div
-              role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
-            >
-              <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
-              <Button
-                variant="danger-ghost"
-                size="xs"
-                onClick={() => void reload()}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
-              >
-                Retry
-              </Button>
-            </div>
-          ) : null}
-          {projectError ? (
-            <div
-              role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
-            >
-              <span className="min-w-0 truncate">{projectError}</span>
-              <Button
-                variant="danger-ghost"
-                size="xs"
-                onClick={() => setProjectError(null)}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
-              >
-                Dismiss
-              </Button>
-            </div>
-          ) : null}
-          {sessionError ? (
-            <div
-              role="alert"
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
-            >
-              <span className="min-w-0 truncate">{sessionError}</span>
-              <Button
-                variant="danger-ghost"
-                size="xs"
-                onClick={() => setSessionError(null)}
-                className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[length:var(--text-xs)] hover:bg-[var(--color-danger)]/15"
-              >
-                Dismiss
-              </Button>
-            </div>
-          ) : null}
+          <span className="projects-access-counts" title={`${counts.none} without access · ${counts.read} read · ${counts.write} full`}>
+            <span className="projects-access-count is-none">
+              <span className="projects-access-dot" aria-hidden />
+              {counts.none}
+            </span>
+            <span className="projects-access-count is-read">
+              <span className="projects-access-dot" aria-hidden />
+              {counts.read}
+            </span>
+            <span className="projects-access-count is-write">
+              <span className="projects-access-dot" aria-hidden />
+              {counts.write}
+            </span>
+            <span className="sr-only">{`${counts.none} without access, ${counts.read} read, ${counts.write} full`}</span>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="projects-access-reset"
+            leadingIcon="ph:arrow-counter-clockwise"
+            disabled={controlsDisabled}
+            onClick={() => void resetAll()}
+          >
+            Reset all
+          </Button>
         </div>
-      ) : null}
 
-      <main ref={shellRef} className="projects-shell">
-        {error && projects.length === 0 ? (
-          <ErrorState
-            icon="ph:warning"
-            headline="Couldn't load projects"
-            subtitle={error}
-            actions={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void reload()}
-                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-              >
-                Retry
-              </Button>
-            }
-          />
-        ) : loading && projects.length === 0 ? (
-          <div className="flex w-full flex-col gap-2 px-4 py-4 sm:px-6">
-            <SkeletonRows count={4} />
-          </div>
-        ) : projects.length === 0 ? (
-          <EmptyState
-            icon="ph:folder-open"
-            headline="No projects yet"
-            subtitle="Add a project folder to group chats by codebase."
-            actions={
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={openCreateProjectForm}
-                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-                >
-                  New project
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    if (typeof window !== "undefined") {
-                      window.dispatchEvent(new CustomEvent("cave:salem-open"));
-                    }
-                  }}
-                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-                  leadingIcon="ph:sparkle"
-                >
-                  Ask Salem
-                </Button>
-              </>
-            }
-          />
-        ) : (
-          <div className="projects-hub" data-pane={pane}>
-            <SurfaceRail
-              storageKey="cave:projects:rail"
-              title="Projects"
-              ariaLabel="Projects"
-              actions={railActions}
-              search={railSearch}
-              forceOpen={narrow}
-            >
-              {(railOpen) => (
-                <div ref={listRef} className="projects-hub__list">
-                  {visibleProjects.length === 0 ? (
-                    railOpen ? (
-                      <p className="px-2 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                        {query.trim()
-                          ? `No projects match “${query.trim()}”.`
-                          : "No active projects right now."}
-                      </p>
-                    ) : null
-                  ) : (
-                    <ProjectList
-                      projects={visibleProjects}
-                      chatsByRoot={chatsByRoot}
-                      selectedId={selectedProjectId}
-                      railOpen={railOpen}
-                      onSelect={selectProject}
-                      onEnterDetail={focusDetailPane}
-                      onNewChat={onNewChat}
-                    />
-                  )}
-                </div>
-              )}
-            </SurfaceRail>
-            <div
-              ref={detailRef}
-              tabIndex={-1}
-              role="region"
-              aria-label={selectedProject ? `${selectedProject.name} details` : "Project details"}
-              onKeyDown={onDetailKeyDown}
-              className="projects-hub__detail"
-            >
-              {selectedProject ? (
-                <ProjectDetail
-                  key={selectedProject.id}
-                  project={selectedProject}
-                  chats={chatsByRoot.get(normalizeProjectRoot(selectedProject.root)) ?? []}
-                  allProjects={projects}
-                  boardCards={boardCards}
-                  familiars={familiars}
-                  onRename={renameProject}
-                  onUpdateRoot={updateRoot}
-                  onUpdateColor={updateColor}
-                  onDelete={deleteProject}
-                  onNewChat={onNewChat}
-                  onOpenSession={openSessionById}
-                  onDeleteSession={handleDeleteSession}
-                  onDeleteSessions={handleDeleteSessions}
-                  onMoveSession={moveSessionToProject}
-                  onOpenBoard={openBoard}
-                  onBack={() => setPane("list")}
-                />
-              ) : (
-                <div className="projects-detail-empty">Pick a project to see its details.</div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-      {moveToast ? (
-        <UndoToast
-          key={moveToast.sessionId}
-          message={moveToast.label}
-          icon="ph:arrow-right-bold"
-          undoAriaLabel="Undo move"
-          onUndo={undoMove}
-          onDismiss={() => setMoveToast(null)}
-          durationMs={5000}
-          autoDismiss
-        />
-      ) : null}
-      {deletePending ? (
-        <UndoToast
-          key={deletePending.id}
-          message={`Deleted ${deletePending.label}`}
-          undoAriaLabel="Undo delete"
-          onUndo={() => {
-            undoSessionDelete();
-            announce("Delete undone.");
-          }}
-          onDismiss={commitSessionDelete}
-        />
-      ) : null}
+        {body}
+      </div>
     </div>
   );
 }

@@ -71,7 +71,13 @@ test("useProjects scopes the project list by familiarId", () => {
 
 test("chat surface consumers pass the active familiar scope", () => {
   assert.match(read("src/components/chat-list.tsx"), /useProjects\(\{ familiarId: familiar\?\.id/, "chat-list scopes its project rail");
-  assert.match(read("src/components/projects-view.tsx"), /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView scopes its project list");
+  // The Projects surface is the access console: it deliberately loads
+  // UNSCOPED so every registered project is visible to grant or revoke.
+  assert.match(
+    read("src/components/projects-view.tsx"),
+    /useProjects\(\)/,
+    "ProjectsView loads unscoped — it manages the grants themselves",
+  );
   assert.match(read("src/components/workspace.tsx"), /\/api\/sessions\/list\$\{scope\}/, "workspace scopes the session poll by familiar");
 });
 
