@@ -52,18 +52,30 @@ assert.match(editor, /syntaxHighlighting\(moodHighlight\)/, "the editor installs
 // The JSON import is a shared module singleton, and Shiki normalizes themes
 // IN PLACE (prepends a scope-less global tokenColors entry). moodColor must
 // skip scope-less entries instead of crashing every editor surface loaded
-// after a chat code block rendered, and message-bubble must hand Shiki a
-// clone, never the module instance (cave-h1hi).
+// after a chat code block rendered, and the app-wide Shiki singleton
+// (lib/shiki-highlighter, used by message-bubble + gh-diff-view) must hand
+// Shiki a clone, never the module instance (cave-h1hi).
 assert.match(
   theme,
   /const scopes = Array\.isArray\(tc\.scope\) \? tc\.scope : typeof tc\.scope === "string" \? \[tc\.scope\] : \[\]/,
   "moodColor guards scope-less tokenColors entries (valid TextMate globals; Shiki injects one)",
 );
+const highlighterSource = await readFile(new URL("../lib/shiki-highlighter.ts", import.meta.url), "utf8");
+assert.match(
+  highlighterSource,
+  /themes: \[structuredClone\(moodCTheme\)/,
+  "Shiki receives a clone of the theme, never the shared JSON module instance",
+);
 const bubbleSource = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 assert.match(
   bubbleSource,
-  /themes: \[structuredClone\(moodCTheme\)/,
-  "Shiki receives a clone of the theme, never the shared JSON module instance",
+  /import \{ getShikiHighlighter \} from "@\/lib\/shiki-highlighter"/,
+  "message-bubble colors code through the shared app-wide Shiki singleton",
+);
+assert.doesNotMatch(
+  bubbleSource,
+  /createHighlighter\(/,
+  "message-bubble must not create its own Shiki instance (the shared singleton owns the clone fix)",
 );
 // The code surface stays dark in EVERY app theme (light modes included), so
 // editor text/gutter inks must be fixed mood-c inks, not theme text tokens

@@ -51,10 +51,47 @@ assert.match(diffLineClass("context"), /gh-diff__line--ctx/, "context class");
 const ghView = readFileSync(new URL("../components/github-view.tsx", import.meta.url), "utf8");
 assert.match(ghView, /import \{ DiffHunk \} from "@\/components\/gh-diff-view"/, "github-view imports DiffHunk");
 assert.match(ghView, /<DiffHunk hunk=\{thread\.diffHunk\}/, "review threads render the diff via DiffHunk, not a raw <pre>");
+assert.match(ghView, /<DiffHunk hunk=\{thread\.diffHunk\} path=\{thread\.path\}/, "review threads pass the file path so the diff can pick a Shiki grammar");
 assert.doesNotMatch(ghView, /thread\.diffHunk\.split\("\\n"\)\.slice\(-4\)/, "the old raw last-4-lines <pre> is gone");
 
 const diffView = readFileSync(new URL("../components/gh-diff-view.tsx", import.meta.url), "utf8");
 assert.match(diffView, /export function DiffHunk/, "exports DiffHunk");
 assert.match(diffView, /parseDiff/, "DiffHunk parses the hunk");
+
+// ── Wiring: syntax highlighting rides the shared app-wide Shiki singleton ─────
+assert.match(
+  diffView,
+  /import \{ getShikiHighlighter \} from "@\/lib\/shiki-highlighter"/,
+  "DiffHunk highlights through the shared Shiki singleton (no second createHighlighter instance)",
+);
+assert.doesNotMatch(diffView, /createHighlighter\(/, "DiffHunk must not create its own Shiki instance");
+assert.match(
+  diffView,
+  /resolveShikiLang\(path \? path\.split\("\."\)\.pop\(\) : null\)/,
+  "the diff grammar resolves from the file path's extension",
+);
+assert.match(
+  diffView,
+  /if \(lang === "text" \|\| lines\.length === 0\) return;/,
+  "unknown grammars skip the highlight pass entirely (plain text render, no WASM load)",
+);
+assert.match(
+  diffView,
+  /l\.type === "meta" \? "" : splitMarker\(l\.text\)\.content/,
+  "hunk is highlighted as one document with meta rows blanked so tokens stay line-aligned",
+);
+assert.match(
+  diffView,
+  /className="gh-diff__marker" aria-hidden/,
+  "the +/-/context marker renders in its own non-copyable span so diff and token coloring compose",
+);
+assert.match(diffView, /if \(!cancelled\) setTokens\(result\.tokens\);/, "async highlight lands behind a cancelled guard");
+
+const bubbleView = readFileSync(new URL("../components/message-bubble.tsx", import.meta.url), "utf8");
+assert.match(
+  bubbleView,
+  /import \{ getShikiHighlighter \} from "@\/lib\/shiki-highlighter"/,
+  "chat code fences share the same Shiki singleton as the diff renderer",
+);
 
 console.log("gh-diff.test.ts: ok");
