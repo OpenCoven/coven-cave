@@ -70,6 +70,9 @@ type ActivityResult = {
    *  state over a dead token (cave-cjgg). */
   patInvalid?: boolean;
   login: string | null;
+  /** Organizations visible to the authenticated token. Unlike activity items,
+   * these remain useful even when no open work exists in an organization. */
+  organizations: string[];
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
 };
@@ -85,6 +88,26 @@ async function ghFetch(path: string, token: string | null) {
   const rateLimit = Number(res.headers.get("x-ratelimit-limit") ?? -1);
   const data = await res.json().catch(() => null);
   return { res, data, rateRemaining, rateLimit };
+}
+
+/**
+ * The activity searches below only describe current work. Fetch memberships
+ * separately so an organization selector represents the account's scope, not
+ * whichever organizations happen to have an open item today.
+ */
+async function fetchOrganizations(token: string): Promise<string[]> {
+  try {
+    const { res, data } = await ghFetch("/user/orgs?per_page=100", token);
+    if (!res.ok || !Array.isArray(data)) return [];
+    return Array.from(new Set(
+      data
+        .map((org) => typeof org?.login === "string" ? org.login : "")
+        .filter(Boolean),
+    )).sort((a, b) => a.localeCompare(b));
+  } catch {
+    // Memberships improve the selector but must not make activity unavailable.
+    return [];
+  }
 }
 
 export async function GET() {
@@ -126,6 +149,7 @@ export async function GET() {
   }
 
   const items: GitHubItem[] = [];
+  const organizations = token ? await fetchOrganizations(token) : [];
 
   // ── Open PRs authored by user ─────────────────────────────────────────────
   try {
@@ -232,6 +256,7 @@ export async function GET() {
     authed: !!token,
     patInvalid: patInvalid || undefined,
     login,
+    organizations,
     items,
     rateLimit: rateInfo,
   };

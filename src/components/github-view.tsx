@@ -2438,17 +2438,16 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     [items, filter],
   );
 
-  // Organization options come from the kind-filtered set; repository options
-  // narrow to the chosen org so the two selects cascade (org → repo). Keep a
-  // restored scope present even when it has no current activity: this endpoint
-  // only returns the user's open/assigned items, not the account's complete
-  // repository access list.
+  // Memberships define the account's organization scope; activity adds any
+  // organization represented by the current items. Repository options still
+  // narrow to the chosen org so the two selects cascade (org → repo).
   const orgOptions = useMemo(
     () => Array.from(new Set([
+      ...(activity?.organizations ?? []),
       ...filtered.map((i) => orgOf(i.repo)),
       ...(orgFilter === "all" ? [] : [orgFilter]),
     ])).sort((a, b) => a.localeCompare(b)),
-    [filtered, orgFilter],
+    [activity?.organizations, filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);

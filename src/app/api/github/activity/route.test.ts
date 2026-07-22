@@ -20,6 +20,16 @@ assert.match(
   /is:issue\+is:open\+assignee:\$\{login\}/,
   "assigned issue search should include private repos when a PAT is configured",
 );
+assert.match(
+  route,
+  /\/user\/orgs\?per_page=100/,
+  "authenticated activity should include the account's organization memberships",
+);
+assert.match(
+  route,
+  /organizations,\n\s*items,/,
+  "activity responses should expose memberships separately from open activity items",
+);
 assert.doesNotMatch(
   route,
   /is:(?:pr|issue)\+is:open\+is:public/,
@@ -34,4 +44,9 @@ assert.match(
   githubView,
   /Authenticated — private repos included/,
   "authenticated GitHub auth chip should make private repo visibility explicit",
+);
+assert.match(
+  githubView,
+  /\.\.\.\(activity\?\.organizations \?\? \[\]\)/,
+  "organization options should include authenticated memberships even without open activity",
 );

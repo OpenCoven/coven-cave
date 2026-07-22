@@ -9,6 +9,7 @@ export type ActivityResult = {
   authed: boolean;
   patInvalid?: boolean;
   login: string | null;
+  organizations: string[];
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
 };
@@ -19,7 +20,7 @@ export type SortDir = "asc" | "desc";
 export type GroupBy = "none" | "org" | "repo";
 
 export const GITHUB_PAT_URL =
-  "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
+  "https://github.com/settings/tokens/new?scopes=read:user,read:org,repo,notifications&description=Cave+local";
 
 export function orgOf(repo: string): string {
   const i = repo.indexOf("/");
