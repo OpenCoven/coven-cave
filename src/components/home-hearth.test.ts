@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   css,
+  /\.home-hearth-card \{[\s\S]{0,700}?margin-block: auto/,
+  "the card centers vertically (auto block margins; collapse to 0 when it overflows)",
+);
+assert.match(
+  css,
   /\.home-composer-root \{[\s\S]{0,900}?radial-gradient\([\s\S]{0,200}?var\(--accent-presence\)/,
   "the base behind the card carries the radial presence wash",
 );
@@ -49,11 +54,13 @@ assert.doesNotMatch(composer, /<HomeDigestCarousel/, "the digest carousel no lon
 // ── (2) Cards-only home: pills removed; Continue cards centered ─────────────
 assert.doesNotMatch(composer, /HomeSuggestionPills|useBoardCards\(\)/, "the cold-start pills (and their board snapshot) are gone from home");
 assert.doesNotMatch(css, /home-suggest-pill/, "the pill CSS is removed with the component");
-assert.match(
-  css,
-  /\.home-continue__label \{[\s\S]{0,300}?text-align: center/,
-  "the Continue label centers under the centered composer",
-);
+// Label strip (2026-07-22): the visible "Continue where you left off" heading
+// is retired — the cards read as resumable sessions on their own (title,
+// "Edited N ago", resume arrow); the section keeps its aria-label.
+const continueTsx = await readFile(new URL("./home/home-continue.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(continueTsx, /home-continue__label/, "no visible Continue heading renders");
+assert.match(continueTsx, /aria-label="Continue where you left off"/, "the section keeps its screen-reader label");
+assert.doesNotMatch(css, /home-continue__label/, "the label CSS is removed with the heading");
 assert.match(
   css,
   /\.home-continue__cards \{[\s\S]{0,300}?justify-content: center/,
