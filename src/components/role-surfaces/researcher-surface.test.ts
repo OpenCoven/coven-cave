@@ -354,6 +354,51 @@ test("polling is abortable, foreground-aware, and container responsive", () => {
   assert.match(css, /@container research-desk/);
 });
 
+test("stale poll responses never clobber fresher state (loadSeq guard)", () => {
+  // Every load claims a monotonic token and bails before each setState once a
+  // newer load or mutation superseded it (the familiar-work-queue-view /
+  // familiar-daily-notes pattern) — without it an in-flight 2s poll landing
+  // after start()/act() made the new mission vanish until the next poll.
+  assert.match(hook, /const loadSeq = useRef\(0\)/);
+  assert.match(hook, /const seq = \+\+loadSeq\.current/);
+  assert.match(hook, /if \(signal\?\.aborted \|\| seq !== loadSeq\.current\) return/);
+  assert.match(hook, /if \(seq !== loadSeq\.current\) return; \/\/ stale failure/);
+  // Switching familiars invalidates responses from the previous familiar…
+  assert.match(hook, /loadSeq\.current \+= 1; \/\/ invalidate in-flight responses from the previous familiar/);
+  // …and every mutation bumps the token when applying its refresh, so a poll
+  // that started before the action can never overwrite the fresher state.
+  const bumps = hook.match(/loadSeq\.current \+= 1/g) ?? [];
+  assert.ok(
+    bumps.length >= 5,
+    "the familiar-switch effect and the four mutating operations must all bump the token",
+  );
+});
+
+test("mutations resolve to { ok: false } on transport failure — never throw", () => {
+  // start/act/schedule/controlAutomation are awaited bare across the tabs; a
+  // network reject or non-JSON body must resolve to the same failure shape the
+  // API path returns, not become an unhandled rejection with a silent UI.
+  assert.match(hook, /return \{ ok: false as const, error: "Research could not start" \};/);
+  assert.match(hook, /return \{ ok: false as const, error: "Research action failed" \};/);
+  assert.match(hook, /return \{ ok: false as const, error: "Research schedule could not be created" \};/);
+  assert.match(hook, /return \{ ok: false as const, error: "Automation action failed" \};/);
+  const tries = hook.match(/try \{/g) ?? [];
+  assert.ok(tries.length >= 5, "load and all four mutations wrap their transport in try/catch");
+  // A failed act resyncs with server truth on BOTH failure paths — the refused
+  // action means the on-screen mission went stale, and a transport failure may
+  // still have landed server-side.
+  const actSection = hook.slice(hook.indexOf("const act = "), hook.indexOf("const schedule = "));
+  const resyncs = actSection.match(/void load\(\)/g) ?? [];
+  assert.equal(resyncs.length, 2, "act refreshes after refused actions and after transport failures");
+});
+
+test("routed Prompt modes are one-shot — consumed then cleared", () => {
+  // onNavigate stores the mode (pinned above) and the Prompt tab consumes it;
+  // the surface then clears the stored mode so a later manual visit to the
+  // Prompt tab never re-applies a stale mode over the user's own choice.
+  assert.match(surface, /if \(activeTab === "prompt" && promptMode !== null\) setPromptMode\(null\)/);
+});
+
 test("forms expose errors and narrow outputs become keyboard tabs", () => {
   assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
   assert.match(composer, /role="alert"/);

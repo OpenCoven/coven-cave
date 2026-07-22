@@ -21,7 +21,7 @@
  * session for /chat to open.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { settleEnhance } from "@/lib/prompt-enhancer";
@@ -150,6 +150,35 @@ function boundNumber(value: string, fallback: number, max: number): number {
   return Math.min(Math.trunc(parsed), max);
 }
 
+/** The four numeric bounds the editor exposes (spend/cost stay plan-driven). */
+type BoundKey = "wallClockMinutes" | "maxIterations" | "sourceTarget" | "checkpointEvery";
+
+/** Commit order: iterations apply before checkpoints so the cap is current. */
+const BOUND_KEYS: readonly BoundKey[] = [
+  "wallClockMinutes",
+  "maxIterations",
+  "sourceTarget",
+  "checkpointEvery",
+];
+
+/** One raw bound edit parsed against the same clamps the old handlers used:
+ *  invalid/empty falls back to 1, iterations drag checkpointEvery down with
+ *  them, and checkpointEvery caps at the current iteration count. */
+function applyBoundEdit(current: ResearchBounds, key: BoundKey, raw: string): ResearchBounds {
+  if (key === "maxIterations") {
+    const maxIterations = boundNumber(raw, 1, RESEARCH_BOUND_LIMITS.maxIterations);
+    return {
+      ...current,
+      maxIterations,
+      checkpointEvery: Math.min(current.checkpointEvery, maxIterations),
+    };
+  }
+  if (key === "checkpointEvery") {
+    return { ...current, checkpointEvery: boundNumber(raw, 1, current.maxIterations) };
+  }
+  return { ...current, [key]: boundNumber(raw, 1, RESEARCH_BOUND_LIMITS[key]) };
+}
+
 export function ResearchMissionComposer({
   familiarId,
   daemonRunning,
@@ -162,10 +191,18 @@ export function ResearchMissionComposer({
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
-  const [mode, setMode] = useState<"auto" | ResearchMissionMode>(initialMode ?? "auto");
+  const [mode, setModeState] = useState<"auto" | ResearchMissionMode>(initialMode ?? "auto");
   const [bounds, setBounds] = useState<ResearchBounds>(
     defaultResearchPlan(initialMode ?? "brief").bounds,
   );
+  // Raw text for a bound input while it is being edited — committed numbers
+  // live in `bounds`. Parsing on every keystroke made fields uncloseable:
+  // clearing snapped to 1, so typing "5" produced "15".
+  const [boundDrafts, setBoundDrafts] = useState<Partial<Record<BoundKey, string>>>({});
+  // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
+  // the plan on every keystroke) must stop clobbering it. Explicit mode picks
+  // clear the latch below, so a deliberate switch still resets.
+  const boundsDirtyRef = useRef(false);
   const [boundsOpen, setBoundsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,11 +212,19 @@ export function ResearchMissionComposer({
   const [improveNote, setImproveNote] = useState<string | null>(null);
   const [angleOffset, setAngleOffset] = useState(0);
 
+  // Every setMode caller is an explicit pick — mode cards, slash commands,
+  // Reset to Auto, cross-tab preselect — so a deliberate switch clears the
+  // bounds dirty latch and lets the new plan's bounds apply.
+  const setMode = useCallback((next: "auto" | ResearchMissionMode) => {
+    boundsDirtyRef.current = false;
+    setModeState(next);
+  }, []);
+
   // Cross-tab navigation may re-target an already-mounted intake (e.g. the
   // Desk's /paper while the Prompt tab is live) — treat it as a manual pick.
   useEffect(() => {
     if (initialMode) setMode(initialMode);
-  }, [initialMode]);
+  }, [initialMode, setMode]);
 
   const inferred = useMemo(() => inferResearchMissionMode(intent), [intent]);
   const effectiveMode = mode === "auto" ? inferred.mode : mode;
@@ -192,11 +237,45 @@ export function ResearchMissionComposer({
   intentRef.current = intent;
 
   useEffect(() => {
+    if (boundsDirtyRef.current) return;
     setBounds({ ...plan.bounds });
+    setBoundDrafts({});
   }, [plan]);
 
-  const updateBound = <K extends keyof ResearchBounds>(key: K, value: ResearchBounds[K]) => {
-    setBounds((current) => ({ ...current, [key]: value }));
+  const editBound = (key: BoundKey, raw: string) => {
+    boundsDirtyRef.current = true;
+    setBoundDrafts((current) => ({ ...current, [key]: raw }));
+  };
+
+  const commitBound = (key: BoundKey) => {
+    const raw = boundDrafts[key];
+    if (raw === undefined) return;
+    setBounds((current) => applyBoundEdit(current, key, raw));
+    setBoundDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  /** What the input shows: the in-flight draft while editing, else the number. */
+  const boundValue = (key: BoundKey): string => boundDrafts[key] ?? String(bounds[key]);
+
+  /** Committed bounds plus any in-flight drafts — what Start actually submits. */
+  const resolveBounds = (): ResearchBounds =>
+    BOUND_KEYS.reduce((acc, key) => {
+      const raw = boundDrafts[key];
+      return raw === undefined ? acc : applyBoundEdit(acc, key, raw);
+    }, bounds);
+
+  // Enter inside a bounds field must never implicitly submit the form —
+  // starting a paid mission stays behind the explicit Start button (the
+  // textarea's palette shortcuts handle their own keys). Enter commits the
+  // draft exactly like blur instead.
+  const boundKeyDown = (key: BoundKey) => (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitBound(key);
   };
 
   // The summary pill doubles as the bounds toggle: open the editor and focus
@@ -301,6 +380,11 @@ export function ResearchMissionComposer({
     event.preventDefault();
     const trimmed = intent.trim();
     if (trimmed.length < RESEARCH_INTENT_MIN_LENGTH || submitting) return;
+    // Any bound still being edited commits before the mission is created, so
+    // Start never submits a value the user already replaced on screen.
+    const submittedBounds = resolveBounds();
+    setBounds(submittedBounds);
+    setBoundDrafts({});
     setSubmitting(true);
     setError(null);
     try {
@@ -310,7 +394,7 @@ export function ResearchMissionComposer({
         mode: effectiveMode,
         modeSource: mode === "auto" ? "auto" : "user",
         deliverable: plan.deliverables.join(" + "),
-        bounds,
+        bounds: submittedBounds,
       });
       if (!result.ok) {
         setError(result.error);
@@ -516,8 +600,10 @@ export function ResearchMissionComposer({
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.wallClockMinutes}
-              value={bounds.wallClockMinutes}
-              onChange={(event) => updateBound("wallClockMinutes", boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.wallClockMinutes))}
+              value={boundValue("wallClockMinutes")}
+              onChange={(event) => editBound("wallClockMinutes", event.target.value)}
+              onBlur={() => commitBound("wallClockMinutes")}
+              onKeyDown={boundKeyDown("wallClockMinutes")}
             />
           </label>
           <label>
@@ -527,15 +613,10 @@ export function ResearchMissionComposer({
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.maxIterations}
-              value={bounds.maxIterations}
-              onChange={(event) => {
-                const maxIterations = boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.maxIterations);
-                setBounds((current) => ({
-                  ...current,
-                  maxIterations,
-                  checkpointEvery: Math.min(current.checkpointEvery, maxIterations),
-                }));
-              }}
+              value={boundValue("maxIterations")}
+              onChange={(event) => editBound("maxIterations", event.target.value)}
+              onBlur={() => commitBound("maxIterations")}
+              onKeyDown={boundKeyDown("maxIterations")}
             />
           </label>
           <label>
@@ -545,8 +626,10 @@ export function ResearchMissionComposer({
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.sourceTarget}
-              value={bounds.sourceTarget}
-              onChange={(event) => updateBound("sourceTarget", boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.sourceTarget))}
+              value={boundValue("sourceTarget")}
+              onChange={(event) => editBound("sourceTarget", event.target.value)}
+              onBlur={() => commitBound("sourceTarget")}
+              onKeyDown={boundKeyDown("sourceTarget")}
             />
           </label>
           <label>
@@ -555,8 +638,10 @@ export function ResearchMissionComposer({
               type="number"
               min={1}
               max={bounds.maxIterations}
-              value={bounds.checkpointEvery}
-              onChange={(event) => updateBound("checkpointEvery", boundNumber(event.target.value, 1, bounds.maxIterations))}
+              value={boundValue("checkpointEvery")}
+              onChange={(event) => editBound("checkpointEvery", event.target.value)}
+              onBlur={() => commitBound("checkpointEvery")}
+              onKeyDown={boundKeyDown("checkpointEvery")}
             />
           </label>
         </div>

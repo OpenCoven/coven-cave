@@ -13,6 +13,7 @@ import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
   type CreateResearchMissionInput,
+  type ResearchArtifactKind,
   type ResearchArtifactRef,
   type ResearchMission,
   type ResearchMissionActionInput,
@@ -41,6 +42,27 @@ export {
   withinStartupGrace,
 } from "./research-mission-lifecycle.ts";
 export type { ResearchFlowStartResult } from "./research-mission-lifecycle.ts";
+
+/**
+ * Settled mission statuses — mirrors the settled set in
+ * src/lib/research-missions.ts (researchBoundReadings): a mission in one of
+ * these states must never be transitioned by background reconciliation.
+ */
+const TERMINAL_RESEARCH_MISSION_STATUSES: ReadonlyArray<ResearchMission["status"]> = [
+  "completed",
+  "failed",
+  "cancelled",
+  "archived",
+];
+
+/**
+ * How long a non-terminal mission may reference a missing, never-launched, or
+ * stuck-queued run before reconcile recovers it as failed (so Retry becomes
+ * available). Within the window the run may still land — travel replay records
+ * a replayed run late, and a startup save may still be in flight. Measured
+ * against deps.now() so tests can drive the clock.
+ */
+export const RESEARCH_RUN_RECOVERY_GRACE_MS = 10 * 60_000;
 
 export type ResearchAutomationScheduleInput = {
   rrule: string;
@@ -160,34 +182,97 @@ function mergeResearchSource(
   } : item);
 }
 
+/**
+ * Merge the flow-written sources.json ledger into the stored mission sources
+ * instead of replacing them: manually attached sources live only in
+ * mission.json (attach-source), so a wholesale replace silently wiped them on
+ * every settle. File entries win on url/localPath/id collision; manual-only
+ * entries survive.
+ */
+function mergeFileSources(
+  stored: ResearchSourceRef[],
+  file: ResearchSourceRef[],
+): ResearchSourceRef[] {
+  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => (
+    source.url && item.url === source.url
+  ) || (
+    source.localPath && item.localPath === source.localPath
+  ) || source.id === item.id);
+  return [...file, ...stored.filter((item) => !matchesFileEntry(item))];
+}
+
+/**
+ * Default primary-artifact kind for a mission mode — mirrors
+ * artifactKindForMode in research-mission-lifecycle.ts, used only when a
+ * stored mission carries no artifact refs at all.
+ */
+function defaultArtifactKindForMode(mode: ResearchMission["mode"]): ResearchArtifactKind {
+  if (mode === "sweep") return "report";
+  if (mode === "paper") return "paper";
+  if (mode === "autoresearch") return "findings";
+  return "brief";
+}
+
+const PATCHABLE_SOURCE_FIELDS = [
+  "title", "publisher", "publishedAt", "sourceType", "claim", "note", "confidence", "status",
+] as const satisfies ReadonlyArray<keyof ResearchSourcePatch>;
+
+const PATCHABLE_TEXT_LIMITS: Record<string, number> = {
+  title: 300,
+  publisher: 200,
+  publishedAt: 100,
+  sourceType: 100,
+  claim: 2_000,
+  note: 2_000,
+};
+
 function patchResearchSource(
   mission: ResearchMission,
   sourceId: string,
   patch: ResearchSourcePatch,
 ): ResearchMission {
-  const allowedStatuses: ResearchSourceRef["status"][] = [
-    "candidate", "used", "conflicting", "rejected",
-  ];
-  if (patch.status && !allowedStatuses.includes(patch.status)) {
-    throw new Error("invalid source status");
+  // The route forwards the patch body verbatim, so allowlist hard: unknown
+  // keys (url, id, addedAt, …) must never spread into the stored record —
+  // url would bypass attach-time normalizeWebUrl and id would break dedupe.
+  const raw = patch as Record<string, unknown>;
+  const unknownKeys = Object.keys(raw).filter(
+    (key) => !(PATCHABLE_SOURCE_FIELDS as readonly string[]).includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    throw new Error(`invalid source patch field: ${unknownKeys[0]}`);
   }
-  if (
-    patch.confidence !== undefined &&
-    (!Number.isFinite(patch.confidence) || patch.confidence < 0 || patch.confidence > 1)
-  ) {
-    throw new Error("invalid source confidence");
+  const validated: Partial<ResearchSourceRef> = {};
+  for (const field of Object.keys(PATCHABLE_TEXT_LIMITS)) {
+    if (!(field in raw)) continue;
+    const value = raw[field];
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (!trimmed) throw new Error(`invalid source ${field}`);
+    (validated as Record<string, string>)[field] = trimmed.slice(0, PATCHABLE_TEXT_LIMITS[field]);
+  }
+  if ("status" in raw) {
+    const allowedStatuses: ResearchSourceRef["status"][] = [
+      "candidate", "used", "conflicting", "rejected",
+    ];
+    if (!allowedStatuses.includes(raw.status as ResearchSourceRef["status"])) {
+      throw new Error("invalid source status");
+    }
+    validated.status = raw.status as ResearchSourceRef["status"];
+  }
+  if ("confidence" in raw) {
+    const confidence = raw.confidence;
+    if (
+      typeof confidence !== "number" ||
+      !Number.isFinite(confidence) || confidence < 0 || confidence > 1
+    ) {
+      throw new Error("invalid source confidence");
+    }
+    validated.confidence = confidence;
   }
   let found = false;
   const sources = mission.sources.map((source) => {
     if (source.id !== sourceId) return source;
     found = true;
-    return {
-      ...source,
-      ...patch,
-      ...(patch.title ? { title: patch.title.trim().slice(0, 300) } : {}),
-      ...(patch.note ? { note: patch.note.trim().slice(0, 2_000) } : {}),
-      ...(patch.claim ? { claim: patch.claim.trim().slice(0, 2_000) } : {}),
-    };
+    return { ...source, ...validated };
   });
   if (!found) throw new Error("research source not found");
   return { ...mission, sources };
@@ -220,9 +305,9 @@ async function reconcileCompletedRun(
     ...(costUsd === undefined ? {} : { costUsd }),
   };
   let markdown: string | null;
-  let sources: ResearchSourceRef[];
+  let fileSources: ResearchSourceRef[];
   try {
-    [markdown, sources] = await Promise.all([
+    [markdown, fileSources] = await Promise.all([
       deps.readMissionFile(mission.id, "artifacts/primary.md"),
       deps.readSources(mission.id),
     ]);
@@ -238,6 +323,7 @@ async function reconcileCompletedRun(
       } : item),
     };
   }
+  const sources = mergeFileSources(mission.sources, fileSources);
 
   if (!markdown) {
     return {
@@ -249,7 +335,14 @@ async function reconcileCompletedRun(
       iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
     };
   }
-  const content = validateResearchArtifactContent(mission.artifacts[0].kind, markdown);
+  // A mission whose artifacts array is empty must reconcile instead of
+  // throwing: validate against the mode's default kind and skip the
+  // artifact-derived updates (there is no ref to update or publish).
+  const primaryArtifact: ResearchArtifactRef | undefined = mission.artifacts[0];
+  const content = validateResearchArtifactContent(
+    primaryArtifact?.kind ?? defaultArtifactKindForMode(mission.mode),
+    markdown,
+  );
   if (!content.ok) {
     return {
       ...mission,
@@ -261,26 +354,30 @@ async function reconcileCompletedRun(
     };
   }
 
-  let artifact: ResearchArtifactRef = {
-    ...mission.artifacts[0],
-    iteration: iteration.number,
-    updatedAt: timestamp,
-  };
-  if (control.decision === "complete" && !artifact.knowledgeId) {
-    const entry = await deps.publishKnowledge(researchKnowledgeEntry({
-      mission,
-      artifact,
-      provenance: {
-        missionId: mission.id,
-        iteration: iteration.number,
-        flowRunId: iteration.flowRunId,
-        sessionId: iteration.sessionId,
-        automationRunId: iteration.automationRunId,
-        generatedAt: timestamp,
-      },
-      markdown: content.value,
-    }));
-    artifact = { ...artifact, knowledgeId: entry.id, state: "published" };
+  let artifacts = mission.artifacts;
+  if (primaryArtifact) {
+    let artifact: ResearchArtifactRef = {
+      ...primaryArtifact,
+      iteration: iteration.number,
+      updatedAt: timestamp,
+    };
+    if (control.decision === "complete" && !artifact.knowledgeId) {
+      const entry = await deps.publishKnowledge(researchKnowledgeEntry({
+        mission,
+        artifact,
+        provenance: {
+          missionId: mission.id,
+          iteration: iteration.number,
+          flowRunId: iteration.flowRunId,
+          sessionId: iteration.sessionId,
+          automationRunId: iteration.automationRunId,
+          generatedAt: timestamp,
+        },
+        markdown: content.value,
+      }));
+      artifact = { ...artifact, knowledgeId: entry.id, state: "published" };
+    }
+    artifacts = [artifact, ...mission.artifacts.slice(1)];
   }
 
   return {
@@ -290,16 +387,31 @@ async function reconcileCompletedRun(
     ...(control.decision === "complete" ? { finishedAt: timestamp } : {}),
     lastError: undefined,
     sources,
-    artifacts: [artifact, ...mission.artifacts.slice(1)],
+    artifacts,
     iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
   };
 }
 
 export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   let reconcileFlowUnlocked: (mission: ResearchMission) => Promise<ResearchMission>;
+  /**
+   * A mission directory deleted mid-flight surfaces as ENOENT from the store —
+   * report the standard not-found error (the actions route maps it to 404)
+   * instead of leaking a raw fs failure as a 500.
+   */
+  const saveMission = async (mission: ResearchMission): Promise<void> => {
+    try {
+      await deps.saveMission(mission);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+        throw new Error("research mission not found");
+      }
+      throw error;
+    }
+  };
   const saveUpdated = async (mission: ResearchMission): Promise<ResearchMission> => {
     const updated = { ...mission, updatedAt: deps.now().toISOString() };
-    await deps.saveMission(updated);
+    await saveMission(updated);
     return updated;
   };
 
@@ -394,13 +506,13 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       iterations: [...mission.iterations, { number, status: "queued" }],
       artifacts: workingArtifact ? [workingArtifact, ...mission.artifacts] : mission.artifacts,
     };
-    await deps.saveMission(next);
+    await saveMission(next);
     const target = await missionStartTarget(next);
     const result = target.ok
       ? await deps.startFlow(buildResearchMissionFlow(next, number), missionStartOptions(next, target.projectRoot))
       : { ok: false, error: target.error };
     next = applyStartResult(next, result, deps.now());
-    await deps.saveMission(next);
+    await saveMission(next);
     return next;
   };
 
@@ -436,7 +548,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         status: "queued",
       } : iteration),
     };
-    await deps.saveMission(retried);
+    await saveMission(retried);
     const target = await missionStartTarget(retried);
     const result = target.ok
       ? await deps.startFlow(
@@ -445,7 +557,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       )
       : { ok: false, error: target.error };
     retried = applyStartResult(retried, result, deps.now());
-    await deps.saveMission(retried);
+    await saveMission(retried);
     return retried;
   };
 
@@ -503,7 +615,11 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       if (input.action === "cancel") {
         const current = mission.iterations.at(-1);
-        if (current?.sessionId && current.status === "running") {
+        const currentActive = current?.status === "queued" || current?.status === "running";
+        // A queued iteration can already carry a live session (travel handoff,
+        // slow start) — kill whenever a session exists and the iteration has
+        // not settled, not only when it reads "running".
+        if (current?.sessionId && currentActive) {
           await deps.killSession(current.sessionId);
         }
         const cancelledMission = await pauseAutomation(mission, "Mission cancelled");
@@ -511,8 +627,11 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           ...cancelledMission,
           status: "cancelled",
           finishedAt: timestamp,
+          // Only rewrite an iteration that is still in flight — a settled
+          // (checkpoint/completed/failed) iteration keeps its real outcome.
           iterations: cancelledMission.iterations.map((iteration, index) => (
-            index === cancelledMission.iterations.length - 1
+            index === cancelledMission.iterations.length - 1 &&
+            (iteration.status === "queued" || iteration.status === "running")
               ? { ...iteration, status: "cancelled", finishedAt: timestamp }
               : iteration
           )),
@@ -530,10 +649,6 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       if (input.action === "archive") {
         mission = await pauseAutomation(mission, "Mission archived");
         return saveUpdated({ ...mission, status: "archived" });
-      }
-      if (input.action === "pause") {
-        mission = await pauseAutomation(mission, "Mission paused");
-        return saveUpdated({ ...mission, status: "paused" });
       }
       if (input.action === "resume") {
         return saveUpdated({ ...mission, status: "checkpoint", lastError: undefined });
@@ -567,7 +682,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         ...(checkpoint?.token ? { checkpointToken: checkpoint.token } : {}),
       },
     };
-    await deps.saveMission(updated);
+    await saveMission(updated);
     return updated;
   };
 
@@ -587,16 +702,59 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         ...(storedAutomation.status === "ACTIVE" ? { stopReason: undefined } : {}),
       };
       mission = { ...mission, automation, updatedAt: deps.now().toISOString() };
-      await deps.saveMission(mission);
+      await saveMission(mission);
     }
+
+    // Oversized or otherwise unreadable workspace files must read as "no
+    // checkpoint" instead of killing this mission's reconcile on every poll.
+    const readCheckpointSafe = async (): Promise<
+      { transcript: string; token: string; at: string } | null
+    > => {
+      try {
+        return await deps.readAutomationCheckpoint(mission.id);
+      } catch {
+        return null;
+      }
+    };
+
+    // A late or replayed automation run must never resurrect a terminal or
+    // archived mission: persist run/checkpoint bookkeeping so the run stays
+    // consumed, but never transition status, iterations, or finishedAt.
+    if (
+      TERMINAL_RESEARCH_MISSION_STATUSES.includes(mission.status)
+    ) {
+      const lateRun = await deps.latestAutomationRun(automation.id);
+      const observedToken = (await readCheckpointSafe())?.token || undefined;
+      const runChanged = lateRun !== null && (
+        lateRun.id !== automation.lastRunId || lateRun.status !== automation.lastRunStatus
+      );
+      const tokenChanged = observedToken !== undefined && observedToken !== automation.checkpointToken;
+      if (!runChanged && !tokenChanged) return mission;
+      const updated: ResearchMission = {
+        ...mission,
+        updatedAt: deps.now().toISOString(),
+        automation: {
+          ...automation,
+          ...(lateRun ? {
+            lastRunId: lateRun.id,
+            lastRunStatus: lateRun.status,
+            lastRunAt: lateRun.finishedAt ?? lateRun.startedAt,
+          } : {}),
+          ...(observedToken ? { checkpointToken: observedToken } : {}),
+        },
+      };
+      await saveMission(updated);
+      return updated;
+    }
+
     let run = await deps.latestAutomationRun(automation.id);
     let checkpointTranscript: string | null = null;
-    let checkpointToken: string | undefined;
+    let observedCheckpointToken: string | undefined;
     if (!run || run.id === automation.lastRunId) {
-      const checkpoint = await deps.readAutomationCheckpoint(mission.id);
-      if (!checkpoint.token || checkpoint.token === automation.checkpointToken) return mission;
+      const checkpoint = await readCheckpointSafe();
+      if (!checkpoint?.token || checkpoint.token === automation.checkpointToken) return mission;
       checkpointTranscript = checkpoint.transcript;
-      checkpointToken = checkpoint.token;
+      observedCheckpointToken = checkpoint.token;
       run = {
         id: `scheduled-${checkpoint.token}`,
         automationId: automation.id,
@@ -617,32 +775,50 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           lastRunAt: run.startedAt,
         },
       };
-      await deps.saveMission(updated);
+      await saveMission(updated);
       return updated;
     }
+
+    // Every settled run has performed its final checkpoint write by contract,
+    // so observe the token now and persist it on EVERY consuming path below —
+    // real and synthetic, success and pause alike. Otherwise the stale stored
+    // token re-triggers the synthetic-run branch on every reconcile, causing
+    // an infinite pause/save loop against the 2s desk poll.
+    if (observedCheckpointToken === undefined) {
+      observedCheckpointToken = (await readCheckpointSafe())?.token || undefined;
+    }
+    // An unreadable fingerprint reads as "unchanged" — the run is consumed
+    // with a visible pause instead of throwing on every poll.
+    const fingerprint = await deps.fingerprintMission(mission.id)
+      .catch(() => automation.checkpointFingerprint);
     if (run.status === "failed") {
       return pauseLinkedAutomation(
         mission,
         run,
         run.summary || "Scheduled research iteration failed",
+        { fingerprint, token: observedCheckpointToken },
       );
     }
 
-    const [transcript, fingerprint] = await Promise.all([
-      checkpointTranscript === null ? deps.readAutomationTranscript(run) : Promise.resolve(checkpointTranscript),
-      deps.fingerprintMission(mission.id),
-    ]);
+    const transcript = checkpointTranscript === null
+      ? await deps.readAutomationTranscript(run).catch(() => "")
+      : checkpointTranscript;
     const control = parseResearchControl(transcript);
     if (control.reason === "Missing or malformed research control output") {
       return pauseLinkedAutomation(
         mission,
         run,
         "Automation run did not emit a valid control checkpoint",
-        { fingerprint, token: checkpointToken },
+        { fingerprint, token: observedCheckpointToken },
       );
     }
     if (fingerprint === automation.checkpointFingerprint) {
-      return pauseLinkedAutomation(mission, run, "Automation run did not change the mission checkpoint");
+      return pauseLinkedAutomation(
+        mission,
+        run,
+        "Automation run did not change the mission checkpoint",
+        { fingerprint, token: observedCheckpointToken },
+      );
     }
 
     const timestamp = deps.now().toISOString();
@@ -653,7 +829,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       ...mission,
       status,
       updatedAt: timestamp,
-      ...(status === "completed" ? { finishedAt: timestamp } : {}),
+      // A non-completing transition out of any earlier settled state must not
+      // keep a stale finishedAt.
+      finishedAt: status === "completed" ? timestamp : undefined,
       lastError: undefined,
       iterations: [...mission.iterations, {
         number,
@@ -668,7 +846,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       automation: {
         ...automation,
         checkpointFingerprint: fingerprint,
-        ...(checkpointToken ? { checkpointToken } : {}),
+        ...(observedCheckpointToken ? { checkpointToken: observedCheckpointToken } : {}),
         lastRunId: run.id,
         lastRunStatus: run.status,
         lastRunAt: run.finishedAt ?? run.startedAt,
@@ -686,7 +864,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         reconciled,
         run,
         reconciled.lastError,
-        { fingerprint, token: checkpointToken },
+        { fingerprint, token: observedCheckpointToken },
       );
     }
     if (!stopReason) stopReason = stopBeforeNextIteration(reconciled, deps.now());
@@ -714,18 +892,75 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         stopReason,
       };
     }
-    await deps.saveMission(reconciled);
+    await saveMission(reconciled);
     return reconciled;
   };
 
   reconcileFlowUnlocked = async (mission: ResearchMission): Promise<ResearchMission> => {
-    if (!["queued", "running"].includes(mission.status)) return mission;
+    // "planning" is included so a crash between the planning save and the
+    // launch-result save (an iteration with no flowRunId yet) can be recovered
+    // below instead of hanging forever with only Cancel available.
+    if (!["queued", "planning", "running"].includes(mission.status)) return mission;
     const iterationIndex = mission.iterations.length - 1;
     const iteration = mission.iterations[iterationIndex];
-    if (!iteration?.flowRunId) return mission;
+    if (!iteration) return mission;
+
+    // Orphan recovery: a run that cannot land anymore (record missing from the
+    // capped flow-run store, replaced by a travel replay under a new id, stuck
+    // "queued" forever, or never launched at all) would otherwise pin the
+    // mission in a non-terminal state with no action but Cancel. Past the
+    // grace window, fail the iteration so Retry becomes available; within it,
+    // change nothing — the run may still land.
+    const recoveryBasisMs = Date.parse(iteration.startedAt ?? mission.updatedAt);
+    const pastRecoveryGrace = Number.isFinite(recoveryBasisMs) &&
+      deps.now().getTime() - recoveryBasisMs >= RESEARCH_RUN_RECOVERY_GRACE_MS;
+    const failOrphan = async (lastError: string, summary: string): Promise<ResearchMission> => {
+      const timestamp = deps.now().toISOString();
+      const failed: ResearchMission = {
+        ...mission,
+        status: "failed",
+        updatedAt: timestamp,
+        lastError,
+        iterations: mission.iterations.map((item, index) => index === iterationIndex ? {
+          ...item,
+          status: "failed",
+          finishedAt: timestamp,
+          summary,
+        } : item),
+      };
+      await saveMission(failed);
+      return failed;
+    };
+
+    if (!iteration.flowRunId) {
+      if (pastRecoveryGrace) {
+        return failOrphan(
+          "Startup was interrupted before a research session was recorded — Retry starts a fresh iteration.",
+          "Startup interrupted",
+        );
+      }
+      return mission;
+    }
     const run = await deps.loadFlowRun(iteration.flowRunId);
-    if (!run) return mission;
+    if (!run) {
+      if (pastRecoveryGrace) {
+        return failOrphan(
+          "The research run record is missing — recovered as failed. Retry starts a fresh iteration.",
+          "Run record missing",
+        );
+      }
+      return mission;
+    }
     if (run.status === "running" || run.status === "queued") {
+      // A run stuck "queued" past the grace window will never start under this
+      // id — travel replay records the replayed run under a NEW flow run id,
+      // so this record stays queued forever while the mission waits on it.
+      if (run.status === "queued" && pastRecoveryGrace) {
+        return failOrphan(
+          "The queued research run never started — recovered as failed. Retry starts a fresh iteration.",
+          "Queued run never started",
+        );
+      }
       // The flow-run record only says the run was STARTED — nothing flips it
       // when the underlying agent session ends, so probe the session itself
       // (cave-ibb7). A finished session reconciles from its transcript; a dead
@@ -735,7 +970,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (state === "finished") {
           const transcript = await deps.readSessionTranscript(iteration.sessionId);
           const reconciled = await reconcileCompletedRun(mission, iterationIndex, deps, transcript);
-          await deps.saveMission(reconciled);
+          await saveMission(reconciled);
           return reconciled;
         }
         if (state === "gone" && !withinStartupGrace(iteration.startedAt, deps.now())) {
@@ -752,7 +987,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
               summary: "Session ended without control markers",
             } : item),
           };
-          await deps.saveMission(failed);
+          await saveMission(failed);
           return failed;
         }
       }
@@ -767,7 +1002,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           steps: run.steps.map((step) => ({ ...step })),
         } : item),
       };
-      await deps.saveMission(synced);
+      await saveMission(synced);
       return synced;
     }
     if (run.status === "failed") {
@@ -784,11 +1019,11 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           summary: run.summary,
         } : item),
       };
-      await deps.saveMission(failed);
+      await saveMission(failed);
       return failed;
     }
     const reconciled = await reconcileCompletedRun(mission, iterationIndex, deps);
-    await deps.saveMission(reconciled);
+    await saveMission(reconciled);
     return reconciled;
   };
 
@@ -796,14 +1031,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     async createAndStart(input: CreateResearchMissionInput): Promise<ResearchMission> {
       let mission = createMissionRecord(input, deps.randomId(), deps.now());
       mission = await deps.createWorkspace(mission);
-      await deps.saveMission(mission);
-      const target = await missionStartTarget(mission);
-      const result = target.ok
-        ? await deps.startFlow(buildResearchMissionFlow(mission, 1), missionStartOptions(mission, target.projectRoot))
-        : { ok: false, error: target.error };
-      mission = applyStartResult(mission, result, deps.now());
-      await deps.saveMission(mission);
-      return mission;
+      await saveMission(mission);
+      // The start sequence shares the per-mission action lock: without it, a
+      // concurrent locked act('cancel') landing between the pre-launch save
+      // and the launch-result save was silently overwritten back to running.
+      return withResearchMissionActionLock(mission.id, async () => {
+        let current = await deps.loadMission(mission.id) ?? mission;
+        if (TERMINAL_RESEARCH_MISSION_STATUSES.includes(current.status)) return current;
+        const target = await missionStartTarget(current);
+        const result = target.ok
+          ? await deps.startFlow(buildResearchMissionFlow(current, 1), missionStartOptions(current, target.projectRoot))
+          : { ok: false, error: target.error };
+        current = applyStartResult(current, result, deps.now());
+        await saveMission(current);
+        return current;
+      });
     },
 
     reconcile(mission: ResearchMission): Promise<ResearchMission> {
@@ -817,6 +1059,11 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         const mission = await deps.loadMission(id);
         if (!mission) throw new Error("research mission not found");
         if (mission.mode !== "autoresearch") throw new Error("schedules require AutoResearch mode");
+        // A terminal or archived mission must never gain a schedule — a later
+        // automation run would otherwise try to revive it.
+        if (TERMINAL_RESEARCH_MISSION_STATUSES.includes(mission.status)) {
+          throw new Error(`cannot schedule a ${mission.status} research mission`);
+        }
         if (mission.automation) throw new Error("research mission already has a schedule");
         const rrule = input.rrule.trim();
         if (!rrule.startsWith("RRULE:") || rrule.length > 500) {
@@ -853,7 +1100,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           },
           updatedAt: deps.now().toISOString(),
         };
-        await deps.saveMission(updated);
+        await saveMission(updated);
         return updated;
       });
     },
@@ -1066,6 +1313,50 @@ export function makeProductionResearchMissionRunner() {
   return makeResearchMissionRunner(deps);
 }
 
+/**
+ * Last logged reconcile failure per mission — the desk list polls every 2s,
+ * so a persistently broken mission must not flood the log with the same
+ * message on every poll.
+ */
+const loggedReconcileFailures = new Map<string, string>();
+
+/**
+ * Reconcile every mission for the desk list, isolating failures per mission:
+ * one poisoned mission (corrupt artifacts, oversized workspace file, deleted
+ * directory, …) must degrade to its stored snapshot instead of failing the
+ * whole list endpoint on every poll.
+ */
+export async function reconcileResearchMissionList(
+  missions: ResearchMission[],
+  runner: Pick<
+    ReturnType<typeof makeResearchMissionRunner>,
+    "reconcile" | "reconcileAutomation"
+  >,
+): Promise<ResearchMission[]> {
+  // Prune dedupe entries for missions no longer in the list (deleted or
+  // archived) so the module-level map cannot grow unbounded over a
+  // long-lived process.
+  const listedIds = new Set(missions.map((mission) => mission.id));
+  for (const id of loggedReconcileFailures.keys()) {
+    if (!listedIds.has(id)) loggedReconcileFailures.delete(id);
+  }
+  return Promise.all(missions.map(async (mission) => {
+    let current = mission;
+    try {
+      current = await runner.reconcile(current);
+      current = await runner.reconcileAutomation(current);
+      loggedReconcileFailures.delete(mission.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (loggedReconcileFailures.get(mission.id) !== message) {
+        loggedReconcileFailures.set(mission.id, message);
+        console.error(`research mission ${mission.id} reconcile failed: ${message}`);
+      }
+    }
+    return current;
+  }));
+}
+
 export async function listAndReconcileResearchMissions(
   familiarId: string,
 ): Promise<ResearchMission[]> {
@@ -1073,8 +1364,5 @@ export async function listAndReconcileResearchMissions(
   const missions = (await listResearchMissions()).filter(
     (mission) => mission.familiarId === familiarId && mission.status !== "archived",
   );
-  return Promise.all(missions.map(async (mission) => {
-    const flowReconciled = await runner.reconcile(mission);
-    return runner.reconcileAutomation(flowReconciled);
-  }));
+  return reconcileResearchMissionList(missions, runner);
 }

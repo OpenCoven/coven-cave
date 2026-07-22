@@ -275,3 +275,111 @@ test("withinStartupGrace bounds the dead-session verdict", () => {
   assert.equal(withinStartupGrace(undefined, now), false);
   assert.equal(withinStartupGrace("not-a-date", now), false);
 });
+
+// ── Orphaned-run recovery (missions stuck forever in non-terminal states) ─────
+// Travel replays record the replayed run under a NEW flow run id, the flow-run
+// store caps at 200 records and evicts, and a crash between the planning save
+// and the launch-result save leaves an iteration with no flowRunId at all.
+// Past a grace window all three recover as failed so Retry becomes available.
+
+test("a planning mission with no recorded run fails after the recovery grace window", async () => {
+  let stored = checkpointMission({
+    status: "planning",
+    iterations: [{ number: 1, status: "queued" }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    now: () => new Date(NOW.getTime() + 11 * 60_000),
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.match(result.lastError ?? "", /startup was interrupted/i);
+  assert.ok(allowedResearchActions(result).includes("retry"), "recovery must enable Retry");
+});
+
+test("a planning mission with no recorded run stays untouched within grace", async () => {
+  let saves = 0;
+  const stored = checkpointMission({
+    status: "planning",
+    iterations: [{ number: 1, status: "queued" }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { saves += 1; },
+    now: () => new Date(NOW.getTime() + 5 * 60_000),
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "planning", "startup may still land within grace");
+  assert.equal(saves, 0, "no save may refresh updatedAt and reset the grace clock");
+});
+
+test("a running mission whose flow run record is gone fails after grace with Retry", async () => {
+  let stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      number: 1,
+      status: "running",
+      flowRunId: "run-evicted",
+      sessionId: "session-1",
+      startedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    // loadFlowRun default: null — evicted from the capped flow-run store.
+    now: () => new Date(NOW.getTime() + 11 * 60_000),
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.match(result.lastError ?? "", /run record is missing/i);
+  assert.ok(allowedResearchActions(result).includes("retry"));
+});
+
+test("a running mission whose flow run record is gone stays untouched within grace", async () => {
+  let saves = 0;
+  const stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      number: 1,
+      status: "running",
+      flowRunId: "run-evicted",
+      sessionId: "session-1",
+      startedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { saves += 1; },
+    now: () => new Date(NOW.getTime() + 5 * 60_000),
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "running");
+  assert.equal(saves, 0);
+});
+
+test("a run stuck queued past the grace window fails with Retry (travel replay orphan)", async () => {
+  let stored = checkpointMission({
+    status: "queued",
+    iterations: [{
+      number: 1,
+      status: "queued",
+      flowRunId: "run-original",
+      startedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    loadFlowRun: async () => ({ ...RUN, id: "run-original", status: "queued", sessionId: undefined }),
+    now: () => new Date(NOW.getTime() + 11 * 60_000),
+  }));
+  const result = await runner.reconcile(stored);
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.match(result.lastError ?? "", /queued research run never started/i);
+  assert.ok(allowedResearchActions(result).includes("retry"));
+});

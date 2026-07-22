@@ -31,6 +31,7 @@ import {
 } from "react";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { copyText } from "@/lib/clipboard";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
   type ResearchGeneration,
@@ -242,9 +243,11 @@ export function useCopyFlash() {
 
   const copy = useCallback(
     async (key: string, text: string) => {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
+      // copyText (lib/clipboard) falls back to execCommand where
+      // navigator.clipboard doesn't exist — the packaged Tauri webview and
+      // other non-secure contexts — and reports whether the copy landed.
+      const ok = await copyText(text);
+      if (!ok) {
         announce("Copy failed — clipboard unavailable", "assertive");
         return;
       }
@@ -270,14 +273,30 @@ type StudioModalProps = {
   variant: "config" | "viewer" | "editor";
   labelledBy: string;
   announceText: string;
+  /**
+   * False parks this dialog under a stacked one (viewer under editor):
+   * its focus trap AND Escape handling are disabled — one live trap at a
+   * time — and the subtree goes inert/aria-hidden so Tab and AT only see
+   * the top dialog. Escape therefore closes only the top dialog; closing
+   * it re-activates this one (default true).
+   */
+  active?: boolean;
   children: ReactNode;
 };
 
 /** Mounted only while open. Focus trap + Escape + focus restore come from
- *  useFocusTrap; backdrop click closes; open is announced to AT. */
-function StudioModal({ onClose, variant, labelledBy, announceText, children }: StudioModalProps) {
+ *  useFocusTrap, gated on `active`; backdrop click closes; open is announced
+ *  to AT. */
+function StudioModal({
+  onClose,
+  variant,
+  labelledBy,
+  announceText,
+  active = true,
+  children,
+}: StudioModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
+  useFocusTrap(active, dialogRef, { onEscape: onClose });
   const { announce } = useAnnouncer();
   const announcedRef = useRef(false);
 
@@ -290,6 +309,8 @@ function StudioModal({ onClose, variant, labelledBy, announceText, children }: S
   return (
     <div
       className={`research-studio-modal__backdrop research-studio-modal__backdrop--${variant}`}
+      aria-hidden={active ? undefined : true}
+      inert={!active || undefined}
       onClick={onClose}
     >
       <div
@@ -537,11 +558,15 @@ export function GenerationViewerModal({
   generation,
   onClose,
   onOpenEditor,
+  active = true,
 }: {
   generation: ResearchGeneration;
   onClose: () => void;
   /** Blog only: open the markdown editor over the viewer. */
   onOpenEditor?: () => void;
+  /** False while the markdown editor is stacked on top — parks this dialog's
+   *  focus trap and Escape handling so only the editor responds. */
+  active?: boolean;
 }) {
   const meta = STUDIO_KIND_META[generation.kind];
   const content = generation.content;
@@ -570,6 +595,7 @@ export function GenerationViewerModal({
     <StudioModal
       onClose={onClose}
       variant="viewer"
+      active={active}
       labelledBy="research-studio-viewer-title"
       announceText={`${meta.label} viewer opened: ${title}`}
     >

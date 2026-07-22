@@ -23,7 +23,7 @@ import "@/styles/globals/surface-research-prompt.css";
 import "@/styles/globals/surface-research-library.css";
 import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import type { ResearchMissionMode, ResearchMissionStatus } from "@/lib/research-missions";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
@@ -111,6 +111,13 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     if (opts?.mode !== undefined) setPromptMode(opts.mode);
     selectTab(next);
   }, [select, selectTab]);
+
+  // A routed Prompt mode is one-shot: once the Prompt tab has rendered with it
+  // (its effects consume initialMode before this parent effect runs), clear it
+  // so later manual visits to the tab never re-apply a stale mode.
+  useEffect(() => {
+    if (activeTab === "prompt" && promptMode !== null) setPromptMode(null);
+  }, [activeTab, promptMode]);
 
   // Engine status, derived honestly from the daemon + live mission count.
   const daemonRunning = context.runtimeState.daemonRunning;

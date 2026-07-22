@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Tabs } from "@/components/ui/tabs";
@@ -36,8 +36,22 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [outputTab, setOutputTab] = useState<"artifacts" | "sources">("artifacts");
   const [sourceFilter, setSourceFilter] = useState<"all" | ResearchSourceRef["status"]>("all");
+  // Tracks the mission currently on screen so an act that settles after the
+  // user switched missions is discarded instead of planting its error/busy
+  // state on the wrong mission's ledger.
+  const missionIdRef = useRef(mission.id);
 
+  // A mission switch resets every piece of local UI state — error banner,
+  // in-flight busy, draft attach fields, per-artifact rejection drafts — so
+  // nothing bleeds into the next mission's ledger (artifact/source keys can
+  // collide across missions). In-flight acts check missionIdRef and discard.
   useEffect(() => {
+    missionIdRef.current = mission.id;
+    setTitle("");
+    setUrl("");
+    setRejection({});
+    setBusy(false);
+    setError(null);
     setSourceFilter("all");
   }, [mission.id]);
 
@@ -46,19 +60,32 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
     ? mission.sources
     : mission.sources.filter((source) => source.status === sourceFilter);
 
+  /** Failures arrive as { ok: false } from the hook; the catch is transport
+   *  defense only — a throw skips the ok branch, so a failure is never
+   *  reported twice. State from an act that settles after a mission switch
+   *  is discarded, and busy always clears for the mission that set it. */
   const act = async (input: ResearchMissionActionInput) => {
+    const startedFor = mission.id;
+    const stillCurrent = () => missionIdRef.current === startedFor;
     setBusy(true);
     setError(null);
     try {
       const result = await onAction(input);
-      if (!result.ok) {
+      if (!result.ok && stillCurrent()) {
         const message = result.error ?? "Evidence could not be updated";
         setError(message);
         announce(message);
       }
-      return result.ok;
+      return result.ok && stillCurrent();
+    } catch (cause) {
+      if (stillCurrent()) {
+        const message = cause instanceof Error ? cause.message : "Evidence could not be updated";
+        setError(message);
+        announce(message);
+      }
+      return false;
     } finally {
-      setBusy(false);
+      if (stillCurrent()) setBusy(false);
     }
   };
 
@@ -97,9 +124,14 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
           { id: "sources", label: "Sources", count: mission.sources.length },
         ]}
       />
+      {/* Panels below are keyed by mission so uncontrolled disclosure state
+          (reject editors, the attach form) can never survive a mission switch —
+          colliding per-mission artifact/source key shapes would otherwise let
+          DOM reuse attach open state to the wrong mission's rows. */}
       {error ? <p className="research-mission-error" role="alert">{error}</p> : null}
       <section
         id="research-output-panel-artifacts"
+        key={`artifacts-${mission.id}`}
         role="tabpanel"
         aria-labelledby="research-output-tab-artifacts"
         hidden={outputTab !== "artifacts"}
@@ -161,6 +193,7 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
 
       <section
         id="research-output-panel-sources"
+        key={`sources-${mission.id}`}
         role="tabpanel"
         aria-labelledby="research-output-tab-sources"
         hidden={outputTab !== "sources"}

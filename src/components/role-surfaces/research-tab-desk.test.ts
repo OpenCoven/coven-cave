@@ -126,6 +126,14 @@ test("runs rail header derives the amber checkpoint line from real missions", ()
   assert.match(css, /\.research-mission-nav__waiting/);
 });
 
+test("planning missions read as active work in the runs rail", () => {
+  // planning is a working state — its status dot carries the same busy tone
+  // as running/queued, never the muted idle dot.
+  assert.match(list, /running: "busy"/);
+  assert.match(list, /planning: "busy"/);
+  assert.match(list, /queued: "busy"/);
+});
+
 // ── Right rail: state switching + reachable ledger ──────────────────────────
 
 test("the right rail switches panels by mission state", () => {
@@ -179,6 +187,45 @@ test("the action bar stays decision-first, sticky, with end actions split right"
   assert.match(css, /\.research-desk-tab \.research-mission-actions \{[^}]*position: sticky/);
   // No kbd chip — the desk registers no keyboard shortcut to claim.
   assert.doesNotMatch(detail, /⌘/);
+});
+
+// ── Action failures: surfaced, mission-scoped, never wedge the bar ──────────
+
+test("detail action failures surface into the error line and clear busy", () => {
+  // Every action path funnels through the shared settle helper:
+  // { ok: false } from the hook is the primary error path…
+  assert.match(detail, /const message = result\.error \?\? fallbackError/);
+  assert.match(detail, /setActionError\(message\);\s*announce\(message\)/);
+  // …a transport throw lands in the same state (defense only — a throw skips
+  // the ok branch, so a failure is never reported twice)…
+  assert.match(detail, /catch \(error\) \{[\s\S]{0,120}error instanceof Error \? error\.message : fallbackError/);
+  // …and the busy flag always clears for the mission that set it.
+  assert.match(detail, /finally \{\s*if \(stillCurrent\(\)\) setBusy\(false\);\s*\}/);
+  // Schedule and automation calls ride the same helper with honest fallbacks.
+  assert.match(detail, /"Automation action failed",\s*\(\) => onAutomationAction\(automation\.id, action\)/);
+  assert.match(detail, /"Research schedule could not be created",\s*\(\) => onSchedule\("RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"\)/);
+});
+
+test("an action settling after a mission switch is discarded", () => {
+  // The settle handlers compare the id captured at start against the ref that
+  // tracks the on-screen mission…
+  assert.match(detail, /const missionIdRef = useRef\(missionId\)/);
+  assert.match(detail, /const startedFor = mission\.id/);
+  assert.match(detail, /const stillCurrent = \(\) => missionIdRef\.current === startedFor/);
+  assert.match(detail, /if \(!stillCurrent\(\)\) return;/);
+  // …and the switch itself resets busy alongside the other per-mission state
+  // so the fresh mission never inherits a disabled action bar.
+  assert.match(
+    detail,
+    /missionIdRef\.current = missionId;\s*setBusy\(false\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
+  );
+});
+
+test("archived missions gate automation controls like the schedule button", () => {
+  assert.match(detail, /const isArchived = mission\.status === "archived"/);
+  // Pause/Resume schedule and Run now both disable once the mission archives.
+  assert.match(detail, /disabled=\{busy \|\| isArchived\}/);
+  assert.match(detail, /disabled=\{busy \|\| isArchived \|\| mission\.status === "completed"\}/);
 });
 
 // ── Responsive collapses re-declared for the desk-tab overrides ─────────────

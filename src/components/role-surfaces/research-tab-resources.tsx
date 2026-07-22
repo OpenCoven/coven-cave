@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
 import {
   linkCategoryMeta,
@@ -229,15 +230,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   }, []);
 
   const copyUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopied(false), 1200);
-      announce("Link copied.");
-    } catch {
+    // copyText (lib/clipboard) falls back to execCommand where
+    // navigator.clipboard doesn't exist — the packaged Tauri webview and
+    // other non-secure contexts — and reports whether the copy landed, so
+    // the ✓ feedback only shows on real success.
+    const ok = await copyText(url);
+    if (!ok) {
       announce("Couldn’t copy the link.", "assertive");
+      return;
     }
+    setCopied(true);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), 1200);
+    announce("Link copied.");
   };
 
   const removeOpenLink = async () => {

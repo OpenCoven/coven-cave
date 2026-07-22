@@ -18,6 +18,9 @@ type Props = {
 
 const STATUS_TONE: Partial<Record<ResearchMission["status"], string>> = {
   running: "busy",
+  // Planning is an active working state — it presents like running/queued,
+  // never like the muted idle dot.
+  planning: "busy",
   queued: "busy",
   checkpoint: "warn",
   paused: "warn",

@@ -20,7 +20,7 @@
  *   video filters are omitted because no such record can exist.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -76,13 +76,29 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   // ready | failed | cancelled, drafting is synchronous — so nothing here can
   // change server-side between visits except through our own mutations, which
   // update the list directly. No polling.
+  //
+  // Stale-response guard (canonical loadSeq pattern, see
+  // familiar-work-queue-view): every load bumps the epoch and responses from
+  // an older epoch are discarded, so an in-flight fetch for the previous
+  // familiar can never land over the new familiar's rows. On a familiar
+  // switch the previous familiar's rows are dropped immediately (the list
+  // shows loading/empty, never another familiar's generations) and the kind
+  // filter resets to All so a kind that familiar lacks can't strand the view.
+  const loadSeq = useRef(0);
+  const loadedFamiliarRef = useRef(familiarId);
   useEffect(() => {
+    const seq = ++loadSeq.current;
     const controller = new AbortController();
+    if (loadedFamiliarRef.current !== familiarId) {
+      loadedFamiliarRef.current = familiarId;
+      setGenerations([]);
+      setFilter("all");
+    }
     setLoading(true);
     setListError(null);
     listResearchGenerations(familiarId, controller.signal)
       .then((result) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || seq !== loadSeq.current) return;
         if (!result.ok || !result.generations) {
           setListError(result.error ?? "Generations could not load");
         } else {
@@ -91,7 +107,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         setLoading(false);
       })
       .catch((error) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || seq !== loadSeq.current) return;
         setListError(error instanceof Error ? error.message : "Generations could not load");
         setLoading(false);
       });
@@ -169,7 +185,11 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       }));
       setRemovingId(null);
       setConfirmRemoveId(null);
-      if (!result.ok) {
+      // The DELETE route 404s ("generation not found") when the record is
+      // already gone server-side — that outcome IS the removal, so drop the
+      // row locally instead of stranding a phantom entry behind an error.
+      const alreadyGone = !result.ok && result.error === "generation not found";
+      if (!result.ok && !alreadyGone) {
         setRemoveError({ id: generation.id, message: result.error ?? "Remove failed" });
         return;
       }
@@ -487,6 +507,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       {viewerGeneration ? (
         <GenerationViewerModal
           generation={viewerGeneration}
+          // While the editor is stacked on top, park the viewer: one live
+          // focus trap and one Escape target at a time (first Escape closes
+          // only the editor; the second closes the viewer).
+          active={editorGeneration === null}
           onClose={() => setViewerId(null)}
           onOpenEditor={
             viewerGeneration.content?.kind === "blog"
