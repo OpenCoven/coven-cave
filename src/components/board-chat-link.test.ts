@@ -111,11 +111,11 @@ assert.match(
 );
 assert.match(
   route,
-  /if \(binding\.harness === "openclaw"\) return reserveNativeChatTask\(\);/,
-  "OpenClaw bridge handling must run before the daemon-only session path",
+  /if \(binding\.harness === "openclaw"\) \{[\s\S]{0,500}isSshRuntime\(binding\.runtime\)[\s\S]{0,500}return reserveNativeChatTask\(\);/,
+  "OpenClaw bridge handling must reject unsupported SSH bindings before reserving a local native Chat task",
 );
 assert.ok(
-  route.indexOf('if (binding.harness === "openclaw") return reserveNativeChatTask();') < route.indexOf("const res = await callDaemon"),
+  route.indexOf('if (binding.harness === "openclaw") {') < route.indexOf("const res = await callDaemon"),
   "OpenClaw task cards must reserve the native Chat task before the daemon path",
 );
 assert.match(

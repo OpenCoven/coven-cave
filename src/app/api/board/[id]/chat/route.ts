@@ -10,6 +10,7 @@ import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { isSshRuntime } from "@/lib/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -201,7 +202,22 @@ export async function POST(
   };
 
   // OpenClaw has no daemon adapter, so it must never be sent to the daemon.
-  if (binding.harness === "openclaw") return reserveNativeChatTask();
+  // Its native bridge is local-only, though: reserving a card first for an
+  // SSH-bound familiar would leave the card linked to a conversation that
+  // chat/send must reject. Leave the card unmodified and surface the same
+  // actionable limitation as the Chat surface instead.
+  if (binding.harness === "openclaw") {
+    if (isSshRuntime(binding.runtime)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "OpenClaw SSH runtime is not supported yet. Use a local OpenClaw familiar or connect the remote agent through a future OpenClaw node bridge.",
+        },
+        { status: 409 },
+      );
+    }
+    return reserveNativeChatTask();
+  }
 
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
