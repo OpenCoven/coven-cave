@@ -1,8 +1,9 @@
 // @ts-nocheck
 //
-// Guard: archived chats never render in the siderail.
+// Guard: archived chats stay out of every siderail unless the user explicitly
+// opts in.
 //
-// Two layers keep an archived chat out of every rail:
+// Layers that keep an archived chat out of the rails by default:
 //  1. `filterVisibleChatSessions` (the shared visibility filter every rail —
 //     ChatProjectSidebar via chat-list/chat-router, WorkspaceSidebar — builds
 //     from) drops `archived_at` rows by DEFAULT; only an explicit
@@ -11,6 +12,9 @@
 //     sidebar groups are built from an archive-free `railSessions` view, so
 //     toggling archived chats visible in the list can't leak them into the
 //     rail.
+//  3. WorkspaceSidebar (the chat sidepanel) has its own "Show archived"
+//     option: OFF by default (archive-free), and only its explicit toggle
+//     routes `includeArchived` through the shared filter.
 //
 // Source-string pins, same convention as chat-thread-rail.test.ts. The
 // behavioral half (default drop / opt-in keep) lives in
@@ -55,8 +59,8 @@ assert.match(
   "sidebar groups must derive from the archive-free railSessions view",
 );
 
-// 3. The other rails build from the shared filter WITHOUT the archived opt-in,
-//    so they inherit the archive-free default.
+// 3. chat-router builds its rail from the shared filter WITHOUT the archived
+//    opt-in, so it inherits the archive-free default.
 assert.match(
   chatRouter,
   /filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\)/,
@@ -67,15 +71,30 @@ assert.doesNotMatch(
   /includeArchived: true/,
   "chat-router never opts rails into archived rows",
 );
+
+// 4. WorkspaceSidebar (the chat sidepanel) has its own explicit "Show
+//    archived" option: the toggle defaults OFF, its state is the only thing
+//    that routes includeArchived through the shared filter, and the opt-in
+//    fetch is gated behind the same toggle.
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(sessions, activeFamiliarId \?\? null\)/,
-  "the workspace siderail uses the default (archive-free) filter",
+  /const \[showArchived, setShowArchived\] = useState\(false\);/,
+  "the sidepanel's Show-archived option must default off (archive-free)",
 );
-assert.doesNotMatch(
+assert.match(
   workspaceSidebar,
-  /includeArchived/,
-  "the workspace siderail never opts into archived rows",
+  /filterVisibleChatSessions\(rows, activeFamiliarId \?\? null, \{ includeArchived: showArchived \}\)/,
+  "the sidepanel passes its Show-archived option through the shared filter's opt-in",
+);
+assert.match(
+  workspaceSidebar,
+  /if \(!showArchived\) \{\s*\n\s*setArchivedRows\(\[\]\);/,
+  "turning Show archived off must clear the fetched archived rows",
+);
+assert.match(
+  workspaceSidebar,
+  /\/api\/sessions\/list\?includeArchived=1/,
+  "archived rows load via the explicit includeArchived fetch (the workspace poll stays archive-free)",
 );
 
 console.log("chat-siderail-hide-archived.test.ts: ok");

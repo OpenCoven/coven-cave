@@ -596,7 +596,7 @@
 /* Only when hovered does the title reserve room for the revealed actions; when
    not hovered the row is full-width (no dead space for hidden buttons). */
 .cnav__thread:hover .cnav__thread-main {
-  padding-right: 52px;
+  padding-right: 76px;
 }
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
@@ -615,6 +615,16 @@
   width: 2.5px;
   border-radius: 2px;
   background: var(--accent-presence);
+}
+/* Archived rows (visible via the sidebar's "Show archived" option) read muted
+   so they can't pass for live threads; hover restores full contrast for the
+   revealed actions (unarchive/delete). */
+.cnav__thread.is-archived .cnav__thread-title,
+.cnav__thread.is-archived .cnav__lead {
+  color: var(--text-muted);
+}
+.cnav__thread.is-archived:hover .cnav__thread-title {
+  color: var(--text-primary);
 }
 .cnav__dot {
   width: 6px;
