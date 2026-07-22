@@ -27,6 +27,13 @@ assert.equal(
   false,
   "below the width threshold the panel never overlays the conversation",
 );
+// No-overlap guarantee: the 1024px reading column centers, so each side
+// margin is (paneWidth − 1024) / 2. The gate must leave the 240px card fully
+// in the margin — never on top of chips/content at the column edge (2xl).
+assert.ok(
+  (ENV_PANEL_MIN_WIDTH - 1024) / 2 >= 240 + 16,
+  "width gate keeps the 240px card entirely inside the spare margin",
+);
 assert.equal(
   resolveEnvPanelVisible({ ...base, paneWidth: null }),
   false,
