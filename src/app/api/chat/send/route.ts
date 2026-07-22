@@ -1300,10 +1300,10 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE =
         /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
-      const recordStdoutErrorTail = (text: string) => {
+      const recordStdoutErrorTail = (text: string, force = false) => {
         for (const part of text.split(/\r?\n/)) {
           const trimmed = part.trim();
-          if (!trimmed || !ERR_LINE_RE.test(trimmed)) continue;
+          if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
         }
@@ -1507,7 +1507,10 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "error") {
-            recordStdoutErrorTail(ev.message);
+            // This is an explicit error envelope, so preserve even messages
+            // such as "Selected model is unavailable" that do not match the
+            // generic stderr-like keyword filter.
+            recordStdoutErrorTail(ev.message, true);
             result = { ...result, is_error: true };
           }
         } catch {

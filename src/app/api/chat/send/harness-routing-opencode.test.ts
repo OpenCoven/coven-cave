@@ -60,5 +60,10 @@ assert.match(
   /child\.on\("close", \(code\) => \{[\s\S]*?if \(openCodeDirect && code !== 0\)[\s\S]*?is_error: true/,
   "a non-zero OpenCode exit cannot be treated as a successful model run when no JSON error arrives",
 );
+assert.match(
+  route,
+  /ev\.kind === "error"[\s\S]*?recordStdoutErrorTail\(ev\.message, true\)/,
+  "structured OpenCode errors retain model-rejection details even when they lack generic error keywords",
+);
 
 console.log("opencode harness routing tests passed");
