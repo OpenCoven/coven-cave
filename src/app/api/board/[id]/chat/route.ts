@@ -3,7 +3,7 @@ import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -13,11 +13,9 @@ import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-per
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
-// harness isn't registered for daemon-managed sessions (e.g. `openclaw`
-// and `hermes` today, which ship as their own CLI flows in chat/send
-// but don't yet have a daemon session adapter). Surfacing a friendly
-// 409 here saves the user from staring at "daemon http 400" with no
-// idea what to do.
+// harness isn't registered for daemon-managed sessions. Trusted Chat runtimes
+// can fall back to Cave's native Chat launch; anything else gets a friendly
+// 409 instead of a misleading "daemon http 400".
 const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
@@ -169,10 +167,11 @@ export async function POST(
     }
   }
 
-  // OpenClaw is a Cave-owned bridge, not a daemon harness. It still follows
-  // the same worktree isolation as daemon-backed tasks, then reserves and
-  // links a conversation id for the task cockpit to start through Chat.
-  if (binding.harness === "openclaw") {
+  // A native Chat launch works for bridge-backed and direct runtimes without
+  // assuming how their executable was installed (npm shim, native binary,
+  // package manager, or a registry adapter). The Board still owns worktree
+  // isolation and the task link; Chat owns each runtime's launch contract.
+  const reserveNativeChatTask = async () => {
     const sessionId = crypto.randomUUID();
     const updated = await updateCard(card.id, {
       sessionId,
@@ -197,9 +196,12 @@ export async function POST(
       projectRoot: sessionRoot,
       worktree,
       initialPrompt: buildInitialTaskChatPrompt(card),
-      bridge: "openclaw",
+      bridge: "native-chat",
     });
-  }
+  };
+
+  // OpenClaw has no daemon adapter, so it must never be sent to the daemon.
+  if (binding.harness === "openclaw") return reserveNativeChatTask();
 
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
@@ -215,12 +217,15 @@ export async function POST(
 
   if (!res.ok || !res.data?.id) {
     const daemonMsg = extractDaemonError(res);
-    // Unsupported-harness errors aren't outages — they're a
-    // misconfiguration: the card is assigned to a familiar whose
-    // harness this daemon doesn't run as a task session. Return a 409
-    // with a message that tells the user what to do, instead of a 502
-    // that reads as "the daemon is broken".
+    // Unsupported-harness errors aren't outages. A trusted runtime can use
+    // native Chat; an untrusted one remains a configuration error with a
+    // helpful 409 instead of a generic daemon failure.
     if (daemonMsg && UNSUPPORTED_HARNESS_RE.test(daemonMsg)) {
+      // The daemon's adapter set can lag Cave's chat-supported runtimes.
+      // Fall back only after the daemon has explicitly declined a trusted
+      // runtime, preserving daemon sessions where they are supported while
+      // allowing direct/registry runtimes such as Hermes to start task work.
+      if (isTrustedChatHarness(binding.harness)) return reserveNativeChatTask();
       return NextResponse.json(
         {
           ok: false,

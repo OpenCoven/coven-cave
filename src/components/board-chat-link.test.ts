@@ -106,33 +106,37 @@ assert.match(
 );
 assert.match(
   route,
-  /binding\.harness = canonicalHarnessId\(binding\.harness\);[\s\S]{0,6000}if \(binding\.harness === "openclaw"\)[\s\S]{0,1400}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,1400}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
   "OpenClaw task cards reserve a bridge conversation before the daemon-only path",
 );
 assert.match(
   route,
-  /if \(binding\.harness === "openclaw"\)[\s\S]{0,5000}callDaemon/,
+  /if \(binding\.harness === "openclaw"\) return reserveNativeChatTask\(\);/,
   "OpenClaw bridge handling must run before the daemon-only session path",
 );
-assert.doesNotMatch(
-  route.match(/if \(binding\.harness === "openclaw"\)[\s\S]*?bridge: "openclaw",[\s\S]*?\n  }/)?.[0] ?? "",
-  /callDaemon/,
-  "OpenClaw task cards must never ask the daemon to spawn OpenClaw",
+assert.ok(
+  route.indexOf('if (binding.harness === "openclaw") return reserveNativeChatTask();') < route.indexOf("const res = await callDaemon"),
+  "OpenClaw task cards must reserve the native Chat task before the daemon path",
 );
 assert.match(
   route,
-  /if \(binding\.harness === "openclaw"\)[\s\S]{0,700}worktree\s*\?\s*\{ cwd: sessionRoot \}/,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,700}worktree\s*\?\s*\{ cwd: sessionRoot \}/,
   "OpenClaw task cards preserve Board worktree isolation before launching the bridge",
 );
 assert.match(
-  boardView,
-  /started\.bridge === "openclaw"[\s\S]{0,300}setPendingBridgeStart/,
-  "Board keeps the first OpenClaw task prompt until its local conversation appears",
+  route,
+  /UNSUPPORTED_HARNESS_RE\.test\(daemonMsg\)[\s\S]{0,500}isTrustedChatHarness\(binding\.harness\)[\s\S]{0,100}reserveNativeChatTask\(\)/,
+  "Any trusted runtime rejected by the daemon falls back to its native Chat launch path",
 );
 assert.match(
   boardView,
-  /if \(isMobile && started\.bridge !== "openclaw"\)/,
-  "Mobile OpenClaw task launches stay in the cockpit until the bridge sends its first prompt",
+  /started\.bridge === "native-chat"[\s\S]{0,300}setPendingBridgeStart/,
+  "Board keeps the first native Chat task prompt until its local conversation appears",
+);
+assert.match(
+  boardView,
+  /if \(isMobile && started\.bridge !== "native-chat"\)/,
+  "Mobile native Chat task launches stay in the cockpit until the bridge sends its first prompt",
 );
 assert.match(
   taskWorkCockpit,

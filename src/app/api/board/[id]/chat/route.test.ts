@@ -2,9 +2,9 @@
 //
 // File-read smoke for the board task-chat route. Locks in the
 // unsupported-harness branch added alongside this test: when the
-// daemon rejects a session with "not a supported harness", the route
-// returns a 409 with an actionable message instead of a 502 that
-// reads as "the daemon is broken".
+// daemon rejects a session with "not a supported harness", trusted
+// Chat runtimes reserve a native Chat task and untrusted runtimes get
+// an actionable 409 instead of a 502 that reads as "the daemon is broken".
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,12 +27,19 @@ assert.match(
   "route declares an /i regex for 'not a supported harness' detection",
 );
 
-// The unsupported-harness branch returns 409, not 502 — that's the
-// whole point of this change.
+// Trusted runtimes use the native Chat handoff instead of losing Board task
+// support merely because the daemon lacks their session adapter.
 assert.match(
   source,
-  /UNSUPPORTED_HARNESS_RE\.test\(daemonMsg\)[\s\S]{0,400}status:\s*409/,
-  "route returns 409 when the daemon rejects an unsupported harness",
+  /UNSUPPORTED_HARNESS_RE\.test\(daemonMsg\)[\s\S]{0,400}isTrustedChatHarness\(binding\.harness\)[\s\S]{0,100}reserveNativeChatTask\(\)/,
+  "route falls back to native Chat when the daemon rejects a trusted runtime",
+);
+
+// Untrusted harnesses still return 409, not a generic 502.
+assert.match(
+  source,
+  /isTrustedChatHarness\(binding\.harness\)[\s\S]{0,700}status:\s*409/,
+  "route returns 409 when the daemon rejects an unsupported untrusted harness",
 );
 
 // The friendly message must name the harness from the binding so the

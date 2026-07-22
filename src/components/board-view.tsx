@@ -830,13 +830,13 @@ export function BoardView({
 
     const started = await startTaskChat(id, project?.root);
     if (!started) return;
-    if (started.bridge === "openclaw" && started.initialPrompt) {
+    if (started.bridge === "native-chat" && started.initialPrompt) {
       setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
     }
-    // The OpenClaw bridge needs TaskWorkCockpit to hand the first prompt to
-    // ChatView. Jumping straight to the mobile session view would discard that
-    // one-shot handoff before a local conversation exists.
-    if (isMobile && started.bridge !== "openclaw") {
+    // Native Chat needs TaskWorkCockpit to hand the first prompt to ChatView.
+    // Jumping straight to the mobile session view would discard that one-shot
+    // handoff before a local conversation exists.
+    if (isMobile && started.bridge !== "native-chat") {
       onJumpToSession?.(started.sessionId, started.familiarId);
       return;
     }
