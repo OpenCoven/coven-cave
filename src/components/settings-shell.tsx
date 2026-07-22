@@ -2665,7 +2665,6 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
   const [steps, setSteps] = useState<PairingStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [autoRetryBlocked, setAutoRetryBlocked] = useState(false);
   const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
   const initialReconcileDoneRef = useRef(false);
 
@@ -2674,7 +2673,6 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
     setError(null);
     try {
       const result = await reconcileMobileModeRequest(enabled, { force: options?.force });
-      setAutoRetryBlocked(result.retryBlocked);
       // The proven ladder rides both success and unavailable responses.
       setSteps(enabled && Array.isArray(result.steps) ? result.steps : null);
       if (!result.ok) {
@@ -2700,7 +2698,6 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
   const onMobileModeChange = async (enabled: boolean) => {
     writeMobileModeEnabled(enabled);
     setMobileModeEnabled(enabled);
-    setAutoRetryBlocked(false);
     await reconcileMobileMode(enabled, { busy: true, force: true });
   };
 
@@ -2711,8 +2708,12 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
     void reconcileMobileMode(mobileModeEnabled);
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; pauses in a hidden tab.
+  // Prerequisite failures do NOT stop the poll — the shared reconciler's TTL
+  // breaker turns most ticks into cached no-ops and lets one real probe
+  // through per TTL, so "Tailscale isn't running" heals itself once the
+  // connection is actually up (it used to latch until a manual Retry).
   usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
-    enabled: mobileModeEnabled && !autoRetryBlocked,
+    enabled: mobileModeEnabled,
   });
 
   const copy = (kind: "link" | "app" | "host", value: string) => {

@@ -178,7 +178,26 @@ assert.match(
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
-assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled && !autoRetryBlocked,?\s*\}\)/, "Settings should stop automatic polling after a known prerequisite 503");
+// The poll must keep ticking through prerequisite failures — the reconciler's
+// TTL breaker rate-limits real probes, and the card self-heals once Tailscale
+// comes up (a gated poll shipped a stale "Tailscale isn't running" over a
+// live connection).
+assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings keeps polling; the shared TTL breaker owns retry pacing");
+assert.doesNotMatch(settings, /autoRetryBlocked/, "the poll-stopping latch is gone from Settings");
+{
+  const workspaceSrc = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+  assert.match(
+    workspaceSrc,
+    /usePausablePoll\(\(\) => void reconcileMobileMode\(mobileModeEnabled\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/,
+    "Workspace keeps polling too; both consumers rely on the shared TTL breaker",
+  );
+  assert.doesNotMatch(workspaceSrc, /mobileModeAutoRetryBlocked/, "the poll-stopping latch is gone from Workspace");
+}
+{
+  const reconciler = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+  assert.match(reconciler, /RETRY_BLOCK_TTL_MS = 45_000/, "the breaker half-opens on a TTL instead of latching forever");
+  assert.match(reconciler, /now\(\) - blocked\.at < RETRY_BLOCK_TTL_MS/, "cached failures expire so the status tracks reality");
+}
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
 
