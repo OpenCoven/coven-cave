@@ -16,8 +16,11 @@ assert.match(boardStore, /modelOverride: "modelOverride" in patch[\s\S]{0,140}no
 assert.match(createRoute, /modelOverride\?: string \| null/, "board create API accepts a task model override");
 assert.match(patchRoute, /modelOverride: string \| null/, "board patch API accepts a task model override");
 assert.match(inspector, /useRuntimeModelOptions\(modelHarness, currentFamiliar\?\.id \?\? null\)/, "inspector loads the selected familiar runtime's model options");
-assert.match(inspector, /onPatch\(card\.id, \{ familiarId: next \|\| null, modelOverride: null \}\)/, "changing familiar clears the prior task model override");
+assert.match(inspector, /persistTaskModelPatch\(\{ familiarId: next \|\| null, modelOverride: null \}\)/, "changing familiar clears the prior task model override");
 assert.match(inspector, /label="Model"/, "inspector exposes a Model control");
 assert.match(taskRoute, /model: card\.modelOverride \?\? binding\.model/, "new task sessions prefer the card model override");
+assert.match(inspector, /const pendingModelSaveRef = useRef<Promise<boolean> \| null>\(null\)/, "the inspector tracks a pending model save");
+assert.match(inspector, /await \(pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)\)/, "starting work waits for the pending model save");
+assert.match(inspector, /onClick=\{\(\) => void openTaskWorkAfterModelSave\(\)\}/, "Start work uses the model-save-aware handler");
 
 console.log("board-task-model.test.ts: ok");

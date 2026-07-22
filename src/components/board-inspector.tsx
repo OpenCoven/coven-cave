@@ -83,7 +83,7 @@ type Props = {
   sessions: SessionRow[];
   projects: CaveProject[];
   onClose: () => void;
-  onPatch: (id: string, patch: CardPatch) => void;
+  onPatch: (id: string, patch: CardPatch) => void | boolean | Promise<boolean>;
   onMoveStatus: (id: string, status: CardStatus) => void;
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
@@ -1131,6 +1131,23 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   );
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
+  // Starting a task creates its session from the persisted card. Keep a model
+  // save in flight until it settles so selecting a model and immediately
+  // pressing Start work cannot create the session with the prior default.
+  const pendingModelSaveRef = useRef<Promise<boolean> | null>(null);
+  const persistTaskModelPatch = (patch: CardPatch) => {
+    const pending = Promise.resolve(onPatch(card.id, patch))
+      .then((saved) => saved !== false)
+      .catch(() => false);
+    pendingModelSaveRef.current = pending;
+    void pending.finally(() => {
+      if (pendingModelSaveRef.current === pending) pendingModelSaveRef.current = null;
+    });
+  };
+  const openTaskWorkAfterModelSave = async () => {
+    const saved = await (pendingModelSaveRef.current ?? Promise.resolve(true));
+    if (saved) await onOpenTaskWork?.(card.id);
+  };
   useEffect(() => {
     setCustomModelDraft(card.modelOverride ?? "");
   }, [card.modelOverride]);
@@ -1261,7 +1278,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   value={card.familiarId ?? ""}
                   onChange={(next) => {
                     setModelCustomMode(false);
-                    onPatch(card.id, { familiarId: next || null, modelOverride: null });
+                    persistTaskModelPatch({ familiarId: next || null, modelOverride: null });
                   }}
                   options={[
                     { value: "", label: "Unassigned" },
@@ -1290,7 +1307,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                         setCustomModelDraft("");
                         return;
                       }
-                      onPatch(card.id, { modelOverride: next || null });
+                      persistTaskModelPatch({ modelOverride: next || null });
                     }}
                     options={taskModelOptions}
                     disabled={!currentFamiliar || Boolean(card.sessionId)}
@@ -1306,7 +1323,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   onChange={(event) => setCustomModelDraft(event.target.value)}
                   onBlur={() => {
                     setModelCustomMode(false);
-                    onPatch(card.id, { modelOverride: customModelDraft || null });
+                    persistTaskModelPatch({ modelOverride: customModelDraft || null });
                   }}
                   placeholder={currentFamiliar ? "provider/model (optional)" : "Assign a familiar first"}
                   disabled={!currentFamiliar || Boolean(card.sessionId)}
@@ -1459,7 +1476,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     className="board-drawer-chat-cta"
                     disabled={chatLinking}
                     title="Start work"
-                    onClick={() => void onOpenTaskWork?.(card.id)}
+                    onClick={() => void openTaskWorkAfterModelSave()}
                   >
                     {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start work"}
                     <Icon name="ph:arrow-right-bold" width={11} />
