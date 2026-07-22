@@ -73,6 +73,7 @@ import {
   flushAppPreferences,
   readAppPreferences,
   refreshAppPreferences,
+  subscribeAppPreferences,
   updateAppPreferences,
 } from "@/lib/app-preferences";
 import {
@@ -2005,21 +2006,34 @@ function withAlphaFrom(prev: string | undefined, hex: string): string {
  *  companions) changes on the selected theme. */
 function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const html = document.documentElement;
-  const themePreferences = readAppPreferences().appearance.theme;
-  let existing: CustomThemeData | null =
+  const preferences = readAppPreferences();
+  const themePreferences = preferences.appearance.theme;
+  const existing: CustomThemeData | null =
     themePreferences.id === "custom" ? themePreferences.custom : null;
-  try {
-    const raw = null;
-    if (raw) existing = JSON.parse(raw) as CustomThemeData;
-  } catch {
-    /* malformed — treat as none */
-  }
   const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
+  const otherGroupKey: "light" | "dark" = groupKey === "light" ? "dark" : "light";
   const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
-  // Seed from the current computed look while the preset CSS is still applied
-  // (also fills a missing mode group when a dark-only custom theme is edited
-  // in light mode, or vice versa).
-  if (Object.keys(group).length === 0) Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  // Fresh fork from a preset: snapshot BOTH mode palettes while the preset CSS
+  // is still applied. Seeding only the edited mode made the fork single-mode —
+  // a later Light/Dark flip kept rendering this mode's colors
+  // (activeCustomThemeVariables falls back to the only group) and the first
+  // edit in the other mode seeded it from the wrong mode's look. Clear in-drag
+  // preview inline vars first so both snapshots read the preset (the live
+  // re-apply below restores the finished look); flipping data-mode +
+  // getComputedStyle forces a synchronous recalc, so nothing paints mid-flip.
+  // Imported customs missing one mode group keep the fill-on-first-edit
+  // fallback — their preset is long gone, the current look is all there is.
+  let otherSeed: Record<string, string> | null = null;
+  if (!existing) {
+    for (const name of THEME_FORK_SNAPSHOT_KEYS) html.style.removeProperty(name);
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+    const restore = html.getAttribute("data-mode") ?? groupKey;
+    html.setAttribute("data-mode", otherGroupKey);
+    otherSeed = resolveTokens(THEME_FORK_SNAPSHOT_KEYS);
+    html.setAttribute("data-mode", restore);
+  } else if (Object.keys(group).length === 0) {
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  }
   group[key] = hex;
   Object.assign(group, deriveTokenCompanions(key, hex, mode));
   const baseTheme = html.getAttribute("data-theme");
@@ -2029,10 +2043,24 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
       : "Custom";
   const data: CustomThemeData = {
     name: existing?.name ?? forkName,
-    cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
+    cssVars: {
+      ...(existing?.cssVars ?? {}),
+      [groupKey]: group,
+      ...(otherSeed ? { [otherGroupKey]: otherSeed } : {}),
+    },
   };
+  // An explicit accent pick is a statement of intent: disarm the backdrop's
+  // auto-match in the same atomic patch, or applyBackdropToDocument re-fits
+  // --accent-presence to the image seed on the very next reconcile and the
+  // pick never renders (the backdrop settings toggle re-arms matching).
+  const backdrop = preferences.appearance.backdrop;
+  const disarmBackdropAccent =
+    key === "--accent-presence" && backdrop.enabled && backdrop.matchAccent;
   updateAppPreferences({
-    appearance: { theme: { id: "custom", resolvedMode: mode, custom: data } },
+    appearance: {
+      theme: { id: "custom", resolvedMode: mode, custom: data },
+      ...(disarmBackdropAccent ? { backdrop: { matchAccent: false } } : {}),
+    },
   });
   // Live-apply the whole group — not just the edited key — so the selected
   // theme's look survives the data-theme flip. Boot (theme-init.js) replays
@@ -2041,6 +2069,19 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
     html.style.setProperty(name, value);
   }
   html.setAttribute("data-theme", "custom");
+}
+
+/** Paint-only in-drag preview: writes the edited token + its companions inline
+ *  so the pick renders instantly, without touching the preferences store — no
+ *  reconcile, no PATCH, no cross-tab broadcast per pointer-move. Inline
+ *  element.style beats whichever preset/custom CSS block is active, so no
+ *  data-theme flip is needed; commit (applyTokenOverride) makes it durable. */
+function previewTokenOverride(key: string, hex: string, mode: Mode) {
+  const html = document.documentElement;
+  html.style.setProperty(key, hex);
+  for (const [name, value] of Object.entries(deriveTokenCompanions(key, hex, mode))) {
+    html.style.setProperty(name, value);
+  }
 }
 
 /** One editable token row — swatch button opening the in-app ColorPicker
@@ -2132,46 +2173,62 @@ function ThemeTokenOverrides({
     setRecents(getRecentColors());
   }, []);
 
-  // The picker fires onChange per pointer-move, and each apply rewrites ~20
-  // root CSS vars + localStorage — coalesce to one apply per animation frame
-  // (mirrors the removed editor's rAF throttle). The daemon sync (onChange →
-  // reloadCustomData → persistThemeTokens PUT) waits for commit: one network
-  // write per finished edit instead of one per move.
+  // The picker fires onChange per pointer-move. Drags stay paint-only — each
+  // rAF-coalesced frame calls previewTokenOverride (inline vars, store
+  // untouched), so nothing reconciles, PATCHes, or broadcasts mid-drag. The
+  // durable write (applyTokenOverride → store → PUT) happens once per finished
+  // edit, at commit (popover close) or unmount.
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ key: string; value: string } | null>(null);
-  const flushPendingApply = useCallback(() => {
+  const dirtyRef = useRef<Set<(typeof THEME_SYNC_KEYS)[number]>>(new Set());
+  const flushPendingPreview = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+    if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
   }, []);
-  // Flush on unmount so a drag-in-progress still persists.
-  useEffect(() => flushPendingApply, [flushPendingApply]);
+  // Persist any un-committed edit on unmount so a drag-in-progress isn't lost
+  // when the user navigates away with the picker still open.
+  useEffect(() => {
+    return () => {
+      flushPendingPreview();
+      for (const key of dirtyRef.current) {
+        const value = valuesRef.current[key];
+        if (value) applyTokenOverride(key, value, modeRef.current);
+      }
+      dirtyRef.current.clear();
+    };
+  }, [flushPendingPreview]);
 
   const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
     // Preserve the token's original alpha byte (hairline borders are washes).
     const next = withAlphaFrom(valuesRef.current[key], hex);
     setValues((v) => ({ ...v, [key]: next }));
+    dirtyRef.current.add(key);
     pendingRef.current = { key, value: next };
     if (frameRef.current === null) {
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
         const pending = pendingRef.current;
         pendingRef.current = null;
-        if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+        if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
       });
     }
   };
 
   const handleCommit = (key: (typeof THEME_SYNC_KEYS)[number]) => {
-    flushPendingApply();
-    const committed = (valuesRef.current[key] ?? "").slice(0, 7);
-    if (committed) setRecents(addRecentColor(committed));
+    flushPendingPreview();
+    if (!dirtyRef.current.has(key)) return; // opened + closed without a pick
+    dirtyRef.current.delete(key);
+    const committed = valuesRef.current[key];
+    if (!committed) return;
+    applyTokenOverride(key, committed, modeRef.current);
+    setRecents(addRecentColor(committed.slice(0, 7)));
     onChange();
   };
 
@@ -2275,6 +2332,28 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     }
     setAppearanceHydrated(true);
   }, []);
+
+  // External theme changes — the 10s /api/theme poll, another tab via the
+  // preferences BroadcastChannel, a phone PATCH — land in the store and
+  // repaint the app, but this section hydrated its selection state once on
+  // mount, leaving the theme grid and token-row swatches stale until a full
+  // reload (cave-hkfq). Follow the store. setCustomData keeps the previous
+  // object when content is unchanged so the persist effect (which watches
+  // customData) doesn't re-emit a PUT for every unrelated store notify.
+  useEffect(() => {
+    if (!appearanceHydrated) return;
+    return subscribeAppPreferences(() => {
+      const theme = readAppPreferences().appearance.theme;
+      setActiveTheme(readPersistedTheme());
+      setMode(readPersistedMode());
+      const next = theme.id === "custom" ? theme.custom : null;
+      setCustomData((prev) => {
+        if (prev === next) return prev;
+        if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+        return next;
+      });
+    });
+  }, [appearanceHydrated]);
 
   const handleSelectPreset = (id: PresetTheme) => {
     setActiveTheme(id);
@@ -2474,7 +2553,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
-          reloadKey={`${activeTheme}:${mode}:${customData ? "c" : "p"}`}
+          reloadKey={`${activeTheme}:${mode}:${customData ? JSON.stringify(customData.cssVars) : "preset"}`}
           onChange={reloadCustomData}
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
