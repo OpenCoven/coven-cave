@@ -2,6 +2,11 @@ const HOOK_LINE_RE = /^hook:\s+/;
 const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning:|session id:|tokens used|\d[\d,]*\s*$)/;
 const CODEX_START_LINE = "codex";
 const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
+// Hermes may emit this compatibility diagnostic on stdout immediately before
+// (or on the same line as) its reply. The selected model is still applied, so
+// do not expose the runtime's internal provider normalization to the user.
+const OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE =
+  /^\s*(?:⚠(?:\uFE0F)?\s*)?Normalized model ['"][^'"\r\n]+['"] to ['"][^'"\r\n]+['"] for openai-codex\.\s*/i;
 
 // Exec-echo blocks emitted by Codex into stdout — NOT structured JSON events.
 // Format:
@@ -142,7 +147,10 @@ export class AssistantFilter {
 
   private processLine(rawLine: string): string {
     const line = rawLine.replace(/\r/g, "");
-    if (this.passthrough) return line + "\n";
+    if (this.passthrough) {
+      const visibleLine = line.replace(OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE, "");
+      return visibleLine ? visibleLine + "\n" : "";
+    }
     const trimmed = line.trim();
 
     if (trimmed === CODEX_START_LINE || CLAUDE_ASSISTANT_RE.test(trimmed)) {

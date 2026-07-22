@@ -240,6 +240,20 @@ assert.equal(
     "external-adapter stdout passes through verbatim — no marker gate, no banner heuristics",
   );
 }
+{
+  const external = new AssistantFilter({ passthrough: true });
+  let out = external.push(
+    "⚠️ Normalized model 'openai/gpt-5.6-terra' to 'gpt-5.6-terra' for openai-codex. The model reply remains visible.\n",
+  );
+  out += external.push(
+    "⚠️ Normalized model 'openai/gpt-5.6-terra' to 'gpt-5.6-terra' for openai-codex.\n",
+  );
+  assert.equal(
+    out,
+    "The model reply remains visible.\n",
+    "the OpenAI Codex model-normalization diagnostic must not leak into an external runtime reply",
+  );
+}
 assert.equal(
   feed(["A bare line with no marker before it."]),
   "",
