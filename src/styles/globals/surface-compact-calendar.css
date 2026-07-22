@@ -1172,10 +1172,6 @@
   border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
 }
-.home-ask-salem__hint {
-  color: var(--text-muted);
-  opacity: 0.75;
-}
 
 
 

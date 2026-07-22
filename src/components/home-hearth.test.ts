@@ -1,16 +1,17 @@
 // @ts-nocheck
-// Chat revamp 1a — the home hearth card. Pins:
+// Chat revamp 1a + minimal pass — the home hearth card. Pins:
 //   (1) one centered card: kicker → heading → live-context subtitle →
-//       composer → demoted suggestions → Continue → Open work → snippets;
+//       composer → cold-start pills → Continue → Open work → snippets;
 //   (2) Continue resumes real sessions through the workspace handler, with a
-//       presence dot for running sessions;
+//       presence dot for running sessions — behind the same persisted
+//       disclosure pattern as Open work (expanded by default);
 //   (3) Open work reuses the EXISTING git/PR data paths (useChangesSummary +
 //       useBranchPr — the same sources as the composer git chip) and the
 //       shared /api/board snapshot, and persists its disclosure preference;
 //   (4) Prompt snippets reuses the /api/prompts-backed picker list and the
 //       existing PromptSnippetsModal browser, collapsed by default;
-//   (5) suggestion pills obey the uniform-rows rule (data-count-keyed grid,
-//       max 4, never 3+1 — #2672);
+//   (5) suggestion pills are cold-start help: capped at one quiet row of two,
+//       hidden while a draft exists, uniform-rows grid (#2672);
 //   (6) the From-task row is prop-driven and explicitly unwired (no task→home
 //       handoff exists yet).
 import assert from "node:assert/strict";
@@ -55,6 +56,12 @@ assert.match(cont, /home-continue__dot\$\{running \? " is-running" : ""\}/, "run
 assert.match(cont, /relativeAge\(s\.updated_at, nowMs\)/, "the subline reuses the shared relative-age formatter");
 assert.match(css, /\.home-continue__dot\.is-running \{\s*background: var\(--accent-presence\);/, "running dot = accent; idle stays muted");
 assert.match(css, /\.home-continue__cards \{[\s\S]{0,200}?repeat\(2, minmax\(0, 1fr\)\)/, "two side-by-side cards");
+// Minimal pass: Continue speaks the same persisted-disclosure language as
+// Open work / Prompt snippets, so the hearth can collapse to quiet headings.
+assert.match(cont, /HOME_CONTINUE_PREF_KEY = "cave:home:continue-expanded"/, "the Continue disclosure preference persists under a stable key");
+assert.match(cont, /useHomeDisclosure\(HOME_CONTINUE_PREF_KEY, true\)/, "Continue is expanded by default — it's the highest-value row");
+assert.match(cont, /aria-expanded=\{open\}/, "the Continue disclosure header is a button with aria-expanded");
+assert.match(cont, /\{open \? `· \$\{rows\.length\}` : `· \$\{freshest\.title\}`\}/, "collapsed, the header carries the freshest resumable title");
 
 // ── (3) Open work ────────────────────────────────────────────────────────────
 assert.match(openWork, /useChangesSummary\(root, Boolean\(root\)\)/, "branch + dirty count ride the shared /api/changes poll");
@@ -96,9 +103,9 @@ assert.match(
   "Show all opens the existing PromptSnippetsModal browser",
 );
 
-// ── (5) Suggestion pills — uniform rows (#2672) ──────────────────────────────
+// ── (5) Suggestion pills — cold-start help, uniform rows (#2672) ─────────────
 assert.match(pills, /data-count=\{suggestions\.length\}/, "the pill grid is keyed off the pill count");
-assert.match(pills, /buildHomeSuggestions\(\{ cards, projectName \}\)/, "pills reuse the pure suggestion heuristic (max 4 by default)");
+assert.match(pills, /buildHomeSuggestions\(\{ cards, projectName, max: 2 \}\)/, "cold-start pills cap at one quiet row of two (minimal pass)");
 assert.match(
   css,
   /\.home-suggest-pills\[data-count="2"\],\s*\.home-suggest-pills\[data-count="4"\] \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
@@ -116,7 +123,23 @@ assert.match(fromTask, /if \(!origin\) return null/, "the row renders only with 
 assert.match(fromTask, /\.slice\(0, 3\)/, "chips cap at three (uniform-row rule)");
 assert.match(fromTask, /From task/, "the accent 'From task' label renders");
 assert.match(composer, /const taskOrigin: HomeTaskOrigin \| null = null;/, "home passes null — no task→home handoff exists yet (see the NOTE)");
-assert.match(composer, /taskOrigin \? \(\s*<HomeFromTaskRow origin=\{taskOrigin\} onPickSuggestion=\{insertPrompt\} \/>\s*\) : \(\s*<HomeSuggestionPills/, "the row replaces the pill row when a task origin arrives");
+assert.match(
+  composer,
+  /taskOrigin \? \(\s*<HomeFromTaskRow origin=\{taskOrigin\} onPickSuggestion=\{insertPrompt\} \/>\s*\) : !text\.trim\(\) \? \(\s*<HomeSuggestionPills/,
+  "the From-task row outranks the pills; the pills render only while the draft is empty (progressive disclosure)",
+);
+
+// ── Minimal pass: chrome the hero and footer no longer repeat ────────────────
+// The hero subtitle stops at familiar · role — the runtime/model already reads
+// verbatim in the composer's context pill one line below.
+assert.doesNotMatch(
+  composer,
+  /const contextLine[\s\S]{0,400}?selectedModelId/,
+  "the hero subtitle does not duplicate the model shown in the context pill",
+);
+// Ask Salem is just the doorway; the what-it-covers copy lives in the tooltip.
+assert.doesNotMatch(composer, /home-ask-salem__hint/, "the Ask Salem row drops the inline hint text");
+assert.match(composer, /title="Grounded answers from the Coven index — docs, your Cave, your models"/, "the Salem hint survives as a tooltip");
 
 // ── Shared plumbing ──────────────────────────────────────────────────────────
 // Disclosure prefs read AFTER mount (SSR-deterministic, like the greeting).

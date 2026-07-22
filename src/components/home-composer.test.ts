@@ -36,9 +36,10 @@ assert.match(
   "HomeComposer should load a familiar-scoped project list for the project selector",
 );
 
-// Chat revamp 1a: the hero is the hearth card's heading — greeting kicker,
-// "What are we casting today?", then a live-context subtitle (familiar ·
-// role · model). The project name moved into the composer context pill.
+// Chat revamp 1a + minimal pass: the hero is the hearth card's heading —
+// greeting kicker, "What are we casting today?", then a live-context subtitle
+// (familiar · role). The project name and runtime/model both live in the
+// composer context pill — the hero never repeats them.
 assert.match(
   source,
   /home-composer-headline">What are we casting today\?<\/h1>/,
@@ -51,8 +52,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const contextLine = useMemo\(\(\) => \{[\s\S]*?selectedFamiliar\?\.display_name[\s\S]*?selectedFamiliar\?\.role[\s\S]*?\}, \[selectedFamiliar, selectedRuntime, selectedModelId\]\)/,
-  "the subtitle derives from the live familiar + runtime/model state (no invented user profile)",
+  /const contextLine = useMemo\(\(\) => \{[\s\S]*?selectedFamiliar\?\.display_name[\s\S]*?selectedFamiliar\?\.role[\s\S]*?\}, \[selectedFamiliar\]\)/,
+  "the subtitle derives from the live familiar only (model reads in the context pill; no invented user profile)",
 );
 assert.match(
   source,
