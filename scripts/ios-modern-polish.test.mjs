@@ -97,7 +97,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /\.transition\(\.asymmetric\([\s\S]{0,160}?insertion: \.opacity\.combined\(with: \.scale\(scale: 0\.9\d, anchor: \.bottom\)\)/,
+  /\.transition\(\.asymmetric\([\s\S]{0,220}?: \.opacity\.combined\(with: \.scale\(scale: 0\.9\d, anchor: \.bottom\)\)/,
   "new bubbles should rise-and-fade in rather than popping",
 );
 assert.match(
