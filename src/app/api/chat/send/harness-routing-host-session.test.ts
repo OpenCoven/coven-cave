@@ -386,8 +386,8 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = body\.sessionId\s*\n?\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
-  "Resume targets the harness's latest session id, not the stable conversation id",
+  /const resumeTarget = body\.startNewConversation && !existingConversation\s*\? null\s*:\s*body\.sessionId\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  "A reserved Board conversation starts fresh once, then resumes with the harness's latest session id",
 );
 assert.match(
   chatRoute,
