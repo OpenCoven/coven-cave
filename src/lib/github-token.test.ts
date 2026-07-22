@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./github-token.ts", import.meta.url), "utf8");
+const envSource = readFileSync(new URL("./github-token-env.ts", import.meta.url), "utf8");
 
 assert.match(
-  source,
+  envSource,
   /GITHUB_TOKEN_ENV_KEYS = \[[\s\S]*"GITHUB_TOKEN",[\s\S]*"COVEN_GITHUB_TOKEN",[\s\S]*"GH_TOKEN",[\s\S]*"GITHUB_PERSONAL_ACCESS_TOKEN"/,
   "GitHub routes recognize standard token environments used by shell and harness installations",
 );

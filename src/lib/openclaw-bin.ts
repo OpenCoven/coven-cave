@@ -11,7 +11,7 @@ import {
   covenSpawnEnv,
   type CovenLaunchCommand,
 } from "./coven-bin";
-import { GITHUB_TOKEN_ENV_KEYS } from "./github-token";
+import { allowedHarnessEnvKeys, restoreAllowedGitHubTokenEnv } from "./harness-spawn-env";
 
 let cachedBin: string | null = null;
 
@@ -20,12 +20,13 @@ const FORBIDDEN_SPAWN_ENV_RE =
   /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
 
 function allowedOpenClawEnvKeys(): Set<string> {
-  return new Set(
-    (process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
+  return new Set([
+    ...allowedHarnessEnvKeys(),
+    ...(process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
       .split(",")
       .map((key) => key.trim())
       .filter(Boolean),
-  );
+  ]);
 }
 
 function dedupe(values: string[]): string[] {
@@ -154,16 +155,11 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
 
-  // covenSpawnEnv deliberately strips every GitHub token alias before a
-  // generic child process starts. OpenClaw is the narrow exception: an owner
-  // can explicitly opt its own CLI into one launcher-provided alias. Do not
-  // restore GITHUB_PAT here because it may have been resolved from Cave's
-  // local vault rather than supplied by the launch environment.
-  for (const key of GITHUB_TOKEN_ENV_KEYS) {
-    if (!allowed.has(key)) continue;
-    const value = process.env[key]?.trim();
-    if (value) env[key] = value;
-  }
+  // The shared harness opt-in covers any supported runtime, while the
+  // OpenClaw-specific setting remains available for existing installations.
+  // GITHUB_PAT is deliberately not restored: it can be Cave-managed local
+  // storage rather than a launcher-provided credential.
+  restoreAllowedGitHubTokenEnv(env, allowed);
 
   for (const key of Object.keys(env)) {
     if (

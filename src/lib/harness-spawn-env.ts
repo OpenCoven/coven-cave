@@ -17,7 +17,40 @@
  */
 
 import { covenSpawnEnv } from "./coven-bin.ts";
+import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, type VaultMap } from "./vault.ts";
+
+/**
+ * Return the explicitly opted-in external credential names that a harness may
+ * inherit. Cave strips GitHub credentials from every generic child process,
+ * so an installation that supplies a token through its launcher must opt in
+ * before a Codex, Hermes, OpenCode, or other harness receives one.
+ */
+export function allowedHarnessEnvKeys(): Set<string> {
+  return new Set(
+    (process.env.COVEN_HARNESS_ALLOW_ENV_KEYS ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+}
+
+/** Restore only explicitly allowed launcher-provided GitHub token aliases. */
+export function restoreAllowedGitHubTokenEnv(
+  env: NodeJS.ProcessEnv,
+  allowed = allowedHarnessEnvKeys(),
+  managedKeys = new Set(Object.keys(loadVaultMap(true))),
+): NodeJS.ProcessEnv {
+  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+    // An alias with a vault entry may have been cached in process.env by an
+    // earlier request. An opt-in is for a launcher-provided credential, never
+    // a way to bypass the vault's familiar scope.
+    if (!allowed.has(key) || managedKeys.has(key)) continue;
+    const value = process.env[key]?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
 
 /** Pure: delete from `env` every vault-managed key not granted to `familiarId`. */
 export function subtractScopedVaultKeys(
@@ -37,5 +70,7 @@ export function subtractScopedVaultKeys(
  * immediately — spawns are per chat turn and the map is a tiny local file.
  */
 export function harnessSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
-  return subtractScopedVaultKeys(covenSpawnEnv(), loadVaultMap(true), familiarId);
+  const map = loadVaultMap(true);
+  const env = subtractScopedVaultKeys(covenSpawnEnv(), map, familiarId);
+  return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }

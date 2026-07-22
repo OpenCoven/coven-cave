@@ -126,5 +126,15 @@ assert.match(asanaPatSource, /scope: map\[PAT_KEY\]\?\.scope/, "Asana PAT re-sav
 
 const helperSource = read("./harness-spawn-env.ts");
 assert.match(helperSource, /loadVaultMap\(true\)/, "the vault map is re-read per spawn so tightened scopes apply immediately");
+assert.match(
+  helperSource,
+  /COVEN_HARNESS_ALLOW_ENV_KEYS/,
+  "any supported harness can explicitly opt into a launcher-provided credential without making generic child processes inherit it",
+);
+assert.match(
+  helperSource,
+  /for \(const key of GITHUB_TOKEN_ENV_KEYS\)[\s\S]*if \(!allowed\.has\(key\) \|\| managedKeys\.has\(key\)\) continue;[\s\S]*process\.env\[key\]\?\.trim\(\)/,
+  "the shared opt-in restores only accepted external GitHub token aliases",
+);
 
 console.log("harness-spawn-env.test.ts: ok");

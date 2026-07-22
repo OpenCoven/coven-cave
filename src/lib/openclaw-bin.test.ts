@@ -62,8 +62,13 @@ assert.match(
 );
 assert.match(
   src,
-  /for \(const key of GITHUB_TOKEN_ENV_KEYS\)[\s\S]*if \(!allowed\.has\(key\)\) continue;[\s\S]*process\.env\[key\]\?\.trim\(\)/,
-  "an explicitly allowed external GitHub token alias should survive Cave's generic child-env scrub for OpenClaw only",
+  /allowedHarnessEnvKeys\(\)[\s\S]*OPENCLAW_ALLOW_ENV_KEYS/,
+  "OpenClaw should support both the shared harness opt-in and its existing runtime-specific opt-in",
+);
+assert.match(
+  src,
+  /restoreAllowedGitHubTokenEnv\(env, allowed\)/,
+  "an explicitly allowed external GitHub token alias should survive Cave's generic child-env scrub for OpenClaw",
 );
 
 console.log("openclaw-bin.test.ts: ok");
