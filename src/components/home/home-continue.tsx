@@ -38,7 +38,9 @@ export function HomeContinue({ sessions, familiarNameById, onOpenSession }: Prop
 
   return (
     <section className="home-continue" aria-label="Continue where you left off">
-      <h2 className="home-continue__label">Continue where you left off</h2>
+      {/* No visible heading (2026-07-22): the cards read as resumable sessions
+          on their own — title, "Edited N ago", resume arrow — so the label is
+          screen-reader-only via the section's aria-label. */}
       <div className="home-continue__cards" data-count={rows.length}>
         {rows.map((s) => {
           const familiar = s.familiarId ? familiarNameById.get(s.familiarId) ?? null : null;

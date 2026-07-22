@@ -64,9 +64,9 @@
  *   unified launch cluster. The heavy bordered container is retired: the visible
  *   frame emphasised the large empty area below the composer at 1280×720. It is
  *   now an invisible layout wrapper — the radial presence wash on the root is the
- *   only ambient surface. Cluster is capped ~900px and sits slightly ABOVE the
- *   vertical centre of the usable workspace (pushed ~84px down from dead-top via
- *   the root's justify + a top offset), never in a framed dead zone. */
+ *   only ambient surface. Cluster is capped ~900px and centers vertically in the
+ *   usable workspace (auto block margins split the root's free space; when the
+ *   cluster outgrows a short viewport they collapse to 0 and the root scrolls). */
 .home-hearth-card {
   display: flex;
   flex-direction: column;
@@ -76,7 +76,7 @@
   margin-inline: auto;
   padding: 0 var(--space-2);
 
-  margin-block: clamp(48px, 9vh, 96px) auto;
+  margin-block: auto;
   border: 0;
   background: transparent;
 }

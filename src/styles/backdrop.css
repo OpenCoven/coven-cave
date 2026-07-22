@@ -70,7 +70,9 @@ html[data-backdrop-on] .cave-group-chat-shell {
 }
 
 html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
-  border-radius: 14px;
+  /* --radius-xl (not a hard-coded px) so the glass column follows the
+     Appearance → Corner radius setting like the rest of the chat chrome. */
+  border-radius: var(--radius-xl);
   padding-inline: clamp(14px, 2vw, 22px);
 }
 
@@ -110,7 +112,7 @@ html[data-backdrop-on] .cave-chat-empty-shell {
   background: color-mix(in oklch, var(--bg-base) 55%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   padding: clamp(16px, 3vh, 28px) clamp(14px, 2.5vw, 24px);
 }
 
@@ -123,7 +125,7 @@ html[data-backdrop-on] .familiar-tab {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(50px) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(50px) saturate(var(--glass-saturate));
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   --text-muted: var(--text-secondary);
 }
 

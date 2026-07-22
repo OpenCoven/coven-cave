@@ -52,16 +52,8 @@
   margin-top: var(--space-6);
 }
 /* Centered under the centered composer — the cards are the only thing left
- * below it, so the section reads as one symmetric column. */
-.home-continue__label {
-  margin: 0 0 var(--space-3);
-  padding: 0 var(--space-1);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: -0.01em;
-  text-align: center;
-}
+ * below it, so the section reads as one symmetric column. The strip carries
+ * no visible heading (the section's aria-label names it for screen readers). */
 .home-continue__cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
