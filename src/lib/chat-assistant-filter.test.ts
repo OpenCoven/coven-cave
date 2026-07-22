@@ -254,6 +254,20 @@ assert.equal(
     "the OpenAI Codex model-normalization diagnostic must not leak into an external runtime reply",
   );
 }
+{
+  const external = new AssistantFilter({ passthrough: true });
+  let out = external.push(
+    "⚠️  Normalized model 'openai/gpt-5.6-terra' to 'gpt-5.6-terra' for \n",
+  );
+  out += external.push("openai-codex.\n");
+  out += external.push("The wrapped reply remains visible.\n");
+  out += external.flush();
+  assert.equal(
+    out,
+    "The wrapped reply remains visible.\n",
+    "the hard-wrapped OpenAI Codex normalization diagnostic must not leak into an external runtime reply",
+  );
+}
 assert.equal(
   feed(["A bare line with no marker before it."]),
   "",
