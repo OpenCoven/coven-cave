@@ -38,6 +38,9 @@ export type AdapterReport = {
   installHint: string;
   source: string;
   manifestPath: string | null;
+  /** Runtime-discovered model choices, when the local CLI exposes them. */
+  models?: Array<{ id: string; label: string }>;
+  defaultModel?: string | null;
 };
 
 export type AdapterSetupState =
@@ -92,6 +95,18 @@ const CURATED_ADAPTERS: CompatibilityAdapter[] = [
     source: "bundled",
   },
   {
+    id: "grok",
+    label: "Grok Build",
+    binary: "grok",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install Grok Build from xAI, run `grok` to sign in, then verify with `grok models`. Cave uses Grok's native streaming headless mode directly.",
+    // This is a Cave-owned direct integration, not an assertion that the
+    // unmerged coven-runtimes proposal has been registry accepted.
+    source: "bundled",
+  },
+  {
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
@@ -132,6 +147,7 @@ export const SUMMONABLE_LOCAL_HARNESS_IDS = [
   "claude",
   "copilot",
   "hermes",
+  "grok",
 ] as const;
 
 const SUMMONABLE_LOCAL_HARNESSES = new Set<string>(SUMMONABLE_LOCAL_HARNESS_IDS);
@@ -259,6 +275,8 @@ export function mergeAdapterReports(
       installed: boolean;
       path: string | null;
       version: string | null;
+      models?: Array<{ id: string; label: string }>;
+      defaultModel?: string | null;
     }
   >,
   covenReports: CovenAdapterSummary[],
@@ -277,6 +295,8 @@ export function mergeAdapterReports(
       installHint: local.installHint ?? "",
       source: local.source ?? "bundled",
       manifestPath: local.manifestPath ?? null,
+      ...(local.models ? { models: local.models } : {}),
+      ...(local.defaultModel ? { defaultModel: local.defaultModel } : {}),
     });
   }
 
@@ -296,6 +316,8 @@ export function mergeAdapterReports(
       installHint: coven.install_hint || existing?.installHint || "",
       source: coven.source || existing?.source || "manifest",
       manifestPath: coven.manifest_path ?? existing?.manifestPath ?? null,
+      ...(existing?.models ? { models: existing.models } : {}),
+      ...(existing?.defaultModel ? { defaultModel: existing.defaultModel } : {}),
     });
   }
 

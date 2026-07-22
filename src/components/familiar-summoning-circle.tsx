@@ -765,7 +765,12 @@ function StageVessel({
     { kind: "ssh", icon: "ph:globe", title: "A remote machine", hint: "Reaches over SSH to a host you name." },
     { kind: "openclaw", icon: "ph:robot", title: "An OpenClaw agent", hint: "Bridge an agent you already keep." },
   ];
-  const installedHarnesses = (harnesses ?? []).filter((h) => h.installed);
+  // Grok Build is deliberately local-only until Cave has a native remote
+  // launcher. Hide it for SSH rather than letting a selection fall back to an
+  // incompatible `coven run --stream-json` path.
+  const installedHarnesses = (harnesses ?? []).filter(
+    (h) => h.installed && (vessel !== "ssh" || h.id !== "grok"),
+  );
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">

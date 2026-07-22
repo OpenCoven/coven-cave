@@ -47,6 +47,34 @@ assert.match(
   "Chat send should source copilot stream wiring from the shared copilot-stream lib",
 );
 
+// ── Grok Build JSONL stream wiring ─────────────────────────────────────────
+
+assert.match(
+  chatRoute,
+  /const grokDirect = !sshRuntime && binding\.harness === "grok";/,
+  "Grok Build must use its native local JSONL path, not coven run",
+);
+assert.match(
+  chatRoute,
+  /buildGrokBuildArgs\(\{[\s\S]*?resumeSessionId,[\s\S]*?identityRules: grokIdentityRules\(/,
+  "Grok argv must carry native resume semantics and system identity",
+);
+assert.match(
+  chatRoute,
+  /if \(grokDirect\) \{\s*handleGrokLine\(line, isJson\);\s*return;/,
+  "Grok stdout routes through the native JSONL parser, never generic stream-json parsing",
+);
+assert.match(
+  chatRoute,
+  /grokDirect\s*\? \{\s*command: process\.platform === "win32" \? "grok\.exe" : "grok"/,
+  "Windows uses grok.exe directly while Unix uses grok",
+);
+assert.match(
+  chatRoute,
+  /Grok Build chats currently run on this Cave host/,
+  "SSH Grok must fail explicitly instead of falling back to coven run",
+);
+
 assert.match(
   chatRoute,
   /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
@@ -55,8 +83,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
-  "Copilot and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
+  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: grokDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "grok\.exe" : "grok",[\s\S]*?: hermesDirect\s*\n?\s*\? \{\s*\n?\s*command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);/,
+  "Copilot, Grok Build, and Hermes direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 
 assert.match(

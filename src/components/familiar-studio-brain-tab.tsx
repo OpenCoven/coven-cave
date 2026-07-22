@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import type { RuntimeModelOption } from "@/lib/grok-build";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -35,7 +36,13 @@ import {
 
 type Props = { familiar: ResolvedFamiliar };
 
-type HarnessReport = { id: string; label: string; installed: boolean };
+type HarnessReport = {
+  id: string;
+  label: string;
+  installed: boolean;
+  models?: RuntimeModelOption[];
+  defaultModel?: string | null;
+};
 
 type CapabilitiesResponse = {
   ok: boolean;
@@ -232,7 +239,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // provider catalog the chat picker uses. allowCustom keeps the free-text
   // field as the escape hatch for ids not in the curated seed.
   const modelCatalog = catalogForRuntime(harnessId);
-  const modelOptions = modelCatalog?.models ?? [];
+  const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
+  // Grok Build exposes models from the authenticated local CLI. Prefer that
+  // catalog over a compile-time seed so Studio never offers unavailable xAI
+  // models; other runtimes retain their existing curated menus.
+  const modelOptions = harnessId === "grok" ? liveRuntimeModels : modelCatalog?.models ?? [];
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user

@@ -49,6 +49,7 @@ const SYNTHETIC_LOCAL_MODELS = new Set([
   "claude-local",
   "copilot-local",
   "hermes-local",
+  "grok-local",
   "openclaw-local",
 ]);
 

@@ -46,6 +46,11 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import {
+  buildGrokBuildArgs,
+  grokIdentityRules,
+  parseGrokStreamEvent,
+} from "@/lib/grok-build";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -817,13 +822,28 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
-  // Hermes runs directly, so it must advertise --model itself; every other
-  // bundled harness uses coven run's capability probe. OpenClaw's bridge has
-  // no CLI model passthrough.
+  // Grok Build is a direct local integration. Do not silently send it through
+  // `coven run --stream-json` on SSH: its native JSONL/session protocol is
+  // different and the proposed registry manifest is not accepted upstream.
+  if (binding.harness === "grok" && sshRuntime) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Grok Build chats currently run on this Cave host. Select a local runtime; SSH Grok is not routed through coven run.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
+  // Hermes and Grok Build run directly. Hermes must advertise `--model`
+  // itself, while Grok Build's documented direct protocol supports it.
+  // OpenClaw's bridge has no CLI model passthrough; every other bundled
+  // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
-  const modelForwardingEnabled = hermesDirect
-    ? await hermesChatSupportsModel()
-    : binding.harness !== "openclaw" && (await covenRunSupportsModel());
+  const modelForwardingEnabled =
+    hermesDirect
+      ? await hermesChatSupportsModel()
+      : binding.harness === "grok" ||
+    (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
   // Same gating for the sandbox/permission flag. Only "read" is forwarded
   // (→ `--permission read-only`); "full" stays implicit so the harness keeps
   // its own default sandbox instead of being widened to danger-full-access.
@@ -1099,6 +1119,10 @@ export async function POST(req: Request) {
   // beside Hermes's Windows executable, which left Cave showing only a timer.
   // Spawn Hermes directly for native local chats, as we already do for the
   // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  // Grok Build has a documented streaming-json headless protocol. It is a
+  // direct local integration, deliberately independent of coven's generic
+  // `run --stream-json` adapter protocol.
+  const grokDirect = !sshRuntime && binding.harness === "grok";
   // The copilot session id Cave chose for the CURRENT attempt: the resume
   // target, or a pre-assigned fresh id (copilot events don't echo the id
   // until the final result frame, so the stream handler announces this one).
@@ -1154,6 +1178,20 @@ export async function POST(req: Request) {
       if (forwardModel) a.push("--model", forwardModel);
       a.push("--query", prompt);
       return a;
+    }
+    if (grokDirect) {
+      return buildGrokBuildArgs({
+        prompt,
+        resumeSessionId,
+        model: cleanModelId(desiredModel),
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
+        grantDirs,
+        identityRules: grokIdentityRules(
+          body.familiarId,
+          binding.display_name,
+          binding.role,
+        ),
+      });
     }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
@@ -1463,6 +1501,37 @@ export async function POST(req: Request) {
         recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
       };
 
+      const handleGrokLine = (line: string, isJson: boolean) => {
+        if (!isJson) {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          return;
+        }
+        try {
+          const event = parseGrokStreamEvent(JSON.parse(line));
+          switch (event.kind) {
+            case "text":
+              assistantText += event.text;
+              push({ kind: "assistant_chunk", text: event.text });
+              return;
+            case "end":
+              if (!sessionId && event.sessionId) announceSession(event.sessionId);
+              // Grok's end event does not echo model, but successful native
+              // launch means its --model contract accepted the selected id.
+              if (!confirmedModel && cleanModelId(desiredModel)) confirmedModel = desiredModel;
+              result = { is_error: event.isError };
+              return;
+            case "error":
+              result = { is_error: true };
+              recordStdoutErrorTail(event.message);
+              return;
+            case "ignore":
+              return;
+          }
+        } catch {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        }
+      };
+
       const handleLine = (rawLine: string) => {
         // stdout is split on bare \n; external adapters (copilot) emit CRLF,
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
@@ -1473,6 +1542,10 @@ export async function POST(req: Request) {
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
+          return;
+        }
+        if (grokDirect) {
+          handleGrokLine(line, isJson);
           return;
         }
         if (isJson) {
@@ -1675,11 +1748,16 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                // Copilot's JSONL mode and Hermes's documented one-shot mode
-                // are direct CLI integrations. Every other local harness goes
+                // Copilot JSONL, Grok Build JSONL, and Hermes's documented
+                // one-shot mode are direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const { command, fixedArgs } = copilotStream
                   ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  : grokDirect
+                    ? {
+                        command: process.platform === "win32" ? "grok.exe" : "grok",
+                        fixedArgs: [] as string[],
+                      }
                   : hermesDirect
                     ? {
                         command: process.platform === "win32" ? "hermes.exe" : "hermes",
@@ -1751,6 +1829,8 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : grokDirect
+                        ? "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again."
                       : hermesDirect
                         ? "Hermes CLI not found on PATH. Install Hermes, then try again."
                         : "Coven CLI not found on PATH. Open Setup to install it, then try again.",

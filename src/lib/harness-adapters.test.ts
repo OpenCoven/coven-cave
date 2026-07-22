@@ -80,7 +80,7 @@ assert.equal(
   "A longer flag like --add-dir-recursive must not be mistaken for --add-dir",
 );
 
-const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
+const curatedIds = ["codex", "claude", "copilot", "hermes", "grok", "openclaw"];
 {
   const ids = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id);
   assert.deepEqual(ids.slice(0, curatedIds.length), curatedIds, "curated adapters keep their seed order first");
@@ -102,13 +102,14 @@ const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
 
 assert.deepEqual(
   SUMMONABLE_LOCAL_HARNESS_IDS,
-  ["codex", "claude", "copilot", "hermes"],
+  ["codex", "claude", "copilot", "hermes", "grok"],
   "the summoning circle's local/SSH runtime choices must only include creation-ready local runtimes",
 );
 assert.equal(isSummonableLocalHarness("codex"), true);
 assert.equal(isSummonableLocalHarness("claude"), true);
 assert.equal(isSummonableLocalHarness("copilot"), true);
 assert.equal(isSummonableLocalHarness("hermes"), true);
+assert.equal(isSummonableLocalHarness("grok"), true);
 assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
 assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
 assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
@@ -133,6 +134,22 @@ assert.equal(mergedOpenClaw.length, 1);
 assert.equal(mergedOpenClaw[0].id, "openclaw");
 assert.equal(mergedOpenClaw[0].installed, true);
 assert.equal(mergedOpenClaw[0].source, "openclaw");
+
+const mergedGrok = mergeAdapterReports(
+  [{
+    id: "grok",
+    label: "Grok Build",
+    binary: "grok",
+    installed: true,
+    path: "/usr/bin/grok",
+    version: "grok 0.2.106",
+    models: [{ id: "grok-4.5", label: "grok-4.5 (default)" }],
+    defaultModel: "grok-4.5",
+  }],
+  [],
+);
+assert.deepEqual(mergedGrok[0].models, [{ id: "grok-4.5", label: "grok-4.5 (default)" }]);
+assert.equal(mergedGrok[0].defaultModel, "grok-4.5");
 
 const merged = mergeAdapterReports(
   [

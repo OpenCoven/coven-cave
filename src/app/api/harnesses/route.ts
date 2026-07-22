@@ -13,6 +13,7 @@ import {
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ type HarnessReport = HarnessSpec & {
   installed: boolean;
   path: string | null;
   version: string | null;
+  /** Live authenticated catalog where the runtime exposes one. */
+  models?: RuntimeModelOption[];
+  defaultModel?: string | null;
 };
 
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
@@ -79,6 +83,33 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
     child.on("error", () => {
       clearTimeout(t);
       resolve(null);
+    });
+  });
+}
+
+function probeGrokModels(binary: string): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(binary, ["models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve({ models: [], defaultModel: null });
+      return;
+    }
+    let output = "";
+    child.stdout.on("data", (data) => (output += data.toString()));
+    child.stderr.on("data", (data) => (output += data.toString()));
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      resolve({ models: [], defaultModel: null });
+    }, 2500);
+    child.on("close", () => {
+      clearTimeout(timeout);
+      resolve(parseGrokModels(output));
+    });
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve({ models: [], defaultModel: null });
     });
   });
 }
@@ -157,7 +188,14 @@ export async function GET() {
         return { ...h, installed: false, path: null, version: null };
       }
       const version = await probeVersion(h.binary, h.versionArgs ?? ["--version"]);
-      return { ...h, installed: true, path, version };
+      const grokCatalog = h.id === "grok" ? await probeGrokModels(h.binary) : null;
+      return {
+        ...h,
+        installed: true,
+        path,
+        version,
+        ...(grokCatalog ? grokCatalog : {}),
+      };
     }),
   );
   const covenReports = (await covenSupportsAdapterList()) ? await loadCovenAdapterSummaries() : [];
