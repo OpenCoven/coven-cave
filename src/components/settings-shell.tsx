@@ -994,10 +994,13 @@ function DaemonSection({
         if (ctl.signal.aborted) return;
         const multiHost = j.config?.multiHost;
         if (!j.ok || !multiHost) return;
+        // Always hydrate executor addresses from config so a later save can't
+        // PATCH an empty executorUrls list. Only skip applying mode/hubUrl when
+        // a hub suggestion has already been applied (it wins over stored config).
+        setExecutorText((multiHost.executorUrls ?? []).join("\n"));
         if (suggestionAppliedRef.current) return;
         setMode(multiHost.mode === "hub" ? "hub" : "local");
         setHubUrl(multiHost.hubUrl ?? "");
-        setExecutorText((multiHost.executorUrls ?? []).join("\n"));
       })
       .catch(() => {});
     return () => ctl.abort();
