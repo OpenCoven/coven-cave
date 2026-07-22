@@ -10,14 +10,12 @@ import {
 } from "@/lib/app-preferences";
 import { reapplyIndependentAppearance } from "@/lib/appearance-restore";
 import { migrateLegacyBackdropImage } from "@/lib/cave-backdrop";
-import { useShellBanners } from "@/lib/shell-banners";
 
-const PREFERENCES_BANNER_ID = "preferences-bootstrap";
-const PREFERENCES_SLOW_MS = 2_000;
-// Bounded auto-retry so a silent cold-start reconciliation stall (e.g. slow
-// IndexedDB with no online/visibility/subscription event to nudge it) self-
-// heals instead of leaving the "still reconciling" warning parked until the
-// user clicks Retry. Backs off, then gives up and lets the manual CTA stand.
+// Silent bounded auto-retry: a failed or stalled cold-start reconciliation
+// (e.g. slow IndexedDB with no online/visibility/subscription event to nudge
+// it) self-heals in the background. Backs off, then gives up after three
+// attempts — no banner is ever surfaced; the app keeps running on the last
+// known-good snapshot and later online/visibility events still re-trigger.
 const PREFERENCES_AUTO_RETRY_MS = [5_000, 10_000, 20_000] as const;
 
 function mark(name: string, startTime?: number): void {
@@ -31,22 +29,11 @@ function mark(name: string, startTime?: number): void {
 
 /** Completes authenticated preference migration and flushes queued writes. */
 export function PreferencesBootstrapController() {
-  const { pushBanner, dismissBanner } = useShellBanners();
   const mounted = useRef(false);
   const autoRetryTimer = useRef<number | null>(null);
   const autoRetryAttempt = useRef(0);
 
   const bootstrap = useCallback(async () => {
-    const slowTimer = window.setTimeout(() => {
-      if (!mounted.current) return;
-      pushBanner({
-        id: PREFERENCES_BANNER_ID,
-        severity: "warning",
-        title: "Preferences are still reconciling. Navigation remains available.",
-        cta: { label: "Retry now", onClick: () => void bootstrap() },
-      });
-    }, PREFERENCES_SLOW_MS);
-
     try {
       const preferences = await initializeAppPreferences();
       if (!mounted.current) return preferences;
@@ -56,39 +43,22 @@ export function PreferencesBootstrapController() {
           autoRetryTimer.current = null;
         }
         autoRetryAttempt.current = 0;
-        dismissBanner(PREFERENCES_BANNER_ID);
         mark("reconciliation-settled");
         await migrateLegacyBackdropImage();
       } else {
         scheduleAutoRetry();
-        pushBanner({
-          id: PREFERENCES_BANNER_ID,
-          severity: "error",
-          title: "Preferences could not be reconciled. Your settings remain unchanged.",
-          cta: { label: "Retry", onClick: () => void bootstrap() },
-        });
       }
       return preferences;
     } catch {
-      if (mounted.current) {
-        scheduleAutoRetry();
-        pushBanner({
-          id: PREFERENCES_BANNER_ID,
-          severity: "error",
-          title: "Preferences could not be reconciled. Your settings remain unchanged.",
-          cta: { label: "Retry", onClick: () => void bootstrap() },
-        });
-      }
+      if (mounted.current) scheduleAutoRetry();
       return readAppPreferences();
-    } finally {
-      window.clearTimeout(slowTimer);
     }
 
     function scheduleAutoRetry(): void {
       if (!mounted.current) return;
       if (autoRetryTimer.current !== null) return; // one pending retry at a time
       const attempt = autoRetryAttempt.current;
-      if (attempt >= PREFERENCES_AUTO_RETRY_MS.length) return; // give up; manual CTA stands
+      if (attempt >= PREFERENCES_AUTO_RETRY_MS.length) return; // give up silently after 3 retries
       const delay = PREFERENCES_AUTO_RETRY_MS[attempt];
       autoRetryAttempt.current = attempt + 1;
       autoRetryTimer.current = window.setTimeout(() => {
@@ -96,7 +66,7 @@ export function PreferencesBootstrapController() {
         if (mounted.current) void bootstrap();
       }, delay);
     }
-  }, [dismissBanner, pushBanner]);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -120,7 +90,6 @@ export function PreferencesBootstrapController() {
         preserveCustomDefaults: readAppPreferences().appearance.theme.id === "custom",
       });
       if (readAppPreferences().initialized) {
-        dismissBanner(PREFERENCES_BANNER_ID);
         retryBackdropMigration();
       }
     });
@@ -141,12 +110,11 @@ export function PreferencesBootstrapController() {
         autoRetryTimer.current = null;
       }
       unsubscribe();
-      dismissBanner(PREFERENCES_BANNER_ID);
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("online", retryBackdropMigration);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [bootstrap, dismissBanner]);
+  }, [bootstrap]);
 
   return null;
 }
