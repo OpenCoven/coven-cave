@@ -2065,8 +2065,11 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
   // Live-apply the whole group — not just the edited key — so the selected
   // theme's look survives the data-theme flip. Boot (theme-init.js) replays
   // this exact group, so what you see now is what a reload restores.
+  // Normalize to custom-property names: imported tweakcn groups keep raw keys
+  // ("background", "radius"), and a raw setProperty would set the real CSS
+  // property inline on <html>, which no cleanup path removes (cave-7eno).
   for (const [name, value] of Object.entries(group)) {
-    html.style.setProperty(name, value);
+    html.style.setProperty(name.startsWith("--") ? name : `--${name}`, value);
   }
   html.setAttribute("data-theme", "custom");
 }
