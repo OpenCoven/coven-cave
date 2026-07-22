@@ -71,6 +71,8 @@ export type Card = {
   status: CardStatus;
   priority: CardPriority;
   familiarId: string | null;
+  /** A model selected for this task's next work session. Null inherits the familiar binding. */
+  modelOverride?: string | null;
   sessionId: string | null;
   cwd: string | null;
   /** Stable project ID from cave-projects.json. Preferred over cwd. */

@@ -31,6 +31,8 @@ import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
@@ -1120,6 +1122,23 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const modelHarness = canonicalHarnessId(
+    currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
+  );
+  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const taskModelIsCustom = Boolean(
+    card.modelOverride && !runtimeModelOptions.some((option) => option.id === card.modelOverride),
+  );
+  const [modelCustomMode, setModelCustomMode] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
+  useEffect(() => {
+    setCustomModelDraft(card.modelOverride ?? "");
+  }, [card.modelOverride]);
+  const taskModelOptions = [
+    { value: "", label: "Familiar default" },
+    ...runtimeModelOptions.map((option) => ({ value: option.id, label: option.label })),
+    ...(runtimeModelOptions.length > 0 ? [{ value: "__custom__", label: "Custom…" }] : []),
+  ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
 
@@ -1240,7 +1259,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={card.familiarId ?? ""}
-                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                  onChange={(next) => {
+                    setModelCustomMode(false);
+                    onPatch(card.id, { familiarId: next || null, modelOverride: null });
+                  }}
                   options={[
                     { value: "", label: "Unassigned" },
                     ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
@@ -1249,6 +1271,55 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
+            </div>
+
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label">Model</div>
+              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom ? (
+                <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                  <span className="board-drawer-project-icon" aria-hidden>
+                    <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />
+                  </span>
+                  <StandardSelect
+                    label="Model"
+                    className="board-drawer-field-select board-drawer-field-select--styled"
+                    value={card.modelOverride ?? ""}
+                    onChange={(next) => {
+                      if (next === "__custom__") {
+                        setModelCustomMode(true);
+                        setCustomModelDraft("");
+                        return;
+                      }
+                      onPatch(card.id, { modelOverride: next || null });
+                    }}
+                    options={taskModelOptions}
+                    disabled={!currentFamiliar || Boolean(card.sessionId)}
+                    title={card.sessionId ? "Unlink work before changing the task model" : undefined}
+                    showCaret={false}
+                  />
+                  <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+                </div>
+              ) : (
+                <input
+                  className="board-drawer-field-input"
+                  value={customModelDraft}
+                  onChange={(event) => setCustomModelDraft(event.target.value)}
+                  onBlur={() => {
+                    setModelCustomMode(false);
+                    onPatch(card.id, { modelOverride: customModelDraft || null });
+                  }}
+                  placeholder={currentFamiliar ? "provider/model (optional)" : "Assign a familiar first"}
+                  disabled={!currentFamiliar || Boolean(card.sessionId)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              )}
+              <p className="board-drawer-field-hint">
+                {card.sessionId
+                  ? "This task's linked work session keeps its current model."
+                  : "Leave blank to use the familiar's configured default."}
+              </p>
             </div>
 
             <div className="board-drawer-grid-2">

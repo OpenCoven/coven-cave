@@ -707,6 +707,7 @@ export function BoardView({
               status: c.status,
               priority: c.priority,
               familiarId: c.familiarId,
+              modelOverride: c.modelOverride,
               sessionId: c.sessionId,
               cwd: c.cwd,
               projectId: c.projectId,

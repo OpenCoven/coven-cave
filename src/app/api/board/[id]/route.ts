@@ -28,6 +28,7 @@ export async function PATCH(
     lifecycleReason: string | undefined;
     priority: CardPriority;
     familiarId: string | null;
+    modelOverride: string | null;
     sessionId: string | null;
     cwd: string | null;
     projectId: string | null;

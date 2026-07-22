@@ -122,14 +122,24 @@ function normalizeCwd(value: string | null | undefined): string | null {
   return cwd ? cwd : null;
 }
 
+const MAX_MODEL_OVERRIDE_CHARS = 512;
+
+/** Task models are user-configured runtime ids, so retain custom ids while
+ * bounding malformed or hand-edited board data. */
+function normalizeModelOverride(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const model = value.trim();
+  return model && model.length <= MAX_MODEL_OVERRIDE_CHARS ? model : null;
+}
+
 type LegacyCard = Omit<
   Card,
-  "cwd" | "projectId" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+  "cwd" | "projectId" | "modelOverride" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "projectId" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+      "cwd" | "projectId" | "modelOverride" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
     >
   >;
 
@@ -154,6 +164,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     status: statusForLifecycle(lifecycle, c.status),
     cwd: normalizeCwd(c.cwd),
     projectId: c.projectId ?? null,
+    modelOverride: normalizeModelOverride(c.modelOverride),
     links,
     github,
     asana,
@@ -246,6 +257,7 @@ export type NewCardInput = {
   status?: CardStatus;
   priority?: CardPriority;
   familiarId?: string | null;
+  modelOverride?: string | null;
   sessionId?: string | null;
   cwd?: string | null;
   projectId?: string | null;
@@ -285,6 +297,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     status,
     priority: input.priority ?? "medium",
     familiarId: input.familiarId ?? null,
+    modelOverride: normalizeModelOverride(input.modelOverride),
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
     projectId: input.projectId ?? null,
@@ -359,6 +372,9 @@ export async function updateCard(
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
+    modelOverride: "modelOverride" in patch
+      ? normalizeModelOverride(patch.modelOverride)
+      : current.modelOverride ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
     endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,

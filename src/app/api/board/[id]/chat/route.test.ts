@@ -54,8 +54,8 @@ assert.match(
 
 assert.match(
   source,
-  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,80}model:\s*binding\.model,/,
-  "task sessions forward the familiar's resolved model to the daemon",
+  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,100}model:\s*card\.modelOverride \?\? binding\.model,/,
+  "task sessions prefer a card model override and otherwise forward the familiar's resolved model",
 );
 
 console.log("board chat route.test.ts: ok");
