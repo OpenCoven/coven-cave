@@ -2011,11 +2011,29 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const existing: CustomThemeData | null =
     themePreferences.id === "custom" ? themePreferences.custom : null;
   const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
+  const otherGroupKey: "light" | "dark" = groupKey === "light" ? "dark" : "light";
   const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
-  // Seed from the current computed look while the preset CSS is still applied
-  // (also fills a missing mode group when a dark-only custom theme is edited
-  // in light mode, or vice versa).
-  if (Object.keys(group).length === 0) Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  // Fresh fork from a preset: snapshot BOTH mode palettes while the preset CSS
+  // is still applied. Seeding only the edited mode made the fork single-mode —
+  // a later Light/Dark flip kept rendering this mode's colors
+  // (activeCustomThemeVariables falls back to the only group) and the first
+  // edit in the other mode seeded it from the wrong mode's look. Clear in-drag
+  // preview inline vars first so both snapshots read the preset (the live
+  // re-apply below restores the finished look); flipping data-mode +
+  // getComputedStyle forces a synchronous recalc, so nothing paints mid-flip.
+  // Imported customs missing one mode group keep the fill-on-first-edit
+  // fallback — their preset is long gone, the current look is all there is.
+  let otherSeed: Record<string, string> | null = null;
+  if (!existing) {
+    for (const name of THEME_FORK_SNAPSHOT_KEYS) html.style.removeProperty(name);
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+    const restore = html.getAttribute("data-mode") ?? groupKey;
+    html.setAttribute("data-mode", otherGroupKey);
+    otherSeed = resolveTokens(THEME_FORK_SNAPSHOT_KEYS);
+    html.setAttribute("data-mode", restore);
+  } else if (Object.keys(group).length === 0) {
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  }
   group[key] = hex;
   Object.assign(group, deriveTokenCompanions(key, hex, mode));
   const baseTheme = html.getAttribute("data-theme");
@@ -2025,7 +2043,11 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
       : "Custom";
   const data: CustomThemeData = {
     name: existing?.name ?? forkName,
-    cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
+    cssVars: {
+      ...(existing?.cssVars ?? {}),
+      [groupKey]: group,
+      ...(otherSeed ? { [otherGroupKey]: otherSeed } : {}),
+    },
   };
   // An explicit accent pick is a statement of intent: disarm the backdrop's
   // auto-match in the same atomic patch, or applyBackdropToDocument re-fits

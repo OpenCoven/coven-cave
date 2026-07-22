@@ -450,10 +450,30 @@ assert.match(
   /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_SYNC_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
   "forking a preset must snapshot the hardcoded per-theme tokens AND the legacy-vocab aliases",
 );
+// A fork must capture BOTH mode palettes. Seeding only the edited mode made
+// the fork single-mode: flipping Light/Dark later kept rendering the edited
+// mode's colors (activeCustomThemeVariables falls back to the only group) and
+// the first edit in the other mode seeded it from the WRONG mode's computed
+// look (cave-hkfq: a dark-only fork seeded lightAccent from the dark accent).
 assert.match(
   settings,
-  /if \(Object\.keys\(group\)\.length === 0\) Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\)/,
-  "an empty mode group is seeded from the current computed look before the DOM mutates",
+  /if \(!existing\) \{\s*\n\s*for \(const name of THEME_FORK_SNAPSHOT_KEYS\) html\.style\.removeProperty\(name\);\s*\n\s*Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\);/,
+  "a fresh fork clears in-drag preview inline vars, then seeds the edited mode from the preset's computed look",
+);
+assert.match(
+  settings,
+  /html\.setAttribute\("data-mode", otherGroupKey\);\s*\n\s*otherSeed = resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\);[\s\S]{0,300}?html\.setAttribute\("data-mode", restore\);/,
+  "a fresh fork snapshots the OTHER mode's preset palette in the same task (getComputedStyle forces a sync recalc — nothing paints mid-flip)",
+);
+assert.match(
+  settings,
+  /\} else if \(Object\.keys\(group\)\.length === 0\) \{\s*\n\s*Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\);/,
+  "an imported custom theme missing this mode group still fills from the current computed look on first edit",
+);
+assert.match(
+  settings,
+  /\.\.\.\(otherSeed \? \{ \[otherGroupKey\]: otherSeed \} : \{\}\),/,
+  "both mode groups land in the forked payload, so a Light/Dark flip actually changes the rendered palette",
 );
 assert.match(
   settings,
