@@ -113,4 +113,33 @@ assert.match(
   "--code body stops double-scrolling — the wrap scrolls internally",
 );
 
+// ─── cave-chat.css: --code preview is flush + wrapped like the editor ─────────
+// Read mode mirrors --edit: the pane is the code surface itself (no padded
+// card), and long lines wrap instead of horizontal-scrolling in a narrow rail.
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \{[^}]*padding: 0;\s*\n\s*background: var\(--code-surface\)/,
+  "--code body is a flush --code-surface fill, matching the --edit editor",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-syntax-block \.cave-code-wrap \{[^}]*margin: 0;\s*\n\s*border: 0;\s*\n\s*border-radius: 0;\s*\n\s*box-shadow: none/,
+  "--code strips the transcript card chrome off the code wrap (flush edges)",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-code-wrap pre \{[^}]*overflow-x: hidden/,
+  "--code kills the pre's horizontal scroll — lines wrap instead",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-line \{[^}]*display: block;\s*\n\s*white-space: pre-wrap;\s*\n\s*overflow-wrap: anywhere/,
+  "--code lines leave the flex row for block flow so text wraps mid-line",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-line:has\(\.cave-ln\) \{[^}]*padding-left: calc\(1em \+ 3\.4em\);\s*\n\s*text-indent: -3\.4em/,
+  "gutter lines hang-indent so wrapped continuations align past the line number",
+);
+
 console.log("rail-files-panel.test.ts OK");

@@ -51,6 +51,13 @@ test("specs normalize allowed values and discard stale enum values", () => {
   assert.equal(surfacePreferenceSpecs.calendar.viewMode.parse("year"), undefined);
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse(true), true);
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse("true"), undefined);
+  assert.deepEqual(
+    surfacePreferenceSpecs.codeRail.selectedFile.parse({ root: "/repo", path: "/repo/src/a.ts" }),
+    { root: "/repo", path: "/repo/src/a.ts" },
+  );
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse({ root: "", path: "/repo/src/a.ts" }), undefined);
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse("stray-string"), undefined);
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse(null), null);
 });
 
 test("every remounting surface opts into the registry while searches remain transient", () => {
@@ -65,6 +72,7 @@ test("every remounting surface opts into the registry while searches remain tran
     marketplace: read("../components/marketplace-view.tsx"),
     browser: read("../components/browser-pane.tsx"),
     grimoire: read("../components/grimoire-view.tsx"),
+    codeRail: read("../components/rail-files-panel.tsx"),
     workspace: read("../app/page.tsx"),
     workspaceShell: read("../components/workspace.tsx"),
   };
@@ -86,4 +94,8 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.grimoire, /if \(deepLinkActiveRef\.current\) \{\s*deepLinkActiveRef\.current = false;/, "a one-visit Grimoire deep link yields to later user selections");
   assert.match(sources.grimoire, /restoredSelectionPendingRef\.current = true;/, "Grimoire marks a restored selection before persistence runs");
   assert.match(sources.grimoire, /if \(restoredSelectionPendingRef\.current\)/, "Grimoire waits to persist until a restored selection has been applied");
+  assert.match(sources.codeRail, /useSurfacePreference\(surfacePreferenceSpecs\.codeRail\.selectedFile\)/, "the code rail restores its open file through the registry");
+  assert.match(sources.codeRail, /if \(path && projectRoot\) setStoredSelection\(\{ root: projectRoot, path \}\)/, "code-rail selections write through with their project root");
+  assert.match(sources.codeRail, /storedSelection\.root !== projectRoot\) return;/, "a saved file from another project is never restored");
+  assert.match(sources.codeRail, /setSelectedPathState\(\(current\) => current \?\? storedSelection\.path\)/, "a selection made before hydration (focus events) wins over the restored one");
 });

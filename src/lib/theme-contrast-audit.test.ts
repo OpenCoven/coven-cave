@@ -190,7 +190,10 @@ function declaredColor(selectorRe: RegExp, label: string): string {
   return value!.trim();
 }
 chrome.set("--_lang-ink", declaredColor(/\.cave-code-lang \{[^}]*\}/, ".cave-code-lang"));
-chrome.set("--_ln-ink", declaredColor(/\.cave-ln \{[^}]*\}/, ".cave-ln"));
+// Line-start anchored: scoped overrides (e.g. the code rail's
+// `.workspace-rail__preview-body--code .cave-ln`) must not shadow the
+// canonical colored rule.
+chrome.set("--_ln-ink", declaredColor(/\n\.cave-ln \{[^}]*\}/, ".cave-ln"));
 chrome.set(
   "--_add-strip",
   (chatCss.match(/\.cave-diff-add \{[^}]*background:\s*([^;]+);/) ?? [])[1] ?? "",

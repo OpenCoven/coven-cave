@@ -887,11 +887,15 @@
    height. Lift SyntaxBlock's chat clamp (max-height: min(60vh, 520px)) so the
    block shrink-fits the body and scrolls internally — short files keep their
    natural height, long files fill the pane with the sticky header reachable.
-   Mirrors the --edit editor fill above. */
+   Mirrors the --edit editor fill above, including its flush --code-surface
+   fill: the pane IS the code surface, not a padded card sitting on the panel
+   background (read mode and edit mode share one look). */
 .workspace-rail__preview-body--code {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0;
+  background: var(--code-surface);
 }
 .workspace-rail__preview-body--code .cave-syntax-block {
   display: flex;
@@ -903,6 +907,39 @@
   flex: 0 1 auto;
   min-height: 0;
   max-height: none;
+}
+/* Strip the transcript card chrome (border, radius, shadow, vertical margins)
+   so the block sits flush against the pane edges like the CodeMirror editor.
+   Three-class specificity: .cave-syntax-block .cave-code-wrap in
+   cave-md/interactions.css re-rounds corners at two classes, and the cave-md
+   vs cave-chat sheets load in component-import order. */
+.workspace-rail__preview-body--code .cave-syntax-block .cave-code-wrap {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Long lines wrap instead of horizontal-scrolling — the rail is narrow and the
+   CodeMirror edit mode already wraps (EditorView.lineWrapping). .cave-line
+   leaves its flex row (which would wrap whole token spans) for block flow. */
+.workspace-rail__preview-body--code .cave-code-wrap pre {
+  overflow-x: hidden;
+}
+.workspace-rail__preview-body--code .cave-line {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+/* Line-number gutter (renders >5 lines) becomes a hanging indent: the 3.4em
+   .cave-ln (2.6em + 0.8em padding-right) hangs left of wrapped continuation
+   lines so code columns stay aligned under the first character. */
+.workspace-rail__preview-body--code .cave-line:has(.cave-ln) {
+  padding-left: calc(1em + 3.4em);
+  text-indent: -3.4em;
+}
+.workspace-rail__preview-body--code .cave-ln {
+  display: inline-block;
 }
 /* With the clamp lifted there is nothing to expand — the footer would be a
    no-op button pinned over the last visible line. */
