@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { isLocalOrigin } from "@/lib/server/local-origin";
 import { resolveProjectGrantTarget } from "@/lib/server/project-grant-targets";
+import { requireTrustedHumanGrantMutation } from "@/lib/server/trusted-grant-mutation";
 
 import {
   grantProjectToFamiliar,
@@ -36,14 +36,6 @@ async function readPayload(req: Request): Promise<Record<string, unknown> | Resp
   }
 }
 
-function requireLocalHumanGrantMutation(req: Request): Response | null {
-  if (isLocalOrigin(req)) return null;
-  return NextResponse.json(
-    { ok: false, error: "grant changes must be confirmed from the local desktop" },
-    { status: 403 },
-  );
-}
-
 function grantInput(payload: Record<string, unknown>) {
   const targetFamiliarId = typeof payload.targetFamiliarId === "string"
     ? payload.targetFamiliarId.trim()
@@ -70,18 +62,21 @@ export async function GET() {
   // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
   // bounded recent window of access decisions for the console's audit log.
   // `accessGroups` ride along so one fetch can render effective (direct + group)
-  // access.
+  // access. `mobileMutationsAllowed` lets the iOS console render editable vs
+  // read-only without a failed mutation probe.
   return NextResponse.json({
     ok: true,
     grants,
     accessGroups,
     supremeFamiliarId: config.supremeFamiliarId,
+    mobileMutationsAllowed: config.allowMobileGrantMutations,
     audit,
   });
 }
 
 export async function POST(req: Request) {
-  const blocked = requireLocalHumanGrantMutation(req);
+  // Local desktop always; the paired phone only behind the desktop opt-in.
+  const blocked = await requireTrustedHumanGrantMutation(req);
   if (blocked) return blocked;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;
@@ -113,7 +108,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const blocked = requireLocalHumanGrantMutation(req);
+  const blocked = await requireTrustedHumanGrantMutation(req);
   if (blocked) return blocked;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;

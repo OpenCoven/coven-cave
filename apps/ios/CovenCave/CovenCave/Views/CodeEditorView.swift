@@ -212,9 +212,22 @@ struct CodeEditorView: View {
             editing = false
             app.showToast("Saved \(name)", systemImage: "checkmark.circle.fill")
         } catch {
-            app.showToast(error.localizedDescription,
+            app.showToast(Self.saveErrorMessage(error),
                           systemImage: "exclamationmark.triangle.fill", style: .error)
         }
+    }
+
+    /// Phone saves are gated by the desktop's "Allow file edits from phone"
+    /// opt-in; the server's refusals name internals (familiarId, grants) that
+    /// mean nothing here — translate them into the action the human can take.
+    static func saveErrorMessage(_ error: Error) -> String {
+        let raw = error.localizedDescription
+        let lowered = raw.lowercased()
+        if lowered.contains("missing familiarid") || lowered.contains("requires write access")
+            || lowered.contains("write access") || lowered.contains("read-only") {
+            return "Saving from the phone is off — enable “Allow file edits from phone” in desktop Settings → Phone."
+        }
+        return raw
     }
 
     private func decodedImage(_ dataUrl: String?) -> Image? {

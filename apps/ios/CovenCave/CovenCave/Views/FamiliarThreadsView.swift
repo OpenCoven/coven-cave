@@ -19,6 +19,8 @@ struct FamiliarThreadsView: View {
     @State private var selectedIds: Set<String> = []
     @State private var confirmingBulkDelete = false
     @State private var exportArchive: ExportArchive?
+    /// Per-familiar permissions sheet (project access scoped to this familiar).
+    @State private var showPermissions = false
     /// Threads vs the OpenCoven content feed (mirrors the desktop Feed tab).
     @State private var section: ThreadSection = .threads
     private enum ThreadSection { case threads, feed }
@@ -102,6 +104,14 @@ struct FamiliarThreadsView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                if !selectMode {
+                    Button { showPermissions = true } label: {
+                        Image(systemName: "key")
+                    }
+                    .accessibilityLabel("Project access")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 if !selectMode && hasLocalThreads && section == .threads {
                     Button("Select") { withAnimation { selectMode = true } }
                 }
@@ -139,6 +149,9 @@ struct FamiliarThreadsView: View {
         }
         .sheet(item: $exportArchive) { archive in
             ActivityView(items: [archive.url])
+        }
+        .sheet(isPresented: $showPermissions) {
+            FamiliarPermissionsSheet(familiar: familiar)
         }
     }
 

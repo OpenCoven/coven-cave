@@ -23,11 +23,14 @@ try {
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
     listAccessibleProjects,
+    loadHumanPermissionConfig,
+    loadMobileWriteAccess,
     loadProjectPermissions,
     requiredAccessLevel,
     resolveGrantProposal,
     undoGrantProposal,
     updateAccessGroup,
+    updateMobileWriteAccess,
     GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
   } = await import("./project-permissions.ts");
@@ -344,6 +347,34 @@ try {
     ProjectAccessDeniedError,
     "a finalized grant can no longer be undone via the proposal",
   );
+
+  // Mobile write-access opt-ins: fail closed by default, persist via the
+  // config mutator, and normalize non-boolean junk back to off.
+  const defaults = await loadMobileWriteAccess();
+  assert.deepEqual(
+    defaults,
+    { allowMobileGrantMutations: false, allowMobileFileWrites: false },
+    "mobile write access defaults to fully off",
+  );
+  const enabled = await updateMobileWriteAccess({ allowMobileGrantMutations: true });
+  assert.deepEqual(
+    enabled,
+    { allowMobileGrantMutations: true, allowMobileFileWrites: false },
+    "a partial patch flips only the addressed flag",
+  );
+  const persisted = await loadMobileWriteAccess();
+  assert.equal(persisted.allowMobileGrantMutations, true, "the opt-in persists across loads");
+  const config = await loadHumanPermissionConfig();
+  assert.equal(config.supremeFamiliarId, "supreme", "supreme id survives mobile flag writes");
+  const bothOff = await updateMobileWriteAccess({ allowMobileGrantMutations: false });
+  assert.equal(bothOff.allowMobileGrantMutations, false, "the opt-in can be revoked");
+  await writeFile(
+    process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE,
+    JSON.stringify({ version: 1, supremeFamiliarId: "supreme", allowMobileFileWrites: "yes" }),
+    "utf8",
+  );
+  const junk = await loadMobileWriteAccess();
+  assert.equal(junk.allowMobileFileWrites, false, "non-boolean flag values fail closed");
 
   console.log("project-permissions.test.ts: ok");
 } finally {
