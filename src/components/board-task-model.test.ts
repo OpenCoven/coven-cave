@@ -20,6 +20,7 @@ assert.match(inspector, /persistTaskModelPatch\(\{ familiarId: next \|\| null, m
 assert.match(inspector, /label="Model"/, "inspector exposes a Model control");
 assert.match(taskRoute, /model: card\.modelOverride \?\? binding\.model/, "new task sessions prefer the card model override");
 assert.match(inspector, /const pendingModelSaveRef = useRef<Promise<boolean> \| null>\(null\)/, "the inspector tracks a pending model save");
+assert.match(inspector, /const previous = pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)/, "model saves serialize back-to-back blur and familiar changes");
 assert.match(inspector, /await \(pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)\)/, "starting work waits for the pending model save");
 assert.match(inspector, /onClick=\{\(\) => void openTaskWorkAfterModelSave\(\)\}/, "Start work uses the model-save-aware handler");
 

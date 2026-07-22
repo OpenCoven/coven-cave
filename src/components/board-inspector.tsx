@@ -1132,11 +1132,16 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
   // Starting a task creates its session from the persisted card. Keep a model
-  // save in flight until it settles so selecting a model and immediately
-  // pressing Start work cannot create the session with the prior default.
+  // save queue in flight until it settles so selecting a model and immediately
+  // pressing Start work cannot create the session with the prior default. The
+  // queue also preserves intent when an input blur and a familiar change fire
+  // back-to-back: the familiar's clearing patch must win over the old custom id.
   const pendingModelSaveRef = useRef<Promise<boolean> | null>(null);
   const persistTaskModelPatch = (patch: CardPatch) => {
-    const pending = Promise.resolve(onPatch(card.id, patch))
+    const previous = pendingModelSaveRef.current ?? Promise.resolve(true);
+    const pending = previous
+      .catch(() => false)
+      .then(() => Promise.resolve(onPatch(card.id, patch)))
       .then((saved) => saved !== false)
       .catch(() => false);
     pendingModelSaveRef.current = pending;
