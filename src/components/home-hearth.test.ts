@@ -34,11 +34,15 @@ assert.match(
   /\.home-hearth-card \{[\s\S]{0,700}?margin-block: auto/,
   "the card centers vertically (auto block margins; collapse to 0 when it overflows)",
 );
-assert.match(
+// Flat ground (2026-07-22): the radial presence washes and the hearth-glow
+// halo are retired — soft radial gradients read as out-of-focus color smears
+// ("blurriness in the bg color") over the clean base.
+assert.doesNotMatch(
   css,
-  /\.home-composer-root \{[\s\S]{0,900}?radial-gradient\([\s\S]{0,200}?var\(--accent-presence\)/,
-  "the base behind the card carries the radial presence wash",
+  /\.home-composer-root \{[\s\S]{0,900}?radial-gradient\(/,
+  "the base behind the card is flat — no radial washes",
 );
+assert.doesNotMatch(css, /home-halo/, "the hearth-glow halo CSS is removed");
 // The subtitle derives from live state — no invented user-profile name.
 assert.doesNotMatch(composer, /casting today, /, "no invented user name in the heading");
 

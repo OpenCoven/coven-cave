@@ -725,11 +725,6 @@ export function HomeComposer({
           card without being clipped by the card's `overflow: hidden`. */}
       <div className="home-composer-card-wrap">
 
-        {/* Hearth glow — the ambient presence halo behind the composer. It
-            breathes slowly and brightens while the composer holds focus
-            (static under prefers-reduced-motion). */}
-        <div className="home-halo" aria-hidden />
-
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}
         {modelMenuActive && modelOptions ? (
