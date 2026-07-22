@@ -382,7 +382,10 @@ function SummoningRite({
     vessel === "local"
       ? harness !== null
       : vessel === "ssh"
-        ? harness !== null && sshHost.trim().length > 0 && sshCwd.trim().length > 0
+        ? harness !== null &&
+          harness !== "grok" &&
+          sshHost.trim().length > 0 &&
+          sshCwd.trim().length > 0
         : vessel === "openclaw"
           ? agentId !== null
           : false;
@@ -738,7 +741,7 @@ function StageVessel({
   setVessel: (v: VesselKind) => void;
   harnesses: HarnessReport[] | null;
   harness: string | null;
-  setHarness: (id: string) => void;
+  setHarness: (id: string | null) => void;
   agents: OpenClawAgent[] | null;
   agentsError: string | null;
   agentId: string | null;
@@ -780,7 +783,12 @@ function StageVessel({
             type="button"
             role="radio"
             aria-checked={vessel === v.kind}
-            onClick={() => setVessel(v.kind)}
+            onClick={() => {
+              setVessel(v.kind);
+              // A previously selected local Grok runtime must not survive a
+              // switch to SSH: native Grok sessions are deliberately local-only.
+              if (v.kind === "ssh" && harness === "grok") setHarness(null);
+            }}
             className={`focus-ring summoning-vessel${vessel === v.kind ? " summoning-vessel--active" : ""}`}
           >
             <Icon name={v.icon} width={18} className="summoning-vessel__icon" />
