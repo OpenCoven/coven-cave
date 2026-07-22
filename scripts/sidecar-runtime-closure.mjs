@@ -104,7 +104,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // traced files (CI measured 5,602 Windows on the pre-Tailscale base and
   // 5,616 Windows on the combined tree). Pin the combined exact maximum
   // without relaxing the expanded-byte ceiling.
-  fileCount: 5_616,
+  // 2026-07-22 (composer add menu): the unified "+" menu splits the composer
+  // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
+  // CI measured 5,618 on Windows. Keep the exact maximum.
+  fileCount: 5_618,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
