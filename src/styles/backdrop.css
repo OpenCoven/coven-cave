@@ -104,6 +104,9 @@ html[data-backdrop-on] .cave-group-chat-shell {
    around it. */
 html[data-backdrop-on] .home-hearth-card {
   background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  /* --radius-xl (not a hard-coded px / square corner) so the hearth glass
+     follows the Appearance → Corner radius setting like the chat glass. */
+  border-radius: var(--radius-xl);
 }
 
 /* Chat landing (no thread yet): the greeting/identity/suggestions cluster
