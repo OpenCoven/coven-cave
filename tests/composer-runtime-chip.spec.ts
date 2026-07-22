@@ -1,16 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
-// relocated behind the context pill by chat revamp 1d): the chat composer's
-// context pill always shows the effective model, its Model section opens the
-// Runtime/Model picker with radio semantics, and picking a runtime rebinds
-// the familiar through /api/config — flipping the pill, re-listing the Model
-// group in the still-open menu (the pick isn't complete until a model is
-// chosen), refetching the familiar roster (cave:familiars-refresh), and
-// catching the empty-state identity line up without a reload. A model pick
-// then closes the menu.
+// split-chip grammar since cave-g21f): the chat composer footer's model chip
+// always shows the effective model and opens the Runtime/Model picker
+// directly with radio semantics; picking a runtime rebinds the familiar
+// through /api/config — flipping the chip, re-listing the Model group in the
+// still-open menu (the pick isn't complete until a model is chosen),
+// refetching the familiar roster (cave:familiars-refresh), and catching the
+// empty-state identity line up without a reload. A model pick then closes
+// the menu.
 //
-// Desktop only (the pill lives in the chat composer). All APIs are mocked;
+// Desktop only (the chip lives in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
 // the app sees — exactly the loop the feature exists to close.
 
