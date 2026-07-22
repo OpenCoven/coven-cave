@@ -35,7 +35,7 @@ assert.match(
 );
 assert.match(
   css,
-  /\.cave-linear-turn-avatar--human svg \{[^}]*width: 14px;[^}]*\}/,
+  /\.cave-linear-turn-avatar--human svg \{[^}]*width: 14px;[^}]*height: 14px;[^}]*\}/,
   "the ph:user fallback glyph scales down to the compact ring",
 );
 
