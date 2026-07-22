@@ -81,7 +81,7 @@ function cleanEffectiveModelId(model: unknown, harness: unknown): string | null 
   return cleanModel;
 }
 
-export function modelApplicationForHarness(input?: ModelApplicationInput): ModelApplicationResult {
+export function modelApplicationForHarness(input?: ModelApplicationInput | null): ModelApplicationResult {
   if (input?.failed) {
     return {
       state: "failed",
