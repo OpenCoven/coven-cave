@@ -115,9 +115,12 @@ export function useResearchMissions(familiarId: string) {
     } catch {
       // Transport failure (network reject, non-JSON) resolves to the same
       // failure shape the API path returns — bare awaits must never throw.
+      // The POST may still have landed server-side, so resync with server
+      // truth: a retry after a false failure would duplicate mission spend.
+      void load();
       return { ok: false as const, error: "Research could not start" };
     }
-  }, []);
+  }, [load]);
 
   const act = useCallback(async (id: string, input: ResearchMissionActionInput) => {
     try {

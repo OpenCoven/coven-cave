@@ -1333,6 +1333,13 @@ export async function reconcileResearchMissionList(
     "reconcile" | "reconcileAutomation"
   >,
 ): Promise<ResearchMission[]> {
+  // Prune dedupe entries for missions no longer in the list (deleted or
+  // archived) so the module-level map cannot grow unbounded over a
+  // long-lived process.
+  const listedIds = new Set(missions.map((mission) => mission.id));
+  for (const id of loggedReconcileFailures.keys()) {
+    if (!listedIds.has(id)) loggedReconcileFailures.delete(id);
+  }
   return Promise.all(missions.map(async (mission) => {
     let current = mission;
     try {
