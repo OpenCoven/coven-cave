@@ -203,6 +203,10 @@ assert.equal(legacyPatch.general?.newsHeadlines, false);
 assert.equal(legacyPatch.phone?.mobileMode, false);
 assert.equal(Object.hasOwn(legacyPatch, "authToken"), false);
 
+// Single-theme rename: stored "openai" normalizes to "codex".
+const codexRenamePatch = legacyStorageToPreferencesPatch({ "coven-theme": "openai" });
+assert.equal(codexRenamePatch.appearance?.theme?.id, "codex");
+
 const compatibilityCache = preferencesToLegacyStorage(selectedAgain);
 assert.equal(compatibilityCache["coven-theme"], "tide");
 assert.equal(compatibilityCache["cave:font:sans"], "source-sans-3");

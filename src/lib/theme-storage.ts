@@ -13,7 +13,8 @@ export const COVEN_MODE_KEY = "coven-mode";
 export const COVEN_CUSTOM_THEME_KEY = "coven-custom-theme";
 
 /**
- * Renames from the dark-only preset roster to the 8-theme roster.
+ * Renames from the dark-only preset roster to the 8-theme roster,
+ * plus later single-theme renames (openai → codex).
  * Applied one-shot on first run after upgrade.
  */
 export const LEGACY_THEME_RENAME: Record<string, string> = {
@@ -21,6 +22,7 @@ export const LEGACY_THEME_RENAME: Record<string, string> = {
   "sky": "tide",
   "orchid": "dusk",
   "midnight": "slate",
+  "openai": "codex",
 };
 
 export type Mode = "light" | "dark";

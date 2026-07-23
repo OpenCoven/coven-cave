@@ -200,6 +200,7 @@ const LEGACY_THEME_RENAME: Record<string, CaveThemeId> = {
   sky: "tide",
   orchid: "dusk",
   midnight: "slate",
+  openai: "codex",
 };
 
 const THEME_ID_SET = new Set<string>([...THEME_IDS, "custom"]);
