@@ -147,6 +147,18 @@ export function isAllowedNewProjectRoot(value: string): boolean {
   // bare volume roots (`/`, `C:\`) — registering an entire home directory or
   // drive as one project is never intended.
   const home = realpathOrResolve(homedir());
-  if (candidate === home) return false;
+  if (sameCanonicalName(candidate, home)) return false;
   return candidate !== path.parse(candidate).root;
+}
+
+// realpath is case-preserving, so on case-insensitive filesystems
+// (APFS/NTFS) a typed `/USERS/BUNS` — or an NFD/NFC Unicode variant —
+// survives canonicalization while still naming $HOME. Compare normalized,
+// case-folded names instead: every alias of the home directory is rejected
+// on every platform, with no fs probe on the untrusted candidate (CodeQL
+// js/path-injection). On a case-sensitive filesystem this can also reject a
+// hypothetical distinct `/USERS/…` twin of $HOME — the safe direction for a
+// guard whose only job is refusing unbounded roots.
+function sameCanonicalName(a: string, b: string): boolean {
+  return a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }

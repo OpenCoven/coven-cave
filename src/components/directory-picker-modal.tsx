@@ -19,9 +19,14 @@ type BrowseResponse = {
 /** Pseudo-location the fs-browse API uses to list volume roots (drives). */
 const DRIVES = "::drives";
 
-/** Path separator the server-native path uses ("\" only on Windows hosts). */
-function sepOf(value: string): "/" | "\\" {
-  return value.includes("\\") ? "\\" : "/";
+/**
+ * Path separator of the server's native paths ("\" only for a Windows host),
+ * derived once from the trusted $HOME the fs-browse API reports. Sniffing
+ * each path for backslashes misclassifies POSIX folder names that legally
+ * contain "\" and corrupts their crumbs.
+ */
+function serverSep(home: string | null): "/" | "\\" {
+  return home && (/^[A-Za-z]:/.test(home) || home.startsWith("\\\\")) ? "\\" : "/";
 }
 
 /** True for a bare volume root: "/" or a Windows drive root like "C:\". */
@@ -30,9 +35,8 @@ function isVolumeRootPath(value: string): boolean {
 }
 
 /** Trailing path segment, volume roots yielding themselves ("/" → "/"). */
-function baseName(value: string): string {
-  const cut = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
-  return value.slice(cut + 1) || value;
+function baseName(value: string, sep: "/" | "\\"): string {
+  return value.slice(value.lastIndexOf(sep) + 1) || value;
 }
 type CreateFolderResponse = {
   ok: boolean;
@@ -252,7 +256,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const crumbs = useMemo(() => {
     if (!cwd) return [];
     if (cwd === DRIVES) return [{ name: "Drives", path: DRIVES }];
-    const sep = sepOf(cwd);
+    const sep = serverSep(home);
     const trail: Array<{ name: string; path: string }> = [];
     let acc: string;
     if (home && (cwd === home || cwd.startsWith(home + sep))) {
@@ -271,8 +275,9 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   if (!open) return null;
 
+  const sep = serverSep(home);
   const collapseHome = (value: string) =>
-    home && (value === home || value.startsWith(home + sepOf(value)))
+    home && (value === home || value.startsWith(home + sep))
       ? "~" + value.slice(home.length)
       : value;
 
@@ -283,7 +288,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const atHomeRoot = cwd !== null && cwd === home;
   const atDrivesList = cwd === DRIVES;
   const pendingPath = selected?.path ?? (atDrivesList ? null : cwd);
-  const pendingName = selected ? selected.name : atHomeRoot || !cwd || atDrivesList ? null : baseName(cwd);
+  const pendingName = selected ? selected.name : atHomeRoot || !cwd || atDrivesList ? null : baseName(cwd, sep);
   const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : atDrivesList ? "Open a drive" : "Select home";
   // $HOME itself and bare volume roots are never valid project roots
   // (isAllowedNewProjectRoot excludes both as unbounded), so selection stays

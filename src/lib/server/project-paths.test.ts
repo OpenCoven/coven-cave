@@ -162,6 +162,27 @@ try {
     "a bare volume root is never a project root",
   );
 
+  // Case/Unicode aliases of $HOME survive realpath (case-preserving on
+  // APFS/NTFS), so the exclusion compares normalized, case-folded names —
+  // deterministic on every platform, no fs probe on the candidate. Rejecting
+  // a hypothetical distinct /USERS twin on a case-sensitive filesystem is
+  // the safe direction for an unbounded-root guard.
+  {
+    const home = await realpath(homedir());
+    const caseAlias = path.join(path.dirname(home), path.basename(home).toUpperCase());
+    assert.equal(
+      isAllowedNewProjectRoot(caseAlias),
+      false,
+      "a case alias of $HOME still names $HOME and must be rejected",
+    );
+    const nfdAlias = home.normalize("NFD");
+    assert.equal(
+      isAllowedNewProjectRoot(nfdAlias),
+      false,
+      "a Unicode-normalization alias of $HOME must be rejected",
+    );
+  }
+
   assert.equal(
     resolveAllowedProjectPath(sensitiveFileRoot),
     null,
