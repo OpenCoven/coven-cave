@@ -4774,6 +4774,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           onSessionStarted?.(ev.sessionId);
         }
+        // A Board native-chat handoff already owns the stable conversation id,
+        // so its "session" event does not promote the router and therefore
+        // cannot refresh the task's session list. Refresh after the server has
+        // saved the first transcript; otherwise the cockpit stays in its
+        // one-shot bridge mode and never restores the normal work/rail view.
+        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,

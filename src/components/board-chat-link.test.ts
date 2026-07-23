@@ -149,6 +149,11 @@ assert.match(
   "ChatView only auto-sends into an existing session for the explicit task-bridge handoff",
 );
 assert.match(
+  chatView,
+  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
+  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+);
+assert.match(
   taskWorkCockpit,
   /autoSendInitialPrompt\s+startNewConversation/,
   "A reserved Board conversation marks its first ChatView send as a fresh native session",
