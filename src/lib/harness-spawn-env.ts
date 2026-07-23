@@ -18,7 +18,7 @@
 
 import { covenSpawnEnv } from "./coven-bin.ts";
 import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env.ts";
-import { isVaultKeyGrantedTo, loadVaultMap, resolveSecret, type VaultMap } from "./vault.ts";
+import { isVaultKeyGrantedTo, loadVaultMap, resolveVaultManagedSecret, type VaultMap } from "./vault.ts";
 
 /**
  * Return the explicitly opted-in external credential names that a harness may
@@ -65,7 +65,10 @@ export function restoreGrantedVaultGitHubTokenEnv(
     // Vault mapping again so that security boundary does not prevent a
     // configured Codex, Hermes, OpenCode, or other harness from receiving
     // its own scoped credential.
-    const value = resolveSecret(key)?.trim();
+    // Do not take a same-named launcher variable here. A managed mapping
+    // must retain its Vault value and scope; launcher values need the explicit
+    // COVEN_HARNESS_ALLOW_ENV_KEYS opt-in handled above.
+    const value = resolveVaultManagedSecret(key, entry)?.trim();
     if (value) env[key] = value;
   }
   return env;

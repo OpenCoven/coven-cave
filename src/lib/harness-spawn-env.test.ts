@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { subtractScopedVaultKeys } from "./harness-spawn-env.ts";
-import { isVaultKeyGrantedTo, normalizeVaultScope } from "./vault.ts";
+import { restoreGrantedVaultGitHubTokenEnv, subtractScopedVaultKeys } from "./harness-spawn-env.ts";
+import { isVaultKeyGrantedTo, loadVaultMap, normalizeVaultScope, saveVaultMap } from "./vault.ts";
+import { setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
 // ── scope normalization ───────────────────────────────────────────────────────
 
@@ -138,8 +139,38 @@ assert.match(
 );
 assert.match(
   helperSource,
-  /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveSecret\(key\)\?\.trim\(\)/,
+  /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveVaultManagedSecret\(key, entry\)\?\.trim\(\)/,
   "a Vault-managed GitHub alias is restored only for the granted familiar after the generic child-env scrub",
 );
+
+// Generic harnesses (Codex, Hermes, OpenCode, etc.) must receive a granted
+// Vault token rather than a same-named launcher variable.
+const tokenDir = mkdtempSync(join(tmpdir(), "harness-github-token-"));
+const tokenOriginal = {
+  COVEN_VAULT_FILE: process.env.COVEN_VAULT_FILE,
+  COVEN_CAVE_LOCAL_VAULT_FILE: process.env.COVEN_CAVE_LOCAL_VAULT_FILE,
+  COVEN_CAVE_LOCAL_VAULT_KEY_FILE: process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE,
+  GH_TOKEN: process.env.GH_TOKEN,
+};
+process.env.COVEN_VAULT_FILE = join(tokenDir, "vault.yaml");
+process.env.COVEN_CAVE_LOCAL_VAULT_FILE = join(tokenDir, "local-vault.enc.json");
+process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = join(tokenDir, "local-vault.key");
+process.env.GH_TOKEN = "launcher-token";
+try {
+  saveVaultMap({ GH_TOKEN: { storage: "encrypted", scope: ["nova"] } });
+  setLocalEncryptedSecret("GH_TOKEN", "vault-token");
+  assert.equal(
+    restoreGrantedVaultGitHubTokenEnv({}, loadVaultMap(true), "nova").GH_TOKEN,
+    "vault-token",
+    "a granted harness gets its Vault value rather than a same-named launcher token",
+  );
+} finally {
+  for (const [key, value] of Object.entries(tokenOriginal)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  loadVaultMap(true);
+  rmSync(tokenDir, { recursive: true, force: true });
+}
 
 console.log("harness-spawn-env.test.ts: ok");

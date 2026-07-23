@@ -16,7 +16,8 @@ import {
   restoreAllowedGitHubTokenEnv,
   restoreGrantedVaultGitHubTokenEnv,
 } from "./harness-spawn-env";
-import { loadVaultMap } from "./vault";
+import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env";
+import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
@@ -160,6 +161,9 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
   const map = loadVaultMap(true);
+  const grantedVaultTokenKeys = new Set(
+    GITHUB_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
+  );
 
   // Direct OpenClaw sessions have no familiar id, so they receive shared
   // Vault aliases just like other context-free harness launches. Scoped
@@ -174,7 +178,8 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   for (const key of Object.keys(env)) {
     if (
       (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
-      !allowed.has(key)
+      !allowed.has(key) &&
+      !grantedVaultTokenKeys.has(key)
     ) {
       delete env[key];
     }
