@@ -36,6 +36,7 @@ import {
 import type { ResearchArtifactRef, ResearchMission } from "../research-missions.ts";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
+import { corruptAsidePath } from "./corrupt-aside.ts";
 import {
   loadResearchMission,
   readValidatedMissionFile,
@@ -152,8 +153,7 @@ async function loadFile(familiarId: string): Promise<ResearchGenerationsFile> {
 
 async function preserveMalformedFile(familiarId: string): Promise<void> {
   const source = researchGenerationsPath(familiarId);
-  const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, corruptAsidePath(source)).catch(() => {});
 }
 
 async function saveFile(familiarId: string, file: ResearchGenerationsFile): Promise<void> {

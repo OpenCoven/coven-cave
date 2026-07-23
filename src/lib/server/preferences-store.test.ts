@@ -193,6 +193,35 @@ try {
     "successful atomic writes leave no temporary files",
   );
 
+  // Same-millisecond double corruption: the aside name's timestamp is
+  // millisecond-resolution, so without the random suffix the second capture
+  // would copy onto the SAME path and destroy the first (see corruptAsidePath).
+  const beforeBurst = new Set((await readdir(root)).filter((name) => name.includes(".corrupt-")));
+  const RealDate = Date;
+  const frozenMs = new RealDate("2026-01-01T00:00:00.000Z").getTime();
+  globalThis.Date = class extends RealDate {
+    constructor() {
+      super(frozenMs);
+    }
+  };
+  try {
+    await writeFile(preferencesFile, "{ corrupt take one", "utf8");
+    await store.patchPreferences({});
+    await writeFile(preferencesFile, "{ corrupt take two", "utf8");
+    await store.patchPreferences({});
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  const burstCaptures = (await readdir(root)).filter(
+    (name) => name.includes(".corrupt-") && !beforeBurst.has(name),
+  );
+  assert.equal(burstCaptures.length, 2, "same-ms corruption events each keep their own capture");
+  const burstContents = await Promise.all(
+    burstCaptures.map((name) => readFile(path.join(root, name), "utf8")),
+  );
+  assert.ok(burstContents.includes("{ corrupt take one"), "the first capture survives");
+  assert.ok(burstContents.includes("{ corrupt take two"), "the second capture survives");
+
   // Empty initialization is meaningful for a genuinely fresh profile.
   await rm(preferencesFile, { force: true });
   const defaults = await store.patchPreferences({});
