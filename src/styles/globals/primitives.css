@@ -820,8 +820,8 @@ textarea.required-inputs-control {
   color: var(--accent-presence-foreground);
 }
 .ui-btn--primary:hover {
-  background: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
-  border-color: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
+  background: var(--accent-presence-hover);
+  border-color: var(--accent-presence-hover);
 }
 .ui-btn--secondary {
   background: var(--bg-raised);

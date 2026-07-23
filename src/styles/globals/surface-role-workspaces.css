@@ -110,7 +110,7 @@
 
 .role-surface-chip--accent:hover {
   color: var(--accent-presence-foreground);
-  background: color-mix(in oklch, var(--accent-presence) 88%, white);
+  background: var(--accent-presence-hover);
 }
 
 .role-surface-commands { position: relative; }

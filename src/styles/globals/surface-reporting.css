@@ -124,7 +124,7 @@
   color: var(--accent-presence-foreground);
 }
 .dr-btn--primary:hover {
-  background: color-mix(in oklch, var(--accent-presence) 88%, #000);
+  background: var(--accent-presence-hover);
   border-color: transparent;
 }
 .dr-btn--sm { height: 32px; padding: 0 12px; font-size: 12.5px; }

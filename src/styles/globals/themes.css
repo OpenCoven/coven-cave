@@ -334,6 +334,7 @@
   --accent-presence: oklch(0.6180 0.0778 65.5444);
   --accent-presence-foreground: #111111;
   --accent-presence-soft: oklch(0.6180 0.060 65);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --ring: oklch(0.6180 0.0778 65.5444);
   --border: oklch(0.8606 0.0321 84.5881);
   --input: oklch(0.8606 0.0321 84.5881);
@@ -486,6 +487,7 @@
   --secondary: oklch(0.90 0.030 25);
   --muted-foreground: oklch(0.44 0.040 25);
   --accent-presence: #A41C24;
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --ring: oklch(0.52 0.22 25);
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.016 25);
@@ -505,6 +507,8 @@
   --secondary: oklch(0.17 0.054 125);
   --muted-foreground: oklch(0.70 0.040 125);
   --accent-presence: #A5F050;
+  /* Near-white accent: lightening is invisible — darken for hover. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
   --ring: oklch(0.78 0.18 125);
   --bg-base: var(--background);
   --bg-panel: oklch(0.07 0.044 125);
@@ -593,6 +597,7 @@
   --accent-presence: #808080;
   --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #808080 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #808080 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #f8f8f8;
@@ -763,6 +768,7 @@
   --accent-presence: #c96442;
   --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #c96442 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #c96442 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #f5f4ee;
@@ -806,6 +812,8 @@
   --accent-presence: #ececec;
   --accent-presence-foreground: #0d0d0d;
   --accent-presence-soft: color-mix(in oklch, #ececec 78%, transparent);
+  /* Near-white accent: lightening is invisible — darken for hover. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
   --accent-faint: color-mix(in oklch, #ececec 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #000000;
@@ -843,6 +851,7 @@
   --accent-presence: #0d0d0d;
   --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #0d0d0d 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #0d0d0d 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #f9f9f9;
@@ -931,6 +940,7 @@
   --accent-presence: #9377e6;
   --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #a78bfa 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #a78bfa 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #e9d8fd;
@@ -979,6 +989,8 @@
   --accent-presence: #1d7449;
   --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #006239 78%, transparent);
+  /* Dark meatseeks pairs white ink with a light-leaning green: darken. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
   --accent-faint: color-mix(in oklch, #006239 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #121212;
@@ -1016,6 +1028,7 @@
   --accent-presence: #279c6b;
   --accent-presence-foreground: #0d120f;
   --accent-presence-soft: color-mix(in oklch, #72e3ad 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #72e3ad 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #fcfcfc;
@@ -1092,6 +1105,7 @@
   --accent-presence: #005735;
   --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #005735 78%, transparent);
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --accent-faint: color-mix(in oklch, #005735 14%, transparent);
   --bg-base: var(--background);
   --bg-panel: #ffffff;
@@ -1227,6 +1241,7 @@
   --secondary: oklch(0.92 0.000 0);
   --muted-foreground: oklch(0.40 0.000 0);
   --accent-presence: #525258;
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --ring: oklch(0.42 0.000 0);
   --bg-base: var(--background);
   --bg-panel: oklch(1.00 0.000 0);
@@ -1250,6 +1265,8 @@
   --muted-foreground: #d9d9d9;
   --accent-presence: #ffd60a;
   --accent-presence-foreground: #000000;
+  /* Near-white accent: lightening is invisible — darken for hover. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
   --ring: #ffd60a;
   --border: #666666;
   --border-strong: #9a9a9a;
@@ -1317,6 +1334,7 @@
   --muted-foreground: oklch(0.40 0.030 250);
   --accent-presence: #a34d00;
   --accent-presence-foreground: #ffffff;
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --ring: oklch(0.50 0.13 65);
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.008 250);
@@ -1356,6 +1374,7 @@
   --muted-foreground: oklch(0.40 0.036 85);
   --accent-presence: #7a5c00;
   --accent-presence-foreground: #ffffff;
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --ring: oklch(0.48 0.11 85);
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.012 90);

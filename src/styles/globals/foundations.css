@@ -59,6 +59,11 @@
   --accent-presence: #9386d0;
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.70 0.10 293);
+  /* Hover fill for solid accent CTAs. The mix direction is per-theme: a
+     fixed direction fails AA somewhere (cave-c7hy — lightening under light
+     ink, darkening under dark ink). Light-root flips to black below;
+     themes.css re-overrides where a palette's measured direction differs. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --brand: var(--accent-presence);
   /* Follows the per-theme ink choice — hardcoded white failed AA on every
      palette whose accent is light (22 of 32 theme×mode combos). */
@@ -310,6 +315,8 @@
   --accent-presence: #6859ac;
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.53 0.10 291);
+  /* Light surfaces pair light ink with a mid accent: darken on hover. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
 
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.004 291);
