@@ -22,6 +22,19 @@ assert.match(
   /path\.join\(\/\* turbopackIgnore: true \*\/ parent, name\)/,
   "dynamic user-home creation paths must not trace the entire checkout into the standalone bundle",
 );
+// CodeQL js/path-injection: the walk's anchor must be the allowlist's own
+// element (server-derived), with the request-derived root used only in an
+// equality check. PR #3728 alerts 88/135 regressed exactly this.
+assert.match(
+  source,
+  /for \(const root of listSystemRoots\(\)\) \{\s*if \(root === wanted\) return root;/,
+  "absolute walks must anchor on the listSystemRoots() allowlist element, never request-derived text",
+);
+assert.doesNotMatch(
+  source,
+  /resolveWithinRoot\(path\.parse\(/,
+  "never anchor the trusted walk on a root parsed straight out of the request",
+);
 
 function withScratchDir(run: (base: string) => void) {
   fs.mkdirSync(TEST_ARTIFACTS_ROOT, { recursive: true });
