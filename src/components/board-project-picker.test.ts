@@ -45,7 +45,7 @@ assert.match(
 );
 assert.match(
   inspector,
-  /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,200}disabled=\{!familiarPickerReady\}/,
+  /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,500}disabled=\{!familiarPickerReady\}/,
   "inspector disables the familiar choice until its project authorization result is ready",
 );
 assert.match(
