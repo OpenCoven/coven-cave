@@ -44,6 +44,12 @@ assert.match(
   "hermes Windows installer URL is pinned to the official script",
 );
 
+assert.match(
+  source,
+  /targetName === "hermes"\s*&&\s*installed\.path\s*&&\s*process\.platform !== "win32"/,
+  "the POSIX-only hermes-coven shim is not attempted after a Windows Hermes install",
+);
+
 assert.equal(
   source.match(/rejectNonLocalRequest\(req\)/g)?.length,
   3,
