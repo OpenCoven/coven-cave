@@ -114,8 +114,8 @@ assert.match(
 
 assert.match(
   source,
-  /resolveSecret\("GITHUB_PAT"\)[\s\S]*https:\/\/api\.github\.com\/repos\/\$\{item\.repo\}\/issues\/\$\{item\.number\}/,
-  "GitHub issue-state refresh should use the saved PAT when present and the REST issue endpoint",
+  /resolveGitHubToken\(\)[\s\S]*https:\/\/api\.github\.com\/repos\/\$\{item\.repo\}\/issues\/\$\{item\.number\}/,
+  "GitHub issue-state refresh should use the shared configured GitHub token when present and the REST issue endpoint",
 );
 
 assert.match(

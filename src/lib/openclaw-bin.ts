@@ -11,6 +11,13 @@ import {
   covenSpawnEnv,
   type CovenLaunchCommand,
 } from "./coven-bin";
+import {
+  allowedHarnessEnvKeys,
+  restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultGitHubTokenEnv,
+} from "./harness-spawn-env";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
+import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
@@ -19,12 +26,13 @@ const FORBIDDEN_SPAWN_ENV_RE =
   /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
 
 function allowedOpenClawEnvKeys(): Set<string> {
-  return new Set(
-    (process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
+  return new Set([
+    ...allowedHarnessEnvKeys(),
+    ...(process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
       .split(",")
       .map((key) => key.trim())
       .filter(Boolean),
-  );
+  ]);
 }
 
 function dedupe(values: string[]): string[] {
@@ -152,10 +160,27 @@ export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[]
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
+  const map = loadVaultMap(true);
+  const grantedVaultTokenKeys = new Set<string>(
+    GITHUB_HARNESS_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
+  );
+
+  // Direct OpenClaw sessions have no familiar id, so they receive shared
+  // Vault aliases just like other context-free harness launches. Scoped
+  // aliases remain unavailable without a granted familiar. The shared
+  // harness opt-in covers launcher credentials for any supported runtime,
+  // while the OpenClaw-specific setting remains available for existing
+  // installations. Cave-managed GITHUB_PAT follows the same Vault scope
+  // policy; an unmanaged launcher GITHUB_PAT still requires an explicit
+  // opt-in and is never restored when Cave has local storage for that key.
+  restoreGrantedVaultGitHubTokenEnv(env, map);
+  restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
+
   for (const key of Object.keys(env)) {
     if (
       (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
-      !allowed.has(key)
+      !allowed.has(key) &&
+      !grantedVaultTokenKeys.has(key)
     ) {
       delete env[key];
     }

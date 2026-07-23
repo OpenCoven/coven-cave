@@ -115,8 +115,8 @@ assert.match(
 );
 assert.match(
   source,
-  /busy\s*\? "Streaming… \(esc to cancel\)"/,
-  "Streaming keeps its own placeholder ahead of the recommendation branch",
+  /busy\s*\? "Streaming… \(send to queue · esc to cancel\)"/,
+  "Streaming explains that the composer now queues follow-ups ahead of the recommendation branch",
 );
 
 assert.match(
@@ -550,7 +550,7 @@ assert.doesNotMatch(
 );
 assert.match(
   applyStreamEventSection,
-  /if \(ev\.kind === "done"\) sawDone = true;[\s\S]*?if \(ev\.kind === "assistant_chunk"\)/,
+  /if \(ev\.kind === "done"\) \{[\s\S]*?sawDone = true;[\s\S]*?streamFailed = Boolean\(ev\.isError\);[\s\S]*?if \(ev\.kind === "assistant_chunk"\)/,
   "A parsed done event is observed immediately before any later reader failure",
 );
 assert.match(

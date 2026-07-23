@@ -19,5 +19,15 @@ assert.match(
   /setOpenCodeInventory\(\{ familiarId: inventoryFamiliarId, models: json\.models \}\)/,
   "a completed inventory request remains associated with the familiar scope that issued it",
 );
+assert.match(
+  source,
+  /canonicalRuntime !== "grok"[\s\S]*?fetch\("\/api\/harnesses", \{ cache: "no-store" \}\)/,
+  "Grok uses the authenticated local harness catalog rather than a static model list",
+);
+assert.match(
+  source,
+  /canonicalRuntime === "grok" && harnessInventory\.runtime === canonicalRuntime[\s\S]*?return harnessInventory\.models/,
+  "Grok only renders models from the inventory for the current runtime request",
+);
 
 console.log("use-runtime-model-options.test.ts: ok");

@@ -40,7 +40,16 @@ export type CovenLaunchCommand = {
   unresolvedWindowsShim?: true;
 };
 
-const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"] as const;
+// These aliases may authenticate Cave's own GitHub API routes. Do not leak a
+// launcher-provided credential into arbitrary installers, probes, or harness
+// sessions just because the desktop process inherited it.
+const FORBIDDEN_SPAWN_ENV_KEYS = [
+  "GITHUB_PAT",
+  "GITHUB_TOKEN",
+  "COVEN_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_PERSONAL_ACCESS_TOKEN",
+] as const;
 
 // Sidecar-internal env namespaces that must never reach child processes
 // (cave-o01k). The packaged app's Next standalone config override breaks any

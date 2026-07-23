@@ -54,8 +54,26 @@ assert.match(
 
 assert.match(
   source,
-  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,80}model:\s*binding\.model,/,
-  "task sessions forward the familiar's resolved model to the daemon",
+  /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/,
+  "task sessions only use a card model override from the familiar's current harness",
+);
+
+assert.match(
+  source,
+  /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/,
+  "a stale model override is cleared when a familiar's harness changes",
+);
+
+assert.match(
+  source,
+  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,100}model:\s*taskModelOverride \?\? binding\.model,/,
+  "task sessions otherwise forward the familiar's resolved model",
+);
+
+assert.match(
+  source,
+  /binding\.harness\s*=\s*canonicalHarnessId\(binding\.harness\)/,
+  "task launch canonicalizes package and binary harness aliases before daemon validation",
 );
 
 // Windows Hermes configurations created before prompt_flag support point to a

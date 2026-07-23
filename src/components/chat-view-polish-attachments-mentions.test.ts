@@ -268,7 +268,7 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /\.\.\.\(outgoingMentions\.length && mentionRoot\s*\n\s*\? \{\s*\n\s*mentionedFiles: outgoingMentions\.slice\(0, MAX_FILE_MENTIONS\),\s*\n\s*mentionedFilesRoot: mentionRoot,/,
+  /\.\.\.\(outgoingMentions\.length && mentionedFilesRootForRequest\s*\n\s*\? \{\s*\n\s*mentionedFiles: outgoingMentions\.slice\(0, MAX_FILE_MENTIONS\),\s*\n\s*mentionedFilesRoot: mentionedFilesRootForRequest,/,
   "The send body must carry mentionedFiles plus the root they are relative to",
 );
 assert.match(

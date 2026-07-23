@@ -298,6 +298,35 @@ type FailedSend = {
   mentionedFiles?: string[];
   promptOverride?: string;
 };
+type ChatSendOptions = {
+  promptOverride?: string;
+  parentTurnId?: string | null;
+  /** Explicit queue-time metadata. `undefined` keeps the direct-send default;
+   *  `null` intentionally preserves that no session model was selected. */
+  modelOverride?: string | null;
+  projectRoot?: string;
+  mentionedFilesRoot?: string;
+};
+type ChatSendControls = {
+  thinkingEffort: ComposerThinkingEffort;
+  responseSpeed: ComposerResponseSpeed;
+  permissionMode: CommandPermissionMode;
+  runtimeHost?: string;
+  /** Present only for queued messages: null means preserve the queue-time
+   *  automatic host choice rather than reading a later composer selection. */
+  queuedRuntimeHost?: string | null;
+};
+/** A follow-up held until the active turn settles successfully. Kept outside
+ *  the transcript until delivery so a queued prompt is never mistaken for a
+ *  turn the familiar has already received. */
+type QueuedChatMessage = {
+  id: string;
+  text: string;
+  attachments: ChatAttachment[];
+  mentionedFiles: string[];
+  options?: ChatSendOptions;
+  controls: ChatSendControls;
+};
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
@@ -1836,6 +1865,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
@@ -2257,6 +2287,63 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Queue state is ref-mirrored because a stream's settle path drains it from
+  // an async closure, where React state alone could be one render behind.
+  const queuedMessagesRef = useRef<QueuedChatMessage[]>([]);
+  const sendQueuedMessageRef = useRef<(message: QueuedChatMessage) => Promise<void>>(
+    async () => {},
+  );
+  const drainNextQueuedMessage = useCallback(() => {
+    const [next, ...rest] = queuedMessagesRef.current;
+    if (!next) return;
+    queuedMessagesRef.current = rest;
+    setQueuedMessages(rest);
+    void sendQueuedMessageRef.current(next);
+  }, []);
+  const enqueueMessage = useCallback(
+    (message: Omit<QueuedChatMessage, "id">) => {
+      const item: QueuedChatMessage = { id: crypto.randomUUID(), ...message };
+      queuedMessagesRef.current = [...queuedMessagesRef.current, item];
+      setQueuedMessages(queuedMessagesRef.current);
+      announce(
+        `Queued message ${queuedMessagesRef.current.length}. It will send after the current response finishes.`,
+        "polite",
+      );
+    },
+    [announce],
+  );
+  const removeQueuedMessage = useCallback(
+    (id: string) => {
+      queuedMessagesRef.current = queuedMessagesRef.current.filter((message) => message.id !== id);
+      setQueuedMessages(queuedMessagesRef.current);
+      announce("Removed queued message.", "polite");
+    },
+    [announce],
+  );
+  const steerQueuedMessage = useCallback(
+    (id: string) => {
+      const index = queuedMessagesRef.current.findIndex((message) => message.id === id);
+      if (index < 0) return;
+      const next = queuedMessagesRef.current[index];
+      if (!next) return;
+      const rest = queuedMessagesRef.current.filter((message) => message.id !== id);
+      // Most chat streams have an AbortController, but some supported runtime
+      // hosts (for example Omnigent) are busy before they expose one. Treat
+      // either case as in-flight so Send next only reprioritizes rather than
+      // starting a concurrent request.
+      if (busy || abortRef.current) {
+        queuedMessagesRef.current = [next, ...rest];
+        setQueuedMessages(queuedMessagesRef.current);
+        announce("Queued message will send next.", "polite");
+        return;
+      }
+      queuedMessagesRef.current = rest;
+      setQueuedMessages(rest);
+      announce("Sending queued message.", "polite");
+      void sendQueuedMessageRef.current(next);
+    },
+    [announce, busy],
+  );
   /** Keys for POST /api/chat/stop — a deliberate Stop must be an explicit
    *  server call; a bare fetch abort now reads as a transport drop and the
    *  turn finishes server-side. runId targets a run this instance started
@@ -2981,6 +3068,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const isThreadSwitch = currentSessionRef.current !== sessionId;
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
+    // A queued follow-up belongs to the conversation that was visible when it
+    // was composed. Never let a thread switch dispatch it into another chat.
+    if (isThreadSwitch) {
+      queuedMessagesRef.current = [];
+      setQueuedMessages([]);
+    }
     // Reset the settle-refetch marker on every (re)load; the live-snapshot
     // branches below re-arm it when there is actually an adopted or possibly-
     // orphaned stream to reconcile. A marker left armed after a normal disk
@@ -3730,19 +3823,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: string,
     outgoingAttachments: ChatAttachment[] = [],
     outgoingMentions: string[] = [],
-    opts?: { promptOverride?: string; parentTurnId?: string | null },
-    controlsOverride?: { thinkingEffort: ComposerThinkingEffort; responseSpeed: ComposerResponseSpeed; runtimeHost?: string },
+    opts?: ChatSendOptions,
+    controlsOverride?: ChatSendControls,
+    allowBusy = false,
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
-    if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
+    if (!trimmed && outgoingAttachments.length === 0) return;
+    // Slash commands and other programmatic sends also arrive here. Keep the
+    // queue at this boundary (rather than only in the composer click handler)
+    // so every harness follows the same sequential path, including runtimes
+    // whose busy state has not yet reached React but already own a controller.
+    if ((busy || abortRef.current) && !allowBusy) {
+      const queuedModelOverride =
+        opts?.modelOverride !== undefined
+          ? opts.modelOverride
+          : modelState?.source === "session" &&
+              modelState.effectiveModel &&
+              modelState.effectiveModel !== "unknown"
+            ? modelState.effectiveModel
+            : null;
+      enqueueMessage({
+        text,
+        attachments: outgoingAttachments,
+        mentionedFiles: outgoingMentions,
+        options: {
+          ...opts,
+          // Programmatic sends (for example /run and /skill) enter here
+          // directly rather than through send(), so snapshot their branch at
+          // queue time as well. An explicit parent (including null) still
+          // wins for regenerate/edit flows.
+          parentTurnId:
+            opts?.parentTurnId !== undefined ? opts.parentTurnId : (activeLeafId || null),
+          projectRoot: opts?.projectRoot ?? requestProjectRoot,
+          ...(outgoingMentions.length
+            ? { mentionedFilesRoot: opts?.mentionedFilesRoot ?? mentionRoot }
+            : {}),
+          modelOverride: queuedModelOverride,
+        },
+        controls: {
+          thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          queuedRuntimeHost:
+            controlsOverride && "queuedRuntimeHost" in controlsOverride
+              ? controlsOverride.queuedRuntimeHost
+              : (controlsOverride?.runtimeHost ?? runtimeHost),
+        },
+      });
+      return;
+    }
 
     // Omnigent fleet host chip: create a session on the control plane and open
     // it in Omnigent (does not stream into Cave chat transcript).
-    const fleetHost = controlsOverride?.runtimeHost ?? runtimeHost;
+    // A queued message must retain even an automatic (null) host choice. The
+    // regular controls override remains optional for existing direct sends.
+    const fleetHost =
+      controlsOverride && "queuedRuntimeHost" in controlsOverride
+        ? controlsOverride.queuedRuntimeHost
+        : (controlsOverride?.runtimeHost ?? runtimeHost);
     if (isOmnigentHostOptionId(fleetHost) && submitPrompt) {
       setBusy(true);
       setError(null);
+      let started = false;
       try {
         const result = await startOmnigentRunFromBrowser({
           prompt: submitPrompt,
@@ -3761,10 +3904,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         void openExternalUrl(result.webUrl);
         announce("Omnigent session started");
+        started = true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Omnigent run failed");
       } finally {
         setBusy(false);
+        if (started) drainNextQueuedMessage();
       }
       return;
     }
@@ -3775,6 +3920,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
     };
+    const projectRootForRequest = opts?.projectRoot ?? requestProjectRoot;
+    const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
+    const modelOverrideForRequest =
+      opts?.modelOverride !== undefined
+        ? opts.modelOverride
+        : modelState?.source === "session" &&
+            modelState.effectiveModel &&
+            modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : null;
     setBusy(true);
     setError(null);
     setDebugError(null);
@@ -3889,6 +4044,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       flushPendingStreamHealthEvent();
     };
     let sawDone = false;
+    let streamFailed = false;
     let needsTranscriptResync = false;
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
@@ -3930,35 +4086,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
-          projectRoot: requestProjectRoot,
+          projectRoot: projectRootForRequest,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
-          permissionMode,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
-          ...((controlsOverride?.runtimeHost ?? runtimeHost) ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+          ...(fleetHost ? { runtimeHost: fleetHost } : {}),
           // Forward the picked model explicitly so it reaches `coven run
           // --model` for THIS turn — don't rely on the PATCH to model-state
           // having persisted to the conversation file before this send (a
           // race), and so a brand-new chat (no sessionId yet) still pins its
           // session model. Only session-scoped picks need this; familiar- and
           // global-default models already resolve server-side from config.
-          ...(modelState?.source === "session" &&
-          modelState.effectiveModel &&
-          modelState.effectiveModel !== "unknown"
+          ...(modelOverrideForRequest
             ? {
-                modelOverride: modelState.effectiveModel,
+                modelOverride: modelOverrideForRequest,
                 modelOverrideScope: "session" as const,
               }
             : {}),
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
-          ...(outgoingMentions.length && mentionRoot
+          ...(outgoingMentions.length && mentionedFilesRootForRequest
             ? {
                 mentionedFiles: outgoingMentions.slice(0, MAX_FILE_MENTIONS),
-                mentionedFilesRoot: mentionRoot,
+                mentionedFilesRoot: mentionedFilesRootForRequest,
               }
             : {}),
           // Branching: when regenerating or re-editing from a non-leaf
@@ -4045,7 +4199,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           cursor = Math.max(cursor, eventCursor);
           pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
         }
-        if (ev.kind === "done") sawDone = true;
+        if (ev.kind === "done") {
+          sawDone = true;
+          streamFailed = Boolean(ev.isError);
+        } else if (ev.kind === "error") {
+          streamFailed = true;
+        }
         if (ev.kind === "assistant_chunk") {
           // Hot path: buffer instead of committing per token.
           chunkCoalescer.push(ev.text);
@@ -4182,9 +4341,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         abortRef.current = null;
         stopKeysRef.current = { runId: null, sessionId: null };
         setBusy(false);
+        // Deliver exactly one follow-up only after a natural, successful
+        // completion. Failed and deliberately stopped turns leave the queue
+        // intact, so a correction never runs unexpectedly after a bad turn.
+        if (sawDone && !streamFailed && !controller.signal.aborted) {
+          drainNextQueuedMessage();
+        }
       }
     }
   };
+
+  sendQueuedMessageRef.current = (message) =>
+    sendRaw(
+      message.text,
+      message.attachments,
+      message.mentionedFiles,
+      message.options,
+      message.controls,
+      true,
+    );
 
   const cancelSend = () => {
     const { runId, sessionId } = stopKeysRef.current;
@@ -4389,11 +4564,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
-    // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
-    // clearing the composer first would silently destroy the typed message
-    // (and staged attachments). Bail before touching state — slash intents
-    // above still run mid-stream; plain sends keep the draft intact.
-    if (busy) return;
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     // Only mentions whose `@path` token survived editing ride along — a
     // deleted reference must not silently re-enter the prompt.
@@ -4406,6 +4576,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Reply to Chat: fold the quoted target into the outgoing prompt so the
     // model sees it and it persists in the transcript; pass-through when unset.
     const outgoingText = buildQuotedPrompt(replyTarget, text);
+    // Branching: consume a pending branch parent set by editTurnInComposer.
+    // Read-and-clear atomically so it only applies to THIS send or queue item.
+    const branchParent = pendingBranchParent;
+    setPendingBranchParent(undefined);
+    // A queued follow-up must remain on the branch that was visible while it
+    // was composed. Branch navigation stays available during a live turn, so
+    // resolving activeLeafId later could otherwise attach it to a sibling.
+    const queueing = busy || abortRef.current;
+    const queuedParentTurnId = queueing
+      ? (branchParent !== undefined ? branchParent : (activeLeafId || null))
+      : undefined;
+    const sendOptions: ChatSendOptions = {
+      ...(queuedParentTurnId !== undefined
+        ? { parentTurnId: queuedParentTurnId }
+        : branchParent !== undefined
+          ? { parentTurnId: branchParent }
+          : {}),
+      // Queue-time metadata must not be re-read after a host, access, model,
+      // or project selection changes while the current turn is streaming.
+      projectRoot: requestProjectRoot,
+      ...(outgoingMentions.length ? { mentionedFilesRoot: mentionRoot } : {}),
+      modelOverride:
+        modelState?.source === "session" &&
+        modelState.effectiveModel &&
+        modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : null,
+    };
     setReplyTarget(null);
     setInput("");
     // Clear the persisted draft synchronously. The debounced writer (250ms) is
@@ -4419,11 +4617,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // doesn't linger over the now-empty composer and let Revert repopulate
     // the composer with the message the user already sent.
     promptEnhance.reset();
-    // Branching: consume a pending branch parent set by editTurnInComposer.
-    // Read-and-clear atomically so it only applies to THIS send.
-    const branchParent = pendingBranchParent;
-    setPendingBranchParent(undefined);
-    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== undefined ? { parentTurnId: branchParent } : undefined);
+    if (queueing) {
+      enqueueMessage({
+        text: outgoingText,
+        attachments: outgoingAttachments,
+        mentionedFiles: outgoingMentions,
+        options: sendOptions,
+        controls: {
+          thinkingEffort,
+          responseSpeed,
+          permissionMode,
+          queuedRuntimeHost: runtimeHost,
+        },
+      });
+      return;
+    }
+    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, sendOptions);
   };
 
   // Latest-ref for the memoized transcript's per-row actions (cave-likl).
@@ -4472,7 +4681,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         [],
         undefined,
         normalized
-          ? { ...normalized, runtimeHost: initialControls?.runtimeHost }
+          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
           : undefined,
       );
     }, 0);
@@ -4848,7 +5057,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
-      if (!busy && attachments.length < 10) fileInputRef.current?.click();
+      if (attachments.length < 10) fileInputRef.current?.click();
       return;
     }
     if (mentionOpen) {
@@ -5740,7 +5949,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onPaste={handlePaste}
               placeholder={
                 busy
-                  ? "Streaming… (esc to cancel)"
+                  ? "Streaming… (send to queue · esc to cancel)"
                   : recommendedNextPath
                     ? `${recommendedNextPath}  ⇥ to fill`
                     : `Message ${familiar.display_name}…  ↵ to send`
@@ -5769,6 +5978,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onRevert={promptEnhance.revert}
               onCancel={promptEnhance.cancel}
             />
+            {queuedMessages.length > 0 ? (
+              <div className="cave-composer-queue" role="group" aria-label="Queued messages">
+                {queuedMessages.map((message) => (
+                  <div key={message.id} className="cave-composer-queue__chip" title={message.text}>
+                    <button
+                      type="button"
+                      className="cave-composer-queue__steer focus-ring"
+                      onClick={() => steerQueuedMessage(message.id)}
+                      aria-label={busy ? "Send queued message next" : "Send queued message"}
+                      title={busy ? "Send this queued message next" : "Send queued message"}
+                    >
+                      <Icon name="ph:clock" width={12} aria-hidden />
+                      <span className="cave-composer-queue__text">
+                        {message.text.trim() || `${message.attachments.length} file${message.attachments.length === 1 ? "" : "s"}`}
+                      </span>
+                      {message.attachments.length > 0 && message.text.trim() ? (
+                        <span className="cave-composer-queue__count">📎{message.attachments.length}</span>
+                      ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="cave-composer-queue__remove focus-ring"
+                      onClick={() => removeQueuedMessage(message.id)}
+                      aria-label="Remove queued message"
+                      title="Remove from queue"
+                    >
+                      <Icon name="ph:x" width={12} aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {dictation.listening ? (
               <div className="hc-dictation-caption">
                 {dictation.partial || "Listening…"}
@@ -5805,7 +6046,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <ComposerActionsMenu
                     attach={{
                       onSelect: () => fileInputRef.current?.click(),
-                      disabled: busy || attachments.length >= 10,
+                      disabled: attachments.length >= 10,
                       hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
                     }}
                     skills={{
@@ -5874,15 +6115,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       rest, ~18% accent tint while the draft is non-empty;
                       busy keeps the cancel behavior in the same circle. */}
                   {busy ? (
-                    <button
-                      type="button"
-                      onClick={cancelSend}
-                      className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
-                      title="Cancel (esc)"
-                      aria-label="Cancel response"
-                    >
-                      <Icon name="ph:x-bold" width={13} aria-hidden />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void send()}
+                        disabled={!input.trim() && attachments.length === 0}
+                        data-typing={input.trim() ? "true" : undefined}
+                        className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
+                        title="Queue message"
+                        aria-label="Queue message"
+                      >
+                        <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelSend}
+                        className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
+                        title="Cancel (esc)"
+                        aria-label="Cancel response"
+                      >
+                        <Icon name="ph:x-bold" width={13} aria-hidden />
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"

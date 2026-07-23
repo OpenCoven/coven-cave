@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8")
 const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -138,14 +138,86 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?clearAttachments\(\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
-  "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?const queueing = busy \|\| abortRef\.current;[\s\S]*?if \(queueing\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
+  "send() must queue a rich follow-up while busy instead of dropping it (CHAT-D5-01)",
 );
 
 assert.match(
   source,
-  /const sendRaw = async [\s\S]*?\|\| busy\) return;/,
-  "sendRaw should keep its own busy guard as the backstop behind send()'s",
+  /const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?enqueueMessage\(/,
+  "sendRaw should queue all programmatic sends while any runtime is in flight, while allowing the queue drain to hand off exactly one settled item",
+);
+
+assert.match(
+  source,
+  /if \(command === "\/run" \|\| command === "\/codex" \|\| command === "\/claude"\)[\s\S]*?setTimeout\(\(\) => sendRaw\(args\), 0\);[\s\S]*?const sendRaw = async [\s\S]*?enqueueMessage\(/,
+  "slash sends for Codex, Claude, and other harness-backed commands must queue through sendRaw instead of being dropped mid-response",
+);
+
+assert.match(
+  source,
+  /type ChatSendControls = \{[\s\S]*?permissionMode: CommandPermissionMode;/,
+  "queued messages must preserve the selected access level",
+);
+
+assert.match(
+  source,
+  /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,[\s\S]*?queuedRuntimeHost: runtimeHost/,
+  "queued messages must retain queue-time model, project, file-mention, access, and host metadata",
+);
+
+assert.match(
+  source,
+  /const queueing = busy \|\| abortRef\.current;[\s\S]*?const queuedParentTurnId = queueing[\s\S]*?branchParent !== undefined \? branchParent : \(activeLeafId \|\| null\)[\s\S]*?parentTurnId: queuedParentTurnId[\s\S]*?if \(queueing\) \{[\s\S]*?options: sendOptions/,
+  "queued messages must capture their visible branch leaf before later navigation can change it",
+);
+
+assert.match(
+  source,
+  /if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?parentTurnId:\s*opts\?\.parentTurnId !== undefined \? opts\.parentTurnId : \(activeLeafId \|\| null\)/,
+  "programmatic sends that queue through sendRaw must capture their visible branch leaf before later navigation can change it",
+);
+
+assert.match(
+  source,
+  /"queuedRuntimeHost" in controlsOverride[\s\S]*?\? controlsOverride\.queuedRuntimeHost[\s\S]*?: \(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
+  "a queued automatic host choice must not be replaced by a later host picker change",
+);
+
+assert.match(
+  source,
+  /\.\.\.\(fleetHost \? \{ runtimeHost: fleetHost \} : \{\}\),/,
+  "the queued host choice must be forwarded to every chat bridge request, not only Omnigent runs",
+);
+
+assert.match(
+  source,
+  /const projectRootForRequest = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?const modelOverrideForRequest =[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  "delayed dispatch must use queued metadata rather than the latest composer state",
+);
+
+assert.match(
+  source,
+  /const drainNextQueuedMessage = useCallback\(\(\) => \{[\s\S]*?const \[next, \.\.\.rest\] = queuedMessagesRef\.current;[\s\S]*?void sendQueuedMessageRef\.current\(next\);[\s\S]*?if \(sawDone && !streamFailed && !controller\.signal\.aborted\) \{[\s\S]*?drainNextQueuedMessage\(\);/,
+  "only a naturally successful stream completion should drain one queued follow-up",
+);
+
+assert.match(
+  source,
+  /aria-label="Queued messages"[\s\S]*?steerQueuedMessage\(message\.id\)[\s\S]*?removeQueuedMessage\(message\.id\)/,
+  "queued messages should remain visible with send-next and remove controls",
+);
+
+assert.match(
+  source,
+  /if \(busy \|\| abortRef\.current\) \{[\s\S]*?announce\("Queued message will send next\.", "polite"\);[\s\S]*?const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\)/,
+  "send-next and normal sends must recognize every supported runtime as in flight, including non-streaming hosts and the render gap before busy updates",
+);
+
+assert.match(
+  source,
+  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
+  "a live response must expose both Queue and Cancel controls",
 );
 
 assert.match(
