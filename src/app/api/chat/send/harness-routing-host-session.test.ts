@@ -410,6 +410,37 @@ assert.match(
   "Resumed turns reuse the conversation's recorded cwd — harness stores are cwd-scoped",
 );
 
+// cave-yjnr: threads opened from Familiar analytics (`/#chat-<id>`) can
+// predate any Cave conversation record — only the daemon knows their cwd.
+// Its session record is the trust anchor (session-project-roots.ts), so the
+// resume falls back to it instead of dying on the 400 project_root_required
+// refusal. A conversation that DID record a runtime stays authoritative
+// (never cross an ssh: runtime onto a local root).
+assert.match(
+  chatRoute,
+  /const resumeCwd =\s*conversationResumeCwd \?\?\s*\(!sshRuntime && !body\.projectRoot && existingConversation\?\.runtime == null\s*\? await daemonSessionCwd\(body\.sessionId\)\s*: undefined\);/,
+  "Rootless sessions without a conversation-recorded runtime resume in the daemon session's project_root",
+);
+assert.match(
+  chatRoute,
+  /import \{ conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace \} from "\.\/chat-send-runtime";/,
+  "The daemon-session resume fallback comes from the shared chat-send-runtime helper",
+);
+const sendRuntimeHelpers = await readFile(
+  new URL("./chat-send-runtime.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  sendRuntimeHelpers,
+  /export async function daemonSessionCwd\(sessionId\?: string\): Promise<string \| undefined> \{[\s\S]*?callDaemon<DaemonSessionRow\[\]>\(\{ path: "\/api\/v1\/sessions" \}\)[\s\S]*?path\.isAbsolute\(root\)[\s\S]*?\n\}/,
+  "daemonSessionCwd resolves the session's project_root from the daemon's own session list and only trusts absolute paths",
+);
+assert.match(
+  chatRoute,
+  /args\.body\.projectRoot \?\?\s*\(await conversationCwd\(args\.body\.sessionId\)\) \?\?\s*\(await daemonSessionCwd\(args\.body\.sessionId\)\)/,
+  "The OpenClaw bridge resume gets the same daemon-session cwd fallback",
+);
+
 assert.match(
   chatRoute,
   /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace\)/,
