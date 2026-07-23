@@ -11,7 +11,12 @@ import {
   covenSpawnEnv,
   type CovenLaunchCommand,
 } from "./coven-bin";
-import { allowedHarnessEnvKeys, restoreAllowedGitHubTokenEnv } from "./harness-spawn-env";
+import {
+  allowedHarnessEnvKeys,
+  restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultGitHubTokenEnv,
+} from "./harness-spawn-env";
+import { loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
@@ -154,12 +159,17 @@ export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[]
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
+  const map = loadVaultMap(true);
 
-  // The shared harness opt-in covers any supported runtime, while the
-  // OpenClaw-specific setting remains available for existing installations.
-  // GITHUB_PAT is deliberately not restored: it can be Cave-managed local
-  // storage rather than a launcher-provided credential.
-  restoreAllowedGitHubTokenEnv(env, allowed);
+  // Direct OpenClaw sessions have no familiar id, so they receive shared
+  // Vault aliases just like other context-free harness launches. Scoped
+  // aliases remain unavailable without a granted familiar. The shared
+  // harness opt-in covers launcher credentials for any supported runtime,
+  // while the OpenClaw-specific setting remains available for existing
+  // installations. GITHUB_PAT is deliberately not restored: it can be
+  // Cave-managed local storage rather than a launcher-provided credential.
+  restoreGrantedVaultGitHubTokenEnv(env, map);
+  restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
 
   for (const key of Object.keys(env)) {
     if (

@@ -67,8 +67,13 @@ assert.match(
 );
 assert.match(
   src,
-  /restoreAllowedGitHubTokenEnv\(env, allowed\)/,
+  /restoreAllowedGitHubTokenEnv\(env, allowed, new Set\(Object\.keys\(map\)\)\)/,
   "an explicitly allowed external GitHub token alias should survive Cave's generic child-env scrub for OpenClaw",
+);
+assert.match(
+  src,
+  /restoreGrantedVaultGitHubTokenEnv\(env, map\)/,
+  "OpenClaw should receive shared Vault-managed GitHub aliases while keeping familiar-scoped aliases unavailable",
 );
 
 console.log("openclaw-bin.test.ts: ok");
