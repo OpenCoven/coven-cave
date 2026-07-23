@@ -87,6 +87,29 @@ export function usePopoverInitialFocus(open: boolean, panelSelector: string) {
 }
 
 /**
+ * While `active`, Escape presses collapse this inline layer (an in-popover
+ * form or drill-in view) instead of closing the whole popover — the same
+ * deepest-first routing cascading submenus use. The root Popover's
+ * window-capture Escape listener pops one layer per press; the popover itself
+ * closes only when no layer remains.
+ */
+export function usePopoverEscapeLayer(active: boolean, close: () => void) {
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  });
+  useEffect(() => {
+    if (!active) return;
+    const closeSelf = () => closeRef.current();
+    submenuEscapeStack.push(closeSelf);
+    return () => {
+      const i = submenuEscapeStack.indexOf(closeSelf);
+      if (i !== -1) submenuEscapeStack.splice(i, 1);
+    };
+  }, [active]);
+}
+
+/**
  * Lightweight portal-rendered popover. Closes on Escape, outside click,
  * scroll, or window resize. Positions itself relative to the anchor; for
  * complex flipping/collision use a real positioning library.

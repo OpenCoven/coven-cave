@@ -201,6 +201,16 @@ assert.doesNotMatch(
   "ChatView must not echo the raw activeProjectRoot (session cwd) as the send request's explicit projectRoot",
 );
 
+// REGRESSION (2026-07-23): "New worktree…" opens a chat at the fresh
+// `.worktrees/<branch>` checkout. That root maps to no registered project, so
+// the No-project branch used to blank activeProjectRoot and the chat silently
+// ran in the shared checkout instead of the worktree.
+assert.match(
+  source,
+  /resolvedProjectId === NO_PROJECT_ID\s*\?\s*\(projectSelection\.unregisteredRoot \?\? ""\)/,
+  "ChatView should keep an opener-provided unregistered root (worktree hand-off) as the active root",
+);
+
 // ── #2618: a failed chat send keeps the user in-chat with the message preserved,
 // and the coven-CLI-missing case offers a soft "Open Setup" link (overlay, not a
 // hard navigation to the wizard). ──────────────────────────────────────────────
