@@ -18,7 +18,7 @@
 
 import { covenSpawnEnv } from "./coven-bin.ts";
 import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env.ts";
-import { isVaultKeyGrantedTo, loadVaultMap, type VaultMap } from "./vault.ts";
+import { isVaultKeyGrantedTo, loadVaultMap, resolveSecret, type VaultMap } from "./vault.ts";
 
 /**
  * Return the explicitly opted-in external credential names that a harness may
@@ -52,6 +52,25 @@ export function restoreAllowedGitHubTokenEnv(
   return env;
 }
 
+/** Restore a Vault-managed GitHub alias only for a familiar granted that key. */
+export function restoreGrantedVaultGitHubTokenEnv(
+  env: NodeJS.ProcessEnv,
+  map: VaultMap,
+  familiarId?: string | null,
+): NodeJS.ProcessEnv {
+  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+    const entry = map[key];
+    if (!entry || !isVaultKeyGrantedTo(entry, familiarId)) continue;
+    // covenSpawnEnv intentionally scrubs GitHub aliases. Resolve a granted
+    // Vault mapping again so that security boundary does not prevent a
+    // configured Codex, Hermes, OpenCode, or other harness from receiving
+    // its own scoped credential.
+    const value = resolveSecret(key)?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
 /** Pure: delete from `env` every vault-managed key not granted to `familiarId`. */
 export function subtractScopedVaultKeys(
   env: NodeJS.ProcessEnv,
@@ -72,5 +91,6 @@ export function subtractScopedVaultKeys(
 export function harnessSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
   const map = loadVaultMap(true);
   const env = subtractScopedVaultKeys(covenSpawnEnv(), map, familiarId);
+  restoreGrantedVaultGitHubTokenEnv(env, map, familiarId);
   return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }

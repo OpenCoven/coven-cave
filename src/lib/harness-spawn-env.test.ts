@@ -136,5 +136,10 @@ assert.match(
   /for \(const key of GITHUB_TOKEN_ENV_KEYS\)[\s\S]*if \(!allowed\.has\(key\) \|\| managedKeys\.has\(key\)\) continue;[\s\S]*process\.env\[key\]\?\.trim\(\)/,
   "the shared opt-in restores only accepted external GitHub token aliases",
 );
+assert.match(
+  helperSource,
+  /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveSecret\(key\)\?\.trim\(\)/,
+  "a Vault-managed GitHub alias is restored only for the granted familiar after the generic child-env scrub",
+);
 
 console.log("harness-spawn-env.test.ts: ok");
