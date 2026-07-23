@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "node:path";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { createSubdirWithinRoot, homeRoot, resolveWithinRoot, listSubdirs } from "@/lib/server/home-browse";
+import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 
 /**
  * Directory browser for the "New project" folder picker on the web build
@@ -23,7 +24,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
 
-  const entries = listSubdirs(dir);
+  // `workspace` badges folders that already sit inside a configured Cave
+  // workspace or registered project root, so the picker can spotlight the
+  // places project chats normally live.
+  const entries = listSubdirs(dir).map((entry) => ({
+    ...entry,
+    workspace: resolveAllowedProjectSubpath(entry.path) !== null,
+  }));
   const parent = dir === root ? null : path.dirname(dir);
   return NextResponse.json({ ok: true, home: root, cwd: dir, parent, entries });
 }

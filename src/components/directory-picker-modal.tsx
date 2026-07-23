@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
-import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
+import { Icon } from "@/lib/icon";
 
-type DirEntry = { name: string; path: string };
+type DirEntry = { name: string; path: string; workspace?: boolean };
 type BrowseResponse = {
   ok: boolean;
   home?: string;
@@ -31,6 +31,11 @@ function isCreateFolderResponse(value: unknown): value is CreateFolderResponse {
   );
 }
 
+/** "Select Documents", truncated so long folder names can't blow out the footer. */
+function truncateName(name: string): string {
+  return name.length > 22 ? name.slice(0, 21) + "…" : name;
+}
+
 export type DirectoryPickerModalProps = {
   open: boolean;
   onClose: () => void;
@@ -42,6 +47,13 @@ export type DirectoryPickerModalProps = {
  * Web folder browser for the "New project" form. Navigates $HOME one level at a
  * time via GET /api/fs-browse (loopback-only, $HOME-rooted). The desktop build
  * uses the native OS dialog instead of this modal.
+ *
+ * Interaction model (project-folder-modal redesign): clicking a row selects it
+ * without entering; the trailing chevron (or double-click) opens it. The footer
+ * echoes the pending path and the primary action names the folder it will
+ * select — the current folder when nothing is highlighted. $HOME itself is
+ * never selectable (registering the whole home directory is always a mistake),
+ * matching isAllowedNewProjectRoot on the server.
  */
 export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPickerModalProps) {
   const [home, setHome] = useState<string | null>(null);
@@ -50,6 +62,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
@@ -97,6 +111,18 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     }
   }, []);
 
+  // Navigation (up, crumbs, opening a row) clears the per-folder UI state —
+  // filter, highlight, and any in-progress inline create — before loading.
+  const navigateTo = useCallback(
+    (dir: string | null) => {
+      setFilter("");
+      setSelectedPath(null);
+      resetCreateFolderState();
+      void load(dir);
+    },
+    [load, resetCreateFolderState],
+  );
+
   // Load $HOME each time the modal opens; reset when it closes.
   useEffect(() => {
     modalSessionRef.current += 1;
@@ -110,6 +136,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setEntries([]);
       setLoading(false);
       setError(null);
+      setFilter("");
+      setSelectedPath(null);
       resetCreateFolderState();
     }
   }, [open, load, resetCreateFolderState]);
@@ -156,8 +184,15 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
         return;
       }
       resetCreateFolderState({ preserveBusy: true });
-      await load(body.path, sessionGeneration);
-      if (sessionGeneration === modalSessionRef.current) shouldRefocusCloseButton = true;
+      // Stay in the current folder and highlight the new one, so the footer's
+      // "Select <name>" finishes the flow in one click (the old modal jumped
+      // inside the empty folder instead).
+      setFilter("");
+      await load(cwd, sessionGeneration);
+      if (sessionGeneration === modalSessionRef.current) {
+        setSelectedPath(body.path);
+        shouldRefocusCloseButton = true;
+      }
     } catch {
       if (sessionGeneration !== modalSessionRef.current) return;
       shouldRefocusInput = true;
@@ -188,13 +223,38 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     }
   };
 
+  // Breadcrumb trail from ~ down to the current folder. The API is
+  // $HOME-rooted, so cwd is always at or under home once loaded.
+  const crumbs = useMemo(() => {
+    if (!cwd || !home) return [];
+    const trail: Array<{ name: string; path: string }> = [{ name: "~", path: home }];
+    if (cwd !== home && cwd.startsWith(home + "/")) {
+      let acc = home;
+      for (const segment of cwd.slice(home.length).split("/").filter(Boolean)) {
+        acc = acc + "/" + segment;
+        trail.push({ name: segment, path: acc });
+      }
+    }
+    return trail;
+  }, [cwd, home]);
+
   if (!open) return null;
 
-  // Display the current path with $HOME collapsed to `~`.
-  const display =
-    cwd && home && (cwd === home || cwd.startsWith(home + "/"))
-      ? "~" + cwd.slice(home.length)
-      : cwd ?? "…";
+  const collapseHome = (value: string) =>
+    home && (value === home || value.startsWith(home + "/")) ? "~" + value.slice(home.length) : value;
+
+  const query = filter.trim().toLowerCase();
+  const visibleEntries = query ? entries.filter((e) => e.name.toLowerCase().includes(query)) : entries;
+  const selected = selectedPath ? entries.find((e) => e.path === selectedPath) ?? null : null;
+
+  const atHomeRoot = cwd !== null && cwd === home;
+  const pendingPath = selected?.path ?? cwd;
+  const pendingName = selected ? selected.name : atHomeRoot ? null : cwd ? cwd.slice(cwd.lastIndexOf("/") + 1) : null;
+  const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : "Select home";
+  // $HOME itself is never a valid project root (isAllowedNewProjectRoot
+  // excludes it), so bare-home selection stays disabled until the user
+  // highlights or enters a subfolder.
+  const selectDisabled = !cwd || createBusy || (!selected && atHomeRoot);
 
   // Portal to <body>: this modal mounts inside arbitrary hosts (the home
   // composer card, the projects form), and a transformed/backdrop-filtered
@@ -204,166 +264,266 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   // true-viewport fixed positioning regardless of the host's styling.
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Choose a project folder"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-6 [background:color-mix(in_oklch,var(--bg-panel)_62%,transparent)] backdrop-blur-[6px] [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)] motion-reduce:[animation:none]"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a project folder"
         tabIndex={-1}
-        className="flex h-[560px] w-[520px] max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none [background:var(--bg-panel)]!"
+        className="flex w-[560px] max-w-full max-h-[min(680px,92dvh)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-[0_30px_70px_-18px_oklch(0_0_0/70%),0_0_0_1px_color-mix(in_oklch,var(--foreground)_4%,transparent)] [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)] motion-reduce:[animation:none] focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-          <span className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">Choose a project folder</span>
+        <div className="flex items-center justify-between gap-4 px-5 pb-4 pt-[18px]">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[length:var(--text-md)] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
+              Choose a project folder
+            </span>
+            <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              Pick where this project&apos;s chats will live.
+            </span>
+          </div>
           <Button
             ref={closeButtonRef}
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-6 w-6 place-items-center rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            leadingIcon="ph:x"
-          />
+            className="h-[30px] w-[30px] flex-none rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:x" width={16} aria-hidden />
+          </Button>
         </div>
 
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
+        <div className="flex items-center gap-1.5 px-3.5 pb-3">
           <Button
-            variant="secondary"
-            size="xs"
+            variant="ghost"
+            size="sm"
             disabled={loading || createBusy || parent === null}
-            onClick={() => void load(parent)}
+            onClick={() => navigateTo(parent)}
             aria-label="Up one folder"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
-            leadingIcon="ph:arrow-up"
-          />
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
-            title={cwd ?? undefined}
+            className="h-[30px] w-[30px] flex-none rounded-[var(--radius-control)] p-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40"
           >
-            {display}
-          </span>
+            <Icon name="ph:arrow-up" width={15} aria-hidden />
+          </Button>
+          <nav
+            aria-label="Folder path"
+            className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto whitespace-nowrap font-mono text-[length:var(--text-sm)] [scrollbar-width:none] [&::-webkit-scrollbar]:h-0"
+          >
+            {crumbs.map((crumb, i) => {
+              const isLast = i === crumbs.length - 1;
+              return (
+                <span key={crumb.path} className="flex flex-none items-center gap-px">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => navigateTo(crumb.path)}
+                    disabled={createBusy}
+                    aria-current={isLast ? "location" : undefined}
+                    className={`h-auto rounded-[6px] px-1.5 py-[3px] font-mono text-[length:var(--text-sm)] ${
+                      isLast ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    }`}
+                  >
+                    {crumb.name}
+                  </Button>
+                  {!isLast ? (
+                    <span className="flex flex-none text-[var(--text-muted)] opacity-50" aria-hidden>
+                      <Icon name="ph:caret-right" width={13} />
+                    </span>
+                  ) : null}
+                </span>
+              );
+            })}
+            {crumbs.length === 0 ? <span className="px-1.5 text-[var(--text-muted)]">…</span> : null}
+          </nav>
           <Button
             ref={newFolderTriggerRef}
-            variant="secondary"
-            size="xs"
+            variant="ghost"
+            size="sm"
             disabled={loading || createBusy || !cwd || creatingFolder}
             onClick={beginCreatingFolder}
-            className="shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
             leadingIcon="ph:plus"
+            className="h-[30px] flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40"
           >
             New folder
           </Button>
         </div>
 
-        {creatingFolder ? (
-          <div
-            className="border-b border-[var(--border-hairline)] px-3 py-2"
-            onKeyDown={onCreateRowKeyDown}
-          >
-            <label
-              htmlFor="directory-picker-new-folder-name"
-              className="mb-1 block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
-            >
-              Folder name
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                id="directory-picker-new-folder-name"
-                ref={newFolderInputRef}
-                value={newFolderName}
-                disabled={createBusy}
-                onChange={(event) => {
-                  setNewFolderName(event.target.value);
-                  setNewFolderError(null);
-                }}
-                placeholder="New folder"
-                aria-invalid={Boolean(newFolderError)}
-                aria-describedby={newFolderError ? `${newFolderHintId} ${newFolderErrorId}` : newFolderHintId}
-                className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-base)] text-[var(--text-primary)] disabled:opacity-60"
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                loading={createBusy}
-                disabled={!newFolderName.trim()}
-                onClick={() => void createFolder()}
-                className="rounded-[var(--radius-control)] px-3 py-1 text-[length:var(--text-sm)] font-medium"
-              >
-                Create
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={createBusy}
-                onClick={cancelCreatingFolder}
-                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-              >
-                Cancel
-              </Button>
-            </div>
-            <p id={newFolderHintId} className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              Create a subfolder in the folder you&apos;re browsing now.
-            </p>
-            {newFolderError ? (
-              <p id={newFolderErrorId} role="alert" className="mt-1 text-[length:var(--text-xs)] text-[var(--color-danger)]">
-                {newFolderError}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="px-5 pb-2">
+          <label className="flex h-[34px] items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
+            <Icon name="ph:magnifying-glass" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            <input
+              className="h-full w-full min-w-0 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)]"
+              placeholder="Filter folders…"
+              value={filter}
+              onChange={(event) => {
+                setFilter(event.target.value);
+                setSelectedPath(null);
+              }}
+              disabled={createBusy}
+              aria-label="Filter folders"
+            />
+          </label>
+        </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        <div className="h-px flex-none bg-[var(--border-hairline)]" />
+
+        <div className="min-h-[120px] flex-1 overflow-y-auto px-3 pb-2.5 pt-2">
+          {creatingFolder ? (
+            <div
+              className="mb-1 rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] p-2 [background:color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
+              onKeyDown={onCreateRowKeyDown}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="flex flex-none text-[var(--accent-presence)]" aria-hidden>
+                  <Icon name="ph:folder" width={18} />
+                </span>
+                <input
+                  id="directory-picker-new-folder-name"
+                  ref={newFolderInputRef}
+                  value={newFolderName}
+                  disabled={createBusy}
+                  onChange={(event) => {
+                    setNewFolderName(event.target.value);
+                    setNewFolderError(null);
+                  }}
+                  placeholder="Folder name"
+                  aria-label="New folder name"
+                  aria-invalid={Boolean(newFolderError)}
+                  aria-describedby={newFolderError ? `${newFolderHintId} ${newFolderErrorId}` : newFolderHintId}
+                  className="ui-text-input h-8 min-w-0 flex-1 disabled:opacity-60"
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={createBusy}
+                  disabled={!newFolderName.trim()}
+                  onClick={() => void createFolder()}
+                  className="h-[30px] rounded-[var(--radius-control)] px-3"
+                >
+                  Create
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={createBusy}
+                  onClick={cancelCreatingFolder}
+                  className="h-[30px] rounded-[var(--radius-control)] px-2.5 text-[var(--text-secondary)]"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p id={newFolderHintId} className="sr-only">
+                Create a subfolder in the folder you&apos;re browsing now.
+              </p>
+              {newFolderError ? (
+                <p id={newFolderErrorId} role="alert" className="mt-1.5 px-[30px] text-[length:var(--text-xs)] text-[var(--color-danger)]">
+                  {newFolderError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? (
             <p role="alert" className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
           ) : loading && entries.length === 0 ? (
             <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
-          ) : entries.length === 0 ? (
-            <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">No subfolders here.</p>
+          ) : visibleEntries.length === 0 && !creatingFolder ? (
+            <div className="flex flex-col items-center gap-1.5 px-5 py-8 text-center">
+              <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
+                {query ? `No folders match \u201C${filter.trim()}\u201D` : "This folder is empty"}
+              </p>
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                Try a different name, or create one above.
+              </p>
+            </div>
           ) : (
-            entries.map((e) => (
-              <Button
-                key={e.path}
-                variant="ghost"
-                size="sm"
-                onClick={() => void load(e.path)}
-                disabled={createBusy}
-                className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[length:var(--text-base)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
-                leadingIcon="ph:folder"
-                trailingIcon="ph:caret-right"
-              >
-                <span className="min-w-0 flex-1 truncate">{e.name}</span>
-              </Button>
-            ))
+            visibleEntries.map((entry) => {
+              const isSelected = selected?.path === entry.path;
+              return (
+                <div key={entry.path} className="relative">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedPath((prev) => (prev === entry.path ? null : entry.path))}
+                    onDoubleClick={() => navigateTo(entry.path)}
+                    disabled={createBusy}
+                    aria-pressed={isSelected}
+                    className={`h-auto w-full justify-start gap-[11px] rounded-[var(--radius-card)] px-[11px] py-[9px] pr-10 text-left font-normal ${
+                      isSelected
+                        ? "bg-[var(--bg-hover)] shadow-[inset_0_0_0_1px_var(--accent-presence)]"
+                        : ""
+                    }`}
+                  >
+                    <span
+                      className={`flex flex-none ${entry.workspace ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
+                      aria-hidden
+                    >
+                      <Icon name="ph:folder" width={18} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[length:var(--text-base)] text-[var(--text-primary)]">
+                      {entry.name}
+                    </span>
+                    {entry.workspace ? (
+                      <span
+                        title="Inside a Cave workspace"
+                        className="flex flex-none items-center gap-[5px] text-[length:var(--text-2xs)] uppercase tracking-[0.06em] text-[var(--accent-presence)]"
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-[var(--accent-presence)] shadow-[0_0_8px_var(--accent-presence)]"
+                          aria-hidden
+                        />
+                        workspace
+                      </span>
+                    ) : null}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigateTo(entry.path)}
+                    disabled={createBusy}
+                    aria-label={`Open ${entry.name}`}
+                    className="absolute right-[7px] top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-[7px] p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:caret-right" width={16} aria-hidden />
+                  </Button>
+                </div>
+              );
+            })
           )}
         </div>
 
-        <div className="flex items-start justify-between gap-3 border-t border-[var(--border-hairline)] px-3 py-2">
-          <div className="min-w-0 flex-1 space-y-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            <p>{PROJECT_ROOT_WORKSPACE_HELP}</p>
-            <p>Select the folder you're browsing, or open a subfolder first.</p>
+        <div className="flex items-end justify-between gap-4 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-3.5">
+          <div className="flex min-w-0 flex-col gap-[3px]">
+            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">Selecting</span>
+            <span
+              className="max-w-[260px] truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+              title={pendingPath ?? undefined}
+            >
+              {pendingPath ? collapseHome(pendingPath) : "…"}
+            </span>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-none items-center gap-2">
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               onClick={onClose}
-              className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              className="h-9 rounded-[var(--radius-control)] px-3.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
             >
               Cancel
             </Button>
             <Button
               variant="primary"
               size="sm"
-              disabled={!cwd || createBusy}
+              disabled={selectDisabled}
               onClick={() => {
-                if (cwd) onSelect(cwd);
+                if (pendingPath) onSelect(pendingPath);
               }}
-              className="rounded-[var(--radius-control)] px-3 py-1 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
+              className="h-9 rounded-[var(--radius-control)] px-[18px] text-[length:var(--text-sm)] disabled:opacity-50"
             >
-              Select this folder
+              {selectLabel}
             </Button>
           </div>
         </div>
