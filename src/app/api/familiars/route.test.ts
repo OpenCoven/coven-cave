@@ -80,6 +80,11 @@ assert.equal(
 // normalization by the onboarding-familiars helpers this route reuses.
 
 assert.match(source, /export async function POST\(/, "route should create a familiar via POST");
+assert.match(
+  source,
+  /await ensureAdapterManifestScaffold\(draft\.harness\)/,
+  "POST should scaffold adapters through the COVEN_HOME-aware shared writer",
+);
 
 // Reuses the shared onboarding write primitives so a UI-created familiar is
 // identical to a setup-created one.

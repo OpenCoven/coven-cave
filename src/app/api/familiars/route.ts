@@ -12,7 +12,7 @@ import {
   normalizeFamiliarDraft,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
-import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
 
@@ -153,7 +153,6 @@ export async function POST(req: Request) {
 
   const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const adaptersDir = path.join(covenDir, "adapters");
 
   await mkdir(covenDir, { recursive: true });
 
@@ -204,16 +203,9 @@ export async function POST(req: Request) {
   // tombstoned ids, so a stale entry would make the new familiar invisible.
   await takeTombstone(draft.id).catch(() => {});
 
-  // Scaffold the harness adapter manifest if it's missing (parity with
-  // onboarding) so a familiar bound to a not-yet-configured harness still works.
-  const adapterManifest = adapterManifestScaffoldForHarness(draft.harness);
-  if (adapterManifest) {
-    await mkdir(adaptersDir, { recursive: true });
-    const manifestPath = path.join(adaptersDir, adapterManifest.filename);
-    if (!(await pathExists(manifestPath))) {
-      await writeFile(manifestPath, adapterManifest.contents, "utf8");
-    }
-  }
+  // Scaffold the harness adapter manifest if it is missing, or repair the
+  // known Windows Hermes shim before the new familiar can launch it.
+  await ensureAdapterManifestScaffold(draft.harness);
 
   // Upsert only this familiar's binding. No `defaults` key → global defaults
   // are preserved (see the doc comment above).

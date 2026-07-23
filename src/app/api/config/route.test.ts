@@ -9,8 +9,8 @@ const source = readFileSync(
 
 assert.match(
   source,
-  /adapterManifestScaffoldForHarness/,
-  "config PATCH should use adapter scaffold metadata when harness bindings change",
+  /ensureAdapterManifestScaffold/,
+  "config PATCH should use the shared adapter scaffold writer when harness bindings change",
 );
 
 assert.match(

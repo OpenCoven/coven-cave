@@ -1,13 +1,9 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
-import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
-import { isManifestShadowedByBuiltin } from "@/lib/server/adapter-conflict-heal";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "addons",
@@ -20,15 +16,6 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "chatAutoArchive",
 ]);
 type ConfigPatchBody = Record<string, unknown>;
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await stat(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function harnessesFromConfigPatch(body: ConfigPatchBody): string[] {
   const harnesses = new Set<string>();
@@ -56,23 +43,8 @@ function harnessesFromConfigPatch(body: ConfigPatchBody): string[] {
 async function scaffoldAdapterManifestsFromPatch(body: ConfigPatchBody): Promise<void> {
   const harnesses = harnessesFromConfigPatch(body);
   if (harnesses.length === 0) return;
-  const adaptersDir = path.join(homedir(), ".coven", "adapters");
-  let ensuredAdaptersDir = false;
   for (const harness of harnesses) {
-    const scaffold = adapterManifestScaffoldForHarness(harness);
-    if (!scaffold) continue;
-    if (!ensuredAdaptersDir) {
-      await mkdir(adaptersDir, { recursive: true });
-      ensuredAdaptersDir = true;
-    }
-    const manifestPath = path.join(adaptersDir, scaffold.filename);
-    // A quarantined manifest means the installed CLI ships this id as a
-    // built-in harness and fatally rejects the external copy — never
-    // resurrect it (cave-1c05).
-    if (await isManifestShadowedByBuiltin(manifestPath)) continue;
-    if (!(await pathExists(manifestPath))) {
-      await writeFile(manifestPath, scaffold.contents, "utf8");
-    }
+    await ensureAdapterManifestScaffold(harness);
   }
 }
 

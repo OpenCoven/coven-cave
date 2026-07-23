@@ -10,6 +10,7 @@ import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
@@ -129,6 +130,11 @@ export async function POST(
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
+
+  // Repair the known Windows-only Hermes manifest before asking the daemon to
+  // create its PTY. Without this the daemon attempts the POSIX-only
+  // `hermes-coven` shim and the task can never start.
+  await ensureAdapterManifestScaffold(binding.harness);
 
   // A familiar can be reconfigured from one runtime to another without the
   // card being reassigned. Model ids are runtime-specific, so only forward an

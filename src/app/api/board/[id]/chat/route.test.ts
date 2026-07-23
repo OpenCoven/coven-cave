@@ -83,4 +83,17 @@ assert.match(
   "task launch canonicalizes package and binary harness aliases before daemon validation",
 );
 
+// Windows Hermes configurations created before prompt_flag support point to a
+// POSIX-only launcher. The route must repair that known manifest before the
+// daemon creates its PTY, or retrying a task will fail before Hermes starts.
+assert.match(
+  source,
+  /import\s*\{[^}]*\bensureAdapterManifestScaffold\b[^}]*\}\s*from\s*"@\/lib\/server\/adapter-manifest-scaffold"/,
+  "route imports the adapter-manifest migration helper",
+);
+assert.ok(
+  source.indexOf("await ensureAdapterManifestScaffold(binding.harness)") < source.indexOf("const res = await callDaemon"),
+  "route repairs the trusted harness manifest before daemon session creation",
+);
+
 console.log("board chat route.test.ts: ok");

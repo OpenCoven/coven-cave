@@ -673,11 +673,16 @@ async function finishInstallJob(
       );
     }
 
-    // Hermes has no positional prompt slot, so the harness's `-- "<prompt>"`
-    // convention needs the hermes-coven shim to remap it onto -q. This remains
-    // best-effort: a shim failure never turns an otherwise successful install
-    // into a failed tool update.
-    if (installOk && targetName === "hermes" && installed.path) {
+    // POSIX Hermes installs need a shim because the harness convention passes
+    // prompts positionally. Windows uses the native adapter recipe with `-q`,
+    // so attempting to install the bash shim there would only report a false
+    // setup failure after an otherwise successful install.
+    if (
+      installOk &&
+      targetName === "hermes" &&
+      installed.path &&
+      process.platform !== "win32"
+    ) {
       try {
         const shim = await installHermesShim(installed.path);
         appendOutput(
