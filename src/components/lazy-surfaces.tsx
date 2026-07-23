@@ -64,6 +64,7 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // warm-up must call the loaders directly to fetch a sidebar's chunks without
 // mounting the surface (and therefore without running any of its effects).
 const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
+const loadCodeView = () => import("@/components/code-view").then((m) => m.CodeView);
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
 const loadMarketplaceView = () =>
@@ -89,6 +90,13 @@ export type WarmableSidebarSurface =
 
 export const GitHubView = dynamic(
   timed("github", loadGitHubView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// Code surface (cave-k0ua): hosts diffs, file tree + editor, terminal and the
+// GitHub tab — its chunk (CodeMirror et al.) must stay out of the boot bundle.
+export const CodeView = dynamic(
+  timed("code", loadCodeView),
   { ssr: false, loading: SurfaceFallback },
 );
 

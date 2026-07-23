@@ -37,7 +37,8 @@ test("isWorkspaceMode accepts the full vocabulary and nothing else", () => {
   }
   // Retired or foreign mode strings must be rejected (the persisted
   // last-surface restore and ?mode= deep links validate through this guard).
-  for (const retired of ["projects", "code", "terminal", "evals", "retro", "workflows", "", "surface:threads", "__proto__", "constructor"]) {
+  // Note: "code" left this list when the Code surface returned (cave-k0ua).
+  for (const retired of ["projects", "terminal", "evals", "retro", "workflows", "", "surface:threads", "__proto__", "constructor"]) {
     assert.ok(!isWorkspaceMode(retired), `"${retired}" must not validate as a workspace mode`);
   }
 });
