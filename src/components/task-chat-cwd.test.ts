@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const activeProjectRoot =\s*resolvedProjectId === NO_PROJECT_ID \? "" : \(selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""\)/,
-  "ChatView keeps an explicit No-project selection rootless instead of falling back to the opener/session root",
+  /const activeProjectRoot =\s*resolvedProjectId === NO_PROJECT_ID\s*\?\s*\(projectSelection\.unregisteredRoot \?\? ""\)\s*:\s*\(selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""\)/,
+  "ChatView keeps an explicit No-project selection rootless — except an opener-provided unregistered root (worktree hand-off), which stays active",
 );
 assert.match(
   chatView,
