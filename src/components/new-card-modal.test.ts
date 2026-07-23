@@ -58,5 +58,10 @@ assert.match(
   /catch \{[\s\S]{0,220}finally/,
   "a failed familiar request leaves the dependent picker in its load-failure state without an unhandled rejection",
 );
+assert.match(
+  projectFamiliars,
+  /for \(const projectId of ids\) search\.append\("projectId", projectId\)/,
+  "table project rosters are requested together so remote/hub installs do not repeat daemon lookups per project",
+);
 
 console.log("new-card-modal.test.ts: ok");

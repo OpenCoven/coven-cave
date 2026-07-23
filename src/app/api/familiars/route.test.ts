@@ -55,13 +55,18 @@ assert.match(
 );
 assert.match(
   source,
-  /const roster = projectId[\s\S]*?filterFamiliarsForProject\([\s\S]*?"session-launch"[\s\S]*?: rosterResult\.roster/,
-  "a project-scoped familiar request filters the roster with session-launch access",
+  /const rostersByProject[\s\S]*?filterFamiliarsForProject\(permissions!, rosterResult\.roster, projectId, "session-launch"\)/,
+  "every project-scoped familiar request filters the roster with session-launch access",
 );
 assert.match(
   source,
-  /const projectId = new URL\(req\.url\)\.searchParams\.get\("projectId"\)/,
-  "Familiars API accepts a projectId scope for dependent task pickers",
+  /searchParams\s*\.getAll\("projectId"\)/,
+  "Familiars API accepts repeated projectId scopes for dependent task pickers",
+);
+assert.match(
+  source,
+  /familiarsByProject: Object\.fromEntries/,
+  "the table can receive every project-scoped roster from one daemon/config lookup",
 );
 assert.match(
   source,

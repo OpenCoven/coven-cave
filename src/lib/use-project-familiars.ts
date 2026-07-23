@@ -112,25 +112,32 @@ export function useProjectFamiliarsByProject({
     setFamiliarsByProject(new Map());
     setLoadingProjectIds(new Set(ids));
     setLoadedProjectIds(new Set());
-    void Promise.all(ids.map(async (projectId) => {
+    const search = new URLSearchParams();
+    for (const projectId of ids) search.append("projectId", projectId);
+    void (async () => {
       try {
-        const response = await fetch(`/api/familiars?projectId=${encodeURIComponent(projectId)}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json().catch(() => null) as { ok?: boolean; familiars?: Familiar[] } | null;
-        return response.ok && payload?.ok
-          ? [projectId, Array.isArray(payload.familiars) ? payload.familiars : []] as const
-          : null;
+        const response = await fetch(`/api/familiars?${search}`, { cache: "no-store" });
+        const payload = await response.json().catch(() => null) as {
+          ok?: boolean;
+          familiarsByProject?: Record<string, Familiar[]>;
+        } | null;
+        if (!response.ok || !payload?.ok || !payload.familiarsByProject) return;
+        if (generationRef.current !== generation) return;
+        const familiarsByProject = payload.familiarsByProject;
+        const loaded = ids.map((projectId) => [
+          projectId,
+          Array.isArray(familiarsByProject[projectId])
+            ? familiarsByProject[projectId]
+            : [],
+        ] as const);
+        setFamiliarsByProject(new Map(loaded));
+        setLoadedProjectIds(new Set(ids));
       } catch {
-        return null;
+        // Keep every affected picker disabled and show its existing failure state.
+      } finally {
+        if (generationRef.current === generation) setLoadingProjectIds(new Set());
       }
-    })).then((results) => {
-      if (generationRef.current !== generation) return;
-      const loaded = results.filter((result): result is readonly [string, Familiar[]] => result !== null);
-      setFamiliarsByProject(new Map(loaded));
-      setLoadedProjectIds(new Set(loaded.map(([projectId]) => projectId)));
-      setLoadingProjectIds(new Set());
-    });
+    })();
   }, [enabled, projectIdsKey]);
 
   return { familiarsByProject, loadingProjectIds, loadedProjectIds };

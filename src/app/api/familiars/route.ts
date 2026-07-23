@@ -57,19 +57,30 @@ export async function GET(req: Request) {
     );
   }
   const { config } = rosterResult;
-  const projectId = new URL(req.url).searchParams.get("projectId")?.trim();
+  const projectIds = [...new Set(
+    new URL(req.url).searchParams
+      .getAll("projectId")
+      .map((projectId) => projectId.trim())
+      .filter(Boolean),
+  )];
   // Board task creation selects the project first. Restrict its familiar
   // picker using the same read-level session-launch rule enforced by
   // /api/board/:id/chat; the route's final assertProjectAccess remains the
   // authority for a launch request.
-  const roster = projectId
-    ? filterFamiliarsForProject(
-        await loadProjectPermissions(),
-        rosterResult.roster,
-        projectId,
-        "session-launch",
-      )
-    : rosterResult.roster;
+  const permissions = projectIds.length > 0 ? await loadProjectPermissions() : null;
+  const rostersByProject = new Map(
+    projectIds.map((projectId) => [
+      projectId,
+      filterFamiliarsForProject(permissions!, rosterResult.roster, projectId, "session-launch"),
+    ]),
+  );
+  const roster = projectIds.length === 0
+    ? rosterResult.roster
+    : projectIds.length === 1
+      ? rostersByProject.get(projectIds[0]) ?? []
+      : [...new Map(
+          [...rostersByProject.values()].flat().map((familiar) => [familiar.id, familiar]),
+        ).values()];
   // Pass `emoji` through — it's the daemon-provided default glyph the
   // glyph picker uses as the starting value. The Cave-local override store
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
@@ -78,40 +89,59 @@ export async function GET(req: Request) {
   // when one exists, cache-busted by file mtime plus renderer format so both
   // content changes and server-side encoding changes refetch in desktop
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
-  const familiars = await Promise.all(
-    roster.map(async (f) => {
-      const configEntry = config.familiars[f.id] ?? {};
-      const binding = bindingFor(config, f.id);
-      const avatar = await resolveFamiliarAvatar(f.id);
-      return {
-        ...f,
-        display_name: binding.display_name ?? f.display_name,
-        role: binding.role ?? f.role,
-        pronouns: binding.pronouns ?? f.pronouns,
-        description: binding.description ?? f.description,
-        color: binding.color,
-        harness: binding.harness,
-        defaultHarness: config.defaults.harness,
-        harnessOverride: configEntry.harness ?? null,
-        model: binding.model,
-        note: binding.note,
-        voiceProvider: binding.voiceProvider,
-        voiceModel: binding.voiceModel,
-        voiceName: binding.voiceName,
-        imageProvider: binding.imageProvider,
-        imageModel: binding.imageModel,
-        imageSize: binding.imageSize,
-        imageQuality: binding.imageQuality,
-        autoSelfReport: configEntry.autoSelfReport ?? false,
-        asanaEnabled: configEntry.asanaEnabled,
-        asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
-        ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
-        avatarUrl: avatar
-          ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
-          : undefined,
-      };
-    }),
-  );
+  const enrichFamiliar = async (f: (typeof rosterResult.roster)[number]) => {
+    const configEntry = config.familiars[f.id] ?? {};
+    const binding = bindingFor(config, f.id);
+    const avatar = await resolveFamiliarAvatar(f.id);
+    return {
+      ...f,
+      display_name: binding.display_name ?? f.display_name,
+      role: binding.role ?? f.role,
+      pronouns: binding.pronouns ?? f.pronouns,
+      description: binding.description ?? f.description,
+      color: binding.color,
+      harness: binding.harness,
+      defaultHarness: config.defaults.harness,
+      harnessOverride: configEntry.harness ?? null,
+      model: binding.model,
+      note: binding.note,
+      voiceProvider: binding.voiceProvider,
+      voiceModel: binding.voiceModel,
+      voiceName: binding.voiceName,
+      imageProvider: binding.imageProvider,
+      imageModel: binding.imageModel,
+      imageSize: binding.imageSize,
+      imageQuality: binding.imageQuality,
+      autoSelfReport: configEntry.autoSelfReport ?? false,
+      asanaEnabled: configEntry.asanaEnabled,
+      asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
+      ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
+      avatarUrl: avatar
+        ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
+        : undefined,
+    };
+  };
+  const familiars = await Promise.all(roster.map(enrichFamiliar));
+
+  // The table can show cards from many projects at once. Fetching the daemon
+  // roster once per project is especially expensive for hub and remote-host
+  // installs, so repeated projectId parameters return each filtered roster
+  // from one config/permissions/daemon snapshot.
+  if (projectIds.length > 1) {
+    const familiarById = new Map(familiars.map((familiar) => [familiar.id, familiar]));
+    return NextResponse.json({
+      ok: true,
+      familiarsByProject: Object.fromEntries(
+        projectIds.map((projectId) => [
+          projectId,
+          (rostersByProject.get(projectId) ?? []).flatMap((familiar) => {
+            const enriched = familiarById.get(familiar.id);
+            return enriched ? [enriched] : [];
+          }),
+        ]),
+      ),
+    });
+  }
   return NextResponse.json({ ok: true, familiars });
 }
 
