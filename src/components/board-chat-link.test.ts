@@ -19,6 +19,11 @@ assert.match(
   /fetch\(`\/api\/board\/\$\{id\}\/chat`, \{[\s\S]*method: "POST"/,
   "Task chat action should POST to the board chat link endpoint",
 );
+assert.match(
+  boardView,
+  /if \(card\?\.projectId && !card\.familiarId\) \{[\s\S]{0,260}Choose an authorized familiar before starting work in this project\.[\s\S]{0,180}return null;[\s\S]{0,260}const fallbackFamiliarId = card\?\.familiarId \?\? activeFamiliarId/,
+  "project-backed task work must not fall back to an unrelated active familiar when no authorized familiar is assigned",
+);
 assert.doesNotMatch(
   boardView,
   /onJumpToSession\?\.\(json\.sessionId, json\.familiarId/,
@@ -33,6 +38,11 @@ assert.match(
   boardView,
   /const openTaskWork = async \(id: string\) =>/,
   "BoardView should expose one task-scoped work entry path",
+);
+assert.match(
+  boardView,
+  /if \(card\.sessionId && !card\.projectId\)/,
+  "project-backed task sessions must revisit the board endpoint for current authorization before opening",
 );
 assert.match(
   boardView,
@@ -88,6 +98,11 @@ assert.match(
   route,
   /projectById\(card\.projectId, await loadProjects\(\)\)[\s\S]{0,900}assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
   "Board chat endpoint should resolve assigned project roots server-side and authorize the familiar",
+);
+assert.match(
+  route,
+  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)[\s\S]{0,700}if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
+  "a project-linked session is reused only after the current familiar passes project authorization",
 );
 assert.match(
   route,

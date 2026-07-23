@@ -55,7 +55,22 @@ assert.match(
 );
 assert.match(
   source,
-  /rosterResult\.roster\.map\(/,
+  /const rostersByProject[\s\S]*?filterFamiliarsForProject\(permissions!, rosterResult\.roster, projectId, "session-launch"\)/,
+  "every project-scoped familiar request filters the roster with session-launch access",
+);
+assert.match(
+  source,
+  /searchParams\s*\.getAll\("projectId"\)/,
+  "Familiars API accepts repeated projectId scopes for dependent task pickers",
+);
+assert.match(
+  source,
+  /familiarsByProject: Object\.fromEntries/,
+  "the table can receive every project-scoped roster from one daemon/config lookup",
+);
+assert.match(
+  source,
+  /roster\.map\(/,
   "daemon roster and declared-only familiars still flow through the same enrichment path",
 );
 assert.match(

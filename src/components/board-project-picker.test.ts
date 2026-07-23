@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
-  "changing the inspector project picker patches projectId and its persisted cwd",
+  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
+  "changing the inspector project picker clears the old familiar and session before persisting the new project root",
 );
 assert.match(inspector, /\{ value: "", label: "No project" \}/, "inspector offers a No-project option");
 assert.match(
@@ -34,27 +34,72 @@ assert.match(
   /Open Projects/,
   "inspector offers a direct route to the project creation surface",
 );
+assert.ok(
+  inspector.indexOf('label="Project"') < inspector.indexOf('label="Familiar"'),
+  "inspector presents Project before Familiar",
+);
+assert.match(
+  inspector,
+  /useProjectFamiliars\(\{ projectId: card\.projectId \?\? null \}\)/,
+  "inspector requests only project-authorized familiars",
+);
+assert.match(
+  inspector,
+  /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,700}disabled=\{!familiarPickerReady\}/,
+  "inspector disables the familiar choice until its project authorization result is ready",
+);
+assert.match(
+  inspector,
+  /const familiarPickerReady = !card\.projectId \|\| \(eligibleFamiliarsLoaded && !eligibleFamiliarsLoading\)/,
+  "inspector keeps the familiar picker available for unscoped cards",
+);
+assert.match(
+  inspector,
+  /const familiarOptions = !card\.projectId[\s\S]{0,360}\.{3}familiars\.map\(\(familiar\)/,
+  "inspector preserves the complete familiar roster for unscoped cards",
+);
+assert.match(
+  inspector,
+  /!eligibleFamiliars\.some\([\s\S]{0,500}onPatch\(card\.id, \{ familiarId: null, sessionId: null \}\)/,
+  "inspector clears an existing familiar and its stale session when it is ineligible for the selected project",
+);
+assert.match(
+  inspector,
+  /label="Familiar"[\s\S]{0,700}onChange=\{\(next\) => \{[\s\S]{0,500}familiarId: next \|\| null,[\s\S]{0,150}sessionId: null,[\s\S]{0,150}\.\.\.taskModelPatch\(null\)/,
+  "changing an authorized familiar unlinks its prior runtime session and model",
+);
 
 // ── New-card modal can set a project at creation time ──────────────────────
 assert.match(newCard, /projectId: string \| null;/, "NewCardDraft carries projectId");
-// The modal sources its own familiar-scoped project list (rather than taking an
-// unscoped `projects` prop) so the Project picker only offers projects the
-// assigned familiar has been granted — matching the server-side grant filter.
 assert.match(
   newCard,
-  /useProjects\(\{ familiarId, enabled: open \}\)/,
-  "new-card modal scopes its project list to the selected familiar",
+  /useProjects\(\{ enabled: open \}\)/,
+  "new-card modal loads the project list before choosing a familiar",
 );
 assert.match(newCard, /setProjectId\(null\)/, "new-card modal resets projectId when reopened");
 assert.match(
   newCard,
-  /setFamiliarId\(v \|\| null\);[\s\S]{0,400}setProjectId\(null\);/,
-  "switching the familiar clears the selected project so an ungranted project can't ride along the re-scope",
+  /useProjectFamiliars\(\{ projectId, enabled: open \}\)/,
+  "new-card modal fetches familiar options scoped to its selected project",
 );
 assert.match(
   newCard,
-  /<Field label="Project">[\s\S]{0,600}label: projectsLoading \? "Loading projects…" : "No project" \}/,
-  "new-card modal renders a Project field whose default reads 'Loading projects…' while the scoped list is in flight, else 'No project'",
+  /!eligibleFamiliars\.some\([\s\S]{0,180}setFamiliarId\(null\);[\s\S]{0,100}setSessionId\(null\);/,
+  "new-card modal clears an incompatible familiar and linked session after a project change",
+);
+assert.ok(
+  newCard.indexOf('<Field label="Project">') < newCard.indexOf('<Field label="Familiar">'),
+  "new-card modal presents Project before Familiar",
+);
+assert.match(
+  newCard,
+  /value=\{familiarPickerReady \? familiarId \?\? "" : ""\}[\s\S]{0,200}disabled=\{!familiarPickerReady\}/,
+  "new-card modal gates project-backed familiar choices on authorization",
+);
+assert.match(
+  newCard,
+  /onChange=\{\(v\) => \{[\s\S]{0,700}setProjectId\(v \|\| null\);[\s\S]{0,180}setFamiliarId\(null\);[\s\S]{0,180}setSessionId\(null\);/,
+  "changing a new task's project immediately clears the prior familiar while its authorized roster loads",
 );
 assert.match(
   newCard,

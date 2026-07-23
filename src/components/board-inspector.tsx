@@ -44,6 +44,7 @@ import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-at
 import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -278,7 +279,9 @@ function GitHubAttachSection({
     const fam = familiars.find(
       (f) => f.display_name?.toLowerCase() === item.repo?.toLowerCase()
     );
-    if (fam) onPatch(card.id, { familiarId: fam.id });
+    // A session carries the prior familiar's harness/runtime context. Do not
+    // relabel it as this familiar merely because a GitHub assignment matched.
+    if (fam) onPatch(card.id, { familiarId: fam.id, sessionId: null });
   }
 
   const iconName = (k: string) => (KIND_ICON[k] ?? "ph:link") as IconName;
@@ -1171,6 +1174,38 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
+  const {
+    familiars: eligibleFamiliars,
+    loading: eligibleFamiliarsLoading,
+    loadedSuccessfully: eligibleFamiliarsLoaded,
+  } = useProjectFamiliars({ projectId: card.projectId ?? null });
+
+  // Preserve an assignment that remains authorized, but fail closed if a
+  // project edit makes the card's familiar ineligible for its task launch.
+  useEffect(() => {
+    if (!card.projectId || !card.familiarId || !eligibleFamiliarsLoaded) return;
+    if (!eligibleFamiliars.some((familiar) => familiar.id === card.familiarId)) {
+      // A linked session belongs to the prior familiar/project context. Keep
+      // it from being reopened after the task is reassigned to an authorized
+      // familiar, which can use a different runtime or harness.
+      onPatch(card.id, { familiarId: null, sessionId: null });
+    }
+  }, [card.familiarId, card.id, card.projectId, eligibleFamiliars, eligibleFamiliarsLoaded, onPatch]);
+
+  const familiarPickerReady = !card.projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
+  const familiarOptions = !card.projectId
+    ? [
+        { value: "", label: "Unassigned" },
+        ...familiars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+      ]
+    : eligibleFamiliarsLoading
+      ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+      : !eligibleFamiliarsLoaded
+        ? [{ value: "", label: "Could not load authorized familiars", disabled: true }]
+        : [
+            { value: "", label: "Unassigned" },
+            ...eligibleFamiliars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+          ];
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
@@ -1276,6 +1311,61 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
+              <div className="board-drawer-field-label board-drawer-field-label--split">
+                <span>Project</span>
+                <button
+                  type="button"
+                  className="board-drawer-inline-link"
+                  onClick={openProjectsSurface}
+                  title="Open Projects"
+                >
+                  <Icon name="ph:folder-open" width={11} />
+                  Open Projects
+                </button>
+              </div>
+              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                <span className="board-drawer-project-icon" aria-hidden>
+                  <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
+                </span>
+                <StandardSelect
+                  label="Project"
+                  className="board-drawer-field-select board-drawer-field-select--styled"
+                  value={card.projectId ?? ""}
+                  onChange={(next) => {
+                    const selectedProject = projects.find((project) => project.id === next) ?? null;
+                    // A Project → Familiar assignment is only valid after the
+                    // target project's authorized roster resolves. Clear an
+                    // existing familiar immediately so Start work cannot race
+                    // that lookup with the old project's assignment.
+                    onPatch(card.id, {
+                      projectId: selectedProject?.id ?? null,
+                      cwd: selectedProject?.root ?? null,
+                      familiarId: null,
+                      sessionId: null,
+                    });
+                  }}
+                  options={[
+                    { value: "", label: "No project" },
+                    ...projects.map((project) => ({ value: project.id, label: project.name })),
+                  ]}
+                  showCaret={false}
+                />
+                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+              </div>
+              {projects.length === 0 ? (
+                <p className="board-drawer-field-hint">
+                  No projects yet. Open Projects to add one, then choose it here.
+                </p>
+              ) : null}
+              {projects.length > 0 && !card.projectId && !card.cwd ? (
+                <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
+                  No project set — task work can't start, and linked sessions won't open in the
+                  right project, until you pick one.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="board-drawer-field">
               <div className="board-drawer-field-label">Familiar</div>
               <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                 <span className="board-drawer-familiar-avatar" aria-hidden>
@@ -1288,15 +1378,19 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <StandardSelect
                   label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.familiarId ?? ""}
+                  value={familiarPickerReady ? card.familiarId ?? "" : ""}
                   onChange={(next) => {
                     setModelCustomMode(false);
-                    persistTaskModelPatch({ familiarId: next || null, ...taskModelPatch(null) });
+                    // Rebinding changes the runtime context; its linked session and
+                    // task-specific model cannot safely follow the new familiar.
+                    persistTaskModelPatch({
+                      familiarId: next || null,
+                      sessionId: null,
+                      ...taskModelPatch(null),
+                    });
                   }}
-                  options={[
-                    { value: "", label: "Unassigned" },
-                    ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
-                  ]}
+                  options={familiarOptions}
+                  disabled={!familiarPickerReady}
                   showCaret={false}
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
@@ -1373,51 +1467,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
               </div>
             </div>
 
-            <div className="board-drawer-field">
-              <div className="board-drawer-field-label board-drawer-field-label--split">
-                <span>Project</span>
-                <button
-                  type="button"
-                  className="board-drawer-inline-link"
-                  onClick={openProjectsSurface}
-                  title="Open Projects"
-                >
-                  <Icon name="ph:folder-open" width={11} />
-                  Open Projects
-                </button>
-              </div>
-              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
-                <span className="board-drawer-project-icon" aria-hidden>
-                  <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
-                </span>
-                <StandardSelect
-                  label="Project"
-                  className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.projectId ?? ""}
-                  onChange={(next) => {
-                    const selectedProject = projects.find((project) => project.id === next) ?? null;
-                    onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
-                  }}
-                  options={[
-                    { value: "", label: "No project" },
-                    ...projects.map((project) => ({ value: project.id, label: project.name })),
-                  ]}
-                  showCaret={false}
-                />
-                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
-              </div>
-              {projects.length === 0 ? (
-                <p className="board-drawer-field-hint">
-                  No projects yet. Open Projects to add one, then choose it here.
-                </p>
-              ) : null}
-              {projects.length > 0 && !card.projectId && !card.cwd ? (
-                <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
-                  No project set — task work can't start, and linked sessions won't open in the
-                  right project, until you pick one.
-                </p>
-              ) : null}
-            </div>
           </div>
 
           <div className="board-drawer-field">

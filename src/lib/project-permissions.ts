@@ -440,6 +440,25 @@ export function canAccessProject(
   return accessLevelSatisfies(effective.level, required);
 }
 
+/**
+ * Filters a roster to the familiars that can use a project surface.  Keeping
+ * this alongside the project filter makes the two sides of a Project →
+ * Familiar picker use the same effective direct and group-grant rules as the
+ * final server-side authorization check.
+ */
+export function filterFamiliarsForProject<T extends { id: string }>(
+  file: Pick<ProjectPermissionsFile, "projectGrants"> &
+    Partial<Pick<ProjectPermissionsFile, "accessGroups">>,
+  familiars: readonly T[],
+  projectId: string,
+  surface: ProjectPermissionSurface = "session-launch",
+): T[] {
+  const required = requiredAccessLevel(surface);
+  return familiars.filter((familiar) =>
+    canAccessProject(file, { familiarId: familiar.id }, projectId, required),
+  );
+}
+
 /** Every project the familiar can reach, with its effective level. */
 export async function listAccessibleProjects(
   projects: CaveProject[],

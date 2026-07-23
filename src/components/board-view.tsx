@@ -531,7 +531,10 @@ export function BoardView({
 
   // Inline quick-add from a kanban column: title-only card in that column's
   // status, scoped to the swimlane it was dropped under (familiar/project) or
-  // the active familiar when ungrouped.
+  // the active familiar when ungrouped. Project lanes deliberately begin
+  // unassigned: the active familiar may use a different harness/runtime and
+  // lack that project's session-launch grant, so the dependent picker must
+  // choose an authorized familiar first.
   const quickAdd = async (
     status: CardStatus,
     title: string,
@@ -542,7 +545,7 @@ export function BoardView({
       notes: "",
       status,
       priority: "medium",
-      familiarId: lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null),
+      familiarId: lane.projectId ? null : (lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null)),
       sessionId: null,
       projectId: lane.projectId !== undefined ? lane.projectId : null,
       cwd: null,
@@ -764,6 +767,16 @@ export function BoardView({
     bridge?: string;
   } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
+    // Project-backed tasks must retain an explicit familiar chosen from the
+    // project's authorized roster. Falling back to the active/default
+    // familiar here would bypass the Project → Familiar picker and produce a
+    // late `project access denied` for installations whose active runtime is
+    // not granted this project.
+    if (card?.projectId && !card.familiarId) {
+      setChatLinkError("Choose an authorized familiar before starting work in this project.");
+      setChatLinkErrorCardId(id);
+      return null;
+    }
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);
@@ -812,7 +825,11 @@ export function BoardView({
   const openTaskWork = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
     if (!card) return;
-    if (card.sessionId) {
+    // Project-backed sessions must still traverse the board-chat endpoint so
+    // a grant revoked after the session was created cannot be reopened from
+    // the Board without a fresh authorization check. Unscoped legacy cards
+    // have no project boundary to revalidate and can keep the direct path.
+    if (card.sessionId && !card.projectId) {
       if (isMobile) {
         const linkedSession = sessions.find((session) => session.id === card.sessionId);
         onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);

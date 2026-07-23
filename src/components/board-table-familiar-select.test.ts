@@ -12,8 +12,23 @@ assert.match(
 );
 assert.match(
   boardTable,
-  /<StandardSelect[\s\S]*className="board-table-familiar-select"[\s\S]*value=\{card\.familiarId \?\? ""\}[\s\S]*onChange=\{\(next\) => onPatch\(card\.id, \{ familiarId: next \|\| null \}\)\}[\s\S]*options=\{familiarOptions\}/,
-  "Familiar column should render an inline StandardSelect that patches card.familiarId",
+  /useProjectFamiliarsByProject\(\{ projectIds \}\)/,
+  "Table mode fetches authorized familiar rosters for every project it displays",
+);
+assert.match(
+  boardTable,
+  /const rowFamiliarOptions = !projectId[\s\S]*?familiarOptions[\s\S]*?Loading authorized familiars…[\s\S]*?scopedFamiliars\.map/,
+  "project-backed table rows only offer their authorized roster while unscoped rows preserve every familiar",
+);
+assert.match(
+  boardTable,
+  /loadingProjectIds\.has\(projectId\)\s*\?\s*"Loading authorized familiars…"\s*:\s*"Could not load authorized familiars"/,
+  "a failed project roster load is distinguished from an in-flight request instead of displaying Loading forever",
+);
+assert.match(
+  boardTable,
+  /<StandardSelect[\s\S]*className="board-table-familiar-select"[\s\S]*value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]*onChange=\{\(next\) => onPatch\(card\.id, \{ familiarId: next \|\| null, sessionId: null \}\)\}[\s\S]*options=\{rowFamiliarOptions\}[\s\S]*disabled=\{!familiarPickerReady\}/,
+  "Familiar column gates project-backed choices until authorization has loaded and unlinks the prior runtime session",
 );
 assert.match(
   boardTable,

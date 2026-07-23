@@ -129,17 +129,17 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1100}onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
-  "The task Project field should set the runtime root for chat starts",
+  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1700}onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
+  "The task Project field should set the runtime root and clear the prior familiar",
 );
 assert.match(
   boardInspector,
-  /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
-  "Changing the task project should persist both projectId and cwd",
+  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
+  "Changing the task project should persist projectId and cwd, then clear the familiar",
 );
 assert.match(
   boardInspector,
-  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{card\.projectId \?\? ""\}[\s\S]{0,520}\{ value: "", label: "No project" \}[\s\S]{0,160}\.\.\.projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
+  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{card\.projectId \?\? ""\}[\s\S]{0,1000}\{ value: "", label: "No project" \}[\s\S]{0,160}\.\.\.projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
   "The task project picker should render the persisted project registry through the shared select",
 );
 assert.doesNotMatch(
