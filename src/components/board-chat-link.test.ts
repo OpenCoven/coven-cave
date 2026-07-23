@@ -170,8 +170,8 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /taskContextForSession\(body\.sessionId/,
-  "Chat send should look up task context for task-linked sessions",
+  /taskCardForSession\(body\.sessionId\)[\s\S]*buildTaskContext\(taskCard\)/,
+  "Chat send should reuse the server-owned task card for task-linked prompt context",
 );
 assert.match(
   chatSendRoute,

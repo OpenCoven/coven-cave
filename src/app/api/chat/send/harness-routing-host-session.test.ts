@@ -458,6 +458,18 @@ assert.match(
   "Local project-scoped chat must assert project access — with the familiar's own workspace exempt — before building the harness prompt",
 );
 
+assert.match(
+  chatRoute,
+  /taskCardForSession\(body\.sessionId\)[\s\S]*taskCard\.familiarId !== body\.familiarId[\s\S]*status: 404/,
+  "A reserved task conversation must remain bound to its server-owned familiar before its first transcript exists",
+);
+
+assert.match(
+  chatRoute,
+  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+);
+
 assert.doesNotMatch(
   chatRoute,
   /bootstrapConfiguredFamiliarProjectGrants/,
