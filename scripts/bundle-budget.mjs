@@ -49,8 +49,11 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // current measurements are 665 KiB root / 904 KiB home. Budget raised 900→910
 // in the home-minimal PR (2026-07-22): new home Continue cards + context-chip
 // styles are home-startup surface CSS (not cross-route), +~18 KiB net.
+// Raised 910→915 (2026-07-23, cave-c7hy): --accent-presence-hover token
+// definitions (foundations + 15 theme overrides) are cascade-wide a11y
+// tokens, +~1 KiB; the measured home set was already at 910.
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 910) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 915) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
