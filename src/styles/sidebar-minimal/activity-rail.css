@@ -225,20 +225,22 @@
   color: var(--text-primary);
 }
 
-/* Compose ("new chat") shares the exact same square — drop its loud 2px accent
-   outline — and stays recognisable purely through its accent glyph. */
+/* Compose ("new chat") is the rail's one FILLED control: a solid accent
+   square with on-accent glyph, so the primary action stands out from the
+   otherwise quiet icon family while keeping the shared 36px geometry. */
 .shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--accent-presence);
+  border: 1px solid var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
   font-weight: 500;
 }
 .shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  background: var(--accent-presence-hover);
+  border-color: var(--accent-presence-hover);
+  color: var(--accent-presence-foreground);
 }
 
-/* The active destination is the one persistent fill: a single accent-tinted
+/* The active destination keeps its own persistent fill: a single accent-tinted
    square (no left bar, which looks off-centre under a centred icon). */
 .shell-nav--rail .sidebar-folder-row--active {
   background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
