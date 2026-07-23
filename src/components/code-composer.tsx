@@ -12,7 +12,6 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { streamFamiliarText } from "@/lib/familiar-stream";
-import { codeSessionWorkRoot } from "@/lib/code-surface";
 import type { SessionRow } from "@/lib/types";
 
 type Phase = { kind: "idle" } | { kind: "streaming"; runId: string } | { kind: "done" } | { kind: "error"; message: string };
@@ -45,15 +44,33 @@ export function CodeComposer({
     setPhase({ kind: "streaming", runId });
     setReply("");
     setPrompt("");
-    const result = await streamFamiliarText({
-      familiarId: row.familiarId,
-      sessionId: row.id,
-      prompt: trimmed,
-      projectRoot: codeSessionWorkRoot(row),
-      runId,
-      signal: controller.signal,
-      onText: setReply,
-    });
+    // No projectRoot rides on the resume: the server derives the cwd from the
+    // conversation record (or the daemon's session record), which is where the
+    // session actually lives — including `.worktrees/` checkouts. Asserting
+    // the worktree root here made the send an explicit unregistered-project
+    // request that fails closed (403), the same class #2238 fixed in Chat.
+    let result: Awaited<ReturnType<typeof streamFamiliarText>>;
+    try {
+      result = await streamFamiliarText({
+        familiarId: row.familiarId,
+        sessionId: row.id,
+        prompt: trimmed,
+        runId,
+        signal: controller.signal,
+        onText: setReply,
+      });
+    } catch (err) {
+      // A mid-stream abort (Stop) rejects the reader — keep whatever streamed
+      // so far and only surface non-abort failures (see use-quick-chat.ts).
+      if (abortRef.current === controller) abortRef.current = null;
+      if (controller.signal.aborted) {
+        setPhase({ kind: "done" });
+      } else {
+        setPhase({ kind: "error", message: err instanceof Error ? err.message : "Generation failed." });
+        setPrompt(trimmed); // let the user retry without retyping
+      }
+      return;
+    }
     abortRef.current = null;
     if (controller.signal.aborted) {
       setPhase({ kind: "done" });

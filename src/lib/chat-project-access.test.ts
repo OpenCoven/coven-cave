@@ -120,4 +120,59 @@ assert.equal(
   "a registered project wins over the workspace exemption",
 );
 
+// REGRESSION (cave-kv8a): the Code surface's fresh-worktree kickoff sends the
+// just-provisioned `.worktrees/<branch>` checkout as an explicit projectRoot.
+// Worktrees are intentionally not separate project records, so the request
+// must authorize against the PARENT project's grant — not fail closed as an
+// arbitrary unregistered directory (403 on every kickoff).
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "an explicit root under a registered project's .worktrees/ vets the parent project's grant",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave-evil/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave-evil/.worktrees/feat-x",
+  }),
+  "unregistered:/Users/me/dev/cave-evil/.worktrees/feat-x",
+  "sibling-dir evasion (cave-evil) misses the containment check and fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees",
+  "the .worktrees directory itself is not a worktree — fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/../../elsewhere",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/../../elsewhere",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees/../../elsewhere",
+  "a traversal escape below .worktrees/ resolves outside and fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/feat-x/",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "a trailing slash on the worktree root still maps to the parent project",
+);
+
 console.log("chat-project-access tests passed");
