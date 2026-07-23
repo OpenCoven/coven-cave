@@ -31,6 +31,8 @@ import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
@@ -81,7 +83,7 @@ type Props = {
   sessions: SessionRow[];
   projects: CaveProject[];
   onClose: () => void;
-  onPatch: (id: string, patch: CardPatch) => void;
+  onPatch: (id: string, patch: CardPatch) => void | boolean | Promise<boolean>;
   onMoveStatus: (id: string, status: CardStatus) => void;
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
@@ -1120,6 +1122,53 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const modelHarness = canonicalHarnessId(
+    currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
+  );
+  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const [modelCustomMode, setModelCustomMode] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
+  const taskModelIsCustom = Boolean(
+    card.modelOverride && !runtimeModelOptions.some((option) => option.id === card.modelOverride),
+  );
+  // OpenCode and Grok discover model catalogs asynchronously. Keep a custom
+  // input mounted while it contains an unsaved edit, otherwise a late catalog
+  // response can replace the input with a select and discard what was typed.
+  const hasUnsavedCustomModelDraft = customModelDraft !== (card.modelOverride ?? "");
+  // Starting a task creates its session from the persisted card. Keep a model
+  // save queue in flight until it settles so selecting a model and immediately
+  // pressing Start work cannot create the session with the prior default. The
+  // queue also preserves intent when an input blur and a familiar change fire
+  // back-to-back: the familiar's clearing patch must win over the old custom id.
+  const pendingModelSaveRef = useRef<Promise<boolean> | null>(null);
+  const taskModelPatch = (modelOverride: string | null): CardPatch => ({
+    modelOverride,
+    modelOverrideHarness: modelOverride ? modelHarness || null : null,
+  });
+  const persistTaskModelPatch = (patch: CardPatch) => {
+    const previous = pendingModelSaveRef.current ?? Promise.resolve(true);
+    const pending = previous
+      .catch(() => false)
+      .then(() => Promise.resolve(onPatch(card.id, patch)))
+      .then((saved) => saved !== false)
+      .catch(() => false);
+    pendingModelSaveRef.current = pending;
+    void pending.finally(() => {
+      if (pendingModelSaveRef.current === pending) pendingModelSaveRef.current = null;
+    });
+  };
+  const openTaskWorkAfterModelSave = async () => {
+    const saved = await (pendingModelSaveRef.current ?? Promise.resolve(true));
+    if (saved) await onOpenTaskWork?.(card.id);
+  };
+  useEffect(() => {
+    setCustomModelDraft(card.modelOverride ?? "");
+  }, [card.modelOverride]);
+  const taskModelOptions = [
+    { value: "", label: "Familiar default" },
+    ...runtimeModelOptions.map((option) => ({ value: option.id, label: option.label })),
+    ...(runtimeModelOptions.length > 0 ? [{ value: "__custom__", label: "Custom…" }] : []),
+  ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
 
@@ -1240,7 +1289,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={card.familiarId ?? ""}
-                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                  onChange={(next) => {
+                    setModelCustomMode(false);
+                    persistTaskModelPatch({ familiarId: next || null, ...taskModelPatch(null) });
+                  }}
                   options={[
                     { value: "", label: "Unassigned" },
                     ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
@@ -1249,6 +1301,55 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
+            </div>
+
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label">Model</div>
+              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom && !hasUnsavedCustomModelDraft ? (
+                <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                  <span className="board-drawer-project-icon" aria-hidden>
+                    <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />
+                  </span>
+                  <StandardSelect
+                    label="Model"
+                    className="board-drawer-field-select board-drawer-field-select--styled"
+                    value={card.modelOverride ?? ""}
+                    onChange={(next) => {
+                      if (next === "__custom__") {
+                        setModelCustomMode(true);
+                        setCustomModelDraft("");
+                        return;
+                      }
+                      persistTaskModelPatch(taskModelPatch(next || null));
+                    }}
+                    options={taskModelOptions}
+                    disabled={!currentFamiliar || Boolean(card.sessionId)}
+                    title={card.sessionId ? "Unlink work before changing the task model" : undefined}
+                    showCaret={false}
+                  />
+                  <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+                </div>
+              ) : (
+                <input
+                  className="board-drawer-field-input"
+                  value={customModelDraft}
+                  onChange={(event) => setCustomModelDraft(event.target.value)}
+                  onBlur={() => {
+                    setModelCustomMode(false);
+                    persistTaskModelPatch(taskModelPatch(customModelDraft || null));
+                  }}
+                  placeholder={currentFamiliar ? "provider/model (optional)" : "Assign a familiar first"}
+                  disabled={!currentFamiliar || Boolean(card.sessionId)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              )}
+              <p className="board-drawer-field-hint">
+                {card.sessionId
+                  ? "This task's linked work session keeps its current model."
+                  : "Leave blank to use the familiar's configured default."}
+              </p>
             </div>
 
             <div className="board-drawer-grid-2">
@@ -1388,7 +1489,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     className="board-drawer-chat-cta"
                     disabled={chatLinking}
                     title="Start work"
-                    onClick={() => void onOpenTaskWork?.(card.id)}
+                    onClick={() => void openTaskWorkAfterModelSave()}
                   >
                     {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start work"}
                     <Icon name="ph:arrow-right-bold" width={11} />
