@@ -99,6 +99,45 @@ assert.match(
   "the Code surface mounts GitHubView whole under its GitHub tab",
 );
 
+// ── Workbench (Diff | Files | Terminal) ──────────────────────────────────────
+
+const workbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
+const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
+
+// Every tab scopes to the session's WORK root (worktree over shared checkout,
+// cave-9q24) — pointing any of them at project_root directly would show a
+// different session's churn on shared checkouts.
+assert.match(
+  workbench,
+  /const workRoot = codeSessionWorkRoot\(row\);/,
+  "the workbench derives one work root for all tabs",
+);
+assert.match(
+  workbench,
+  /<SessionChangesInner key=\{workRoot\} projectRoot=\{workRoot\} running=\{running\} \/>/,
+  "Diff tab mounts the proven changes panel keyed+scoped to the work root",
+);
+assert.match(
+  workbench,
+  /import\("@\/components\/code-workbench-files"\)/,
+  "Files tab is dynamic() so CodeMirror stays out of the surface's initial chunk",
+);
+assert.match(
+  workbench,
+  /import\("@\/components\/rail-terminal-panel"\)/,
+  "Terminal tab is dynamic() so xterm stays out of the surface's initial chunk",
+);
+assert.match(
+  workbench,
+  /\{terminalOpened \? \([\s\S]*?active=\{tab === "terminal"\}/,
+  "the terminal stays mounted once opened (keepalive) with active tracking the tab",
+);
+assert.match(
+  workbenchFiles,
+  /<RailFilePreview[\s\S]*?projectRoot=\{projectRoot\}/,
+  "Files tab reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
+);
+
 // ── Chat stays untouched this phase ──────────────────────────────────────────
 
 // Phase 1 builds the surface *behind the flag* without slimming Chat: the code
