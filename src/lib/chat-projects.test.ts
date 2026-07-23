@@ -518,6 +518,80 @@ console.log("chat-projects.test.ts: ok");
     { projectId: "p1", project: roster[0] },
     "a linked task's project still beats the opener's worktree root",
   );
+
+  // ── Reopened worktree chats (cave-k0ra) ─────────────────────────────────────
+  // REGRESSION (2026-07-23): a chat created in a `.worktrees/<branch>` checkout
+  // kept its root only while the opener's fallbackProjectRoot still matched.
+  // Reopened later from the chat list, the view root differs (or is absent),
+  // the resolver returned bare No-project, and the chat lost its home: git
+  // chip hidden, enhance in "chat" mode. A recorded cwd under a registered
+  // project's `.worktrees/` dir now carries through as unregisteredRoot.
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "a worktree chat reopened without an opener root keeps its recorded worktree home",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: "/work/beta",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "a mismatched view root never strips a worktree session of its recorded home",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: `${worktreeRoot}/`,
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "the recorded worktree root is normalized (trailing slash trimmed)",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/elsewhere/.worktrees/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a worktree under an UNREGISTERED parent stays bare No-project — its cwd is never surfaced",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alphax/.worktrees/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "containment is separator-exact: /work/alphax never matches project root /work/alpha",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha/.worktrees-evasion/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "only the literal .worktrees/ directory qualifies — sibling dirs sharing the prefix do not",
+  );
 }
 
 // ── recentChatProjectRoot ────────────────────────────────────────────────────

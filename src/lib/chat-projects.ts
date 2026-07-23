@@ -79,6 +79,10 @@ export type ChatProjectSelection = {
  * root that maps to no registered project (`fallbackProjectRoot`, e.g. a
  * freshly provisioned `.worktrees/<branch>` checkout) resolves to No-project
  * with `unregisteredRoot` carrying the root, so the chat actually runs there.
+ * The same applies to an existing session whose recorded cwd lives under a
+ * registered project's `.worktrees/` directory: reopened later — when the
+ * view's opener root no longer matches — the chat keeps its worktree home
+ * instead of degrading to a root-less No-project (cave-k0ra).
  * Only a brand new chat
  * (no session yet) defaults: to the most recent chat's registered project
  * (`recentProjectRoot`, see recentChatProjectRoot) so new chats pick up where
@@ -133,6 +137,23 @@ export function resolveChatProjectSelection(args: {
         : false))
   ) {
     return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: explicitRoot };
+  }
+  // A chat that RAN in a project's worktree keeps that root when reopened
+  // later, when the view's opener root no longer matches (cave-k0ra): a
+  // recorded cwd under a registered project's `.worktrees/` directory is as
+  // intentional as the opener hand-off above — the git chip, env panel, and
+  // enhance mode belong to that checkout, not to "No project". Scoped to
+  // `.worktrees/` containment on purpose: a session recorded in the
+  // familiar's own workspace (or any other unregistered dir) still resolves
+  // to bare No-project, so its cwd is never surfaced or re-asserted.
+  if (args.hasSession && args.sessionProjectRoot?.trim()) {
+    const sessionRoot = normalizeChatProjectRoot(args.sessionProjectRoot);
+    const inProjectWorktrees = args.projects.some((project) =>
+      sessionRoot.startsWith(`${normalizeChatProjectRoot(project.root)}/.worktrees/`),
+    );
+    if (inProjectWorktrees) {
+      return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: sessionRoot };
+    }
   }
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
   const recentProject = projectForRoot(args.recentProjectRoot, args.projects);
