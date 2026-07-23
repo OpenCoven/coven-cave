@@ -81,7 +81,7 @@ color.
 
 ### Theming
 `data-theme` (21 palettes: coven, tide, grove, ember, bloom, dusk, mist, hex,
-bane, slate, ghosty, claymorphism, claude, openai, pastel-dreams, meatseeks,
+bane, slate, ghosty, claymorphism, claude, codex, pastel-dreams, meatseeks,
 trucker, snow, contrast, beacon, solstice)
 × `data-mode` (dark/light) are orthogonal attributes on `:root`, hydrated by
 `theme-script.tsx`. External shadcn themes import via tweakcn and are enriched

@@ -14,6 +14,7 @@ assert.deepEqual(
     "bloom",
     "claude",
     "claymorphism",
+    "codex",
     "contrast",
     "coven",
     "dusk",
@@ -23,7 +24,6 @@ assert.deepEqual(
     "hex",
     "meatseeks",
     "mist",
-    "openai",
     "pastel-dreams",
     "slate",
     "snow",
@@ -52,12 +52,13 @@ for (const id of THEME_IDS) {
   assert.equal(light.accent, THEME_META[id].accentLight);
 }
 
-// Legacy rename map covers all 4 old ids.
+// Legacy rename map covers the 4 old ids plus openai → codex.
 assert.deepEqual(LEGACY_THEME_RENAME, {
   "mood-c": "coven",
   "sky": "tide",
   "orchid": "dusk",
   "midnight": "slate",
+  "openai": "codex",
 });
 
 // Inverse coverage: no stray THEME_META keys outside THEME_IDS.
@@ -72,9 +73,9 @@ assert.equal(THEME_META.ghosty.accentDark, "#a6a6a6");
 assert.equal(THEME_META.ghosty.accentLight, "#808080");
 assert.equal(THEME_META.claymorphism.name, "Claymorphism");
 assert.equal(THEME_META.claude.name, "Claude");
-assert.equal(THEME_META.openai.name, "OpenAI");
-assert.equal(THEME_META.openai.accentDark, "#ececec");
-assert.equal(THEME_META.openai.accentLight, "#0d0d0d");
+assert.equal(THEME_META.codex.name, "Codex");
+assert.equal(THEME_META.codex.accentDark, "#ececec");
+assert.equal(THEME_META.codex.accentLight, "#0d0d0d");
 assert.equal(THEME_META["pastel-dreams"].name, "Pastel Dreams");
 assert.equal(THEME_META["pastel-dreams"].accentDark, "#c0aafd");
 assert.equal(THEME_META["pastel-dreams"].accentLight, "#9377e6");

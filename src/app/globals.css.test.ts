@@ -50,7 +50,7 @@ console.log("globals.css.test.ts (task 3) OK");
 // solstice), which the original loop of 9 never covered.
 const otherThemes = [
   "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
-  "ghosty", "claymorphism", "claude", "openai", "pastel-dreams", "meatseeks",
+  "ghosty", "claymorphism", "claude", "codex", "pastel-dreams", "meatseeks",
   "trucker", "snow", "contrast", "beacon", "solstice",
 ];
 for (const id of otherThemes) {
@@ -61,7 +61,7 @@ for (const id of otherThemes) {
 }
 
 // Old preset ids no longer present as CSS selectors.
-for (const old of ["midnight", "orchid", "sky"]) {
+for (const old of ["midnight", "orchid", "sky", "openai"]) {
   const re = new RegExp(`\\[data-theme="${old}"\\]`);
   assert.doesNotMatch(css, re, `old preset ${old} removed`);
 }

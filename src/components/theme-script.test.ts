@@ -90,12 +90,12 @@ assert.match(bootScript, /reading\.leading[\s\S]*--cave-reading-leading/, "boots
 assert.match(bootScript, /appearance\.cornerRadius[\s\S]*--radius-control/, "bootstrap applies corner radius");
 assert.match(bootScript, /appearance\.backdrop[\s\S]*data-backdrop/, "bootstrap applies backdrop settings");
 
-for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
+for (const legacy of ["mood-c", "sky", "orchid", "midnight", "openai"]) {
   assert.ok(bootScript.includes(`"${legacy}"`), `legacy theme migration contains ${legacy}`);
 }
 for (const id of [
   "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
-  "bane", "slate", "ghosty", "claymorphism", "claude", "openai",
+  "bane", "slate", "ghosty", "claymorphism", "claude", "codex",
   "pastel-dreams", "meatseeks", "trucker", "snow", "contrast", "beacon",
   "solstice", "custom",
 ]) {

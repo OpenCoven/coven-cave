@@ -25,7 +25,7 @@ export const THEME_IDS = [
   "ghosty",
   "claymorphism",
   "claude",
-  "openai",
+  "codex",
   "pastel-dreams",
   "meatseeks",
   "trucker",
@@ -127,8 +127,8 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     hue: 17, accentDark: "#d97757", accentLight: "#c96442",
     bgDark: "#262624", bgLight: "#faf9f5",
   },
-  openai: {
-    name: "OpenAI",
+  codex: {
+    name: "Codex",
     description: "Codex black. Void-dark monochrome; the cursor blinks back.",
     hue: 0, accentDark: "#ececec", accentLight: "#0d0d0d",
     bgDark: "#0d0d0d", bgLight: "#ffffff",

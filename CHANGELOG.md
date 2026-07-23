@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **OpenAI theme renamed to Codex** — same void-dark monochrome palette under `data-theme="codex"`; stored `openai` preferences migrate automatically via the legacy rename map.
+
+### Fixed
+- **Button label visibility** — filled primary buttons (`.ui-btn--primary`, calendar Salem go) now use the paired on-accent foreground token instead of `--text-primary`/hard-coded white, which rendered labels invisible on the Codex theme's monochrome accent.
+
+
 ## [0.1.6] - 2026-07-22
 
 > 🏡 **Calmer hearth, sharper GitHub surfaces, and a quieter API footprint.** The launch home settles into a cards-only hearth with appearance-radius theming, Projects becomes a per-familiar access matrix, and GitHub surfaces gain diff syntax highlighting and an instant activity-heatmap tooltip. Under the hood, session PR context now resolves over REST instead of GraphQL, migrations gain stronger destructive-action guards, and the research desk gets a wide stability sweep.

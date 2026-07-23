@@ -778,12 +778,12 @@
   --chart-5: #b4552d;
 }
 
-/* ---- OpenAI — Codex black; void-dark monochrome with paper-white keys ----
+/* ---- Codex — Codex black; void-dark monochrome with paper-white keys ----
    Modeled on the Codex/ChatGPT surfaces: #0d0d0d canvas over a true-black
    panel rail, grayscale elevation ladder, and a white filled accent (black
    ink on it) like the composer send key. Light mode inverts to white paper
    with black keys. Heritage teal survives only as a chart series. */
-[data-theme="openai"] {
+[data-theme="codex"] {
   --background: #0d0d0d;
   --foreground: #ececec;
   --card: #171717;
@@ -820,7 +820,7 @@
   --chart-4: #8f8f8f;
   --chart-5: #5d5d5d;
 }
-[data-theme="openai"][data-mode="light"] {
+[data-theme="codex"][data-mode="light"] {
   --background: #ffffff;
   --foreground: #0d0d0d;
   --card: #f9f9f9;
