@@ -52,30 +52,43 @@ export function CodeView({
   onTasksRefresh,
 }: CodeViewProps) {
   // `?mode=code&session=<id>&ctab=<sessions|github>&wtab=<diff|files|terminal|pr>`
-  // deep link — read once on mount, then strip (the workspace's ?mode= idiom)
-  // so reloads stay clean. wtab is forwarded to the workbench for the
-  // deep-linked session only.
+  // deep link — parsed once (initializer stays PURE: React StrictMode runs it
+  // twice, so stripping here would feed the second run an already-stripped
+  // URL and lose the target), then stripped in a mount effect (the
+  // workspace's ?mode= idiom) so reloads stay clean. wtab is forwarded to the
+  // workbench for the deep-linked session only.
   const [deepLink] = useState(() => {
     if (typeof window === "undefined") return null;
-    const params = new URLSearchParams(window.location.search);
-    const parsed = parseCodeDeepLink(params);
-    if (params.has("session") || params.has("ctab") || params.has("wtab")) {
-      params.delete("session");
-      params.delete("ctab");
-      params.delete("wtab");
-      const query = params.toString();
-      window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
-    }
-    return parsed;
+    return parseCodeDeepLink(new URLSearchParams(window.location.search));
   });
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("session") && !params.has("ctab") && !params.has("wtab")) return;
+    params.delete("session");
+    params.delete("ctab");
+    params.delete("wtab");
+    const query = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+  }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
     githubTarget ? "github" : deepLink?.topTab ?? "sessions",
   );
-  const [selectedId, setSelectedId] = useState<string | null>(deepLink?.sessionId ?? null);
+  // Selection is tri-state for the mobile drill-in: `undefined` = nothing
+  // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
+  // the session list (auto-pick must NOT re-select), string = a session.
+  const [selectedId, setSelectedId] = useState<string | null | undefined>(
+    deepLink?.sessionId ?? undefined,
+  );
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   // A session created HERE isn't in the polled list yet; hold its selection
   // until /api/sessions/list catches up instead of auto-picking the newest.
   const pendingNewIdRef = useRef<string | null>(null);
+  // On a phone the rail IS the landing screen — auto-picking the newest
+  // session would skip the list and drop the user straight into a workbench
+  // with no context. Captured once at mount (Tailwind md breakpoint).
+  const narrowMountRef = useRef(
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
   const selected = useMemo(() => {
@@ -88,12 +101,15 @@ export function CodeView({
   }, [groups, selectedId]);
 
   // Land on the newest session so the surface is immediately useful; keep the
-  // user's explicit pick as long as that session is still visible.
+  // user's explicit pick as long as that session is still visible. Skipped
+  // after an explicit Back (null) and on narrow mounts (list-first drill-in).
   useEffect(() => {
     if (selected) {
       if (pendingNewIdRef.current === selected.id) pendingNewIdRef.current = null;
       return;
     }
+    if (selectedId === null) return;
+    if (narrowMountRef.current) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
     const first = groups[0]?.sessions[0];
     if (first) setSelectedId(first.id);
@@ -146,23 +162,42 @@ export function CodeView({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <div className="w-64 shrink-0 border-r border-[var(--border-hairline)]">
+          {/* Mobile drill-in: below md the rail is the landing screen and the
+              workbench replaces it once a session is picked (Back returns). */}
+          <div
+            className={`${selected ? "hidden md:block" : "block"} w-full shrink-0 border-[var(--border-hairline)] md:w-64 md:border-r`}
+          >
             <CodeSessionRail
               sessions={sessions}
-              selectedId={selectedId}
+              selectedId={selectedId ?? null}
               onSelect={setSelectedId}
               onNewSession={() => setNewSessionOpen(true)}
             />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className={`${selected ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
             {selected ? (
-              <CodeWorkbench
-                key={selected.id}
-                row={selected}
-                initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
-                onJumpToSession={onJumpToSession}
-                onRefresh={onTasksRefresh}
-              />
+              <>
+                <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-1 md:hidden">
+                  <button
+                    type="button"
+                    aria-label="Back to sessions"
+                    onClick={() => setSelectedId(null)}
+                    className="focus-ring inline-flex items-center gap-1 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:caret-left" width={12} height={12} />
+                    Sessions
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <CodeWorkbench
+                    key={selected.id}
+                    row={selected}
+                    initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
+                    onJumpToSession={onJumpToSession}
+                    onRefresh={onTasksRefresh}
+                  />
+                </div>
+              </>
             ) : (
               <div className="flex h-full items-center justify-center p-6 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 Select a session to see its branch, diff, and PR context.
