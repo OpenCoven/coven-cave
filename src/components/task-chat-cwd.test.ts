@@ -22,8 +22,18 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
-  "ChatView resolves the selected project through resolveChatProjectSelection, feeding the linked task's project (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
+  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*recentProjectRoot,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
+  "ChatView resolves the selected project through resolveChatProjectSelection, feeding the linked task's project and the most recent chat's project (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
+);
+// A brand-new chat keeps a NULL draft so the default (opener root → linked
+// task → most recent chat's project → first project) resolves LIVE — sessions
+// load async, so an eager seed would freeze out the recency signal. Only
+// switching compose targets clears a prior explicit pick, and only while
+// sessionId is still null (a just-minted session keeps the pick send used).
+assert.match(
+  chatView,
+  /if \(!session\) return sessionId === null && viewChanged \? null : prev;/,
+  "Brand-new chats keep a null project draft so the recency default stays live",
 );
 // REGRESSION (2026-07-02): a session in an unregistered cwd must NOT default
 // the picker to the first project — sending that root re-roots the next
@@ -194,7 +204,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*projects,\s*\}\)\.projectId \?\?/,
+  /taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*projects,\s*\}\)\.projectId;/,
   "The draft-init effect seeds the picker from the linked task's project once the context loads",
 );
 assert.match(

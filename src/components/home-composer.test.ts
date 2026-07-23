@@ -88,17 +88,33 @@ assert.doesNotMatch(
 
 // Project selection lives in the composer's context pill (chat revamp 1d):
 // the pill chains to the shared ProjectPickerPopover so the user can choose
-// which project a new chat runs in (mirrors the chat composer).
+// which project a new chat runs in (mirrors the chat composer). The picker
+// displays the RESOLVED project — an unset pick shows the live default (most
+// recent chat's project, then the first project), matching what send uses.
 assert.match(
   source,
-  /<ComposerContextChips[\s\S]*projectValue=\{selectedProjectId \|\| null\}[\s\S]*onProjectChange=\{setSelectedProjectId\}/,
-  "the context pill hosts the project picker, wired to selectedProjectId",
+  /<ComposerContextChips[\s\S]*projectValue=\{displayProjectId\}[\s\S]*onProjectChange=\{setSelectedProjectId\}/,
+  "the context pill hosts the project picker, wired to the resolved display id",
 );
 
 assert.match(
   composerContext,
   /if \(selectedProjectId === noProjectId\) return null/,
   "An explicit No-project selection should resolve to a null project (not fall back to projects[0])",
+);
+
+// REGRESSION: an unset pick must stay unset — seeding state to projects[0]
+// froze the default before sessions loaded, so the most-recent-chat project
+// could never apply. Only a stale pick (its project vanished) gets cleared.
+assert.doesNotMatch(
+  source,
+  /setSelectedProjectId\(projects\[0\]/,
+  "the composer must not seed the project pick to the first project",
+);
+assert.match(
+  source,
+  /recentChatProjectRoot\(sessions, projects\)/,
+  "the composer derives the live default from the most recent chat's project",
 );
 
 assert.match(

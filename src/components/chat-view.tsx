@@ -144,6 +144,7 @@ import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
   projectIdForRoot,
+  recentChatProjectRoot,
   resolveChatProjectSelection,
 } from "@/lib/chat-projects";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
@@ -1979,6 +1980,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const { projects, createProject, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
+  // The project the most recent chat ran in — the default a brand-new chat
+  // inherits (kept live: sessions can land seconds after boot).
+  const recentProjectRoot = useMemo(
+    () => recentChatProjectRoot(sessions ?? [], projects),
+    [sessions, projects],
+  );
   // A session whose recorded cwd maps to no registered project resolves to
   // NO_PROJECT_ID here — never to the first project, whose root would re-root
   // the next turn's cwd and fork the harness session (`--continue` misses).
@@ -1991,6 +1998,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     fallbackProjectRoot: projectRoot,
     taskProjectId: linkedContext?.task?.projectId,
     taskCwd: linkedContext?.task?.cwd,
+    recentProjectRoot,
     projects,
   });
   const resolvedProjectId = projectSelection.projectId;
@@ -5143,31 +5151,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  // Sync the selected project when switching sessions. Also initialise the draft
-  // the first time projects load (when it is still null). Do NOT overwrite a
+  // Sync the selected project when switching sessions. Do NOT overwrite a
   // user-set draft just because the projects list was re-fetched (e.g. after a
   // rename or create), which would discard an in-session selection. (The header
   // delete confirm resets itself — HeaderDeleteButton is keyed on sessionId.)
+  //
+  // Brand-new chats keep a NULL draft on purpose: the default project (opener
+  // root → linked task → most recent chat's project → first project) resolves
+  // LIVE in resolveChatProjectSelection until the user explicitly picks, so
+  // the recency signal still applies when sessions land after boot (an eager
+  // first-project seed would freeze it out), and a background sessions
+  // refresh can never clobber an explicit pick. Only switching compose
+  // targets clears a prior pick — and only while sessionId is still null: a
+  // just-minted session whose row hasn't landed in the list yet must keep the
+  // pick its first send used.
+  const draftViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    const viewKey = `${sessionId ?? ""}|${projectRoot ?? ""}`;
+    const viewChanged = draftViewKeyRef.current !== viewKey;
+    draftViewKeyRef.current = viewKey;
     setProjectIdDraft((prev) => {
+      if (!session) return sessionId === null && viewChanged ? null : prev;
       // Mirrors resolveChatProjectSelection: the linked task's project first
       // (a task chat belongs in its task's project), then a registered project
       // mapped from the session/opener root, then NO_PROJECT_ID for an
-      // existing session in an unregistered cwd, then the first project only
-      // for brand-new chats. linkedContext loads async with the conversation,
-      // so its deps re-seed the draft once the task arrives.
-      const resolved =
-        resolveChatProjectSelection({
-          draftId: null,
-          hasSession: Boolean(session),
-          sessionProjectRoot: session?.project_root,
-          fallbackProjectRoot: projectRoot,
-          taskProjectId: linkedContext?.task?.projectId,
-          taskCwd: linkedContext?.task?.cwd,
-          projects,
-        }).projectId ??
-        firstProject?.id ??
-        null;
+      // existing session in an unregistered cwd. linkedContext loads async
+      // with the conversation, so its deps re-seed the draft once the task
+      // arrives.
+      const resolved = resolveChatProjectSelection({
+        draftId: null,
+        hasSession: true,
+        sessionProjectRoot: session.project_root,
+        fallbackProjectRoot: projectRoot,
+        taskProjectId: linkedContext?.task?.projectId,
+        taskCwd: linkedContext?.task?.cwd,
+        projects,
+      }).projectId;
       // Initialise when unset, or always resync on session switch.
       return prev === null ? resolved : resolved ?? prev;
     });
@@ -5499,7 +5518,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   inputRef.current?.focus();
                 }}
                 onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
-                projectId={projectIdDraft}
+                projectId={resolvedProjectId}
                 onProjectChange={setProjectIdDraft}
                 projects={projects}
                 createProject={createProject}

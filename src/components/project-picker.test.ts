@@ -39,7 +39,7 @@ assert.doesNotMatch(
 // The selector lets the user choose which project a new chat runs in (mirrors
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
-assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context chips host the shared project picker");
+assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(

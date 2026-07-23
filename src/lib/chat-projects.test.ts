@@ -367,6 +367,145 @@ console.log("chat-projects.test.ts: ok");
     { projectId: "p2", project: roster[1] },
     "a brand-new task chat opens scoped to the task's project, not the first project",
   );
+
+  // ── Most recent chat's project (recentProjectRoot) ─────────────────────────
+  // A brand-new chat with no other context starts in the project the most
+  // recent chat ran in, so back-to-back chats stay in the working project
+  // instead of snapping to the alphabetically-first one.
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "a brand-new chat inherits the most recent chat's project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: "/work/alpha",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "an opener root (e.g. a project group's + button) outranks the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      taskProjectId: "p1",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "a linked task's project outranks the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: NO_PROJECT_ID,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "an explicit No-project pick beats the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/somewhere/unregistered",
+    }),
+    { projectId: null, project: roster[0] },
+    "an unregistered recent root falls through to the first project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "recency never re-roots an EXISTING session in an unregistered cwd",
+  );
+}
+
+// ── recentChatProjectRoot ────────────────────────────────────────────────────
+// The root fed into the recency default above: the registered project of the
+// newest visible chat. Unregistered/no-project chats are skipped (they can't
+// seed a registered-project picker); archived and generated rows never count.
+{
+  const { recentChatProjectRoot } = await import("./chat-projects.ts");
+  const roster = [
+    { id: "alpha", name: "Alpha", root: "/work/alpha", createdAt: "", updatedAt: "" },
+    { id: "beta", name: "Beta", root: "/work/beta", createdAt: "", updatedAt: "" },
+  ];
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        session("older-beta", "/work/beta", "2026-06-01T00:00:00.000Z", "nova"),
+        session("newest-alpha", "/work/alpha", "2026-06-03T00:00:00.000Z", "cody"),
+      ],
+      roster,
+    ),
+    "/work/alpha",
+    "the newest chat's registered project wins",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        session("newest-scratch", "", "2026-06-05T00:00:00.000Z", "charm"),
+        session("unregistered", "/somewhere/else", "2026-06-04T00:00:00.000Z", "sage"),
+        session("registered", "/work/beta", "2026-06-02T00:00:00.000Z", "nova"),
+      ],
+      roster,
+    ),
+    "/work/beta",
+    "no-project and unregistered chats are skipped, not treated as a default",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        { ...session("stashed", "/work/alpha", "2026-06-09T00:00:00.000Z", "cody"), archived_at: "2026-06-09T01:00:00.000Z" },
+        session("status-archived", "/work/alpha", "2026-06-08T00:00:00.000Z", "cody", "archived"),
+        session("live", "/work/beta", "2026-06-07T00:00:00.000Z", "nova"),
+      ],
+      roster,
+    ),
+    "/work/beta",
+    "archived chats don't drive the default",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [session("normalized", "/work/beta/", "2026-06-02T00:00:00.000Z", "nova")],
+      roster,
+    ),
+    "/work/beta",
+    "roots are normalized to the registered project's canonical root",
+  );
+
+  assert.equal(recentChatProjectRoot([], roster), null, "no sessions → no recency default");
+  assert.equal(
+    recentChatProjectRoot([session("any", "/work/alpha", "2026-06-01T00:00:00.000Z", "nova")], []),
+    null,
+    "no registered projects → no recency default",
+  );
 }
 
 // ── Journal-narrative noise stays out of the chat lists (cave-buih) ─────────

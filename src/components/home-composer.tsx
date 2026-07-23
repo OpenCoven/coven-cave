@@ -47,7 +47,7 @@ import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { useProjects } from "@/lib/use-projects";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import { useAddProjectFlow } from "@/components/project-picker";
@@ -227,10 +227,20 @@ export function HomeComposer({
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
-  const selectedProject = useMemo(
-    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID),
-    [projects, selectedProjectId],
+  // The project the most recent chat ran in: the default for the next chat
+  // when the user hasn't explicitly picked one (kept live as sessions load).
+  const recentProjectRoot = useMemo(
+    () => recentChatProjectRoot(sessions, projects),
+    [sessions, projects],
   );
+  const selectedProject = useMemo(
+    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID, recentProjectRoot),
+    [projects, selectedProjectId, recentProjectRoot],
+  );
+  // What the pickers display: the explicit pick when set (including
+  // "No project"), otherwise the resolved live default the send would use.
+  const displayProjectId =
+    selectedProjectId === NO_PROJECT_ID ? NO_PROJECT_ID : selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
@@ -255,10 +265,13 @@ export function HomeComposer({
     [],
   );
 
+  // An unset pick stays unset — the live default (most recent chat's project,
+  // then the first project) resolves in resolveHomeComposerProject so it can
+  // upgrade as sessions land. Only clear a stale pick whose project vanished.
   useEffect(() => {
-    if (selectedProjectId === NO_PROJECT_ID) return; // an explicit No-project choice is valid
-    if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
-    setSelectedProjectId(projects[0]?.id ?? "");
+    if (!selectedProjectId || selectedProjectId === NO_PROJECT_ID) return;
+    if (projects.some((project) => project.id === selectedProjectId)) return;
+    setSelectedProjectId("");
   }, [projects, selectedProjectId]);
 
   // "Add to project ›" flyout data + the "Start a new project" flow (same
@@ -934,7 +947,7 @@ export function HomeComposer({
                 }}
                 projects={{
                   projects: plusMenuProjects,
-                  selectedId: selectedProjectId || null,
+                  selectedId: displayProjectId,
                   onPick: setSelectedProjectId,
                   noProjectId: NO_PROJECT_ID,
                   onStartNewProject: plusAddProject.beginAddProject,
@@ -1089,7 +1102,7 @@ export function HomeComposer({
           <div className="home-composer-toolbar__left">
             <ComposerContextChips
               projects={projects}
-              projectValue={selectedProjectId || null}
+              projectValue={displayProjectId}
               onProjectChange={setSelectedProjectId}
               allowNoProject
               familiarId={selectedFamiliarId || null}
