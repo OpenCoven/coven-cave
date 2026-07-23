@@ -13,7 +13,7 @@
 .chat-thread-row[data-dragging="true"] > div {
   background: var(--bg-raised);
   border-radius: 6px;
-  box-shadow: 0 6px 18px color-mix(in oklch, var(--shadow-color, #000) 30%, transparent);
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--shadow-color) 30%, transparent);
 }
 .chat-thread-handle {
   cursor: grab;
@@ -31,7 +31,7 @@
 }
 .chat-list-sortable-row[data-dragging="true"] > .chat-list-row {
   background: var(--bg-raised);
-  box-shadow: 0 8px 22px color-mix(in oklch, var(--shadow-color, #000) 26%, transparent);
+  box-shadow: 0 8px 22px color-mix(in oklch, var(--shadow-color) 26%, transparent);
 }
 .chat-list-drag-handle {
   cursor: grab;

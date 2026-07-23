@@ -940,11 +940,11 @@
 }
 .skill-browser__action:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-strong, var(--border-hairline)); }
 .skill-browser__action:disabled { opacity: 0.5; cursor: default; }
-.skill-browser__action--danger:hover:not(:disabled) { color: var(--danger, #e5484d); border-color: var(--danger, #e5484d); }
+.skill-browser__action--danger:hover:not(:disabled) { color: var(--color-danger); border-color: var(--color-danger); }
 .skill-browser__action--danger.is-confirming {
-  color: #fff;
-  background: var(--danger, #e5484d);
-  border-color: var(--danger, #e5484d);
+  color: var(--color-danger-foreground);
+  background: var(--color-danger);
+  border-color: var(--color-danger);
 }
 .skill-browser__action-label { font-size: 12px; font-weight: 600; }
 .skill-browser__decision {

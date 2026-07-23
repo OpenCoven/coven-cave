@@ -91,11 +91,11 @@
   padding: 0 var(--space-1);
 }
 .md-editor__conflict-key--mine {
-  background: color-mix(in oklch, var(--color-success, #3fb950) 18%, transparent);
+  background: color-mix(in oklch, var(--color-success) 18%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-key--theirs {
-  background: color-mix(in oklch, var(--color-danger, #f85149) 18%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 18%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line {
@@ -112,11 +112,11 @@
   opacity: 0.7;
 }
 .md-editor__conflict-line--add {
-  background: color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line--del {
-  background: color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line--skip {

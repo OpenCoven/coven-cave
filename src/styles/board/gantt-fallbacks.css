@@ -197,7 +197,7 @@
 .cg-today { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--color-danger); z-index: 3; pointer-events: none; }
 .cg-today__flag {
   position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
-  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: #fff;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: var(--color-danger-foreground);
   background: var(--color-danger); padding: 1px 5px; border-radius: 3px; white-space: nowrap;
 }
 

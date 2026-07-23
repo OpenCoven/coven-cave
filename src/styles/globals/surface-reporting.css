@@ -121,7 +121,7 @@
 .dr-btn--primary {
   background: var(--accent-presence);
   border-color: transparent;
-  color: var(--accent-presence-foreground, #fff);
+  color: var(--accent-presence-foreground);
 }
 .dr-btn--primary:hover {
   background: color-mix(in oklch, var(--accent-presence) 88%, #000);
@@ -696,7 +696,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .retro-btn--primary {
   border-color: transparent;
   background: var(--accent-presence);
-  color: var(--accent-presence-foreground, #fff);
+  color: var(--accent-presence-foreground);
 }
 .retro-metrics {
   display: grid;
@@ -2982,7 +2982,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .cave-fill-btn[data-state="copied"],
 .cave-fill-btn[data-state="success"] {
-  color: #fff;
+  color: var(--color-success-foreground);
   border-color: color-mix(in oklch, var(--color-success) 75%, transparent);
 }
 .cave-fill-btn[data-state="failed"]::before,
@@ -2992,7 +2992,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .cave-fill-btn[data-state="failed"],
 .cave-fill-btn[data-state="error"] {
-  color: #fff;
+  color: var(--color-danger-foreground);
   border-color: color-mix(in oklch, var(--color-danger) 75%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {

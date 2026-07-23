@@ -180,6 +180,7 @@
      backgrounds, and badge edges; base variants are for foreground
      text and dots. */
   --color-success: oklch(0.78 0.14 158);
+  --color-success-foreground: #111111;
   --color-success-soft: oklch(0.82 0.06 158);
   --color-warning: oklch(0.83 0.13 78);
   --color-warning-soft: oklch(0.86 0.05 78);
@@ -339,6 +340,7 @@
      The :root values above are tuned for dark backgrounds and read too
      pale on light. */
   --color-success: oklch(0.52 0.16 158);
+  --color-success-foreground: #ffffff;
   --color-success-soft: oklch(0.66 0.10 158);
   --color-warning: oklch(0.58 0.16 78);
   --color-warning-soft: oklch(0.72 0.10 78);
