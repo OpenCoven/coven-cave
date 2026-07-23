@@ -127,6 +127,22 @@ test("Hermes manifest repair uses the active COVEN_HOME adapters directory", asy
   }
 });
 
+test("Hermes manifest repair preserves a formatting-only user manifest", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  const legacyManifest = adapterManifestScaffoldForHarness("hermes", "linux");
+  assert.ok(legacyManifest);
+  const userContents = JSON.stringify(JSON.parse(legacyManifest.contents));
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, userContents, "utf8");
+
+  assert.equal(
+    await ensureAdapterManifestScaffold("hermes", { adaptersDir: path.dirname(manifestPath), platform: "win32" }),
+    false,
+  );
+  assert.equal(await readFileFs(manifestPath, "utf8"), userContents);
+});
+
 // Wiring pins: the chat send route must detect the conflict from harness
 // stderr and heal+retry; every scaffold site must route through the shared
 // writer, which refuses to resurrect a quarantined manifest.

@@ -57,38 +57,6 @@ type AdapterManifestDocument = {
   [key: string]: unknown;
 };
 
-function isExactJsonValue(actual: unknown, expected: unknown): boolean {
-  if (actual === expected) return true;
-  if (Array.isArray(actual) || Array.isArray(expected)) {
-    return (
-      Array.isArray(actual) &&
-      Array.isArray(expected) &&
-      actual.length === expected.length &&
-      actual.every((entry, index) => isExactJsonValue(entry, expected[index]))
-    );
-  }
-  if (
-    !actual ||
-    !expected ||
-    typeof actual !== "object" ||
-    typeof expected !== "object"
-  ) {
-    return false;
-  }
-  const actualRecord = actual as Record<string, unknown>;
-  const expectedRecord = expected as Record<string, unknown>;
-  const actualKeys = Object.keys(actualRecord).sort();
-  const expectedKeys = Object.keys(expectedRecord).sort();
-  return (
-    actualKeys.length === expectedKeys.length &&
-    actualKeys.every(
-      (key, index) =>
-        key === expectedKeys[index] &&
-        isExactJsonValue(actualRecord[key], expectedRecord[key]),
-    )
-  );
-}
-
 // The hand-curated seed: Cave-specific labels, install copy, and probe args.
 // Curated entries win over registry entries with the same id.
 const CURATED_ADAPTERS: CompatibilityAdapter[] = [
@@ -466,12 +434,11 @@ export function isLegacyWindowsHermesManifest(
   platform = process.platform,
 ): boolean {
   if (platform !== "win32") return false;
-  try {
-    const parsed = JSON.parse(contents) as AdapterManifestDocument;
-    const legacyManifest = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "hermes")
-      ?.adapterManifest;
-    return !!legacyManifest && isExactJsonValue(parsed, legacyManifest);
-  } catch {
-    return false;
-  }
+  // Only the byte-for-byte document Cave emitted can be safely migrated.
+  // Parsing and comparing JSON values would also replace a user's equivalent
+  // hand-authored document just because they chose another key order or
+  // formatting style.
+  const legacyManifest = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "hermes")
+    ?.adapterManifest;
+  return !!legacyManifest && contents === `${JSON.stringify(legacyManifest, null, 2)}\n`;
 }

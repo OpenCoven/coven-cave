@@ -329,6 +329,13 @@ assert.equal(hermesManifest?.filename, "hermes.json");
   assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "linux"));
   assert.ok(
     !isLegacyWindowsHermesManifest(
+      JSON.stringify(JSON.parse(hermesManifest?.contents ?? "{}")),
+      "win32",
+    ),
+    "a formatting-only user-authored manifest is never replaced during migration",
+  );
+  assert.ok(
+    !isLegacyWindowsHermesManifest(
       JSON.stringify({
         adapters: [{
           ...JSON.parse(hermesManifest?.contents ?? "{}").adapters?.[0],
