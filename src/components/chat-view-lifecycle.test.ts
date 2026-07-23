@@ -138,7 +138,7 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy \|\| abortRef\.current\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?const queueing = busy \|\| abortRef\.current;[\s\S]*?if \(queueing\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
   "send() must queue a rich follow-up while busy instead of dropping it (CHAT-D5-01)",
 );
 
@@ -164,6 +164,12 @@ assert.match(
   source,
   /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,[\s\S]*?queuedRuntimeHost: runtimeHost/,
   "queued messages must retain queue-time model, project, file-mention, access, and host metadata",
+);
+
+assert.match(
+  source,
+  /const queueing = busy \|\| abortRef\.current;[\s\S]*?const queuedParentTurnId = queueing[\s\S]*?branchParent !== undefined \? branchParent : \(activeLeafId \|\| null\)[\s\S]*?parentTurnId: queuedParentTurnId[\s\S]*?if \(queueing\) \{[\s\S]*?options: sendOptions/,
+  "queued messages must capture their visible branch leaf before later navigation can change it",
 );
 
 assert.match(

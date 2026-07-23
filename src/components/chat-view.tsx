@@ -4574,8 +4574,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Read-and-clear atomically so it only applies to THIS send or queue item.
     const branchParent = pendingBranchParent;
     setPendingBranchParent(undefined);
+    // A queued follow-up must remain on the branch that was visible while it
+    // was composed. Branch navigation stays available during a live turn, so
+    // resolving activeLeafId later could otherwise attach it to a sibling.
+    const queueing = busy || abortRef.current;
+    const queuedParentTurnId = queueing
+      ? (branchParent !== undefined ? branchParent : (activeLeafId || null))
+      : undefined;
     const sendOptions: ChatSendOptions = {
-      ...(branchParent !== undefined ? { parentTurnId: branchParent } : {}),
+      ...(queuedParentTurnId !== undefined
+        ? { parentTurnId: queuedParentTurnId }
+        : branchParent !== undefined
+          ? { parentTurnId: branchParent }
+          : {}),
       // Queue-time metadata must not be re-read after a host, access, model,
       // or project selection changes while the current turn is streaming.
       projectRoot: requestProjectRoot,
@@ -4600,7 +4611,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // doesn't linger over the now-empty composer and let Revert repopulate
     // the composer with the message the user already sent.
     promptEnhance.reset();
-    if (busy || abortRef.current) {
+    if (queueing) {
       enqueueMessage({
         text: outgoingText,
         attachments: outgoingAttachments,
