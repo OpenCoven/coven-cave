@@ -4,6 +4,7 @@
 // api.github.com. Returns null (section absent, never an error) when neither
 // a PAT nor GITHUB_USERNAME is configured.
 
+import { resolveGitHubToken } from "@/lib/github-token";
 import { resolveSecret } from "@/lib/vault";
 import type { MergedPr } from "@/lib/daily-report-facts";
 
@@ -58,7 +59,7 @@ export async function fetchMergedPrsForDay(now: Date): Promise<MergedPr[] | null
     return cache.items;
   }
 
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const token = resolveGitHubToken();
   let login = resolveSecret("GITHUB_USERNAME") ?? null;
   if (token) {
     try {

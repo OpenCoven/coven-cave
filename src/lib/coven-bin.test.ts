@@ -43,8 +43,8 @@ assert.match(
 
 assert.match(
   source,
-  /FORBIDDEN_SPAWN_ENV_KEYS = \["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"\]/,
-  "coven child processes strip both legacy and marketplace GitHub token env vars",
+  /FORBIDDEN_SPAWN_ENV_KEYS = \[[\s\S]*"GITHUB_PAT",[\s\S]*"GITHUB_TOKEN",[\s\S]*"COVEN_GITHUB_TOKEN",[\s\S]*"GH_TOKEN",[\s\S]*"GITHUB_PERSONAL_ACCESS_TOKEN"/,
+  "coven child processes strip every GitHub credential alias Cave accepts",
 );
 
 // ── cave-o01k: sidecar-internal env never reaches children ────────────────────
@@ -73,6 +73,10 @@ assert.match(
     __NEXT_PRIVATE_STANDALONE_CONFIG: "{\"distDir\":\"/Users/runner/work\"}",
     __NEXT_PRIVATE_ORIGIN: "http://127.0.0.1:3000",
     GITHUB_PAT: "ghp_x",
+    GITHUB_TOKEN: "github-token",
+    COVEN_GITHUB_TOKEN: "coven-github-token",
+    GH_TOKEN: "gh-token",
+    GITHUB_PERSONAL_ACCESS_TOKEN: "marketplace-token",
     MY_APP_TOKEN: "kept",
   });
   assert.deepEqual(

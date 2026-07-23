@@ -341,6 +341,18 @@ function readRef(ref: string): string | null {
   return ref.startsWith(DL_REF_PREFIX) ? dcliRead(ref) : opRead(ref);
 }
 
+/** Resolve a mapped secret without reading or changing process.env. */
+export function resolveVaultManagedSecret(key: string, entry = loadVaultMap()[key]): string | undefined {
+  if (!entry) return undefined;
+
+  // The map's declared backend wins: a ref mapping is never shadowed by a
+  // stale/orphaned entry in the local encrypted store.
+  if (entry.storage === "encrypted") {
+    return getLocalEncryptedSecret(key)?.trim() || undefined;
+  }
+  return entry.ref ? readRef(entry.ref) || undefined : undefined;
+}
+
 /**
  * Resolve an env var by key.
  * Checks process.env first, then local encrypted vault, then vault.yaml → `op read`.
@@ -363,22 +375,9 @@ export function resolveSecret(key: string): string | undefined {
 
   const map = loadVaultMap();
   const entry = map[key];
-
-  // The map's declared backend wins: a ref mapping is never shadowed by a
-  // stale/orphaned entry in the local encrypted store. Unmapped encrypted
-  // secrets (no entry at all) still resolve.
-  const preferEncrypted =
-    entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key));
-  const localEncrypted = preferEncrypted ? getLocalEncryptedSecret(key) : null;
-  if (localEncrypted?.trim()) {
-    process.env[key] = localEncrypted.trim();
-    return localEncrypted.trim();
-  }
-
-  // Try a vault reference (1Password op:// or Dashlane dl://)
-  if (!entry?.ref) return undefined;
-
-  const value = readRef(entry.ref);
+  const value = entry
+    ? resolveVaultManagedSecret(key, entry)
+    : hasLocalEncryptedSecret(key) ? getLocalEncryptedSecret(key)?.trim() : undefined;
   if (value) {
     process.env[key] = value; // cache for process lifetime
     return value;
