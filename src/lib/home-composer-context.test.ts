@@ -19,3 +19,35 @@ test("home composer project selection honors no-project and stable fallback", ()
   assert.equal(resolveHomeComposerProject(projects, "missing", "__no-project__")?.id, "one");
   assert.equal(resolveHomeComposerProject(projects, "__no-project__", "__no-project__"), null);
 });
+
+test("home composer defaults an unset pick to the most recent chat's project", () => {
+  const projects = [
+    { id: "one", name: "One", root: "/work/one" },
+    { id: "two", name: "Two", root: "/work/two" },
+  ] as never[];
+  assert.equal(
+    resolveHomeComposerProject(projects, "", "__no-project__", "/work/two")?.id,
+    "two",
+    "an unset pick resolves to the recent chat's project before projects[0]",
+  );
+  assert.equal(
+    resolveHomeComposerProject(projects, "one", "__no-project__", "/work/two")?.id,
+    "one",
+    "an explicit pick beats the recency default",
+  );
+  assert.equal(
+    resolveHomeComposerProject(projects, "__no-project__", "__no-project__", "/work/two"),
+    null,
+    "an explicit No-project pick beats the recency default",
+  );
+  assert.equal(
+    resolveHomeComposerProject(projects, "", "__no-project__", "/somewhere/unregistered")?.id,
+    "one",
+    "an unregistered recent root falls through to projects[0]",
+  );
+  assert.equal(
+    resolveHomeComposerProject(projects, "", "__no-project__", null)?.id,
+    "one",
+    "no recency signal keeps the stable projects[0] fallback",
+  );
+});

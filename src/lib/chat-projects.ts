@@ -71,7 +71,9 @@ export type ChatProjectSelection = {
  * workspace or another unregistered dir, and defaulting it to the first
  * registered project would re-root the next turn's cwd there and fork the
  * harness session (`--continue` misses in the new dir). Only a brand new chat
- * (no session yet) defaults to the first project.
+ * (no session yet) defaults: to the most recent chat's registered project
+ * (`recentProjectRoot`, see recentChatProjectRoot) so new chats pick up where
+ * the user is actually working, then to the first project.
  */
 export function resolveChatProjectSelection(args: {
   draftId: string | null;
@@ -82,6 +84,9 @@ export function resolveChatProjectSelection(args: {
    *  the card's stable projectId, with its cwd as a fallback mapping. */
   taskProjectId?: string | null;
   taskCwd?: string | null;
+  /** Root of the most recent chat's registered project (recentChatProjectRoot):
+   *  the brand-new-chat default when no other context picked a project. */
+  recentProjectRoot?: string | null;
   projects: CaveProject[];
 }): ChatProjectSelection {
   const firstProject = args.projects[0] ?? null;
@@ -101,6 +106,8 @@ export function resolveChatProjectSelection(args: {
   );
   if (mappedId) return { projectId: mappedId, project: chatProjectById(mappedId, args.projects) };
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
+  const recentProject = projectForRoot(args.recentProjectRoot, args.projects);
+  if (recentProject) return { projectId: recentProject.id, project: recentProject };
   return { projectId: null, project: firstProject };
 }
 
@@ -168,6 +175,27 @@ export function filterVisibleChatSessions(
     .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
+}
+
+/** The registered project the most recent visible chat ran in, as a root for
+ *  resolveChatProjectSelection's `recentProjectRoot` — so a brand-new chat
+ *  starts off in the project the user was just working in instead of the
+ *  alphabetically-first one. Walks newest-first (all familiars: project
+ *  context follows the work across familiar switches) and skips chats whose
+ *  recorded cwd maps to no entry in `projects` — an unregistered or
+ *  no-project chat can't meaningfully seed a picker that only offers
+ *  registered projects, and `projects` is already scoped to the familiar's
+ *  grants, so an inaccessible project can never be inherited. */
+export function recentChatProjectRoot(
+  sessions: SessionRow[],
+  projects: CaveProject[],
+): string | null {
+  if (projects.length === 0) return null;
+  for (const session of filterVisibleChatSessions(sessions, null)) {
+    const project = projectForRoot(session.project_root, projects);
+    if (project) return project.root;
+  }
+  return null;
 }
 
 export function deriveChatProjectGroups(

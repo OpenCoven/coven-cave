@@ -1,5 +1,6 @@
 import type { CaveProject } from "./cave-projects-types";
 import type { Familiar } from "./types";
+import { projectForRoot } from "./chat-projects.ts";
 
 export function resolveHomeComposerFamiliar(
   familiars: readonly Familiar[],
@@ -22,7 +23,15 @@ export function resolveHomeComposerProject(
   projects: readonly CaveProject[],
   selectedProjectId: string,
   noProjectId: string,
+  /** Root of the most recent chat's registered project (recentChatProjectRoot):
+   *  the default when the user hasn't explicitly picked, before projects[0]. */
+  recentProjectRoot?: string | null,
 ): CaveProject | null {
   if (selectedProjectId === noProjectId) return null;
-  return projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
+  return (
+    projects.find((project) => project.id === selectedProjectId) ??
+    projectForRoot(recentProjectRoot, projects.slice()) ??
+    projects[0] ??
+    null
+  );
 }
