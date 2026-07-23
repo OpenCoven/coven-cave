@@ -39,6 +39,16 @@ export function resolveGitHubToken(): string | null {
   const localEnv = readEnvLocalValue("GITHUB_PAT")?.trim();
   if (localEnv) return localEnv;
 
+  // Vault entries are not cached into process.env until a caller resolves
+  // that exact key. Check the standard aliases directly so a token managed
+  // under (for example) GH_TOKEN works just as it does when a launcher
+  // supplies the same name. Vault scopes only limit harness injection; Cave's
+  // own GitHub API routes may resolve the configured secret.
+  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+    const managedAlias = resolveVaultManagedSecret(key, map[key])?.trim();
+    if (managedAlias) return managedAlias;
+  }
+
   const launcherPat = process.env.GITHUB_PAT?.trim();
   return launcherPat || resolveGitHubTokenFromEnvironment();
 }

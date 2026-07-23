@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   source,
+  /for \(const key of GITHUB_TOKEN_ENV_KEYS\) \{[\s\S]*resolveVaultManagedSecret\(key, map\[key\]\)\?\.trim\(\)/,
+  "Vault-managed standard GitHub aliases work even before another caller caches them into process.env",
+);
+assert.match(
+  source,
   /const launcherPat = process\.env\.GITHUB_PAT\?\.trim\(\);[\s\S]*return launcherPat \|\| resolveGitHubTokenFromEnvironment\(\);/,
   "an unconfigured Cave still accepts a direct GITHUB_PAT before standard aliases",
 );
