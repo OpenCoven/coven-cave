@@ -520,7 +520,13 @@ export function BoardTable({ cards, familiars, projects, groupBy, sortKey, sortD
                             const rowFamiliarOptions = !projectId
                               ? familiarOptions
                               : !familiarPickerReady
-                                ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+                                ? [{
+                                    value: "",
+                                    label: loadingProjectIds.has(projectId)
+                                      ? "Loading authorized familiars…"
+                                      : "Could not load authorized familiars",
+                                    disabled: true,
+                                  }]
                                 : [
                                     { value: "", label: "Unassigned" },
                                     ...scopedFamiliars.map((familiar) => ({
