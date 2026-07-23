@@ -88,10 +88,10 @@ export type WarmableSidebarSurface =
   | "grimoire"
   | "agents";
 
-export const GitHubView = dynamic(
-  timed("github", loadGitHubView),
-  { ssr: false, loading: SurfaceFallback },
-);
+// The standalone GitHubView dynamic wrapper is gone (cave-m6ys): GitHub
+// mounts only as Code's GitHub tab (code-view.tsx owns that lazy import).
+// loadGitHubView stays for preloadSidebarSurface — warming the chunk still
+// pays off when the user opens the tab.
 
 // Code surface (cave-k0ua): hosts diffs, file tree + editor, terminal and the
 // GitHub tab — its chunk (CodeMirror et al.) must stay out of the boot bundle.

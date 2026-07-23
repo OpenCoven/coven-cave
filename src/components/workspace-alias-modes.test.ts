@@ -62,6 +62,13 @@ assert.match(
   "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
 );
 
+assert.equal(MODE_ALIASES.github, "code");
+assert.match(
+  workspace,
+  /mode === "code" \|\| mode === "github"[\s\S]{0,500}?<CodeView\s+key=\{mode\}[\s\S]{0,200}?initialTopTab=\{mode === "github" \? "github" : undefined\}/,
+  "the github alias renders the Code surface on its GitHub tab (keyed remount, cave-m6ys)",
+);
+
 // ── Every mode-string entry point validates/routes through the shared
 //    vocabulary instead of ad-hoc special cases ──────────────────────────────
 

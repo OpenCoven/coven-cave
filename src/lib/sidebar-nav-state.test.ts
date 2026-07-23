@@ -40,6 +40,7 @@ test("deep-linkable modes hosted by another surface light the host row (cave-s9p
   assert.equal(sidebarRowState("inbox", "calendar"), "active", "calendar renders on Schedules");
   assert.equal(sidebarRowState("board", "familiar-work-queue"), "active", "the Queue is a Tasks-hub tab");
   assert.equal(sidebarRowState("inbox", "flow"), "active", "retired flow remaps to Schedules");
+  assert.equal(sidebarRowState("code", "github"), "active", "github is Code's GitHub tab (cave-m6ys)");
 });
 
 test("Journal is a Memories tab — the Memories (grimoire) row hosts it", () => {

@@ -17,7 +17,6 @@ export type CanonicalWorkspaceMode =
   | "board"
   | "inbox"
   | "browser"
-  | "github"
   | "code"
   | "marketplace"
   | "submissions"
@@ -31,7 +30,8 @@ export type AliasWorkspaceMode =
   | "calendar"
   | "familiar-work-queue"
   | "roles"
-  | "capabilities";
+  | "capabilities"
+  | "github";
 
 export type WorkspaceMode = CanonicalWorkspaceMode | AliasWorkspaceMode;
 
@@ -42,10 +42,9 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "board",
   "inbox",
   "browser",
-  "github",
   // Code — the Codex-style multi-session coding surface (cave-k0ua). Reverses
-  // the earlier Code-mode retirement: gated by caveCodeSurface(); while the
-  // flag is off, setMode redirects "code" to the legacy chat fallback.
+  // the earlier Code-mode retirement; default-on since phase 2 (cave-m6ys),
+  // with GitHub absorbed as its GitHub tab ("github" is now an alias below).
   "code",
   "marketplace",
   "submissions",
@@ -66,7 +65,9 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
  *   the canonical surface on the matching tab, keyed by the alias so deep
  *   links remount onto it — `calendar` (Rituals' Calendar tab),
  *   `familiar-work-queue` (Tasks' Queue tab), `roles` / `capabilities`
- *   (Marketplace hub sections).
+ *   (Marketplace hub sections), `github` (Code's GitHub tab — the standalone
+ *   surface was absorbed in cave-m6ys; old deep links and persisted
+ *   last-surface strings keep landing on the same content).
  *
  * workspace-alias-modes.test.ts pins Workspace's branches to this table;
  * sidebar-nav-state derives row highlighting from it.
@@ -79,6 +80,7 @@ export const MODE_ALIASES = {
   "familiar-work-queue": "board",
   roles: "marketplace",
   capabilities: "marketplace",
+  github: "code",
 } as const satisfies Record<AliasWorkspaceMode, CanonicalWorkspaceMode>;
 
 export function isAliasWorkspaceMode(mode: string): mode is AliasWorkspaceMode {

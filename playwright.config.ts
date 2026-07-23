@@ -121,11 +121,6 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       COVEN_CAVE_E2E: "1",
-      // The dedicated Code surface (cave-k0ua) is validated flag-ON here so
-      // tests/code-surface.spec.ts and the mobile drill-in spec exercise the
-      // real landing; existing specs never asserted the GitHub sidebar row,
-      // and ?mode=github stays canonical either way.
-      NEXT_PUBLIC_CAVE_CODE_SURFACE: "1",
       // Keep app-owned preferences and backdrop bytes out of the developer's
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for

@@ -72,7 +72,6 @@ import {
   FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
-  GitHubView,
   CodeView,
   GrimoireView,
   InboxEscalationsView,
@@ -87,7 +86,6 @@ import {
   ShortcutsSheet,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { caveCodeSurface } from "@/lib/feature-flags";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
@@ -367,15 +365,6 @@ export function Workspace() {
       setModeRaw("inbox");
       return;
     }
-    if (next === "code" && !caveCodeSurface()) {
-      // The Code surface is flag-gated (cave-k0ua). While off, "code" is a
-      // valid mode string (deep links, persisted last-surface) but must not
-      // render — land on Chat, the retirement-era fallback. The
-      // cave:navigate-mode handler upgrades this to "newest repo session"
-      // before reaching here.
-      setModeRaw("chat");
-      return;
-    }
     setModeRaw(next);
   }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
@@ -514,11 +503,13 @@ export function Workspace() {
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
   // Deep-link target for the native GitHub surface (a GitHub-event inbox
-  // notification's PR/issue). Cleared on leaving the surface so a later manual
-  // visit doesn't re-open a stale item.
+  // notification's PR/issue). GitHub lives on the Code surface's GitHub tab
+  // (cave-m6ys), so the target survives within the whole surface — mode
+  // "github" (the tab alias) or "code" — and clears on leaving it so a later
+  // manual visit doesn't re-open a stale item.
   const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
   useEffect(() => {
-    if (mode !== "github" && githubTarget) setGithubTarget(null);
+    if (mode !== "github" && mode !== "code" && githubTarget) setGithubTarget(null);
   }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
@@ -1779,22 +1770,8 @@ export function Workspace() {
     const onNavigate = (e: Event) => {
       const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
       if (!targetMode) return;
-      // Legacy fallback while the Code surface flag is off: redirect to the
-      // most-recent repo session in chat (the retirement-era behavior). With
-      // the flag on, "code" falls through to setMode and lands on the surface.
-      if (targetMode === "code" && !caveCodeSurface()) {
-        const repoSession = [...sessionsRef.current]
-          .filter((s) => s.project_root)
-          .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at))[0];
-        if (repoSession) {
-          openFamiliarSession(repoSession.id, repoSession.familiarId);
-        } else {
-          setMode("chat");
-        }
-        return;
-      }
-      // Alias modes (flow, journal, groupchat, …) need no special-casing:
-      // setMode's alias funnel routes them via MODE_ALIASES.
+      // Alias modes (flow, journal, groupchat, github, …) need no
+      // special-casing: setMode's alias funnel routes them via MODE_ALIASES.
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
@@ -2855,16 +2832,14 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
-    ) : mode === "github" ? (
-      <GitHubView
-        onJumpToSession={openFamiliarSession}
-        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        initialTarget={githubTarget}
-        onTasksRefresh={() => void loadGitHubTasks(true)}
-      />
-    ) : mode === "code" ? (
+    ) : mode === "code" || mode === "github" ? (
+      // "github" is a tab alias (cave-m6ys): the standalone surface was
+      // absorbed as Code's GitHub tab. Keyed remount so ?mode=github deep
+      // links land on the tab even when Code is already the active surface.
       <CodeView
+        key={mode}
         sessions={sessions}
+        initialTopTab={mode === "github" ? "github" : undefined}
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         githubTarget={githubTarget}

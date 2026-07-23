@@ -8,10 +8,11 @@ import { readFile } from "node:fs/promises";
 // predecessor (code-view.test.ts) was the retirement guard keeping it deleted.
 // The owner requested a Codex-style multi-session coding surface — diffs,
 // files, terminal, per-session PR context, worktrees, branches, with GitHub
-// absorbed as a tab — so the mode returned, flag-gated by caveCodeSurface()
-// (NEXT_PUBLIC_CAVE_CODE_SURFACE). These pins document the sanctioned shape:
-// the surface exists, the flag gates entry, and Chat's own code rail stays
-// untouched until the flagged follow-up that slims it.
+// absorbed as a tab — so the mode returned behind caveCodeSurface(). Phase 2
+// (cave-m6ys) made it default-on: the flag is retired, the standalone GitHub
+// surface/row is absorbed ("github" is a tab alias in MODE_ALIASES), and
+// Chat's own code rail stays untouched until the flagged follow-up that
+// slims it. These pins document that sanctioned shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -35,8 +36,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /mode === "code" \? \(\s*<CodeView/,
-  "Workspace renders CodeView on the code mode",
+  /mode === "code" \|\| mode === "github" \? \([\s\S]{0,300}?<CodeView/,
+  "Workspace renders CodeView on the code mode and the absorbed github alias",
 );
 assert.match(
   lazySurfaces,
@@ -44,21 +45,24 @@ assert.match(
   "CodeView stays code-split behind lazy-surfaces — its chunk must not join the boot bundle",
 );
 
-// Flag gating: while caveCodeSurface() is off, "code" deep links keep the
-// retirement-era fallback (newest repo chat); with it on they land on the
-// surface. Both behaviors live in the same navigate-mode branch.
-assert.match(
-  workspace,
-  /if \(targetMode === "code" && !caveCodeSurface\(\)\) \{[\s\S]*?filter\(\(s\) => s\.project_root\)[\s\S]*?openFamiliarSession\(repoSession\.id, repoSession\.familiarId\)[\s\S]*?setMode\("chat"\)/,
-  "flag-off code deep-links redirect to the newest repo chat or Chat fallback",
+// Default-on (cave-m6ys): the build-time flag is retired. No workspace wiring
+// may resurrect a gate in front of the surface, and the vocabulary records
+// GitHub's absorption — "github" is an alias landing on Code's GitHub tab.
+const featureFlags = await readFile(new URL("../lib/feature-flags.ts", import.meta.url), "utf8");
+assert.doesNotMatch(
+  featureFlags,
+  /caveCodeSurface|CAVE_CODE_SURFACE/,
+  "the Code-surface feature flag is retired — default-on, no env gate",
 );
-// The setMode funnel is the choke point for every other entry (?mode= deep
-// link, persisted last-surface restore): flag off, "code" lands on Chat
-// instead of rendering a gated surface.
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /if \(next === "code" && !caveCodeSurface\(\)\) \{[\s\S]{0,600}?setModeRaw\("chat"\);\s*return;/,
-  "setMode funnels flag-off code requests to Chat",
+  /caveCodeSurface/,
+  "no flag-off fallbacks survive in the Workspace wiring",
+);
+assert.match(
+  modeType,
+  /github: "code"/,
+  "MODE_ALIASES routes the absorbed GitHub surface onto Code (cave-m6ys)",
 );
 
 // File/diff links from inbox cards etc. still target Chat's code rail this
@@ -77,21 +81,21 @@ assert.match(
   "keyboard surface order keeps the primary cluster without Code",
 );
 
-// ── Sidebar row swap ─────────────────────────────────────────────────────────
+// ── Sidebar row ──────────────────────────────────────────────────────────────
 
-// One quiet slot, two vocabularies: flag on → Code row (GitHub becomes a tab
-// inside the surface); flag off → the standalone GitHub row, byte-identical to
-// the pre-flag sidebar. The conditional spread keeps FOLDER_MODES a single
-// literal so palette/mobile/canonical-name extraction regexes stay valid.
+// One quiet slot, one vocabulary (cave-m6ys): the Code row owns it and keeps
+// carrying the assigned-work badge; the standalone GitHub row is gone for
+// good — its surface lives under Code's GitHub tab and mode "github" aliases
+// there, so old muscle memory and deep links still land on the content.
 assert.match(
   sidebar,
-  /\.\.\.\(caveCodeSurface\(\)\s*\?\s*\[\{ id: "code", label: "Code", iconName: "ph:code"/,
-  "flag on: the Code quiet row takes the GitHub slot",
+  /\{ id: "code", label: "Code", iconName: "ph:code"[\s\S]{0,200}?badge: \(p\) => badgeText\(p\.githubAssignedCount\)/,
+  "the Code quiet row owns the slot and carries the assigned-work badge",
 );
-assert.match(
+assert.doesNotMatch(
   sidebar,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
-  "flag off: the GitHub row literal survives in FOLDER_MODES",
+  /id: "github"/,
+  "no standalone GitHub row survives in FOLDER_MODES",
 );
 assert.match(
   codeView,
