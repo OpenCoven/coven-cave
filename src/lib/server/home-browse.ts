@@ -55,8 +55,12 @@ export function listSystemRootEntries(): DirEntry[] {
  */
 function trustedVolumeRoot(raw: string): string | null {
   const wanted = path.parse(path.resolve(raw)).root;
+  // win32 drive letters are case-insensitive (`c:\` names `C:\`, and a
+  // lowercase USERPROFILE drive would otherwise 403 every navigation), so
+  // fold case before comparing. POSIX keeps exact matching ("/" only).
+  const fold = (value: string) => (process.platform === "win32" ? value.toUpperCase() : value);
   for (const root of listSystemRoots()) {
-    if (root === wanted) return root;
+    if (fold(root) === fold(wanted)) return root;
   }
   return null;
 }

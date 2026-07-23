@@ -147,6 +147,22 @@ export function isAllowedNewProjectRoot(value: string): boolean {
   // bare volume roots (`/`, `C:\`) — registering an entire home directory or
   // drive as one project is never intended.
   const home = realpathOrResolve(homedir());
-  if (candidate === home) return false;
+  if (candidate === home || isSameExistingDir(candidate, home)) return false;
   return candidate !== path.parse(candidate).root;
+}
+
+// String equality alone misses aliases of $HOME on case-insensitive
+// filesystems (APFS/NTFS): realpathSync is case-preserving, so a typed
+// `/USERS/BUNS` (or an NFD/NFC Unicode variant) survives canonicalization
+// while still naming the home directory. Filesystem identity (dev+ino)
+// rejects every alias of the same directory; a candidate that doesn't exist
+// can't be $HOME, so stat failures fall through to "not the same".
+function isSameExistingDir(a: string, b: string): boolean {
+  try {
+    const statA = fs.statSync(/* turbopackIgnore: true */ a, { bigint: true });
+    const statB = fs.statSync(/* turbopackIgnore: true */ b, { bigint: true });
+    return statA.dev === statB.dev && statA.ino === statB.ino;
+  } catch {
+    return false;
+  }
 }

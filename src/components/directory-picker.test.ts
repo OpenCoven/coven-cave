@@ -268,6 +268,16 @@ test("the modal browses above $HOME to volume roots and drives", () => {
   );
   assert.match(
     src,
+    /function serverSep\(home: string \| null\)/,
+    "the separator is derived once from the trusted server-reported $HOME",
+  );
+  assert.doesNotMatch(
+    src,
+    /includes\("\\\\"\) \? "\\\\" : "\/"/,
+    "never sniff per-path for backslashes — POSIX folder names may legally contain them",
+  );
+  assert.match(
+    src,
     /trail\.push\(\{ name: acc, path: acc \}\);/,
     "paths above $HOME anchor their crumbs at the volume root",
   );

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -161,6 +161,30 @@ try {
     false,
     "a bare volume root is never a project root",
   );
+
+  // Case aliases of $HOME survive realpath on case-insensitive filesystems
+  // (APFS/NTFS preserve the typed case), so the exclusion compares filesystem
+  // identity (dev+ino), not strings. On a case-sensitive filesystem the alias
+  // is a different (usually nonexistent) path and stays allowed like any
+  // other outside-home folder.
+  {
+    const home = await realpath(homedir());
+    const alias = path.join(path.dirname(home), path.basename(home).toUpperCase());
+    let aliasIsHome = false;
+    try {
+      const [aliasStat, homeStat] = [await stat(alias, { bigint: true }), await stat(home, { bigint: true })];
+      aliasIsHome = aliasStat.dev === homeStat.dev && aliasStat.ino === homeStat.ino;
+    } catch {
+      aliasIsHome = false;
+    }
+    assert.equal(
+      isAllowedNewProjectRoot(alias),
+      !aliasIsHome,
+      aliasIsHome
+        ? "a case alias of $HOME still names $HOME and must be rejected"
+        : "on a case-sensitive filesystem a case variant is a different path and stays allowed",
+    );
+  }
 
   assert.equal(
     resolveAllowedProjectPath(sensitiveFileRoot),

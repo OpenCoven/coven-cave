@@ -27,8 +27,13 @@ assert.match(
 // equality check. PR #3728 alerts 88/135 regressed exactly this.
 assert.match(
   source,
-  /for \(const root of listSystemRoots\(\)\) \{\s*if \(root === wanted\) return root;/,
+  /for \(const root of listSystemRoots\(\)\) \{\s*if \(fold\(root\) === fold\(wanted\)\) return root;/,
   "absolute walks must anchor on the listSystemRoots() allowlist element, never request-derived text",
+);
+assert.match(
+  source,
+  /process\.platform === "win32" \? value\.toUpperCase\(\) : value/,
+  "drive-letter matching folds case on win32 (a lowercase USERPROFILE drive must not 403 navigation)",
 );
 assert.doesNotMatch(
   source,
