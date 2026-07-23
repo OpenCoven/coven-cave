@@ -17,7 +17,79 @@
  */
 
 import { covenSpawnEnv } from "./coven-bin.ts";
-import { isVaultKeyGrantedTo, loadVaultMap, type VaultMap } from "./vault.ts";
+import { readEnvLocalValue } from "./env-file.ts";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env.ts";
+import { hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
+import { isVaultKeyGrantedTo, loadVaultMap, resolveVaultManagedSecret, type VaultMap } from "./vault.ts";
+
+/**
+ * Return the explicitly opted-in external credential names that a harness may
+ * inherit. Cave strips GitHub credentials from every generic child process,
+ * so an installation that supplies a token through its launcher must opt in
+ * before a Codex, Hermes, OpenCode, or other harness receives one.
+ */
+export function allowedHarnessEnvKeys(): Set<string> {
+  return new Set(
+    (process.env.COVEN_HARNESS_ALLOW_ENV_KEYS ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+}
+
+/** Whether `GITHUB_PAT` is Cave-owned rather than a launcher-only variable. */
+function hasCaveManagedGitHubPat(managedKeys: Set<string>): boolean {
+  return (
+    managedKeys.has("GITHUB_PAT") ||
+    hasLocalEncryptedSecret("GITHUB_PAT") ||
+    !!readEnvLocalValue("GITHUB_PAT")
+  );
+}
+
+/** Restore only explicitly allowed launcher-provided GitHub token aliases. */
+export function restoreAllowedGitHubTokenEnv(
+  env: NodeJS.ProcessEnv,
+  allowed = allowedHarnessEnvKeys(),
+  managedKeys = new Set(Object.keys(loadVaultMap(true))),
+): NodeJS.ProcessEnv {
+  for (const key of GITHUB_HARNESS_TOKEN_ENV_KEYS) {
+    // An alias with a vault entry may have been cached in process.env by an
+    // earlier request. An opt-in is for a launcher-provided credential, never
+    // a way to bypass the vault's familiar scope.
+    // GITHUB_PAT also has legacy Cave-owned stores outside the vault map, so
+    // do not mistake a cached local PAT for a launcher credential.
+    if (
+      !allowed.has(key) ||
+      managedKeys.has(key) ||
+      (key === "GITHUB_PAT" && hasCaveManagedGitHubPat(managedKeys))
+    ) continue;
+    const value = process.env[key]?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
+/** Restore a Vault-managed GitHub alias only for a familiar granted that key. */
+export function restoreGrantedVaultGitHubTokenEnv(
+  env: NodeJS.ProcessEnv,
+  map: VaultMap,
+  familiarId?: string | null,
+): NodeJS.ProcessEnv {
+  for (const key of GITHUB_HARNESS_TOKEN_ENV_KEYS) {
+    const entry = map[key];
+    if (!entry || !isVaultKeyGrantedTo(entry, familiarId)) continue;
+    // covenSpawnEnv intentionally scrubs GitHub aliases. Resolve a granted
+    // Vault mapping again so that security boundary does not prevent a
+    // configured Codex, Hermes, OpenCode, or other harness from receiving
+    // its own scoped credential.
+    // Do not take a same-named launcher variable here. A managed mapping
+    // must retain its Vault value and scope; launcher values need the explicit
+    // COVEN_HARNESS_ALLOW_ENV_KEYS opt-in handled above.
+    const value = resolveVaultManagedSecret(key, entry)?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
 
 /** Pure: delete from `env` every vault-managed key not granted to `familiarId`. */
 export function subtractScopedVaultKeys(
@@ -37,5 +109,8 @@ export function subtractScopedVaultKeys(
  * immediately — spawns are per chat turn and the map is a tiny local file.
  */
 export function harnessSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
-  return subtractScopedVaultKeys(covenSpawnEnv(), loadVaultMap(true), familiarId);
+  const map = loadVaultMap(true);
+  const env = subtractScopedVaultKeys(covenSpawnEnv(), map, familiarId);
+  restoreGrantedVaultGitHubTokenEnv(env, map, familiarId);
+  return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }

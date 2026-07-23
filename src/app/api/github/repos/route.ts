@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 import type { RepoItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";
@@ -52,13 +52,6 @@ const LIST_QUERY = `query {
   }
 }`;
 
-function resolveGitHubToken(): string | undefined {
-  return (
-    resolveSecret("GITHUB_PAT") ??
-    process.env.GITHUB_TOKEN?.trim() ??
-    process.env.COVEN_GITHUB_TOKEN?.trim()
-  );
-}
 
 type RestRepo = {
   id?: number;

@@ -4,8 +4,9 @@
  * Returns the authenticated user's live GitHub activity.
  *
  * Auth tiers (tried in order):
- *   1. GITHUB_PAT env var — user's own PAT, stored in .env.local only,
- *      NEVER committed, NEVER shared, NEVER logged. Private to this machine.
+ *   1. GITHUB_PAT — user's own PAT, stored in .env.local only, or a
+ *      GITHUB_TOKEN/COVEN_GITHUB_TOKEN supplied by an installed harness.
+ *      Tokens are NEVER committed, shared, or logged.
  *   2. Public unauthenticated GitHub API — rate-limited to 60 req/hr.
  *      Only public data accessible. Username must be provided via
  *      GITHUB_USERNAME env var or inferred from the PAT if present.
@@ -16,8 +17,9 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
+import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,6 +72,9 @@ type ActivityResult = {
    *  state over a dead token (cave-cjgg). */
   patInvalid?: boolean;
   login: string | null;
+  /** Organizations visible to the authenticated token. Unlike activity items,
+   * these remain useful even when no open work exists in an organization. */
+  organizations: string[];
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
 };
@@ -87,9 +92,46 @@ async function ghFetch(path: string, token: string | null) {
   return { res, data, rateRemaining, rateLimit };
 }
 
+
+function nextGitHubPagePath(link: string | null): string | null {
+  const nextUrl = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1];
+  if (!nextUrl) return null;
+  try {
+    const parsed = new URL(nextUrl);
+    return parsed.origin === GH ? `${parsed.pathname}${parsed.search}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The activity searches below only describe current work. Fetch memberships
+ * separately so an organization selector represents the account's scope, not
+ * whichever organizations happen to have an open item today.
+ */
+async function fetchOrganizations(token: string): Promise<string[]> {
+  try {
+    const organizations = new Set<string>();
+    let path: string | null = "/user/orgs?per_page=100";
+    while (path) {
+      const { res, data } = await ghFetch(path, token);
+      if (!res.ok || !Array.isArray(data)) break;
+      data
+        .map((org) => typeof org?.login === "string" ? org.login : "")
+        .filter(Boolean)
+        .forEach((org) => organizations.add(org));
+      path = nextGitHubPagePath(res.headers.get("link"));
+    }
+    return Array.from(organizations).sort((a, b) => a.localeCompare(b));
+  } catch {
+    // Memberships improve the selector but must not make activity unavailable.
+    return [];
+  }
+}
+
 export async function GET() {
   // PAT is strictly local — read from env, never echoed back
-  const storedToken = resolveSecret("GITHUB_PAT") ?? null;
+  const storedToken = resolveGitHubToken();
   const envLogin = resolveSecret("GITHUB_USERNAME") ?? null;
 
   // ── Resolve login ────────────────────────────────────────────────────────
@@ -126,6 +168,7 @@ export async function GET() {
   }
 
   const items: GitHubItem[] = [];
+  const organizations = token ? await fetchOrganizations(token) : [];
 
   // ── Open PRs authored by user ─────────────────────────────────────────────
   try {
@@ -232,6 +275,7 @@ export async function GET() {
     authed: !!token,
     patInvalid: patInvalid || undefined,
     login,
+    organizations,
     items,
     rateLimit: rateInfo,
   };

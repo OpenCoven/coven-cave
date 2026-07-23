@@ -89,13 +89,15 @@ function PatSetupModal({
   onClose,
   username,
   hasPat = false,
+  canRemoveStoredPat = false,
 }: {
-  onSaved: (login: string, hasPat: boolean) => void;
+  onSaved: () => void;
   onClose: () => void;
   username: string | null;
-  /** A PAT is currently stored — offers the remove path (the DELETE route
-   *  had no caller anywhere; cave-cjgg). */
+  /** A GitHub credential is configured, including an external launcher token. */
   hasPat?: boolean;
+  /** Only Cave-managed credentials can be removed through the local API. */
+  canRemoveStoredPat?: boolean;
 }) {
   const [pat, setPat] = useState("");
   const [usernameInput, setUsernameInput] = useState(username ?? "");
@@ -146,7 +148,7 @@ function PatSetupModal({
         return;
       }
       invalidateSurfaceResources("github:pat", "github:activity");
-      onSaved(data.login ?? trimmedUser, !!trimmedPat);
+      onSaved();
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -253,7 +255,7 @@ function PatSetupModal({
           </div>
         </form>
 
-        {hasPat && (
+        {canRemoveStoredPat && (
           <div className="mt-3 border-t border-[var(--border-hairline)] pt-3">
             <Button
               variant="ghost"
@@ -274,7 +276,7 @@ function PatSetupModal({
                         return;
                       }
                       invalidateSurfaceResources("github:pat", "github:activity");
-                      onSaved(usernameInput.trim() || username || "", false);
+                      onSaved();
                     } catch {
                       setError("Network error — please try again.");
                     } finally {
@@ -290,6 +292,11 @@ function PatSetupModal({
               Drops back to public data for @{usernameInput.trim() || username || "…"}.
             </p>
           </div>
+        )}
+        {hasPat && !canRemoveStoredPat && (
+          <p className="mt-3 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+            GitHub authentication is supplied by the launch environment; manage that credential outside Cave.
+          </p>
         )}
       </div>
     </div>
@@ -2373,7 +2380,9 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
       }
       const nextActivity = data;
       setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
+        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
+          && arrayContentEqual(prev.organizations, nextActivity.organizations)
+          && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
           : nextActivity);
       setError(null);
@@ -2438,17 +2447,16 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
     [items, filter],
   );
 
-  // Organization options come from the kind-filtered set; repository options
-  // narrow to the chosen org so the two selects cascade (org → repo). Keep a
-  // restored scope present even when it has no current activity: this endpoint
-  // only returns the user's open/assigned items, not the account's complete
-  // repository access list.
+  // Memberships define the account's organization scope; activity adds any
+  // organization represented by the current items. Repository options still
+  // narrow to the chosen org so the two selects cascade (org → repo).
   const orgOptions = useMemo(
     () => Array.from(new Set([
+      ...(activity?.organizations ?? []),
       ...filtered.map((i) => orgOf(i.repo)),
       ...(orgFilter === "all" ? [] : [orgFilter]),
     ])).sort((a, b) => a.localeCompare(b)),
-    [filtered, orgFilter],
+    [activity?.organizations, filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);
@@ -2640,9 +2648,13 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
         <PatSetupModal
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
-          onSaved={(login, hasPat) => {
+          canRemoveStoredPat={patStatus?.canRemoveStoredPat ?? false}
+          onSaved={() => {
             invalidateSurfaceResources("github:pat", "github:activity");
-            setPatStatus({ hasPat, login });
+            // A stored Cave PAT can coexist with a launcher-provided token.
+            // Re-read the server status after either save or removal instead of
+            // assuming the local mutation describes the remaining credential.
+            void fetchPatStatus();
             setShowPatModal(false);
             refreshActivity();
           }}

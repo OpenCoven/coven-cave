@@ -384,6 +384,11 @@ assert.doesNotMatch(
   /href="https:\/\/github\.com\/settings\/tokens\/new/,
   "PAT setup no longer relies on a plain anchor that can stay inside localhost",
 );
+assert.match(
+  source,
+  /onSaved=\{\(\) => \{[\s\S]*?invalidateSurfaceResources\("github:pat", "github:activity"\);[\s\S]*?void fetchPatStatus\(\);[\s\S]*?setShowPatModal\(false\);/,
+  "saving or removing a Cave PAT re-reads status so a remaining launcher credential stays connected",
+);
 
 // ── 2026-07-03 GitHub audit fixes ─────────────────────────────────────────────
 // The activity poll is content-guarded — an unchanged response keeps the prior
