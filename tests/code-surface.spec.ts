@@ -3,9 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
 // tab — session rail grouped by project, per-session workbench
 // (Diff | Files | Terminal | PR), inspector column, and a GitHub top tab.
-// Runs flag-ON via NEXT_PUBLIC_CAVE_CODE_SURFACE=1 in playwright.config.ts's
-// webServer env (NEXT_PUBLIC_ flags are inlined at dev-server start, so a
-// per-test toggle is impossible by construction).
+// Default-on since phase 2 (cave-m6ys) — no flag env needed.
 //
 // Daemon-less — onboarding dismissed, every endpoint mocked via page.route.
 

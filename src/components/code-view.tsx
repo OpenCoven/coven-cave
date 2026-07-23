@@ -3,7 +3,7 @@
 /**
  * CodeView — the dedicated Code surface (cave-k0ua): a Codex-style
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
- * owner's request; gated by caveCodeSurface() (NEXT_PUBLIC_CAVE_CODE_SURFACE).
+ * owner's request; default-on since phase 2 (cave-m6ys).
  *
  * Phase 3+ (this shape): top-level Sessions/GitHub tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
@@ -11,7 +11,8 @@
  * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
  * project + familiar + optional fresh worktree. The inspector and mobile
  * layout land in follow-up PRs. GitHub mounts whole under the GitHub tab
- * (its sidebar row hides when the flag is on).
+ * (the standalone GitHub surface and its sidebar row were absorbed; the
+ * "github" workspace mode is now a tab alias landing here).
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +39,9 @@ const LazyGitHubView = dynamic(
 
 export type CodeViewProps = {
   sessions: SessionRow[];
+  /** Landing tab override — the "github" mode alias mounts CodeView on its
+   *  GitHub tab (deep-link continuity for the absorbed standalone surface). */
+  initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
   githubTarget?: GitHubItemTarget | null;
@@ -46,6 +50,7 @@ export type CodeViewProps = {
 
 export function CodeView({
   sessions,
+  initialTopTab,
   onJumpToSession,
   onFocusCard,
   githubTarget,
@@ -71,7 +76,7 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    githubTarget ? "github" : deepLink?.topTab ?? "sessions",
+    githubTarget ? "github" : deepLink?.topTab ?? initialTopTab ?? "sessions",
   );
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to

@@ -292,8 +292,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
-  "GitHub is visible by default",
+  /\{ id: "code", label: "Code", iconName: "ph:code"/,
+  "Code is visible by default (GitHub lives on its GitHub tab, cave-m6ys)",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls
