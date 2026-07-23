@@ -285,7 +285,7 @@
 }
 
 .settings-tool-action--primary:hover {
-  background: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
+  background: var(--accent-presence-hover);
   border-color: color-mix(in oklch, var(--accent-presence) 82%, white 18%);
   box-shadow:
     0 0 0 1px color-mix(in oklch, var(--accent-presence) 32%, transparent) inset,

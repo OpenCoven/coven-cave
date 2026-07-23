@@ -7,6 +7,7 @@ import {
   parseThemeColor,
   flattenOnto,
   contrastRatio,
+  rgbToOklab,
   type TokenMap,
   type Rgba,
 } from "./theme-contrast.ts";
@@ -74,6 +75,9 @@ const PAIRS: Pair[] = [
   { fg: "--accent-foreground", bg: "--accent", min: 4.5 },
   { fg: "--primary-foreground", bg: "--primary", min: 4.5 },
   { fg: "--accent-presence-foreground", bg: "--accent-presence", min: 4.5 },
+  // cave-c7hy: the label must stay AA while the fill is in its hover state
+  // (.ui-btn--primary:hover et al. use --accent-presence-hover).
+  { fg: "--accent-presence-foreground", bg: "--accent-presence-hover", min: 4.5 },
   { fg: "--destructive-foreground", bg: "--destructive", min: 4.5 },
   { fg: "--brand-foreground", bg: "--brand", min: 4.5 },
   { fg: "--accent-presence", bg: "--bg-base", min: 3 },
@@ -131,6 +135,32 @@ for (const mode of ["dark", "light"] as const) {
 }
 
 console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} themes × 2 modes, 0 failures`);
+
+// ── hover feedback stays visible (cave-c7hy) ────────────────────────────────
+// The AA pair above keeps hover readable; this keeps it *noticeable*. A theme
+// override that resolved hover to (nearly) the rest fill would pass contrast
+// while silently killing the hover affordance. Direction-aware 12% mixes give
+// a worst-case OKLab ΔL of ~0.027 across the premade palettes; hold 0.02.
+{
+  const shiftFailures: string[] = [];
+  for (const id of THEME_IDS) {
+    for (const mode of ["dark", "light"] as const) {
+      const tokens = themeTokens(css, id, mode);
+      const rest = surface(tokens, "--accent-presence");
+      const hover = surface(tokens, "--accent-presence-hover");
+      assert.ok(rest && hover, `${id}/${mode}: accent rest+hover fills must resolve`);
+      const delta = Math.abs(rgbToOklab(rest!).L - rgbToOklab(hover!).L);
+      if (delta < 0.02) {
+        shiftFailures.push(`${id} ${mode}: hover ΔL=${delta.toFixed(3)} (needs ≥0.02)`);
+      }
+    }
+  }
+  assert.deepEqual(
+    shiftFailures,
+    [],
+    `hover states must shift visibly from rest:\n${shiftFailures.join("\n")}`,
+  );
+}
 
 // ── fixed dark code chrome (cave-md.css, CHAT-D13-01/02) ────────────────────
 // Code blocks and system turns keep a fixed dark-terminal surface in BOTH
