@@ -22,6 +22,7 @@ import {
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import { SidebarFooter } from "@/components/sidebar-footer";
+import { caveCodeSurface } from "@/lib/feature-flags";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -81,7 +82,7 @@ function badgeText(n?: number): string | undefined {
   return n > 99 ? "99+" : String(n);
 }
 
-const FOLDER_MODES: Array<{
+type FolderModeRow = {
   id: FolderMode;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
@@ -99,7 +100,9 @@ const FOLDER_MODES: Array<{
    *  surfaces you summon on demand rather than navigate to daily — the Browser
    *  opens itself when a link/URL is clicked, so it needn't sit in the nav. */
   navHidden?: boolean;
-}> = [
+};
+
+const FOLDER_MODES: Array<FolderModeRow> = [
   { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
@@ -128,7 +131,16 @@ const FOLDER_MODES: Array<{
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
+  //
+  // Code ⇄ GitHub row swap (cave-k0ua): behind caveCodeSurface(), the Codex-
+  // style Code surface takes over this quiet slot and GitHub becomes a tab
+  // inside it (the row keeps carrying the assigned-work badge). Flag off keeps
+  // the standalone GitHub row exactly as before. A conditional spread keeps
+  // FOLDER_MODES one literal, so the palette, mobile tabs, and the
+  // canonical-name pins all derive from whichever vocabulary is active.
+  ...(caveCodeSurface()
+    ? [{ id: "code", label: "Code", iconName: "ph:code", description: "Multi-session coding — diffs, files, branches, worktrees, and GitHub", badge: (p) => badgeText(p.githubAssignedCount), quiet: true } satisfies FolderModeRow]
+    : [{ id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true } satisfies FolderModeRow]),
 ];
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces

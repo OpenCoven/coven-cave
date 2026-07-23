@@ -73,6 +73,7 @@ import {
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
   GitHubView,
+  CodeView,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -86,6 +87,7 @@ import {
   ShortcutsSheet,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { caveCodeSurface } from "@/lib/feature-flags";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
@@ -216,6 +218,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   inbox: "Rituals",
   browser: "Browser",
   github: "GitHub",
+  code: "Code",
   roles: "Roles",
   marketplace: "Marketplace",
   flow: "Flow",
@@ -362,6 +365,15 @@ export function Workspace() {
       // the single choke point — so ?mode=flow deep links, cave:navigate-mode,
       // and last-mode restore all land on Schedules.
       setModeRaw("inbox");
+      return;
+    }
+    if (next === "code" && !caveCodeSurface()) {
+      // The Code surface is flag-gated (cave-k0ua). While off, "code" is a
+      // valid mode string (deep links, persisted last-surface) but must not
+      // render — land on Chat, the retirement-era fallback. The
+      // cave:navigate-mode handler upgrades this to "newest repo session"
+      // before reaching here.
+      setModeRaw("chat");
       return;
     }
     setModeRaw(next);
@@ -1767,8 +1779,10 @@ export function Workspace() {
     const onNavigate = (e: Event) => {
       const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
       if (!targetMode) return;
-      // "code" was retired — redirect to the most-recent repo session in chat.
-      if (targetMode === "code") {
+      // Legacy fallback while the Code surface flag is off: redirect to the
+      // most-recent repo session in chat (the retirement-era behavior). With
+      // the flag on, "code" falls through to setMode and lands on the surface.
+      if (targetMode === "code" && !caveCodeSurface()) {
         const repoSession = [...sessionsRef.current]
           .filter((s) => s.project_root)
           .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at))[0];
@@ -2846,6 +2860,14 @@ export function Workspace() {
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         initialTarget={githubTarget}
+        onTasksRefresh={() => void loadGitHubTasks(true)}
+      />
+    ) : mode === "code" ? (
+      <CodeView
+        sessions={sessions}
+        onJumpToSession={openFamiliarSession}
+        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        githubTarget={githubTarget}
         onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (

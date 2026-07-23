@@ -18,6 +18,7 @@ export type CanonicalWorkspaceMode =
   | "inbox"
   | "browser"
   | "github"
+  | "code"
   | "marketplace"
   | "submissions"
   | "grimoire"
@@ -42,6 +43,10 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "inbox",
   "browser",
   "github",
+  // Code — the Codex-style multi-session coding surface (cave-k0ua). Reverses
+  // the earlier Code-mode retirement: gated by caveCodeSurface(); while the
+  // flag is off, setMode redirects "code" to the legacy chat fallback.
+  "code",
   "marketplace",
   "submissions",
   "grimoire",
