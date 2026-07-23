@@ -84,7 +84,7 @@
 .cave-composer-queue {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1);
   padding: 0 var(--space-3) var(--space-2);
 }
 
@@ -111,8 +111,8 @@
 
 .cave-composer-queue__steer {
   min-width: 0;
-  gap: 5px;
-  padding: 4px 4px 4px 8px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
 }
 
 .cave-composer-queue__text {
@@ -127,7 +127,7 @@
 }
 
 .cave-composer-queue__remove {
-  padding: 4px 7px 4px 3px;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
 }
 
 .cave-composer-queue__steer:hover,
