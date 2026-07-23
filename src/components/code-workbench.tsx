@@ -18,6 +18,8 @@
  *   - PR → CodeSessionPrPanel (stage pipeline, checks, review threads,
  *     approve/merge via /api/github/*), dynamic() alongside its fetch hooks
  *
+ * Right of the tabs (toggleable, md+ only): the inspector
+ * (code-inspector.tsx) — session env, branch switcher, worktree creation.
  * Below the tabs (except Terminal, which owns its input): the follow-up
  * composer (code-composer.tsx) — sends to THIS session's agent.
  */
@@ -50,6 +52,10 @@ const LazyPrTab = dynamic(
   () => import("@/components/code-session-pr-panel").then((m) => m.CodeSessionPrPanel),
   { ssr: false },
 );
+const LazyInspector = dynamic(
+  () => import("@/components/code-inspector").then((m) => m.CodeInspector),
+  { ssr: false },
+);
 
 const TAB_LABELS: Array<{ id: CodeWorkbenchTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
   { id: "diff", label: "Diff", icon: "ph:git-diff" },
@@ -62,13 +68,19 @@ export function CodeWorkbench({
   row,
   initialTab,
   onJumpToSession,
+  onRefresh,
 }: {
   row: SessionRow;
   /** Deep-linked workbench tab (?wtab=). */
   initialTab?: CodeWorkbenchTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
+  /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
+  onRefresh?: () => void;
 }) {
   const [tab, setTab] = useState<CodeWorkbenchTab>(initialTab ?? "diff");
+  // Inspector (branches/worktrees/env) is an opt-in right column; md+ only —
+  // the narrow-screen treatment lands with the mobile layout pass.
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   // Terminal keepalive: once visited, keep the pty mounted (hidden) so the
   // shell and scrollback survive tab switches within the session.
   const [terminalOpened, setTerminalOpened] = useState(false);
@@ -116,9 +128,25 @@ export function CodeWorkbench({
               <span className="shrink-0">Updated {relativeTime(row.updated_at)}</span>
             </div>
           </div>
-          <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
-            Open in Chat
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              aria-pressed={inspectorOpen}
+              aria-label="Toggle inspector"
+              title="Inspector — branches, worktrees, session env"
+              onClick={() => setInspectorOpen((v) => !v)}
+              className={`focus-ring hidden items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] md:inline-flex ${
+                inspectorOpen
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:sliders-bold" width={12} height={12} />
+            </button>
+            <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
+              Open in Chat
+            </Button>
+          </div>
         </div>
         <div role="tablist" aria-label="Session workbench" className="mt-2 flex items-center gap-1">
           {TAB_LABELS.map((t) => (
@@ -140,21 +168,31 @@ export function CodeWorkbench({
           ))}
         </div>
       </div>
-      <div className="min-h-0 flex-1">
-        {tab === "diff" ? (
-          // Keyed by work root: the panel's file/diff/checkpoint state is
-          // per-repo, and switching sessions must never show stale rows.
-          <SessionChangesInner key={workRoot} projectRoot={workRoot} running={running} />
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1">
+          {tab === "diff" ? (
+            // Keyed by work root: the panel's file/diff/checkpoint state is
+            // per-repo, and switching sessions must never show stale rows.
+            <SessionChangesInner key={workRoot} projectRoot={workRoot} running={running} />
+          ) : null}
+          {tab === "files" ? (
+            <LazyFilesTab key={workRoot} projectRoot={workRoot} familiarId={row.familiarId} />
+          ) : null}
+          {terminalOpened ? (
+            <div className={tab === "terminal" ? "h-full min-h-0" : "hidden"}>
+              <LazyTerminalTab sessionId={row.id} projectRoot={workRoot} active={tab === "terminal"} />
+            </div>
+          ) : null}
+          {tab === "pr" ? <LazyPrTab key={row.id} row={row} /> : null}
+        </div>
+        {inspectorOpen ? (
+          <aside
+            aria-label="Session inspector"
+            className="hidden w-72 shrink-0 border-l border-[var(--border-hairline)] md:block"
+          >
+            <LazyInspector key={workRoot} row={row} onChanged={onRefresh} />
+          </aside>
         ) : null}
-        {tab === "files" ? (
-          <LazyFilesTab key={workRoot} projectRoot={workRoot} familiarId={row.familiarId} />
-        ) : null}
-        {terminalOpened ? (
-          <div className={tab === "terminal" ? "h-full min-h-0" : "hidden"}>
-            <LazyTerminalTab sessionId={row.id} projectRoot={workRoot} active={tab === "terminal"} />
-          </div>
-        ) : null}
-        {tab === "pr" ? <LazyPrTab key={row.id} row={row} /> : null}
       </div>
       {tab !== "terminal" ? <CodeComposer row={row} onJumpToSession={onJumpToSession} /> : null}
     </div>
