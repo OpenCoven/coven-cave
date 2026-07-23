@@ -91,7 +91,7 @@ function PatSetupModal({
   hasPat = false,
   canRemoveStoredPat = false,
 }: {
-  onSaved: (login: string, hasPat: boolean) => void;
+  onSaved: () => void;
   onClose: () => void;
   username: string | null;
   /** A GitHub credential is configured, including an external launcher token. */
@@ -148,7 +148,7 @@ function PatSetupModal({
         return;
       }
       invalidateSurfaceResources("github:pat", "github:activity");
-      onSaved(data.login ?? trimmedUser, !!trimmedPat);
+      onSaved();
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -276,7 +276,7 @@ function PatSetupModal({
                         return;
                       }
                       invalidateSurfaceResources("github:pat", "github:activity");
-                      onSaved(usernameInput.trim() || username || "", false);
+                      onSaved();
                     } catch {
                       setError("Network error — please try again.");
                     } finally {
@@ -2649,9 +2649,12 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           username={patStatus?.login ?? null}
           hasPat={patStatus?.hasPat ?? false}
           canRemoveStoredPat={patStatus?.canRemoveStoredPat ?? false}
-          onSaved={(login, hasPat) => {
+          onSaved={() => {
             invalidateSurfaceResources("github:pat", "github:activity");
-            setPatStatus({ hasPat, login, canRemoveStoredPat: hasPat });
+            // A stored Cave PAT can coexist with a launcher-provided token.
+            // Re-read the server status after either save or removal instead of
+            // assuming the local mutation describes the remaining credential.
+            void fetchPatStatus();
             setShowPatModal(false);
             refreshActivity();
           }}
