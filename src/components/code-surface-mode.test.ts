@@ -182,6 +182,59 @@ assert.match(
   "merge requires a second confirming click — no one-click merges",
 );
 
+// ── Composer + new-session flow ──────────────────────────────────────────────
+
+const composer = await readFile(new URL("./code-composer.tsx", import.meta.url), "utf8");
+const newSession = await readFile(new URL("./code-new-session.tsx", import.meta.url), "utf8");
+const rail = await readFile(new URL("./code-session-rail.tsx", import.meta.url), "utf8");
+
+assert.match(
+  composer,
+  /streamFamiliarText\(\{\s*familiarId: row\.familiarId,\s*sessionId: row\.id,/,
+  "the composer RESUMES the selected session (sessionId rides) — never forks a new thread",
+);
+assert.match(
+  composer,
+  /projectRoot: codeSessionWorkRoot\(row\),/,
+  "composer turns run in the session's work root (worktree over shared checkout, cave-9q24)",
+);
+assert.match(
+  composer,
+  /"\/api\/chat\/stop"[\s\S]*?runId: phase\.runId, sessionId: row\.id/,
+  "Stop cancels via /api/chat/stop with the send's runId before dropping the stream",
+);
+assert.match(
+  newSession,
+  /action: "create-worktree", branch: branch\.trim\(\)/,
+  "fresh-worktree option provisions through the existing /api/changes action",
+);
+const kickoff = newSession.match(/void streamFamiliarText\(\{[\s\S]*?\}\)\.then/)?.[0] ?? "";
+assert.ok(kickoff.length > 0, "the new-session kickoff send is present");
+assert.ok(
+  !kickoff.includes("sessionId:"),
+  "the kickoff send carries NO sessionId — a fresh thread, saved like any chat",
+);
+assert.match(
+  newSession,
+  /onSession: \(sessionId\) => \{/,
+  "the rail learns the new session id the moment the bridge announces it",
+);
+assert.match(
+  rail,
+  /onNewSession\?: \(\) => void;/,
+  "the rail exposes the + New session entry point",
+);
+assert.match(
+  codeView,
+  /pendingNewIdRef\.current === selectedId\) return;/,
+  "a just-created session's selection survives until /api/sessions/list catches up",
+);
+assert.match(
+  workbench,
+  /\{tab !== "terminal" \? <CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/> : null\}/,
+  "the composer rides under every tab except Terminal (which owns its input)",
+);
+
 // ── Chat stays untouched this phase ──────────────────────────────────────────
 
 // Phase 1 builds the surface *behind the flag* without slimming Chat: the code

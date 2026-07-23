@@ -17,6 +17,9 @@
  *     xterm; stays mounted once opened so scrollback survives tab switches
  *   - PR → CodeSessionPrPanel (stage pipeline, checks, review threads,
  *     approve/merge via /api/github/*), dynamic() alongside its fetch hooks
+ *
+ * Below the tabs (except Terminal, which owns its input): the follow-up
+ * composer (code-composer.tsx) — sends to THIS session's agent.
  */
 
 import React, { useEffect, useState } from "react";
@@ -25,6 +28,7 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/relative-time";
 import { SessionChangesInner } from "@/components/session-changes-panel";
+import { CodeComposer } from "@/components/code-composer";
 import {
   codeSessionActivity,
   codeSessionBranch,
@@ -152,6 +156,7 @@ export function CodeWorkbench({
         ) : null}
         {tab === "pr" ? <LazyPrTab key={row.id} row={row} /> : null}
       </div>
+      {tab !== "terminal" ? <CodeComposer row={row} onJumpToSession={onJumpToSession} /> : null}
     </div>
   );
 }

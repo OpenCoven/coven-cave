@@ -51,21 +51,37 @@ export type CodeSessionRailProps = {
   sessions: SessionRow[];
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
+  onNewSession?: () => void;
 };
 
-export function CodeSessionRail({ sessions, selectedId, onSelect }: CodeSessionRailProps) {
+export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }: CodeSessionRailProps) {
   const groups = groupCodeRailSessions(sessions);
+  const newButton = onNewSession ? (
+    <div className="px-2 pb-1">
+      <button
+        type="button"
+        className="focus-ring flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        onClick={onNewSession}
+      >
+        <Icon name="ph:plus" width={12} height={12} />
+        New session
+      </button>
+    </div>
+  ) : null;
   if (groups.length === 0) {
     return (
-      <div className="px-3 py-6 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-        No coding sessions yet. Start one from Chat — it will appear here with
-        its branch, diff, and PR context.
+      <div className="flex h-full flex-col py-2">
+        {newButton}
+        <div className="px-3 py-4 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          No coding sessions yet. Start one here — or from Chat — and it will
+          appear with its branch, diff, and PR context.
+        </div>
       </div>
     );
   }
   return (
     <nav aria-label="Coding sessions" className="flex h-full min-h-0 flex-col overflow-y-auto py-2">
-      {groups.map((group) => (
+      {newButton}      {groups.map((group) => (
         <section key={group.root || "(unknown)"} className="mb-2">
           <div
             className="truncate px-3 py-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
