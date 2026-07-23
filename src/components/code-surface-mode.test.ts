@@ -138,6 +138,50 @@ assert.match(
   "Files tab reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
 );
 
+// ── PR tab (stage pipeline + checks + review + merge) ────────────────────────
+
+const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
+
+assert.match(
+  workbench,
+  /import\("@\/components\/code-session-pr-panel"\)/,
+  "PR tab is dynamic() — its fetch stack stays out of the surface's initial chunk",
+);
+assert.match(
+  workbench,
+  /\{tab === "pr" \? <LazyPrTab key=\{row\.id\} row=\{row\} \/> : null\}/,
+  "PR tab mounts keyed by session id so switching sessions never shows stale PR state",
+);
+assert.match(
+  prPanel,
+  /resolveStageForBranch\(\{ branch, open: state\.open, merged: state\.merged, beads: state\.beads \}\)/,
+  "the stage strip uses the SAME resolveStageForBranch as the work queue + chat header",
+);
+assert.match(
+  prPanel,
+  /const branch = codeSessionBranch\(row\);/,
+  "stage branch comes from the session's ATTRIBUTED branch (cave-9q24), never the checkout's current branch",
+);
+for (const call of [
+  '/api/github/checks?repo=',
+  '/api/github/comments?repo=',
+  '"/api/github/resolve-thread"',
+  '"/api/github/review"',
+  '"/api/github/merge"',
+] as const) {
+  assert.ok(prPanel.includes(call), `PR panel reuses the existing GitHub API surface (${call})`);
+}
+assert.match(
+  prPanel,
+  /method: "squash"/,
+  "merge is squash-only — the repo's protected-main convention",
+);
+assert.match(
+  prPanel,
+  /if \(!confirmMerge\) \{\s*setConfirmMerge\(true\);\s*return;\s*\}/,
+  "merge requires a second confirming click — no one-click merges",
+);
+
 // ── Chat stays untouched this phase ──────────────────────────────────────────
 
 // Phase 1 builds the surface *behind the flag* without slimming Chat: the code
