@@ -94,3 +94,22 @@ test("plugin rows mirror the capabilities idiom: disabled dims + marker, mono co
   assert.match(src, /familiar-mcp__row-cmd" title=\{cmd\}/, "command line truncates with a tooltip");
   assert.match(src, /No plugins or MCP servers yet — connect a well-known server below, or bring your own\./, "design empty copy verbatim");
 });
+
+test("health check is real and on-demand: GET /api/mcp/health, verdict pills, no invented states", () => {
+  // The doctor runs only when the user asks — never on mount — and the fetch
+  // is uncached so a re-check reflects the machine as it is now.
+  assert.match(src, /fetch\("\/api\/mcp\/health", \{ cache: "no-store" \}\)/, "health comes from the doctor route, uncached");
+  assert.match(src, /\{checking \? "Checking…" : "Check servers"\}/, "busy label while the doctor runs");
+  assert.match(src, /disabled=\{checking \|\| !catalog \|\| catalog\.length === 0\}/, "no dead check with an empty registry");
+  // Verdicts render exactly what the route returned: status class + detail
+  // tooltip with unmet requirement *names* (never values).
+  assert.match(src, /familiar-mcp__health--\$\{h\.status\}/, "pill tone rides the doctor's verdict");
+  assert.match(src, /requires \$\{h\.requires\.join\(", "\)\}/, "unmet requirement names surface in the tooltip");
+  assert.match(src, /health\?\.\[server\.id\] \? <HealthPill h=\{health\[server\.id\]\} \/> : null/, "no pill until a check has run");
+  assert.match(src, /Health check failed — the cave server did not respond\./, "failure is stated, not swallowed");
+  assert.match(src, /Health check returned no servers — is the marketplace registry present\?/, "empty result is stated too");
+  // Tones ride the semantic tokens — ready/needs-config/unavailable.
+  assert.match(css, /\.familiar-mcp__health--ready \{[^}]*var\(--color-success\)/, "ready rides the success token");
+  assert.match(css, /\.familiar-mcp__health--needs-config \{[^}]*var\(--color-warning\)/, "needs-config rides the warning token");
+  assert.match(css, /\.familiar-mcp__health--unavailable \{[^}]*var\(--color-danger\)/, "unavailable rides the danger token");
+});
