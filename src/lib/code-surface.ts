@@ -109,6 +109,16 @@ export function codeSessionDiffstat(row: SessionRow): string | null {
   return `+${diff.additions} \u2212${diff.deletions}`;
 }
 
+/**
+ * The root this session's work actually happens in: its worktree when it has
+ * one, else the project root. The workbench (Diff/Files/Terminal) scopes here
+ * — pointing them at a shared checkout would show another session's churn
+ * (cave-9q24).
+ */
+export function codeSessionWorkRoot(row: SessionRow): string {
+  return row.git?.worktreeRoot || row.project_root;
+}
+
 export type CodeSessionActivity = "running" | "error" | "idle";
 
 export function codeSessionActivity(row: SessionRow): CodeSessionActivity {

@@ -4,6 +4,7 @@ import {
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
+  codeSessionWorkRoot,
   groupCodeRailSessions,
   isCodeRailSession,
   isCodeTopTab,
@@ -101,6 +102,19 @@ test("activity maps running/exit-code/idle", () => {
   assert.equal(codeSessionActivity(row({ status: "exited", exit_code: 1 })), "error");
   assert.equal(codeSessionActivity(row({ status: "exited", exit_code: 0 })), "idle");
   assert.equal(codeSessionActivity(row({})), "idle");
+});
+
+test("work root prefers the session's worktree over the shared project root", () => {
+  assert.equal(codeSessionWorkRoot(row({})), "/repo/a");
+  assert.equal(
+    codeSessionWorkRoot(row({ git: { worktreeRoot: "/repo/a/.worktrees/feat", isWorktree: true, branch: "feat" } })),
+    "/repo/a/.worktrees/feat",
+  );
+  assert.equal(
+    codeSessionWorkRoot(row({ git: { worktreeRoot: null, isWorktree: false, branch: "main" } })),
+    "/repo/a",
+    "a null worktreeRoot falls back to the project root",
+  );
 });
 
 test("deep-link parsing falls back to defaults on unknown values", () => {
