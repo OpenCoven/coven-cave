@@ -132,6 +132,19 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
 
+  // A familiar can be reconfigured from one runtime to another without the
+  // card being reassigned. Model ids are runtime-specific, so only forward an
+  // override that was chosen for this exact canonical harness. Legacy or stale
+  // overrides are cleared before launch and the familiar's current default is
+  // used instead.
+  const taskModelOverride =
+    card.modelOverride && card.modelOverrideHarness === binding.harness
+      ? card.modelOverride
+      : null;
+  if (card.modelOverride && !taskModelOverride) {
+    await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
+  }
+
   // ── Intelligent worktree isolation ────────────────────────────────────────
   // If another card already has a live session for a *different* issue in the
   // same GitHub repo, this issue gets its own dedicated git worktree so the
@@ -176,7 +189,7 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      model: card.modelOverride ?? binding.model,
+      model: taskModelOverride ?? binding.model,
       prompt: buildInitialTaskChatPrompt(card),
     },
     timeoutMs: 8000,

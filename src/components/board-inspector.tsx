@@ -1141,6 +1141,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   // queue also preserves intent when an input blur and a familiar change fire
   // back-to-back: the familiar's clearing patch must win over the old custom id.
   const pendingModelSaveRef = useRef<Promise<boolean> | null>(null);
+  const taskModelPatch = (modelOverride: string | null): CardPatch => ({
+    modelOverride,
+    modelOverrideHarness: modelOverride ? modelHarness || null : null,
+  });
   const persistTaskModelPatch = (patch: CardPatch) => {
     const previous = pendingModelSaveRef.current ?? Promise.resolve(true);
     const pending = previous
@@ -1287,7 +1291,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   value={card.familiarId ?? ""}
                   onChange={(next) => {
                     setModelCustomMode(false);
-                    persistTaskModelPatch({ familiarId: next || null, modelOverride: null });
+                    persistTaskModelPatch({ familiarId: next || null, ...taskModelPatch(null) });
                   }}
                   options={[
                     { value: "", label: "Unassigned" },
@@ -1316,7 +1320,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                         setCustomModelDraft("");
                         return;
                       }
-                      persistTaskModelPatch({ modelOverride: next || null });
+                      persistTaskModelPatch(taskModelPatch(next || null));
                     }}
                     options={taskModelOptions}
                     disabled={!currentFamiliar || Boolean(card.sessionId)}
@@ -1332,7 +1336,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   onChange={(event) => setCustomModelDraft(event.target.value)}
                   onBlur={() => {
                     setModelCustomMode(false);
-                    persistTaskModelPatch({ modelOverride: customModelDraft || null });
+                    persistTaskModelPatch(taskModelPatch(customModelDraft || null));
                   }}
                   placeholder={currentFamiliar ? "provider/model (optional)" : "Assign a familiar first"}
                   disabled={!currentFamiliar || Boolean(card.sessionId)}

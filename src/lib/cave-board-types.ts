@@ -73,6 +73,8 @@ export type Card = {
   familiarId: string | null;
   /** A model selected for this task's next work session. Null inherits the familiar binding. */
   modelOverride?: string | null;
+  /** Canonical harness that supplied modelOverride. An override only applies to this runtime. */
+  modelOverrideHarness?: string | null;
   sessionId: string | null;
   cwd: string | null;
   /** Stable project ID from cave-projects.json. Preferred over cwd. */

@@ -31,6 +31,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -132,14 +133,20 @@ function normalizeModelOverride(value: unknown): string | null {
   return model && model.length <= MAX_MODEL_OVERRIDE_CHARS ? model : null;
 }
 
+function normalizeModelOverrideHarness(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const harness = value.trim();
+  return harness && harness.length <= 128 ? canonicalHarnessId(harness) : null;
+}
+
 type LegacyCard = Omit<
   Card,
-  "cwd" | "projectId" | "modelOverride" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+  "cwd" | "projectId" | "modelOverride" | "modelOverrideHarness" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "projectId" | "modelOverride" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+      "cwd" | "projectId" | "modelOverride" | "modelOverrideHarness" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
     >
   >;
 
@@ -165,6 +172,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     cwd: normalizeCwd(c.cwd),
     projectId: c.projectId ?? null,
     modelOverride: normalizeModelOverride(c.modelOverride),
+    modelOverrideHarness: normalizeModelOverrideHarness(c.modelOverrideHarness),
     links,
     github,
     asana,
@@ -258,6 +266,7 @@ export type NewCardInput = {
   priority?: CardPriority;
   familiarId?: string | null;
   modelOverride?: string | null;
+  modelOverrideHarness?: string | null;
   sessionId?: string | null;
   cwd?: string | null;
   projectId?: string | null;
@@ -298,6 +307,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     priority: input.priority ?? "medium",
     familiarId: input.familiarId ?? null,
     modelOverride: normalizeModelOverride(input.modelOverride),
+    modelOverrideHarness: normalizeModelOverrideHarness(input.modelOverrideHarness),
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
     projectId: input.projectId ?? null,
@@ -372,16 +382,23 @@ export async function updateCard(
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
-    // A task model belongs to its familiar's runtime. All assignment paths
-    // (table, bulk toolbar, and API clients) converge here, so clear an
-    // inherited override whenever the familiar actually changes. An explicit
-    // override in the same patch is intentional and may be supplied by an
-    // integration that knows the new familiar accepts it.
+    // A task model belongs to a familiar runtime. Keep its source harness with
+    // the override so launch can reject an id left behind when the familiar's
+    // harness changes without reassigning the card.
     modelOverride: "modelOverride" in patch
       ? normalizeModelOverride(patch.modelOverride)
       : "familiarId" in patch && patch.familiarId !== current.familiarId
         ? null
         : current.modelOverride ?? null,
+    modelOverrideHarness: "modelOverride" in patch
+      ? normalizeModelOverride(patch.modelOverride)
+        ? normalizeModelOverrideHarness(patch.modelOverrideHarness)
+        : null
+      : "familiarId" in patch && patch.familiarId !== current.familiarId
+        ? null
+        : "modelOverrideHarness" in patch
+          ? normalizeModelOverrideHarness(patch.modelOverrideHarness)
+          : current.modelOverrideHarness ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
     endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,
