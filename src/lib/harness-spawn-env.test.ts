@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { restoreGrantedVaultGitHubTokenEnv, subtractScopedVaultKeys } from "./harness-spawn-env.ts";
+import { restoreAllowedGitHubTokenEnv, restoreGrantedVaultGitHubTokenEnv, subtractScopedVaultKeys } from "./harness-spawn-env.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, normalizeVaultScope, saveVaultMap } from "./vault.ts";
 import { setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
@@ -134,8 +134,8 @@ assert.match(
 );
 assert.match(
   helperSource,
-  /for \(const key of GITHUB_TOKEN_ENV_KEYS\)[\s\S]*if \(!allowed\.has\(key\) \|\| managedKeys\.has\(key\)\) continue;[\s\S]*process\.env\[key\]\?\.trim\(\)/,
-  "the shared opt-in restores only accepted external GitHub token aliases",
+  /for \(const key of GITHUB_HARNESS_TOKEN_ENV_KEYS\)[\s\S]*!allowed\.has\(key\)[\s\S]*\(key === "GITHUB_PAT" && hasCaveManagedGitHubPat\(managedKeys\)\)[\s\S]*process\.env\[key\]\?\.trim\(\)/,
+  "the shared opt-in restores accepted launcher aliases while retaining Cave-owned PATs",
 );
 assert.match(
   helperSource,
@@ -150,19 +150,43 @@ const tokenOriginal = {
   COVEN_VAULT_FILE: process.env.COVEN_VAULT_FILE,
   COVEN_CAVE_LOCAL_VAULT_FILE: process.env.COVEN_CAVE_LOCAL_VAULT_FILE,
   COVEN_CAVE_LOCAL_VAULT_KEY_FILE: process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE,
+  COVEN_CAVE_ENV_FILE: process.env.COVEN_CAVE_ENV_FILE,
+  GITHUB_PAT: process.env.GITHUB_PAT,
   GH_TOKEN: process.env.GH_TOKEN,
 };
 process.env.COVEN_VAULT_FILE = join(tokenDir, "vault.yaml");
 process.env.COVEN_CAVE_LOCAL_VAULT_FILE = join(tokenDir, "local-vault.enc.json");
 process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = join(tokenDir, "local-vault.key");
+process.env.COVEN_CAVE_ENV_FILE = join(tokenDir, ".env.local");
+process.env.GITHUB_PAT = "launcher-pat";
 process.env.GH_TOKEN = "launcher-token";
 try {
-  saveVaultMap({ GH_TOKEN: { storage: "encrypted", scope: ["nova"] } });
+  assert.equal(
+    restoreAllowedGitHubTokenEnv({}, new Set(["GITHUB_PAT"]), new Set()).GITHUB_PAT,
+    "launcher-pat",
+    "an explicitly opted-in launcher GITHUB_PAT reaches every supported harness",
+  );
+
+  saveVaultMap({
+    GH_TOKEN: { storage: "encrypted", scope: ["nova"] },
+    GITHUB_PAT: { storage: "encrypted", scope: ["nova"] },
+  });
   setLocalEncryptedSecret("GH_TOKEN", "vault-token");
+  setLocalEncryptedSecret("GITHUB_PAT", "vault-pat");
   assert.equal(
     restoreGrantedVaultGitHubTokenEnv({}, loadVaultMap(true), "nova").GH_TOKEN,
     "vault-token",
     "a granted harness gets its Vault value rather than a same-named launcher token",
+  );
+  assert.equal(
+    restoreGrantedVaultGitHubTokenEnv({}, loadVaultMap(true), "nova").GITHUB_PAT,
+    "vault-pat",
+    "a granted harness receives a Cave-managed GitHub PAT without exposing it to other familiars",
+  );
+  assert.equal(
+    restoreAllowedGitHubTokenEnv({}, new Set(["GITHUB_PAT"]), new Set(Object.keys(loadVaultMap(true)))).GITHUB_PAT,
+    undefined,
+    "an opt-in cannot replace a Vault-managed GitHub PAT with the launcher's same-named value",
   );
 } finally {
   for (const [key, value] of Object.entries(tokenOriginal)) {

@@ -17,7 +17,9 @@
  */
 
 import { covenSpawnEnv } from "./coven-bin.ts";
-import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env.ts";
+import { readEnvLocalValue } from "./env-file.ts";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env.ts";
+import { hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, resolveVaultManagedSecret, type VaultMap } from "./vault.ts";
 
 /**
@@ -35,17 +37,32 @@ export function allowedHarnessEnvKeys(): Set<string> {
   );
 }
 
+/** Whether `GITHUB_PAT` is Cave-owned rather than a launcher-only variable. */
+function hasCaveManagedGitHubPat(managedKeys: Set<string>): boolean {
+  return (
+    managedKeys.has("GITHUB_PAT") ||
+    hasLocalEncryptedSecret("GITHUB_PAT") ||
+    !!readEnvLocalValue("GITHUB_PAT")
+  );
+}
+
 /** Restore only explicitly allowed launcher-provided GitHub token aliases. */
 export function restoreAllowedGitHubTokenEnv(
   env: NodeJS.ProcessEnv,
   allowed = allowedHarnessEnvKeys(),
   managedKeys = new Set(Object.keys(loadVaultMap(true))),
 ): NodeJS.ProcessEnv {
-  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+  for (const key of GITHUB_HARNESS_TOKEN_ENV_KEYS) {
     // An alias with a vault entry may have been cached in process.env by an
     // earlier request. An opt-in is for a launcher-provided credential, never
     // a way to bypass the vault's familiar scope.
-    if (!allowed.has(key) || managedKeys.has(key)) continue;
+    // GITHUB_PAT also has legacy Cave-owned stores outside the vault map, so
+    // do not mistake a cached local PAT for a launcher credential.
+    if (
+      !allowed.has(key) ||
+      managedKeys.has(key) ||
+      (key === "GITHUB_PAT" && hasCaveManagedGitHubPat(managedKeys))
+    ) continue;
     const value = process.env[key]?.trim();
     if (value) env[key] = value;
   }
@@ -58,7 +75,7 @@ export function restoreGrantedVaultGitHubTokenEnv(
   map: VaultMap,
   familiarId?: string | null,
 ): NodeJS.ProcessEnv {
-  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+  for (const key of GITHUB_HARNESS_TOKEN_ENV_KEYS) {
     const entry = map[key];
     if (!entry || !isVaultKeyGrantedTo(entry, familiarId)) continue;
     // covenSpawnEnv intentionally scrubs GitHub aliases. Resolve a granted

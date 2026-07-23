@@ -78,8 +78,8 @@ assert.match(
 
 assert.match(
   src,
-  /const grantedVaultTokenKeys = new Set(?:<string>)?\([\s\S]*GITHUB_TOKEN_ENV_KEYS\.filter\([\s\S]*isVaultKeyGrantedTo\(map\[key\]\)[\s\S]*!grantedVaultTokenKeys\.has\(key\)/,
-  "OpenClaw must retain a shared Vault-managed GitHub alias through its final secret scrub",
+  /const grantedVaultTokenKeys = new Set(?:<string>)?\([\s\S]*GITHUB_HARNESS_TOKEN_ENV_KEYS\.filter\([\s\S]*isVaultKeyGrantedTo\(map\[key\]\)[\s\S]*!grantedVaultTokenKeys\.has\(key\)/,
+  "OpenClaw must retain a shared Vault-managed GitHub credential through its final secret scrub",
 );
 
 console.log("openclaw-bin.test.ts: ok");

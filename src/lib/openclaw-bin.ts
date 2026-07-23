@@ -16,7 +16,7 @@ import {
   restoreAllowedGitHubTokenEnv,
   restoreGrantedVaultGitHubTokenEnv,
 } from "./harness-spawn-env";
-import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
 import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
@@ -162,7 +162,7 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const allowed = allowedOpenClawEnvKeys();
   const map = loadVaultMap(true);
   const grantedVaultTokenKeys = new Set<string>(
-    GITHUB_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
+    GITHUB_HARNESS_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
   );
 
   // Direct OpenClaw sessions have no familiar id, so they receive shared
@@ -170,8 +170,9 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   // aliases remain unavailable without a granted familiar. The shared
   // harness opt-in covers launcher credentials for any supported runtime,
   // while the OpenClaw-specific setting remains available for existing
-  // installations. GITHUB_PAT is deliberately not restored: it can be
-  // Cave-managed local storage rather than a launcher-provided credential.
+  // installations. Cave-managed GITHUB_PAT follows the same Vault scope
+  // policy; an unmanaged launcher GITHUB_PAT still requires an explicit
+  // opt-in and is never restored when Cave has local storage for that key.
   restoreGrantedVaultGitHubTokenEnv(env, map);
   restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
 
