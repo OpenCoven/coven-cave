@@ -60,6 +60,26 @@ try {
     "cleared color is removed from the record, not persisted as null",
   );
 
+  // repoUrl: same string-sets / undefined-keeps / null-clears contract as color.
+  const linked = await patchProject(created.id, { repoUrl: "https://github.com/OpenCoven/coven-cave" });
+  assert.equal(linked?.repoUrl, "https://github.com/OpenCoven/coven-cave", "string sets the GitHub link");
+  const untouchedKeepsRepo = await patchProject(created.id, { name: "New" });
+  assert.equal(untouchedKeepsRepo?.repoUrl, "https://github.com/OpenCoven/coven-cave", "untouched patch keeps the link");
+  const unlinked = await patchProject(created.id, { repoUrl: null });
+  assert.equal(unlinked?.repoUrl, undefined, "null unlinks the repository");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(unlinked ?? {}, "repoUrl"),
+    false,
+    "cleared repoUrl is removed from the record, not persisted as null",
+  );
+  const createdLinked = await createProject({
+    name: "Linked",
+    root: "/tmp/linked",
+    repoUrl: "https://github.com/OpenCoven/coven-docs",
+  });
+  assert.equal(createdLinked.repoUrl, "https://github.com/OpenCoven/coven-docs", "create persists a provided link");
+  assert.equal(await deleteProject(createdLinked.id), true);
+
   const slashHeavy = await createProject({
     name: "Slash heavy",
     root: `  C:\\tmp\\slash-heavy${"/".repeat(5000)}  `,

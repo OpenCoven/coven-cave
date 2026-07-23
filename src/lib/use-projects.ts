@@ -37,6 +37,8 @@ export type ProjectsState = {
   updateRoot: (id: string, root: string) => Promise<boolean>;
   /** Set an explicit tile tint, or pass null to restore the auto root-hash tint. */
   updateColor: (id: string, color: string | null) => Promise<boolean>;
+  /** Tie the project to a GitHub repository link, or pass null to unlink it. */
+  updateRepoUrl: (id: string, repoUrl: string | null) => Promise<boolean>;
   deleteProject: (id: string) => Promise<boolean>;
 };
 
@@ -211,6 +213,23 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     return false;
   }, []);
 
+  const updateRepoUrl = useCallback(async (id: string, repoUrl: string | null): Promise<boolean> => {
+    const res = await fetch(`/api/projects/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl }),
+    });
+    const data = await res.json();
+    if (data.ok && data.project) {
+      setProjects((prev) =>
+        sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
+      );
+      emitProjectRegistryMutation();
+      return true;
+    }
+    return false;
+  }, []);
+
   const deleteProject = useCallback(async (id: string): Promise<boolean> => {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -233,6 +252,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     renameProject,
     updateRoot,
     updateColor,
+    updateRepoUrl,
     deleteProject,
   };
 }

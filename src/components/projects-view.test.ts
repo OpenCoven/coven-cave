@@ -50,7 +50,7 @@ test("the toolbar carries picker, search, tally, and reset", () => {
 });
 
 test("rows cycle a direct grant against /api/project-grants", () => {
-  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
+  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload, createProject, updateRepoUrl \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
   assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
   assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
   assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
@@ -86,7 +86,32 @@ test("pills and states are token-driven for both themes", () => {
   assert.match(css, /\.projects-access-rule \{[^}]*background: var\(--border-hairline\)/, "section rules are hairlines");
 });
 
-test("empty projects offer Ask Salem", () => {
+test("empty projects offer New project and Ask Salem", () => {
+  assert.match(view, /Create one here, or register a folder from the chat composer\./, "empty state points at both creation paths");
   assert.match(view, /Ask Salem/, "projects empty state offers Ask Salem");
   assert.match(view, /cave:salem-open/, "Ask Salem opens the Salem rail");
+});
+
+test("the toolbar creates projects through the one shared add flow", () => {
+  assert.match(view, /import \{ useAddProjectFlow \} from "@\/components\/project-picker"/, "creation reuses the shared add-project flow (native dialog + web fallback + grant)");
+  assert.match(view, /const addFlow = useAddProjectFlow\(\{[\s\S]{0,200}familiarId: familiar\?\.id \?\? null/, "the new project is granted to the picked familiar");
+  assert.match(view, /createProject, updateRepoUrl \} = useProjects\(\)/, "creation + repo-link mutations come from useProjects");
+  assert.match(view, /onAdded: \(\) => \{[\s\S]{0,120}reload\(\);[\s\S]{0,120}void loadGrants\(\);/, "a successful add refreshes both the registry and the grants snapshot");
+  assert.match(view, /className="projects-access-new"[\s\S]{0,220}onClick=\{addFlow\.beginAddProject\}/, "the toolbar exposes the New project button");
+  assert.match(view, />\s*\{addFlow\.adding \? "Adding…" : "New project"\}\s*</, "the button reflects the in-flight add");
+  assert.match(view, /\{addFlow\.addError \? \([\s\S]{0,120}projects-access-error/, "add failures surface on the page");
+  assert.match(view, /\{addFlow\.addProjectModal\}/, "the web-fallback directory browser is mounted");
+});
+
+test("each row opens per-project settings with the GitHub repo link", () => {
+  assert.match(view, /import \{ ProjectSettingsModal \} from "@\/components\/project-settings-modal"/, "settings live in the shared modal component");
+  assert.match(view, /className="projects-access-rowwrap"/, "rows wrap the access button and the settings trigger");
+  assert.match(view, /className="projects-access-row-settings focus-ring"[\s\S]{0,120}onClick=\{\(\) => setSettingsProjectId\(project\.id\)\}/, "the gear opens that project's settings");
+  assert.match(view, /aria-label=\{`Project settings — \$\{project\.name\}`\}/, "the settings trigger is named per project");
+  assert.match(view, /\{project\.repoUrl \? \([\s\S]{0,160}ph:github-logo/, "repo-linked rows carry the GitHub indicator");
+  assert.match(view, /<ProjectSettingsModal[\s\S]{0,160}project=\{settingsProject\}[\s\S]{0,160}onSaveRepoUrl=\{saveRepoUrl\}/, "the modal is wired to the derived project + save handler");
+  assert.match(view, /const ok = await updateRepoUrl\(id, repoUrl\);/, "saves go through useProjects().updateRepoUrl");
+  assert.match(css, /\.projects-access-rowwrap \{/, "rowwrap layout is styled");
+  assert.match(css, /\.projects-access-row-settings \{/, "settings trigger is styled");
+  assert.match(css, /\.projects-access-row-repo \{/, "GitHub indicator is styled");
 });

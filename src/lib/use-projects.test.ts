@@ -84,8 +84,8 @@ assert.match(
 );
 assert.equal(
   (source.match(/emitProjectRegistryMutation\(\);/g) ?? []).length,
-  4,
-  "four successful non-delete mutations still notify every mounted projects hook scope with a generic refresh",
+  5,
+  "five successful non-delete mutations (create, rename, root, color, repoUrl) still notify every mounted projects hook scope with a generic refresh",
 );
 assert.match(
   source,

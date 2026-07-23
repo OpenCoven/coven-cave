@@ -154,6 +154,10 @@
   flex: 0 0 auto;
 }
 
+.projects-access-new {
+  flex: 0 0 auto;
+}
+
 /* ── Notes / errors ─────────────────────────────────────────────────── */
 
 .projects-access-supreme {
@@ -269,6 +273,41 @@
   gap: var(--space-1);
 }
 
+/* Access button + per-project settings trigger, side by side. */
+.projects-access-rowwrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.projects-access-rowwrap > .projects-access-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.projects-access-row-settings {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.projects-access-row-settings:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
+}
+
 .projects-access-row {
   width: 100%;
   display: flex;
@@ -329,6 +368,12 @@
 }
 
 .projects-access-row-group {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* GitHub-linked indicator inside the access row. */
+.projects-access-row-repo {
   flex: 0 0 auto;
   color: var(--text-muted);
 }

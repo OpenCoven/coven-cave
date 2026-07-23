@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
@@ -21,7 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
-  const patch: { name?: string; root?: string; color?: string | null } = {};
+  const patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null } = {};
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();
     if (trimmed.length === 0) {
@@ -60,6 +61,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     patch.color = trimmed;
   } else if (body.color === null) {
     patch.color = null; // clear — the tile falls back to the auto root-hash tint
+  }
+  if (typeof body.repoUrl === "string") {
+    const trimmed = body.repoUrl.trim();
+    if (trimmed.length === 0) {
+      // Clearing the field unlinks the repository — same as an explicit null.
+      patch.repoUrl = null;
+    } else {
+      const normalized = normalizeGitHubRepoUrl(trimmed);
+      if (!normalized) {
+        return NextResponse.json(
+          { ok: false, error: "repoUrl must be a GitHub repository link (owner/repo or https://github.com/owner/repo)" },
+          { status: 400 },
+        );
+      }
+      patch.repoUrl = normalized;
+    }
+  } else if (body.repoUrl === null) {
+    patch.repoUrl = null; // unlink the GitHub repository
   }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
