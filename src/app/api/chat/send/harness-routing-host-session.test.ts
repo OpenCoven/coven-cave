@@ -386,8 +386,8 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = body\.sessionId\s*\n?\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
-  "Resume targets the harness's latest session id, not the stable conversation id",
+  /const resumeTarget = body\.startNewConversation && !existingConversation\s*\? null\s*:\s*body\.sessionId\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  "A reserved Board conversation starts fresh once, then resumes with the harness's latest session id",
 );
 assert.match(
   chatRoute,
@@ -456,6 +456,18 @@ assert.match(
   chatRoute,
   /const chatProjectId = sshRuntime[\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
   "Local project-scoped chat must assert project access — with the familiar's own workspace exempt — before building the harness prompt",
+);
+
+assert.match(
+  chatRoute,
+  /taskCardForSession\(body\.sessionId\)[\s\S]*taskCard\.familiarId !== body\.familiarId[\s\S]*status: 404/,
+  "A reserved task conversation must remain bound to its server-owned familiar before its first transcript exists",
+);
+
+assert.match(
+  chatRoute,
+  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
 );
 
 assert.doesNotMatch(

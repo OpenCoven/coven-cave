@@ -6,6 +6,8 @@ const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "
 const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
 const chatSendRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const taskWorkCockpit = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   boardView,
@@ -104,6 +106,65 @@ assert.match(
 );
 assert.match(
   route,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,1400}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
+  "OpenClaw task cards reserve a bridge conversation before the daemon-only path",
+);
+assert.match(
+  route,
+  /if \(binding\.harness === "openclaw"\) \{[\s\S]{0,500}isSshRuntime\(binding\.runtime\)[\s\S]{0,500}return reserveNativeChatTask\(\);/,
+  "OpenClaw bridge handling must reject unsupported SSH bindings before reserving a local native Chat task",
+);
+assert.ok(
+  route.indexOf('if (binding.harness === "openclaw") {') < route.indexOf("const res = await callDaemon"),
+  "OpenClaw task cards must reserve the native Chat task before the daemon path",
+);
+assert.match(
+  route,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,700}worktree\s*\?\s*\{ cwd: sessionRoot \}/,
+  "OpenClaw task cards preserve Board worktree isolation before launching the bridge",
+);
+assert.match(
+  route,
+  /UNSUPPORTED_HARNESS_RE\.test\(daemonMsg\)[\s\S]{0,500}isTrustedChatHarness\(binding\.harness\)[\s\S]{0,100}reserveNativeChatTask\(\)/,
+  "Any trusted runtime rejected by the daemon falls back to its native Chat launch path",
+);
+assert.match(
+  boardView,
+  /started\.bridge === "native-chat"[\s\S]{0,300}setPendingBridgeStart/,
+  "Board keeps the first native Chat task prompt until its local conversation appears",
+);
+assert.match(
+  boardView,
+  /if \(isMobile && started\.bridge !== "native-chat"\)/,
+  "Mobile native Chat task launches stay in the cockpit until the bridge sends its first prompt",
+);
+assert.match(
+  taskWorkCockpit,
+  /initialPrompt && familiar[\s\S]{0,600}autoSendInitialPrompt/,
+  "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",
+);
+assert.match(
+  chatView,
+  /sessionId && !autoSendInitialPrompt/,
+  "ChatView only auto-sends into an existing session for the explicit task-bridge handoff",
+);
+assert.match(
+  chatView,
+  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
+  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+);
+assert.match(
+  taskWorkCockpit,
+  /autoSendInitialPrompt\s+startNewConversation/,
+  "A reserved Board conversation marks its first ChatView send as a fresh native session",
+);
+assert.match(
+  chatSendRoute,
+  /body\.startNewConversation && !existingConversation[\s\S]{0,160}\? null/,
+  "A reserved Board id must not be passed as a resume token to direct or registry runtimes",
+);
+assert.match(
+  route,
   /updateCard\(card\.id, \{\s*sessionId/,
   "Board chat endpoint should persist the relation on the board card",
 );
@@ -114,8 +175,8 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /taskContextForSession\(body\.sessionId/,
-  "Chat send should look up task context for task-linked sessions",
+  /taskCardForSession\(body\.sessionId\)[\s\S]*buildTaskContext\(taskCard\)/,
+  "Chat send should reuse the server-owned task card for task-linked prompt context",
 );
 assert.match(
   chatSendRoute,

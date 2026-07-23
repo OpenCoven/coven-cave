@@ -124,8 +124,9 @@ import {
   filterProjectsForFamiliar,
 } from "@/lib/project-permissions";
 import {
+  buildTaskContext,
   buildTaskAwarePrompt,
-  taskContextForSession,
+  taskCardForSession,
 } from "@/lib/task-chat-context";
 import {
   buildPromptWithFamiliarStartupContext,
@@ -186,6 +187,10 @@ type SendBody = {
    *  before the server has assigned/echoed a conversation id. */
   runId?: string;
   sessionId?: string;
+  /** A Board native-chat handoff reserves Cave's stable id before any harness
+   * session exists. Start its first turn fresh instead of treating that id as
+   * a harness resume token. */
+  startNewConversation?: boolean;
   projectRoot?: string;
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
@@ -808,6 +813,16 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // Native Board handoffs reserve Cave's conversation id before the harness
+  // writes its transcript. Bind that pre-transcript id to the server-owned
+  // task card now, so a caller cannot use another familiar's reserved task.
+  const taskCard = await taskCardForSession(body.sessionId);
+  if (taskCard && taskCard.familiarId !== body.familiarId) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "not found" }),
+      { status: 404, headers: { "content-type": "application/json" } },
+    );
+  }
   // Host picker: an explicit allowed host wins; with no request, a conversation
   // recorded on an allowed ssh host stays pinned there; only then does the
   // familiar's own runtime binding decide. Unregistered hosts are rejected
@@ -965,9 +980,24 @@ export async function POST(req: Request) {
     }
     throw error;
   }
+  // A Board task may be isolated in a worktree below its registered project.
+  // The worktree itself is intentionally not a separate project record, so
+  // its first native-chat turn must authorize against the card's server-owned
+  // project instead of failing as an arbitrary unregistered directory. This
+  // narrow exception applies only to the fresh reserved handoff and only when
+  // the browser submits the exact CWD persisted on that task card.
+  const taskWorktreeProjectId =
+    body.startNewConversation &&
+    !existingConversation &&
+    taskCard?.projectId &&
+    taskCard.cwd &&
+    body.projectRoot &&
+    taskCard.cwd === body.projectRoot
+      ? taskCard.projectId
+      : null;
   const chatProjectId = sshRuntime
     ? null
-    : chatProjectAccessId({
+    : taskWorktreeProjectId ?? chatProjectAccessId({
         projects,
         requestedProjectRoot: body.projectRoot,
         resumeCwd,
@@ -1070,7 +1100,10 @@ export async function POST(req: Request) {
   const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
   const knowledgeVaultCollections = await listCollections();
 
-  const taskContext = await taskContextForSession(body.sessionId);
+  // Reuse the task card already loaded to authorize this reserved handoff.
+  // Besides avoiding a second board-store read on every chat turn, this keeps
+  // the permission decision and prompt context on the same task snapshot.
+  const taskContext = taskCard ? buildTaskContext(taskCard) : null;
   const scopedPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
       buildTaskAwarePrompt(
@@ -1269,9 +1302,11 @@ export async function POST(req: Request) {
   };
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
-  const resumeTarget = body.sessionId
-    ? existingConversation?.harnessSessionId ?? body.sessionId
-    : null;
+  const resumeTarget = body.startNewConversation && !existingConversation
+    ? null
+    : body.sessionId
+      ? existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An

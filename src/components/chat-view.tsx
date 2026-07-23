@@ -221,6 +221,13 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** Task work can reserve its conversation id before mounting the bridge.
+   * Allow that one first prompt to send into the reserved, otherwise-empty
+   * conversation instead of treating it as a resumed thread. */
+  autoSendInitialPrompt?: boolean;
+  /** The Board reserved this Cave conversation id before any native harness
+   * session exists, so the first send must not pass it as a resume token. */
+  startNewConversation?: boolean;
   /** Files handed off from the home composer alongside `initialPrompt`; included
    *  in the auto-sent first message. */
   initialAttachments?: ChatAttachment[];
@@ -1655,7 +1662,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -4086,6 +4093,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
+          ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
@@ -4663,7 +4671,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       initialPromptSentRef.current = false;
       return;
     }
-    if (initialPromptSentRef.current || sessionId) return;
+    if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
       initialPromptSentRef.current = true;
@@ -4687,7 +4695,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -4975,6 +4983,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           onSessionStarted?.(ev.sessionId);
         }
+        // A Board native-chat handoff already owns the stable conversation id,
+        // so its "session" event does not promote the router and therefore
+        // cannot refresh the task's session list. Refresh after the server has
+        // saved the first transcript; otherwise the cockpit stays in its
+        // one-shot bridge mode and never restores the normal work/rail view.
+        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,

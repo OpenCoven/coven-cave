@@ -25,6 +25,9 @@ type Props = {
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   onSessionDeleted: () => void;
   onUnlinkSession: () => Promise<boolean>;
+  /** A bridge-backed task whose conversation id is reserved before its first
+   * send. ChatView starts it through the normal streaming path. */
+  initialPrompt?: string | null;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   onOpenUrl?: (url: string) => void;
@@ -41,6 +44,7 @@ export function TaskWorkCockpit({
   onSessionsDeleted,
   onSessionDeleted,
   onUnlinkSession,
+  initialPrompt = null,
   onSlashCommand,
   onOpenOnboarding,
   onOpenUrl,
@@ -164,7 +168,28 @@ export function TaskWorkCockpit({
       <TaskWorkGitHub links={card.github} onOpenUrl={onOpenUrl} onManage={onOpenDetails} />
 
       <div className="task-work-cockpit__body">
-        {target.kind === "ready" && familiar ? (
+        {initialPrompt && familiar ? (
+          <ChatView
+            familiar={familiar}
+            sessionId={card.sessionId}
+            session={railSession}
+            projectRoot={railProjectRoot ?? undefined}
+            initialPrompt={initialPrompt}
+            autoSendInitialPrompt
+            startNewConversation
+            daemonRunning={daemonRunning}
+            sessions={sessions}
+            onSessionsChanged={onRefreshSessions}
+            onSessionsDeleted={(sessionIds) => {
+              onSessionsDeleted(sessionIds);
+              if (card.sessionId && sessionIds.includes(card.sessionId)) onSessionDeleted();
+            }}
+            onBack={onClose}
+            onSlashCommand={onSlashCommand}
+            onOpenOnboarding={onOpenOnboarding}
+            onOpenUrl={onOpenUrl}
+          />
+        ) : target.kind === "ready" && familiar ? (
           <Group
             className="task-work-cockpit__group"
             orientation="horizontal"
