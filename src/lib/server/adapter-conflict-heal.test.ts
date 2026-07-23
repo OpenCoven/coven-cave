@@ -3,7 +3,7 @@
 // registry error, which bricked every `coven run` (chat surfaced it as codex
 // turns ending "No assistant text returned").
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -141,6 +141,21 @@ test("Hermes manifest repair preserves a formatting-only user manifest", async (
     false,
   );
   assert.equal(await readFileFs(manifestPath, "utf8"), userContents);
+});
+
+test("adapter scaffolding preserves a user-managed non-file manifest path", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  await mkdir(manifestPath, { recursive: true });
+
+  assert.equal(
+    await ensureAdapterManifestScaffold("hermes", {
+      adaptersDir: path.dirname(manifestPath),
+      platform: "win32",
+    }),
+    false,
+  );
+  assert.equal((await lstat(manifestPath)).isDirectory(), true);
 });
 
 // Wiring pins: the chat send route must detect the conflict from harness

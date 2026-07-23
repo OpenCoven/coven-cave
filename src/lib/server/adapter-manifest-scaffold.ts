@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   adapterManifestScaffoldForHarness,
@@ -6,12 +6,14 @@ import {
 } from "../harness-adapters.ts";
 import { covenAdaptersDir, isManifestShadowedByBuiltin } from "./adapter-conflict-heal.ts";
 
-async function pathExists(targetPath: string): Promise<boolean> {
+type ManifestPathKind = "missing" | "file" | "other";
+
+async function manifestPathKind(targetPath: string): Promise<ManifestPathKind> {
   try {
-    await stat(targetPath);
-    return true;
-  } catch {
-    return false;
+    return (await lstat(targetPath)).isFile() ? "file" : "other";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    throw error;
   }
 }
 
@@ -32,12 +34,16 @@ export async function ensureAdapterManifestScaffold(
   const manifestPath = path.join(adaptersDir, scaffold.filename);
   if (await isManifestShadowedByBuiltin(manifestPath)) return false;
 
-  const exists = await pathExists(manifestPath);
-  const shouldRepair = exists && isLegacyWindowsHermesManifest(
+  // A directory or symlink is an intentional user-owned setup, not a Cave
+  // scaffold. Do not follow it or replace its target while repairing Hermes.
+  const kind = await manifestPathKind(manifestPath);
+  if (kind === "other") return false;
+
+  const shouldRepair = kind === "file" && isLegacyWindowsHermesManifest(
     await readFile(manifestPath, "utf8"),
     platform,
   );
-  if (!exists || shouldRepair) {
+  if (kind === "missing" || shouldRepair) {
     await mkdir(adaptersDir, { recursive: true });
     await writeFile(manifestPath, scaffold.contents, "utf8");
     return true;
