@@ -16,6 +16,7 @@ import {
 } from "@/lib/preferences-schema";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 import { withCaveHomeReconciledStore } from "./cave-home-migration.ts";
+import { corruptAsidePath } from "./corrupt-aside.ts";
 
 export function preferencesPath(): string {
   const override = process.env.COVEN_PREFERENCES_PATH?.trim();
@@ -84,8 +85,7 @@ async function readLegacyThemeSeed(): Promise<CavePreferencesPatch | null> {
 
 async function preserveMalformedFile(): Promise<void> {
   const source = preferencesPath();
-  const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, corruptAsidePath(source)).catch(() => {});
 }
 
 async function writePreferences(preferences: CavePreferences): Promise<void> {

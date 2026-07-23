@@ -20,6 +20,7 @@ import {
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
+import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 export const MAX_SAVED_LINKS = 500;
@@ -93,8 +94,7 @@ async function loadFile(): Promise<ResearchLinksFile> {
 
 async function preserveMalformedFile(): Promise<void> {
   const source = researchLinksPath();
-  const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, corruptAsidePath(source)).catch(() => {});
 }
 
 async function saveFile(file: ResearchLinksFile): Promise<void> {

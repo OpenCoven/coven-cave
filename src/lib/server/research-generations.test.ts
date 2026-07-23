@@ -389,6 +389,46 @@ test("a corrupt store file is preserved aside, never silently wiped", async () =
   assert.ok(backups.length >= 1, "malformed file preserved as .corrupt-<ts>");
 });
 
+test("same-millisecond corruption events keep distinct aside captures", async () => {
+  const target = researchGenerationsPath("nova");
+  const dir = path.dirname(target);
+  const valid = await readFile(target, "utf8");
+  const before = new Set((await readdir(dir)).filter((name) => name.includes(".corrupt-")));
+
+  // Freeze the clock: the aside name's timestamp is millisecond-resolution,
+  // so without the random suffix both captures below would target the SAME
+  // path and copyFile would clobber the first (see corruptAsidePath).
+  const RealDate = Date;
+  const frozenMs = new RealDate("2026-01-01T00:00:00.000Z").getTime();
+  globalThis.Date = class extends RealDate {
+    constructor() {
+      super(frozenMs);
+    }
+  } as DateConstructor;
+  try {
+    await writeFile(target, "{ corrupt take one", "utf8");
+    assert.deepEqual(await listResearchGenerations("nova"), [], "a corrupt store reads as empty");
+    await writeFile(target, "{ corrupt take two", "utf8");
+    assert.deepEqual(
+      await listResearchGenerations("nova"),
+      [],
+      "the second corruption also reads as empty",
+    );
+  } finally {
+    globalThis.Date = RealDate;
+  }
+
+  const fresh = (await readdir(dir)).filter(
+    (name) => name.includes(".corrupt-") && !before.has(name),
+  );
+  assert.equal(fresh.length, 2, "each corruption event keeps its own capture");
+  const captured = await Promise.all(fresh.map((name) => readFile(path.join(dir, name), "utf8")));
+  assert.ok(captured.includes("{ corrupt take one"), "the first capture survives");
+  assert.ok(captured.includes("{ corrupt take two"), "the second capture survives");
+
+  await writeFile(target, valid, "utf8");
+});
+
 test("path safety: traversal-shaped familiar ids are rejected outright", async () => {
   await assert.rejects(() => listResearchGenerations("../evil"), /invalid familiar id/);
   await assert.rejects(() => removeResearchGeneration("a/b", "x"), /invalid familiar id/);
