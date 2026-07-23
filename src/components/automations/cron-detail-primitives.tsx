@@ -9,6 +9,6 @@ export function CronDetailSection({ title, description, className, children }: {
 }
 
 export function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
-  const color = tone === "active" ? "oklch(0.75 0.1 150)" : tone === "danger" ? "var(--color-danger)" : tone === "paused" ? "var(--text-muted)" : "var(--text-primary)";
+  const color = tone === "active" ? "var(--color-success)" : tone === "danger" ? "var(--color-danger)" : tone === "paused" ? "var(--text-muted)" : "var(--text-primary)";
   return <div className="rounded-[var(--radius-control)] border px-3 py-2 [border-color:var(--border-hairline)]! [background:var(--bg-base)]!"><p className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest [color:var(--text-muted)]!">{label}</p><div className="mt-1 min-w-0 truncate text-[length:var(--text-sm)] font-medium" style={{ color }}>{value}</div></div>;
 }

@@ -75,9 +75,14 @@ function RitualActions({ children }: { children: ReactNode }) {
   return <span className="flex shrink-0 items-center gap-0.5 pl-1">{children}</span>;
 }
 
-export function RitualItemRow({ item, familiarLabel, onSelect, quiet = false }: { item: InboxItem; familiarLabel: (familiarId?: string | null) => string | null; onSelect: (item: InboxItem) => void; quiet?: boolean }) {
+export function RitualItemRow({ item, familiarLabel, onSelect, quiet = false, timeMode = "agenda" }: { item: InboxItem; familiarLabel: (familiarId?: string | null) => string | null; onSelect: (item: InboxItem) => void; quiet?: boolean; timeMode?: "agenda" | "log" }) {
   const familiar = familiarLabel(item.familiarId);
   const date = ritualItemDate(item);
+  // The Log pane sorts by last activity (firedAt ?? updatedAt) — show that
+  // same timestamp, not a future fireAt, so its times read monotonically.
+  const shownIso = timeMode === "log"
+    ? item.firedAt ?? item.updatedAt ?? item.createdAt
+    : date ? date.toISOString() : item.updatedAt;
   return (
     <button type="button" className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`} onClick={() => onSelect(item)}>
       <StatusIcon item={item} />
@@ -85,7 +90,7 @@ export function RitualItemRow({ item, familiarLabel, onSelect, quiet = false }: 
       <span className="rituals-overview__kind">{inboxKindLabel(item.kind)}</span>
       {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
       <span className="rituals-overview__spacer" />
-      <span className="rituals-overview__meta">{date ? relativeTime(date.toISOString()) : relativeTime(item.updatedAt)}</span>
+      <span className="rituals-overview__meta">{relativeTime(shownIso)}</span>
     </button>
   );
 }

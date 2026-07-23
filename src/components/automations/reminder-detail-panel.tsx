@@ -247,7 +247,7 @@ export function DetailPanel({
               <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
               <p
                 className="text-[length:var(--text-sm)]"
-                style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
+                style={{ color: item.firedAt ? "var(--color-success)" : "var(--text-muted)" }}
                 title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
               >
                 {item.firedAt ? relTime(item.firedAt) : isReminder ? "Never" : "—"}
@@ -378,7 +378,7 @@ export function DetailPanel({
                 </Button>
               )}
               <Button variant="ghost" size="xs" onClick={() => removeItem(item.id)} disabled={busy}
-                className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[oklch(0.65_0.18_20)] transition-colors disabled:opacity-40 hover:underline">
+                className="rounded-[var(--radius-control)] p-0.5 text-[length:var(--text-xs)] text-[var(--color-danger)] transition-colors disabled:opacity-40 hover:underline">
                 Delete
               </Button>
             </div>
@@ -435,7 +435,7 @@ export function DetailPanel({
               fullWidth
               disabled={busy}
               onClick={() => removeItem(item.id)}
-              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40 [color:oklch(0.65_0.18_20)]!"
+              className="rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] disabled:opacity-40 [color:var(--color-danger)]!"
             >
               Delete
             </Button>

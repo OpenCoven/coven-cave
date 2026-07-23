@@ -104,9 +104,9 @@ function AgendaView({
     }
     return Array.from(map.values())
       .filter((g) => showPast ? true : g.date >= startOfDay(anchor))
-      .sort((a, b) => showPast
-        ? b.date.getTime() - a.date.getTime()
-        : a.date.getTime() - b.date.getTime());
+      // Always chronological: revealing past prepends older groups above
+      // today instead of flipping the whole agenda to future-first.
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [items, deadlines, anchor, showPast]);
 
   // The single soonest still-pending item — highlighted as "Next" so the agenda
@@ -164,6 +164,19 @@ function AgendaView({
             className="calendar-empty-action"
           >
             Hide past
+          </Button>
+        </div>
+      ) : pastCount > 0 ? (
+        // Past items must stay reachable when upcoming groups exist too — not
+        // only from the empty state.
+        <div className="mb-1 flex justify-end">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setShowPast(true)}
+            className="calendar-empty-action"
+          >
+            Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
           </Button>
         </div>
       ) : null}
@@ -1585,12 +1598,13 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         // out from under it.
         case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(-1); break;
         case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(1);  break;
-        case "t": case "T": setAnchor(new Date()); break;
-        case "d": case "D": setViewMode("day");    break;
-        case "w": case "W": setViewMode("week");   break;
-        case "m": case "M": setViewMode("month");  break;
-        case "a": case "A": setViewMode("agenda"); break;
+        case "t": case "T": if (e.metaKey || e.ctrlKey || e.altKey) break; setAnchor(new Date()); break;
+        case "d": case "D": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("day");    break;
+        case "w": case "W": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("week");   break;
+        case "m": case "M": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("month");  break;
+        case "a": case "A": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("agenda"); break;
         case "n": case "N":
+          if (e.metaKey || e.ctrlKey || e.altKey) break;
           if (onAddEntry) { e.preventDefault(); onAddEntry({ fireAt: defaultEntryFireAt(anchor) }); }
           break;
       }
@@ -1608,8 +1622,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       if (effectiveView === "day") return addDays(prev, dir);
       if (effectiveView === "week") return addDays(prev, dir * 7);
       if (effectiveView === "month") {
-        const d = new Date(prev);
-        d.setMonth(d.getMonth() + dir);
+        // setMonth on the raw anchor overflows short months (Jan 31 + 1 → Mar 3,
+        // skipping February) — step from day 1, then clamp the day back in.
+        const d = new Date(prev.getFullYear(), prev.getMonth() + dir, 1);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(prev.getDate(), lastDay));
         return d;
       }
       // agenda: jump by 2 weeks

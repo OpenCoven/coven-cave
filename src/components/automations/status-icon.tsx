@@ -9,7 +9,7 @@ export function StatusIcon({ item }: { item: InboxItem }) {
 
   if (paused) {
     return (
-      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.18)]! [color:rgba(255,255,255,0.35)]!">
+      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:color-mix(in_oklch,var(--foreground)_18%,transparent)]! [color:color-mix(in_oklch,var(--foreground)_35%,transparent)]!">
         <Icon name="ph:minus" width={8} />
       </span>
     );
@@ -17,5 +17,5 @@ export function StatusIcon({ item }: { item: InboxItem }) {
   if (active && hasRun) {
     return <span role="img" aria-label="Active, has fired" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full [background:var(--accent-presence)]!" />;
   }
-  return <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:rgba(255,255,255,0.28)]!" />;
+  return <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border [border-color:color-mix(in_oklch,var(--foreground)_28%,transparent)]!" />;
 }
