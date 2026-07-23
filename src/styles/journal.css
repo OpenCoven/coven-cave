@@ -397,9 +397,9 @@
 .journal-next__act--run:hover:not(:disabled) { color: var(--accent-presence); }
 /* Satisfying success state: green fill + a quick pop when an action lands. */
 .journal-next__act.is-done {
-  color: var(--color-success, #36b37e);
-  border-color: color-mix(in oklch, var(--color-success, #36b37e) 55%, transparent);
-  background: color-mix(in oklch, var(--color-success, #36b37e) 16%, var(--bg-raised));
+  color: var(--color-success);
+  border-color: color-mix(in oklch, var(--color-success) 55%, transparent);
+  background: color-mix(in oklch, var(--color-success) 16%, var(--bg-raised));
   animation: journal-act-pop 0.34s ease;
 }
 @keyframes journal-act-pop {
@@ -450,7 +450,7 @@
   from { opacity: 0; transform: translate(-50%, 12px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
-.journal-notice__icon { color: var(--color-success, #36b37e); flex: 0 0 auto; }
+.journal-notice__icon { color: var(--color-success); flex: 0 0 auto; }
 .journal-notice__text { flex: 1; min-width: 0; }
 .journal-notice__act {
   flex: 0 0 auto;

@@ -322,8 +322,8 @@
   background:color-mix(in oklch, var(--bg-elevated) 60%, transparent);
 }
 .gh-diff__stat { display:inline-flex; gap:6px; font-size:10.5px; font-weight:600; }
-.gh-diff__stat-add { color:var(--color-success, #3fb950); }
-.gh-diff__stat-del { color:var(--color-danger, #f85149); }
+.gh-diff__stat-add { color:var(--color-success); }
+.gh-diff__stat-del { color:var(--color-danger); }
 .gh-diff__expand {
   border:none; background:transparent; cursor:pointer; padding:1px 4px;
   font:inherit; font-size:10.5px; color:var(--text-muted); border-radius:5px;
@@ -349,8 +349,8 @@
 }
 .gh-diff__marker { user-select:none; opacity:0.75; }
 .gh-diff__line--ctx { color:var(--text-muted); }
-.gh-diff__line--add { background:color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent); color:var(--text-primary); }
-.gh-diff__line--del { background:color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent); color:var(--text-primary); }
+.gh-diff__line--add { background:color-mix(in oklch, var(--color-success) 14%, transparent); color:var(--text-primary); }
+.gh-diff__line--del { background:color-mix(in oklch, var(--color-danger) 14%, transparent); color:var(--text-primary); }
 .gh-diff__line--meta { background:color-mix(in oklch, var(--accent-presence) 10%, transparent); color:var(--accent-presence); }
 
 /* ```diff fenced blocks rewritten by wireDiffBlocks: the <pre>/<code> keep their

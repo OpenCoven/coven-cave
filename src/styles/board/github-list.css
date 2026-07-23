@@ -269,7 +269,7 @@
 .gh-row.is-selected .gh-actions.reveal-on-hover,
 .gh-actions.reveal-on-hover:has(.gh-action-error) { opacity:1; }
 .gh-action-wrap { position:relative; display:inline-flex; }
-.gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:#fff; font-size:10px; font-weight:700; }
+.gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:var(--color-danger-foreground); font-size:10px; font-weight:700; }
 .gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--glass-elevated); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); box-shadow:0 12px 30px rgba(0,0,0,.18); }
 .gh-action-popover--wide { padding:0; min-width:280px; background:transparent; border:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 .gh-action-popover-title { padding:0 4px 6px; font-size:11px; color:var(--text-muted); }

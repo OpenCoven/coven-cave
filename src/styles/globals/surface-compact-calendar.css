@@ -871,7 +871,7 @@
 .salem-pf-entry__go {
   flex-shrink: 0; height: 32px; padding: 0 12px; border-radius: 7px;
   border: 1px solid var(--accent-presence); background: var(--accent-presence);
-  color: #fff; font-size: 12px; cursor: pointer;
+  color: var(--accent-presence-foreground); font-size: 12px; cursor: pointer;
 }
 .salem-pf-entry__go:disabled { opacity: 0.6; cursor: default; }
 .salem-pf-entry__error { margin: 0; font-size: 11.5px; color: var(--color-danger); }

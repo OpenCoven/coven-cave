@@ -32,8 +32,8 @@
 .recent-activity__model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
 .recent-activity__meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .recent-activity__diff { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
-.recent-activity__add { color: color-mix(in oklch, #3fb950 80%, var(--text-secondary)); }
-.recent-activity__del { color: color-mix(in oklch, #f85149 80%, var(--text-secondary)); }
+.recent-activity__add { color: color-mix(in oklch, var(--color-success) 80%, var(--text-secondary)); }
+.recent-activity__del { color: color-mix(in oklch, var(--color-danger) 80%, var(--text-secondary)); }
 .recent-activity__time { font-size: 10.5px; color: var(--text-muted); }
 
 /* ── Collapsed icon rail (desktop) ───────────────────────────────────────────

@@ -18,6 +18,8 @@
   --cv-pill-bg: #222326;
   --cv-row-selected: #242528;
   --cv-send: #3fb6b0;
+  --cv-send-ink: #061312;
+  --cv-file-icon-bg: #0f1012;
   min-height: 100%;
   height: 100vh;
   background: var(--cv-bg);
@@ -223,7 +225,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #0f1012;
+  background: var(--cv-file-icon-bg);
   border: 1px solid var(--cv-divider);
   color: var(--cv-text-2);
   flex: 0 0 auto;
@@ -438,7 +440,7 @@
   height: 36px;
   border-radius: var(--radius-pill);
   background: var(--cv-send);
-  color: #061312;
+  color: var(--cv-send-ink);
   font-size: 18px;
 }
 

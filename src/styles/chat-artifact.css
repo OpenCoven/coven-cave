@@ -96,10 +96,10 @@
   position: absolute; left: 10px; right: 10px; bottom: 10px;
   display: flex; align-items: center; gap: 8px;
   padding: var(--space-2) 10px; font-size: var(--text-xs);
-  color: #fff; background: #b95050; border-radius: 8px;
+  color: var(--color-danger-foreground); background: var(--color-danger); border-radius: 8px;
 }
 .chat-artifact__error-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.chat-artifact__error-fix { color: #fff; background: rgba(0,0,0,0.2); border: 0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.chat-artifact__error-fix { color: var(--color-danger-foreground); background: rgba(0,0,0,0.2); border: 0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
 .chat-artifact__refine-icon { color: var(--accent-presence, var(--text-muted)); flex: none; }
 
 /* Collapsed state: a calm full-width trigger that opens the refine space. */
@@ -159,8 +159,8 @@
   /* Filled brand-accent CTA: --accent-presence with its paired foreground
      (var(--accent) is the near-background shadcn surface token — in light
      mode it left white text on a near-white fill). */
-  color: var(--accent-presence-foreground, #fff);
-  background: var(--accent-presence, #6b8fbf); border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence); border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
   transition: filter 0.12s ease;
 }
 .chat-artifact__refine-go:hover:not(:disabled) { filter: brightness(1.08); }
