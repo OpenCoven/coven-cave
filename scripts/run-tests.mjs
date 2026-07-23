@@ -70,6 +70,7 @@ export const SUITES = {
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
+    "src/lib/mcp-doctor.test.ts",
     "src/lib/user-profile-shared.test.ts",
     "src/lib/user-profile.test.ts",
     "src/lib/legacy-svg-avatar-hint.test.ts",

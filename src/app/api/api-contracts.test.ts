@@ -128,6 +128,7 @@ const contracts: RouteContract[] = [
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
+  { route: "/mcp/health", methods: ["GET"], kind: "json" },
   { route: "/marketplace", methods: ["GET"], kind: "json" },
   { route: "/marketplace/config", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
