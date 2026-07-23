@@ -119,11 +119,22 @@ export function useProjectFamiliarsByProject({
         const response = await fetch(`/api/familiars?${search}`, { cache: "no-store" });
         const payload = await response.json().catch(() => null) as {
           ok?: boolean;
+          familiars?: Familiar[];
           familiarsByProject?: Record<string, Familiar[]>;
         } | null;
-        if (!response.ok || !payload?.ok || !payload.familiarsByProject) return;
+        if (!response.ok || !payload?.ok) return;
         if (generationRef.current !== generation) return;
-        const familiarsByProject = payload.familiarsByProject;
+        // `/api/familiars?projectId=…` deliberately retains its established
+        // single-project `{ familiars }` response for inspector/modal callers.
+        // A board can currently contain only one distinct project, though, in
+        // which case this batch hook makes that same one-id request. Accept
+        // both response forms so the inline picker works for single-project
+        // boards and during client/server version-skewed desktop updates.
+        const familiarsByProject = payload.familiarsByProject
+          ?? (ids.length === 1 && Array.isArray(payload.familiars)
+            ? { [ids[0]]: payload.familiars }
+            : null);
+        if (!familiarsByProject) return;
         const loaded = ids.map((projectId) => [
           projectId,
           Array.isArray(familiarsByProject[projectId])
