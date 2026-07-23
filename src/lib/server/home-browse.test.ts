@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  DRIVES_LOCATION,
+  createSubdirInBrowsableDir,
   createSubdirWithinRoot,
+  homeRoot,
+  listSystemRoots,
+  resolveBrowsableDir,
   resolveWithinRoot,
   sanitizeRelSegments,
 } from "./home-browse.ts";
@@ -131,6 +136,61 @@ test("createSubdirWithinRoot rejects parents outside or missing beneath the root
       reason: "invalid-parent",
     });
     assert.deepEqual(createSubdirWithinRoot(base, "missing", "child"), {
+      ok: false,
+      reason: "invalid-parent",
+    });
+  });
+});
+
+// ── Browsing above $HOME (volume roots / drives) ────────────────────────────
+test("resolveBrowsableDir defaults to $HOME and keeps relative requests home-anchored", () => {
+  assert.equal(resolveBrowsableDir(null), homeRoot());
+  assert.equal(resolveBrowsableDir("   "), homeRoot());
+  // Relative escapes above $HOME are still rejected — going higher requires
+  // naming an absolute path, which then walks from its own volume root.
+  assert.equal(resolveBrowsableDir("../../.."), null);
+});
+
+test("resolveBrowsableDir walks absolute paths from their own volume root", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, "repos", "app"), { recursive: true });
+
+    assert.equal(resolveBrowsableDir(path.join(base, "repos", "app")), path.join(base, "repos", "app"));
+    // The volume root itself is browsable (the picker just disables selecting it).
+    const root = path.parse(homeRoot()).root;
+    assert.equal(resolveBrowsableDir(root), root);
+    // Nonexistent absolute paths still resolve to null.
+    assert.equal(resolveBrowsableDir(path.join(base, "repos", "ghost")), null);
+  });
+});
+
+test("listSystemRoots lists this machine's volume roots", () => {
+  const roots = listSystemRoots();
+  assert.ok(roots.length >= 1, "at least one volume root exists");
+  for (const root of roots) {
+    assert.equal(path.parse(root).root, root, `${root} is a bare volume root`);
+  }
+  if (process.platform !== "win32") assert.deepEqual(roots, ["/"]);
+});
+
+test("the drives pseudo-location is never a browsable or creatable real path", () => {
+  assert.equal(DRIVES_LOCATION, "::drives");
+  assert.equal(resolveBrowsableDir(DRIVES_LOCATION), null);
+  assert.deepEqual(createSubdirInBrowsableDir(DRIVES_LOCATION, "child"), {
+    ok: false,
+    reason: "invalid-parent",
+  });
+});
+
+test("createSubdirInBrowsableDir creates beneath absolute parents via their volume root", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, "repos"));
+
+    assert.deepEqual(createSubdirInBrowsableDir(path.join(base, "repos"), "new-app"), {
+      ok: true,
+      path: path.join(base, "repos", "new-app"),
+    });
+    assert.deepEqual(createSubdirInBrowsableDir(path.join(base, "ghost"), "child"), {
       ok: false,
       reason: "invalid-parent",
     });

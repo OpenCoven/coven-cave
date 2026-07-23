@@ -18,6 +18,51 @@ export function homeRoot(): string {
 }
 
 /**
+ * Pseudo-location the folder browser uses to list the machine's volume roots
+ * (drives on Windows, `/` on POSIX). Never a real path — `::` cannot start an
+ * absolute path on either platform, so it can't collide with a directory.
+ */
+export const DRIVES_LOCATION = "::drives";
+
+/**
+ * Absolute volume roots browsable on this machine: `/` on POSIX, the existing
+ * drive roots (`C:\`, `D:\`, …) on Windows.
+ */
+export function listSystemRoots(): string[] {
+  if (process.platform !== "win32") return ["/"];
+  const roots: string[] = [];
+  for (let code = 65; code <= 90; code += 1) {
+    const root = `${String.fromCharCode(code)}:\\`;
+    try {
+      if (fs.existsSync(root)) roots.push(root);
+    } catch {
+      /* drive letter not present or not readable — skip it */
+    }
+  }
+  return roots.length > 0 ? roots : [path.parse(homeRoot()).root];
+}
+
+/** `listSystemRoots()` as picker entries (name === path for a volume root). */
+export function listSystemRootEntries(): DirEntry[] {
+  return listSystemRoots().map((root) => ({ name: root, path: root }));
+}
+
+/**
+ * Resolve a browse request for the folder picker. Empty requests land on
+ * $HOME (the picker's entry point) and relative requests stay $HOME-anchored,
+ * but absolute requests may name any directory: the walk simply starts from
+ * the request's own volume root (`/` or `X:\`) instead of $HOME, so the
+ * trusted-allowlist walk in resolveWithinRoot still builds the real path
+ * entirely from fs-provided entry names.
+ */
+export function resolveBrowsableDir(requested: string | null | undefined): string | null {
+  const raw = (requested ?? "").trim();
+  if (raw === "") return homeRoot();
+  if (!path.isAbsolute(raw)) return resolveWithinRoot(homeRoot(), raw);
+  return resolveWithinRoot(path.parse(path.resolve(raw)).root, raw);
+}
+
+/**
  * The requested path expressed as clean relative segments beneath `root`, or
  * `null` when it escapes `root`. Pure (no filesystem access) — the segments are
  * only ever compared against real directory-entry names, never used as a path.
@@ -119,6 +164,21 @@ export function createSubdirWithinRoot(
     }
     return { ok: false, reason: "create-failed" };
   }
+}
+
+/**
+ * Create a subdirectory beneath a picker-browsable parent. Same widening as
+ * resolveBrowsableDir: relative parents stay $HOME-anchored, absolute parents
+ * walk from their own volume root. The drives pseudo-location is not a real
+ * parent and resolves to invalid-parent.
+ */
+export function createSubdirInBrowsableDir(
+  requestedParent: string | null | undefined,
+  requestedName: string,
+): CreateSubdirResult {
+  const raw = (requestedParent ?? "").trim();
+  const root = path.isAbsolute(raw) ? path.parse(path.resolve(raw)).root : homeRoot();
+  return createSubdirWithinRoot(root, raw, requestedName);
 }
 
 /** Immediate visible subdirectories of `dir` (one level), sorted, noise-skipped. */

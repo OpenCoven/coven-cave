@@ -15,6 +15,25 @@ type BrowseResponse = {
   entries?: DirEntry[];
   error?: string;
 };
+
+/** Pseudo-location the fs-browse API uses to list volume roots (drives). */
+const DRIVES = "::drives";
+
+/** Path separator the server-native path uses ("\" only on Windows hosts). */
+function sepOf(value: string): "/" | "\\" {
+  return value.includes("\\") ? "\\" : "/";
+}
+
+/** True for a bare volume root: "/" or a Windows drive root like "C:\". */
+function isVolumeRootPath(value: string): boolean {
+  return value === "/" || /^[A-Za-z]:[\\/]$/.test(value);
+}
+
+/** Trailing path segment, volume roots yielding themselves ("/" → "/"). */
+function baseName(value: string): string {
+  const cut = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+  return value.slice(cut + 1) || value;
+}
 type CreateFolderResponse = {
   ok: boolean;
   path?: string;
@@ -44,16 +63,19 @@ export type DirectoryPickerModalProps = {
 };
 
 /**
- * Web folder browser for the "New project" form. Navigates $HOME one level at a
- * time via GET /api/fs-browse (loopback-only, $HOME-rooted). The desktop build
+ * Web folder browser for the "New project" form. Navigates the filesystem one
+ * level at a time via GET /api/fs-browse (loopback-only). Browsing opens at
+ * $HOME but can walk above it to any volume root, and the ::drives
+ * pseudo-location switches drives on multi-volume machines. The desktop build
  * uses the native OS dialog instead of this modal.
  *
  * Interaction model (project-folder-modal redesign): clicking a row selects it
  * without entering; the trailing chevron (or double-click) opens it. The footer
  * echoes the pending path and the primary action names the folder it will
- * select — the current folder when nothing is highlighted. $HOME itself is
- * never selectable (registering the whole home directory is always a mistake),
- * matching isAllowedNewProjectRoot on the server.
+ * select — the current folder when nothing is highlighted. $HOME itself and
+ * bare volume roots are never selectable (registering a whole home directory
+ * or drive is always a mistake), matching isAllowedNewProjectRoot on the
+ * server.
  */
 export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPickerModalProps) {
   const [home, setHome] = useState<string | null>(null);
@@ -223,17 +245,26 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     }
   };
 
-  // Breadcrumb trail from ~ down to the current folder. The API is
-  // $HOME-rooted, so cwd is always at or under home once loaded.
+  // Breadcrumb trail down to the current folder: `~`-anchored while inside
+  // $HOME (the familiar shape), volume-root-anchored above it ("/", "C:\"),
+  // and a single "Drives" crumb on the drives list. Separator-aware so the
+  // Windows web build gets real crumbs instead of one unsplit path.
   const crumbs = useMemo(() => {
-    if (!cwd || !home) return [];
-    const trail: Array<{ name: string; path: string }> = [{ name: "~", path: home }];
-    if (cwd !== home && cwd.startsWith(home + "/")) {
-      let acc = home;
-      for (const segment of cwd.slice(home.length).split("/").filter(Boolean)) {
-        acc = acc + "/" + segment;
-        trail.push({ name: segment, path: acc });
-      }
+    if (!cwd) return [];
+    if (cwd === DRIVES) return [{ name: "Drives", path: DRIVES }];
+    const sep = sepOf(cwd);
+    const trail: Array<{ name: string; path: string }> = [];
+    let acc: string;
+    if (home && (cwd === home || cwd.startsWith(home + sep))) {
+      acc = home;
+      trail.push({ name: "~", path: home });
+    } else {
+      acc = sep === "\\" ? cwd.slice(0, cwd.indexOf("\\") + 1) : "/";
+      trail.push({ name: acc, path: acc });
+    }
+    for (const segment of cwd.slice(acc.length).split(sep).filter(Boolean)) {
+      acc = acc.endsWith(sep) ? acc + segment : acc + sep + segment;
+      trail.push({ name: segment, path: acc });
     }
     return trail;
   }, [cwd, home]);
@@ -241,20 +272,24 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   if (!open) return null;
 
   const collapseHome = (value: string) =>
-    home && (value === home || value.startsWith(home + "/")) ? "~" + value.slice(home.length) : value;
+    home && (value === home || value.startsWith(home + sepOf(value)))
+      ? "~" + value.slice(home.length)
+      : value;
 
   const query = filter.trim().toLowerCase();
   const visibleEntries = query ? entries.filter((e) => e.name.toLowerCase().includes(query)) : entries;
   const selected = selectedPath ? entries.find((e) => e.path === selectedPath) ?? null : null;
 
   const atHomeRoot = cwd !== null && cwd === home;
-  const pendingPath = selected?.path ?? cwd;
-  const pendingName = selected ? selected.name : atHomeRoot ? null : cwd ? cwd.slice(cwd.lastIndexOf("/") + 1) : null;
-  const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : "Select home";
-  // $HOME itself is never a valid project root (isAllowedNewProjectRoot
-  // excludes it), so bare-home selection stays disabled until the user
-  // highlights or enters a subfolder.
-  const selectDisabled = !cwd || createBusy || (!selected && atHomeRoot);
+  const atDrivesList = cwd === DRIVES;
+  const pendingPath = selected?.path ?? (atDrivesList ? null : cwd);
+  const pendingName = selected ? selected.name : atHomeRoot || !cwd || atDrivesList ? null : baseName(cwd);
+  const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : atDrivesList ? "Open a drive" : "Select home";
+  // $HOME itself and bare volume roots are never valid project roots
+  // (isAllowedNewProjectRoot excludes both as unbounded), so selection stays
+  // disabled there until the user highlights or enters a subfolder.
+  const selectDisabled =
+    !cwd || createBusy || !pendingPath || pendingPath === home || isVolumeRootPath(pendingPath);
 
   // Portal to <body>: this modal mounts inside arbitrary hosts (the home
   // composer card, the projects form), and a transformed/backdrop-filtered
@@ -342,7 +377,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             ref={newFolderTriggerRef}
             variant="ghost"
             size="sm"
-            disabled={loading || createBusy || !cwd || creatingFolder}
+            disabled={loading || createBusy || !cwd || creatingFolder || cwd === DRIVES}
             onClick={beginCreatingFolder}
             leadingIcon="ph:plus"
             className="h-[30px] flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40"
@@ -447,7 +482,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setSelectedPath((prev) => (prev === entry.path ? null : entry.path))}
+                    onClick={() =>
+                      atDrivesList
+                        ? navigateTo(entry.path)
+                        : setSelectedPath((prev) => (prev === entry.path ? null : entry.path))
+                    }
                     onDoubleClick={() => navigateTo(entry.path)}
                     disabled={createBusy}
                     aria-pressed={isSelected}
@@ -461,7 +500,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                       className={`flex flex-none ${entry.workspace ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
                       aria-hidden
                     >
-                      <Icon name="ph:folder" width={18} />
+                      <Icon name={atDrivesList ? "ph:hard-drives" : "ph:folder"} width={18} />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[length:var(--text-base)] text-[var(--text-primary)]">
                       {entry.name}

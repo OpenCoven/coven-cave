@@ -1,25 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "node:path";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { createSubdirWithinRoot, homeRoot, resolveWithinRoot, listSubdirs } from "@/lib/server/home-browse";
+import {
+  DRIVES_LOCATION,
+  createSubdirInBrowsableDir,
+  homeRoot,
+  listSystemRootEntries,
+  listSystemRoots,
+  resolveBrowsableDir,
+  listSubdirs,
+} from "@/lib/server/home-browse";
 import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 
 /**
  * Directory browser for the "New project" folder picker on the web build
  * (desktop uses the native OS dialog instead). Lists the immediate
- * subdirectories of a directory under $HOME so the client can navigate the
- * filesystem one level at a time.
+ * subdirectories of a directory so the client can navigate the filesystem one
+ * level at a time. Browsing opens at $HOME but may walk above it to any
+ * volume root (`/` on POSIX, drive roots on Windows); the `::drives`
+ * pseudo-location lists those roots so multi-drive machines can switch.
  *
  * Security: loopback-only (a phone on the tailnet must not browse the host's
- * home dir), and every requested path is re-derived within $HOME by
- * resolveWithinRoot — anything escaping $HOME returns 403.
+ * filesystem), and every requested path is re-derived from its volume root by
+ * resolveBrowsableDir's trusted directory walk — anything else returns 403.
  */
 export async function GET(req: NextRequest) {
   const denied = rejectNonLocalRequest(req);
   if (denied) return denied;
 
-  const root = homeRoot();
-  const dir = resolveWithinRoot(root, req.nextUrl.searchParams.get("dir"));
+  const requested = req.nextUrl.searchParams.get("dir");
+  if ((requested ?? "").trim() === DRIVES_LOCATION) {
+    const entries = listSystemRootEntries().map((entry) => ({ ...entry, workspace: false }));
+    return NextResponse.json({
+      ok: true,
+      home: homeRoot(),
+      cwd: DRIVES_LOCATION,
+      parent: null,
+      entries,
+    });
+  }
+
+  const dir = resolveBrowsableDir(requested);
   if (!dir) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
@@ -31,8 +52,16 @@ export async function GET(req: NextRequest) {
     ...entry,
     workspace: resolveAllowedProjectSubpath(entry.path) !== null,
   }));
-  const parent = dir === root ? null : path.dirname(dir);
-  return NextResponse.json({ ok: true, home: root, cwd: dir, parent, entries });
+  // Above a volume root the only place left is the drives list — and only
+  // when there is more than one volume to switch between.
+  const volumeRoot = path.parse(dir).root;
+  const parent =
+    dir === volumeRoot
+      ? listSystemRoots().length > 1
+        ? DRIVES_LOCATION
+        : null
+      : path.dirname(dir);
+  return NextResponse.json({ ok: true, home: homeRoot(), cwd: dir, parent, entries });
 }
 
 export async function POST(req: NextRequest) {
@@ -48,7 +77,7 @@ export async function POST(req: NextRequest) {
 
   const dir = typeof body?.dir === "string" ? body.dir : "";
   const name = typeof body?.name === "string" ? body.name : "";
-  const result = createSubdirWithinRoot(homeRoot(), dir, name);
+  const result = createSubdirInBrowsableDir(dir, name);
   if (result.ok) {
     return NextResponse.json({ ok: true, path: result.path }, { status: 201 });
   }

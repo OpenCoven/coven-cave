@@ -18,12 +18,23 @@ test("the add-project flow wires a folder picker that goes native vs web per pla
   assert.match(src, /<DirectoryPickerModal[\s\S]*onSelect=\{\(dir\) =>/, "mounts the modal");
 });
 
-test("the fs-browse route is loopback-gated and $HOME-rooted", () => {
+test("the fs-browse route is loopback-gated and walks from trusted volume roots", () => {
   const src = read("../app/api/fs-browse/route.ts");
   assert.match(src, /rejectNonLocalRequest\(req\)/, "loopback-only");
-  assert.match(src, /resolveWithinRoot\(root, req\.nextUrl\.searchParams\.get\("dir"\)\)/, "resolves within $HOME");
+  assert.match(src, /resolveBrowsableDir\(requested\)/, "resolves via the trusted volume-root walk");
   assert.match(src, /path not allowed[\s\S]*status: 403/, "rejects escapes with 403");
-  assert.match(src, /homeRoot\(\)/, "roots at $HOME");
+  assert.match(src, /homeRoot\(\)/, "still reports $HOME as the picker's entry point");
+  assert.match(src, /DRIVES_LOCATION/, "exposes the drives pseudo-location for volume switching");
+  assert.match(
+    src,
+    /listSystemRoots\(\)\.length > 1\s*\?\s*DRIVES_LOCATION\s*:\s*null/,
+    "volume roots only climb to the drives list when there is more than one volume",
+  );
+  assert.match(
+    src,
+    /listSystemRootEntries\(\)\.map\(\(entry\) => \(\{ \.\.\.entry, workspace: false \}\)\)/,
+    "drive entries never claim the workspace badge",
+  );
 });
 
 test("the modal navigates via the fs-browse API with up/select controls", () => {
@@ -31,7 +42,7 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
-  assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : "Select home";/, "the primary action names the folder it will select");
+  assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : atDrivesList \? "Open a drive" : "Select home";/, "the primary action names the folder it will select");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
   // cave-psp8: a true modal must trap focus + restore it on close, not just listen
@@ -167,14 +178,22 @@ test("the redesigned modal separates selection from navigation", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(
     src,
-    /onClick=\{\(\) => setSelectedPath\(\(prev\) => \(prev === entry\.path \? null : entry\.path\)\)\}/,
-    "clicking a row toggles the highlight instead of entering the folder",
+    /onClick=\{\(\) =>\s*atDrivesList\s*\?\s*navigateTo\(entry\.path\)\s*:\s*setSelectedPath\(\(prev\) => \(prev === entry\.path \? null : entry\.path\)\)\s*\}/,
+    "clicking a row toggles the highlight instead of entering the folder (drives enter directly)",
   );
   assert.match(src, /onDoubleClick=\{\(\) => navigateTo\(entry\.path\)\}/, "double-click opens the folder");
   assert.match(src, /aria-label=\{`Open \$\{entry\.name\}`\}/, "each row keeps an explicit chevron open control");
   assert.match(src, /aria-pressed=\{isSelected\}/, "row selection is exposed to assistive tech");
-  assert.match(src, /const pendingPath = selected\?\.path \?\? cwd;/, "the footer resolves the highlighted folder before the browsed one");
-  assert.match(src, /const selectDisabled = !cwd \|\| createBusy \|\| \(!selected && atHomeRoot\);/, "bare $HOME cannot be selected");
+  assert.match(
+    src,
+    /const pendingPath = selected\?\.path \?\? \(atDrivesList \? null : cwd\);/,
+    "the footer resolves the highlighted folder before the browsed one",
+  );
+  assert.match(
+    src,
+    /const selectDisabled =\s*\n?\s*!cwd \|\| createBusy \|\| !pendingPath \|\| pendingPath === home \|\| isVolumeRootPath\(pendingPath\);/,
+    "bare $HOME and bare volume roots cannot be selected",
+  );
   assert.match(src, />Selecting</, "the footer labels the pending selection");
   assert.match(src, /\{pendingPath \? collapseHome\(pendingPath\) : "…"\}/, "the footer echoes the ~-collapsed pending path");
 });
@@ -227,5 +246,44 @@ test("fs-browse marks entries inside configured workspaces for the picker badge"
     src,
     /workspace: resolveAllowedProjectSubpath\(entry\.path\) !== null,/,
     "each listed entry carries a workspace flag",
+  );
+});
+
+// cave-zf1f: the picker was capped at $HOME, so projects on another drive (or
+// anywhere above home) could never be selected on the web build. Browsing now
+// walks up to volume roots and across drives via the ::drives pseudo-location,
+// while bare roots stay unselectable like $HOME itself.
+test("the modal browses above $HOME to volume roots and drives", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /const DRIVES = "::drives";/, "shares the drives pseudo-location with the API");
+  assert.match(
+    src,
+    /if \(cwd === DRIVES\) return \[\{ name: "Drives", path: DRIVES \}\];/,
+    "the drives list gets a single Drives crumb",
+  );
+  assert.match(
+    src,
+    /cwd === home \|\| cwd\.startsWith\(home \+ sep\)/,
+    "home-anchored crumbs are separator-aware (Windows web builds get real crumbs)",
+  );
+  assert.match(
+    src,
+    /trail\.push\(\{ name: acc, path: acc \}\);/,
+    "paths above $HOME anchor their crumbs at the volume root",
+  );
+  assert.match(
+    src,
+    /\/\^\[A-Za-z\]:\[\\\\\/\]\$\/\.test\(value\)/,
+    "volume roots are recognized on both platforms",
+  );
+  assert.match(
+    src,
+    /name=\{atDrivesList \? "ph:hard-drives" : "ph:folder"\}/,
+    "drive rows render the hard-drives glyph",
+  );
+  assert.match(
+    src,
+    /disabled=\{loading \|\| createBusy \|\| !cwd \|\| creatingFolder \|\| cwd === DRIVES\}/,
+    "New folder is unavailable on the drives list",
   );
 });
