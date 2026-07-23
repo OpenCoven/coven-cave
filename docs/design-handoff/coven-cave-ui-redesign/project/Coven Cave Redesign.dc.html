@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-d70ab487-6d5d-4c3d-a517-4b68c9e3bf1f/styles.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<style>
+:root{--acc:#9184d9;--acc-soft:#a99ee6;--bg:#161826;--surf:#232532;--surf2:#1c1e2c;--txt:#e9e9ed;--mut:#9397ab;--mut2:#75798c;--line:rgba(233,233,237,.09);--line2:rgba(233,233,237,.14)}
+*{box-sizing:border-box}
+body{margin:0;background:#0b0c12;background-image:radial-gradient(1200px 700px at 20% -10%,#181a2b 0%,#0b0c12 60%);font-family:"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.dv-turn{padding:56px 60px 40px}
+.dv-thd{display:flex;align-items:baseline;gap:12px;margin:0 0 34px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:4px 8px;background:var(--acc);color:#12131c;border-radius:5px;text-decoration:none}
+.dv-tname{font:500 15px/1.3 "Inter",sans-serif;color:#e9e9ed;letter-spacing:-.01em}
+.dv-sub{font:400 13px/1.4 "Inter",sans-serif;color:#75798c;max-width:640px;margin:8px 0 0}
+.dv-opts{display:flex;flex-wrap:wrap;gap:52px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:16px;scroll-margin-top:24px}
+.dv-oid{font:600 11px ui-monospace,Menlo,monospace;padding:3px 8px;background:rgba(145,132,217,.16);color:var(--acc-soft);border-radius:6px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:10px;font:400 13px/1.4 "Inter",sans-serif;color:#9397ab;max-width:375px}
+.dv-olabel b{color:#e9e9ed;font-weight:500}
+.dv-opt:target .dv-oid{background:var(--acc);color:#12131c}
+.dv-next{margin:40px 0 0;font:13px/1.7 "Inter",sans-serif;color:#75798c;max-width:760px}
+.dv-next a{color:var(--acc-soft);text-decoration:none}
+
+/* iPhone shell */
+.phone{width:378px;height:818px;background:linear-gradient(150deg,#2a2c38,#0e0f16);border-radius:56px;padding:12px;box-shadow:0 2px 4px rgba(0,0,0,.6),0 40px 80px -20px rgba(0,0,0,.7),inset 0 0 0 1.5px #3a3c4a}
+.scr{position:relative;width:100%;height:100%;border-radius:44px;overflow:hidden;background:var(--bg);color:var(--txt);display:flex;flex-direction:column;font-size:15px;line-height:1.4}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:118px;height:33px;background:#000;border-radius:19px;z-index:60}
+.sb{flex:none;height:52px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 28px 7px;font-size:15px;font-weight:600;letter-spacing:-.02em}
+.sb .r{display:flex;align-items:center;gap:7px;font-size:16px}
+.body{flex:1;min-height:0;position:relative;overflow:hidden;display:flex;flex-direction:column}
+
+/* generic */
+.av{border-radius:50%;display:grid;place-items:center;font-weight:600;color:#fff;flex:none;letter-spacing:-.02em}
+.dot{width:12px;height:12px;border-radius:50%;border:2.5px solid var(--bg);position:absolute;right:-1px;bottom:-1px}
+.muted{color:var(--mut)}
+.tiny{font-size:12px}
+.icbtn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.06);color:var(--txt);font-size:19px;flex:none}
+.hdr{flex:none;padding:6px 20px 12px;display:flex;align-items:center;gap:12px}
+.h-title{font-family:"Inter";font-weight:600;letter-spacing:-.03em;font-size:29px}
+.scroll{flex:1;min-height:0;overflow:hidden}
+
+/* search chip */
+.search{margin:2px 20px 14px;display:flex;align-items:center;gap:9px;background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:11px 14px;color:var(--mut);font-size:15px}
+
+/* familiar rail */
+.rail{display:flex;gap:16px;padding:2px 20px 16px;overflow:hidden}
+.rail .f{display:flex;flex-direction:column;align-items:center;gap:7px;width:58px;flex:none}
+.rail .f span{font-size:12px;color:var(--mut);max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seclabel{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mut2);padding:4px 20px 10px}
+
+/* conversation rows */
+.crow{display:flex;gap:13px;align-items:center;padding:11px 20px}
+.crow .mid{flex:1;min-width:0}
+.crow .top{display:flex;align-items:baseline;gap:8px}
+.crow .nm{font-size:16px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .tm{margin-left:auto;font-size:12px;color:var(--mut2);flex:none}
+.crow .pv{font-size:14px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.unread{width:9px;height:9px;border-radius:50%;background:var(--acc);flex:none}
+.badge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--acc);color:#12131c;font-size:12px;font-weight:700;display:grid;place-items:center;flex:none}
+
+/* tab bar */
+.tabs{flex:none;height:62px;display:flex;align-items:center;justify-content:space-around;padding:0 8px 18px;background:linear-gradient(180deg,rgba(22,24,38,0),rgba(18,20,32,.92) 42%);backdrop-filter:blur(20px);border-top:1px solid var(--line)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:22px;color:var(--mut2)}
+.tab span{font-size:10px;font-weight:500;letter-spacing:.01em}
+.tab.on{color:var(--acc)}
+
+/* conversation view */
+.nav{flex:none;display:flex;align-items:center;gap:11px;padding:4px 14px 12px;border-bottom:1px solid var(--line)}
+.nav .bk{font-size:24px;color:var(--acc);width:30px}
+.thread{flex:1;min-height:0;overflow:hidden;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.b-a{align-self:flex-start;max-width:80%;background:var(--surf);border-radius:20px 20px 20px 6px;padding:11px 14px;font-size:15px;line-height:1.45}
+.b-u{align-self:flex-end;max-width:80%;background:linear-gradient(180deg,var(--acc-soft),var(--acc));color:#141320;border-radius:20px 20px 6px 20px;padding:11px 14px;font-size:15px;line-height:1.45;font-weight:450}
+.ts{font-size:11px;color:var(--mut2);margin:-4px 4px 2px}
+.actchip{align-self:flex-start;display:flex;align-items:center;gap:9px;background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:9px 13px;font-size:13px;color:var(--mut);max-width:82%}
+.composer{flex:none;display:flex;align-items:center;gap:10px;padding:10px 14px 20px;border-top:1px solid var(--line)}
+.cfield{flex:1;display:flex;align-items:center;gap:8px;background:var(--surf);border:1px solid var(--line2);border-radius:22px;padding:10px 8px 10px 16px;color:var(--mut);font-size:15px}
+.send{width:34px;height:34px;border-radius:50%;background:var(--acc);color:#12131c;display:grid;place-items:center;font-size:18px;flex:none}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:14px;font-size:13px;font-weight:500}
+
+/* doc transcript */
+.turn{padding:14px 4px;border-bottom:1px solid var(--line)}
+.turn .who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--mut2);margin-bottom:8px}
+.turn .who .tick{width:5px;height:5px;border-radius:50%}
+.turn .tx{font-size:15px;line-height:1.5;color:var(--txt)}
+.turn.me .tx{color:var(--mut)}
+
+/* task cards */
+.tcard{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin:0 20px 10px}
+.tcard .tt{font-size:15px;font-weight:500;line-height:1.3;letter-spacing:-.01em}
+.tmeta{display:flex;align-items:center;gap:8px;margin-top:10px}
+.tag{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px}
+.stbar{display:flex;align-items:center;gap:8px;padding:16px 20px 9px}
+.stbar .sh{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.stbar .ct{font-size:12px;color:var(--mut2);background:var(--surf);border-radius:8px;padding:1px 7px}
+
+/* seg control */
+.seg{display:flex;background:var(--surf2);border-radius:11px;padding:3px;gap:3px;margin:0 20px}
+.seg div{flex:1;text-align:center;font-size:13px;font-weight:500;padding:7px 0;border-radius:8px;color:var(--mut)}
+.seg div.on{background:var(--surf);color:var(--txt);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.fchip{font-size:12.5px;font-weight:500;color:var(--mut);border:1px solid var(--line2);border-radius:20px;padding:6px 12px;white-space:nowrap}
+
+/* connection */
+.conn{flex:1;display:flex;flex-direction:column;padding:0 26px;overflow:hidden}
+.glyph{width:78px;height:78px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(150deg,#2a2752,#191a2c);border:1px solid var(--line2);color:var(--acc-soft);font-size:38px;box-shadow:0 10px 30px -8px rgba(145,132,217,.5)}
+.field{background:var(--surf);border:1px solid var(--line2);border-radius:13px;padding:14px 15px;font-size:15px;display:flex;align-items:center;gap:10px}
+.checkrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#4ade80;margin-top:12px}
+.btnp{border:1.5px solid var(--acc);color:var(--acc-soft);border-radius:13px;padding:15px;text-align:center;font-weight:600;font-size:15px}
+.btng{background:var(--surf);border-radius:13px;padding:15px;text-align:center;font-weight:500;font-size:15px;color:var(--txt);display:flex;align-items:center;justify-content:center;gap:9px}
+
+/* settings */
+.grp{background:var(--surf);border:1px solid var(--line);border-radius:15px;margin:0 20px 20px;overflow:hidden}
+.srow{display:flex;align-items:center;gap:13px;padding:13px 15px;border-bottom:1px solid var(--line)}
+.srow:last-child{border-bottom:none}
+.srow .si{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:17px;color:#fff;flex:none}
+.srow .sl{flex:1;font-size:15px;letter-spacing:-.01em}
+.srow .sv{font-size:14px;color:var(--mut2)}
+.srow .chev{color:var(--mut2);font-size:15px}
+.toggle{width:44px;height:26px;border-radius:13px;background:var(--acc);position:relative;flex:none}
+.toggle::after{content:"";position:absolute;width:22px;height:22px;border-radius:50%;background:#fff;top:2px;right:2px}
+.toggle.off{background:#3a3c4a}
+.toggle.off::after{right:auto;left:2px}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><div><div class="dv-tname">Coven Cave — modern redesign</div><p class="dv-sub">A calmer, faster take on the Nocturne palette. The stacked familiar+group+chat lists collapse into one avatar rail plus a unified recents list; chrome thins to hairlines and glass; the accent is used as a line and a glow, never a flood. Conversation is shown two ways — modernized bubbles and a flatter document transcript.</p></div></div>
+<div class="dv-opts">
+
+<!-- 1a CHATS HOME -->
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a><span><b>Chats</b> — familiar rail + unified recents, floating tab bar</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="hdr"><div class="h-title" style="flex:1">Messages</div>
+    <div class="icbtn"><i class="ph ph-pencil-simple"></i></div>
+    <div class="av" style="width:38px;height:38px;background:linear-gradient(150deg,#6366F1,#8B5CF6);font-size:14px">JR</div>
+  </div>
+  <div class="search"><i class="ph ph-magnifying-glass"></i>Search familiars &amp; chats</div>
+  <div class="rail">
+    <div class="f"><div style="position:relative"><div class="av" style="width:56px;height:56px;background:linear-gradient(150deg,#8B5CF6,#6366F1);font-size:19px">Ny</div><div class="dot" style="background:#4ade80"></div></div><span>Nyx</span></div>
+    <div class="f"><div style="position:relative"><div class="av" style="width:56px;height:56px;background:linear-gradient(150deg,#14B8A6,#10B981);font-size:19px">Sa</div><div class="dot" style="background:#fbbf24"></div></div><span>Sable</span></div>
+    <div class="f"><div style="position:relative"><div class="av" style="width:56px;height:56px;background:linear-gradient(150deg,#F59E0B,#EF4444);font-size:19px">Or</div><div class="dot" style="background:#60a5fa"></div></div><span>Orrery</span></div>
+    <div class="f"><div style="position:relative"><div class="av" style="width:56px;height:56px;background:linear-gradient(150deg,#EC4899,#8B5CF6);font-size:19px">Wi</div><div class="dot" style="background:#8a8a8e"></div></div><span>Wisp</span></div>
+    <div class="f"><div style="position:relative"><div class="av" style="width:56px;height:56px;background:linear-gradient(150deg,#3B82F6,#14B8A6);font-size:19px">Em</div></div><span>Ember</span></div>
+  </div>
+  <div class="seclabel">Recent</div>
+  <div class="scroll">
+    <div class="crow"><div style="position:relative"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#8B5CF6,#6366F1);font-size:16px">Ny</div><div class="dot" style="background:#4ade80"></div></div>
+      <div class="mid"><div class="top"><span class="nm">Nyx</span><span class="tm">now</span></div><div class="pv" style="color:var(--acc-soft)">Reviewing the migration plan…</div></div><div class="badge">2</div></div>
+    <div class="crow"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#F59E0B,#EF4444);font-size:16px"><i class="ph-fill ph-users-three" style="font-size:20px"></i></div>
+      <div class="mid"><div class="top"><span class="nm">Release war-room</span><i class="ph-fill ph-users-three muted" style="font-size:12px"></i><span class="tm">12m</span></div><div class="pv"><b style="color:var(--txt);font-weight:500">Sable:</b> Tests are green on staging</div></div><span class="unread"></span></div>
+    <div class="crow"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#14B8A6,#10B981);font-size:16px">Sa</div>
+      <div class="mid"><div class="top"><span class="nm">Sable</span><span class="tm">1h</span></div><div class="pv">You: ship it when CI passes</div></div></div>
+    <div class="crow"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#F59E0B,#EF4444);font-size:16px">Or</div>
+      <div class="mid"><div class="top"><span class="nm">Orrery</span><i class="ph-fill ph-pin muted" style="font-size:11px;color:#F59E0B"></i><span class="tm">3h</span></div><div class="pv">Draft: next week I want to focus on…</div></div></div>
+    <div class="crow"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#EC4899,#8B5CF6);font-size:16px">Wi</div>
+      <div class="mid"><div class="top"><span class="nm">Wisp</span><span class="tm">Tue</span></div><div class="pv">Here's the blog draft — three angles…</div></div></div>
+    <div class="crow"><div class="av" style="width:46px;height:46px;background:linear-gradient(150deg,#3B82F6,#14B8A6);font-size:16px">Em</div>
+      <div class="mid"><div class="top"><span class="nm">Ember</span><span class="tm">Mon</span></div><div class="pv">Exported the new icon set to Canvas</div></div></div>
+  </div>
+  <div class="tabs">
+    <div class="tab on"><i class="ph-fill ph-chat-circle"></i><span>Chats</span></div>
+    <div class="tab"><i class="ph ph-check-square"></i><span>Tasks</span></div>
+    <div class="tab"><i class="ph ph-sparkle"></i><span>Canvas</span></div>
+    <div class="tab"><i class="ph ph-magnifying-glass"></i><span>Search</span></div>
+    <div class="tab"><i class="ph ph-gear"></i><span>Settings</span></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+<!-- 1b CONVERSATION — BUBBLES -->
+<div class="dv-opt" id="1b">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a><span><b>Conversation A</b> — modernized bubbles + inline agent activity</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="nav"><i class="ph ph-caret-left bk"></i>
+    <div style="position:relative"><div class="av" style="width:34px;height:34px;background:linear-gradient(150deg,#8B5CF6,#6366F1);font-size:13px">Ny</div><div class="dot" style="background:#4ade80;width:10px;height:10px"></div></div>
+    <div style="flex:1;line-height:1.15"><div style="font-size:16px;font-weight:600;letter-spacing:-.01em">Nyx</div><div style="font-size:12px;color:#4ade80">active now</div></div>
+    <i class="ph ph-dots-three-outline muted" style="font-size:20px"></i>
+  </div>
+  <div class="thread">
+    <div class="b-a">Morning — want me to pick up the auth migration today?</div>
+    <div class="b-u">yes, but read-only until we pair on the schema</div>
+    <div class="ts" style="align-self:flex-end">9:38 AM</div>
+    <div class="actchip"><i class="ph ph-circle-notch" style="color:var(--acc-soft)"></i>Read 4 files · ran <b style="color:var(--txt);font-weight:500">rg "grant"</b> · +2 steps</div>
+    <div class="b-a">Done. The migration touches <b style="font-weight:600">3 tables</b>. Here's the plan and the rollback path — I've left writes gated behind the phone opt-in.</div>
+    <div class="ts">9:41 AM</div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-self:stretch;margin-top:2px">
+      <div class="pill" style="background:rgba(145,132,217,.16);color:var(--acc-soft);border:1px solid rgba(145,132,217,.35);justify-content:center"><i class="ph-fill ph-sparkle"></i>Show me the rollback plan</div>
+      <div class="pill" style="background:var(--surf);color:var(--txt);justify-content:center">Open the diff in Canvas</div>
+    </div>
+  </div>
+  <div class="composer">
+    <i class="ph ph-plus-circle" style="font-size:28px;color:var(--acc-soft)"></i>
+    <div class="cfield"><span style="flex:1">Message</span><i class="ph ph-microphone" style="font-size:19px"></i></div>
+    <div class="send"><i class="ph-bold ph-arrow-up"></i></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+<!-- 1c CONVERSATION — DOCUMENT -->
+<div class="dv-opt" id="1c">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a><span><b>Conversation B</b> — flat document transcript, more reading width</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="nav"><i class="ph ph-caret-left bk"></i>
+    <div style="position:relative"><div class="av" style="width:34px;height:34px;background:linear-gradient(150deg,#8B5CF6,#6366F1);font-size:13px">Ny</div><div class="dot" style="background:#4ade80;width:10px;height:10px"></div></div>
+    <div style="flex:1;line-height:1.15"><div style="font-size:16px;font-weight:600;letter-spacing:-.01em">Nyx</div><div style="font-size:12px;color:#4ade80">active now</div></div>
+    <i class="ph ph-dots-three-outline muted" style="font-size:20px"></i>
+  </div>
+  <div class="thread" style="gap:0;padding:6px 20px">
+    <div class="turn"><div class="who" style="color:#8B5CF6"><span class="tick" style="background:#8B5CF6"></span>Nyx</div><div class="tx">Morning — want me to pick up the auth migration today?</div></div>
+    <div class="turn me"><div class="who"><span class="tick" style="background:var(--acc)"></span>You</div><div class="tx">yes, but read-only until we pair on the schema</div></div>
+    <div class="turn"><div class="who" style="color:#8B5CF6"><span class="tick" style="background:#8B5CF6"></span>Nyx</div>
+      <div class="actchip" style="max-width:100%;margin-bottom:10px"><i class="ph ph-check-circle" style="color:#4ade80"></i>Read 4 files · ran <b style="color:var(--txt);font-weight:500">rg "grant"</b> · +2 steps</div>
+      <div class="tx">Done. The migration touches <b style="font-weight:600">3 tables</b>:</div>
+      <div class="tx" style="margin-top:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;background:var(--surf2);border-radius:10px;padding:10px 12px;color:var(--mut)">grants · access_groups · audit_log</div>
+      <div class="tx" style="margin-top:8px">Writes stay gated behind the phone opt-in. Here's the plan and a clean rollback path.</div></div>
+  </div>
+  <div class="composer">
+    <i class="ph ph-plus-circle" style="font-size:28px;color:var(--acc-soft)"></i>
+    <div class="cfield"><span style="flex:1">Message</span><i class="ph ph-microphone" style="font-size:19px"></i></div>
+    <div class="send"><i class="ph-bold ph-arrow-up"></i></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+<!-- 1d TASKS -->
+<div class="dv-opt" id="1d">
+<div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a><span><b>Tasks</b> — grouped by status, dense cards, filter chips</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="hdr"><div class="h-title" style="flex:1">Tasks</div><div class="icbtn"><i class="ph ph-sliders-horizontal"></i></div><div class="icbtn"><i class="ph ph-plus"></i></div></div>
+  <div class="seg" style="margin-bottom:12px"><div class="on">List</div><div>Board</div></div>
+  <div style="display:flex;gap:8px;padding:0 20px 8px;overflow:hidden"><div class="fchip" style="border-color:var(--acc);color:var(--acc-soft)"><i class="ph ph-flag-pennant"></i> High</div><div class="fchip">All familiars</div><div class="fchip">This week</div></div>
+  <div class="scroll">
+    <div class="stbar"><span class="dot" style="position:static;border:none;width:9px;height:9px;background:#3B82F6"></span><span class="sh">Running</span><span class="ct">2</span></div>
+    <div class="tcard"><div class="tt">Auth migration — gate writes behind opt-in</div>
+      <div class="tmeta"><span class="tag" style="background:rgba(239,68,68,.16);color:#f87171"><i class="ph-fill ph-flag" style="font-size:10px"></i> Urgent</span><span class="muted tiny">coven-cave</span><div class="av" style="width:22px;height:22px;background:linear-gradient(150deg,#8B5CF6,#6366F1);font-size:10px;margin-left:auto">Ny</div></div></div>
+    <div class="tcard"><div class="tt">Terminal bundle blank on cold launch</div>
+      <div class="tmeta"><span class="tag" style="background:rgba(245,158,11,.16);color:#fbbf24">High</span><span class="muted tiny">ios-app</span><div class="av" style="width:22px;height:22px;background:linear-gradient(150deg,#14B8A6,#10B981);font-size:10px;margin-left:auto">Sa</div></div></div>
+    <div class="stbar"><span class="dot" style="position:static;border:none;width:9px;height:9px;background:#8B5CF6"></span><span class="sh">In review</span><span class="ct">1</span></div>
+    <div class="tcard"><div class="tt">New icon set for Canvas export</div>
+      <div class="tmeta"><span class="tag" style="background:rgba(59,130,246,.16);color:#60a5fa">Medium</span><span class="muted tiny">design</span><div class="av" style="width:22px;height:22px;background:linear-gradient(150deg,#3B82F6,#14B8A6);font-size:10px;margin-left:auto">Em</div></div></div>
+    <div class="stbar"><span class="dot" style="position:static;border:none;width:9px;height:9px;background:#14B8A6"></span><span class="sh">Inbox</span><span class="ct">3</span></div>
+    <div class="tcard"><div class="tt">Draft Q3 changelog from merged PRs</div>
+      <div class="tmeta"><span class="tag" style="background:rgba(148,163,184,.16);color:#94A3B8">Low</span><span class="muted tiny">writing</span><div class="av" style="width:22px;height:22px;background:linear-gradient(150deg,#EC4899,#8B5CF6);font-size:10px;margin-left:auto">Wi</div></div></div>
+  </div>
+  <div class="tabs">
+    <div class="tab"><i class="ph ph-chat-circle"></i><span>Chats</span></div>
+    <div class="tab on"><i class="ph-fill ph-check-square"></i><span>Tasks</span></div>
+    <div class="tab"><i class="ph ph-sparkle"></i><span>Canvas</span></div>
+    <div class="tab"><i class="ph ph-magnifying-glass"></i><span>Search</span></div>
+    <div class="tab"><i class="ph ph-gear"></i><span>Settings</span></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+<!-- 1e CONNECTION -->
+<div class="dv-opt" id="1e">
+<div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a><span><b>Connect</b> — calm pairing with live reachability</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="conn">
+    <div style="height:56px"></div>
+    <div class="glyph"><i class="ph-fill ph-moon-stars"></i></div>
+    <h2 style="font-size:26px;margin:22px 0 6px;letter-spacing:-.03em">Connect to your desktop</h2>
+    <p style="color:var(--mut);font-size:15px;line-height:1.5;margin:0 0 26px">Coven Cave reaches your Mac over your Tailscale network. No token, no password — your tailnet is the trust boundary.</p>
+    <div class="seclabel" style="padding:0 0 8px">MagicDNS name or address</div>
+    <div class="field"><i class="ph ph-desktop-tower muted"></i><span style="flex:1;color:var(--txt)">my-mac.example.ts.net</span><i class="ph ph-x-circle muted"></i></div>
+    <div class="checkrow"><i class="ph-fill ph-check-circle"></i>Desktop found · responding on :3000</div>
+    <div style="height:20px"></div>
+    <div class="btnp" style="box-shadow:0 8px 24px -8px rgba(145,132,217,.6)">Connect</div>
+    <div style="height:11px"></div>
+    <div class="btng"><i class="ph ph-qr-code"></i>Scan QR from desktop</div>
+    <div style="flex:1"></div>
+    <div style="display:flex;gap:9px;align-items:flex-start;color:var(--mut2);font-size:12.5px;line-height:1.45;padding:16px 4px 22px"><i class="ph ph-shield-check" style="font-size:16px;margin-top:1px"></i><span>Changes from the phone are off by default. Enable them on the desktop's Settings → Phone.</span></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+<!-- 1f SETTINGS -->
+<div class="dv-opt" id="1f">
+<div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a><span><b>Settings</b> — profile header, grouped, minimal</span></div>
+<div class="phone"><div class="scr">
+<div class="island"></div>
+<div class="sb">9:41<div class="r"><i class="ph-fill ph-cell-signal-full"></i><i class="ph-fill ph-wifi-high"></i><i class="ph-fill ph-battery-full"></i></div></div>
+<div class="body">
+  <div class="hdr"><div class="h-title" style="flex:1">Settings</div></div>
+  <div class="scroll">
+    <div style="display:flex;align-items:center;gap:14px;padding:6px 20px 20px">
+      <div class="av" style="width:60px;height:60px;background:linear-gradient(150deg,#6366F1,#8B5CF6);font-size:22px">JR</div>
+      <div><div style="font-size:19px;font-weight:600;letter-spacing:-.01em">Jordan Reyes</div><div style="font-size:13px;color:#4ade80;display:flex;align-items:center;gap:6px;margin-top:3px"><span class="dot" style="position:static;border:none;width:8px;height:8px;background:#4ade80"></span>my-mac.example.ts.net</div></div>
+    </div>
+    <div class="grp">
+      <div class="srow"><div class="si" style="background:#8B5CF6"><i class="ph-fill ph-paint-brush"></i></div><div class="sl">Appearance</div><div class="sv">Dark</div><i class="ph ph-caret-right chev"></i></div>
+      <div class="srow"><div class="si" style="background:#3B82F6"><i class="ph-fill ph-key"></i></div><div class="sl">Familiar permissions</div><i class="ph ph-caret-right chev"></i></div>
+      <div class="srow"><div class="si" style="background:#EF4444"><i class="ph-fill ph-bell"></i></div><div class="sl">Notifications</div><div class="toggle"></div></div>
+    </div>
+    <div class="grp">
+      <div class="srow"><div class="si" style="background:#14B8A6"><i class="ph-fill ph-wifi-high"></i></div><div class="sl">Connection</div><div class="sv">Tailscale</div><i class="ph ph-caret-right chev"></i></div>
+      <div class="srow"><div class="si" style="background:#F59E0B"><i class="ph-fill ph-hand-tap"></i></div><div class="sl">Haptics</div><div class="toggle"></div></div>
+      <div class="srow"><div class="si" style="background:#75798c"><i class="ph-fill ph-terminal-window"></i></div><div class="sl">Developer</div><div class="toggle off"></div></div>
+    </div>
+    <div class="grp">
+      <div class="srow"><div class="si" style="background:#596080"><i class="ph-fill ph-info"></i></div><div class="sl">About</div><div class="sv">v2.0</div><i class="ph ph-caret-right chev"></i></div>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab"><i class="ph ph-chat-circle"></i><span>Chats</span></div>
+    <div class="tab"><i class="ph ph-check-square"></i><span>Tasks</span></div>
+    <div class="tab"><i class="ph ph-sparkle"></i><span>Canvas</span></div>
+    <div class="tab"><i class="ph ph-magnifying-glass"></i><span>Search</span></div>
+    <div class="tab on"><i class="ph-fill ph-gear"></i><span>Settings</span></div>
+  </div>
+</div>
+</div></div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "prototype <a class="dv-oid" href="#1a">1a</a> with working navigation into <a class="dv-oid" href="#1b">1b</a>" · "I prefer the flat transcript <a class="dv-oid" href="#1c">1c</a> — make it the default and refine it" · "show a light variant of <a class="dv-oid" href="#1a">1a</a>" · "add a Canvas screen" · "recreate the current Chats screen next to <a class="dv-oid" href="#1a">1a</a> for before/after"</p>
+</section>
+</x-dc>
+</body>
+</html>

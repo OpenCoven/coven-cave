@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+/// The pairing front door, redesigned (design handoff 2026-07-22, screen 1e +
+/// QR-first variant): a calm, centered hero — glowing Cave glyph, "Connect to
+/// Cave", one prominent Scan QR Code action — with manual address entry folded
+/// behind an "Enter address manually" link. All the existing plumbing (invite
+/// parsing, debounced live reachability preview, recovery callouts, quiet
+/// re-probe) is preserved; only the hierarchy changed.
 struct ConnectionView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
@@ -13,6 +19,10 @@ struct ConnectionView: View {
     /// "pasted from" banner just for showing the button.
     @State private var canPaste = false
     @State private var showScanner = false
+    /// Manual entry starts folded behind the "Enter address manually" link —
+    /// the QR from the desktop is the one-tap path. Auto-expands when an
+    /// address already exists (returning user) or no camera is available.
+    @State private var manualEntry = false
     /// Live as-you-edit reachability preview under the address field. Purely
     /// advisory: never auto-connects, never persists — Connect stays the
     /// explicit action.
@@ -31,50 +41,59 @@ struct ConnectionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    header
-                    pairingSteps
+                VStack(spacing: 0) {
+                    Spacer(minLength: 36)
+                    hero
+                    Spacer(minLength: 28)
 
-                    if scanFirst {
-                        scanHero
+                    VStack(spacing: 14) {
+                        if scannerAvailable {
+                            scanHeroButton
+                        }
+
+                        if manualEntry || !scannerAvailable {
+                            manualSection
+                                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                        } else {
+                            manualEntryLink
+                        }
+
+                        if case .unreachable(let diagnosis) = app.connectionState {
+                            connectionRecoveryCallout(
+                                title: diagnosis.title,
+                                message: diagnosis.message,
+                                guidance: diagnosis.guidance,
+                                systemImage: diagnosis.systemImage
+                            )
+                        } else if case .needsAuth(let message) = app.connectionState {
+                            // The desktop is alive but token-gated — say how to
+                            // pair instead of the generic unreachable shrug.
+                            connectionRecoveryCallout(
+                                title: "Pairing needed",
+                                message: message,
+                                guidance: "Open Cave on your desktop and scan the latest QR code.",
+                                systemImage: "qrcode.viewfinder"
+                            )
+                        }
                     }
 
-                    addressField
-
-                    if case .unreachable(let diagnosis) = app.connectionState {
-                        connectionRecoveryCallout(
-                            title: diagnosis.title,
-                            message: diagnosis.message,
-                            guidance: diagnosis.guidance,
-                            systemImage: diagnosis.systemImage
-                        )
-                    } else if case .needsAuth(let message) = app.connectionState {
-                        // The desktop is alive but token-gated — say how to
-                        // pair instead of the generic unreachable shrug.
-                        connectionRecoveryCallout(
-                            title: "Pairing needed",
-                            message: message,
-                            guidance: "Open Cave on your desktop and scan the latest QR code.",
-                            systemImage: "qrcode.viewfinder"
-                        )
-                    }
-
-                    actions
-
-                    trustNote
+                    Spacer(minLength: 40)
+                    trustFooter
                 }
-                .padding(24)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, minHeight: heroMinHeight)
                 .readableWidth(520)
                 .animation(reduceMotion ? nil : .spring(duration: 0.32), value: liveCheck)
-                .animation(reduceMotion ? nil : .spring(duration: 0.32), value: hostPresent)
+                .animation(reduceMotion ? nil : .spring(duration: 0.32), value: manualEntry)
                 .animation(reduceMotion ? nil : .spring(duration: 0.32), value: app.connectionState)
             }
-            .background(chrome.bgBase.ignoresSafeArea())
-            .navigationTitle("Coven Cave")
+            .background(connectBackground.ignoresSafeArea())
+            .toolbarVisibility(.hidden, for: .navigationBar)
             .onAppear {
                 host = app.connection?.host ?? ""
-                focused = host.isEmpty
                 canPaste = UIPasteboard.general.hasStrings
+                if !host.isEmpty { manualEntry = true }
             }
             // The user may copy the address from the desktop, then return — keep
             // the Paste affordance in step with the clipboard.
@@ -111,194 +130,167 @@ struct ConnectionView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            heroBadge
-            VStack(alignment: .leading, spacing: 8) {
+    private var scannerAvailable: Bool { QRScannerSheet.isSupported }
+
+    /// Keep the centered composition on tall phones without fighting small
+    /// ones — the ScrollView still wins when content overflows.
+    private var heroMinHeight: CGFloat {
+        UIScreen.main.bounds.height - 120
+    }
+
+    /// A quiet violet wash behind the hero so the glyph's glow reads as part
+    /// of the page, not a sticker.
+    private var connectBackground: some View {
+        ZStack {
+            chrome.bgBase
+            RadialGradient(
+                colors: [chrome.accent.opacity(0.14), .clear],
+                center: .init(x: 0.5, y: 0.22),
+                startRadius: 10,
+                endRadius: 340
+            )
+        }
+    }
+
+    // MARK: - Hero
+
+    private var hero: some View {
+        VStack(spacing: 20) {
+            glyph
+            VStack(spacing: 8) {
                 Text("Connect to Cave")
-                    .font(.largeTitle.bold())
+                    .font(.system(size: 30, weight: .bold))
+                    .kerning(-0.6)
                     .foregroundStyle(chrome.textPrimary)
-                Text("Pair this phone with the Cave desktop running on your private Tailscale network.")
+                Text("Pair this iPhone with Cave on your desktop.")
                     .font(.callout)
                     .foregroundStyle(chrome.textSecondary)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.top, 4)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
-    private var heroBadge: some View {
-        ZStack(alignment: .bottomTrailing) {
+    /// Glowing Cave glyph — the app icon's hooded-nib mark stands in via the
+    /// bundled icon asset when present, over a soft accent bloom.
+    private var glyph: some View {
+        ZStack {
             Circle()
-                .fill(chrome.accent.opacity(0.16))
-                .frame(width: 72, height: 72)
+                .fill(chrome.accent.opacity(0.22))
+                .frame(width: 96, height: 96)
+                .blur(radius: 26)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(chrome.bgElevated)
+                .frame(width: 84, height: 84)
                 .overlay {
-                    Circle()
-                        .strokeBorder(chrome.accent.opacity(0.35), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(chrome.accent.opacity(0.45), lineWidth: 1)
                 }
-            Image(systemName: "cat.fill")
+                .shadow(color: chrome.accent.opacity(0.35), radius: 22, y: 6)
+            appMark
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Prefer the real app icon; fall back to a themed SF Symbol so the hero
+    /// never renders empty (e.g. alternate-icon edge cases).
+    @ViewBuilder
+    private var appMark: some View {
+        if let icon = UIImage(named: "AppIcon") ?? Bundle.main.primaryAppIcon {
+            Image(uiImage: icon)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 84, height: 84)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else {
+            Image(systemName: "moon.stars.fill")
                 .font(.system(size: 38, weight: .semibold))
                 .foregroundStyle(chrome.accent)
-            Image(systemName: "wifi")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(7)
-                .background(Circle().fill(Color.green))
-                .overlay {
-                    Circle().strokeBorder(chrome.bgBase.opacity(0.9), lineWidth: 2)
-                }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Cave familiar network")
     }
 
-    /// The three-step guide, now live: each chip is a real button whose state
-    /// tracks actual progress (Scan/Paste land a host → done; Connect goes
-    /// green once connected) instead of decorative hardcoded highlights.
-    private var pairingSteps: some View {
-        HStack(spacing: 8) {
-            stepChip(
-                "Scan", systemImage: "qrcode.viewfinder", state: scanStep,
-                enabled: QRScannerSheet.isSupported && !busy,
-                hint: "Opens the QR scanner"
-            ) { showScanner = true }
-            stepChip(
-                "Paste", systemImage: "doc.on.clipboard", state: pasteStep,
-                enabled: canPaste && !busy,
-                hint: "Pastes the desktop address from the clipboard"
-            ) { pasteHost() }
-            stepChip(
-                "Connect", systemImage: "bolt.horizontal.circle", state: connectStep,
-                enabled: hostPresent && !busy,
-                hint: "Connects to the desktop address"
-            ) { connect() }
-        }
-        .padding(8)
-        .glass(.raised, cornerRadius: 18)
-    }
+    // MARK: - Actions
 
-    private enum StepState { case pending, active, done }
-
-    private var hostPresent: Bool {
-        !host.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    /// Camera-first hierarchy: with no address yet and a camera available,
-    /// scanning the desktop's QR is the shortest correct path.
-    private var scanFirst: Bool {
-        QRScannerSheet.isSupported && !hostPresent
-    }
-
-    private var scanStep: StepState { hostPresent ? .done : .active }
-
-    private var pasteStep: StepState {
-        if hostPresent { return .done }
-        return canPaste ? .active : .pending
-    }
-
-    private var connectStep: StepState {
-        if app.connectionState == .connected { return .done }
-        return hostPresent ? .active : .pending
-    }
-
-    private func stepChip(
-        _ title: String,
-        systemImage: String,
-        state: StepState,
-        enabled: Bool,
-        hint: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: state == .done ? "checkmark.circle.fill" : systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(chipForeground(state))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+    /// The one-tap path: the desktop's QR carries host and credential.
+    private var scanHeroButton: some View {
+        Button {
+            showScanner = true
+        } label: {
+            Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                .font(.body.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .padding(.horizontal, 6)
-                .background(
-                    Capsule()
-                        .fill(chipFill(state))
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(chipStroke(state), lineWidth: 1)
-                }
-                .contentShape(Capsule())
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(.white)
+        .foregroundStyle(Color(white: 0.08))
+        .disabled(busy)
+        .accessibilityHint("Opens the camera to scan the QR code shown in Cave on your desktop")
+    }
+
+    private var manualEntryLink: some View {
+        Button {
+            manualEntry = true
+            focused = true
+        } label: {
+            Text("Enter address manually")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(chrome.accent)
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityHint(hint)
+        .padding(.top, 2)
+        .accessibilityHint("Shows a field for the desktop's Tailscale address")
     }
 
-    private func chipForeground(_ state: StepState) -> Color {
-        switch state {
-        case .done: return .green
-        case .active: return chrome.accent
-        case .pending: return chrome.textSecondary
-        }
-    }
-
-    private func chipFill(_ state: StepState) -> Color {
-        switch state {
-        case .done: return Color.green.opacity(0.14)
-        case .active: return chrome.accent.opacity(0.16)
-        case .pending: return chrome.bgElevated.opacity(0.55)
-        }
-    }
-
-    private func chipStroke(_ state: StepState) -> Color {
-        switch state {
-        case .done: return Color.green.opacity(0.4)
-        case .active: return chrome.accent.opacity(0.45)
-        case .pending: return chrome.border.opacity(0.25)
-        }
-    }
-
-    /// Prominent scan entry shown before any address exists — the QR from
-    /// "Open on phone" carries host AND credential, so it's the one-tap path.
-    private var scanHero: some View {
-        VStack(spacing: 8) {
-            scanButton(prominent: true)
-            Text("or enter the address manually")
-                .font(.caption)
-                .foregroundStyle(chrome.textMuted)
-                .frame(maxWidth: .infinity)
-        }
-    }
-
-    private var addressField: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    /// Manual path: address field + advisory live check + explicit Connect.
+    private var manualSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Desktop").font(.subheadline.weight(.semibold))
-                        .foregroundStyle(chrome.textPrimary)
-                    Text("Tailscale address or invite link")
-                        .font(.caption)
-                        .foregroundStyle(chrome.textMuted)
-                }
+                Text("MagicDNS name or address")
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.6)
+                    .foregroundStyle(chrome.textMuted)
                 Spacer()
                 if canPaste {
                     Button(action: pasteHost) {
                         Label("Paste", systemImage: "doc.on.clipboard")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.borderless)
                     .accessibilityHint("Pastes the desktop address from the clipboard")
                 }
             }
-            TextField("Cave desktop or 100.x address", text: $host)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .focused($focused)
-                .font(.body.monospaced())
-                .padding(.vertical, 14)
-                .padding(.horizontal, 14)
-                .glass(.control, cornerRadius: 16)
-                .accentGlow(active: focused)
+            HStack(spacing: 10) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(chrome.textMuted)
+                TextField("my-mac.example.ts.net", text: $host)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .focused($focused)
+                    .font(.body.monospaced())
+                if hostPresent {
+                    Button {
+                        host = ""
+                        liveCheck = .idle
+                        focused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(chrome.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear address")
+                }
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 14)
+            .glass(.control, cornerRadius: 16)
+            .accentGlow(active: focused)
+
             if let hostHint {
                 Label(hostHint, systemImage: "exclamationmark.circle")
                     .font(.caption)
@@ -306,13 +298,27 @@ struct ConnectionView: View {
             } else if liveCheck != .idle && hostPresent && !busy {
                 liveCheckRow
             } else {
-                Text("Find it in Cave on the desktop under “Open on phone”. QR invite links fill this automatically.")
+                Text("Find it in Cave on the desktop under “Open on phone”.")
                     .font(.footnote)
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Button(action: connect) {
+                Label(
+                    busy ? "Connecting…" : "Connect",
+                    systemImage: busy ? "arrow.triangle.2.circlepath" : "bolt.horizontal.circle.fill"
+                )
+                .font(.body.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!hostPresent || busy)
+            .shadow(color: chrome.accent.opacity(hostPresent && !busy ? 0.4 : 0), radius: 14, y: 5)
         }
-        .padding(14)
+        .padding(16)
         .glass(.raised, cornerRadius: 20)
     }
 
@@ -332,7 +338,7 @@ struct ConnectionView: View {
             }
         case .found(let port):
             Label(
-                port.map { "Desktop found on port \($0)." } ?? "Desktop found.",
+                port.map { "Desktop found · responding on :\($0)" } ?? "Desktop found.",
                 systemImage: "checkmark.circle.fill"
             )
             .font(.caption.weight(.medium))
@@ -378,64 +384,8 @@ struct ConnectionView: View {
         }
     }
 
-    private var actions: some View {
-        VStack(spacing: 12) {
-            connectButton
-
-            if QRScannerSheet.isSupported && !scanFirst {
-                scanButton(prominent: false)
-            }
-        }
-    }
-
-    /// Connect is the prominent CTA once an address exists; while the scan
-    /// hero leads (no address yet), it recedes to a secondary style.
-    @ViewBuilder
-    private var connectButton: some View {
-        if scanFirst {
-            Button(action: connect) { connectLabel }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-        } else {
-            Button(action: connect) { connectLabel }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-        }
-    }
-
-    private var connectLabel: some View {
-        Label(busy ? "Connecting…" : "Connect desktop", systemImage: busy ? "arrow.triangle.2.circlepath" : "bolt.horizontal.circle.fill")
-            .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private func scanButton(prominent: Bool) -> some View {
-        if prominent {
-            Button {
-                showScanner = true
-            } label: {
-                scanLabel
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(busy)
-        } else {
-            Button {
-                showScanner = true
-            } label: {
-                scanLabel
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .disabled(busy)
-        }
-    }
-
-    private var scanLabel: some View {
-        Label("Scan QR", systemImage: "qrcode.viewfinder")
-            .frame(maxWidth: .infinity)
+    private var hostPresent: Bool {
+        !host.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func connectionRecoveryCallout(
@@ -461,29 +411,19 @@ struct ConnectionView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.orange)
             }
+            Spacer(minLength: 0)
         }
         .padding(14)
         .glass(.raised, cornerRadius: 16)
     }
 
-    private var trustNote: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "lock.shield.fill")
-                .font(.title3)
-                .foregroundStyle(Color.green)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Private Tailscale mesh")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(chrome.textPrimary)
-                Text("No public internet exposure. Traffic stays encrypted between this phone and your desktop.")
-                    .font(.footnote)
-                    .foregroundStyle(chrome.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .glass(.raised, cornerRadius: 16)
+    /// Quiet one-line trust note anchored at the bottom, per the mock.
+    private var trustFooter: some View {
+        Label("Private & encrypted", systemImage: "lock.fill")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(chrome.textMuted)
+            .padding(.bottom, 6)
+            .accessibilityLabel("Private and encrypted. Traffic stays on your Tailscale network between this phone and your desktop.")
     }
 
     private func connect() {
@@ -521,6 +461,7 @@ struct ConnectionView: View {
                 if app.connectionState == .connected { Haptics.success() }
             }
         } else {
+            manualEntry = true
             focused = true
         }
     }
@@ -548,4 +489,18 @@ struct ConnectionView: View {
     }
 
     private var hostHint: String? { hostAdvice?.message }
+}
+
+private extension Bundle {
+    /// The largest primary app-icon image the bundle carries, for in-app hero
+    /// use (icons aren't automatically available as image assets).
+    var primaryAppIcon: UIImage? {
+        guard
+            let icons = infoDictionary?["CFBundleIcons"] as? [String: Any],
+            let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+            let files = primary["CFBundleIconFiles"] as? [String],
+            let name = files.last
+        else { return nil }
+        return UIImage(named: name)
+    }
 }

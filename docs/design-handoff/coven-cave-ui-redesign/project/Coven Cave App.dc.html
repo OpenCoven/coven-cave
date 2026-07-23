@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=EB+Garamond:ital@0;1&display=swap">
+<link rel="stylesheet" href="_ds/opencoven-530c9c44-8b06-4dfc-9215-ed70af0a743a/_ds_bundle.css">
+<style>
+html,body{margin:0}
+#desk{min-height:100vh;display:grid;place-items:center;padding:48px 24px;background:radial-gradient(1100px 700px at 30% -8%,#15131f 0%,#080810 62%);font-family:var(--font-inter),"Inter",system-ui,sans-serif}
+.cc-scroll{scrollbar-width:none;-ms-overflow-style:none}
+.cc-scroll::-webkit-scrollbar{width:0;height:0;display:none}
+</style>
+</helmet>
+<div id="desk">{{ app }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    ready: !!(typeof window !== "undefined" && window.CovenCave),
+    tab: "chat",
+    openChat: null,
+    query: "",
+    draft: "",
+    thinking: false,
+    convOpen: false,
+    convCfg: { runtime: "Cloud", model: "5.6 Sol", intelligence: "Ultra", mode: "Agent", think: true, speed: "Standard" },
+    ghTab: "prs",
+    taskView: "list",
+    collapsed: {},
+    projectsOpen: false,
+    plusOpen: false,
+    pluginsOpen: false,
+    pluginQuery: "",
+    pluginAdded: {},
+    pluginDetail: null,
+    phoneWrites: false,
+    permsOpen: false,
+    perms: {
+      Nyx: { "coven-cave": "write", "ios-app": "read" },
+      Sable: { "coven-cave": "write", "ios-app": "write" },
+      Orrery: { "coven-cave": "read", "grimoire-docs": "read" },
+      Wisp: { "design": "write", "grimoire-docs": "read" },
+    },
+    openTask: null,
+    taskEdits: {},
+    editingField: null,
+    termActive: 0,
+    termNewOpen: false,
+    termSwitchOpen: false,
+    shorthands: ["deploy", "status"],
+    termSessions: [
+      { id: 1, project: "coven-cave", draft: "", lines: [
+        { k: "prompt", t: "coven --project coven-cave" },
+        { k: "brand", t: "◆ Coven Cave  ·  v2.0" },
+        { k: "ok", t: "✓ connected   my-mac.example.ts.net" },
+        { k: "muted", t: "  project: coven-cave" },
+        { k: "ok", t: "✓ 5 familiars summoned" },
+        { k: "info", t: "Type a command or tap one below · /help for the grimoire." },
+      ] },
+    ],
+    threads: [
+      { id: "nyx", name: "Nyx", glyph: "sparkle", color: "var(--accent-presence)", presence: "success",
+        preview: "Done — the migration touches 3 tables. Writes stay gated.", unread: 2,
+        link: { git: { kind: "pr", n: 412, state: "open" }, task: "Auth migration — gate writes behind opt-in", proj: "coven-cave" },
+        messages: [
+          { role: "familiar", text: "Morning — want me to pick up the auth migration today?" },
+          { role: "user", text: "yes, but read-only until we pair on the schema" },
+          { role: "familiar", text: "Done. The migration touches 3 tables: grants, access_groups, audit_log. Writes stay gated behind the phone opt-in." },
+        ] },
+      { id: "warroom", name: "Release war-room", glyph: "users-three", color: "var(--color-warning)", presence: "warning", group: true,
+        preview: "Sable: tests are green on staging", unread: 1,
+        link: { git: { kind: "issue", n: 128, state: "open" }, task: "Terminal bundle blank on cold launch", proj: "ios-app" },
+        messages: [
+          { role: "familiar", who: "Sable", text: "CI finished — tests are green on staging." },
+          { role: "familiar", who: "Orrery", text: "Cutting the release notes now." },
+        ] },
+      { id: "sable", name: "Sable", glyph: "code", color: "var(--color-info)", presence: "info",
+        preview: "You: ship it when CI passes", unread: 0,
+        link: { git: { kind: "pr", n: 401, state: "merged" }, task: "Migrate access groups to OKLCH tints", proj: "coven-cave" },
+        messages: [
+          { role: "user", text: "ship it when CI passes" },
+          { role: "familiar", text: "Understood. I'll watch the pipeline and tag v2.0 the moment it's green." },
+        ] },
+      { id: "orrery", name: "Orrery", glyph: "compass", color: "var(--color-success)", presence: "muted",
+        preview: "Draft: next week I want to focus on…", unread: 0,
+        messages: [ { role: "familiar", text: "Planning board is ready when you are." } ] },
+      { id: "wisp", name: "Wisp", glyph: "feather", color: "#c98bd6", presence: "muted",
+        preview: "Here's the blog draft — three angles.", unread: 0,
+        messages: [ { role: "familiar", text: "Here's the blog draft — I took three angles, pick one." } ] },
+    ],
+  };
+
+  componentDidMount() {
+    try {
+      document.documentElement.setAttribute("data-theme", "coven");
+      document.documentElement.setAttribute("data-mode", "dark");
+    } catch (e) {}
+    // Load the DS bundle here — in componentDidMount window.React/ReactDOM are
+    // guaranteed present, so the bundle's react-shim resolves. Loading it from
+    // <helmet> raced the runtime's async React UMD load and could throw.
+    if (!window.CovenCave && !document.querySelector("script[data-cc-bundle]")) {
+      const sc = document.createElement("script");
+      sc.src = "_ds/opencoven-530c9c44-8b06-4dfc-9215-ed70af0a743a/_ds_bundle.js";
+      sc.setAttribute("data-cc-bundle", "");
+      sc.onload = () => { if (window.CovenCave) this.setState({ ready: true }); };
+      document.head.appendChild(sc);
+    }
+    if (!this.state.ready) {
+      this._iv = setInterval(() => {
+        if (window.CovenCave) { clearInterval(this._iv); this.setState({ ready: true }); }
+      }, 80);
+    }
+  }
+  componentWillUnmount() { clearInterval(this._iv); clearTimeout(this._reply); }
+
+  go(tab) { this.setState({ tab, openChat: null }); }
+  open(id) {
+    this.setState(s => ({ openChat: id, threads: s.threads.map(t => t.id === id ? { ...t, unread: 0 } : t) }));
+  }
+  fillSlash(cmd) { this.setState({ draft: cmd + " " }); }
+  send() {
+    const text = this.state.draft.trim();
+    if (!text) return;
+    if (text.startsWith("/")) {
+      const cmd = text.split(" ")[0];
+      if (cmd === "/tasks") { this.setState({ draft: "", tab: "tasks", openChat: null }); return; }
+      if (cmd === "/clear") { const cid = this.state.openChat; this.setState(s => ({ draft: "", threads: s.threads.map(t => t.id === cid ? { ...t, messages: [] } : t) })); return; }
+      if (cmd === "/mute" || cmd === "/rename" || cmd === "/summon") { this.setState({ draft: "" }); return; }
+    }
+    const id = this.state.openChat;
+    this.setState(s => ({
+      draft: "", thinking: true,
+      threads: s.threads.map(t => t.id === id ? { ...t, preview: text, messages: [...t.messages, { role: "user", text }] } : t),
+    }));
+    clearTimeout(this._reply);
+    this._reply = setTimeout(() => {
+      const reply = "On it. I'll gather what I need and keep writes gated until you confirm.";
+      this.setState(s => ({
+        thinking: false,
+        threads: s.threads.map(t => t.id === id ? { ...t, preview: reply, messages: [...t.messages, { role: "familiar", text: reply }] } : t),
+      }));
+    }, 1300);
+  }
+
+  renderVals() {
+    return { app: this.state.ready && window.CovenCave ? this.renderApp() : this.renderLoading() };
+  }
+
+  // ---- shell ----
+  frame(children) {
+    const el = React.createElement;
+    return el("div", { style: {
+      width: 380, height: 812, background: "linear-gradient(155deg,#33303f,#0d0d15)",
+      borderRadius: 56, padding: 12,
+      boxShadow: "0 2px 4px rgba(0,0,0,.6),0 50px 90px -24px rgba(0,0,0,.8),inset 0 0 0 1.5px #43414f",
+    } },
+      el("div", { style: {
+        position: "relative", width: "100%", height: "100%", borderRadius: 44, overflow: "hidden",
+        background: "var(--bg-base)", color: "var(--text-primary)", display: "flex", flexDirection: "column",
+        fontFamily: "var(--font-inter),Inter,system-ui,sans-serif", fontSize: 13,
+      } },
+        el("div", { style: { position: "absolute", top: 11, left: "50%", transform: "translateX(-50%)", width: 118, height: 33, background: "#000", borderRadius: 19, zIndex: 60 } }),
+        this.statusBar(),
+        children,
+      ),
+    );
+  }
+  statusBar() {
+    const el = React.createElement;
+    return el("div", { style: { flex: "none", height: 50, display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "0 30px 7px", fontSize: 15, fontWeight: 600, letterSpacing: "-.02em" } },
+      el("span", null, "9:41"),
+      el("span", { style: { display: "inline-flex", alignItems: "center", gap: 6 }, dangerouslySetInnerHTML: { __html:
+        '<svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2.5" width="3" height="9.5" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>' +
+        '<svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5a10 10 0 0 1 13 0"/><path d="M4.5 7a6.2 6.2 0 0 1 8 0"/><path d="M7 9.4a2.6 2.6 0 0 1 3 0"/></svg>' +
+        '<svg width="26" height="13" viewBox="0 0 26 13" fill="none"><rect x="1" y="1" width="21" height="11" rx="3" stroke="currentColor" stroke-opacity=".45"/><rect x="3" y="3" width="17" height="7" rx="1.5" fill="currentColor"/><rect x="23.5" y="4.5" width="1.8" height="4" rx=".9" fill="currentColor" fill-opacity=".5"/></svg>'
+      } }),
+    );
+  }
+  header(title, right) {
+    const el = React.createElement;
+    return el("div", { style: { flex: "none", padding: "4px 20px 12px", display: "flex", alignItems: "center", gap: 10 } },
+      el("div", { style: { flex: 1, fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 26, letterSpacing: "-.03em" } }, title),
+      right,
+    );
+  }
+  tabBar() {
+    const el = React.createElement, C = window.CovenCave;
+    const tabs = [
+      ["chat", "chat-circle", "Chat"], ["tasks", "check-square", "Tasks"],
+      ["terminal", "terminal-window", "Terminal"], ["settings", "gear-six", "Settings"],
+    ];
+    return el("div", { style: {
+      flex: "none", height: 74, display: "flex", alignItems: "flex-start", justifyContent: "space-around",
+      padding: "9px 6px 0", background: "var(--bg-panel)", borderTop: "1px solid var(--border-hairline)",
+    } },
+      tabs.map(([id, icon, label]) => {
+        const on = this.state.tab === id;
+        return el("button", { key: id, onClick: () => this.go(id), style: {
+          appearance: "none", border: "none", background: "none", cursor: "pointer",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 8px",
+          color: on ? "var(--text-primary)" : "var(--text-muted)",
+        } },
+          el(C.Icon, { name: "ph:" + icon + (on ? "-fill" : ""), width: 23, height: 23 }),
+          el("span", { style: { fontSize: 10, fontWeight: 500, letterSpacing: ".01em" } }, label),
+        );
+      }),
+    );
+  }
+  scrollBody(children, pad) {
+    return React.createElement("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: pad || "0 16px 12px" } }, children);
+  }
+
+  avatar(t, size) {
+    const el = React.createElement, C = window.CovenCave;
+    const s = size || 40;
+    const dot = { success: "var(--color-success)", warning: "var(--color-warning)", info: "var(--accent-presence)", muted: "var(--text-muted)" }[t.presence];
+    return el("span", { style: { position: "relative", flexShrink: 0, width: s, height: s } },
+      el("span", { style: {
+        width: s, height: s, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center",
+        background: "color-mix(in oklch, " + t.color + " 26%, var(--bg-elevated))",
+        color: t.color, border: "1px solid color-mix(in oklch, " + t.color + " 40%, transparent)",
+      } }, el(C.Icon, { name: "ph:" + t.glyph + "-fill", width: Math.round(s * 0.46) })),
+      t.presence !== "muted" ? el("span", { style: {
+        position: "absolute", right: -1, bottom: -1, width: Math.round(s * 0.28), height: Math.round(s * 0.28),
+        borderRadius: 999, background: dot, border: "2.5px solid var(--bg-base)",
+      } }) : null,
+    );
+  }
+
+  // ---- views ----
+  renderApp() {
+    if (this.state.tab === "chat" && this.state.openChat) return this.frame(this.conversation());
+    const bodies = { chat: this.chatList(), tasks: this.tasks(), terminal: this.terminal(), settings: this.settings() };
+    return this.frame(React.createElement(React.Fragment, null, bodies[this.state.tab], this.tabBar()));
+  }
+  renderLoading() {
+    return this.frame(React.createElement("div", { style: { flex: 1, display: "grid", placeItems: "center", color: "var(--text-muted)", fontSize: 12 } }, "Summoning…"));
+  }
+
+  chatList() {
+    const el = React.createElement, C = window.CovenCave;
+    const q = this.state.query.trim().toLowerCase();
+    const list = this.state.threads.filter(t => !q || t.name.toLowerCase().includes(q) || t.preview.toLowerCase().includes(q));
+    return el(React.Fragment, null,
+      this.header("Chats", el(React.Fragment, null,
+        el(C.IconButton, { icon: "ph:folders", "aria-label": "Projects", onClick: () => this.setState({ projectsOpen: true }) }),
+        el(C.IconButton, { icon: "ph:pencil-simple-line", "aria-label": "New chat" }),
+      )),
+      el("div", { style: { padding: "0 16px 8px" } },
+        el(C.SearchInput, { value: this.state.query, onValueChange: v => this.setState({ query: v }), onClear: () => this.setState({ query: "" }), placeholder: "Search chats…" }),
+      ),
+      this.scrollBody(
+        list.length ? el("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
+          list.map(t => el(C.ListRowCard, {
+            key: t.id, onClick: () => this.open(t.id), leading: this.avatar(t, 42), name: t.name,
+            description: (t.group && t.messages.length ? (t.messages[t.messages.length - 1].who || "") + ": " : "") + t.preview,
+            trailing: t.unread ? el("span", { style: {
+              minWidth: 20, height: 20, padding: "0 6px", borderRadius: 999, background: "var(--accent-presence)",
+              color: "var(--accent-presence-foreground)", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center",
+            } }, t.unread) : el("span", { style: { fontSize: 11, color: "var(--text-muted)" } }, "2h"),
+          })),
+        ) : el(C.EmptyState, { compact: true, icon: "magnifying-glass", headline: "No matches", subtitle: "Try a different search — chats match on name and last message." }),
+      ),
+      this.state.projectsOpen ? this.projectsPanel() : null,
+    );
+  }
+
+  projectsPanel() {
+    const el = React.createElement, C = window.CovenCave;
+    const items = [
+      { icon: "folder-open", name: "coven-cave", desc: "18 chats · 4 familiars", meta: "2h" },
+      { icon: "folder-open", name: "ios-app", desc: "9 chats · 2 familiars", meta: "1d" },
+      { icon: "folder-open", name: "grimoire-docs", desc: "3 chats · 1 familiar", meta: "Tue" },
+      { icon: "folder-open", name: "design", desc: "6 chats · 2 familiars", meta: "Mon" },
+    ];
+    return el("div", { style: { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 40, background: "var(--bg-base)", display: "flex", flexDirection: "column", boxShadow: "-1px 0 40px rgba(0,0,0,.5)" } },
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 12px" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Close projects", onClick: () => this.setState({ projectsOpen: false }) }),
+        el("div", { style: { flex: 1, fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 22, letterSpacing: "-.02em" } }, "Projects"),
+        el(C.Button, { variant: "secondary", size: "sm", leadingIcon: "plus" }, "Add"),
+      ),
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 16px" } },
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
+          items.map(p => el(C.ListRowCard, { key: p.name, icon: "ph:" + p.icon, name: p.name, description: p.desc,
+            onClick: () => this.setState({ projectsOpen: false }),
+            trailing: el("span", { style: { fontSize: 11, color: "var(--text-muted)" } }, p.meta) })),
+        ),
+      ),
+    );
+  }
+
+  setCfg(k, v) { this.setState(st => ({ convCfg: { ...st.convCfg, [k]: v } })); }
+  convDetails() {
+    const el = React.createElement, C = window.CovenCave;
+    const cfg = this.state.convCfg;
+    const seg = (k, opts) => el(C.Segmented, { options: opts, value: cfg[k], onChange: v => this.setCfg(k, v), getLabel: o => o, ariaLabel: k });
+    const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 14px", borderTop: "1px solid var(--border-hairline)" };
+    const label = (name, icon) => el("span", { style: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 } }, el(C.Icon, { name: "ph:" + icon, width: 15, style: { color: "var(--text-muted)" } }), name);
+    return el(React.Fragment, null,
+      el("div", { onClick: () => this.setState({ convOpen: false }), style: { position: "absolute", inset: 0, top: 46, zIndex: 44, width: 380, height: 720 } }),
+      el("div", { style: { position: "absolute", top: 46, left: 10, right: 10, zIndex: 45, background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-panel)", overflow: "hidden", boxShadow: "0 22px 56px rgba(0,0,0,.62)" } },
+        el("div", { style: { padding: "12px 14px 4px" } },
+          el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)" } }, "Session")),
+        el("div", { style: { ...rowStyle, borderTop: "none" } }, label("Runtime", "cloud"), seg("runtime", ["Cloud", "Local"])),
+        el("div", { style: rowStyle }, label("Model", "cube"), el("span", { style: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--text-primary)", fontFamily: "var(--font-jetbrains-mono),monospace" } }, cfg.model, el(C.Icon, { name: "ph:caret-right", width: 11 }))),
+        el("div", { style: rowStyle }, label("Intelligence", "sparkle"), seg("intelligence", ["Ultra", "Max", "High"])),
+        el("div", { style: rowStyle }, label("Mode", "robot"), seg("mode", ["Agent", "Manual"])),
+        el("div", { style: rowStyle }, label("Speed", "gauge"), seg("speed", ["Standard", "Turbo"])),
+        el("div", { style: rowStyle }, label("Think", "brain"),
+          el("button", { onClick: () => this.setCfg("think", !cfg.think), "aria-label": "Toggle thinking", style: {
+            appearance: "none", cursor: "pointer", width: 44, height: 26, borderRadius: 999, border: "none", position: "relative",
+            background: cfg.think ? "var(--accent-presence)" : "var(--bg-hover)", transition: "background .15s" } },
+            el("span", { style: { position: "absolute", top: 3, left: cfg.think ? 21 : 3, width: 20, height: 20, borderRadius: 999, background: "#fff", transition: "left .15s" } }))),
+      ),
+    );
+  }
+  conversation() {
+    const el = React.createElement, C = window.CovenCave;
+    const t = this.state.threads.find(x => x.id === this.state.openChat);
+    const bubbles = t.messages.map((m, i) => {
+      const mine = m.role === "user";
+      return el("div", { key: i, style: { display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", gap: 2 } },
+        m.who && !mine ? el("span", { style: { fontSize: 10, fontWeight: 600, color: t.color, letterSpacing: ".04em", textTransform: "uppercase", paddingLeft: 4 } }, m.who) : null,
+        el("div", { style: {
+          maxWidth: "80%", padding: "9px 13px", fontSize: 13, lineHeight: 1.45,
+          borderRadius: mine ? "18px 18px 6px 18px" : "18px 18px 18px 6px",
+          background: mine ? "var(--primary)" : "var(--bg-raised)",
+          color: mine ? "var(--primary-foreground,#fff)" : "var(--text-primary)",
+          border: mine ? "none" : "1px solid var(--border-hairline)",
+        } }, m.text),
+      );
+    });
+    const d = this.state.draft;
+    const slashCmds = [
+      { c: "/summon", d: "Start a new chat with a familiar" },
+      { c: "/tasks", d: "Open the task board" },
+      { c: "/clear", d: "Clear this conversation" },
+      { c: "/rename", d: "Rename this chat" },
+      { c: "/mute", d: "Mute notifications" },
+    ];
+    const slashActive = d.startsWith("/") && !d.includes(" ");
+    const slashMatches = slashActive ? slashCmds.filter(x => x.c.startsWith(d.toLowerCase())) : [];
+    const gl = t.link && t.link.git;
+    const gitColor = gl ? (gl.kind === "pr"
+      ? (gl.state === "merged" ? "var(--accent-presence)" : gl.state === "closed" ? "var(--color-danger)" : "var(--color-success)")
+      : "#5aa2ff") : null;
+    const gitText = gl ? ((gl.kind === "pr" ? "PR #" : "I #") + gl.n) : "";
+    const cfg = this.state.convCfg;
+    return el(React.Fragment, null,
+      // conversation top bar — sleek: name + caret opens a session-details dropdown
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 6, padding: "2px 10px 10px", borderBottom: "1px solid var(--border-hairline)", position: "relative" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Back", onClick: () => this.setState({ openChat: null, convOpen: false }) }),
+        el("button", { onClick: () => this.setState({ convOpen: !this.state.convOpen }), "aria-expanded": this.state.convOpen, style: {
+          appearance: "none", border: "none", background: "none", cursor: "pointer", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, color: "var(--text-primary)" } },
+          el("span", { style: { width: 7, height: 7, borderRadius: 999, background: t.presence === "success" ? "var(--color-success)" : "var(--text-muted)" } }),
+          el("span", { style: { fontSize: 16, fontWeight: 600, letterSpacing: "-.02em" } }, t.name),
+          el(C.Icon, { name: this.state.convOpen ? "ph:caret-up" : "ph:caret-down", width: 12, style: { color: "var(--text-muted)" } }),
+        ),
+        this.state.convOpen ? this.convDetails() : null,
+      ),
+      // linked context: git PR/Issue (left) + related task (right)
+      t.link ? el("div", { style: { flex: "none", display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border-hairline)", background: "var(--bg-panel)" } },
+        el("button", { onClick: () => {}, title: "Open on GitHub", style: {
+          appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 9px", borderRadius: 999,
+          fontFamily: "var(--font-jetbrains-mono),monospace", fontSize: 11.5, fontWeight: 600, color: gitColor,
+          background: "color-mix(in oklch, " + gitColor + " 12%, transparent)", border: "1px solid color-mix(in oklch, " + gitColor + " 38%, var(--border-hairline))" } },
+          el(C.Icon, { name: gl.kind === "pr" ? "ph:git-pull-request" : "ph:record", width: 12 }),
+          gitText,
+          el("span", { style: { width: 6, height: 6, borderRadius: 999, background: gitColor } }),
+          el(C.Icon, { name: "ph:arrow-square-out", width: 11 }),
+        ),
+        el("div", { style: { flex: 1 } }),
+        el("button", { onClick: () => this.openLinkedTask(t.link.task, t), title: "Open task", style: {
+          appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 200, padding: "4px 10px", borderRadius: 999,
+          fontSize: 12, color: "var(--text-secondary)", background: "var(--bg-raised)", border: "1px solid var(--border-hairline)" } },
+          el("span", { style: { fontWeight: 700, fontSize: 11, fontFamily: "var(--font-jetbrains-mono),monospace", color: "var(--text-primary)" } }, "T"),
+          el("span", { style: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, t.link.task),
+        ),
+      ) : null,
+      // messages
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 } },
+        bubbles,
+        this.state.thinking ? el("div", { style: { alignSelf: "flex-start" } }, el(C.ThinkingIndicator, { label: t.name + " is conjuring a reply" })) : null,
+      ),
+      // slash-command menu
+      slashMatches.length ? el("div", { style: { flex: "none", borderTop: "1px solid var(--border-hairline)", padding: 6, display: "flex", flexDirection: "column", gap: 2 } },
+        slashMatches.map(sc => el("button", { key: sc.c, onClick: () => this.fillSlash(sc.c), style: {
+          appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", textAlign: "left", display: "flex", alignItems: "baseline", gap: 10, padding: "9px 10px", borderRadius: "var(--radius-control)", color: "var(--text-primary)" } },
+          el("span", { style: { fontFamily: "var(--font-jetbrains-mono),monospace", fontSize: 13, color: "var(--accent-presence)", fontWeight: 600 } }, sc.c),
+          el("span", { style: { fontSize: 12, color: "var(--text-muted)" } }, sc.d),
+        )),
+      ) : null,
+      // composer
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 9, padding: "10px 14px 20px", borderTop: slashMatches.length ? "none" : "1px solid var(--border-hairline)" } },
+        el(C.IconButton, { icon: "ph:plus", "aria-label": "Add attachment", active: this.state.plusOpen, onClick: () => this.setState({ plusOpen: !this.state.plusOpen }) }),
+        el("input", {
+          value: this.state.draft, placeholder: "Message " + t.name + "… · type / for commands",
+          onChange: e => this.setState({ draft: e.target.value }),
+          onKeyDown: e => {
+            if (e.key === "Enter") { e.preventDefault(); this.send(); return; }
+            if (e.key === " " && slashActive && slashMatches.length) { e.preventDefault(); this.setState({ draft: slashMatches[0].c + " " }); }
+          },
+          style: {
+            flex: 1, appearance: "none", background: "var(--bg-raised)", border: "1px solid var(--border-strong)",
+            borderRadius: 999, padding: "10px 16px", color: "var(--text-primary)", fontSize: 14, outline: "none",
+            fontFamily: "var(--font-inter),Inter,system-ui,sans-serif",
+          },
+        }),
+        el("button", { onClick: () => this.send(), "aria-label": "Send", disabled: !this.state.draft.trim(), style: {
+          width: 36, height: 36, flexShrink: 0, borderRadius: 999, border: "none", cursor: "pointer",
+          background: this.state.draft.trim() ? "var(--primary)" : "var(--bg-hover)",
+          color: this.state.draft.trim() ? "var(--primary-foreground,#fff)" : "var(--text-muted)",
+          display: "grid", placeItems: "center",
+        } }, el(C.Icon, { name: "ph:arrow-up-bold", width: 17 })),
+      ),
+      this.state.plusOpen ? this.plusMenu() : null,
+      this.state.pluginsOpen ? this.pluginsPanel() : null,
+    );
+  }
+
+  pluginsPanel() {
+    const el = React.createElement, C = window.CovenCave;
+    const installed = [
+      ["GitHub", ["#3a3a3a", "#111"], "github-logo"], ["Gmail", ["#ea4335", "#b31412"], "envelope-simple"],
+      ["Calendar", ["#4285f4", "#1a56c4"], "calendar-blank"], ["Linear", ["#5e6ad2", "#3d47a8"], "path"], ["Notion", ["#3a3a3a", "#111"], "notion-logo"],
+    ];
+    const featured = [
+      ["Data Analytics", "Answer product and business questions", ["#7aa8ff", "#3b6fd6"], "chart-bar"],
+      ["GitHub", "Triage PRs, issues, CI, and publish flows", ["#3a3a3a", "#111"], "github-logo"],
+      ["Google Drive", "Work across Drive, Docs, Sheets, and Slides", ["#22c55e", "#eab308"], "google-drive-logo"],
+      ["Notion", "Search and read workspace content", ["#4a4a4a", "#111"], "notion-logo"],
+      ["Figma", "Design-to-code workflows", ["#f24e1e", "#a259ff"], "figma-logo"],
+      ["Linear", "Track issues and projects", ["#5e6ad2", "#3d47a8"], "path"],
+    ];
+    const q = this.state.pluginQuery.trim().toLowerCase();
+    const rows = q ? featured.filter(f => f[0].toLowerCase().includes(q)) : featured;
+    const tile = (grad, icon, size) => el("span", { style: { width: size, height: size, borderRadius: size > 40 ? 12 : 9, flexShrink: 0, background: "linear-gradient(150deg," + grad[0] + "," + grad[1] + ")", display: "grid", placeItems: "center", color: "#fff" } }, el(C.Icon, { name: "ph:" + icon, width: Math.round(size * 0.5) }));
+    const added = (name) => !!this.state.pluginAdded[name];
+    return el(React.Fragment, null, el("div", { style: { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 46, background: "var(--bg-base)", display: "flex", flexDirection: "column", boxShadow: "-1px 0 40px rgba(0,0,0,.55)" } },
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 10px" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Close plugins", onClick: () => this.setState({ pluginsOpen: false }) }),
+        el("div", { style: { flex: 1, fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 22, letterSpacing: "-.02em" } }, "Plugins"),
+      ),
+      el("div", { style: { flex: "none", padding: "0 16px 10px" } },
+        el(C.SearchInput, { value: this.state.pluginQuery, onValueChange: v => this.setState({ pluginQuery: v }), onClear: () => this.setState({ pluginQuery: "" }), placeholder: "Search plugins…" })),
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 20px" } },
+        q ? null : el("div", { style: { marginBottom: 16 } },
+          el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "4px 0 10px" } }, "Installed"),
+          el("div", { className: "cc-scroll", style: { display: "flex", gap: 12, overflowX: "auto" } },
+            installed.map(p => el("div", { key: p[0], style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 56, flexShrink: 0 } },
+              tile(p[1], p[2], 48), el("span", { style: { fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 56 } }, p[0])))),
+        ),
+        el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "4px 0 10px" } }, q ? "Results" : "Featured"),
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
+          rows.map((p, i) => el("div", { key: p[0] + i, onClick: () => this.setState({ pluginDetail: { name: p[0], desc: p[1], grad: p[2], icon: p[3] } }), style: { cursor: "pointer", display: "flex", alignItems: "center", gap: 13, padding: "10px 4px" } },
+            tile(p[2], p[3], 46),
+            el("div", { style: { flex: 1, minWidth: 0 } },
+              el("div", { style: { fontSize: 15, fontWeight: 500, letterSpacing: "-.01em" } }, p[0]),
+              el("div", { style: { fontSize: 13, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, p[1])),
+            el("button", { onClick: (e) => { e.stopPropagation(); this.setState(st => ({ pluginAdded: { ...st.pluginAdded, [p[0] + i]: !st.pluginAdded[p[0] + i] } })); }, "aria-label": added(p[0] + i) ? "Remove plugin" : "Add plugin", style: {
+              width: 34, height: 34, flexShrink: 0, borderRadius: 999, border: "1px solid var(--border-hairline)", cursor: "pointer",
+              background: added(p[0] + i) ? "var(--accent-presence)" : "var(--bg-raised)",
+              color: added(p[0] + i) ? "var(--accent-presence-foreground)" : "var(--text-primary)", display: "grid", placeItems: "center" } },
+              el(C.Icon, { name: added(p[0] + i) ? "ph:check-bold" : "ph:plus-bold", width: 14 })),
+          )),
+        ),
+      ),
+    ), this.state.pluginDetail ? this.pluginDetailView() : null);
+  }
+
+  pluginDetailView() {
+    const el = React.createElement, C = window.CovenCave;
+    const p = this.state.pluginDetail;
+    const isGH = p.name === "GitHub";
+    const skills = isGH ? ["Review Follow-up", "CI Debug", "GitHub", "Publish Changes"] : ["Overview", "Quick start"];
+    const apps = isGH ? [["GitHub", false], ["GitHub Enterprise", true]] : [[p.name, false]];
+    const infoRow = (k, v) => el("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderTop: "1px solid var(--border-hairline)", fontSize: 13 } }, el("span", { style: { color: "var(--text-muted)" } }, k), el("span", { style: { color: "var(--text-primary)" } }, v));
+    return el("div", { style: { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 47, background: "var(--bg-base)", display: "flex", flexDirection: "column" } },
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 10px" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Back", onClick: () => this.setState({ pluginDetail: null }) }),
+        el("div", { style: { flex: 1, textAlign: "center", fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 15 } }, p.name),
+        el(C.IconButton, { icon: "ph:export", "aria-label": "Share" }),
+      ),
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 20px 16px" } },
+        el("span", { style: { width: 60, height: 60, borderRadius: 14, display: "grid", placeItems: "center", background: "linear-gradient(150deg," + p.grad[0] + "," + p.grad[1] + ")", color: "#fff" } }, el(C.Icon, { name: "ph:" + p.icon, width: 30 })),
+        el("div", { style: { fontSize: 26, fontWeight: 700, letterSpacing: "-.02em", marginTop: 14 } }, p.name),
+        el("div", { style: { fontSize: 14, color: "var(--text-muted)", marginTop: 4 } }, p.desc),
+        el("div", { style: { marginTop: 16, borderRadius: 18, padding: 22, minHeight: 150, display: "grid", placeItems: "center", background: "linear-gradient(135deg," + p.grad[0] + "55," + p.grad[1] + "66)" } },
+          el("div", { style: { background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: 16, padding: "14px 16px", fontSize: 14, lineHeight: 1.45 } },
+            el("b", { style: { color: "var(--text-primary)" } }, "@" + p.name + " "), el("span", { style: { color: "var(--text-secondary)" } }, p.desc))),
+        el("div", { style: { fontSize: 13.5, lineHeight: 1.6, color: "var(--text-secondary)", marginTop: 16 } }, "Use " + p.name + " through a connector-first workflow with targeted CLI fallbacks — inspect, triage, and prepare changes without leaving the chat."),
+        el("div", { style: { fontSize: 18, fontWeight: 600, margin: "22px 0 8px" } }, "Apps"),
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 0 } },
+          apps.map(a => el("div", { key: a[0], style: { display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: "1px solid var(--border-hairline)" } },
+            el("span", { style: { width: 34, height: 34, borderRadius: 8, background: "linear-gradient(150deg," + p.grad[0] + "," + p.grad[1] + ")", display: "grid", placeItems: "center", color: "#fff" } }, el(C.Icon, { name: "ph:" + p.icon, width: 17 })),
+            el("span", { style: { flex: 1, fontSize: 15, color: a[1] ? "var(--text-muted)" : "var(--text-primary)" } }, a[0]),
+            a[1] ? el(C.Icon, { name: "ph:lock-simple", width: 14 }) : null))),
+        el("div", { style: { fontSize: 18, fontWeight: 600, margin: "22px 0 10px" } }, "Skills"),
+        el("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } },
+          skills.map(sk => el("span", { key: sk, style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, padding: "7px 13px", borderRadius: 999, border: "1px solid var(--border-hairline)", background: "var(--bg-raised)" } }, el(C.Icon, { name: "ph:cube", width: 13, style: { color: "var(--accent-presence)" } }), sk))),
+        el("div", { style: { fontSize: 18, fontWeight: 600, margin: "22px 0 4px" } }, "Information"),
+        infoRow("Capabilities", "Interactive, Write"),
+        infoRow("Developer", "OpenCoven"),
+        infoRow("Version", "0.1.8"),
+      ),
+      el("div", { style: { flex: "none", padding: "12px 16px 20px", borderTop: "1px solid var(--border-hairline)" } },
+        el(C.Button, { variant: "primary", size: "md", fullWidth: true, leadingIcon: "chat-circle", onClick: () => this.setState({ pluginDetail: null, pluginsOpen: false }) }, "Try in chat")),
+    );
+  }
+
+  plusMenu() {
+    const el = React.createElement, C = window.CovenCave;
+    const items = [
+      ["camera", "Camera"], ["image", "Photos"], ["paperclip", "Files"], ["plugs", "Plugins"],
+    ];
+    return el(React.Fragment, null,
+      el("div", { onClick: () => this.setState({ plusOpen: false }), style: { position: "absolute", inset: 0, zIndex: 44 } }),
+      el("div", { style: { position: "absolute", left: 14, bottom: 84, zIndex: 45, minWidth: 244, background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-panel)", padding: 8, boxShadow: "0 20px 54px rgba(0,0,0,.62)" } },
+        items.map(([icon, label]) => el("button", { key: label, onClick: () => this.setState({ plusOpen: false, pluginsOpen: label === "Plugins" }), style: {
+          appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "9px 8px", borderRadius: "var(--radius-control)", color: "var(--text-primary)",
+        } },
+          el("span", { style: { width: 34, height: 34, borderRadius: 999, flexShrink: 0, background: "var(--bg-hover)", display: "grid", placeItems: "center" } }, el(C.Icon, { name: "ph:" + icon, width: 18 })),
+          el("span", { style: { fontSize: 15, fontWeight: 500 } }, label),
+        )),
+      ),
+    );
+  }
+
+  tasks() {
+    const el = React.createElement, C = window.CovenCave;
+    const groups = [
+      { label: "Running", dot: "var(--color-info)", cards: [
+        { t: "Auth migration — gate writes behind opt-in", pri: ["Urgent", "var(--color-danger)"], proj: "coven-cave", who: "Nyx" },
+        { t: "Terminal bundle blank on cold launch", pri: ["High", "var(--color-warning)"], proj: "ios-app", who: "Sable" },
+      ] },
+      { label: "In review", dot: "var(--accent-presence)", cards: [
+        { t: "New icon set for Canvas export", pri: ["Medium", "var(--color-info)"], proj: "design", who: "Wisp" },
+      ] },
+      { label: "Inbox", dot: "var(--color-success)", cards: [
+        { t: "Draft Q3 changelog from merged PRs", pri: ["Low", "var(--text-muted)"], proj: "writing", who: "Orrery" },
+        { t: "Audit loopback exemptions", pri: ["Medium", "var(--color-info)"], proj: "coven-cave", who: "Nyx" },
+      ] },
+    ];
+    return el(React.Fragment, null,
+      this.header("Tasks", el(React.Fragment, null,
+        el(C.IconButton, { icon: "ph:funnel", "aria-label": "Filter tasks" }),
+        el(C.IconButton, { icon: "ph:plus", "aria-label": "New task", active: true }),
+      )),
+      this.scrollBody(
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          groups.map(g => { const open = !this.state.collapsed[g.label]; return el("div", { key: g.label },
+            el("button", { onClick: () => this.setState(s => ({ collapsed: { ...s.collapsed, [g.label]: !s.collapsed[g.label] } })),
+              "aria-expanded": open, style: { appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", color: "var(--text-primary)" } },
+              el(C.Icon, { name: open ? "ph:caret-down" : "ph:caret-right", width: 12 }),
+              el("span", { style: { width: 8, height: 8, borderRadius: 999, background: g.dot } }),
+              el("span", { style: { fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" } }, g.label),
+              el("span", { style: { fontSize: 11, color: "var(--text-muted)", background: "var(--bg-raised)", borderRadius: 6, padding: "1px 7px" } }, g.cards.length),
+            ),
+            open ? el("div", { style: { display: "flex", flexDirection: "column", gap: 8, paddingBottom: 4 } },
+              g.cards.map((c, i) => el("div", { key: i, role: "button", tabIndex: 0, onClick: () => this.openTaskCard(c, g), style: { cursor: "pointer", background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-card)", padding: "12px 13px" } },
+                el("div", { style: { fontSize: 13.5, fontWeight: 500, lineHeight: 1.3, letterSpacing: "-.01em" } }, (this.state.taskEdits[c.t] && this.state.taskEdits[c.t].t) || c.t),
+                (() => {
+                  const ce = this.state.taskEdits[c.t] || {};
+                  const pri = ce.pri || c.pri, proj = ce.proj || c.proj, who = ce.who || c.who;
+                  return el("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 10 } },
+                    el("span", { style: {
+                      display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
+                      color: pri[1], background: "color-mix(in oklch, " + pri[1] + " 14%, transparent)",
+                      border: "1px solid color-mix(in oklch, " + pri[1] + " 38%, var(--border-hairline))",
+                    } }, pri[0]),
+                    el(C.PropertyPill, { icon: "ph:folder", label: proj, filled: true }),
+                    el(C.PropertyPill, { icon: "ph:cat", label: who, filled: true }));
+                })()),
+              )) : null,
+          ); }),
+        ),
+      ),
+      this.state.openTask ? this.taskDetail() : null,
+    );
+  }
+
+  openTaskCard(c, g) {
+    const e = this.state.taskEdits[c.t] || {};
+    const desc = e.desc || ("Assigned to " + c.who + " in " + c.proj + ". " + c.who + " keeps writes gated behind the phone opt-in and posts progress here as it works.");
+    this.setState({ editingField: null, openTask: { ...c, status: g.label, dot: g.dot, key: c.t, t: e.t || c.t, desc } });
+  }
+  commitTask(field, value) {
+    const v = (value || "").trim();
+    this.setState(st => {
+      const ot = { ...st.openTask, [field]: v || st.openTask[field] };
+      const key = ot.key, prev = st.taskEdits[key] || {};
+      return { openTask: ot, editingField: null, taskEdits: { ...st.taskEdits, [key]: { ...prev, [field]: ot[field] } } };
+    });
+  }
+  editTask(patch) {
+    this.setState(st => {
+      const ot = { ...st.openTask, ...patch };
+      const key = ot.key, prev = st.taskEdits[key] || {};
+      return { openTask: ot, taskEdits: { ...st.taskEdits, [key]: { ...prev, ...patch } } };
+    });
+  }
+  cycleStatus() {
+    const opts = [["Running", "var(--color-info)"], ["In review", "var(--accent-presence)"], ["Inbox", "var(--color-success)"]];
+    const i = opts.findIndex(o => o[0] === this.state.openTask.status);
+    const n = opts[(i + 1) % opts.length];
+    this.editTask({ status: n[0], dot: n[1] });
+  }
+  cyclePri() {
+    const opts = [["Urgent", "var(--color-danger)"], ["High", "var(--color-warning)"], ["Medium", "var(--color-info)"], ["Low", "var(--text-muted)"]];
+    const i = opts.findIndex(o => o[0] === this.state.openTask.pri[0]);
+    this.editTask({ pri: opts[(i + 1) % opts.length] });
+  }
+  cycleFrom(field, opts) {
+    const i = opts.indexOf(this.state.openTask[field]);
+    this.editTask({ [field]: opts[(i + 1) % opts.length] });
+  }
+  taskDetail() {
+    const el = React.createElement, C = window.CovenCave;
+    const t = this.state.openTask;
+    const chip = (icon, label, col, fill) => el("span", { style: {
+      display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, padding: "4px 9px", borderRadius: 999,
+      color: col || "var(--text-secondary)",
+      background: fill ? "color-mix(in oklch, " + col + " 14%, transparent)" : "var(--bg-raised)",
+      border: "1px solid " + (fill ? "color-mix(in oklch, " + col + " 38%, var(--border-hairline))" : "var(--border-hairline)"),
+    } }, el(C.Icon, { name: "ph:" + icon, width: 12 }), label);
+    return el("div", { style: { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 40, background: "var(--bg-base)", display: "flex", flexDirection: "column", boxShadow: "-1px 0 40px rgba(0,0,0,.5)" } },
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 12px" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Close task", onClick: () => this.setState({ openTask: null }) }),
+        el("div", { style: { flex: 1, fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 15, letterSpacing: "-.01em" } }, "Task"),
+        el(C.IconButton, { icon: "ph:dots-three", "aria-label": "Task options" }),
+      ),
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 16 } },
+        this.state.editingField === "title"
+          ? el("textarea", { autoFocus: true, defaultValue: t.t, rows: 2,
+              onBlur: e => this.commitTask("t", e.target.value),
+              onKeyDown: e => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
+              style: { width: "100%", resize: "none", fontSize: 20, fontWeight: 600, lineHeight: 1.25, letterSpacing: "-.02em", fontFamily: "var(--font-inter),Inter,sans-serif", background: "var(--bg-raised)", border: "1px solid var(--border-strong)", borderRadius: 10, padding: "8px 11px", color: "var(--text-primary)", outline: "none" } })
+          : el("div", { onDoubleClick: () => this.setState({ editingField: "title" }), title: "Double-tap to edit", style: { fontSize: 20, fontWeight: 600, lineHeight: 1.25, letterSpacing: "-.02em", cursor: "text" } }, t.t),
+        (() => {
+          const ebtn = (icon, txt, col, onClick) => el("button", { onClick, title: "Tap to change", style: {
+            display: "inline-flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "flex-start", fontSize: 11.5, fontWeight: 600, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+            color: col, background: "color-mix(in oklch, " + col + " 12%, transparent)", border: "1px solid color-mix(in oklch, " + col + " 34%, var(--border-hairline))" } },
+            el(C.Icon, { name: "ph:" + icon, width: 12 }),
+            el("span", { style: { flex: 1, textAlign: "left" } }, txt),
+            el(C.Icon, { name: "ph:pencil-simple", width: 10, style: { opacity: 0.55 } }));
+          return el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } },
+            ebtn("dot-outline-fill", t.status, t.dot, () => this.cycleStatus()),
+            ebtn("flag", t.pri[0], t.pri[1], () => this.cyclePri()),
+            ebtn("folder", t.proj, "var(--text-secondary)", () => this.cycleFrom("proj", ["coven-cave", "ios-app", "grimoire-docs", "design"])),
+            ebtn("cat", t.who, "var(--text-secondary)", () => this.cycleFrom("who", ["Nyx", "Sable", "Orrery", "Wisp", "Ember"])),
+          );
+        })(),
+        this.state.editingField === "desc"
+          ? el("textarea", { autoFocus: true, defaultValue: t.desc, rows: 4,
+              onBlur: e => this.commitTask("desc", e.target.value),
+              onKeyDown: e => { if (e.key === "Escape") { e.target.blur(); } },
+              style: { width: "100%", resize: "none", fontSize: 13, lineHeight: 1.6, fontFamily: "var(--font-inter),Inter,sans-serif", background: "var(--bg-raised)", border: "1px solid var(--border-strong)", borderRadius: 10, padding: "9px 11px", color: "var(--text-primary)", outline: "none" } })
+          : el("div", { onDoubleClick: () => this.setState({ editingField: "desc" }), title: "Double-tap to edit", style: { fontSize: 13, lineHeight: 1.6, color: "var(--text-secondary)", cursor: "text" } }, t.desc),
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border-hairline)", paddingTop: 16 } },
+          el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)" } }, "Activity"),
+          el("div", { style: { fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "var(--font-jetbrains-mono),monospace" } }, "◆ opened · 2h ago"),
+          el("div", { style: { fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "var(--font-jetbrains-mono),monospace" } }, "▸ " + t.who + " picked it up · 1h ago"),
+        ),
+      ),
+      el("div", { style: { flex: "none", display: "flex", gap: 8, padding: "12px 16px 20px", borderTop: "1px solid var(--border-hairline)" } },
+        el(C.Button, { variant: "primary", size: "md", leadingIcon: "chat-circle", fullWidth: true, onClick: () => this.setState({ openTask: null, tab: "chat", openChat: "nyx" }) }, "Open in chat"),
+        el(C.Button, { variant: "secondary", size: "md", leadingIcon: "check", fullWidth: true, onClick: () => this.setState({ openTask: null }) }, "Mark done"),
+      ),
+    );
+  }
+
+  sess() { return this.state.termSessions[this.state.termActive]; }
+  updateSess(fn) {
+    this.setState(st => ({ termSessions: st.termSessions.map((s, i) => i === st.termActive ? fn(s) : s) }));
+  }
+  seedLines(project) {
+    return [
+      { k: "prompt", t: "coven --project " + project },
+      { k: "brand", t: "◆ Coven Cave  ·  v2.0" },
+      { k: "ok", t: "✓ connected   my-mac.example.ts.net" },
+      { k: "muted", t: "  project: " + project },
+      { k: "ok", t: "✓ 5 familiars summoned" },
+      { k: "info", t: "Type a command or tap one below · /help for the grimoire." },
+    ];
+  }
+  newSession(project) {
+    this.setState(st => {
+      const id = (st.termSessions[st.termSessions.length - 1]?.id || 0) + 1;
+      return {
+        termSessions: [...st.termSessions, { id, project, draft: "", lines: this.seedLines(project) }],
+        termActive: st.termSessions.length,
+        termNewOpen: false,
+      };
+    });
+  }
+  addShorthand() {
+    const v = (window.prompt("New shorthand command — appears as a tap chip") || "").trim();
+    if (!v) return;
+    this.setState(st => st.shorthands.includes(v) ? {} : { shorthands: [...st.shorthands, v] });
+  }
+  runTermCmd(raw) {
+    const cmd = (raw || "").trim();
+    if (!cmd) return;
+    if (cmd === "clear" || cmd === "/clear") { this.updateSess(s => ({ ...s, lines: [], draft: "" })); return; }
+    const out = this.termResponse(cmd);
+    this.updateSess(s => ({ ...s, draft: "", lines: [...s.lines, { k: "prompt", t: cmd }, ...out] }));
+  }
+  termResponse(cmd) {
+    const c = cmd.toLowerCase();
+    if (c === "help" || c === "/help") return [
+      { k: "info", t: "commands" },
+      { k: "muted", t: "  chat        open a conversation" },
+      { k: "muted", t: "  tasks       show the task board" },
+      { k: "muted", t: "  familiars   list summoned familiars" },
+      { k: "muted", t: "  clear       clear the screen" },
+    ];
+    if (c === "/model") return [{ k: "muted", t: "model: 5.6 Sol · intelligence Ultra · speed Standard" }];
+    if (c === "/project") { setTimeout(() => this.setState({ termSwitchOpen: true }), 260); return [{ k: "ok", t: "→ pick a project from the header" }]; }
+    if (c === "/new") { setTimeout(() => this.setState({ termNewOpen: true }), 260); return [{ k: "ok", t: "→ launching new terminal…" }]; }
+    if (c === "/summon") return [{ k: "fam", t: "▸ summon <familiar> to start a session" }];
+    if (c === "familiars") return this.state.threads.filter(t => !t.group)
+      .map(t => ({ k: "fam", t: "  " + t.name.padEnd(9) + (t.presence === "success" ? "active" : "idle") }));
+    if (c === "tasks") { setTimeout(() => this.go("tasks"), 260); return [{ k: "ok", t: "→ opening tasks…" }]; }
+    if (c === "chat" || c === "chats") { setTimeout(() => this.go("chat"), 260); return [{ k: "ok", t: "→ opening chats…" }]; }
+    return [{ k: "fam", t: "Nyx ▸ " + cmd + " — on it." }];
+  }
+  terminal() {
+    const el = React.createElement, C = window.CovenCave;
+    const color = { prompt: "var(--text-primary)", brand: "var(--accent-presence)", ok: "var(--color-success)", muted: "var(--text-muted)", info: "var(--text-secondary)", fam: "var(--text-primary)", err: "var(--color-danger)" };
+    const mono = "var(--font-jetbrains-mono),ui-monospace,monospace";
+    const s = this.sess();
+    const draft = s.draft || "";
+    const vocab = ["help", "familiars", "tasks", "chat", "projects", "clear", ...this.state.shorthands];
+    const tslash = ["/help", "/model", "/project", "/new", "/clear", "/summon"];
+    const q = draft.trim().toLowerCase();
+    const pool = q.startsWith("/") ? tslash : vocab;
+    const suggestions = q ? pool.filter(c => c.startsWith(q) && c !== q).slice(0, 5) : [];
+    const projects = ["coven-cave", "ios-app", "grimoire-docs", "design"];
+    // project dropdown header
+    const head = el("div", { style: { flex: "none", padding: "4px 12px 12px", display: "flex", alignItems: "center", gap: 8, position: "relative" } },
+      el("button", { onClick: () => this.setState({ termSwitchOpen: !this.state.termSwitchOpen }), style: {
+        appearance: "none", border: "none", background: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, padding: "2px 4px", color: "var(--text-primary)" } },
+        el(C.Icon, { name: "ph:terminal-window", width: 20 }),
+        el("span", { style: { fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 22, letterSpacing: "-.02em" } }, "Terminal"),
+        el("span", { style: { fontFamily: mono, fontSize: 12, color: "var(--accent-presence)", background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", borderRadius: 999, padding: "2px 9px", display: "inline-flex", alignItems: "center", gap: 5 } }, s.project, el(C.Icon, { name: "ph:caret-down", width: 10 })),
+      ),
+      el("div", { style: { flex: 1 } }),
+      el(C.IconButton, { icon: "ph:plus", "aria-label": "New session", onClick: () => this.setState({ termNewOpen: true }) }),
+      this.state.termSwitchOpen ? el(React.Fragment, null,
+        el("div", { onClick: () => this.setState({ termSwitchOpen: false }), style: { position: "absolute", inset: 0, zIndex: 44, width: 380, height: 700, transform: "translate(-12px,-4px)" } }),
+        el("div", { style: { position: "absolute", top: 46, left: 12, right: 12, zIndex: 45, background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-panel)", padding: 6, boxShadow: "0 18px 50px rgba(0,0,0,.6)" } },
+          el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "6px 10px 4px" } }, "Sessions"),
+          this.state.termSessions.map((se, i) => el("button", { key: se.id, onClick: () => this.setState({ termActive: i, termSwitchOpen: false }), style: {
+            appearance: "none", border: "none", background: i === this.state.termActive ? "var(--bg-hover)" : "none", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: "var(--radius-control)", color: "var(--text-primary)", fontFamily: mono, fontSize: 13 } },
+            el(C.Icon, { name: "ph:terminal-window", width: 14 }), el("span", { style: { flex: 1, textAlign: "left" } }, se.project),
+            i === this.state.termActive ? el(C.Icon, { name: "ph:check", width: 13 }) : null)),
+          el("div", { style: { height: 1, background: "var(--border-hairline)", margin: "6px 4px" } }),
+          el("button", { onClick: () => this.setState({ termSwitchOpen: false, termNewOpen: true }), style: {
+            appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: "var(--radius-control)", color: "var(--accent-presence)", fontSize: 13, fontWeight: 500 } },
+            el(C.Icon, { name: "ph:plus", width: 14 }), "New terminal…"),
+        ),
+      ) : null,
+    );
+    const chipStyle = { flexShrink: 0, appearance: "none", cursor: "pointer", fontFamily: mono, fontSize: 11.5, color: "var(--text-secondary)", background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", borderRadius: 999, padding: "5px 11px" };
+    return el(React.Fragment, null,
+      head,
+      el("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "0 16px 14px" } },
+        el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", background: "var(--code-surface)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-card)", padding: "12px 13px", fontFamily: mono, fontSize: 12, lineHeight: 1.7 } },
+          s.lines.map((l, i) => l.k === "prompt"
+            ? el("div", { key: i, style: { display: "flex", gap: 7, color: "var(--text-primary)" } },
+                el("span", { style: { color: "var(--accent-presence)", fontWeight: 600 } }, "coven ❯"), el("span", null, l.t))
+            : el("div", { key: i, style: { color: color[l.k] || "var(--text-primary)", fontWeight: l.k === "brand" ? 600 : 400, whiteSpace: "pre-wrap" } }, l.t)),
+        ),
+        el("div", { className: "cc-scroll", style: { display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", padding: "10px 0 8px", alignItems: "center" } },
+          ["help", "familiars", "tasks", "clear"].map(cmd => el("button", { key: cmd, onClick: () => this.runTermCmd(cmd), style: chipStyle }, cmd)),
+          this.state.shorthands.map(cmd => el("button", { key: cmd, onClick: () => this.runTermCmd(cmd), title: "Shorthand", style: { ...chipStyle, color: "var(--accent-presence)", borderColor: "color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline))" } }, cmd)),
+          el("button", { onClick: () => this.addShorthand(), "aria-label": "Create shorthand", style: { ...chipStyle, borderStyle: "dashed", display: "inline-flex", alignItems: "center", gap: 4 } }, el(C.Icon, { name: "ph:plus", width: 11 }), "Shorthand"),
+        ),
+        el("div", { style: { position: "relative" } },
+          suggestions.length ? el("div", { style: { position: "absolute", left: 0, right: 0, bottom: 46, zIndex: 30, background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-card)", padding: 5, boxShadow: "0 16px 44px rgba(0,0,0,.55)" } },
+            suggestions.map(sug => el("button", { key: sug, onClick: () => this.runTermCmd(sug), style: {
+              appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderRadius: "var(--radius-control)", color: "var(--text-primary)", fontFamily: mono, fontSize: 12.5, textAlign: "left" } },
+              el(C.Icon, { name: "ph:arrow-elbow-down-left", width: 12 }),
+              el("span", null, el("span", { style: { color: "var(--accent-presence)" } }, sug.slice(0, q.length)), sug.slice(q.length)),
+            ))) : null,
+          el("div", { style: { display: "flex", alignItems: "center", gap: 8, background: "var(--code-surface)", border: "1px solid var(--border-strong)", borderRadius: 999, padding: "8px 8px 8px 14px" } },
+            el("span", { style: { color: "var(--accent-presence)", fontFamily: mono, fontSize: 12, fontWeight: 700 } }, "❯"),
+            el("input", { value: draft, placeholder: "Run a command…",
+              onChange: e => this.updateSess(x => ({ ...x, draft: e.target.value })),
+              onKeyDown: e => {
+                if (e.key === "Enter") { e.preventDefault(); this.runTermCmd(draft); return; }
+                if (e.key === " " && q.startsWith("/") && suggestions.length) { e.preventDefault(); this.updateSess(x => ({ ...x, draft: suggestions[0] })); }
+              },
+              style: { flex: 1, appearance: "none", background: "none", border: "none", outline: "none", color: "var(--text-primary)", fontFamily: mono, fontSize: 12.5 } }),
+            el("button", { onClick: () => this.runTermCmd(draft), "aria-label": "Run", disabled: !draft.trim(), style: {
+              width: 30, height: 30, flexShrink: 0, borderRadius: 999, border: "none", cursor: "pointer",
+              background: draft.trim() ? "var(--accent-presence)" : "var(--bg-hover)",
+              color: draft.trim() ? "var(--accent-presence-foreground)" : "var(--text-muted)", display: "grid", placeItems: "center",
+            } }, el(C.Icon, { name: "ph:arrow-elbow-down-left-bold", width: 14 })),
+          ),
+        ),
+      ),
+      this.state.termNewOpen ? this.termProjectPicker(projects) : null,
+    );
+  }
+
+  termProjectPicker(projects) {
+    const el = React.createElement, C = window.CovenCave;
+    return el(React.Fragment, null,
+      el("div", { onClick: () => this.setState({ termNewOpen: false }), style: { position: "absolute", inset: 0, zIndex: 48, background: "rgba(0,0,0,.5)" } }),
+      el("div", { style: { position: "absolute", left: 20, right: 20, top: "26%", zIndex: 49, background: "var(--bg-elevated)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-panel)", padding: 10, boxShadow: "0 24px 60px rgba(0,0,0,.65)" } },
+        el("div", { style: { fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "8px 10px 8px" } }, "New terminal · choose a project"),
+        projects.map(p => el("button", { key: p, onClick: () => this.newSession(p), style: {
+          appearance: "none", border: "none", background: "none", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "12px 10px", borderRadius: "var(--radius-control)", color: "var(--text-primary)" } },
+          el("span", { style: { width: 30, height: 30, borderRadius: 8, background: "var(--bg-hover)", display: "grid", placeItems: "center", flexShrink: 0 } }, el(C.Icon, { name: "ph:folder-open", width: 16 })),
+          el("span", { style: { fontSize: 14, fontWeight: 500, fontFamily: "var(--font-jetbrains-mono),monospace" } }, p),
+        )),
+      ),
+    );
+  }
+
+  settings() {
+    const el = React.createElement, C = window.CovenCave;
+    const nyx = this.state.threads[0];
+    const row = (label, hint, control) => el(C.SettingControlRow, { label, hint }, control);
+    const linkRow = (label, value) => row(label, null, el("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)" } }, value, el(C.Icon, { name: "ph:arrow-square-out", width: 12 })));
+    return el(React.Fragment, null,
+      this.header("Settings"),
+      this.scrollBody(
+        el("div", { style: { display: "flex", flexDirection: "column", gap: 18 } },
+          // profile
+          el("div", { style: { display: "flex", alignItems: "center", gap: 13, padding: "2px 2px 2px" } },
+            el("span", { style: { width: 54, height: 54, borderRadius: 999, display: "grid", placeItems: "center", fontSize: 18, fontWeight: 600, color: "#fff", background: "linear-gradient(150deg,#7b6cff,#b06ad6)" } }, "JR"),
+            el("div", null,
+              el("div", { style: { fontSize: 17, fontWeight: 600, letterSpacing: "-.01em" } }, "Jordan Reyes"),
+              el("div", { style: { fontSize: 12, color: "var(--color-success)", display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: "var(--font-jetbrains-mono),monospace" } },
+                el("span", { style: { width: 7, height: 7, borderRadius: 999, background: "var(--color-success)" } }), "my-mac.example.ts.net"),
+            ),
+          ),
+
+
+          el(C.SettingsGroup, { label: "Wards" },
+            row("Familiar permissions", this.state.phoneWrites ? "Per-familiar project read/write." : "Read-only until changes are enabled.",
+              el("button", { onClick: () => this.setState({ permsOpen: true }), "aria-label": "Open familiar permissions", style: { appearance: "none", border: "none", background: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, color: "var(--text-secondary)", fontSize: 12 } }, "Manage", el(C.Icon, { name: "ph:caret-right", width: 13 }))),
+            row("Allow changes from phone", "Changed on the desktop only.", el("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" } }, el(C.Icon, { name: "ph:lock-simple", width: 12 }), "Desktop only")),
+            row("Allow file edits from phone", "The Code tab's Save.", el("span", { style: { fontSize: 11, color: "var(--text-muted)" } }, "Off")),
+          ),
+          el(C.SettingsGroup, { label: "Community" },
+            linkRow("Discord", "OpenCoven"),
+            linkRow("X", "@OpenCvn"),
+            linkRow("Docs", "docs.opencoven.ai"),
+            linkRow("Podcast", "pod.opencoven.ai"),
+            linkRow("Blog", "mind.opencoven.ai"),
+          ),
+          el("div", { style: { textAlign: "center", fontSize: 11, color: "var(--text-muted)", padding: "0 0 4px", fontFamily: "var(--font-jetbrains-mono),monospace" } }, "Coven Cave · v2.0"),
+        ),
+      ),
+      this.state.permsOpen ? this.permsPanel() : null,
+    );
+  }
+
+  cyclePerm(fam, proj) {
+    if (!this.state.phoneWrites) return;
+    const order = ["none", "read", "write"];
+    this.setState(st => {
+      const cur = (st.perms[fam] && st.perms[fam][proj]) || "none";
+      const next = order[(order.indexOf(cur) + 1) % 3];
+      return { perms: { ...st.perms, [fam]: { ...(st.perms[fam] || {}), [proj]: next } } };
+    });
+  }
+  permsPanel() {
+    const el = React.createElement, C = window.CovenCave;
+    const projects = ["coven-cave", "ios-app", "grimoire-docs", "design"];
+    const fams = this.state.threads.filter(t => !t.group);
+    const enabled = this.state.phoneWrites;
+    const lv = { none: { t: "No access", c: "var(--text-muted)" }, read: { t: "Read", c: "#5aa2ff" }, write: { t: "Write", c: "var(--color-success)" } };
+    return el("div", { style: { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 47, background: "var(--bg-base)", display: "flex", flexDirection: "column" } },
+      el("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 10px" } },
+        el(C.IconButton, { icon: "ph:caret-left", "aria-label": "Back", onClick: () => this.setState({ permsOpen: false }) }),
+        el("div", { style: { flex: 1, fontFamily: "var(--font-inter)", fontWeight: 600, fontSize: 18, letterSpacing: "-.01em" } }, "Familiar permissions"),
+      ),
+      el("div", { className: "cc-scroll", style: { flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 20px", display: "flex", flexDirection: "column", gap: 14 } },
+        !enabled ? el("div", { style: { display: "flex", alignItems: "flex-start", gap: 9, fontSize: 12.5, lineHeight: 1.45, color: "var(--color-warning)", background: "color-mix(in oklch, var(--color-warning) 12%, transparent)", border: "1px solid color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline))", borderRadius: "var(--radius-card)", padding: "11px 13px" } },
+          el(C.Icon, { name: "ph:lock-simple-fill", width: 15 }),
+          el("span", null, "Read-only. Turn on ", el("b", null, "Allow changes from phone"), " in Wards, or edit from the desktop.")) : null,
+        fams.map(f => el("div", { key: f.id, style: { background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-card)", overflow: "hidden" } },
+          el("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderBottom: "1px solid var(--border-hairline)" } },
+            this.avatar(f, 30), el("span", { style: { fontSize: 15, fontWeight: 600, letterSpacing: "-.01em" } }, f.name)),
+          projects.map(pr => {
+            const level = (this.state.perms[f.name] && this.state.perms[f.name][pr]) || "none";
+            const m = lv[level];
+            return el("div", { key: pr, style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", borderTop: "1px solid var(--border-hairline)" } },
+              el(C.Icon, { name: "ph:folder", width: 14, style: { color: "var(--text-muted)" } }),
+              el("span", { style: { flex: 1, fontSize: 13, fontFamily: "var(--font-jetbrains-mono),monospace", color: level === "none" ? "var(--text-muted)" : "var(--text-primary)" } }, pr),
+              el("button", { onClick: () => this.cyclePerm(f.name, pr), disabled: !enabled, "aria-label": pr + " access: " + m.t, style: {
+                appearance: "none", cursor: enabled ? "pointer" : "default", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999,
+                color: m.c, background: "color-mix(in oklch, " + m.c + " 14%, transparent)", border: "1px solid color-mix(in oklch, " + m.c + " 38%, var(--border-hairline))", opacity: enabled ? 1 : 0.7 } }, m.t));
+          }),
+        )),
+      ),
+    );
+  }
+}
+</script>
+</body>
+</html>
