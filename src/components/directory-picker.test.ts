@@ -31,9 +31,7 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
-  assert.match(src, /Select this folder/, "can select the current folder");
-  assert.match(src, /import \{ PROJECT_ROOT_WORKSPACE_HELP \} from "@\/lib\/project-root-guidance"/, "imports the shared workspace guidance copy");
-  assert.match(src, /\{PROJECT_ROOT_WORKSPACE_HELP\}/, "renders the shared workspace guidance in the modal footer");
+  assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : "Select home";/, "the primary action names the folder it will select");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
   // cave-psp8: a true modal must trap focus + restore it on close, not just listen
@@ -51,8 +49,8 @@ test("the modal keeps a stable panel and creates folders inline", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(
     src,
-    /className="flex h-\[560px\] w-\[520px\] max-h-\[calc\(100dvh-2rem\)\] max-w-\[calc\(100vw-2rem\)\] flex-col overflow-hidden/,
-    "the panel keeps a stable 520x560 size with viewport caps",
+    /className="flex w-\[560px\] max-w-full max-h-\[min\(680px,92dvh\)\] flex-col overflow-hidden/,
+    "the panel keeps the 560px redesign width with viewport caps",
   );
   assert.match(src, /fetch\("\/api\/fs-browse", \{\s*method: "POST"/, "new folders post to the browse route");
   assert.match(
@@ -60,7 +58,8 @@ test("the modal keeps a stable panel and creates folders inline", () => {
     /body: JSON\.stringify\(\{ dir: cwd, name: newFolderName \}\)/,
     "folder creation posts the current directory and draft name",
   );
-  assert.match(src, /await load\(body\.path, sessionGeneration\)/, "successful creation enters the returned folder");
+  assert.match(src, /await load\(cwd, sessionGeneration\);/, "successful creation reloads the current folder (not the new one)");
+  assert.match(src, /setSelectedPath\(body\.path\);/, "successful creation highlights the new folder for one-click select");
   assert.match(src, /role="alert"/, "inline creation errors announce via role=alert");
 });
 
@@ -92,7 +91,7 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(
     src,
-    /const sessionGeneration = modalSessionRef\.current;[\s\S]*if \(sessionGeneration !== modalSessionRef\.current\) return;[\s\S]*await load\(body\.path, sessionGeneration\);[\s\S]*finally \{\s*if \(sessionGeneration !== modalSessionRef\.current\) return;\s*setCreateBusy\(false\);/,
+    /const sessionGeneration = modalSessionRef\.current;[\s\S]*if \(sessionGeneration !== modalSessionRef\.current\) return;[\s\S]*await load\(cwd, sessionGeneration\);[\s\S]*finally \{\s*if \(sessionGeneration !== modalSessionRef\.current\) return;\s*setCreateBusy\(false\);/,
     "folder creation ignores stale completion and finally writes from prior modal sessions",
   );
   assert.match(src, /const newFolderTriggerRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the New folder trigger");
@@ -116,8 +115,8 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(
     src,
-    /await load\(body\.path, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) shouldRefocusCloseButton = true;/,
-    "successful creation refocuses the stable Close button after navigation",
+    /await load\(cwd, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) \{\s*setSelectedPath\(body\.path\);\s*shouldRefocusCloseButton = true;/,
+    "successful creation refocuses the stable Close button after the reload",
   );
   assert.match(
     src,
@@ -157,4 +156,76 @@ test("the modal portals to <body> so host stacking contexts can't bury it", () =
   assert.match(src, /return createPortal\(\s*<div\s*\n?\s*className="fixed inset-0 z-\[200\]/, "the fixed scrim renders through a portal");
   assert.match(src, /document\.body,\s*\n\s*\);/, "the portal targets document.body");
   assert.match(src, /if \(!open\) return null;[\s\S]*createPortal/, "closed modal renders nothing (portal only touches document.body when open)");
+});
+
+// cave-tv71: project-folder-modal redesign (Claude Design handoff). Clicking a
+// row highlights it without entering; the chevron (or double-click) opens it;
+// the footer echoes the pending path and names the folder the primary action
+// will select. $HOME itself stays unselectable, matching the server-side
+// isAllowedNewProjectRoot boundary.
+test("the redesigned modal separates selection from navigation", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(
+    src,
+    /onClick=\{\(\) => setSelectedPath\(\(prev\) => \(prev === entry\.path \? null : entry\.path\)\)\}/,
+    "clicking a row toggles the highlight instead of entering the folder",
+  );
+  assert.match(src, /onDoubleClick=\{\(\) => navigateTo\(entry\.path\)\}/, "double-click opens the folder");
+  assert.match(src, /aria-label=\{`Open \$\{entry\.name\}`\}/, "each row keeps an explicit chevron open control");
+  assert.match(src, /aria-pressed=\{isSelected\}/, "row selection is exposed to assistive tech");
+  assert.match(src, /const pendingPath = selected\?\.path \?\? cwd;/, "the footer resolves the highlighted folder before the browsed one");
+  assert.match(src, /const selectDisabled = !cwd \|\| createBusy \|\| \(!selected && atHomeRoot\);/, "bare $HOME cannot be selected");
+  assert.match(src, />Selecting</, "the footer labels the pending selection");
+  assert.match(src, /\{pendingPath \? collapseHome\(pendingPath\) : "…"\}/, "the footer echoes the ~-collapsed pending path");
+});
+
+test("the redesigned modal keeps breadcrumbs, filtering, and per-folder state resets", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /aria-label="Folder path"/, "the toolbar exposes a breadcrumb nav");
+  assert.match(src, /aria-current=\{isLast \? "location" : undefined\}/, "the current crumb is marked for assistive tech");
+  assert.match(src, /onClick=\{\(\) => navigateTo\(crumb\.path\)\}/, "crumbs jump straight to any ancestor");
+  assert.match(src, /aria-label="Filter folders"/, "the filter input is labelled");
+  assert.match(
+    src,
+    /const visibleEntries = query \? entries\.filter\(\(e\) => e\.name\.toLowerCase\(\)\.includes\(query\)\) : entries;/,
+    "filtering is client-side over the loaded entries",
+  );
+  assert.match(
+    src,
+    /No folders match \\u201C\$\{filter\.trim\(\)\}\\u201D/,
+    "the empty state names the failing filter query",
+  );
+  assert.match(
+    src,
+    /const navigateTo = useCallback\(\s*\(dir: string \| null\) => \{\s*setFilter\(""\);\s*setSelectedPath\(null\);\s*resetCreateFolderState\(\);/,
+    "navigation clears filter, highlight, and inline create before loading",
+  );
+});
+
+test("the redesigned modal badges workspace folders and keeps the design-language chrome", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /title="Inside a Cave workspace"/, "workspace rows explain the badge on hover");
+  assert.match(src, /entry\.workspace \? "text-\[var\(--accent-presence\)\]" : "text-\[var\(--text-muted\)\]"/, "workspace folder icons pick up the accent");
+  assert.match(src, /Pick where this project(&apos;|')s chats will live\./, "the header keeps the redesign subtitle");
+  assert.match(src, /color-mix\(in_oklch,var\(--bg-panel\)_62%,transparent\)/, "the scrim uses the translucent panel mix, not bg-black");
+  assert.doesNotMatch(src, /bg-black\/50/, "the old opaque scrim is gone");
+  assert.match(src, /backdrop-blur-\[6px\]/, "the scrim blurs the page behind the modal");
+  assert.match(src, /\[animation:ui-modal-enter_var\(--duration-base\)_var\(--ease-decelerate\)\]/, "the card reuses the shared pop-in keyframes");
+  const motionReduceCount = src.split("motion-reduce:[animation:none]").length - 1;
+  assert.ok(motionReduceCount >= 2, "scrim and card both honor prefers-reduced-motion");
+  assert.doesNotMatch(src, /rgba\(255,\s*255,\s*255/, "no hard-coded white overlays");
+});
+
+test("fs-browse marks entries inside configured workspaces for the picker badge", () => {
+  const src = read("../app/api/fs-browse/route.ts");
+  assert.match(
+    src,
+    /import \{ resolveAllowedProjectSubpath \} from "@\/lib\/server\/project-paths"/,
+    "the route reuses the allowed-project-roots resolver",
+  );
+  assert.match(
+    src,
+    /workspace: resolveAllowedProjectSubpath\(entry\.path\) !== null,/,
+    "each listed entry carries a workspace flag",
+  );
 });
