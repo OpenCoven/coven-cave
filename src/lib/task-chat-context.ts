@@ -1,4 +1,5 @@
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
+import type { Card } from "@/lib/cave-board-types";
 
 type TaskContextCard = {
   title: string;
@@ -75,10 +76,19 @@ export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
     : base;
 }
 
-export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
+/**
+ * Look up the server-owned task relation for a conversation. Consumers that
+ * need to launch a task chat use this rather than accepting project or
+ * familiar identity from the browser alongside a reserved conversation id.
+ */
+export async function taskCardForSession(sessionId?: string | null): Promise<Card | null> {
   if (!sessionId) return null;
   const { loadBoard } = await import("@/lib/cave-board");
   const board = await loadBoard();
-  const card = board.cards.find((candidate) => candidate.sessionId === sessionId);
+  return board.cards.find((candidate) => candidate.sessionId === sessionId) ?? null;
+}
+
+export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
+  const card = await taskCardForSession(sessionId);
   return card ? buildTaskContext(card) : null;
 }
