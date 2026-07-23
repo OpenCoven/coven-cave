@@ -108,6 +108,8 @@ export function createProject(input: {
   name: string;
   root: string;
   color?: string;
+  /** Canonical GitHub repository link — callers validate/normalize first. */
+  repoUrl?: string;
 }): Promise<CaveProject> {
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
@@ -128,6 +130,7 @@ export function createProject(input: {
       createdAt: now,
       updatedAt: now,
     };
+    if (input.repoUrl) project.repoUrl = input.repoUrl;
     await saveProjects([...projects, project]);
     return project;
   }));
@@ -136,8 +139,9 @@ export function createProject(input: {
 export function patchProject(
   id: string,
   // color: string sets an explicit tint; null clears it (back to the auto
-  // root-hash tint); undefined leaves it untouched.
-  patch: { name?: string; root?: string; color?: string | null },
+  // root-hash tint); undefined leaves it untouched. repoUrl follows the same
+  // string-sets / null-clears / undefined-keeps contract.
+  patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null },
 ): Promise<CaveProject | null> {
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
@@ -165,6 +169,10 @@ export function patchProject(
     if (patch.color !== undefined) {
       if (patch.color === null) delete updated.color;
       else updated.color = patch.color;
+    }
+    if (patch.repoUrl !== undefined) {
+      if (patch.repoUrl === null) delete updated.repoUrl;
+      else updated.repoUrl = patch.repoUrl;
     }
     const next = [...projects];
     next[idx] = updated;

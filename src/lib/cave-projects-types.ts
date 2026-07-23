@@ -11,6 +11,8 @@ export type CaveProject = {
   name: string;
   root: string;
   color?: string;
+  /** Canonical GitHub repository link (https://github.com/owner/repo), when tied to one. */
+  repoUrl?: string;
   createdAt: string;
   updatedAt: string;
 };

@@ -61,6 +61,21 @@ assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should re
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
 assert.match(
   listRoute,
+  /from "@\/lib\/github-repo-link"/,
+  "POST /api/projects should import the shared GitHub repo-link normalizer",
+);
+assert.match(
+  listRoute,
+  /normalizeGitHubRepoUrl\(body\.repoUrl\)/,
+  "POST /api/projects should normalize a provided repoUrl instead of storing raw input",
+);
+assert.match(
+  listRoute,
+  /repoUrl must be a GitHub repository link/,
+  "POST /api/projects should reject non-GitHub repoUrl values with an actionable error",
+);
+assert.match(
+  listRoute,
   /export async function POST\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest\(req\);/,
   "POST /api/projects must enforce loopback before registering \$HOME-scoped roots",
 );
@@ -86,6 +101,26 @@ assert.match(
 assert.match(itemRoute, /status:\s*403/, "PUT /api/projects/[id] should reject unsafe roots with 403");
 assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] should require existing directory roots before persisting them");
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
+assert.match(
+  itemRoute,
+  /from "@\/lib\/github-repo-link"/,
+  "PUT /api/projects/[id] should import the shared GitHub repo-link normalizer",
+);
+assert.match(
+  itemRoute,
+  /normalizeGitHubRepoUrl\(trimmed\)/,
+  "PUT /api/projects/[id] should normalize repoUrl patches instead of storing raw input",
+);
+assert.match(
+  itemRoute,
+  /repoUrl must be a GitHub repository link/,
+  "PUT /api/projects/[id] should reject non-GitHub repoUrl values with an actionable error",
+);
+assert.match(
+  itemRoute,
+  /body\.repoUrl === null[\s\S]{0,80}patch\.repoUrl = null/,
+  "PUT /api/projects/[id] should accept null to unlink the repository",
+);
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
 

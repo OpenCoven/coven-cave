@@ -14,6 +14,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
+import { gitHubRepoSlug } from "@/lib/github-repo-link";
 import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
   normalizeAccessLevel,
@@ -41,6 +42,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
+import { ProjectSettingsModal } from "@/components/project-settings-modal";
+import { useAddProjectFlow } from "@/components/project-picker";
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
@@ -97,7 +100,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const confirm = useConfirm();
   // Unscoped: access is managed over EVERY registered project, not just the
   // ones the active familiar can already see.
-  const { projects, loading: projectsLoading, error: projectsError, reload } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, updateRepoUrl } = useProjects();
 
   const [grantsData, setGrantsData] = useState<GrantsSnapshot | null>(null);
   const [grantsLoading, setGrantsLoading] = useState(true);
@@ -141,6 +144,36 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [familiars, pickedFamiliarId],
   );
   const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
+
+  // ── New project ────────────────────────────────────────────────────────
+  // The shared add flow (native folder dialog on desktop, in-app browser on
+  // web) registers the root AND grants the picked familiar access, so the new
+  // project lands in this matrix already visible to whoever it was added for.
+  const addFlow = useAddProjectFlow({
+    familiarId: familiar?.id ?? null,
+    createProject,
+    projects,
+    onAdded: () => {
+      reload();
+      void loadGrants();
+      announce("Project added.");
+    },
+  });
+
+  // ── Per-project settings (GitHub repository link) ──────────────────────
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
+  const settingsProject = useMemo(
+    () => projects.find((project) => project.id === settingsProjectId) ?? null,
+    [projects, settingsProjectId],
+  );
+  const saveRepoUrl = useCallback(
+    async (id: string, repoUrl: string | null) => {
+      const ok = await updateRepoUrl(id, repoUrl);
+      if (ok) announce(repoUrl ? "GitHub repository linked." : "GitHub repository unlinked.");
+      return ok;
+    },
+    [updateRepoUrl, announce],
+  );
 
   // ── Mutation state ─────────────────────────────────────────────────────
   // projectId → optimistic direct level (null = revoked), layered over the
@@ -406,15 +439,25 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       <EmptyState
         icon="ph:folder"
         headline="No projects yet"
-        subtitle="Register a project from the chat composer and it will show up here."
+        subtitle="Create one here, or register a folder from the chat composer."
         actions={
-          <Button
-            variant="secondary"
-            leadingIcon="ph:sparkle"
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:salem-open"))}
-          >
-            Ask Salem
-          </Button>
+          <>
+            <Button
+              variant="primary"
+              leadingIcon="ph:plus"
+              disabled={addFlow.adding}
+              onClick={addFlow.beginAddProject}
+            >
+              {addFlow.adding ? "Adding project…" : "New project"}
+            </Button>
+            <Button
+              variant="secondary"
+              leadingIcon="ph:sparkle"
+              onClick={() => window.dispatchEvent(new CustomEvent("cave:salem-open"))}
+            >
+              Ask Salem
+            </Button>
+          </>
         }
       />
     );
@@ -431,6 +474,11 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         {mutateError ? (
           <p className="projects-access-error" role="alert">
             {mutateError}
+          </p>
+        ) : null}
+        {addFlow.addError ? (
+          <p className="projects-access-error" role="alert">
+            {addFlow.addError}
           </p>
         ) : null}
         {visibleSections.length === 0 ? (
@@ -477,34 +525,57 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                       : "";
                   return (
                     <li key={project.id}>
-                      <button
-                        id={`project-access-row:${project.id}`}
-                        type="button"
-                        className={`projects-access-row is-${row.state}${pending ? " is-pending" : ""}${flashId === project.id ? " is-flash" : ""}`}
-                        disabled={pending || supreme}
-                        onClick={() => void cycleRow(row)}
-                        title={
-                          supreme
-                            ? `${project.name} — Full (supreme familiar)`
-                            : `${project.name} — ${meta.label}${viaGroups}. Click to ${accessStateMeta(row.state).action}.`
-                        }
-                        aria-label={`${project.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
-                      >
-                        <Icon className="projects-access-row-icon" name="ph:folder" width={15} aria-hidden />
-                        <span className="projects-access-row-name">{project.name}</span>
-                        {row.groupNames.length > 0 && !supreme ? (
-                          <Icon
-                            className="projects-access-row-group"
-                            name="ph:users-three"
-                            width={13}
-                            aria-hidden
-                          />
-                        ) : null}
-                        <span className={`projects-access-pill is-${row.state}`}>
-                          <span className="projects-access-dot" aria-hidden />
-                          {meta.label}
-                        </span>
-                      </button>
+                      <div className="projects-access-rowwrap">
+                        <button
+                          id={`project-access-row:${project.id}`}
+                          type="button"
+                          className={`projects-access-row is-${row.state}${pending ? " is-pending" : ""}${flashId === project.id ? " is-flash" : ""}`}
+                          disabled={pending || supreme}
+                          onClick={() => void cycleRow(row)}
+                          title={
+                            supreme
+                              ? `${project.name} — Full (supreme familiar)`
+                              : `${project.name} — ${meta.label}${viaGroups}. Click to ${accessStateMeta(row.state).action}.`
+                          }
+                          aria-label={`${project.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
+                        >
+                          <Icon className="projects-access-row-icon" name="ph:folder" width={15} aria-hidden />
+                          <span className="projects-access-row-name">{project.name}</span>
+                          {project.repoUrl ? (
+                            <Icon
+                              className="projects-access-row-repo"
+                              name="ph:github-logo"
+                              width={13}
+                              aria-hidden
+                            />
+                          ) : null}
+                          {row.groupNames.length > 0 && !supreme ? (
+                            <Icon
+                              className="projects-access-row-group"
+                              name="ph:users-three"
+                              width={13}
+                              aria-hidden
+                            />
+                          ) : null}
+                          <span className={`projects-access-pill is-${row.state}`}>
+                            <span className="projects-access-dot" aria-hidden />
+                            {meta.label}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="projects-access-row-settings focus-ring"
+                          onClick={() => setSettingsProjectId(project.id)}
+                          aria-label={`Project settings — ${project.name}`}
+                          title={
+                            project.repoUrl
+                              ? `Project settings — linked to ${gitHubRepoSlug(project.repoUrl) ?? project.repoUrl}`
+                              : "Project settings — link a GitHub repository"
+                          }
+                        >
+                          <Icon name="ph:gear-six" width={14} aria-hidden />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -574,10 +645,27 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           >
             Reset all
           </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="projects-access-new"
+            leadingIcon="ph:plus"
+            disabled={addFlow.adding}
+            onClick={addFlow.beginAddProject}
+          >
+            {addFlow.adding ? "Adding…" : "New project"}
+          </Button>
         </div>
 
         {body}
       </div>
+
+      <ProjectSettingsModal
+        project={settingsProject}
+        onClose={() => setSettingsProjectId(null)}
+        onSaveRepoUrl={saveRepoUrl}
+      />
+      {addFlow.addProjectModal}
     </div>
   );
 }
