@@ -5,16 +5,16 @@
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
  * owner's request; gated by caveCodeSurface() (NEXT_PUBLIC_CAVE_CODE_SURFACE).
  *
- * Phase 2 (this shape): top-level Sessions/GitHub tabs, the session rail
- * grouped by project with git-attribution badges, and the per-session
- * workbench (Diff | Files | Terminal — see code-workbench.tsx). The PR tab,
- * inspector, composer, and new-session flow land in follow-up PRs; the
- * CODE_WORKBENCH_TABS vocabulary in src/lib/code-surface.ts already fixes
- * their deep-link names. GitHub mounts whole under the GitHub tab (its
- * sidebar row hides when the flag is on).
+ * Phase 3+ (this shape): top-level Sessions/GitHub tabs, the session rail
+ * (grouped by project, git-attribution badges, + New session) and the
+ * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
+ * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
+ * project + familiar + optional fresh worktree. The inspector and mobile
+ * layout land in follow-up PRs. GitHub mounts whole under the GitHub tab
+ * (its sidebar row hides when the flag is on).
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/lib/code-surface";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
+import { CodeNewSession } from "@/components/code-new-session";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { SessionRow } from "@/lib/types";
 
@@ -71,6 +72,10 @@ export function CodeView({
     githubTarget ? "github" : deepLink?.topTab ?? "sessions",
   );
   const [selectedId, setSelectedId] = useState<string | null>(deepLink?.sessionId ?? null);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // A session created HERE isn't in the polled list yet; hold its selection
+  // until /api/sessions/list catches up instead of auto-picking the newest.
+  const pendingNewIdRef = useRef<string | null>(null);
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
   const selected = useMemo(() => {
@@ -85,10 +90,14 @@ export function CodeView({
   // Land on the newest session so the surface is immediately useful; keep the
   // user's explicit pick as long as that session is still visible.
   useEffect(() => {
-    if (selected) return;
+    if (selected) {
+      if (pendingNewIdRef.current === selected.id) pendingNewIdRef.current = null;
+      return;
+    }
+    if (selectedId && pendingNewIdRef.current === selectedId) return;
     const first = groups[0]?.sessions[0];
     if (first) setSelectedId(first.id);
-  }, [groups, selected]);
+  }, [groups, selected, selectedId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -138,7 +147,12 @@ export function CodeView({
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="w-64 shrink-0 border-r border-[var(--border-hairline)]">
-            <CodeSessionRail sessions={sessions} selectedId={selectedId} onSelect={setSelectedId} />
+            <CodeSessionRail
+              sessions={sessions}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onNewSession={() => setNewSessionOpen(true)}
+            />
           </div>
           <div className="min-w-0 flex-1">
             {selected ? (
@@ -156,6 +170,15 @@ export function CodeView({
           </div>
         </div>
       )}
+      <CodeNewSession
+        open={newSessionOpen}
+        onClose={() => setNewSessionOpen(false)}
+        onCreated={(sessionId) => {
+          pendingNewIdRef.current = sessionId;
+          setSelectedId(sessionId);
+          setNewSessionOpen(false);
+        }}
+      />
     </div>
   );
 }
