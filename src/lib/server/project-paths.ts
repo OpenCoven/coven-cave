@@ -147,22 +147,18 @@ export function isAllowedNewProjectRoot(value: string): boolean {
   // bare volume roots (`/`, `C:\`) — registering an entire home directory or
   // drive as one project is never intended.
   const home = realpathOrResolve(homedir());
-  if (candidate === home || isSameExistingDir(candidate, home)) return false;
+  if (sameCanonicalName(candidate, home)) return false;
   return candidate !== path.parse(candidate).root;
 }
 
-// String equality alone misses aliases of $HOME on case-insensitive
-// filesystems (APFS/NTFS): realpathSync is case-preserving, so a typed
-// `/USERS/BUNS` (or an NFD/NFC Unicode variant) survives canonicalization
-// while still naming the home directory. Filesystem identity (dev+ino)
-// rejects every alias of the same directory; a candidate that doesn't exist
-// can't be $HOME, so stat failures fall through to "not the same".
-function isSameExistingDir(a: string, b: string): boolean {
-  try {
-    const statA = fs.statSync(/* turbopackIgnore: true */ a, { bigint: true });
-    const statB = fs.statSync(/* turbopackIgnore: true */ b, { bigint: true });
-    return statA.dev === statB.dev && statA.ino === statB.ino;
-  } catch {
-    return false;
-  }
+// realpath is case-preserving, so on case-insensitive filesystems
+// (APFS/NTFS) a typed `/USERS/BUNS` — or an NFD/NFC Unicode variant —
+// survives canonicalization while still naming $HOME. Compare normalized,
+// case-folded names instead: every alias of the home directory is rejected
+// on every platform, with no fs probe on the untrusted candidate (CodeQL
+// js/path-injection). On a case-sensitive filesystem this can also reject a
+// hypothetical distinct `/USERS/…` twin of $HOME — the safe direction for a
+// guard whose only job is refusing unbounded roots.
+function sameCanonicalName(a: string, b: string): boolean {
+  return a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }
