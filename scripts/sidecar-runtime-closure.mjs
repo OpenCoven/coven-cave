@@ -116,7 +116,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // event-decoder, composer-add-menu, and subsequent alias/mobile fixes
   // land. Retain ten files of headroom over that measured maximum without
   // relaxing the byte ceiling.
-  fileCount: 5_654,
+  // 2026-07-23 (MCP doctor): the /api/mcp/health route traces the mcp-doctor
+  // and endpoint-validators chunks; CI measured 5,655 on Ubuntu and 5,657 on
+  // Windows. Retain ten files of headroom over the measured maximum without
+  // relaxing the byte ceiling.
+  fileCount: 5_667,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
