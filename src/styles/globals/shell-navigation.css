@@ -271,11 +271,14 @@
   height: 34px;
   padding: 0 var(--space-2);
   border-radius: 10px;
-  /* Brand accent (--accent-presence); var(--accent) is the shadcn surface
-     token and rendered this button's chrome nearly invisible. */
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  color: var(--text-primary);
+  /* Filled brand accent (--accent-presence): New chat is the panel's primary
+     action, so it gets the solid treatment with its paired on-accent ink.
+     Hover shifts through --accent-presence-hover (WCAG-AA pair, cave-c7hy).
+     var(--accent) is the shadcn surface token and rendered this button's
+     chrome nearly invisible. */
+  border: 1px solid var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
   font-size: var(--text-sm);
   font-weight: 560;
   text-align: left;
@@ -283,12 +286,12 @@
     border-color var(--duration-fast) var(--ease-standard);
 }
 .cnav__new:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 48%, transparent);
+  background: var(--accent-presence-hover);
+  border-color: var(--accent-presence-hover);
 }
 .cnav__new-icon {
   flex-shrink: 0;
-  color: var(--accent-presence);
+  color: var(--accent-presence-foreground);
 }
 .cnav__new-label {
   flex: 1;

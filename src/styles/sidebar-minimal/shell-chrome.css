@@ -160,20 +160,22 @@
   color: var(--text-primary);
 }
 
-/* "New chat" is the top CTA — an outlined accent button: the accent reads on
-   the border + label rather than a solid fill, so it stays prominent without
-   dominating the panel. A faint accent wash on hover gives press feedback. */
+/* "New chat" is the top CTA — a filled accent button: solid --accent-presence
+   with its paired on-accent ink (--accent-presence-foreground, not
+   --text-primary — monochrome palettes vanish the label otherwise), so the
+   panel's one primary action stands out. Hover shifts through
+   --accent-presence-hover, the direction-aware WCAG-AA pair (cave-c7hy). */
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  background: transparent;
-  color: var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
   border: 2px solid var(--accent-presence);
   font-weight: 600;
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  color: var(--accent-presence);
-  border-color: var(--accent-presence);
+  background: var(--accent-presence-hover);
+  color: var(--accent-presence-foreground);
+  border-color: var(--accent-presence-hover);
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {
