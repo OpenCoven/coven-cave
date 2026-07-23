@@ -55,6 +55,11 @@ export type ChatProjectSelection = {
   projectId: string | null;
   /** The registered project the chat is scoped to; null for no-project. */
   project: CaveProject | null;
+  /** Explicit opener-provided root that maps to no registered project — e.g. a
+   *  `.worktrees/<branch>` checkout handed off by the worktree-creation flow.
+   *  The chat runs here; it must NOT be re-rooted to a registered project.
+   *  Only present when the selection resolved through that path. */
+  unregisteredRoot?: string;
 };
 
 /**
@@ -70,7 +75,11 @@ export type ChatProjectSelection = {
  * registered project is "No project" — it runs in the familiar's own
  * workspace or another unregistered dir, and defaulting it to the first
  * registered project would re-root the next turn's cwd there and fork the
- * harness session (`--continue` misses in the new dir). Only a brand new chat
+ * harness session (`--continue` misses in the new dir). An opener-provided
+ * root that maps to no registered project (`fallbackProjectRoot`, e.g. a
+ * freshly provisioned `.worktrees/<branch>` checkout) resolves to No-project
+ * with `unregisteredRoot` carrying the root, so the chat actually runs there.
+ * Only a brand new chat
  * (no session yet) defaults: to the most recent chat's registered project
  * (`recentProjectRoot`, see recentChatProjectRoot) so new chats pick up where
  * the user is actually working, then to the first project.
@@ -105,6 +114,26 @@ export function resolveChatProjectSelection(args: {
     args.projects,
   );
   if (mappedId) return { projectId: mappedId, project: chatProjectById(mappedId, args.projects) };
+  // An explicit opener root that maps to no registered project (a
+  // `.worktrees/<branch>` checkout from the composer's "New worktree…" flow or
+  // the GitHub safe-merge hand-off) is an intentional choice of where the chat
+  // runs. Falling through to the recent/first project would silently re-root
+  // the chat back into the shared checkout — the exact collision the worktree
+  // was created to avoid. Honored for the view's own session too (the root
+  // must match), so the worktree context survives the first send; a DIFFERENT
+  // session opened into this view keeps its own home instead.
+  const explicitRoot = args.fallbackProjectRoot?.trim()
+    ? normalizeChatProjectRoot(args.fallbackProjectRoot)
+    : null;
+  if (
+    explicitRoot &&
+    (!args.hasSession ||
+      (args.sessionProjectRoot?.trim()
+        ? normalizeChatProjectRoot(args.sessionProjectRoot) === explicitRoot
+        : false))
+  ) {
+    return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: explicitRoot };
+  }
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
   const recentProject = projectForRoot(args.recentProjectRoot, args.projects);
   if (recentProject) return { projectId: recentProject.id, project: recentProject };

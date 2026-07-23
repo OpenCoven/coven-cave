@@ -110,6 +110,15 @@ assert.match(
   "create-worktree provisions through the shared issue-worktree-provision lib",
 );
 
+// Branch rows carry the absolute path of the worktree that has each branch
+// checked out, so the client can offer "open a chat in that worktree" instead
+// of a dead disabled row (cave-tmst).
+assert.match(
+  source,
+  /worktree: worktreeDir \? path\.basename\(worktreeDir\) : null,\s*\n\s*worktreePath: worktreeDir,/,
+  "branch rows expose both the worktree basename (display) and absolute path (jump target)",
+);
+
 // The branch listing marks the current branch and which worktree holds each
 // checked-out branch, so the menu can disable non-switchable rows.
 assert.match(

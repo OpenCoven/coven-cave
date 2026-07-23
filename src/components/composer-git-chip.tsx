@@ -34,7 +34,9 @@ import {
   PopoverItem,
   PopoverLabel,
   PopoverSeparator,
+  usePopoverEscapeLayer,
 } from "@/components/ui/popover";
+import { useAnnouncer } from "@/components/ui/live-region";
 import "@/styles/composer-git-chip.css";
 
 export type BranchPr = {
@@ -52,6 +54,8 @@ type BranchRow = {
   current: boolean;
   /** Checkout dir basename when some worktree has the branch checked out. */
   worktree: string | null;
+  /** Absolute path of that worktree — jump target for "open a chat there". */
+  worktreePath?: string | null;
 };
 
 /** The branch's PR, fetched once per (projectRoot, branch) — null when the
@@ -131,6 +135,20 @@ export function GitBranchMenuPopover({
   const [menuError, setMenuError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newBranch, setNewBranch] = useState("");
+  const { announce } = useAnnouncer();
+
+  // Escape while the inline new-branch form is open backs out to the menu
+  // (deepest-first, like a submenu) instead of dismissing the whole popover.
+  usePopoverEscapeLayer(menuOpen && creating, () => {
+    setCreating(false);
+    setNewBranch("");
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(".ui-popover")
+        ?.querySelector<HTMLElement>("button:not(:disabled)")
+        ?.focus();
+    });
+  });
 
   // One branch-list fetch per menu open — the list is only as fresh as the
   // moment the menu opened, which is exactly when it's read.
@@ -183,6 +201,7 @@ export function GitBranchMenuPopover({
       const json = (await res.json()) as { ok?: boolean; error?: string; branch?: string };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `switch HTTP ${res.status}`);
       closeMenu();
+      announce(`Switched to branch ${name}.`);
       onSwitched?.();
     } catch (err) {
       setMenuError(err instanceof Error ? err.message : "branch switch failed");
@@ -217,6 +236,9 @@ export function GitBranchMenuPopover({
         throw new Error(json.error ?? `worktree HTTP ${res.status}`);
       }
       closeMenu();
+      announce(
+        `Worktree ${json.created === false ? "reused" : "created"} for ${json.branch ?? name} — opening a chat there.`,
+      );
       // Hand off to a fresh chat rooted in the worktree — the same event the
       // GitHub safe-merge flow uses, so routing/familiar defaults match.
       window.dispatchEvent(
@@ -229,6 +251,18 @@ export function GitBranchMenuPopover({
     } finally {
       setMenuBusy(false);
     }
+  };
+
+  const openWorktreeChat = (row: BranchRow) => {
+    const target = row.worktreePath;
+    if (!target) return;
+    closeMenu();
+    announce(`Opening a chat in worktree ${row.worktree ?? row.name}.`);
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: { projectRoot: target },
+      }),
+    );
   };
 
   return (
@@ -249,25 +283,35 @@ export function GitBranchMenuPopover({
           <div className="cave-composer-git-chip__menu-note">Loading branches…</div>
         ) : (
           <>
-            {rows.map((row) => (
-              <PopoverItem
-                key={row.name}
-                icon="ph:git-branch"
-                checked={row.current}
-                disabled={menuBusy || row.current || row.worktree !== null}
-                title={
-                  row.worktree && !row.current
-                    ? `Checked out in worktree ${row.worktree}`
-                    : row.current
-                      ? "Current branch"
-                      : `Switch to ${row.name}`
-                }
-                onSelect={() => void switchBranch(row.name)}
-              >
-                {row.name}
-                {row.worktree && !row.current ? ` · ${row.worktree}` : ""}
-              </PopoverItem>
-            ))}
+            {rows.map((row) => {
+              // A branch living in another worktree can't be switched to here,
+              // but it IS one click from useful: jump into a chat rooted there.
+              const jumpable = !row.current && row.worktree !== null && !!row.worktreePath;
+              return (
+                <PopoverItem
+                  key={row.name}
+                  icon={jumpable ? "ph:tree-structure" : "ph:git-branch"}
+                  checked={row.current}
+                  disabled={menuBusy || row.current || (row.worktree !== null && !jumpable)}
+                  title={
+                    jumpable
+                      ? `Open a chat in worktree ${row.worktree}`
+                      : row.worktree && !row.current
+                        ? `Checked out in worktree ${row.worktree}`
+                        : row.current
+                          ? "Current branch"
+                          : `Switch to ${row.name}`
+                  }
+                  onSelect={() => {
+                    if (jumpable) openWorktreeChat(row);
+                    else void switchBranch(row.name);
+                  }}
+                >
+                  {row.name}
+                  {row.worktree && !row.current ? ` · ${row.worktree}` : ""}
+                </PopoverItem>
+              );
+            })}
             {rows.length === 0 && !menuError ? (
               <div className="cave-composer-git-chip__menu-note">No local branches</div>
             ) : null}

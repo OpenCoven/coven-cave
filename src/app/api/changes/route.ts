@@ -135,6 +135,8 @@ type BranchRow = {
   current: boolean;
   /** Checkout dir basename when some worktree has the branch checked out. */
   worktree: string | null;
+  /** Absolute path of that worktree — lets the client open a chat there. */
+  worktreePath: string | null;
 };
 
 /** Branch-menu payload cap: enough for real repos, bounded for pathological ones. */
@@ -154,7 +156,7 @@ async function listBranches(repoRoot: string) {
   for (const line of wtOut.split("\n")) {
     if (line.startsWith("worktree ")) dir = line.slice("worktree ".length).trim();
     else if (line.startsWith("branch refs/heads/") && dir) {
-      checkedOut.set(line.slice("branch refs/heads/".length).trim(), path.basename(dir));
+      checkedOut.set(line.slice("branch refs/heads/".length).trim(), dir);
     }
   }
   const branches: BranchRow[] = [];
@@ -164,10 +166,12 @@ async function listBranches(repoRoot: string) {
     // Tool-internal refs (e.g. beads' __dolt_remote_info__) aren't human
     // switch targets — keep them out of the menu.
     if (/^__.*__$/.test(name)) continue;
+    const worktreeDir = checkedOut.get(name) ?? null;
     branches.push({
       name,
       current: name === current,
-      worktree: checkedOut.get(name) ?? null,
+      worktree: worktreeDir ? path.basename(worktreeDir) : null,
+      worktreePath: worktreeDir,
     });
     if (branches.length >= MAX_BRANCH_ROWS) break;
   }

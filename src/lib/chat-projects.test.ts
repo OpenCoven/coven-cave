@@ -440,6 +440,84 @@ console.log("chat-projects.test.ts: ok");
     { projectId: NO_PROJECT_ID, project: null },
     "recency never re-roots an EXISTING session in an unregistered cwd",
   );
+
+  // ── Unregistered opener roots (worktree hand-off) ──────────────────────────
+  // REGRESSION (2026-07-23): "New worktree…" dispatches a new chat at the
+  // freshly provisioned `.worktrees/<branch>` checkout. That root maps to no
+  // registered project, so the resolver used to drop it and fall through to
+  // the recent/first project — the chat silently ran in the shared checkout
+  // the worktree was created to avoid. An explicit opener root now resolves
+  // to No-project WITH the root carried as unregisteredRoot.
+  const worktreeRoot = "/work/alpha/.worktrees/feat-x";
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: worktreeRoot,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "a new chat opened at a worktree root keeps that root — never the recent/first project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: `${worktreeRoot}/`,
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "the opener root is normalized (trailing slash trimmed)",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    "the worktree root survives the first send (session recorded at the same root)",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a DIFFERENT session opened into a worktree-rooted view keeps its own home",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: "p2",
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: "p2", project: roster[1] },
+    "an explicit user pick still beats the opener's worktree root",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      taskProjectId: "p1",
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: "p1", project: roster[0] },
+    "a linked task's project still beats the opener's worktree root",
+  );
 }
 
 // ── recentChatProjectRoot ────────────────────────────────────────────────────

@@ -2003,8 +2003,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   });
   const resolvedProjectId = projectSelection.projectId;
   const selectedProject = projectSelection.project;
+  // No-project normally means "no root asserted" (the familiar's own
+  // workspace), but an opener-provided unregistered root — a freshly created
+  // `.worktrees/<branch>` checkout — IS the chat's home: keep it active so the
+  // first send runs there and the git chip/env panel show the worktree.
   const activeProjectRoot =
-    resolvedProjectId === NO_PROJECT_ID ? "" : (selectedProject?.root ?? session?.project_root ?? projectRoot ?? "");
+    resolvedProjectId === NO_PROJECT_ID
+      ? (projectSelection.unregisteredRoot ?? "")
+      : (selectedProject?.root ?? session?.project_root ?? projectRoot ?? "");
   // Root asserted to the server on send. A session's recorded cwd is NOT an
   // explicit project choice: a no-project chat boots in the familiar's own
   // workspace and the daemon records that dir as project_root. Echoing it back
