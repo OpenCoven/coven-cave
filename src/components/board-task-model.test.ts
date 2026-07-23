@@ -28,7 +28,7 @@ assert.match(
   "the inspector renders every runtime-provided model option, including authenticated catalogs",
 );
 assert.match(inspector, /const taskModelPatch = \(modelOverride: string \| null\): CardPatch => \(\{[\s\S]{0,120}modelOverrideHarness: modelOverride \? modelHarness \|\| null : null/, "the inspector tags each task model with its selected runtime");
-assert.match(inspector, /persistTaskModelPatch\(\{ familiarId: next \|\| null, \.\.\.taskModelPatch\(null\) \}\)/, "changing familiar clears the prior task model and runtime");
+assert.match(inspector, /persistTaskModelPatch\(\{[\s\S]{0,120}familiarId: next \|\| null,[\s\S]{0,120}sessionId: null,[\s\S]{0,120}\.\.\.taskModelPatch\(null\)/, "changing familiar clears the linked session, prior task model, and runtime");
 assert.match(inspector, /label="Model"/, "inspector exposes a Model control");
 assert.match(
   inspector,
