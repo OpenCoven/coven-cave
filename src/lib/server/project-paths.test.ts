@@ -69,8 +69,8 @@ try {
   );
   assert.equal(
     isAllowedNewProjectRoot(savedProjectRoot),
-    false,
-    "saved Cave projects must not expand the trusted base for new project registration",
+    true,
+    "registration accepts paths outside $HOME (picker/native-dialog parity), saved or not",
   );
 
   // Research mission workspaces live under cave state, not a registered
@@ -115,8 +115,8 @@ try {
   );
   assert.equal(
     isAllowedNewProjectRoot(lateProjectRoot),
-    false,
-    "late saved projects do not authorize more arbitrary project roots",
+    true,
+    "late saved projects are registrable like any other non-root directory",
   );
 
   assert.equal(
@@ -144,12 +144,22 @@ try {
     await rm(homeChildProject, { recursive: true, force: true });
   }
 
-  // Paths outside $HOME (e.g. a sibling of the OS tmp home) stay rejected so
-  // registration can't reach arbitrary filesystem locations.
+  // Registration matches the folder picker (and the desktop native dialog),
+  // which can browse anywhere on the machine: paths outside $HOME are now
+  // allowed. The projects POST route stays loopback-only, so this cannot be
+  // reached from other tailnet devices.
   assert.equal(
     isAllowedNewProjectRoot(path.join(tmp, "outside-home")),
+    true,
+    "roots outside $HOME are allowed (native-dialog and picker parity; loopback-only)",
+  );
+
+  // Unbounded roots stay excluded: bare volume roots ("/", "C:\") and $HOME
+  // itself can never be registered as a single project.
+  assert.equal(
+    isAllowedNewProjectRoot(path.parse(homedir()).root),
     false,
-    "roots outside both the built-in workspace roots and $HOME are rejected",
+    "a bare volume root is never a project root",
   );
 
   assert.equal(
