@@ -122,3 +122,13 @@ assert.match(cronPanel, /runStatusIcon\(r\.status\)/, "run rows encode status by
 }
 
 console.log("automations-detail-inputs.test.ts: ok");
+
+// ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
+// Run timestamps format identically in the list rows and the detail panel
+// (relativeTimeSigned), and the weekly cadence echo lists days in week order,
+// not click order. Status/validation colors come from theme tokens.
+assert.match(cronPanel, /import \{ relativeTimeSigned \} from "@\/lib\/relative-time"/, "cron panel reuses the shared relative-time helper");
+assert.match(cronPanel, /return iso \? relativeTimeSigned\(iso\) : "—";/, "cron panel relTime matches schedule-list's formatting");
+assert.match(cronPanel, /RRULE_DAY_ORDER\.filter\(\(d\) => scheduleDays\.includes\(d\)\)\.map\(\(d\) => RRULE_DAY_LABEL\[d\]\)/, "weekly cadence echo is week-ordered");
+assert.doesNotMatch(cronPanel, /oklch\(0\.7[0-9]? 0\.1/, "cron panel active/status colors use tokens, not hardcoded oklch");
+

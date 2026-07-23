@@ -291,7 +291,9 @@ assert.match(source, /role="img" aria-label="Paused"/, "status dots carry access
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
 assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");
 assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); setTemplateInitialValues\(undefined\); \}\}/, "the create dialog closes through one reset path");
-assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");
+assert.match(source, /window\.setTimeout\(\(\) => \(newBtnRef\.current \?\? newCronBtnRef\.current\)\?\.focus\(\), 0\)/, "deletes hand focus to whichever header action is mounted instead of dropping it on <body>");
+assert.match(source, /const deleteCodex = useCallback\(\(auto: CodexAutomation\) => \{\s*setSelectedCodex\(null\);\s*focusHeaderAction\(\)/, "cron deletes restore focus via the shared helper (newBtnRef is unmounted on the crons tab)");
+assert.match(source, /ref=\{newCronBtnRef\}/, "the crons-tab New button carries the focus-restore ref");
 
 // ── 2026-07-03 audit batch C ──────────────────────────────────────────────────
 // The Activity tab opens this panel for agent/response items too — those are
@@ -343,3 +345,18 @@ assert.match(source, /const hasRunningRun = automationRuns\.some\(\(r\) => r\.st
 assert.match(source, /\}, \[selectedCodex\?\.id, hasRunningRun, refreshRuns\]\);/, "the poll effect does not depend on the runs array identity");
 assert.match(source, /setAutomationRuns\(\(prev\) => \(arrayContentEqual\(prev, runs\) \? prev : runs\)\)/, "unchanged run polls keep the array identity");
 assert.doesNotMatch(source, /void refreshRuns\(id\);\s*\n\s*void refreshLastRuns\(\);/, "the hot poll loop no longer fans out per-automation requests");
+
+// ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
+// Overview search must never dead-end: the input renders whenever search is
+// open (items.length gating made both the input AND the toggle icon vanish
+// when the list was empty), and the Log pane shows activity time (firedAt ??
+// updatedAt), not a future fireAt, so its timestamps read monotonically.
+assert.match(source, /activeTab === "overview" && searchOpen && initialLoadDone \? \(/, "overview search input is not gated on items.length");
+assert.match(source, /timeMode="log"/, "the Log pane renders rows in log time mode");
+assert.match(source, /timeMode = "agenda"/, "RitualItemRow defaults to agenda time");
+assert.match(source, /item\.firedAt \?\? item\.updatedAt \?\? item\.createdAt\s*:/, "log mode shows last-activity time (same key ritualLogItems sorts by)");
+
+// Status dots + schedule-mode toggle derive from theme tokens, not hardcoded
+// white — rgba(255,255,255,…) was invisible-on-light-themes.
+assert.doesNotMatch(source, /rgba\(255,\s*255,\s*255/, "no hardcoded white rgba left in the Rituals surface");
+

@@ -145,8 +145,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // (pause/resume/run/create/save/restore) was silent.
   const { announce } = useAnnouncer();
   // Focus lands here after a delete unmounts the detail panel that held it —
-  // otherwise it falls to <body> and keyboard users lose their place.
+  // otherwise it falls to <body> and keyboard users lose their place. The
+  // overview "New" button and the crons "New cron" button are mounted on
+  // different tabs, so deletes focus whichever header action exists.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
+  const newCronBtnRef = useRef<HTMLButtonElement | null>(null);
+  const focusHeaderAction = useCallback(() => {
+    window.setTimeout(() => (newBtnRef.current ?? newCronBtnRef.current)?.focus(), 0);
+  }, []);
   const manageBtnRef = useRef<HTMLButtonElement | null>(null);
   const overviewSwipeStartRef = useRef<number | null>(null);
   const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.schedules.activeTab);
@@ -405,7 +411,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (prev?.id === id) {
         // The detail panel (which held focus) unmounts — hand focus somewhere
         // stable instead of letting it fall to <body>.
-        window.setTimeout(() => newBtnRef.current?.focus(), 0);
+        focusHeaderAction();
         return null;
       }
       return prev;
@@ -419,7 +425,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         setError(err instanceof Error ? err.message : "delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [items, scheduleDelete, reloadAfterMutation]);
+  }, [items, scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
   // Confirm before firing — crons and flows already do, and the identical Run
   // buttons on the All tab must not behave differently per type.
@@ -578,7 +584,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
-    window.setTimeout(() => newBtnRef.current?.focus(), 0); // panel held focus
+    focusHeaderAction(); // panel held focus
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
@@ -589,7 +595,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         setError(err instanceof Error ? err.message : "codex delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, reloadAfterMutation]);
+  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -858,7 +864,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             </p>
           )}
           <div className="surface-compact-actions">
-            {activeTab === "overview" && searchOpen && initialLoadDone && items.length > 0 ? (
+            {activeTab === "overview" && searchOpen && initialLoadDone ? (
               <div className="surface-compact-search">
                 <SearchInput
                   value={query}
@@ -970,7 +976,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               </Button>
             ) : null}
             {activeTab === "crons" ? (
-              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+              <Button ref={newCronBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New cron
               </Button>
             ) : null}
@@ -1177,7 +1183,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                         {overviewPane === "log" ? (
                           <div className="rituals-overview__log">
                             {ritualLog.length > 0 ? ritualLog.map((item) => (
-                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel}
+                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel} timeMode="log"
                                 onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
                             )) : <p className="rituals-overview__empty">No quiet activity yet.</p>}
                           </div>

@@ -297,4 +297,33 @@ assert.doesNotMatch(
   "no hand-rolled mini-month nav-arrow markup remains",
 );
 
+// ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
+// 1. View-switch shortcuts must not swallow browser/OS chords: Cmd+M, Ctrl+D
+//    etc. previously ALSO switched the calendar view.
+assert.equal(
+  (source.match(/if \(e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) break;/g) ?? []).length,
+  6,
+  "every single-letter calendar shortcut ignores modified keypresses",
+);
+// 2. Month paging steps from day 1 and clamps back, so Jan 31 → Feb 28
+//    instead of overflowing into March.
+assert.match(
+  source,
+  /const d = new Date\(prev\.getFullYear\(\), prev\.getMonth\(\) \+ dir, 1\);\s*\n\s*const lastDay = new Date\(d\.getFullYear\(\), d\.getMonth\(\) \+ 1, 0\)\.getDate\(\);\s*\n\s*d\.setDate\(Math\.min\(prev\.getDate\(\), lastDay\)\);/,
+  "month navigation clamps the day instead of overflowing short months",
+);
+// 3. Agenda: past items stay reachable when upcoming groups exist (the toggle
+//    lived only in the empty state), and revealing them keeps chronological
+//    order instead of flipping the agenda to future-first.
+assert.match(
+  source,
+  /\) : pastCount > 0 \? \([\s\S]{0,400}Show \{pastCount\} past item/,
+  "the Show-past toggle renders alongside populated agenda groups too",
+);
+assert.doesNotMatch(
+  source,
+  /\.sort\(\(a, b\) => showPast\s*\n?\s*\? b\.date\.getTime\(\) - a\.date\.getTime\(\)/,
+  "showPast no longer reverses the agenda sort",
+);
+
 console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours + cave-4op control primitives ok");
