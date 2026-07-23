@@ -161,6 +161,7 @@ export function CodeView({
                 row={selected}
                 initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                 onJumpToSession={onJumpToSession}
+                onRefresh={onTasksRefresh}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-6 text-[length:var(--text-xs)] text-[var(--text-muted)]">

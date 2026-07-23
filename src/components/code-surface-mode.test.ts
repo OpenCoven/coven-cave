@@ -235,6 +235,59 @@ assert.match(
   "the composer rides under every tab except Terminal (which owns its input)",
 );
 
+// ── Inspector: branches / worktrees / session env (right column) ─────────────
+
+// The inspector reuses the exact /api/changes surface chat's composer git chip
+// speaks (?branches=1, switch-branch, create-worktree) but scopes every call
+// to the session's WORK ROOT — a worktree session mutates its own checkout,
+// never the shared root (cave-9q24).
+const inspector = await readFile(new URL("./code-inspector.tsx", import.meta.url), "utf8");
+assert.match(
+  inspector,
+  /const workRoot = codeSessionWorkRoot\(row\);/,
+  "every inspector call is scoped to the session's work root",
+);
+assert.match(
+  inspector,
+  /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(projectRoot\)\}&branches=1/,
+  "branch list comes from the same ?branches=1 contract as chat's git chip",
+);
+assert.match(
+  inspector,
+  /action: "switch-branch", branch: name/,
+  "one-click branch switch posts the existing switch-branch action",
+);
+assert.match(
+  inspector,
+  /action: "create-worktree", branch: name/,
+  "fresh-worktree provisioning posts the existing create-worktree action",
+);
+assert.match(
+  inspector,
+  /disabled=\{b\.current \|\| busyBranch != null\}/,
+  "the checked-out branch is not a switch target and switches don't overlap",
+);
+assert.match(
+  workbench,
+  /aria-pressed=\{inspectorOpen\}/,
+  "the header exposes an accessible inspector toggle",
+);
+assert.match(
+  workbench,
+  /\{inspectorOpen \? \(\s*<aside/,
+  "the inspector column mounts only when toggled open",
+);
+assert.match(
+  workbench,
+  /<LazyInspector key=\{workRoot\} row=\{row\} onChanged=\{onRefresh\} \/>/,
+  "inspector mutations re-poll the enriched session list via onRefresh",
+);
+assert.match(
+  codeView,
+  /onRefresh=\{onTasksRefresh\}/,
+  "code-view threads the workspace's tasks refresh into the workbench",
+);
+
 // ── Chat stays untouched this phase ──────────────────────────────────────────
 
 // Phase 1 builds the surface *behind the flag* without slimming Chat: the code
