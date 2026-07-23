@@ -99,6 +99,15 @@ export function CodeNewSession({
 
     setPhase({ kind: "starting" });
     let announced = false;
+    const announce = (sessionId: string) => {
+      if (announced) return;
+      announced = true;
+      // The component stays mounted after the parent closes the modal, so
+      // restore idle state here — Modal never fires onClose on a prop flip,
+      // and a phase stuck on "starting" bricks every later open.
+      reset();
+      onCreated(sessionId);
+    };
     // Fire-and-continue: the moment the session id arrives the rail can select
     // it; the stream keeps flowing server-side and Chat shows the transcript.
     void streamFamiliarText({
@@ -106,19 +115,22 @@ export function CodeNewSession({
       prompt: prompt.trim(),
       projectRoot: cwd,
       runId: `code-new-session-${Date.now().toString(36)}`,
-      onSession: (sessionId) => {
-        if (announced) return;
-        announced = true;
-        onCreated(sessionId);
-      },
-    }).then((result) => {
-      if (!announced && result.sessionId) {
-        announced = true;
-        onCreated(result.sessionId);
-      } else if (!announced && result.error) {
-        setPhase({ kind: "error", message: result.error });
-      }
-    });
+      onSession: announce,
+    })
+      .then((result) => {
+        if (!announced && result.sessionId) {
+          announce(result.sessionId);
+        } else if (!announced && result.error) {
+          setPhase({ kind: "error", message: result.error });
+        }
+      })
+      .catch((err) => {
+        // A dropped stream rejects the reader; only surface it if the session
+        // id never arrived (afterwards the run lives server-side regardless).
+        if (!announced) {
+          setPhase({ kind: "error", message: err instanceof Error ? err.message : "Couldn’t start the session." });
+        }
+      });
   }
 
   function reset() {

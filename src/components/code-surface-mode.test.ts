@@ -193,10 +193,16 @@ assert.match(
   /streamFamiliarText\(\{\s*familiarId: row\.familiarId,\s*sessionId: row\.id,/,
   "the composer RESUMES the selected session (sessionId rides) — never forks a new thread",
 );
+const composerSend = composer.match(/result = await streamFamiliarText\(\{[\s\S]*?\}\);/)?.[0] ?? "";
+assert.ok(composerSend.length > 0, "the composer resume send is present");
+assert.ok(
+  !composerSend.includes("projectRoot"),
+  "composer resumes assert NO projectRoot — the server derives the cwd from the conversation record; an explicit worktree root fails closed as unregistered (403, cave-kv8a)",
+);
 assert.match(
   composer,
-  /projectRoot: codeSessionWorkRoot\(row\),/,
-  "composer turns run in the session's work root (worktree over shared checkout, cave-9q24)",
+  /catch \(err\) \{[\s\S]*?if \(controller\.signal\.aborted\) \{\s*setPhase\(\{ kind: "done" \}\);/,
+  "a mid-stream Stop rejects the reader — the catch keeps the partial reply and lands on done instead of wedging the streaming phase (cave-kv8a)",
 );
 assert.match(
   composer,
@@ -208,7 +214,7 @@ assert.match(
   /action: "create-worktree", branch: branch\.trim\(\)/,
   "fresh-worktree option provisions through the existing /api/changes action",
 );
-const kickoff = newSession.match(/void streamFamiliarText\(\{[\s\S]*?\}\)\.then/)?.[0] ?? "";
+const kickoff = newSession.match(/void streamFamiliarText\(\{[\s\S]*?\}\)\s*\.then/)?.[0] ?? "";
 assert.ok(kickoff.length > 0, "the new-session kickoff send is present");
 assert.ok(
   !kickoff.includes("sessionId:"),
@@ -216,8 +222,18 @@ assert.ok(
 );
 assert.match(
   newSession,
-  /onSession: \(sessionId\) => \{/,
+  /onSession: announce,/,
   "the rail learns the new session id the moment the bridge announces it",
+);
+assert.match(
+  newSession,
+  /const announce = \(sessionId: string\) => \{[\s\S]*?reset\(\);\s*onCreated\(sessionId\);/,
+  "success restores idle state before handing off — the mounted modal otherwise reopens bricked on 'Starting session…' (cave-kv8a)",
+);
+assert.match(
+  newSession,
+  /\.catch\(\(err\) => \{[\s\S]*?if \(!announced\) \{/,
+  "a kickoff stream failure surfaces as an error phase instead of an unhandled rejection (cave-kv8a)",
 );
 assert.match(
   rail,
