@@ -1,6 +1,6 @@
 import { createItem, loadInbox } from "@/lib/cave-inbox";
 import { broadcastCreated } from "@/lib/inbox-scheduler";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 import {
   diffCompletedRuns,
   diffOpenedPrs,
@@ -136,7 +136,7 @@ export async function tickGithubWatcher(): Promise<void> {
     const subs = await loadSubscriptions();
     if (!subs.enabled || subs.repos.length === 0) return;
     if (!subs.events.prOpened && !subs.events.ciCompleted) return;
-    const token = resolveSecret("GITHUB_PAT");
+    const token = resolveGitHubToken();
     if (!token) return;
     for (const repo of subs.repos) {
       try {

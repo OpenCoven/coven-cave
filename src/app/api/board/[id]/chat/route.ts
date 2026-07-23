@@ -63,10 +63,10 @@ export async function POST(
 
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
-  // Familiar configs may retain an adapter package/legacy alias (or different
-  // casing) while Chat normalizes it before routing. Keep Board launches on
-  // that same canonical path so a bridge-backed adapter reaches its native
-  // path instead of falling through to the daemon.
+  // Familiar bindings can retain a package or binary alias from older setup
+  // flows (for example `hermes-agent` or `opencode-ai`). Normalize before
+  // both model-override validation and bridge routing so the task inspector,
+  // Chat, and Board all select the same runtime behavior.
   binding.harness = canonicalHarnessId(binding.harness);
 
   // Resolve the project the task chat will run in. Security-critical: when the
@@ -128,6 +128,19 @@ export async function POST(
 
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
+  }
+
+  // A familiar can be reconfigured from one runtime to another without the
+  // card being reassigned. Model ids are runtime-specific, so only forward an
+  // override that was chosen for this exact canonical harness. Legacy or stale
+  // overrides are cleared before launch and the familiar's current default is
+  // used instead.
+  const taskModelOverride =
+    card.modelOverride && card.modelOverrideHarness === binding.harness
+      ? card.modelOverride
+      : null;
+  if (card.modelOverride && !taskModelOverride) {
+    await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }
 
   // ── Intelligent worktree isolation ────────────────────────────────────────
@@ -225,7 +238,7 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      model: binding.model,
+      model: taskModelOverride ?? binding.model,
       prompt: buildInitialTaskChatPrompt(card),
     },
     timeoutMs: 8000,

@@ -60,5 +60,26 @@ assert.match(
   /OPENCLAW_ALLOW_ENV_KEYS/,
   "OpenClaw spawn env should require explicit allowlisting before passing secret-like variables through",
 );
+assert.match(
+  src,
+  /allowedHarnessEnvKeys\(\)[\s\S]*OPENCLAW_ALLOW_ENV_KEYS/,
+  "OpenClaw should support both the shared harness opt-in and its existing runtime-specific opt-in",
+);
+assert.match(
+  src,
+  /restoreAllowedGitHubTokenEnv\(env, allowed, new Set\(Object\.keys\(map\)\)\)/,
+  "an explicitly allowed external GitHub token alias should survive Cave's generic child-env scrub for OpenClaw",
+);
+assert.match(
+  src,
+  /restoreGrantedVaultGitHubTokenEnv\(env, map\)/,
+  "OpenClaw should receive shared Vault-managed GitHub aliases while keeping familiar-scoped aliases unavailable",
+);
+
+assert.match(
+  src,
+  /const grantedVaultTokenKeys = new Set(?:<string>)?\([\s\S]*GITHUB_HARNESS_TOKEN_ENV_KEYS\.filter\([\s\S]*isVaultKeyGrantedTo\(map\[key\]\)[\s\S]*!grantedVaultTokenKeys\.has\(key\)/,
+  "OpenClaw must retain a shared Vault-managed GitHub credential through its final secret scrub",
+);
 
 console.log("openclaw-bin.test.ts: ok");

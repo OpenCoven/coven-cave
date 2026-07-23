@@ -28,6 +28,8 @@ export async function POST(req: Request) {
     status?: CardStatus;
     priority?: CardPriority;
     familiarId?: string | null;
+    modelOverride?: string | null;
+    modelOverrideHarness?: string | null;
     sessionId?: string | null;
     cwd?: string | null;
     projectId?: string | null;
@@ -73,6 +75,8 @@ export async function POST(req: Request) {
     status: body.status,
     priority: body.priority,
     familiarId: body.familiarId,
+    modelOverride: body.modelOverride,
+    modelOverrideHarness: body.modelOverrideHarness,
     sessionId: body.sessionId,
     cwd,
     projectId: body.projectId,
