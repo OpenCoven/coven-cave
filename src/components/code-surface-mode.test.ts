@@ -288,6 +288,62 @@ assert.match(
   "code-view threads the workspace's tasks refresh into the workbench",
 );
 
+// ── Mobile drill-in (list-first below md) ────────────────────────────────────
+
+// Below the md breakpoint the rail is the landing screen: no newest-session
+// auto-pick on narrow mounts, an explicit Back (null) suppresses re-selection,
+// and the rail/workbench swap is pure CSS (hidden md:block / hidden md:flex)
+// so desktop keeps the three-pane layout untouched.
+assert.match(
+  codeView,
+  /useState<string \| null \| undefined>\(\s*deepLink\?\.sessionId \?\? undefined,?\s*\)/,
+  "selection is tri-state: undefined = auto-pick allowed, null = user went Back",
+);
+assert.match(
+  codeView,
+  /if \(selectedId === null\) return;/,
+  "an explicit Back is terminal — auto-pick must not re-select",
+);
+// StrictMode double-invokes state initializers in dev: parsing must stay pure
+// there and the URL strip must live in a mount effect, or the second
+// initializer run reads an already-stripped URL and loses the deep link
+// (caught by tests/code-surface.spec.ts against next dev).
+assert.match(
+  codeView,
+  /return parseCodeDeepLink\(new URLSearchParams\(window\.location\.search\)\);/,
+  "the deep-link initializer is pure (StrictMode-safe)",
+);
+assert.match(
+  codeView,
+  /useEffect\(\(\) => \{\s*const params = new URLSearchParams\(window\.location\.search\);\s*if \(!params\.has\("session"\)/,
+  "the ?session/ctab/wtab strip happens in a mount effect, not the initializer",
+);
+assert.match(
+  codeView,
+  /window\.matchMedia\("\(max-width: 767px\)"\)\.matches/,
+  "narrow mounts land on the session list, not the newest workbench",
+);
+assert.match(
+  codeView,
+  /if \(narrowMountRef\.current\) return;/,
+  "the auto-pick effect honors the narrow-mount guard",
+);
+assert.match(
+  codeView,
+  /\$\{selected \? "hidden md:block" : "block"\}/,
+  "picking a session hides the rail below md only",
+);
+assert.match(
+  codeView,
+  /\$\{selected \? "flex" : "hidden md:flex"\}/,
+  "the workbench column is hidden below md until a session is picked",
+);
+assert.match(
+  codeView,
+  /aria-label="Back to sessions"[\s\S]{0,80}onClick=\{\(\) => setSelectedId\(null\)\}/,
+  "the mobile Back affordance clears the selection explicitly",
+);
+
 // ── Chat stays untouched this phase ──────────────────────────────────────────
 
 // Phase 1 builds the surface *behind the flag* without slimming Chat: the code

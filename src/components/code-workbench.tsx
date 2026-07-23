@@ -96,7 +96,7 @@ export function CodeWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2">
+      <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2" data-testid="code-workbench-header">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
