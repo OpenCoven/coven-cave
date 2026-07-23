@@ -3849,6 +3849,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         mentionedFiles: outgoingMentions,
         options: {
           ...opts,
+          // Programmatic sends (for example /run and /skill) enter here
+          // directly rather than through send(), so snapshot their branch at
+          // queue time as well. An explicit parent (including null) still
+          // wins for regenerate/edit flows.
+          parentTurnId:
+            opts?.parentTurnId !== undefined ? opts.parentTurnId : (activeLeafId || null),
           projectRoot: opts?.projectRoot ?? requestProjectRoot,
           ...(outgoingMentions.length
             ? { mentionedFilesRoot: opts?.mentionedFilesRoot ?? mentionRoot }

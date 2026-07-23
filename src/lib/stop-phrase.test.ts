@@ -123,7 +123,7 @@ test("chat composer send() intercepts the stop phrase before busy queueing", () 
   assert.match(src, /matchesStopPhrase, readStopPhrase \} from "@\/lib\/stop-phrase"/);
   const intercept = src.indexOf("busy && matchesStopPhrase(text, readStopPhrase())");
   assert.ok(intercept > 0, "send() consults the stop phrase while busy");
-  const queue = src.indexOf("if (busy || abortRef.current) {", intercept);
+  const queue = src.indexOf("const queueing = busy || abortRef.current;", intercept);
   assert.ok(queue > intercept, "intercept sits before the busy queue path");
   const between = src.slice(intercept, queue);
   assert.match(between, /cancelSend\(\)/);

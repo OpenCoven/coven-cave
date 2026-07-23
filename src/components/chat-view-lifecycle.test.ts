@@ -174,6 +174,12 @@ assert.match(
 
 assert.match(
   source,
+  /if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?parentTurnId:\s*opts\?\.parentTurnId !== undefined \? opts\.parentTurnId : \(activeLeafId \|\| null\)/,
+  "programmatic sends that queue through sendRaw must capture their visible branch leaf before later navigation can change it",
+);
+
+assert.match(
+  source,
   /"queuedRuntimeHost" in controlsOverride[\s\S]*?\? controlsOverride\.queuedRuntimeHost[\s\S]*?: \(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
   "a queued automatic host choice must not be replaced by a later host picker change",
 );
