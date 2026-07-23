@@ -79,6 +79,62 @@
   justify-content: flex-end;
 }
 
+/* Follow-ups composed while a turn streams stay visible and actionable, but
+   remain outside the transcript until the normal send path dispatches them. */
+.cave-composer-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.cave-composer-queue__chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(100%, 28rem);
+  align-items: center;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
+  color: var(--text-secondary);
+}
+
+.cave-composer-queue__steer,
+.cave-composer-queue__remove {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cave-composer-queue__steer {
+  min-width: 0;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+}
+
+.cave-composer-queue__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+}
+
+.cave-composer-queue__count {
+  font-size: var(--text-2xs);
+}
+
+.cave-composer-queue__remove {
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+}
+
+.cave-composer-queue__steer:hover,
+.cave-composer-queue__remove:hover {
+  color: var(--text-primary);
+}
+
 /* ── Footer band ─────────────────────────────────────────────────────────────
  * The darker strip attached to the panel's underside (home composer's
  * hc-footer-band, same grammar): the chat's session metadata — project ·
@@ -1062,6 +1118,10 @@
 
 .cave-composer-send--busy:hover {
   background: var(--color-danger);
+}
+
+.cave-composer-send--queue {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
 }
 
 /* Input wrap — positioning anchor for affordances layered over the input

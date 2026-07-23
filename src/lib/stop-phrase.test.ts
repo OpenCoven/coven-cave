@@ -118,14 +118,14 @@ test("validatePreferencesPatch validates stopPhrase as a trimmed bounded string"
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
-test("chat composer send() intercepts the stop phrase before the busy bail", () => {
+test("chat composer send() intercepts the stop phrase before busy queueing", () => {
   const src = readFileSync(path.join(repoRoot, "src/components/chat-view.tsx"), "utf8");
   assert.match(src, /matchesStopPhrase, readStopPhrase \} from "@\/lib\/stop-phrase"/);
   const intercept = src.indexOf("busy && matchesStopPhrase(text, readStopPhrase())");
   assert.ok(intercept > 0, "send() consults the stop phrase while busy");
-  const bail = src.indexOf("if (busy) return;", intercept);
-  assert.ok(bail > intercept, "intercept sits before the CHAT-D5-01 busy bail");
-  const between = src.slice(intercept, bail);
+  const queue = src.indexOf("const queueing = busy || abortRef.current;", intercept);
+  assert.ok(queue > intercept, "intercept sits before the busy queue path");
+  const between = src.slice(intercept, queue);
   assert.match(between, /cancelSend\(\)/);
 });
 
