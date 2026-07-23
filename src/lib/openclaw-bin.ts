@@ -161,7 +161,7 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
   const map = loadVaultMap(true);
-  const grantedVaultTokenKeys = new Set(
+  const grantedVaultTokenKeys = new Set<string>(
     GITHUB_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
   );
 

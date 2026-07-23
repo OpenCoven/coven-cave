@@ -16,8 +16,23 @@ assert.match(
 );
 assert.match(
   source,
-  /return resolveSecret\("GITHUB_PAT"\) \?\? resolveGitHubTokenFromEnvironment\(\);/,
-  "Cave's configured PAT remains authoritative over external launcher credentials",
+  /resolveVaultManagedSecret\("GITHUB_PAT", map\.GITHUB_PAT\)\?\.trim\(\)/,
+  "a Cave-managed PAT takes precedence over a same-named launcher credential",
+);
+assert.match(
+  source,
+  /getLocalEncryptedSecret\("GITHUB_PAT"\)\?\.trim\(\)/,
+  "legacy encrypted Cave PATs remain authoritative over launcher credentials",
+);
+assert.match(
+  source,
+  /readEnvLocalValue\("GITHUB_PAT"\)\?\.trim\(\)/,
+  "legacy local-env Cave PATs remain authoritative over launcher credentials",
+);
+assert.match(
+  source,
+  /const launcherPat = process\.env\.GITHUB_PAT\?\.trim\(\);[\s\S]*return launcherPat \|\| resolveGitHubTokenFromEnvironment\(\);/,
+  "an unconfigured Cave still accepts a direct GITHUB_PAT before standard aliases",
 );
 
 console.log("github-token.test.ts: ok");
