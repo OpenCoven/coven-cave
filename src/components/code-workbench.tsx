@@ -15,9 +15,8 @@
  *   - Terminal → RailTerminalPanel (per-session pty via cave.rail.<id>, so a
  *     shell started from Chat's rail is the SAME shell here), dynamic() for
  *     xterm; stays mounted once opened so scrollback survives tab switches
- *
- * The PR tab ("pr" in CODE_WORKBENCH_TABS) is deep-link-reserved but not
- * rendered yet — the stage-pipeline panel is the next PR in the series.
+ *   - PR → CodeSessionPrPanel (stage pipeline, checks, review threads,
+ *     approve/merge via /api/github/*), dynamic() alongside its fetch hooks
  */
 
 import React, { useEffect, useState } from "react";
@@ -43,11 +42,16 @@ const LazyTerminalTab = dynamic(
   () => import("@/components/rail-terminal-panel").then((m) => m.RailTerminalPanel),
   { ssr: false },
 );
+const LazyPrTab = dynamic(
+  () => import("@/components/code-session-pr-panel").then((m) => m.CodeSessionPrPanel),
+  { ssr: false },
+);
 
-const TAB_LABELS: Array<{ id: Exclude<CodeWorkbenchTab, "pr">; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
+const TAB_LABELS: Array<{ id: CodeWorkbenchTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
   { id: "diff", label: "Diff", icon: "ph:git-diff" },
   { id: "files", label: "Files", icon: "ph:folder-open" },
   { id: "terminal", label: "Terminal", icon: "ph:terminal-window" },
+  { id: "pr", label: "PR", icon: "ph:git-pull-request" },
 ];
 
 export function CodeWorkbench({
@@ -56,13 +60,11 @@ export function CodeWorkbench({
   onJumpToSession,
 }: {
   row: SessionRow;
-  /** Deep-linked workbench tab; "pr" coerces to "diff" until that tab lands. */
+  /** Deep-linked workbench tab (?wtab=). */
   initialTab?: CodeWorkbenchTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
 }) {
-  const [tab, setTab] = useState<Exclude<CodeWorkbenchTab, "pr">>(
-    initialTab && initialTab !== "pr" ? initialTab : "diff",
-  );
+  const [tab, setTab] = useState<CodeWorkbenchTab>(initialTab ?? "diff");
   // Terminal keepalive: once visited, keep the pty mounted (hidden) so the
   // shell and scrollback survive tab switches within the session.
   const [terminalOpened, setTerminalOpened] = useState(false);
@@ -148,6 +150,7 @@ export function CodeWorkbench({
             <LazyTerminalTab sessionId={row.id} projectRoot={workRoot} active={tab === "terminal"} />
           </div>
         ) : null}
+        {tab === "pr" ? <LazyPrTab key={row.id} row={row} /> : null}
       </div>
     </div>
   );
