@@ -45,7 +45,7 @@ assert.match(
 );
 assert.match(
   inspector,
-  /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,500}disabled=\{!familiarPickerReady\}/,
+  /value=\{familiarPickerReady \? card\.familiarId \?\? "" : ""\}[\s\S]{0,700}disabled=\{!familiarPickerReady\}/,
   "inspector disables the familiar choice until its project authorization result is ready",
 );
 assert.match(
@@ -65,8 +65,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /label="Familiar"[\s\S]{0,500}onChange=\{\(next\) => onPatch\(card\.id, \{ familiarId: next \|\| null, sessionId: null \}\)\}/,
-  "changing an authorized familiar also unlinks its prior runtime session",
+  /label="Familiar"[\s\S]{0,700}onChange=\{\(next\) => \{[\s\S]{0,500}familiarId: next \|\| null,[\s\S]{0,150}sessionId: null,[\s\S]{0,150}\.\.\.taskModelPatch\(null\)/,
+  "changing an authorized familiar unlinks its prior runtime session and model",
 );
 
 // ── New-card modal can set a project at creation time ──────────────────────
