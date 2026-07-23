@@ -143,6 +143,7 @@ import { SkillStageCard } from "@/components/skill-stage-card";
 import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
+  chatProjectById,
   projectIdForRoot,
   recentChatProjectRoot,
   resolveChatProjectSelection,
@@ -528,6 +529,9 @@ function ChatErrorStrip({
   onOpenProjects,
   onUseHarness,
   harnessId,
+  pickProjectOptions,
+  onPickProject,
+  onRegisterProject,
 }: {
   message: string;
   code?: string;
@@ -554,6 +558,14 @@ function ChatErrorStrip({
   /** The runtime the failing send used — lets the auth-failure fix row name
    *  it and offer its exact login command (cave-f6ol). */
   harnessId?: string | null;
+  /** When set, this failure was a 400 project_root_required: the chat has no
+   *  root anywhere. Render an inline registered-project picker; choosing one
+   *  adopts it for the chat and retries the failed send there (cave-yjnr). */
+  pickProjectOptions?: { id: string; name: string }[];
+  onPickProject?: (projectId: string) => void;
+  /** Zero registered projects: the inline resolve is registering a folder —
+   *  opens the shared add-project flow (native picker + web fallback). */
+  onRegisterProject?: () => void;
 }) {
   const { copied, copy } = useCopy();
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
@@ -687,6 +699,46 @@ function ChatErrorStrip({
             <Icon name="ph:wrench" width={11} aria-hidden />
             Open Setup
           </button>
+        </div>
+      ) : null}
+      {!harnessFailure && !authFailure && !covenMissing && onPickProject && pickProjectOptions ? (
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
+          {pickProjectOptions.length ? (
+            <>
+              <span className="min-w-0">Run this chat in one of your projects:</span>
+              <select
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/60 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]"
+                defaultValue=""
+                disabled={busy}
+                aria-label="Pick a project to run this chat in"
+                onChange={(event) => {
+                  if (event.target.value) onPickProject(event.target.value);
+                }}
+              >
+                <option value="" disabled>
+                  Pick a project…
+                </option>
+                {pickProjectOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <>
+              <span className="min-w-0">
+                No projects are registered yet — register the folder this chat should run in,
+                then retry.
+              </span>
+              {onRegisterProject ? (
+                <button type="button" onClick={onRegisterProject} className={btn}>
+                  <Icon name="ph:folders-bold" width={11} aria-hidden />
+                  Register a folder…
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       {hasDetail && open ? (
@@ -1893,6 +1945,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // send 400s with code project_root_unavailable and Retry can never succeed —
   // the recovery is re-pointing the project, not retrying (cave-ivcc).
   const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // 400 project_root_required: the chat has no root anywhere (analytics-opened
+  // daemon thread with no recorded cwd + familiar without a workspace). The
+  // error strip renders an inline project picker that retries the send in the
+  // chosen project (cave-yjnr).
+  const [projectRootRequired, setProjectRootRequired] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   // The session id the OPEN overlay was auto-created for (voice new-chat), or
@@ -3957,6 +4014,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLastFailedSend(null);
     setProjectAccessRoot(null);
     setProjectRootMissing(false);
+    setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     setHistoryState("loaded");
@@ -4167,6 +4225,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
+        }
+        // A 400 project_root_required means this chat has no root anywhere:
+        // no explicit project, no conversation-recorded cwd, no daemon
+        // session record, no familiar workspace. Retry alone can never
+        // succeed, and the server's refusal is jargon — surface plain copy
+        // plus an inline project picker that re-sends the failed message in
+        // the chosen project (cave-yjnr).
+        if (res.status === 400 && /project_root_required|projectRoot is required/i.test(message)) {
+          setProjectRootRequired(true);
+          surfacedMessage =
+            "This chat isn't tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -4471,6 +4540,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setAddingProject(false);
     }
+  }
+
+  // Recovery for a 400 project_root_required failure: the chat has no root
+  // anywhere. Adopt the picked project as this chat's selection and re-send
+  // the failed message explicitly rooted there (the explicit opts.projectRoot
+  // sidesteps the stale requestProjectRoot closure of this render).
+  function handlePickProjectFix(projectId: string) {
+    if (busy || !lastFailedSend) return;
+    const project = chatProjectById(projectId, projects);
+    if (!project) return;
+    const failed = lastFailedSend;
+    setProjectIdDraft(projectId);
+    setProjectRootRequired(false);
+    setError(null);
+    setDebugError(null);
+    setLastFailedSend(null);
+    void sendRaw(
+      failed.text,
+      failed.attachments,
+      failed.mentionedFiles ?? [],
+      {
+        projectRoot: project.root,
+        ...(failed.promptOverride ? { promptOverride: failed.promptOverride } : {}),
+      },
+    );
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
@@ -5662,11 +5756,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
               : undefined
           }
+          pickProjectOptions={
+            projectRootRequired
+              ? projects.map((project) => ({ id: project.id, name: project.name }))
+              : undefined
+          }
+          onPickProject={projectRootRequired ? handlePickProjectFix : undefined}
+          onRegisterProject={
+            projectRootRequired && projects.length === 0
+              ? overflowAddProject.beginAddProject
+              : undefined
+          }
           onDismiss={() => {
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
             setProjectRootMissing(false);
+            setProjectRootRequired(false);
           }}
         />
       ) : null}

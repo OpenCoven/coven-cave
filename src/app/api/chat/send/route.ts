@@ -166,7 +166,7 @@ import {
   resolveSendModelMetadata,
 } from "./chat-send-models";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
-import { conversationCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -472,7 +472,9 @@ function openClawChatResponse(args: {
       let cwd: string;
       try {
         cwd = await resolveLocalRuntimeCwd(
-          args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
+          args.body.projectRoot ??
+            (await conversationCwd(args.body.sessionId)) ??
+            (await daemonSessionCwd(args.body.sessionId)),
         );
       } catch (error) {
         if (error instanceof RuntimeScopeError) {
@@ -960,10 +962,22 @@ export async function POST(req: Request) {
   // directory the conversation started in, not homedir or the familiar
   // workspace, or `--continue <id>` misses (and the transparent retry forks
   // the chat into a fresh session).
-  const resumeCwd =
+  const conversationResumeCwd =
     !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
       ? existingConversation.runtime.slice("local:".length).trim() || undefined
       : undefined;
+  // Threads opened from Familiar analytics (`/#chat-<id>`) can predate any
+  // Cave conversation record — the daemon spawned them, so only IT knows the
+  // cwd. Its session record is the trust anchor (see daemonSessionCwd);
+  // without this fallback those chats died on the 400 "projectRoot is
+  // required" refusal with nowhere to go (cave-yjnr). Conversations that
+  // recorded a runtime keep it authoritative (never cross an ssh: runtime
+  // onto a local root).
+  const resumeCwd =
+    conversationResumeCwd ??
+    (!sshRuntime && !body.projectRoot && existingConversation?.runtime == null
+      ? await daemonSessionCwd(body.sessionId)
+      : undefined);
   const projects = sshRuntime ? [] : await loadProjects();
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)

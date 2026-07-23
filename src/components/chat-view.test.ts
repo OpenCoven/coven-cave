@@ -234,3 +234,28 @@ assert.doesNotMatch(
   /router\.(push|replace)\([`"'][^`"']*onboard/i,
   "a send failure must never hard-navigate the router to onboarding",
 );
+
+// ── cave-yjnr: a 400 project_root_required (analytics-opened thread with no
+// root anywhere) must not dead-end at jargon + a Retry that can never work.
+// The strip swaps in plain copy and an inline project picker that adopts the
+// chosen project and re-sends the failed message explicitly rooted there. ────
+assert.match(
+  source,
+  /res\.status === 400 && \/project_root_required\|projectRoot is required\/i\.test\(message\)[\s\S]{0,200}setProjectRootRequired\(true\)/,
+  "the projectRoot-required 400 is detected and flips the inline-resolve state instead of surfacing server jargon",
+);
+assert.match(
+  source,
+  /function handlePickProjectFix\(projectId: string\) \{[\s\S]*?setProjectIdDraft\(projectId\);[\s\S]*?void sendRaw\(\s*failed\.text,[\s\S]*?projectRoot: project\.root,[\s\S]*?\n  \}/,
+  "picking a project from the strip adopts it as the chat's selection and retries the failed send rooted there",
+);
+assert.match(
+  source,
+  /onPickProject=\{projectRootRequired \? handlePickProjectFix : undefined\}/,
+  "the inline project picker only renders for the projectRoot-required failure class",
+);
+assert.match(
+  source,
+  /projectRootRequired && projects\.length === 0\s*\? overflowAddProject\.beginAddProject/,
+  "with zero registered projects the strip offers the shared register-a-folder flow instead of a dead select",
+);

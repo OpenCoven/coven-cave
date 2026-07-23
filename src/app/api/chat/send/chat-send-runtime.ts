@@ -1,6 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConversation } from "@/lib/cave-conversations";
+import { callDaemon } from "@/lib/coven-daemon";
 import {
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
@@ -18,6 +19,32 @@ export async function conversationCwd(sessionId?: string): Promise<string | unde
     }
   } catch {
     /* fall back to the caller's default */
+  }
+  return undefined;
+}
+
+type DaemonSessionRow = { id?: string; project_root?: string };
+
+/**
+ * Resume-cwd fallback for sessions the Cave conversation store has no local
+ * runtime for — e.g. threads opened from Familiar analytics (`/#chat-<id>`)
+ * that were spawned by the daemon rather than the chat bridge. Without this,
+ * their first chat turn had no root anywhere and died on the 400
+ * "projectRoot is required" refusal (cave-yjnr). The daemon is the right
+ * trust anchor: it already ran a harness in this session's `project_root`
+ * (same argument as session-project-roots.ts), so resuming there is exactly
+ * "the directory the conversation started in" — never a homedir downgrade.
+ */
+export async function daemonSessionCwd(sessionId?: string): Promise<string | undefined> {
+  if (!sessionId) return undefined;
+  try {
+    const res = await callDaemon<DaemonSessionRow[]>({ path: "/api/v1/sessions" });
+    if (!res.ok || !Array.isArray(res.data)) return undefined;
+    const row = res.data.find((session) => session?.id === sessionId);
+    const root = row?.project_root?.trim();
+    if (root && path.isAbsolute(root)) return root;
+  } catch {
+    /* daemon offline — the caller keeps its remaining fallbacks */
   }
   return undefined;
 }
