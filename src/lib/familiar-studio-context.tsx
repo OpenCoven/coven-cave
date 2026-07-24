@@ -11,10 +11,10 @@ import {
 } from "react";
 
 export type FamiliarStudioTab =
-  | "identity" | "look" | "brain" | "lifecycle" | "memory" | "projects" | "contract" | "vault" | "journal";
+  | "identity" | "brain" | "memory" | "projects" | "contract" | "vault";
 
 const STUDIO_TABS: readonly FamiliarStudioTab[] = [
-  "identity", "look", "brain", "lifecycle", "memory", "projects", "contract", "vault", "journal",
+  "identity", "brain", "memory", "projects", "contract", "vault",
 ];
 
 const TAB_STORAGE_KEY = "cave:familiar-studio-tab:v1";
@@ -33,7 +33,7 @@ export const BRAIN_STUDIO_FAMILIAR_KEY = "cave:brain-studio-familiar:v1";
  * Hard-navigate to Settings → Familiars with an optional studio tab and
  * familiar preselected. This is the single redirect path shared by the
  * workspace-level provider (`redirectToSettings`) and workspace surfaces that
- * retired their own page (e.g. the Journal, now a studio tab).
+ * retired their own page in favor of the studio.
  */
 export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarId?: string): void {
   if (typeof window === "undefined") return;
@@ -49,10 +49,9 @@ export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarI
 type Ctx = {
   /** `null` means closed; a string id means open for a specific familiar. */
   activeFamiliarId: string | null;
-  /** `true` means open in no-familiar list view (Lifecycle tab only). */
-  listView: boolean;
   activeTab: FamiliarStudioTab;
   openFamiliarStudio: (id: string, tab?: FamiliarStudioTab) => void;
+  /** Opens the familiars manager (Settings → Familiars) without forcing a tab. */
   openFamiliarStudioListView: () => void;
   closeFamiliarStudio: () => void;
   setActiveTab: (tab: FamiliarStudioTab) => void;
@@ -76,7 +75,6 @@ export function FamiliarStudioProvider({
   redirectToSettings?: boolean;
 }) {
   const [activeFamiliarId, setActiveFamiliarId] = useState<string | null>(null);
-  const [listView, setListView] = useState(false);
   const [activeTab, setActiveTabState] = useState<FamiliarStudioTab>(DEFAULT_TAB);
 
   // Restore last-used tab on mount.
@@ -102,38 +100,36 @@ export function FamiliarStudioProvider({
         return;
       }
       setActiveFamiliarId(id);
-      setListView(false);
       if (tab) setActiveTab(tab);
     },
     [setActiveTab, redirectToSettings],
   );
 
+  // "Manage familiars" entry point: with the roster manager retired, this just
+  // opens Settings → Familiars (keeping the last-used tab); the inline panel
+  // auto-selects a familiar.
   const openFamiliarStudioListView = useCallback(() => {
     if (redirectToSettings) {
-      openFamiliarStudioSettingsTab("lifecycle");
+      openFamiliarStudioSettingsTab();
       return;
     }
     setActiveFamiliarId(null);
-    setListView(true);
-    setActiveTab("lifecycle");
-  }, [setActiveTab, redirectToSettings]);
+  }, [redirectToSettings]);
 
   const closeFamiliarStudio = useCallback(() => {
     setActiveFamiliarId(null);
-    setListView(false);
   }, []);
 
   const value = useMemo<Ctx>(
     () => ({
       activeFamiliarId,
-      listView,
       activeTab,
       openFamiliarStudio,
       openFamiliarStudioListView,
       closeFamiliarStudio,
       setActiveTab,
     }),
-    [activeFamiliarId, listView, activeTab, openFamiliarStudio, openFamiliarStudioListView, closeFamiliarStudio, setActiveTab],
+    [activeFamiliarId, activeTab, openFamiliarStudio, openFamiliarStudioListView, closeFamiliarStudio, setActiveTab],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;

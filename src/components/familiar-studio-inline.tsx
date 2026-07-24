@@ -7,12 +7,9 @@ import { useFamiliarStudio, BRAIN_STUDIO_FAMILIAR_KEY, type FamiliarStudioTab } 
 import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
-import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
-import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
 import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
 import { FamiliarStudioProjectsTab } from "./familiar-studio-projects-tab";
-import { FamiliarStudioJournalTab } from "./familiar-studio-journal-tab";
 import { SettingsFamiliarPicker } from "./settings-familiar-picker";
 import { VaultPanel } from "./vault-panel";
 import type { Familiar } from "@/lib/types";
@@ -24,17 +21,14 @@ type Props = {
   resolved: ResolvedFamiliar[];
   /** Opens the summoning circle from the familiar picker's fixed footer. */
   onSummon?: () => void;
-  /** Re-fetch the roster after the Lifecycle tab removes/restores a familiar. */
+  /** Re-fetch the roster after the Identity tab's lifecycle section removes/restores a familiar. */
   onRosterChanged?: () => void;
 };
 
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "identity", label: "Identity", icon: "ph:user" },
-  { id: "look", label: "Look", icon: "ph:paint-brush" },
   { id: "brain", label: "Brain", icon: "ph:brain" },
-  { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
-  { id: "journal", label: "Journal", icon: "ph:book-open" },
   { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
@@ -133,24 +127,15 @@ export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRos
                     pronouns: familiars.find((f) => f.id === familiar.id)?.pronouns,
                     description: familiars.find((f) => f.id === familiar.id)?.description,
                   }}
-                />
-              ) : null}
-              {activeTab === "look" ? (
-                <FamiliarStudioLookTab familiar={familiar} allFamiliars={resolved} />
-              ) : null}
-              {activeTab === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
-              {activeTab === "lifecycle" ? (
-                <FamiliarStudioLifecycleTab
-                  familiar={familiar}
-                  allResolved={resolved}
+                  allFamiliars={resolved}
                   onRosterChanged={onRosterChanged}
                 />
               ) : null}
+              {activeTab === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
               {activeTab === "memory" ? (
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
               ) : null}
               {activeTab === "projects" ? <FamiliarStudioProjectsTab familiar={familiar} /> : null}
-              {activeTab === "journal" ? <FamiliarStudioJournalTab familiar={familiar} allFamiliars={resolved} /> : null}
               {activeTab === "vault" ? <VaultPanel /> : null}
             </div>
 

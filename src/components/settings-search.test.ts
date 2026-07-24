@@ -42,11 +42,19 @@ assert.match(
   /familiarTab\?: FamiliarStudioTab/,
   "index entries can target a Familiars studio tab",
 );
-for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects", "vault", "journal"]) {
+for (const tab of ["identity", "brain", "memory", "projects", "vault"]) {
   assert.match(
     sections,
     new RegExp(`familiarTab: "${tab}"`),
     `the ${tab} studio tab is indexed for search`,
+  );
+}
+// Look/Lifecycle/Journal merged or moved out — no rows target retired tabs.
+for (const gone of ["look", "lifecycle", "journal"]) {
+  assert.doesNotMatch(
+    sections,
+    new RegExp(`familiarTab: "${gone}"`),
+    `no search row targets the retired ${gone} tab`,
   );
 }
 // Picking a familiars entry activates the studio tab below the provider

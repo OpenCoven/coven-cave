@@ -53,7 +53,7 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
 test("roster membership changes publish the workspace familiar-refresh event", async () => {
   for (const sourcePath of [
     "../components/familiar-summoning-circle.tsx",
-    "../components/familiar-studio-lifecycle-tab.tsx",
+    "../components/familiar-lifecycle-section.tsx",
   ]) {
     const code = await readFile(new URL(sourcePath, here), "utf8");
     assert.match(code, /window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\)/, `${sourcePath} invalidates warmed familiar consumers`);

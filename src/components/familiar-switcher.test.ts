@@ -116,7 +116,7 @@ assert.match(
   /className="familiar-switcher__summon focus-ring"[\s\S]{0,200}ph:magic-wand-fill[\s\S]{0,100}Summon familiar/,
   "the footer leads with a full-width Summon familiar button wearing the circle's wand",
 );
-assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the Studio list view");
+assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the familiars manager (Settings → Familiars)");
 assert.match(source, /setReordering\(true\)/, "Reorder enables drag mode");
 assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new familiar order");
 
