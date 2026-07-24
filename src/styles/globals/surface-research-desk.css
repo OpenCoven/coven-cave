@@ -730,5 +730,5 @@
 .research-artifact-viewer__empty {
   margin: 0;
   font-size: var(--text-2xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }

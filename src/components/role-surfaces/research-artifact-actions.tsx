@@ -62,6 +62,7 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
   };
 
   const view = async () => {
+    if (pending) return;
     const file = await loadFile();
     if (!file) return;
     setViewing(file);
@@ -69,6 +70,7 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
   };
 
   const download = async () => {
+    if (pending) return;
     const file = await loadFile();
     if (!file) return;
     if (file.content === null) {
@@ -99,7 +101,8 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
           type="button"
           className="research-desk-artifact__open focus-ring"
           onClick={view}
-          disabled={disabled}
+          disabled={Boolean(busy)}
+          aria-busy={pending}
           aria-label={`View ${artifact.title}`}
         >
           <Icon name="ph:file-text" width={14} height={14} aria-hidden />
@@ -109,7 +112,8 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
           type="button"
           className="research-desk-artifact__open focus-ring"
           onClick={download}
-          disabled={disabled}
+          disabled={Boolean(busy)}
+          aria-busy={pending}
           aria-label={`Download ${artifact.title}`}
         >
           <Icon name="ph:download-simple" width={14} height={14} aria-hidden />
@@ -146,7 +150,6 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
         open={viewerOpen}
         onClose={() => setViewerOpen(false)}
         breadcrumb={["Research", viewing?.fileName ?? artifact.title]}
-        ariaLabel={`${artifact.title} file contents`}
         wide
       >
         {viewing?.content === null || viewing?.content === undefined ? (
