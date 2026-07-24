@@ -251,7 +251,10 @@ export async function runPiperWithDependencies(
       else signal?.addEventListener("abort", abort, { once: true });
       // Piper reads one utterance per stdin line. Do not pass text as argv:
       // that path is rejected by Piper's argument parser.
-      child.stdin?.end(`${text}\n`);
+      // Piper consumes stdin one line at a time. Keep a streamed markdown or
+      // list response as one utterance rather than overwriting its WAV once
+      // for every embedded newline.
+      child.stdin?.end(`${text.replace(/[\r\n]+/g, " ")}\n`);
     });
 
     const info = await stat(/* turbopackIgnore: true */ outputPath);

@@ -79,6 +79,27 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   assert.equal(existsSync(outputDirectory), false, "the private audio directory is removed");
 });
 
+test("Piper runner sends multiline text as one utterance", async () => {
+  let stdin = "";
+  const fakeRunner = (_command, args) => {
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    child.stdin.setEncoding("utf8");
+    child.stdin.on("data", (chunk) => { stdin += chunk; });
+    child.stdin.on("end", () => {
+      writeFileSync(args[args.indexOf("-f") + 1], Buffer.from("RIFF"));
+      queueMicrotask(() => child.emit("close", 0));
+    });
+    return child;
+  };
+  await runPiperWithDependencies("voice.onnx", "First line\r\nSecond line\nThird line", undefined, {
+    spawnImpl: fakeRunner,
+  });
+  assert.equal(stdin, "First line Second line Third line\n");
+});
+
 test("Piper runner force-kills a process that never closes after timeout", async () => {
   const signals = [];
   const hangingRunner = () => {

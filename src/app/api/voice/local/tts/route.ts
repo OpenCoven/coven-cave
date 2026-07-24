@@ -9,7 +9,6 @@ import {
   runPiper,
   type PiperRunner,
 } from "../../../../../lib/voice/local-tts-server.ts";
-import { stat } from "node:fs/promises";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,13 +23,6 @@ type LocalTtsRouteDependencies = {
   readiness?: (voiceName: string) => Promise<SpeechModelReadiness | null>;
   piper?: PiperRunner;
 };
-
-type CachedReadiness = {
-  fingerprint: string;
-  readiness: SpeechModelReadiness;
-};
-
-const readinessCache = new Map<string, CachedReadiness>();
 
 class LocalTtsBodyTooLargeError extends Error {}
 
@@ -71,36 +63,14 @@ async function parseLocalTtsJsonBody(req: Request): Promise<unknown> {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 
-async function readinessFingerprint(readiness: SpeechModelReadiness): Promise<string | null> {
-  try {
-    const assets = [readiness.path, readiness.companionPath].filter(Boolean) as string[];
-    return (await Promise.all(assets.map(async (asset) => {
-      const info = await stat(asset);
-      return `${asset}:${info.size}:${info.mtimeMs}`;
-    }))).join("|");
-  } catch {
-    return null;
-  }
-}
-
 async function defaultReadiness(
   voiceName: string,
 ): Promise<SpeechModelReadiness | null> {
   const model = speechModelById(voiceName);
   if (!model) return null;
-  const cached = readinessCache.get(model.id);
-  if (cached) {
-    const fingerprint = await readinessFingerprint(cached.readiness);
-    if (fingerprint === cached.fingerprint) return cached.readiness;
-  }
-  const readiness = await speechModelReadiness(model);
-  if (readiness.ready && readiness.verified) {
-    const fingerprint = await readinessFingerprint(readiness);
-    if (fingerprint) readinessCache.set(model.id, { fingerprint, readiness });
-  } else {
-    readinessCache.delete(model.id);
-  }
-  return readiness;
+  // Integrity is part of readiness. Recompute the registered asset digests
+  // before every synthesis instead of treating matching metadata as proof.
+  return speechModelReadiness(model);
 }
 
 export async function handleLocalTtsPost(
