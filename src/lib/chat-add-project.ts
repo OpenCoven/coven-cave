@@ -5,7 +5,13 @@ export type AddChatProjectResult =
   | { ok: true; projectId: string }
   | { ok: false; error: string };
 
-export type CreateProjectOptions = { emitMutation?: boolean };
+export type CreateProjectOptions = {
+  emitMutation?: boolean;
+  /** Explicit identity tint persisted on the project (absent → auto root-hash tint). */
+  color?: string;
+  /** Canonical GitHub link — callers must pre-normalize via normalizeGitHubRepoUrl. */
+  repoUrl?: string;
+};
 
 /** Derive a human project name from a working-directory path — its leaf folder.
  *  `/Users/me/code/coven-cave` → `coven-cave`. Falls back to the raw root. */

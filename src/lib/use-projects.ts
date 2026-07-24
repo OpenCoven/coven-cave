@@ -133,7 +133,12 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, root }),
+        body: JSON.stringify({
+          name,
+          root,
+          ...(options?.color ? { color: options.color } : {}),
+          ...(options?.repoUrl ? { repoUrl: options.repoUrl } : {}),
+        }),
       });
       const data = (await res.json().catch(() => null)) as ProjectMutationPayload | null;
       if (res.ok && data?.ok && data.project) {
