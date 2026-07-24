@@ -58,7 +58,7 @@ assert.match(
 );
 assert.match(
   wrapper,
-  /const enhanced = supported && !reducedMotion;/,
+  /const enhanced = supported && peelReady && !reducedMotion;/,
   "reduced motion disables the enhancement entirely",
 );
 
@@ -66,13 +66,36 @@ assert.match(
 // so toggling the nav can't re-parent (and remount) the detail tree.
 assert.match(
   wrapper,
-  /OFF_OPTIONS = \{ reveal: 0, zone: 0 \}/,
-  "inactive geometry collapses to zero via options",
+  /OFF_OPTIONS = \{\s*reveal: 0,\s*zone: 0,\s*curl: 1,\s*bow: 0,\s*bulge: 0,\s*\}/,
+  "inactive geometry flattens the whole curl (vendor floors the strip at 1px)",
+);
+assert.match(
+  wrapper,
+  /LIVE_OPTIONS = \{\s*reveal: 232,\s*zone: 120,\s*curl: 300,\s*bow: 75,\s*bulge: 50,\s*\}/,
+  "live geometry restates vendor curl defaults (setOptions merges)",
 );
 assert.match(
   wrapper,
   /\{\.\.\.\(active \? LIVE_OPTIONS : OFF_OPTIONS\)\}/,
   "active drives options, not mounting",
+);
+assert.doesNotMatch(
+  wrapper,
+  /active \? <Peel|active && <Peel|\{active &&/,
+  "Peel is never conditionally mounted on active",
+);
+
+// The live tree waits for the vendored chunk: no null-fallback blank of the
+// detail pane while next/dynamic suspends.
+assert.match(
+  wrapper,
+  /const enhanced = supported && peelReady && !reducedMotion;/,
+  "enhancement additionally gates on module readiness",
+);
+assert.match(
+  wrapper,
+  /supported \? subscribePeelReady : emptySubscribe/,
+  "chunk fetch starts only on supporting browsers",
 );
 
 // The revealed sidebar clone is decorative: hidden from AT and uninteractive.

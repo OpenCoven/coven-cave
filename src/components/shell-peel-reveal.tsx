@@ -13,14 +13,51 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 // The ~22 KB vendored WebGL file loads only on HTML-in-canvas browsers.
 const Peel = dynamic(() => import("@/components/canvasui/Peel"), { ssr: false });
 
+let peelModuleReady = false;
+const peelReadyListeners = new Set<() => void>();
+/** next/dynamic suspends with a null fallback, and the detail children live
+ *  inside <Peel> — switching to the live tree before the chunk arrives would
+ *  blank (and double-mount) the whole detail pane. Track module readiness so
+ *  the plain tree keeps rendering until the live tree can mount for real. */
+function subscribePeelReady(listener: () => void) {
+  if (!peelModuleReady) {
+    void import("@/components/canvasui/Peel").then(() => {
+      peelModuleReady = true;
+      for (const notify of peelReadyListeners) notify();
+    });
+  }
+  peelReadyListeners.add(listener);
+  return () => peelReadyListeners.delete(listener);
+}
+function getPeelReady() {
+  return peelModuleReady;
+}
+const getPeelReadyServer = () => false;
+
 /** Peel geometry while the collapsed rail arms the reveal: 232px of exposed
  *  under-layer matches the hover-peek overlay width; a 120px trigger strip
- *  (vs the vendor's 200 default) keeps casual mouse travel from curling. */
-const LIVE_OPTIONS = { reveal: 232, zone: 120 } as const;
-/** Nav open: geometry collapses to nothing via the vendor's live setOptions.
- *  The component stays mounted so toggling ⌘B never re-parents (and thereby
- *  remounts) the detail tree. */
-const OFF_OPTIONS = { reveal: 0, zone: 0 } as const;
+ *  (vs the vendor's 200 default) keeps casual mouse travel from curling.
+ *  curl/bow/bulge restate the vendor defaults because setOptions merges:
+ *  every key OFF_OPTIONS flattens must be restated here or it stays flat. */
+const LIVE_OPTIONS = {
+  reveal: 232,
+  zone: 120,
+  curl: 300,
+  bow: 75,
+  bulge: 50,
+} as const;
+/** Nav open: geometry flattens to (sub)pixel scale via the vendor's live
+ *  setOptions — reveal/zone gate the drive strip (floored at 1px upstream,
+ *  hence curl/bow/bulge must flatten too or a pointer parked on that strip
+ *  still curls the page). The component stays mounted so toggling ⌘B never
+ *  re-parents (and thereby remounts) the detail tree. */
+const OFF_OPTIONS = {
+  reveal: 0,
+  zone: 0,
+  curl: 1,
+  bow: 0,
+  bulge: 0,
+} as const;
 
 /** How many times a lost WebGL context earns a fresh mount before giving up —
  *  a crashing GPU/driver loop should not thrash remounts forever (mirrors
@@ -58,8 +95,9 @@ const emptySubscribe = () => () => {};
  * decorative tease that hands off to the interactive .shell-nav--peek
  * overlay. Everywhere else (Tauri WKWebView, Safari, Firefox, stock Chrome,
  * reduced-motion users) this renders display:contents wrappers: zero layout
- * impact, zero GPU or network cost, and the children are never re-parented
- * by `active` changes within a mode.
+ * impact, zero GPU cost, and the children are never re-parented by `active`
+ * changes within a mode. The live tree additionally waits for the vendored
+ * chunk so enhancement never blanks the pane mid-load.
  */
 export function ShellPeelReveal({
   active,
@@ -71,8 +109,13 @@ export function ShellPeelReveal({
   children: ReactNode;
 }) {
   const supported = useSyncExternalStore(emptySubscribe, probeHtmlInCanvas, () => false);
+  const peelReady = useSyncExternalStore(
+    supported ? subscribePeelReady : emptySubscribe,
+    getPeelReady,
+    getPeelReadyServer,
+  );
   const reducedMotion = usePrefersReducedMotion();
-  const enhanced = supported && !reducedMotion;
+  const enhanced = supported && peelReady && !reducedMotion;
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [glEpoch, setGlEpoch] = useState(0);
