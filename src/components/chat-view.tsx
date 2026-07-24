@@ -360,7 +360,7 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn't
+// half-written message. The composer is a single shared input (it isn’t
 // remounted per session), so one key mirrors the in-memory behaviour.
 const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
@@ -4300,7 +4300,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (res.status === 400 && /project_root_required|projectRoot is required/i.test(message)) {
           setProjectRootRequired(true);
           surfacedMessage =
-            "This chat isn't tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
+            "This chat isn’t tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -5904,7 +5904,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <span className="font-medium text-[var(--text-primary)]">
                 {projectNameForRoot(setupCandidateRoot)}
               </span>
-              , which isn't a registered project.
+              , which isn’t a registered project.
             </span>
             <Button variant="ghost" onClick={() => setProjectSetupRoot(setupCandidateRoot)}>
               Set up as project…
