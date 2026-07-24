@@ -259,3 +259,42 @@ assert.match(
   /projectRootRequired && projects\.length === 0\s*\? overflowAddProject\.beginAddProject/,
   "with zero registered projects the strip offers the shared register-a-folder flow instead of a dead select",
 );
+
+// ── In-place project setup for ad-hoc chat homes (spec 2026-07-24) ──────────
+// Eligibility comes from the pure helper on the RESOLVED selection — so
+// registered projects, familiar workspaces (no unregisteredRoot), and
+// project worktrees never see the offer.
+assert.match(
+  source,
+  /projectSetupCandidateRoot\(projectSelection, projects\)/,
+  "the setup offer derives from the resolved selection via the pure helper",
+);
+// Banner dismissal persists per normalized root, so one folder never re-nags.
+assert.match(
+  source,
+  /projectSetupDismissKey\(setupCandidateRoot\)/,
+  "banner dismissal keys on the shared per-root helper",
+);
+assert.match(
+  source,
+  /Set up as project…/,
+  "the banner offers setup in one click",
+);
+// Success rescopes the chat to the new project — same contract as the shared
+// add flow (draft set + registry reload).
+assert.match(
+  source,
+  /<ProjectSetupModal[\s\S]*?onCreated=\{\(newProjectId\) => \{\s*setProjectIdDraft\(newProjectId\);\s*reloadProjects\(\);/,
+  "a created project becomes the chat's next-send selection",
+);
+// Both picker hosts (composer chips + session kebab) surface the register row.
+assert.match(
+  source,
+  /<ComposerContextChips[\s\S]*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
+  "composer chips carry the register-current-folder affordance",
+);
+assert.match(
+  source,
+  /<SessionOverflowMenu[\s\S]*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
+  "the session kebab picker carries it too",
+);
