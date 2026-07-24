@@ -614,13 +614,17 @@ function ChatErrorStrip({
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
   const pre =
-    "mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--bg-base)]/40 px-2 py-1 font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]";
+    "max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-r border-l-2 border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[var(--bg-base)]/45 px-2.5 py-1.5 font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]";
+  // Small mono kicker naming which tool/step produced the quoted reason below.
+  const kicker =
+    "mb-1 font-mono text-[length:var(--text-2xs)] font-medium tracking-wide text-[color-mix(in_oklch,var(--color-warning)_72%,var(--text-secondary))]";
 
   return (
     <div
       role="alert"
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
+      <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
       <div className="flex items-center gap-2 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
         <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
@@ -741,29 +745,36 @@ function ChatErrorStrip({
         </div>
       ) : null}
       {hasDetail && open ? (
-        <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
-          {erroredTools.map((t) => (
-            <div key={t.id} className="mb-2 last:mb-0">
-              <div className="text-[length:var(--text-xs)] font-semibold text-[var(--color-warning)]">
-                tool: {t.name} ✗ error{t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
+        <div className="border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 pb-2.5 pt-2">
+          <div className="mb-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[color-mix(in_oklch,var(--color-warning)_70%,var(--text-secondary))]">
+            Why it failed
+          </div>
+          <div className="max-h-48 space-y-2.5 overflow-auto">
+            {erroredTools.map((t) => (
+              <div key={t.id}>
+                <div className={kicker}>
+                  tool: {t.name}
+                  {t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
+                </div>
+                {t.input ? <pre className={pre}>{t.input}</pre> : null}
+                {t.output ? <pre className={pre}>{t.output}</pre> : null}
               </div>
-              {t.input ? <pre className={pre}>{t.input}</pre> : null}
-              {t.output ? <pre className={pre}>{t.output}</pre> : null}
-            </div>
-          ))}
-          {erroredSteps.map((p) => (
-            <div key={p.id} className="mb-2 last:mb-0">
-              <div className="text-[length:var(--text-xs)] font-semibold text-[var(--color-warning)]">step: {p.label} ✗ error</div>
-              {p.detail ? <pre className={pre}>{p.detail}</pre> : null}
-            </div>
-          ))}
-          {erroredTools.length === 0 && erroredSteps.length === 0 ? (
-            <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-              No tool output captured for this turn. Open Debug for the full session events.
-            </div>
-          ) : null}
+            ))}
+            {erroredSteps.map((p) => (
+              <div key={p.id}>
+                <div className={kicker}>step{p.detail ? `: ${p.label}` : ""}</div>
+                <pre className={pre}>{p.detail || p.label}</pre>
+              </div>
+            ))}
+            {erroredTools.length === 0 && erroredSteps.length === 0 ? (
+              <div className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+                No tool output captured for this turn. Open Debug for the full session events.
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
