@@ -12,8 +12,10 @@
    Both resolve to the same colours so they stay in sync.
 
    Brand: OpenCoven lavender (#9386D0) lives at --accent-presence.
-   Reserved for familiar presence dots and the health strip — not
-   for primary CTAs.
+   Presence first (familiar dots, the health strip); solid fills are
+   allowed for at most one designated primary CTA per surface (e.g.
+   the New chat button, cave-xr5z) via the pre-audited trio
+   --accent-presence / -foreground / -hover.
 
    Palette v1.2 — Coven (default) tuned for editor density at both
    modes. Dark uses near-black panels with low chroma on surfaces;
@@ -54,8 +56,10 @@
   --ring: oklch(0.55 0.075 291);
 
   /* ---- Coven brand ----
-     Lavender presence accent. Use sparingly — familiar dots,
-     status strip, the gradient AI toggle in #22. */
+     Lavender presence accent. Use sparingly — familiar dots, status
+     strip, the gradient AI toggle in #22, and at most one designated
+     solid primary CTA per surface (New chat, cave-xr5z) paired with
+     --accent-presence-foreground/-hover below. */
   --accent-presence: #9386d0;
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.70 0.10 293);

@@ -10,6 +10,53 @@
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
+## Design System (any UI work)
+
+[`docs/coven-design-language.md`](docs/coven-design-language.md) is the
+binding contract for tokens, density, elevation, motion, voice, and interface
+copy — read it before editing any surface, and walk its §9 shipping checklist
+before opening a UI PR. The live token reference renders at `/aesthetic`.
+
+Where the truth lives:
+
+- `src/styles/globals/foundations.css` — the annotated token contract
+  (surfaces, text tiers, borders, radii, 4px spacing grid, type scale, motion,
+  focus rings, icon sizes). `src/app/globals.css` is only an import facade.
+- `src/styles/globals/themes.css` — 21 palettes × 2 modes (`data-theme` ×
+  `data-mode` on `:root`). Every surface must survive all 42 combinations.
+- `src/styles/globals/primitives.css` — shared `.ui-*` classes; grep before
+  inventing a class.
+- `src/components/ui/` — React primitives (Button, EmptyState, ErrorState,
+  Skeleton, Modal, Popover, OverflowMenu, ViewHeader, SearchInput, …). Reuse
+  before writing new ones.
+- `src/lib/icon.tsx` — the `ph:`-prefixed Phosphor `ICON_NAMES` union. New
+  icon: add the name there, run `node scripts/generate-icon-subset.mjs`,
+  commit the regenerated subset (`icon-subset.test.ts` fails CI otherwise).
+
+Hard rules, enforced by gates (not advisory):
+
+- **Tokens only** — no hardcoded colors, on-scale px font sizes, off-grid
+  spacing, or off-step radii in render code. `pnpm lint` runs the design
+  ESLint gate (`coven-design/no-raw-px-text`, `no-static-inline-style`,
+  `no-render-hex-color`) plus `pnpm codemod:design:check`;
+  `src/lib/design-token-drift.test.ts` (app test suite) keeps the CSS codemod
+  a no-op and ratchets judgment categories down-only — if you must add one,
+  raise the baseline in the same PR and justify it.
+- **Auto-fixers before hand-editing**: `node scripts/codemods/tokenize-css.mjs`
+  rewrites on-scale CSS literals to tokens; `pnpm codemod:design` does the
+  same for component TSX.
+- **State tints derive from one solid token** via the `color-mix` recipe
+  (solid text, ~14% fill, 30–45% border) — never a second hue. Danger alerts
+  ship pre-mixed as `--danger-bg` / `--danger-border` / `--danger-text`.
+- **A11y non-negotiables**: `.focus-ring` on interactive elements,
+  `useFocusTrap` + focus return for anything modal, `useAnnouncer()` on
+  mutations, a `prefers-reduced-motion` story for anything that moves, and
+  color never the only channel.
+- **Copy follows the doc's §10 contract** (vocabulary, action copy, field
+  semantics, placeholder grammar `Search <items>…` with the `…` character,
+  state copy). `scripts/ui-consistency.test.mjs` pins the §10 headings and
+  the doc's factual claims (palette counts, token values, cited paths).
+
 ## Starting The Tauri Desktop App
 
 Use the desktop shell when validating native-only surfaces such as the terminal,
