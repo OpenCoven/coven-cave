@@ -29,10 +29,18 @@ function downloadTextFile(fileName: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Resolve the mission workspace path for "Copy workspace path" affordances. */
-export async function fetchResearchWorkspacePath(missionId: string): Promise<string | null> {
+/** Resolve the mission workspace path for "Copy workspace path" affordances.
+ *  workspacePath is mission-level, not artifact-level, but the route still
+ *  needs a real artifact key to look up (see files/[key]/route.ts) — a
+ *  legacy mission with an empty/odd artifacts array may have no "primary"
+ *  key, so callers should pass the mission's actual first artifact key when
+ *  they have one; "primary" remains the default for ordinary missions. */
+export async function fetchResearchWorkspacePath(
+  missionId: string,
+  artifactKey = "primary",
+): Promise<string | null> {
   try {
-    const file = await getResearchMissionFile(missionId, "primary");
+    const file = await getResearchMissionFile(missionId, artifactKey);
     return file.workspacePath;
   } catch {
     return null;

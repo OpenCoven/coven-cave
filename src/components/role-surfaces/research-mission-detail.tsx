@@ -269,7 +269,7 @@ export function ResearchMissionDetail({
     const startedFor = mission.id;
     const stillCurrent = () => missionIdRef.current === startedFor;
     setActionError(null);
-    const workspacePath = await fetchResearchWorkspacePath(mission.id);
+    const workspacePath = await fetchResearchWorkspacePath(mission.id, mission.artifacts[0]?.key ?? "primary");
     if (!stillCurrent()) return;
     if (!workspacePath) {
       const message = "Workspace path could not be resolved.";

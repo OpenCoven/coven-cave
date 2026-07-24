@@ -180,6 +180,102 @@ test("source pick: newest published markdown wins; rejected and non-md never qua
   );
 });
 
+test("source pick: primary lineage wins over a newer published standard ref", () => {
+  // A manually-retried research-log publish (or any standard-ref publish at
+  // a checkpoint) must never outrank the primary just for being newer —
+  // cave research-final-artifacts Fix 1.
+  const picked = pickGenerationSourceArtifact({
+    artifacts: [
+      artifactRef({
+        key: "primary",
+        title: "Primary draft",
+        relativePath: "artifacts/primary.md",
+        state: "published",
+        updatedAt: "2026-07-19T09:00:00.000Z",
+      }),
+      artifactRef({
+        key: "research-log",
+        title: "Research log",
+        relativePath: "research-log.md",
+        state: "published",
+        updatedAt: "2026-07-22T09:00:00.000Z",
+      }),
+    ],
+  });
+  assert.equal(picked?.key, "primary");
+});
+
+test("source pick: a working primary beats a published standard ref at a checkpoint", () => {
+  const picked = pickGenerationSourceArtifact({
+    artifacts: [
+      artifactRef({
+        key: "primary",
+        title: "Primary draft",
+        relativePath: "artifacts/primary.md",
+        state: "working",
+        updatedAt: "2026-07-19T09:00:00.000Z",
+      }),
+      artifactRef({
+        key: "research-log",
+        title: "Research log",
+        relativePath: "research-log.md",
+        state: "published",
+        updatedAt: "2026-07-22T09:00:00.000Z",
+      }),
+    ],
+  });
+  assert.equal(picked?.key, "primary");
+});
+
+test("source pick: a later-iteration primary (primary-iN key) is still primary lineage", () => {
+  // startNextIteration resurrects a rejected primary under key `primary-i${n}`
+  // while keeping relativePath "artifacts/primary.md" (research-mission-runner.ts
+  // startNextIteration). Both signals must independently identify the lineage.
+  const picked = pickGenerationSourceArtifact({
+    artifacts: [
+      artifactRef({
+        key: "primary-i2",
+        title: "Primary draft, iteration 2",
+        relativePath: "artifacts/primary.md",
+        state: "working",
+        updatedAt: "2026-07-19T09:00:00.000Z",
+      }),
+      artifactRef({
+        key: "research-log",
+        title: "Research log",
+        relativePath: "research-log.md",
+        state: "published",
+        updatedAt: "2026-07-22T09:00:00.000Z",
+      }),
+    ],
+  });
+  assert.equal(picked?.key, "primary-i2");
+});
+
+test("source pick: falls back to the newest published/working ref when no primary lineage exists", () => {
+  // Unchanged legacy behavior — verified explicitly so Fix 1's "prefer
+  // primary lineage" branch doesn't shadow the pre-existing fallback.
+  const picked = pickGenerationSourceArtifact({
+    artifacts: [
+      artifactRef({
+        key: "research-log",
+        title: "Research log",
+        relativePath: "research-log.md",
+        state: "published",
+        updatedAt: "2026-07-19T09:00:00.000Z",
+      }),
+      artifactRef({
+        key: "findings",
+        title: "Findings",
+        relativePath: "findings.md",
+        state: "published",
+        updatedAt: "2026-07-22T09:00:00.000Z",
+      }),
+    ],
+  });
+  assert.equal(picked?.key, "findings");
+});
+
 // ── extractive drafting per kind ─────────────────────────────────────────────
 
 test("blog = the artifact markdown as an editable copy with a provenance first line", async () => {

@@ -15,6 +15,7 @@ import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
   researchArtifactKindForMode,
+  STANDARD_RESEARCH_ARTIFACTS,
   type CreateResearchMissionInput,
   type ResearchArtifactRef,
   type ResearchMission,
@@ -333,6 +334,23 @@ function publishFailureError(failures: string[]): string | undefined {
   return failures.length ? `Artifact publish failed — ${failures.join("; ")}` : undefined;
 }
 
+const STANDARD_RESEARCH_ARTIFACT_KEYS = new Set(
+  STANDARD_RESEARCH_ARTIFACTS.map((standard) => standard.key),
+);
+const STANDARD_RESEARCH_ARTIFACT_RELATIVE_PATHS = new Set(
+  STANDARD_RESEARCH_ARTIFACTS.map((standard) => standard.relativePath),
+);
+
+/** True for the findings/source-ledger/research-log refs — matched by key or
+ *  relativePath against STANDARD_RESEARCH_ARTIFACTS rather than duplicating
+ *  those literals here. Never true for the primary lineage. */
+function isStandardResearchArtifact(artifact: ResearchArtifactRef): boolean {
+  return (
+    STANDARD_RESEARCH_ARTIFACT_KEYS.has(artifact.key) ||
+    STANDARD_RESEARCH_ARTIFACT_RELATIVE_PATHS.has(artifact.relativePath)
+  );
+}
+
 async function reconcileCompletedRun(
   mission: ResearchMission,
   iterationIndex: number,
@@ -553,6 +571,20 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       iteration: number,
       updatedAt: timestamp,
     } : null;
+    // The next pass rewrites every standard file (findings/source-ledger/
+    // research-log) from scratch, so a rejected standard ref genuinely has a
+    // fresh working version coming — recover it in place. Unlike the primary
+    // lineage above, there is no per-iteration file for these, so no new
+    // key/lineage entry is created; the same ref just returns to "working".
+    const artifactsWithRecoveredStandardRefs = mission.artifacts.map((artifact) => (
+      artifact.state === "rejected" && isStandardResearchArtifact(artifact) ? {
+        ...artifact,
+        state: "working" as const,
+        rejectionReason: undefined,
+        iteration: number,
+        updatedAt: timestamp,
+      } : artifact
+    ));
     let next: ResearchMission = {
       ...mission,
       status: "planning",
@@ -560,7 +592,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       finishedAt: undefined,
       lastError: undefined,
       iterations: [...mission.iterations, { number, status: "queued" }],
-      artifacts: workingArtifact ? [workingArtifact, ...mission.artifacts] : mission.artifacts,
+      artifacts: workingArtifact
+        ? [workingArtifact, ...artifactsWithRecoveredStandardRefs]
+        : artifactsWithRecoveredStandardRefs,
     };
     await saveMission(next);
     const target = await missionStartTarget(next);

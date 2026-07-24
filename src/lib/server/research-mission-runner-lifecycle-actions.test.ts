@@ -419,6 +419,71 @@ test("artifact rejection preserves the file reference and refine starts once", a
   assert.equal(refined.iterations.length, 2);
 });
 
+test("continue recovers a rejected standard ref to working, leaving primary lineage resurrection untouched", async () => {
+  // cave research-final-artifacts Fix 2: every later pass rewrites
+  // findings.md/sources.json/research-log.md from scratch, so a rejected
+  // standard ref should not stay a permanent dead end — the next iteration's
+  // startNextIteration must recover it to "working" in place. This must
+  // stay independent of the pre-existing primary-lineage resurrection (a new
+  // `primary-i${n}` ref prepended, the old rejected primary ref preserved).
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "rejected", rejectionReason: "too shallow", updatedAt: NOW.toISOString() },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "source-ledger", kind: "source-ledger", title: "Source ledger", relativePath: "sources.json", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md", iteration: 1, state: "published", knowledgeId: "research-mission-actions-research-log", updatedAt: NOW.toISOString() },
+    ],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => ({
+      ok: true,
+      executor: "session",
+      sessionId: "session-2",
+      run: { ...RUN, id: "run-2", sessionId: "session-2" },
+    }),
+  }));
+
+  // Reject the standard ref through the real action, exactly like an
+  // operator would from the ledger.
+  const rejected = await runner.act(stored.id, {
+    action: "reject-artifact",
+    artifactKey: "findings",
+    reason: "needs more sources",
+  });
+  const rejectedFindings = rejected.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(rejectedFindings?.state, "rejected");
+  assert.match(rejectedFindings?.rejectionReason ?? "", /needs more sources/);
+
+  // Pinned refusal (~622–633): still true before any continue happens.
+  await assert.rejects(
+    () => runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" }),
+    new Error("rejected artifacts need a new working version before publishing"),
+  );
+
+  const continued = await runner.act(stored.id, { action: "continue" });
+
+  const findings = continued.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "working", "the next pass regenerates findings.md, so a fresh working version exists");
+  assert.equal(findings?.rejectionReason, undefined, "rejection metadata is cleared");
+
+  // Refs that were never rejected are untouched by the recovery.
+  assert.equal(continued.artifacts.find((artifact) => artifact.key === "source-ledger")?.state, "working");
+  const researchLog = continued.artifacts.find((artifact) => artifact.key === "research-log");
+  assert.equal(researchLog?.state, "published");
+  assert.equal(researchLog?.knowledgeId, "research-mission-actions-research-log");
+
+  // Primary lineage resurrection is unchanged by this fix: a fresh working
+  // ref is prepended under a new per-iteration key, and the rejected
+  // original survives at its own key (lineage history, not recovered in place).
+  assert.equal(continued.artifacts[0].key, "primary-i2");
+  assert.equal(continued.artifacts[0].state, "working");
+  const oldPrimary = continued.artifacts.find((artifact) => artifact.key === "primary");
+  assert.equal(oldPrimary?.state, "rejected");
+  assert.equal(oldPrimary?.rejectionReason, "too shallow");
+});
+
 test("cancel kills a queued session that already carries a session id", async () => {
   // Travel handoffs and slow starts can leave a live session on an iteration
   // that still reads "queued" — cancel must kill it, not only "running" ones.
