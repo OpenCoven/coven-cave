@@ -1702,8 +1702,10 @@ function resolveSyncTokens(): Record<string, string> {
 }
 
 /** Push the active theme + resolved tokens to the daemon for cross-device sync.
- *  Returns whether the write reached the daemon (the manual Resync button shows
- *  the result; the automatic on-change call ignores it). */
+ *  Manual Resync only. Change-driven publishing belongs to RemoteThemeController:
+ *  every selection/edit here lands in updateAppPreferences, whose store notify
+ *  runs the controller's reconcile → publish. A second on-change PUT from this
+ *  section raced it — identical payloads plus a 409 window (cave-gvtw). */
 async function persistThemeTokens(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (!(await flushAppPreferences())) return false;
@@ -2289,12 +2291,11 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   // there, distinct from the avatar-strip pin order set here).
   const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
-  // Mirror the active theme + resolved tokens to the daemon on change (and mount)
-  // so cross-device clients can read it. Best-effort; failures are swallowed.
-  useEffect(() => {
-    if (!appearanceHydrated) return;
-    void persistThemeTokens();
-  }, [activeTheme, mode, customData, appearanceHydrated]);
+  // No on-change daemon mirror here: RemoteThemeController publishes tokens
+  // whenever the canonical theme signature changes (every selection, mode flip,
+  // and token commit in this section writes updateAppPreferences). A section-
+  // side effect doubled each PUT /api/theme (cave-gvtw); persistThemeTokens
+  // remains for the manual Resync button only.
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -2341,8 +2342,8 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   // repaint the app, but this section hydrated its selection state once on
   // mount, leaving the theme grid and token-row swatches stale until a full
   // reload (cave-hkfq). Follow the store. setCustomData keeps the previous
-  // object when content is unchanged so the persist effect (which watches
-  // customData) doesn't re-emit a PUT for every unrelated store notify.
+  // object when content is unchanged so unrelated store notifies don't churn
+  // renders or the token rows' content-keyed reloadKey.
   useEffect(() => {
     if (!appearanceHydrated) return;
     return subscribeAppPreferences(() => {
