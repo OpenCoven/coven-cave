@@ -66,13 +66,13 @@ assert.match(
 // so toggling the nav can't re-parent (and remount) the detail tree.
 assert.match(
   wrapper,
-  /OFF_OPTIONS = \{\s*reveal: 0,\s*zone: 0,\s*curl: 1,\s*bow: 0,\s*bulge: 0,\s*\}/,
-  "inactive geometry flattens the whole curl (vendor floors the strip at 1px)",
+  /OFF_OPTIONS = \{\s*reveal: 0,\s*zone: 0,\s*curl: 1,\s*bow: 0,\s*bulge: 0,\s*shine: 0,\s*\}/,
+  "inactive geometry flattens the whole curl and zeroes the shine",
 );
 assert.match(
   wrapper,
-  /LIVE_OPTIONS = \{\s*reveal: 232,\s*zone: 120,\s*curl: 300,\s*bow: 75,\s*bulge: 50,\s*\}/,
-  "live geometry restates vendor curl defaults (setOptions merges)",
+  /LIVE_OPTIONS = \{\s*reveal: 232,\s*zone: 120,\s*curl: 300,\s*bow: 75,\s*bulge: 50,\s*shine: 1,\s*\}/,
+  "live geometry restates vendor curl and shine defaults (setOptions merges)",
 );
 assert.match(
   wrapper,

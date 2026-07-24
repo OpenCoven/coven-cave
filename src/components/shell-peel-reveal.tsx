@@ -21,10 +21,13 @@ const peelReadyListeners = new Set<() => void>();
  *  the plain tree keeps rendering until the live tree can mount for real. */
 function subscribePeelReady(listener: () => void) {
   if (!peelModuleReady) {
-    void import("@/components/canvasui/Peel").then(() => {
-      peelModuleReady = true;
-      for (const notify of peelReadyListeners) notify();
-    });
+    void import("@/components/canvasui/Peel")
+      .then(() => {
+        peelModuleReady = true;
+        for (const notify of peelReadyListeners) notify();
+      })
+      // Failed chunk loads self-heal: the next subscribe retries the import.
+      .catch(() => {});
   }
   peelReadyListeners.add(listener);
   return () => peelReadyListeners.delete(listener);
@@ -45,11 +48,13 @@ const LIVE_OPTIONS = {
   curl: 300,
   bow: 75,
   bulge: 50,
+  shine: 1,
 } as const;
 /** Nav open: geometry flattens to (sub)pixel scale via the vendor's live
  *  setOptions — reveal/zone gate the drive strip (floored at 1px upstream,
  *  hence curl/bow/bulge must flatten too or a pointer parked on that strip
- *  still curls the page). The component stays mounted so toggling ⌘B never
+ *  still curls the page; shine is peel-independent in the shader, so it
+ *  must zero here too). The component stays mounted so toggling ⌘B never
  *  re-parents (and thereby remounts) the detail tree. */
 const OFF_OPTIONS = {
   reveal: 0,
@@ -57,6 +62,7 @@ const OFF_OPTIONS = {
   curl: 1,
   bow: 0,
   bulge: 0,
+  shine: 0,
 } as const;
 
 /** How many times a lost WebGL context earns a fresh mount before giving up —
