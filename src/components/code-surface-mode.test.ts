@@ -65,7 +65,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /if \(next === "code"\) \{[\s\S]{0,700}?setModeRaw\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   "setMode funnels every code entry point (deep links, palette, navigate-mode, persisted restore) into the room",
 );
 assert.match(
