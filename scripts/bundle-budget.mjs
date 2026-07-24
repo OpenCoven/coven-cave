@@ -64,8 +64,14 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // +~3 KiB root). This surface's CSS has always lived in the global bundle;
 // follow-up cave-5rqi tracks extracting it to a component-imported sheet
 // per #3264 so it code-splits out of the every-route/home first load.
+// Raised home 936→940 (2026-07-25, cave-2l7h): the hearth-Home restore /
+// dashboard-to-new-chat swap returns the hearth sheets (landing-composer +
+// hearth-continuations) to the home graph while home-dashboard.css stays in
+// it (now imported via chat-view's ChatNewDashboard); the pruned dashboard
+// chrome/dock offsets most but not all of the restored hearth CSS (+2 KiB
+// measured, 938).
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 696) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 936) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(

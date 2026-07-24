@@ -1,135 +1,32 @@
-/* Home dashboard — launcher direction 3a ("work-led dashboard").
- *
- * The cold-start Home surface as a full-bleed app view: a top identity chrome,
- * a left context rail (project · quick start · pick up), a scrolling work board
- * (greeting + filter tabs · open work · recent threads), and the real composer
- * docked full-width along the bottom. Everything is token-driven so the 16
- * themes × dark/light and the Appearance corner-radius setting all apply.
- *
- * The root keeps the .home-composer-root class (the shell's :has() overflow
- * rule and the composer's slash-popover anchoring both key off it); .home-dash
- * overrides that class's centered-cluster layout for the full-bleed shell. */
+/* New-chat dashboard — launcher direction 3a ("work-led dashboard"),
+ * relocated from Home to the brand-new chat view (Home went back to the quiet
+ * hearth). A left context rail (project · quick start · task · pick up) beside
+ * a scrolling work board (greeting + filter tabs · open work · recent
+ * threads). ChatView supplies the chrome above and the real composer below, so
+ * only the body ships. Everything is token-driven so the themes × dark/light
+ * and the Appearance corner-radius setting all apply. */
 
-.home-composer-root.home-dash {
+/* ── Embedded shell — fills the empty transcript ────────────────────────── */
+/* The dashboard renders inside the chat transcript (role="log") as the empty
+   state of a brand-new chat. The transcript flexes so the embed stretches to
+   the pane's height; rail and board keep their own internal scroll. The
+   thread's centered reading measure is released — the board wants the pane. */
+.cave-chat-transcript:has(.home-dash--embed) {
   display: flex;
   flex-direction: column;
-  /* Override the base .home-composer-root's centered-cluster layout: column
-     children must STRETCH full-width (the base uses align-items: safe center,
-     which would shrink-wrap the chrome/board/dock to their content width). */
-  align-items: stretch;
-  justify-content: flex-start;
-  width: 100%;
-  height: 100%;
+}
+.cave-chat-transcript:has(.home-dash--embed) .cave-chat-thread {
+  flex: 1;
   min-height: 0;
-  padding: 0;
-  gap: 0;
-  overflow: hidden;
+  max-width: none;
+}
+.home-dash--embed {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
   background: var(--bg-base);
-  transform: none;
-}
-
-/* ── Top chrome ─────────────────────────────────────────────────────────── */
-.home-dash__chrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 13px 22px;
-  border-bottom: 1px solid var(--border-hairline);
-  flex-shrink: 0;
-}
-.home-dash__ident {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-}
-.home-dash__avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(140deg, var(--accent-presence), color-mix(in oklch, var(--accent-presence) 55%, black));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--accent-presence-foreground);
-  flex-shrink: 0;
-}
-.home-dash__name {
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1;
-  white-space: nowrap;
-}
-.home-dash__name-model {
-  color: var(--text-muted);
-  font-weight: 400;
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-xs);
-}
-.home-dash__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  margin-left: 2px;
-  white-space: nowrap;
-}
-.home-dash__status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--color-success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-success) 20%, transparent);
-  flex-shrink: 0;
-}
-.home-dash__chrome-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.home-dash__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 10px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  font-family: var(--font-jetbrains-mono), monospace;
-  max-width: 240px;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.home-dash__chip span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.home-dash__icon-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
-  background: transparent;
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease),
-    border-color var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-.home-dash__icon-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
 }
 
 /* ── Body: rail + board ─────────────────────────────────────────────────── */
@@ -168,51 +65,8 @@
   background: var(--border-hairline);
 }
 
-/* Project card */
-.home-dash__project {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  transition: background var(--duration-fast, 120ms), border-color var(--duration-fast, 120ms);
-}
-.home-dash__project:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-presence);
-}
-.home-dash__project-glyph {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--color-success) 22%, transparent);
-  color: var(--color-success);
-  font: 600 9px var(--font-jetbrains-mono), monospace;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  text-transform: lowercase;
-}
-.home-dash__project-name {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__project-chev {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
+/* Project group — the picker itself is the shared ProjectPicker control;
+   only the path + readiness meta lines are dashboard-specific. */
 .home-dash__project-path {
   font-family: var(--font-jetbrains-mono), monospace;
   font-size: var(--text-2xs);
@@ -396,6 +250,29 @@
   line-height: 1.05;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+/* Identity meta under the headline — harness · model, quiet mono text. */
+.home-dash__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+.home-dash__meta span {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__meta span + span::before {
+  content: "·";
+  margin-right: var(--space-2);
 }
 
 /* Filter tabs */
@@ -587,27 +464,6 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
   flex-shrink: 0;
-}
-
-/* ── Docked composer ────────────────────────────────────────────────────── */
-.home-dash__dock {
-  padding: 14px 22px;
-  border-top: 1px solid var(--border-hairline);
-  background: var(--bg-panel);
-  flex-shrink: 0;
-  /* Let the composer's slash popover escape upward over the board. */
-  overflow: visible;
-  position: relative;
-  z-index: 2;
-}
-.home-dash__dock-inner {
-  max-width: 1360px;
-  margin: 0 auto;
-}
-/* The docked composer keeps its own card styling; neutralize the centered
-   hearth wrapper's vertical auto-margins so it sits flush in the dock band. */
-.home-dash__dock .home-composer-card-wrap {
-  max-width: 100%;
 }
 
 /* ── Responsive: fold the rail under a narrow surface ───────────────────── */
