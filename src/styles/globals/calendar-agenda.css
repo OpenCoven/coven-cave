@@ -450,7 +450,6 @@
     min-height: calc(var(--touch-target) + 4px);
     background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
     backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 
   .chat-scope-tabs [role="tab"] {
@@ -558,7 +557,6 @@
     z-index: 45;
     background: color-mix(in oklch, var(--bg-base) 96%, transparent);
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
   }
 
   .chat-list-dossier > * {

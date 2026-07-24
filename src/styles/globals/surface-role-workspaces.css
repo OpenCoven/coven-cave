@@ -21,7 +21,6 @@
   border-bottom: 1px solid var(--border);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .role-surface-header-title {
@@ -128,7 +127,6 @@
   border-radius: var(--radius-md);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
 }
 
@@ -622,7 +620,6 @@
   border-top: 1px solid var(--border);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .role-surface-drawer-toggle {

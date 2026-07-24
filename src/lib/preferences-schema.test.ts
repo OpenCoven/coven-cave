@@ -308,6 +308,41 @@ assert.throws(
   PreferencesValidationError,
   "the strict validator bounds the familiars map size",
 );
+
+// ── appearance.backdrop.style "off" (cave-kbh1) ──────────────────────────────
+// The explicit no-backdrop choice: a persisted style, always disabled.
+const offNormalized = normalizeCavePreferences({
+  appearance: { backdrop: { style: "off", enabled: true } },
+});
+assert.equal(offNormalized.appearance.backdrop.style, "off", "off round-trips as a persisted style");
+assert.equal(
+  offNormalized.appearance.backdrop.enabled,
+  false,
+  "normalize coerces the off style to disabled — no empty-scrim contradiction can persist",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "sparkles" } } })
+    .appearance.backdrop.style,
+  "image",
+  "an unknown style still defaults to image",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "blaze", enabled: true } } })
+    .appearance.backdrop.enabled,
+  true,
+  "the off coercion leaves the other styles' enablement alone",
+);
+assert.equal(
+  validatePreferencesPatch({ appearance: { backdrop: { style: "off" } } })
+    .appearance?.backdrop?.style,
+  "off",
+  "the strict validator accepts the off style",
+);
+const offApplied = applyPreferencesPatch(createDefaultPreferences(true), {
+  appearance: { backdrop: { style: "off", enabled: false } },
+});
+assert.equal(offApplied.appearance.backdrop.style, "off");
+assert.equal(offApplied.appearance.backdrop.enabled, false);
 assert.throws(
   () => validatePreferencesPatch({
     appearance: { backdrop: { familiars: { ["f".repeat(129)]: true } } },
@@ -343,3 +378,31 @@ assert.throws(
 );
 
 console.log("preferences-schema.test.ts: ok");
+
+// ── Backdrop style option set (cave-99s9) ────────────────────────────────────
+// "image" is the compatible default; unknown styles normalize back to it, the
+// strict patch path rejects them, and the legacy mirror round-trips the choice.
+assert.equal(defaults.appearance.backdrop.style, "image");
+{
+  const normalized = normalizeCavePreferences({ appearance: { backdrop: { style: "blaze" } } });
+  assert.equal(normalized.appearance.backdrop.style, "blaze");
+  const coerced = normalizeCavePreferences({ appearance: { backdrop: { style: "confetti" } } });
+  assert.equal(coerced.appearance.backdrop.style, "image", "unknown styles fall back to image");
+}
+{
+  const patch = validatePreferencesPatch({ appearance: { backdrop: { style: "blaze" } } });
+  assert.equal(patch.appearance?.backdrop?.style, "blaze");
+  assert.throws(
+    () => validatePreferencesPatch({ appearance: { backdrop: { style: "confetti" } } }),
+    PreferencesValidationError,
+    "unknown backdrop styles are rejected",
+  );
+}
+{
+  const prefs = createDefaultPreferences(true);
+  prefs.appearance.backdrop.style = "blaze";
+  const mirrored = preferencesToLegacyStorage(prefs);
+  assert.equal(JSON.parse(mirrored["cave:backdrop:v1"]).style, "blaze", "legacy mirror carries the style");
+  const imported = legacyStorageToPreferencesPatch(mirrored);
+  assert.equal(imported.appearance?.backdrop?.style, "blaze", "legacy import restores the style");
+}

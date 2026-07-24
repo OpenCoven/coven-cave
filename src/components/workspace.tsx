@@ -351,8 +351,7 @@ export function Workspace() {
       // Journal is now a tab inside the Grimoire surface. Every entry point
       // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
       // dashboard links) funnels through setMode, so opening Grimoire on its
-      // Journal tab here covers them all. (Per-familiar journals still live in
-      // Settings → Familiars → Journal.)
+      // Journal tab here covers them all.
       setGrimoireView("journal");
       setModeRaw("grimoire");
       return;
@@ -1422,21 +1421,19 @@ export function Workspace() {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
-    if (skipped) {
-      setOnboardingResolved(true);
-      return;
-    }
     void (async () => {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
+        const queueProjectNeedsRepair = json.steps?.project?.ok === false;
         if (
           shouldApplyStartupOnboardingStatus({
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
-          })
+          }) &&
+          (!skipped || queueProjectNeedsRepair)
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);

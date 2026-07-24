@@ -57,103 +57,10 @@
  *   and centers vertically in the usable workspace (auto block margins split
  *   the root's free space; when the cluster outgrows a short viewport they
  *   collapse to 0 and the root scrolls). */
-.home-hearth-card {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  width: 100%;
-  max-width: min(900px, 100%);
-  margin-inline: auto;
-  padding: 0 var(--space-2);
-
-  margin-block: auto;
-  border: 0;
-  background: transparent;
-}
-
-@media (max-width: 520px) {
-  .home-hearth-card {
-    padding: 0 var(--space-1);
-    margin-block: var(--space-4) auto;
-  }
-}
-
-/* ── Hero ────────────────────────────────────────────────────────────────── */
-.home-composer-hero {
-  text-align: center;
-  margin-bottom: var(--space-5);
-}
-
-.home-composer-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 var(--space-2);
-  min-height: 15px;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
-  opacity: 0;
-  transition: opacity 400ms var(--ease-standard);
-  justify-content: center;
-}
-
-.home-composer-eyebrow.is-ready {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .home-hearth-card {
-    animation: home-cluster-settle 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
-  }
-}
-@keyframes home-cluster-settle {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Presence dot — the brand accent means "something is alive here". */
-.home-composer-eyebrow-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-presence);
-  box-shadow: 0 0 8px color-mix(in oklch, var(--accent-presence) 70%, transparent);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .home-composer-eyebrow-dot {
-    animation: home-dot-pulse 4.5s var(--ease-standard) infinite;
-  }
-}
-
-@keyframes home-dot-pulse {
-  0%, 100% { box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 50%, transparent); }
-  50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
-}
-
-.home-composer-headline {
-  font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
-  font-weight: 500;
-  font-size: clamp(26px, 3vw, 34px);
-  line-height: 1.12;
-  color: color-mix(in oklch, var(--text-primary) 92%, var(--text-muted));
-  letter-spacing: -0.02em;
-  margin: 0 0 var(--space-1);
-}
-
-/* Live-context subtitle: familiar · role · model. */
-.home-composer-sub {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  margin: 0;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The centered hearth card + hero (greeting eyebrow, serif headline, context
+   subtitle) were retired in the launcher 3a redesign — Home is now the
+   full-bleed dashboard shell (home-dashboard.css). Only the composer card
+   wrapper below is still used, docked at the bottom of that shell. */
 
 .home-composer-card-wrap {
   position: relative;

@@ -52,7 +52,7 @@ export function shouldAutoOpenOnboarding(payload: OnboardingStatusPayload): bool
   if (payload.complete) return false;
   const step = (key: string) => payload.steps?.[key]?.ok === true;
   const structuralMissing =
-    !step("covenCli") || !step("covenHome") || !step("adapters");
+    !step("covenCli") || !step("covenHome") || !step("adapters") || !step("project");
   const daemonUpButUnfinished = step("daemon");
   return structuralMissing || daemonUpButUnfinished;
 }

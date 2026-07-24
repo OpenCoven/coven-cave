@@ -134,8 +134,8 @@ function fnBlock(source, name) {
   );
   assert.match(
     prune,
-    /if \(pruned > 0\) invalidateSessionsListCache\(\)/,
-    "the client prune path invalidates only when sessions were actually pruned",
+    /if \(candidates\.length > 0\) invalidateSessionsListCache\(\)/,
+    "the client prune path invalidates whenever candidates were attempted — local tombstones land even when the CLI sacrifice fails (cave-sufj)",
   );
 }
 

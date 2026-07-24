@@ -90,7 +90,10 @@ export function GrimoireLauncher({
   const topRoot = useMemo(() => topMemoryRoot(memory), [memory]);
 
   const hero = items[0] ?? null;
-  const smallRecents = items.slice(1, 5);
+  // Five small recents: hero(2×2) + week(1×2) + 5 + the five fixed cards + tip
+  // fill the 4-column bento to a clean 16-cell rectangle (prototype layout);
+  // four left a ragged 15-cell final row.
+  const smallRecents = items.slice(1, 6);
   const latestMemory = useMemo(
     () => items.find((i) => i.ref.kind === "memory") ?? null,
     [items],

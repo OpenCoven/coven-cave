@@ -89,7 +89,11 @@ assert.match(
 );
 
 const boardView = await readFile(new URL("../components/board-view.tsx", import.meta.url), "utf8");
-assert.match(boardView, /board-search-input/, "Tasks header should expose one search input");
+// The Tasks header search affordance is the tokenized <BoardTokenSearch>
+// (redesign) — the single search input now lives in that component.
+assert.match(boardView, /<BoardTokenSearch/, "Tasks header should mount the tokenized search");
+const boardTokenSearch = await readFile(new URL("../components/board-token-search.tsx", import.meta.url), "utf8");
+assert.match(boardTokenSearch, /board-token-input/, "Token search should expose one search input");
 assert.doesNotMatch(boardView, /label="Labels"/, "Tasks header should not show Labels as a separate filter control");
 assert.doesNotMatch(boardView, /allLabels/, "Tasks view should not build a dedicated labels filter row");
 

@@ -96,10 +96,17 @@ assert.doesNotMatch(source, /familiar-studio__scrim/, "Inline panel must not ren
 assert.doesNotMatch(source, /familiar-studio__drawer/, "Inline panel must not render the fixed drawer root");
 
 // Familiar-specific studio tabs are wired with the same prop shapes the drawer uses.
-for (const tab of ["Identity", "Look", "Brain", "Lifecycle", "Memory"]) {
+for (const tab of ["Identity", "Brain", "Memory"]) {
   assert.match(source, new RegExp("FamiliarStudio" + tab + "Tab"), "Wires the " + tab + " tab body");
 }
-assert.match(source, /<FamiliarStudioLookTab familiar=\{familiar\} allFamiliars=\{resolved\} \/>/, "Look tab gets all resolved familiars for group colors");
+// Look and Lifecycle merged into Identity: the tab strip is exactly these five.
+for (const gone of ["look", "lifecycle", "journal"]) {
+  assert.doesNotMatch(source, new RegExp('id: "' + gone + '"'), "No standalone " + gone + " tab remains");
+}
+assert.match(source, /id: "identity", label: "Identity"/, "Identity leads the tab strip");
+const identityTab = readFileSync(new URL("./familiar-studio-identity-tab.tsx", import.meta.url), "utf8");
+assert.match(identityTab, /<FamiliarStudioLookTab familiar=\{familiar\} allFamiliars=\{allFamiliars\} \/>/, "Identity hosts the Look sections with all resolved familiars for group colors");
+assert.match(source, /allFamiliars=\{resolved\}/, "Identity tab gets the resolved roster for the appearance controls");
 assert.match(source, /<FamiliarStudioMemoryTab familiar=\{familiar\} allFamiliars=\{familiars\} \/>/, "Memory tab gets the raw roster");
 assert.match(source, /VaultPanel/, "Wires the Vault settings panel inside familiar settings");
 assert.match(source, /id: "vault", label: "Vault"/, "Exposes Vault as a familiar settings tab");

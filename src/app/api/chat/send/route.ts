@@ -10,12 +10,19 @@ import {
   loadState,
   recordSessionFamiliar,
   setSessionTitle,
+  setSessionTitleAuto,
 } from "@/lib/cave-config";
 import {
   chatSummaryTitle,
   chatTitleFromPrompt,
   defaultChatTitleForSession,
 } from "@/lib/cave-chat-titles";
+import {
+  isAutoOwnedTitle,
+  isRenameDueAtTurn,
+  normalizeChatAutoRenamePolicy,
+  renameTitleFromLatestExchange,
+} from "@/lib/chat-auto-rename";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -285,6 +292,59 @@ async function autoNameSessionFromFirstExchange(
     if (current && !autoDefaults.has(current)) return;
     if (current === summary) return;
     await setSessionTitle(sessionId, summary);
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * Periodic, context-aware rename (chat-auto-rename.ts). Opt-in via the
+ * `chatAutoRename` policy: once a thread reaches a multiple of `everyTurns`
+ * assistant turns, re-derive its title from the LATEST exchange so a long
+ * conversation's name tracks where it actually went. Never overwrites a title
+ * a person set by hand (provenance in `sessionTitleAuto`). Best effort: any
+ * failure leaves the current title in place. `firstPromptText` seeds the set of
+ * auto-derived defaults the first-exchange name may have left behind.
+ */
+async function maybeAutoRenameFromContext(
+  sessionId: string,
+  firstPromptText: string,
+): Promise<void> {
+  try {
+    const config = await loadConfig();
+    const policy = normalizeChatAutoRenamePolicy(config.chatAutoRename);
+    if (!policy.enabled) return;
+
+    const conversation = await loadConversation(sessionId);
+    const turns = conversation?.turns ?? [];
+    const assistantTurns = turns.filter((t) => t.role === "assistant").length;
+    if (!isRenameDueAtTurn(assistantTurns, policy.everyTurns)) return;
+
+    const lastUser = [...turns].reverse().find((t) => t.role === "user")?.text ?? null;
+    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant")?.text ?? null;
+    const next = renameTitleFromLatestExchange({ userText: lastUser, assistantText: lastAssistant });
+    if (!next) return;
+
+    const state = await loadState();
+    const current = state.sessionTitles[sessionId];
+    if (current === next) return;
+    const firstPrompt = turns.find((t) => t.role === "user")?.text ?? firstPromptText;
+    const autoDefaults = new Set(
+      [defaultChatTitleForSession(sessionId), chatTitleFromPrompt(firstPrompt)].filter(
+        (t): t is string => Boolean(t),
+      ),
+    );
+    if (
+      !isAutoOwnedTitle({
+        current,
+        lastAutoTitle: state.sessionTitleAuto[sessionId],
+        autoDefaults,
+        preserveManualTitles: policy.preserveManualTitles,
+      })
+    ) {
+      return;
+    }
+    await setSessionTitleAuto(sessionId, next);
   } catch {
     /* best effort */
   }
@@ -745,6 +805,9 @@ function openClawChatResponse(args: {
           if (isFirstExchange && !isError) {
             await autoNameSessionFromFirstExchange(sessionId, args.promptText);
           }
+          // Periodic context-aware rename runs on every completed turn (the
+          // cadence gate inside decides when it's actually due).
+          if (!isError) await maybeAutoRenameFromContext(sessionId, args.promptText);
           pushProgress("save-transcript", "Transcript saved", "done");
         }
 
@@ -2388,6 +2451,10 @@ export async function POST(req: Request) {
         await saveConversation(conv);
         if (isFirstExchange && !result.is_error && !cancelledByUser) {
           await autoNameSessionFromFirstExchange(finalSessionId, promptText);
+        }
+        // Periodic context-aware rename on every completed turn (cadence gated inside).
+        if (!result.is_error && !cancelledByUser) {
+          await maybeAutoRenameFromContext(finalSessionId, promptText);
         }
         pushProgress("save-transcript", "Transcript saved", "done");
       }

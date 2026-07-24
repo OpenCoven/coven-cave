@@ -280,8 +280,8 @@ console.log("familiars-view: all assertions passed");
 
 // The detail panel header carries a per-familiar overflow menu — the
 // discoverable entry points for Edit-in-Studio and Remove. Remove must ROUTE
-// to the Studio lifecycle tab (the canonical confirm + undo + tombstone flow),
-// never confirm or DELETE from this surface.
+// to the Studio Identity tab (its lifecycle section owns the canonical
+// confirm + undo + tombstone flow), never confirm or DELETE from this surface.
 assert.match(
   source,
   /aria-label=\{`\$\{familiar\.display_name\} options`\}[\s\S]{0,600}openFamiliarStudio\(familiar\.id, "identity"\)/,
@@ -289,13 +289,13 @@ assert.match(
 );
 assert.match(
   source,
-  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "lifecycle"\)[\s\S]{0,120}Remove familiar/,
-  "Remove familiar routes to the Studio lifecycle tab where the canonical confirm lives",
+  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "identity"\)[\s\S]{0,120}Remove familiar/,
+  "Remove familiar routes to the Studio Identity tab where the canonical confirm lives",
 );
 assert.doesNotMatch(
   source,
   /fetch\([^)]*\/api\/familiars\/[^)]*\{\s*method:\s*"DELETE"/,
-  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle tab",
+  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle section",
 );
 
 // Sessions tab: each row keeps its open-in-chat primary action AND gains a

@@ -30,6 +30,7 @@ import path from "node:path";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
+let cachedToolPath: string | null = null;
 
 export type CovenLaunchCommand = {
   command: string;
@@ -452,26 +453,23 @@ export function covenAdapterDirsEnvValue(
  * a Finder-spawned cave can still resolve nested tooling (codex, claude,
  * git, gh, …).
  */
-export function covenSpawnEnv(): NodeJS.ProcessEnv {
-  if (cachedPath === null) {
-    const fromSystem =
-      process.platform === "win32" ? windowsRegistryPath() : loginShellPath();
-    const prependedDirs = candidateDirs();
-    const parts = [
-      ...prependedDirs,
-      ...(fromSystem ? fromSystem.split(path.delimiter) : []),
-      ...(process.env.PATH ? process.env.PATH.split(path.delimiter) : []),
-    ];
-    const seen = new Set<string>();
-    const dedup: string[] = [];
-    for (const p of parts) {
-      if (!p || seen.has(p)) continue;
-      seen.add(p);
-      dedup.push(p);
-    }
-    cachedPath = dedup.join(path.delimiter);
-  }
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: cachedPath };
+function augmentedSpawnPath(preferLaunchPath: boolean): string {
+  const fromSystem = process.platform === "win32" ? windowsRegistryPath() : loginShellPath();
+  const launchPath = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
+  const systemPath = fromSystem ? fromSystem.split(path.delimiter) : [];
+  const candidates = candidateDirs();
+  // `coven` intentionally prefers its managed install locations over a stale
+  // shell binary. General Queue tools must do the opposite: a desktop launch
+  // should honor the user's PATH before falling back to Cave's helpful extras.
+  const parts = preferLaunchPath
+    ? [...launchPath, ...systemPath, ...candidates]
+    : [...candidates, ...systemPath, ...launchPath];
+  const seen = new Set<string>();
+  return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path.delimiter);
+}
+
+function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,
@@ -489,8 +487,26 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
   return scrubSidecarInternalEnv(env);
 }
 
+export function covenSpawnEnv(): NodeJS.ProcessEnv {
+  cachedPath ??= augmentedSpawnPath(false);
+  return spawnEnv(cachedPath);
+}
+
+/**
+ * Augmented, scrubbed environment for user-selected project tooling (Git,
+ * Beads, GitHub CLI). Preserve the actual launch/login PATH before Cave's
+ * fallback directories so Finder/Spotlight launches behave like the user's
+ * shell and a deliberately selected tool is never shadowed by Cave's own
+ * binary-discovery priority.
+ */
+export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
+  cachedToolPath ??= augmentedSpawnPath(true);
+  return spawnEnv(cachedToolPath);
+}
+
 export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
   cachedPath = null;
+  cachedToolPath = null;
   return covenSpawnEnv();
 }
 
@@ -502,5 +518,6 @@ export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
 export function refreshCovenBin(): string {
   cachedBin = null;
   cachedPath = null;
+  cachedToolPath = null;
   return covenBin();
 }

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { NextResponse } from "next/server";
-import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
+import { NextResponse } from "next/server.js";
+import { caveToolSpawnEnv } from "@/lib/coven-bin";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import {
@@ -36,7 +36,7 @@ const MERGED_PR_LIMIT = "30";
 async function ghPrList(repoRoot: string, args: string[]): Promise<unknown> {
   const { stdout } = await execFileAsync("gh", args, {
     cwd: repoRoot, // cwd's repo → gh targets the right OWNER/REPO without hardcoding
-    env: scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLED: "1" }),
+    env: { ...caveToolSpawnEnv(), GH_PROMPT_DISABLED: "1" },
     timeout: GH_TIMEOUT_MS,
     maxBuffer: MAX_GH_BUFFER,
   });
@@ -61,7 +61,9 @@ export async function GET(req: Request) {
   if (forbidden) return forbidden;
 
   const url = new URL(req.url);
-  const root = await resolveRepoRoot(url.searchParams.get("projectRoot") || process.cwd());
+  const projectRoot = url.searchParams.get("projectRoot");
+  if (!projectRoot) return NextResponse.json({ ok: false, error: "projectRoot is required" }, { status: 400 });
+  const root = await resolveRepoRoot(projectRoot);
   if (!root.ok) {
     if ((root.error || "path not allowed") === "path not allowed") {
       return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });

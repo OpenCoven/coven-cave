@@ -16,12 +16,30 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
   return (CODE_WORKBENCH_TABS as readonly string[]).includes(value ?? "");
 }
 
-/** Top-level surface tabs: the session workbench, or the absorbed GitHub view. */
-export const CODE_TOP_TABS = ["sessions", "github"] as const;
+/** Top-level surface tabs: the session workbench, then GitHub content split into
+ *  its own tabs (PRs · Issues · Reviews) — the single generic "github" tab was
+ *  replaced so each content type lands directly on its own list. */
+export const CODE_TOP_TABS = ["sessions", "prs", "issues", "reviews"] as const;
 export type CodeTopTab = (typeof CODE_TOP_TABS)[number];
 
 export function isCodeTopTab(value: string | null | undefined): value is CodeTopTab {
   return (CODE_TOP_TABS as readonly string[]).includes(value ?? "");
+}
+
+/** The GitHub content tabs (every top tab except the session workbench). */
+export const CODE_GITHUB_TABS = ["prs", "issues", "reviews"] as const;
+export type CodeGithubTab = (typeof CODE_GITHUB_TABS)[number];
+
+export function isCodeGithubTab(value: string | null | undefined): value is CodeGithubTab {
+  return (CODE_GITHUB_TABS as readonly string[]).includes(value ?? "");
+}
+
+/** Normalize a raw `ctab` value to a top tab. The legacy `github` value (from
+ *  deep links minted before the split) lands on PRs so old links keep working. */
+export function normalizeCodeTopTab(raw: string | null | undefined): CodeTopTab {
+  if (isCodeTopTab(raw)) return raw;
+  if (raw === "github") return "prs";
+  return "sessions";
 }
 
 /** A project group in the session rail: one repo/root, newest work first. */
@@ -143,7 +161,7 @@ export function parseCodeDeepLink(params: Pick<URLSearchParams, "get">): CodeDee
   const rawTab = params.get("wtab");
   return {
     sessionId: params.get("session") || null,
-    topTab: isCodeTopTab(rawTop) ? rawTop : "sessions",
+    topTab: normalizeCodeTopTab(rawTop),
     workbenchTab: isCodeWorkbenchTab(rawTab) ? rawTab : "diff",
   };
 }

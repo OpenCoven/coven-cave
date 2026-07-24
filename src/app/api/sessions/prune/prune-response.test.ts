@@ -39,4 +39,19 @@ const none = prunePayload({ dryRun: true, count: 0, method: "daemon" });
 assert.equal(has(none, "wouldPrune"), 0);
 assert.equal(none.pruned, 0);
 
+// --- route source pins (cave-sufj): the client fallback must delete daemon
+// rows via `coven sacrifice`, not DELETE /api/v1/sessions/{id} — the daemon
+// has no HTTP delete route, so that path silently no-oped every prune.
+import { readFileSync } from "node:fs";
+const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+assert.match(route, /"sacrifice", s\.id, "--yes"/, "daemon rows are deleted via coven sacrifice");
+assert.match(route, /await sacrificeSessionLocal\(s\.id\);/, "each swept row is tombstoned locally regardless");
+assert.match(route, /isValidSessionId\(s\.id\)/, "session ids are validated before reaching argv");
+assert.doesNotMatch(route, /method: "DELETE"/, "no fallback DELETE to a route the daemon doesn't have");
+assert.match(
+  route,
+  /if \(candidates\.length > 0\) invalidateSessionsListCache\(\);/,
+  "cache invalidates when anything was attempted — tombstones land even on CLI failure",
+);
+
 console.log("prune-response: all assertions passed");

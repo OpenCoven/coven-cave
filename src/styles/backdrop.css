@@ -39,6 +39,30 @@ html[data-backdrop] .cave-backdrop-layer::after {
   );
 }
 
+/* ── Blaze style (cave-99s9) ─────────────────────────────────────────────────
+   The animated option: the vendored Canvas UI Blaze renders inside the same
+   fixed layer the image uses, so enablement, the intensity opacity, the
+   scrim above, and the glass contracts below all apply unchanged. The canvas
+   is decorative and inert (aria-hidden; the layer already ignores pointers). */
+.cave-backdrop-blaze {
+  position: absolute;
+  inset: 0;
+}
+
+.cave-backdrop-blaze__fill {
+  width: 100%;
+  height: 100%;
+}
+
+/* No frozen fire frame: reduced motion drops the animated style entirely
+   (the component also skips mounting — this rule is the CSS belt to that
+   suspender). The static image style is unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-backdrop] .cave-backdrop-layer[data-backdrop-style="blaze"] {
+    display: none;
+  }
+}
+
 /* The big opaque paints over the layer go translucent while a backdrop
    surface (home/chat) is frontmost — the layer component flips
    html[data-backdrop-on]. Side panes (nav, list) keep their own solid
@@ -66,7 +90,6 @@ html[data-backdrop-on] .cave-chat-linear .cave-chat-thread,
 html[data-backdrop-on] .cave-group-chat-shell {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
@@ -80,7 +103,6 @@ html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
    behind it so the title and session actions stay steady. */
 html[data-backdrop-on] .cave-chat-linear-header {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* One-step contrast lift for the quiet text while the image is on — meta
@@ -97,16 +119,16 @@ html[data-backdrop-on] .cave-group-chat-shell {
    (faces, props) fights the copy. Ground the centered content clusters
    without dulling the scene at its edges. */
 
-/* Home: one uniform, theme-derived readability surface on the existing
-   hearth card (cave-hct3). The old full-area radial ground behind the whole
-   column read as a blurry oval over busy imagery; the card is the thing that
-   needs the contrast, so deepen ITS fill instead and leave the scene visible
-   around it. */
-html[data-backdrop-on] .home-hearth-card {
-  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
-  /* --radius-xl (not a hard-coded px / square corner) so the hearth glass
-     follows the Appearance → Corner radius setting like the chat glass. */
-  border-radius: var(--radius-xl);
+/* Home (launcher 3a dashboard): a glass ground over the whole surface — the
+   same idiom the Familiar tab earns, since the dashboard is another dense
+   surface whose section labels, greeting, and board rows sit straight on the
+   photo. The image reads as a soft tinted wash behind the board content, while
+   the rail and docked composer keep their own solid --bg-panel fills, so they
+   stay grounded and the scene shows through the content area only. (The old
+   centered hearth card is gone; this replaces its fill.) */
+html[data-backdrop-on] .home-composer-root.home-dash {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* Chat landing (no thread yet): the greeting/identity/suggestions cluster
@@ -114,7 +136,6 @@ html[data-backdrop-on] .home-hearth-card {
 html[data-backdrop-on] .cave-chat-empty-shell {
   background: color-mix(in oklch, var(--bg-base) 55%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-radius: var(--radius-xl);
   padding: clamp(16px, 3vh, 28px) clamp(14px, 2.5vw, 24px);
 }
@@ -127,7 +148,6 @@ html[data-backdrop-on] .cave-chat-empty-shell {
 html[data-backdrop-on] .familiar-tab {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(50px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(50px) saturate(var(--glass-saturate));
   border-radius: var(--radius-xl);
   --text-muted: var(--text-secondary);
 }
@@ -149,6 +169,12 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .familiar-tab {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
   }
+
+  /* Same for the Home dashboard ground — no blur means a see-through wash is
+     unreadable, so go near-opaque over the photo. */
+  html[data-backdrop-on] .home-composer-root.home-dash {
+    background: color-mix(in oklch, var(--bg-base) 92%, transparent);
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -162,23 +188,22 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .cave-group-chat-shell {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
     padding-inline: 0;
   }
 
-  /* Same reasoning for the new grounds: no image → no deepened fill; restore
-     the hearth card's normal translucent panel fill. */
-  html[data-backdrop-on] .home-hearth-card {
-    background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  /* Same reasoning for the new grounds: no image → no glass over nothing;
+     restore the Home dashboard's normal opaque base surface. */
+  html[data-backdrop-on] .home-composer-root.home-dash {
+    background: var(--bg-base);
+    backdrop-filter: none;
   }
 
   html[data-backdrop-on] .cave-chat-empty-shell {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     padding: 0;
   }
 
@@ -186,7 +211,6 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .familiar-tab {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 

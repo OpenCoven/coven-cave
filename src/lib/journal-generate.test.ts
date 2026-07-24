@@ -10,6 +10,26 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   assert.match(p, /Reply to Sage/, "embeds the item titles");
 }
 
+// ── The prompt is the rendered Generation-prompt template (cave-hlic) ────────
+// The journal UI shows an editable template with {familiar}/{date}/{context}
+// placeholders; what the user reads there is exactly what gets sent.
+{
+  const p = buildReflectionPrompt("ctx lines", {
+    template: "Speak as {familiar} about {date}.\n{context}",
+    familiar: "Sage",
+    date: "June 20, 2026",
+  });
+  assert.equal(p, "Speak as Sage about June 20, 2026.\nctx lines", "a custom template renders verbatim");
+}
+{
+  const p = buildReflectionPrompt("the day's activity", { template: "No context placeholder here." });
+  assert.match(p, /the day's activity/, "context is still appended when a custom template drops {context}");
+}
+{
+  const p = buildReflectionPrompt("c", { template: null });
+  assert.match(p, /first-person/i, "a null template falls back to the default");
+}
+
 // ── next-paths stripped from generated reflections (cave-onp8) ───────────────
 // /api/chat/send appends the next-paths directive to every prompt and a
 // compliant familiar echoes the block back; the journal has no chip row, so

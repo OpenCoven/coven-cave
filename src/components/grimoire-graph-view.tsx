@@ -952,12 +952,12 @@ export function GrimoireGraphView({
               </label>
             </div>
             {memoryTruncated && meta ? (
-              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--text-muted)]">
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
                 Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files.
               </p>
             ) : null}
             {scanError ? (
-              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--color-warning)]">
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--color-warning)]">
                 Full scan unavailable — showing knowledge-vault connections only.
               </p>
             ) : null}
@@ -988,7 +988,7 @@ export function GrimoireGraphView({
       </div>
 
       {/* Status line. */}
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] backdrop-blur">
+      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)] backdrop-blur">
         {summary}
         {scanning ? " · scanning…" : ""}
       </div>

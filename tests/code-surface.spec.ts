@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
 // workbench — session rail grouped by project, per-session workbench
-// (Diff | Files | Terminal | PR), inspector column, and a GitHub top tab.
+// (Diff | Files | Terminal | PR), inspector column, and the GitHub content top
+// tabs (PRs | Issues | Reviews).
 // Default-on since phase 2 (cave-m6ys); since cave-cc5r it lives as the
 // Coding familiar's Role Surface room (`?mode=code` aliases onto
 // `surface:code`), so the mocked familiar carries the explicit
@@ -91,11 +92,15 @@ test.describe("code surface (Coding familiar's room)", () => {
     await base(page);
     await page.goto("/?mode=code");
 
-    // Top tabs: Sessions active, GitHub reachable (the absorbed surface).
+    // Top tabs: Sessions active, then the GitHub content tabs (PRs · Issues ·
+    // Reviews) that replaced the single generic GitHub tab.
     const topTabs = page.getByRole("tablist", { name: "Code surface" });
     await expect(topTabs).toBeVisible({ timeout: 30_000 });
     await expect(topTabs.getByRole("tab", { name: "Sessions" })).toHaveAttribute("aria-selected", "true");
-    await expect(topTabs.getByRole("tab", { name: "GitHub" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "PRs" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "Issues" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "Reviews" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "GitHub", exact: true })).toHaveCount(0);
 
     // Rail: both sessions listed under their project group.
     const rail = page.getByRole("navigation", { name: "Coding sessions" });

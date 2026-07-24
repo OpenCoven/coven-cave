@@ -8,12 +8,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/ui/search-input";
 import { Modal } from "@/components/ui/modal";
-import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
+import { subscribeToQueueProjectSelection, type QueueProjectSelection } from "@/lib/queue-project-selection";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
@@ -110,15 +109,33 @@ type FetchedQueue = {
 };
 
 type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary[]; merged?: MergedPrRef[]; error?: string };
+type QueueReadiness = {
+  ok: boolean;
+  code?: string;
+  message: string;
+  canGenerate: boolean;
+  project: { id: string; name: string; root: string } | null;
+};
 
 // Either source alone still renders a useful queue, so a single failing
 // adapter DEGRADES the surface (with a truthful banner) instead of failing the
 // whole load: beads-only when the gh PR bridge is down, PRs-only when the
 // beads adapter is down. Only both failing rejects — then there is genuinely
 // nothing to show.
-async function fetchQueue(signal: AbortSignal, force = false): Promise<FetchedQueue> {
+async function fetchQueue(projectRoot: string, signal: AbortSignal): Promise<FetchedQueue> {
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue", force);
+  const query = `projectRoot=${encodeURIComponent(projectRoot)}`;
+  const readJson = async (url: string): Promise<QueueSource> => {
+    const response = await fetch(url, { cache: "no-store", signal });
+    return response.json() as Promise<QueueSource>;
+  };
+  // The Queue always supplies its explicitly selected project. In particular,
+  // do not let a packaged desktop sidecar substitute its application-resource
+  // cwd for the user's repository.
+  const data = await Promise.allSettled([
+    readJson(`/api/beads?mode=ready&${query}`),
+    readJson(`/api/beads/prs?${query}`),
+  ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const [beadsSettled, prsSettled] = data;
 
@@ -162,6 +179,9 @@ function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
 export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false, activeFamiliarId }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
+  const [readiness, setReadiness] = useState<QueueReadiness | null>(null);
+  const [readinessFailure, setReadinessFailure] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [beadsDegraded, setBeadsDegraded] = useState(false);
@@ -177,6 +197,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | "p0" | "p1" | "p2plus">("all");
   const [sortMode, setSortMode] = useState<"priority" | "recent">("priority");
+  // Scope segment (queue redesign): All vs. Unassigned. "Unassigned" narrows to
+  // work no familiar has picked up yet (the fastest thing to claim); it composes
+  // with — does not replace — the per-familiar rollup chips below it.
+  const [scope, setScope] = useState<"all" | "unassigned">("all");
   // Bead detail drawer — the id being inspected, null = closed.
   const [detailId, setDetailId] = useState<string | null>(null);
   // Per-lane disclosure + show-all state. Collapse persists across sessions;
@@ -188,10 +212,36 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const queueSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const restoreQueueFocusRef = useRef(false);
+  const announcedRef = useRef(false);
   // True once a load has landed WITH PR-bridge data. A later bridge failure is
   // then a refresh failure (keep the richer on-screen picture + inline retry
   // banner) rather than a degradation (which would silently drop PR lanes).
   const hadPrDataRef = useRef(false);
+  const activeProjectRootRef = useRef<string | null>(null);
+
+  const resetForProject = useCallback((project: QueueProjectSelection | null) => {
+    const surface = queueSurfaceRef.current;
+    const focusedQueueControl = surface?.contains(document.activeElement) ?? false;
+    activeProjectRootRef.current = project?.root ?? null;
+    hadPrDataRef.current = false;
+    announcedRef.current = false;
+    setQueue(null);
+    setReadiness(null);
+    setReadinessFailure(null);
+    setError(null);
+    setBeadsDegraded(false);
+    setPrsDegraded(null);
+    setLastUpdated(null);
+    setBusyId(null);
+    setDetailId(null);
+    setEvidenceAdded(new Set());
+    if (focusedQueueControl) {
+      restoreQueueFocusRef.current = true;
+      surface?.focus({ preventScroll: true });
+    }
+  }, []);
   // Re-render ~once a minute so the header freshness and per-card ages stay
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
@@ -218,8 +268,30 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    let readinessResolved = false;
     try {
-      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal, force);
+      const readinessResponse = await fetch("/api/queue/readiness", { cache: "no-store", signal: ctrl.signal });
+      const readinessJson = (await readinessResponse.json()) as { ok?: boolean; readiness?: QueueReadiness; error?: string };
+      const nextReadiness = readinessJson.readiness;
+      if (!readinessResponse.ok || !readinessJson.ok || !nextReadiness) {
+        throw new Error(readinessJson.error || "Couldn't check the Queue project");
+      }
+      if (seq !== loadSeq.current) return;
+      setReadinessFailure(null);
+      readinessResolved = true;
+      const nextRoot = nextReadiness.project?.root ?? null;
+      if (activeProjectRootRef.current !== nextRoot) {
+        // A selected repository is an isolation boundary. Do not retain cards,
+        // failure state, detail selection, or evidence from the prior project.
+        resetForProject(nextReadiness.project);
+      }
+      setReadiness(nextReadiness);
+      if (!nextReadiness.ok || !nextReadiness.project) {
+        setQueue(null);
+        setError(nextReadiness.message);
+        return;
+      }
+      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(nextReadiness.project.root, ctrl.signal);
       if (seq !== loadSeq.current) return; // a newer load won
       if (!prsOk && hadPrDataRef.current) {
         // The bridge worked before and just failed — keep earlier data on
@@ -239,18 +311,60 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       // Keep whatever data is on screen — the render picks between the
       // full-surface empty state (no data yet) and the inline refresh banner.
       setError(err instanceof Error ? err.message : "Failed to load the queue");
+      if (!readinessResolved) setReadinessFailure(err instanceof Error ? err.message : "Couldn't check the Queue project");
     } finally {
       if (seq === loadSeq.current) setHasLoaded(true);
     }
-  }, []);
+  }, [resetForProject]);
+
+  const generateQueue = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const response = await fetch("/api/queue/readiness", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "generate", projectId: readiness?.project?.id }),
+      });
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; readiness?: QueueReadiness } | null;
+      if (!response.ok || !json?.ok) {
+        // Another Cave window can change the persisted selection while this
+        // Generate request is in flight. The route returns that newer
+        // readiness on 409: adopt it immediately so a retry targets B, not
+        // the stale A button the user originally pressed.
+        if (response.status === 409 && json?.readiness) {
+          resetForProject(json.readiness.project);
+          setReadiness(json.readiness);
+          setError(json.error || json.readiness.message);
+          void load(true);
+          return;
+        }
+        throw new Error(json?.error || "Couldn't generate the Queue workspace");
+      }
+      await load(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't generate the Queue workspace");
+    } finally {
+      setGenerating(false);
+    }
+  }, [generating, load, readiness?.project?.id, resetForProject]);
 
   useEffect(() => {
     void load();
     return () => abortRef.current?.abort();
   }, [load]);
 
+  useEffect(() => {
+    return subscribeToQueueProjectSelection((project) => {
+      // Selection is an isolation boundary even if its readiness request is
+      // unavailable. Clear all prior-project controls synchronously so a
+      // transient B failure cannot leave actionable cards from A on screen.
+      resetForProject(project);
+      void load(true);
+    });
+  }, [load, resetForProject]);
+
   // Announce the actionable count once the first load settles.
-  const announcedRef = useRef(false);
   useEffect(() => {
     if (!hasLoaded || announcedRef.current || !queue) return;
     announcedRef.current = true;
@@ -260,6 +374,15 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         : `Queue loaded: ${queue.actionable} actionable of ${queue.total}.`,
     );
   }, [hasLoaded, queue, announce]);
+
+  // The selected project can replace the focused row action with a loading
+  // state. Keep keyboard focus on the Queue surface, then restore it there
+  // after the new project settles instead of dropping users onto document body.
+  useEffect(() => {
+    if (!restoreQueueFocusRef.current || !hasLoaded || (!queue && !error)) return;
+    restoreQueueFocusRef.current = false;
+    queueSurfaceRef.current?.focus({ preventScroll: true });
+  }, [hasLoaded, queue, error]);
 
   usePausablePoll(() => void load(true), 30_000, { pauseWhileInputActive: true });
 
@@ -275,10 +398,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runAction = useCallback(
     async (item: WorkQueueItem, action: "claim" | "close") => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
-        const body: Record<string, string> = { action, id };
+        const body: Record<string, string> = { action, id, projectRoot };
         if (action === "close") body.reason = item.merged ? `Merged in PR #${item.merged.number}` : "Completed";
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -288,7 +412,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
@@ -296,7 +419,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Handoff note: appends a comment to the bead (the recorded verification
@@ -306,19 +429,23 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     async (item: WorkQueueItem, text: string): Promise<boolean> => {
       const id = item.bead?.id;
       const comment = text.trim();
-      if (!id || !comment) return false;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !comment || !projectRoot) return false;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "comment", id, comment }),
+          body: JSON.stringify({ action: "comment", id, comment, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "comment failed");
+        // A comment can complete after the user selects a different Queue
+        // project. Its evidence belongs only to the root that initiated it;
+        // otherwise an equal bead id in the new project could unlock Close.
+        if (activeProjectRootRef.current !== projectRoot) return false;
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -328,7 +455,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Claim-for-familiar: same claim action, but the bead lands on the picked
@@ -337,18 +464,18 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runClaimFor = useCallback(
     async (item: WorkQueueItem, familiar: ResolvedFamiliar) => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "claim", id, assignee: familiar.id }),
+          body: JSON.stringify({ action: "claim", id, assignee: familiar.id, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
@@ -356,7 +483,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // File a bead for an unlinked attention-strip PR: bd create with the PR's
@@ -366,6 +493,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // can drop its busy state truthfully (cave-p63a).
   const runFileBead = useCallback(
     async (pr: PullRequestSummary): Promise<boolean> => {
+      const projectRoot = readiness?.project?.root;
+      if (!projectRoot) return false;
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -376,13 +505,13 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
             externalRef: `gh-${pr.number}`,
             labels: ["from-pr"],
+            projectRoot,
           }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -393,7 +522,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         return false;
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Search matches title, bead id, and PR number; priority bands map P2+
@@ -421,10 +550,16 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     };
     const recency = (item: WorkQueueItem): number =>
       Date.parse(item.pr?.updatedAt ?? item.merged?.mergedAt ?? item.bead?.updated_at ?? "") || 0;
+    const matchesScope = (item: WorkQueueItem): boolean =>
+      scope === "all" || item.familiar === "unassigned";
     return queue.lanes
       .map((lane) => {
         let items = lane.items.filter(
-          (i) => (!familiarFilter || i.familiar === familiarFilter) && matchesSearch(i) && matchesPriority(i),
+          (i) =>
+            (!familiarFilter || i.familiar === familiarFilter) &&
+            matchesScope(i) &&
+            matchesSearch(i) &&
+            matchesPriority(i),
         );
         // "priority" keeps buildWorkQueue's deterministic triage order;
         // "recent" re-sorts the filtered copy without touching queue state
@@ -433,15 +568,30 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         return { ...lane, items };
       })
       .filter((lane) => lane.items.length > 0);
-  }, [queue, familiarFilter, search, priorityFilter, sortMode]);
+  }, [queue, familiarFilter, scope, search, priorityFilter, sortMode]);
 
-  if (!hasLoaded) {
+  // Scope counts for the segment (unfiltered by search/priority/familiar — the
+  // segment shows the whole-queue split, like the meta row's totals).
+  const scopeCounts = useMemo(() => {
+    if (!queue) return { all: 0, unassigned: 0 };
+    let unassigned = 0;
+    for (const lane of queue.lanes) {
+      for (const item of lane.items) if (item.familiar === "unassigned") unassigned += 1;
+    }
+    return { all: queue.total, unassigned };
+  }, [queue]);
+
+  // A project-selection event intentionally clears the prior Queue before the
+  // next readiness response arrives. Render a short loading state during that
+  // gap rather than dereferencing the removed Queue or retaining its controls.
+  if (!hasLoaded || (!queue && !error)) {
     return (
-      <div className="fwq" aria-busy>
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1} aria-busy>
         <header className="surface-compact-header">
           {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
         </header>
         <div className="fwq-body">
+          <p role="status" aria-live="polite" className="sr-only">Loading the selected Queue project…</p>
           <SkeletonRows count={6} />
         </div>
       </div>
@@ -449,17 +599,38 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   }
 
   if (error && !queue) {
+    const canGenerate = readiness?.canGenerate === true;
+    const readinessUnavailable = readinessFailure !== null;
+    const sourcesUnavailable = !readinessUnavailable && readiness?.ok === true && readiness.project !== null;
+    const selectionRemediable = readiness?.code === "no-project"
+      || readiness?.code === "project-missing"
+      || readiness?.code === "project-not-allowed"
+      || readiness?.code === "not-git-repository"
+      || readiness?.code === "project-not-git-root"
+      || readiness?.code === "project-storage-error";
+    const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness?.project !== null;
     return (
-      <div className="fwq">
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline="Couldn't load the queue"
-            subtitle={error}
+            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : canGenerate ? "Generate your Queue" : projectUnavailable ? "Queue project needs attention" : "Queue needs a project"}
+            subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
-              <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
-                Retry
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                {readinessUnavailable || sourcesUnavailable || projectUnavailable ? null : canGenerate ? (
+                  <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
+                    Generate
+                  </Button>
+                ) : (
+                  <Button variant="secondary" leadingIcon="ph:folder-open" onClick={() => window.dispatchEvent(new Event("cave:onboarding-open"))}>
+                    Choose project
+                  </Button>
+                )}
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
+                  Retry
+                </Button>
+              </div>
             }
           />
         </div>
@@ -470,30 +641,67 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const q = queue!;
 
   return (
-    <div className="fwq">
-      {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
-          Marketplace / Tasks / Grimoire): small title, live summary inline
-          (with a truthful "updated Xm ago" readout), Refresh on the right. */}
-      <header className="surface-compact-header">
-        {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
-        <p className="surface-compact-summary">
-          {q.total === 0
-            ? "No open PRs or ready beads."
-            : `${q.actionable} actionable · ${q.total} total${q.stale ? ` · ${q.stale} stale` : ""}`}
-          {lastUpdated ? <span className="fwq-updated"> · updated {relativeTime(lastUpdated)}</span> : null}
+    <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
+      {/* Meta row (queue redesign) — the live summary with a truthful
+          "updated Xm ago" readout, Refresh on the right. The surface title +
+          Tasks/Queue tabs live in the hosting board header (embedded). */}
+      <header className="fwq-meta">
+        {embedded ? null : <h1 className="fwq-meta-title">Queue</h1>}
+        <p className="fwq-meta-summary">
+          {q.total === 0 ? (
+            "No open PRs or ready beads."
+          ) : (
+            <>
+              <span className="fwq-meta-strong">{q.actionable}</span> actionable
+              <span className="fwq-meta-sep">·</span>
+              <span className="fwq-meta-count">{q.total}</span> total
+              {q.stale ? (
+                <>
+                  <span className="fwq-meta-sep">·</span>
+                  {q.stale} stale
+                </>
+              ) : null}
+            </>
+          )}
+          {lastUpdated ? (
+            <>
+              <span className="fwq-meta-sep">·</span>updated {relativeTime(lastUpdated)}
+            </>
+          ) : null}
         </p>
-        <div className="surface-compact-actions">
-          <Button
-            variant="ghost"
-            size="sm"
-            leadingIcon="ph:arrow-clockwise"
-            onClick={() => void load(true)}
-            aria-label="Refresh queue"
-          >
-            Refresh
-          </Button>
-        </div>
+        <button
+          type="button"
+          className="fwq-refresh"
+          onClick={() => void load(true)}
+          aria-label="Refresh queue"
+        >
+          <Icon name="ph:arrow-clockwise" width={14} className="fwq-refresh-icon" aria-hidden />
+          Refresh
+        </button>
       </header>
+
+      {/* Scope segment — All vs. Unassigned (whole-queue split, unfiltered). */}
+      <div className="fwq-scope-row">
+        <div className="fwq-seg" role="group" aria-label="Filter by scope">
+          {(
+            [
+              ["all", "All", scopeCounts.all],
+              ["unassigned", "Unassigned", scopeCounts.unassigned],
+            ] as const
+          ).map(([value, label, count]) => (
+            <button
+              key={value}
+              type="button"
+              className={`fwq-seg-btn${scope === value ? " is-active" : ""}`}
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+            >
+              <span>{label}</span>
+              <span className="fwq-seg-count">{count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {q.byFamiliar.length > 0 ? (
         <div className="fwq-familiars" role="group" aria-label="Filter by familiar">
@@ -531,7 +739,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           aria-label="Search the queue"
           containerClassName="fwq-toolbar-search"
         />
-        <div className="fwq-toolbar-group" role="group" aria-label="Filter by priority">
+        <div className="fwq-seg" role="group" aria-label="Filter by priority">
           {(
             [
               ["all", "All"],
@@ -543,7 +751,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             <button
               key={value}
               type="button"
-              className={`fwq-chip${priorityFilter === value ? " is-active" : ""}`}
+              className={`fwq-seg-btn fwq-seg-btn--sm${priorityFilter === value ? " is-active" : ""}`}
               aria-pressed={priorityFilter === value}
               onClick={() => setPriorityFilter(value)}
             >
@@ -553,12 +761,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
         <button
           type="button"
-          className="fwq-chip fwq-toolbar-sort"
+          className="fwq-sort"
           aria-pressed={sortMode === "recent"}
           onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
           title={sortMode === "priority" ? "Sort by recently updated" : "Sort by priority and oldest"}
         >
-          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={13} aria-hidden />
+          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={14} aria-hidden />
           {sortMode === "priority" ? "Priority · oldest" : "Recently updated"}
         </button>
       </div>
@@ -595,7 +803,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
       ) : null}
 
-      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load(true)} familiarId={activeFamiliarId} />
+      <AsanaQueueStrip
+        onOpenUrl={onOpenUrl}
+        onFiledBead={() => void load(true)}
+        familiarId={activeFamiliarId}
+        projectRoot={readiness?.project?.root}
+      />
 
       <div className="fwq-body">
         {q.total === 0 ? (
@@ -622,6 +835,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                 variant="secondary"
                 onClick={() => {
                   setFamiliarFilter(null);
+                  setScope("all");
                   setSearch("");
                   setPriorityFilter("all");
                 }}
@@ -651,7 +865,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                       className={`fwq-lane-caret${collapsed ? "" : " is-open"}`}
                       aria-hidden
                     />
-                    <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
+                    <Icon name={LANE_ICON[lane.key]} width={14} className="fwq-lane-icon" aria-hidden />
                     <span className="fwq-lane-title">{lane.title}</span>
                     <span className="fwq-lane-count">{lane.items.length}</span>
                   </button>
@@ -709,6 +923,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       {detailId ? (
         <BeadDetailModal
           id={detailId}
+          projectRoot={readiness?.project?.root ?? ""}
           onClose={() => setDetailId(null)}
           onClaim={() => {
             const item = q.lanes.flatMap((l) => l.items).find((i) => i.bead?.id === detailId);

@@ -2,10 +2,10 @@
 
 /**
  * Inline GitHub cards for chat turns (design: docs/chat-github-integration.md
- * §2). W1a scope: IssueCard/PRCard hydrate from /api/github/item; commit /
- * run / review-thread descriptors render an attrs-only compact card (their
- * hydrated forms land with W1b). Cards degrade to a plain link on any fetch
- * failure — never an empty box.
+ * §2). IssueCard/PRCard hydrate from /api/github/item; commit cards from
+ * /api/github/commit (message, author, stats); run cards from
+ * /api/github/runs?id= (status, conclusion — re-polled while in flight).
+ * Cards degrade to a plain link on any fetch failure — never an empty box.
  */
 
 import { useEffect, useState } from "react";
@@ -198,10 +198,146 @@ function useGitHubItem(
   return { ...state, refresh: () => setTick((t) => t + 1) };
 }
 
+type CommitDetail = {
+  sha: string;
+  message: string;
+  authorLogin: string | null;
+  authorName: string | null;
+  date: string | null;
+  htmlUrl: string | null;
+  stats: { additions: number; deletions: number; total: number };
+  fileCount: number;
+};
+
+type CommitState =
+  | { phase: "loading" }
+  | { phase: "ready"; commit: CommitDetail }
+  | { phase: "unauth" }
+  | { phase: "error" };
+
+/** Commit detail for a commit card — /api/github/commit. One shot: commits
+ *  are immutable, so there is nothing to re-poll. */
+function useCommitDetail(repo: string, sha: string | undefined, enabled: boolean): CommitState {
+  const [state, setState] = useState<CommitState>({ phase: "loading" });
+  useEffect(() => {
+    if (!enabled || !sha) return;
+    let cancelled = false;
+    setState({ phase: "loading" });
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/github/commit?repo=${encodeURIComponent(repo)}&sha=${encodeURIComponent(sha)}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (res.status === 401 || res.status === 403) {
+          setState({ phase: "unauth" });
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as
+          | { ok: true; commit: CommitDetail }
+          | { ok: false }
+          | null;
+        if (cancelled) return;
+        if (!res.ok || !data || data.ok !== true) {
+          setState({ phase: "error" });
+          return;
+        }
+        setState({ phase: "ready", commit: data.commit });
+      } catch {
+        if (!cancelled) setState({ phase: "error" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, sha, enabled]);
+  return state;
+}
+
+type RunDetail = {
+  id: number;
+  name: string;
+  runNumber: number;
+  status: string;
+  conclusion: string | null;
+  branch: string | null;
+  event: string | null;
+  createdAt: string | null;
+  htmlUrl: string | null;
+};
+
+type RunState =
+  | { phase: "loading" }
+  | { phase: "ready"; run: RunDetail }
+  | { phase: "unauth" }
+  | { phase: "error" };
+
+/** One exact run for a run card — /api/github/runs?id=. Re-polls on the
+ *  checks cadence (30s, hidden tabs pause) only while the run is in flight. */
+function useRunDetail(repo: string, runId: number | undefined, enabled: boolean): RunState {
+  const [state, setState] = useState<RunState>({ phase: "loading" });
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!enabled || !runId) return;
+    let cancelled = false;
+    setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/github/runs?repo=${encodeURIComponent(repo)}&id=${runId}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (res.status === 401 || res.status === 403) {
+          setState({ phase: "unauth" });
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as
+          | { ok: true; runs: RunDetail[] }
+          | { ok: false }
+          | null;
+        if (cancelled) return;
+        if (!res.ok || !data || data.ok !== true || !data.runs[0]) {
+          // A failed refresh keeps the last good detail.
+          setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
+          return;
+        }
+        setState({ phase: "ready", run: data.runs[0] });
+      } catch {
+        if (!cancelled) setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, runId, enabled, tick]);
+  const inFlight = state.phase === "ready" && state.run.status !== "completed";
+  usePausablePoll(() => setTick((t) => t + 1), 30_000, { enabled: enabled && inFlight });
+  return state;
+}
+
 /** Visual identity per state — icon + accent color for the leading glyph. */
-function stateGlyph(d: GitHubBlockDescriptor, item: ItemDetail | null): { icon: IconName; color: string; label: string } {
+function stateGlyph(
+  d: GitHubBlockDescriptor,
+  item: ItemDetail | null,
+  run?: RunDetail | null,
+): { icon: IconName; color: string; label: string } {
   if (d.kind === "commit") return { icon: "ph:git-branch", color: "var(--text-secondary)", label: "Commit" };
-  if (d.kind === "run") return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)", label: "Workflow run" };
+  if (d.kind === "run") {
+    // Hydrated runs take the checks-strip vocabulary: success/fail conclusion
+    // tint, spinner while in flight. Unhydrated stays the neutral spinner.
+    if (run?.conclusion === "success") {
+      return { icon: "ph:check-circle", color: "var(--color-success)", label: "Workflow run succeeded" };
+    }
+    if (run && isFailConclusion(run.conclusion)) {
+      return { icon: "ph:x-circle-fill", color: "var(--color-danger)", label: "Workflow run failed" };
+    }
+    if (run && run.status !== "completed") {
+      return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)", label: "Workflow run in progress" };
+    }
+    return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)", label: "Workflow run" };
+  }
   if (d.kind === "review-thread") return { icon: "ph:chat-circle-dots", color: "var(--text-secondary)", label: "Review thread" };
   const isPull = d.kind === "pr" || Boolean(item?.isPull);
   if (item?.merged) return { icon: "ph:git-merge", color: "var(--accent-presence)", label: "Merged" };
@@ -466,7 +602,7 @@ function ChecksStrip({ data }: { data: ChecksData }) {
   if (!counts.total) return null;
   const tint =
     rollup === "failing"
-      ? "var(--color-warning)"
+      ? "var(--color-danger)"
       : rollup === "passing"
         ? "var(--color-success)"
         : "var(--text-secondary)";
@@ -487,7 +623,7 @@ function ChecksStrip({ data }: { data: ChecksData }) {
 function checkRunGlyph(run: CheckRunDetail): { icon: IconName; color: string } {
   if (run.status !== "completed") return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)" };
   if (run.conclusion === "success") return { icon: "ph:check-circle", color: "var(--color-success)" };
-  if (isFailConclusion(run.conclusion)) return { icon: "ph:x-circle-fill", color: "var(--color-warning)" };
+  if (isFailConclusion(run.conclusion)) return { icon: "ph:x-circle-fill", color: "var(--color-danger)" };
   return { icon: "ph:minus-circle", color: "var(--text-secondary)" };
 }
 
@@ -630,8 +766,20 @@ export function GitHubCard({
   const hydratable = descriptor.kind === "pr" || descriptor.kind === "issue";
   const state = useGitHubItem(descriptor.repo, descriptor.number, hydratable);
   const item = hydratable && state.phase === "ready" ? state.item : null;
-  const url = item?.htmlUrl ?? descriptorUrl(descriptor);
-  const glyph = stateGlyph(descriptor, item);
+  const commitState = useCommitDetail(
+    descriptor.repo,
+    descriptor.kind === "commit" ? descriptor.sha : undefined,
+    descriptor.kind === "commit",
+  );
+  const commit = commitState.phase === "ready" ? commitState.commit : null;
+  const runState = useRunDetail(
+    descriptor.repo,
+    descriptor.kind === "run" ? descriptor.runId : undefined,
+    descriptor.kind === "run",
+  );
+  const run = runState.phase === "ready" ? runState.run : null;
+  const url = item?.htmlUrl ?? commit?.htmlUrl ?? run?.htmlUrl ?? descriptorUrl(descriptor);
+  const glyph = stateGlyph(descriptor, item, run);
 
   // Checks strip + expandable run list: OPEN pull requests only — merged and
   // closed PRs have no live CI story worth a rate-limited fetch.
@@ -644,10 +792,28 @@ export function GitHubCard({
     descriptor.kind === "commit"
       ? descriptor.sha?.slice(0, 7)
       : descriptor.kind === "run"
-        ? `run ${descriptor.runId}`
+        ? run
+          ? `run #${run.runNumber}`
+          : `run ${descriptor.runId}`
         : `#${descriptor.number}`;
-  const title = item?.title ?? descriptor.title ?? url.replace("https://github.com/", "");
+  const title =
+    item?.title ??
+    (commit ? commit.message.split("\n", 1)[0] : null) ??
+    (run ? run.name : null) ??
+    descriptor.title ??
+    url.replace("https://github.com/", "");
   const updated = item?.updatedAt ? relativeTime(item.updatedAt) : "";
+
+  // Degradation rows share one gate: every hydrating kind reports its fetch
+  // state in the sub-row (review-thread reports inside its own body).
+  const detailPhase =
+    descriptor.kind === "commit"
+      ? commitState.phase
+      : descriptor.kind === "run"
+        ? runState.phase
+        : hydratable
+          ? state.phase
+          : null;
 
   const open = () => {
     if (onOpenUrl) onOpenUrl(url);
@@ -689,6 +855,24 @@ export function GitHubCard({
           {item?.draft ? <span>draft</span> : null}
           {item?.author?.login ? <span>by {item.author.login}</span> : null}
           {updated ? <span>{updated}</span> : null}
+          {commit ? (
+            <>
+              <span>by {commit.authorLogin ?? commit.authorName ?? "unknown"}</span>
+              {commit.date ? <span>{relativeTime(commit.date)}</span> : null}
+              <span>
+                <span className="text-[var(--color-success)]">+{commit.stats.additions}</span>{" "}
+                <span className="text-[var(--color-warning)]">−{commit.stats.deletions}</span>
+              </span>
+              <span>{commit.fileCount === 1 ? "1 file" : `${commit.fileCount} files`}</span>
+            </>
+          ) : null}
+          {run ? (
+            <>
+              <span>{run.status === "completed" ? (run.conclusion ?? "completed") : run.status.replace(/_/g, " ")}</span>
+              {run.branch ? <span className="font-mono">{run.branch}</span> : null}
+              {run.createdAt ? <span>{relativeTime(run.createdAt)}</span> : null}
+            </>
+          ) : null}
           {item && item.comments > 0 ? (
             <span className="inline-flex items-center gap-1">
               <Icon name="ph:chat-circle-dots" width={11} aria-hidden />
@@ -696,9 +880,9 @@ export function GitHubCard({
             </span>
           ) : null}
           {checks.phase === "ready" ? <ChecksStrip data={checks.data} /> : null}
-          {hydratable && state.phase === "loading" ? <span aria-live="polite">loading…</span> : null}
-          {hydratable && state.phase === "unauth" ? <span>connect GitHub to hydrate</span> : null}
-          {hydratable && state.phase === "error" ? <span>details unavailable</span> : null}
+          {detailPhase === "loading" ? <span aria-live="polite">loading…</span> : null}
+          {detailPhase === "unauth" ? <span>connect GitHub to hydrate</span> : null}
+          {detailPhase === "error" ? <span>details unavailable</span> : null}
         </div>
         {item && item.labels.length ? (
           <div className="mt-1 flex flex-wrap items-center gap-1">

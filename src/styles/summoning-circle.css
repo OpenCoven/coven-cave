@@ -23,7 +23,6 @@
   overflow: hidden;
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   box-shadow: 0 24px 64px oklch(0 0 0 / 35%);
@@ -41,7 +40,6 @@
   .summoning-dialog {
     background: var(--bg-raised);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 

@@ -13,7 +13,7 @@ const browser = await readFile(new URL("../skill-browser.tsx", import.meta.url),
 const format = await readFile(new URL("../../lib/skill-build-format.ts", import.meta.url), "utf8");
 
 // Section wiring in the hub.
-assert.match(model, /\{ id: "build", label: "Build", icon: "ph:hammer" \}/, "Build is a first-class Marketplace section");
+assert.match(model, /\{ id: "build", label: "Build", icon: "ph:flow-arrow" \}/, "Build is a first-class Marketplace section");
 assert.match(model, /"browse" \| "crafts" \| "roles" \| "skills" \| "build" \| "capabilities"/, "MarketplaceSection includes build");
 assert.match(view, /id="marketplace-panel-build"/, "Build section has a labelled tabpanel");
 assert.match(view, /aria-labelledby="marketplace-tab-build"/, "Build tabpanel is labelled by its tab");
@@ -25,14 +25,15 @@ assert.match(
   /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(""\);\s*\}\}/,
   "a saved skill invalidates the warm list before refreshing the Skills list and tab count",
 );
-assert.match(view, /onViewSkills=\{\(\) => selectSection\("skills"\)\}/, "the success panel can jump to the Skills tab");
-assert.match(view, /label="Build a skill"[\s\S]{0,80}selectSection\("build"\)/, "the Browse setup rail links to Build");
+// The Build success panel jumps back to the skills view — now Explore
+// pre-filtered to the Skills type (selectSection maps "skills" → Explore).
+assert.match(view, /onViewSkills=\{\(\) => selectSection\("skills"\)\}/, "the success panel can jump back to the skills view");
+assert.match(view, /if \(next === "skills"\)[\s\S]{0,120}setKind\("skill"\)/, "the retired Skills route lands on Explore filtered to the Skills type");
 
 // The old dead-end: creating a skill used to punt to the read-only
 // Capabilities inspector.
-assert.match(view, /onCreateSkill=\{\(\) => selectSection\("build"\)\}/, "the Skills tab create CTA opens Build");
-assert.doesNotMatch(view, /onCreateSkill=\{\(\) => selectSection\("capabilities"\)\}/, "create-skill no longer punts to Capabilities");
-assert.match(browser, /Build a skill/, "the Skills empty-state CTA is named for authoring");
+assert.doesNotMatch(view, /selectSection\("capabilities"\)/, "create-skill no longer punts to Capabilities");
+assert.match(browser, /Build a skill/, "the skill-browser empty-state CTA is named for authoring");
 
 // The authoring form's contract.
 assert.match(builder, /fetch\("\/api\/skills\/build"/, "saving posts to the guarded build endpoint");

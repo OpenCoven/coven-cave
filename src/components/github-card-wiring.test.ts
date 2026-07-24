@@ -63,6 +63,20 @@ assert.match(
 );
 assert.match(card, /isFailConclusion\(run\.conclusion\)/, "run glyphs share the fail-conclusion source of truth");
 
+// cave-w91n: commit/run cards hydrate like PR/issue cards.
+assert.match(card, /\/api\/github\/commit\?repo=/, "commit cards hydrate from /api/github/commit");
+assert.match(card, /&id=\$\{runId\}/, "run cards hydrate one exact run via the runs id param");
+assert.match(
+  card,
+  /usePausablePoll\(\(\) => setTick\(\(t\) => t \+ 1\), 30_000, \{ enabled: enabled && inFlight \}\)/,
+  "run detail re-polls every 30s only while the run is in flight (hidden tabs pause)",
+);
+assert.match(card, /commit\.message\.split\("\\n", 1\)\[0\]/, "commit cards title from the first message line");
+assert.match(card, /commit\.stats\.additions/, "commit sub-row surfaces diff stats");
+assert.match(card, /detailPhase === "unauth"/, "commit/run cards share the PR/issue degradation rows");
+assert.match(card, /Workflow run succeeded/, "hydrated run glyph reflects a success conclusion");
+assert.match(card, /Workflow run failed/, "hydrated run glyph reflects a fail conclusion");
+
 // W2a (cave-fpqx.8): tier-1 actions fire directly from cards.
 assert.match(card, /fetch\("\/api\/github\/comment"/, "comment action posts through the existing comment route");
 assert.match(card, /fetch\("\/api\/github\/issue"/, "close/reopen goes through PATCH /api/github/issue");

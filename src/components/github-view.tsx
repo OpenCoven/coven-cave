@@ -77,6 +77,10 @@ type Props = {
   /** Deep-link target from a GitHub-event inbox notification — opens that
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
+  /** When set, the host owns the content filter (e.g. the Code Workshop's
+   *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
+   *  its own filter control to avoid a redundant second switch. */
+  initialFilter?: Filter | null;
 };
 
 type ActivityPayload = ActivityResult | { ok: false; error?: string };
@@ -2290,13 +2294,26 @@ const COLS: ColDef[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initialTarget }: Props = {}) {
+export function GitHubView({
+  onJumpToSession,
+  onFocusCard,
+  onTasksRefresh,
+  initialTarget,
+  initialFilter,
+}: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
+  // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
+  // prop whenever it changes so switching tabs re-filters the same mounted view.
+  useEffect(() => {
+    if (initialFilter && initialFilter !== filter) setFilter(initialFilter);
+    // Only react to the host's prop, not the user's own later chip changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFilter]);
   const [orgFilter, setOrgFilter] = useSurfacePreference(surfacePreferenceSpecs.github.organization);
   const [repoFilter, setRepoFilter] = useSurfacePreference(surfacePreferenceSpecs.github.repository);
   const [query, setQuery] = useState("");
@@ -2717,19 +2734,23 @@ export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initi
           )}
         </div>
 
-        <Tabs
-          className="gh-compact-tabs"
-          variant="segment"
-          size="sm"
-          ariaLabel="Filter GitHub activity"
-          value={filter}
-          onChange={setFilter}
-          items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
-            id: f,
-            label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
-            count: counts[f] > 0 ? counts[f] : undefined,
-          })) satisfies TabItem<Filter>[]}
-        />
+        {/* Host-driven filter (Code Workshop tabs) owns the switch — hide the
+            in-view chips so there is only one control. */}
+        {initialFilter ? null : (
+          <Tabs
+            className="gh-compact-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Filter GitHub activity"
+            value={filter}
+            onChange={setFilter}
+            items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
+              id: f,
+              label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
+              count: counts[f] > 0 ? counts[f] : undefined,
+            })) satisfies TabItem<Filter>[]}
+          />
+        )}
 
         <div className="gh-compact-filters">
           <div className="gh-search">

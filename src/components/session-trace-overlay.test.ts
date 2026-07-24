@@ -47,11 +47,18 @@ describe("SessionTraceOverlay", () => {
     assert.match(source, /No events recorded for this session\./);
   });
 
-  it("treats the daemon's 404 as a calm no-log state, not a raw error", () => {
-    // Chat-only sessions and pruned logs 404 on the daemon — expected, so the
+  it("treats a missing daemon event log as a calm no-log state, not a raw error", () => {
+    // Cave-local chats that never ran through the daemon, rows lost on daemon
+    // restart, and pruned logs have no event timeline — expected, so the
     // overlay renders an empty state and suppresses the alert callout for it.
-    assert.match(source, /const noEventLog = error !== null && \/\\b404\\b\/\.test\(error\)/);
+    assert.match(
+      source,
+      /res\.status === 404 \|\| message === "no_event_timeline" \|\| \/\\b404\\b\/\.test\(message\)/,
+      "no-log detection keys on the route's 404/no_event_timeline signal, with the legacy 502-message fallback",
+    );
+    assert.match(source, /setNoEventLog\(true\);\s*\n\s*return;/, "the no-log path never lands in the error state");
     assert.match(source, /No event log for this session\./);
+    assert.match(source, /Expected for Cave-local chats/, "the empty state names the expected local-chat case");
     assert.match(source, /\{error && !noEventLog \? \(/, "the alert callout is reserved for real failures");
   });
 });

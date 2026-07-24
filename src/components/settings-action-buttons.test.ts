@@ -11,7 +11,7 @@ const studioSources = [
   "familiar-studio-brain-tab.tsx",
   "familiar-studio-contract-tab.tsx",
   "familiar-studio-identity-tab.tsx",
-  "familiar-studio-lifecycle-tab.tsx",
+  "familiar-lifecycle-section.tsx",
   "familiar-studio-look-tab.tsx",
   "familiar-studio-projects-tab.tsx",
 ].map((fileName) => [fileName, readFileSync(new URL(`./${fileName}`, import.meta.url), "utf8")] as const);
@@ -95,7 +95,6 @@ assert.match(
 for (const selector of [
   ".familiar-studio-picker__trigger",
   ".familiar-studio-picker__option",
-  ".familiar-studio-lifecycle__row",
 ]) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(

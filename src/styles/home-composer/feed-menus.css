@@ -213,7 +213,6 @@
   border-radius: var(--radius-2xl, 14px);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:
     0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
     0 4px 18px -6px rgb(0 0 0 / 0.35);
@@ -231,7 +230,6 @@
   .hc-slash-menu {
     background: var(--bg-base);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 /* Skills picker: option list + detail preview side by side. */

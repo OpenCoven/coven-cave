@@ -134,8 +134,8 @@ assert.match(
   /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
   "'roles' and 'capabilities' deep links land on Browse",
 );
-assert.match(marketplaceView, /import \{ SkillBrowser, type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub renders the Skills browser");
-assert.match(marketplaceView, /SkillDetailDrawer,/, "hub mounts the skill detail drawer for role-card skill chips");
+assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub consumes the registry skill entry type for Explore");
+assert.match(marketplaceView, /SkillExploreDrawer/, "hub mounts the Explore skill detail drawer");
 assert.doesNotMatch(marketplaceView, /CapabilitiesViewSurface|capabilities-view/, "the hub no longer imports or renders the Capabilities surface");
 assert.match(
   marketplaceView,
@@ -154,13 +154,15 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "crafts", "skills", "build"]) {
+// Skills is no longer its own panel — it merged into Explore (browse).
+for (const id of ["browse", "crafts", "build"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
+assert.doesNotMatch(marketplaceView, /marketplace-panel-skills/, "the standalone Skills panel merged into Explore");
 assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
 assert.doesNotMatch(marketplaceView, /marketplace-panel-capabilities/, "no capabilities tabpanel — the section is retired");
 
@@ -174,25 +176,24 @@ assert.match(
   "the shared search hides on the Build section",
 );
 
-// The store rail cross-links into the setup sections, so Browse stays aware of
-// what your familiars already have.
-assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setup group");
-assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no rail jump to Roles while the section is hidden");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("crafts"\)\}/, "the rail jumps to Crafts");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
-assert.doesNotMatch(marketplaceView, /selectSection\("capabilities"\)/, "no rail jump to the retired Capabilities section");
-assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");
-assert.match(marketplaceView, /className="marketplace-category-stack"/, "Browse renders a grouped category stack instead of one flat card grid");
+// Explore's rail filters the one merged pool by Type · Status · Collection,
+// and the section tabs (not the rail) cross-link into Crafts / Build.
+assert.match(marketplaceView, /aria-label="Filter by type"/, "the Explore rail groups the pool by item type");
+assert.match(marketplaceView, /aria-label="Filter by install status"/, "the Explore rail filters by install status");
+assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no jump to Roles while the section is hidden");
+assert.doesNotMatch(marketplaceView, /selectSection\("capabilities"\)/, "no jump to the retired Capabilities section");
+assert.match(marketplaceView, /Tools & connectors/, "Explore groups the pool into Tools & connectors and Skills at the default view");
+assert.match(marketplaceView, /className="marketplace-category-stack"/, "Explore renders a grouped stack instead of one flat card grid");
 assert.match(marketplaceView, /className="marketplace-category-group"/, "each Marketplace category has a stable grouped section hook");
 assert.match(marketplaceView, /className="marketplace-category-grid"/, "each category group uses the same responsive card grid");
 assert.match(css, /\.marketplace-category-stack \{[\s\S]*?flex-direction: column/, "Marketplace category stack has stable vertical rhythm");
 assert.match(css, /\.marketplace-category-group__head \{[\s\S]*?border-bottom/, "Marketplace category groups use quiet structural dividers");
 assert.match(css, /\.marketplace-category-grid \{[\s\S]*?grid-template-columns/, "Marketplace category groups use a stable responsive grid");
-// The kind filter + sort moved out of the header into the Browse toolbar so
-// the header stays one row; the toolbar also carries the result context line.
-assert.match(marketplaceView, /className="marketplace-browse-summary mb-4"/, "Browse keeps a toolbar row above the grid");
-assert.match(marketplaceView, /ariaLabel="Filter plugins by type"/, "the kind filter lives in the Browse toolbar");
-assert.match(marketplaceView, /label="Sort plugins"/, "the sort select lives in the Browse toolbar");
+// Type moved into the rail; the toolbar carries the result-context line, a
+// grid/list view toggle, and the sort select.
+assert.match(marketplaceView, /className="marketplace-browse-summary mb-4"/, "Explore keeps a toolbar row above the grid");
+assert.match(marketplaceView, /aria-label="Card layout"/, "the grid/list view toggle lives in the Explore toolbar");
+assert.match(marketplaceView, /label="Sort listings"/, "the sort select lives in the Explore toolbar");
 assert.match(css, /\.marketplace-browse-summary \{[\s\S]*?justify-content: space-between/, "the Browse toolbar keeps context and controls apart");
 assert.match(css, /\.marketplace-card \{[\s\S]*?min-height:/, "Marketplace cards reserve stable height across categories");
 

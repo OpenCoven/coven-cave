@@ -192,7 +192,8 @@
       enabled: backdrop.enabled === true,
       intensity: typeof backdrop.intensity === "number" ? backdrop.intensity : 50,
       matchAccent: backdrop.matchAccent !== false,
-      accentSeed: backdrop.accentSeed || null
+      accentSeed: backdrop.accentSeed || null,
+      style: backdrop.style === "blaze" ? "blaze" : backdrop.style === "off" ? "off" : "image"
     }));
     safeSet("cave:home-news-enabled", general.newsHeadlines === false ? "false" : "true");
     safeSet("cave:mobile-mode-enabled", phone.mobileMode === false ? "false" : "true");
@@ -319,7 +320,11 @@
     intensity = Math.min(100, Math.max(0, intensity));
     html.style.setProperty("--cave-backdrop-opacity", String(intensity / 100));
     var seed = backdropPrefs.accentSeed;
-    if (backdropEnabled && backdropPrefs.matchAccent !== false && seed &&
+    // Blaze derives its tint live from the theme accent; a leftover image
+    // accentSeed must not repaint the app pre-paint (mirrors the runtime
+    // guard in applyBackdropToDocument, cave-99s9).
+    var backdropStyle = backdropPrefs.style === "blaze" ? "blaze" : "image";
+    if (backdropEnabled && backdropStyle === "image" && backdropPrefs.matchAccent !== false && seed &&
         isFinite(seed.L) && isFinite(seed.a) && isFinite(seed.b)) {
       var tokenBackground = themePrefs.tokens && themePrefs.tokens["--bg-base"];
       var computedBackground = "";

@@ -7,26 +7,37 @@ import { readFileSync } from "node:fs";
 // readability surface on the existing hearth card instead.
 const css = readFileSync(new URL("../styles/backdrop.css", import.meta.url), "utf8");
 
-// ── Home hearth glass ─────────────────────────────────────────────────────────
+// ── Home dashboard glass (launcher 3a) ────────────────────────────────────────
+// The dashboard is a dense surface (section labels + board rows sit on the
+// photo), so it earns the Familiar-tab glass idiom: a translucent theme-derived
+// ground with a real blur over the whole surface. The rail + docked composer
+// keep their own solid --bg-panel fills, so the image shows through the board
+// content area only.
 assert.match(
   css,
-  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*background: color-mix\(in oklch, var\(--bg-base\) 72%, transparent\);[^}]*\}/,
-  "Home uses one uniform theme-derived hearth surface while a backdrop is active",
+  /html\[data-backdrop-on\] \.home-composer-root\.home-dash \{[^}]*background: color-mix\(in oklch, var\(--bg-base\) 62%, transparent\);[^}]*\}/,
+  "Home uses one uniform theme-derived glass ground while a backdrop is active",
 );
 assert.match(
   css,
-  /html\[data-backdrop-on\] \.home-hearth-card \{[^}]*border-radius: var\(--radius-xl\);[^}]*\}/,
-  "the hearth surface rounds with the Appearance corner-radius tokens, not square corners",
+  /html\[data-backdrop-on\] \.home-composer-root\.home-dash \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\)[^}]*\}/,
+  "the dashboard ground earns a real blur so its on-surface type stays legible over the image",
 );
 assert.doesNotMatch(
   css,
   /html\[data-backdrop-on\] \.home-composer-root::before/,
-  "Home no longer paints a full-area pseudo-element behind the hearth",
+  "Home no longer paints a full-area pseudo-element behind the content",
 );
 assert.doesNotMatch(
   css,
-  /html\[data-backdrop-on\] \.home-hearth-card(?:::before|::after)? \{[^}]*radial-gradient\(/s,
+  /html\[data-backdrop-on\] \.home-composer-root\.home-dash(?:::before|::after)? \{[^}]*radial-gradient\(/s,
   "the backdrop-only Home treatment contains no radial gradient",
+);
+// The retired hearth card no longer carries a backdrop treatment.
+assert.doesNotMatch(
+  css,
+  /html\[data-backdrop-on\] \.home-hearth-card/,
+  "the retired hearth-card backdrop rules are gone (Home is the dashboard shell now)",
 );
 
 // ── Chat landing glass ───────────────────────────────────────────────────────
@@ -63,8 +74,8 @@ assert.match(
 );
 assert.match(
   css,
-  /prefers-reduced-transparency: reduce[\s\S]*html\[data-backdrop-on\] \.home-hearth-card \{[^}]*background: color-mix\(in oklch, var\(--bg-panel\) 55%, transparent\);[^}]*\}/,
-  "reduced transparency restores the normal Home card fill",
+  /prefers-reduced-transparency: reduce[\s\S]*html\[data-backdrop-on\] \.home-composer-root\.home-dash \{[^}]*background: var\(--bg-base\);[^}]*backdrop-filter: none;[^}]*\}/,
+  "reduced transparency restores the Home dashboard's opaque base surface",
 );
 assert.match(
   css,
