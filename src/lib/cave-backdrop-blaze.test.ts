@@ -67,4 +67,27 @@ assert.match(
   "colors re-derive live on theme/mode/custom-accent changes",
 );
 
+// ── Layer integration ────────────────────────────────────────────────────────
+const layer = readFileSync(new URL("../components/cave-backdrop-layer.tsx", import.meta.url), "utf8");
+assert.match(
+  layer,
+  /prefs\.style === "blaze" && !familiarImageShowing/,
+  "a familiar's own image still overrides the Blaze style while active",
+);
+assert.match(
+  layer,
+  /\{blazeShowing && active \? <CaveBackdropBlaze \/> : null\}/,
+  "the GPU loop unmounts whenever no backdrop surface is frontmost",
+);
+assert.match(
+  layer,
+  /data-backdrop-style=\{blazeShowing \? "blaze" : "image"\}/,
+  "CSS can target the active backdrop style",
+);
+assert.match(
+  layer,
+  /prefs\.style === "image" &&\n\s*\(prefs\.enabled \|\|/,
+  "image bytes are not fetched while the Blaze style is selected",
+);
+
 console.log("cave-backdrop-blaze.test.ts: ok");
