@@ -153,7 +153,9 @@ assert.match(view, /action, id, projectRoot/, "claim and close mutations receive
 assert.match(view, /action: "comment", id, comment, projectRoot/, "handoff comments receive the selected root");
 assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "claim-for receives the selected root");
 assert.match(view, /projectRoot=\{readiness\?\.project\?\.root\}/, "Asana filing receives the selected root");
-assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
+assert.match(view, /const sourcesUnavailable = !readinessUnavailable && readiness\?\.ok === true && readiness\.project !== null/, "a ready project with failing adapters is not treated as unselected");
+assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
+assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \? null/, "adapter failures offer Retry rather than project selection");
 assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
 assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 
