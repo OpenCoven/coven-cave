@@ -66,11 +66,17 @@ export type CaveBackdropImageMetadata = {
   updatedAt: string;
 };
 
+/** Backdrop style option set — grows as animated styles land (cave-99s9). */
+export const BACKDROP_STYLES = ["image", "blaze"] as const;
+export type CaveBackdropStyle = (typeof BACKDROP_STYLES)[number];
+
 export type CaveBackdropPreferences = {
   enabled: boolean;
   intensity: number;
   matchAccent: boolean;
   accentSeed: CaveBackdropAccentSeed | null;
+  /** Which visual fills the layer: the stored image or the Blaze effect. */
+  style: CaveBackdropStyle;
   /** Explicit per-familiar enablement (cave-kf8p); absent id = image-presence default. */
   familiars: Record<string, boolean>;
   image: CaveBackdropImageMetadata;
@@ -177,6 +183,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         intensity: 50,
         matchAccent: true,
         accentSeed: null,
+        style: "image",
         familiars: {},
         image: { present: false, mime: null, updatedAt: "" },
       },
@@ -399,6 +406,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
           ? Math.min(100, Math.max(0, backdrop.intensity)) : 50,
         matchAccent: backdrop.matchAccent !== false,
         accentSeed: normalizeAccentSeed(backdrop.accentSeed),
+        style: oneOf(backdrop.style, BACKDROP_STYLES, "image"),
         familiars: normalizeFamiliarBackdrops(backdrop.familiars),
         image: {
           present: image.present === true,
@@ -593,7 +601,7 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     if (Object.hasOwn(appearance, "backdrop")) {
       const backdrop = strictRecord(appearance.backdrop, "appearance.backdrop");
-      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "familiars", "image"], "appearance.backdrop");
+      assertAllowedKeys(backdrop, ["enabled", "intensity", "matchAccent", "accentSeed", "style", "familiars", "image"], "appearance.backdrop");
       const backdropPatch: NonNullable<typeof next.backdrop> = {};
       if (Object.hasOwn(backdrop, "enabled")) backdropPatch.enabled = strictBoolean(backdrop.enabled, "appearance.backdrop.enabled");
       if (Object.hasOwn(backdrop, "intensity")) {
@@ -604,6 +612,9 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       }
       if (Object.hasOwn(backdrop, "matchAccent")) backdropPatch.matchAccent = strictBoolean(backdrop.matchAccent, "appearance.backdrop.matchAccent");
       if (Object.hasOwn(backdrop, "accentSeed")) backdropPatch.accentSeed = strictAccentSeed(backdrop.accentSeed, "appearance.backdrop.accentSeed");
+      if (Object.hasOwn(backdrop, "style")) {
+        backdropPatch.style = strictChoice(backdrop.style, BACKDROP_STYLES, "appearance.backdrop.style");
+      }
       if (Object.hasOwn(backdrop, "familiars")) {
         const familiars = strictRecord(backdrop.familiars, "appearance.backdrop.familiars");
         if (Object.keys(familiars).length > MAX_FAMILIAR_BACKDROPS) {
@@ -811,6 +822,7 @@ export function preferencesToLegacyStorage(input: CavePreferences): Record<strin
       intensity: appearance.backdrop.intensity,
       matchAccent: appearance.backdrop.matchAccent,
       accentSeed: appearance.backdrop.accentSeed,
+      style: appearance.backdrop.style,
     }),
     "cave:home-news-enabled": String(preferences.general.newsHeadlines),
     "cave:mobile-mode-enabled": String(preferences.phone.mobileMode),
@@ -911,6 +923,9 @@ export function legacyStorageToPreferencesPatch(values: Record<string, unknown>)
     if (typeof backdropRaw.matchAccent === "boolean") backdrop.matchAccent = backdropRaw.matchAccent;
     const accentSeed = normalizeAccentSeed(backdropRaw.accentSeed);
     if (accentSeed) backdrop.accentSeed = accentSeed;
+    if (typeof backdropRaw.style === "string" && BACKDROP_STYLES.includes(backdropRaw.style as never)) {
+      backdrop.style = backdropRaw.style as CaveBackdropStyle;
+    }
     if (Object.keys(backdrop).length > 0) appearance.backdrop = backdrop;
   }
 
