@@ -205,6 +205,36 @@ assert.match(
   /\.familiar-studio-brain__voice-preview\s*\{/,
   "the preview button has dedicated styling beside the voice select",
 );
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/engines"\)/,
+  "local voice choices load from the sidecar engine-readiness endpoint",
+);
+assert.match(
+  source,
+  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true/,
+  "only downloaded and checksum-verified local voices become selectable",
+);
+assert.match(
+  source,
+  /options=\{localVoiceOptions\}/,
+  "Familiar Studio renders ready Piper/Kokoro voices in the Voice picker",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/local\/tts"/,
+  "local voice previews use the same authenticated sidecar TTS endpoint as calls",
+);
+assert.match(
+  source,
+  /No local voices downloaded — open Settings to add one, or use the system default\./,
+  "the empty local catalog gives a concrete next step and preserves the system fallback",
+);
+assert.match(
+  source,
+  /localVoiceCatalog\.status === "error"[\s\S]{0,800}<Button[\s\S]{0,500}status: "idle"[\s\S]{0,300}Retry/,
+  "local voice readiness failures expose a real retry action",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
 

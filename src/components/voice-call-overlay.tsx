@@ -355,6 +355,14 @@ function errorMessage(code: string | undefined): string {
       return "Couldn't reach ElevenLabs. Check your connection and try again.";
     case "elevenlabs_tts_failed":
       return "ElevenLabs speech synthesis failed.";
+    // Local neural TTS
+    case "local_voice_not_ready":
+      return "The selected local voice isn't ready.";
+    case "local_tts_engine_unavailable":
+      return "The local speech engine isn't available.";
+    case "local_tts_failed":
+    case "local_tts_playback_failed":
+      return "Local speech synthesis failed.";
     // Brain / familiar runtime issues
     case "familiar_brain_failed":
       return "The familiar's voice brain couldn't start.";
