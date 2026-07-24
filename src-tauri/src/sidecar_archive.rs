@@ -136,6 +136,16 @@ fn cache_is_ready(destination: &Path, manifest: &SidecarArchiveManifest) -> bool
     // start (and is especially expensive under real-time antivirus scanning).
     // Required entrypoints are still checked so common partial-cache damage is
     // repaired automatically.
+    //
+    // Deep-verify consideration (cave-7kay): this warm-path trust lives in
+    // user-writable LocalAppData, which is acceptable because the
+    // authoritative archive sits in admin-protected Program Files and any
+    // failed check funnels back into the fully verified extraction path. For
+    // paranoid/enterprise installs an opt-in deep-verify mode would slot in
+    // here — re-hash the cached tree against manifest.tree_sha256 before
+    // trusting the marker — at the cost of exactly the full-tree read this
+    // fast path exists to avoid. Weigh it against real-time AV overhead
+    // before wiring such a flag.
     if !runtime_has_required_files(destination) {
         return false;
     }
