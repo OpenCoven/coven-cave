@@ -21,6 +21,18 @@ assert.doesNotMatch(
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
 assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
 
+const shippingInfoPlist = read("apps/ios/CovenCave/CovenCave/Info.plist");
+assert.match(
+  shippingInfoPlist,
+  /<key>NSAppTransportSecurity<\/key>[\s\S]*?<key>NSAllowsLocalNetworking<\/key>\s*<true\/>/,
+  "the native iOS app must retain ATS's narrow local-network allowance for localhost and Tailscale IP connections",
+);
+assert.match(
+  shippingInfoPlist,
+  /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/,
+  "the native iOS app must not disable ATS globally",
+);
+
 const entitlements = read("src-tauri/gen/apple/app_iOS/app_iOS.entitlements");
 assert.match(entitlements, /com\.apple\.developer\.networking\.wifi-info/);
 
