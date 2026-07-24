@@ -354,19 +354,26 @@ async function recoverPreviousPublication(
     fileExists(previousArchivePath),
     fileExists(previousManifestPath),
   ]);
-  if (!hasPreviousArchive && !hasPreviousManifest) {
-    // A first publication has no coherent pair to restore. If the archive
-    // reached its public path before the manifest failed, remove it rather
-    // than leaving an orphaned resource behind.
-    if (await fileExists(archivePath) && !await archiveMatchesManifest(archivePath, manifestPath)) {
-      await removeFileWithRetries(archivePath);
-    }
+  if (await archiveMatchesManifest(archivePath, manifestPath)) {
+    if (hasPreviousArchive) await removeFileWithRetries(previousArchivePath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
     return;
   }
 
-  if (await archiveMatchesManifest(archivePath, manifestPath)) {
-    await removeFileWithRetries(previousArchivePath);
-    await removeFileWithRetries(previousManifestPath);
+  if (!hasPreviousArchive) {
+    // A partial rollback may already have restored the archive while its
+    // manifest remains in the private backup. Resume that exact state first.
+    if (hasPreviousManifest && await archiveMatchesManifest(archivePath, previousManifestPath)) {
+      await removeFileWithRetries(manifestPath);
+      await rename(previousManifestPath, manifestPath);
+      return;
+    }
+
+    // A first publication, or an orphaned manifest, has no coherent archive
+    // pair to restore. If the archive reached its public path before the
+    // manifest failed, remove it while preserving the public manifest.
+    if (await fileExists(archivePath)) await removeFileWithRetries(archivePath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
     return;
   }
 

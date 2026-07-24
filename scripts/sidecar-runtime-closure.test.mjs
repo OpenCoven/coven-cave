@@ -338,6 +338,36 @@ try {
   );
   assert.ok(await missing(`${noPriorArchive}.publish.lock`), "a stale publication lock must be reclaimed");
 
+  const orphanArchive = path.join(fixture, "orphan", "server.tar.zst");
+  const orphanManifest = path.join(fixture, "orphan", "manifest.json");
+  const orphanTemporaryArchive = path.join(fixture, "orphan", ".server.tar.zst.tmp");
+  const orphanTemporaryManifest = path.join(fixture, "orphan", ".manifest.json.tmp");
+  await mkdir(path.dirname(orphanArchive), { recursive: true });
+  await writeFile(orphanManifest, "stale manifest\n");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(projectRoot, "public"),
+      orphanTemporaryArchive,
+      orphanArchive,
+      orphanManifest,
+      orphanTemporaryManifest,
+      {
+        beforeManifestPublish: async () => {
+          const error = new Error("EPERM: injected final manifest rename failure");
+          error.code = "EPERM";
+          throw error;
+        },
+      },
+    ),
+    /EPERM/,
+    "an orphaned manifest publication failure must reject",
+  );
+  assert.ok(await missing(orphanArchive), "an orphaned manifest must not retain the candidate archive");
+  assert.equal(await readFile(orphanManifest, "utf8"), "stale manifest\n");
+  assert.ok(await missing(`${orphanManifest}.previous`), "orphan recovery must remove its private manifest copy");
+  assert.ok(await missing(orphanTemporaryArchive), "orphan recovery must remove its staged archive");
+  assert.ok(await missing(orphanTemporaryManifest), "orphan recovery must remove its staged manifest");
+
   await writeFile(tracePath, `${JSON.stringify({ version: 1, files: ["../../../outside.txt"] })}\n`, "utf8");
   await assert.rejects(
     collectTracedDependencies(projectRoot),
