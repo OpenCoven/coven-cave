@@ -38,6 +38,7 @@ import {
   codeSessionWorkRoot,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
+import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
 const LazyFilesTab = dynamic(
@@ -67,17 +68,27 @@ const TAB_LABELS: Array<{ id: CodeWorkbenchTab; label: string; icon: Parameters<
 export function CodeWorkbench({
   row,
   initialTab,
+  openTarget,
   onJumpToSession,
   onRefresh,
 }: {
   row: SessionRow;
   /** Deep-linked workbench tab (?wtab=). */
   initialTab?: CodeWorkbenchTab;
+  /** A routed file/diff open (cave-ohcj): lands on the Files or Diff tab with
+   *  that path focused. `nonce` re-triggers the jump for a repeated path. */
+  openTarget?: PendingCodeOpen;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
   onRefresh?: () => void;
 }) {
   const [tab, setTab] = useState<CodeWorkbenchTab>(initialTab ?? "diff");
+  // A routed open outranks the resting/deep-linked tab — a diff jump shows
+  // the Diff tab, a file open the Files tab (also re-applied per nonce).
+  useEffect(() => {
+    if (!openTarget) return;
+    setTab(openTarget.kind === "changes" ? "diff" : "files");
+  }, [openTarget]);
   // Inspector (branches/worktrees/env) is an opt-in right column; md+ only —
   // the narrow-screen treatment lands with the mobile layout pass.
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -173,10 +184,22 @@ export function CodeWorkbench({
           {tab === "diff" ? (
             // Keyed by work root: the panel's file/diff/checkpoint state is
             // per-repo, and switching sessions must never show stale rows.
-            <SessionChangesInner key={workRoot} projectRoot={workRoot} running={running} />
+            <SessionChangesInner
+              key={workRoot}
+              projectRoot={workRoot}
+              running={running}
+              focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
+              focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+            />
           ) : null}
           {tab === "files" ? (
-            <LazyFilesTab key={workRoot} projectRoot={workRoot} familiarId={row.familiarId} />
+            <LazyFilesTab
+              key={workRoot}
+              projectRoot={workRoot}
+              familiarId={row.familiarId}
+              focusPath={openTarget?.kind === "files" ? openTarget.path : undefined}
+              focusNonce={openTarget?.kind === "files" ? openTarget.nonce : undefined}
+            />
           ) : null}
           {terminalOpened ? (
             <div className={tab === "terminal" ? "h-full min-h-0" : "hidden"}>

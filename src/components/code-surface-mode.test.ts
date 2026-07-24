@@ -65,12 +65,13 @@ assert.match(
   "MODE_ALIASES routes the absorbed GitHub surface onto Code (cave-m6ys)",
 );
 
-// File/diff links from inbox cards etc. still target Chat's code rail this
-// phase — retargeting them to the Code surface is an explicit follow-up.
+// File/diff links from chat transcripts, inbox cards, the Projects hub —
+// everywhere — land on the Code surface (cave-ohcj): the workspace bridges
+// the events into code mode with the raising chat session attached.
 assert.match(
   workspace,
-  /File\/diff links target ChatSurface's code rail[\s\S]*?setPendingCodeRailOpen\([\s\S]*?setMode\("chat"\)/,
-  "file-open events keep targeting Chat's code rail until the flagged follow-up",
+  /File\/diff links land on the Code surface[\s\S]*?setPendingCodeOpen\([\s\S]*?setMode\("code"\)/,
+  "file-open events route to the Code surface, not Chat's code rail",
 );
 
 // The primary keyboard cluster is unchanged: Code is a quiet destination, not
@@ -118,7 +119,7 @@ assert.match(
 );
 assert.match(
   workbench,
-  /<SessionChangesInner key=\{workRoot\} projectRoot=\{workRoot\} running=\{running\} \/>/,
+  /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
   "Diff tab mounts the proven changes panel keyed+scoped to the work root",
 );
 assert.match(

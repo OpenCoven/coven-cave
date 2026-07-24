@@ -9,16 +9,22 @@
  * CodeMirror stays out of the surface's initial chunk.
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
 
 export function CodeWorkbenchFiles({
   projectRoot,
   familiarId,
+  focusPath,
+  focusNonce,
 }: {
   projectRoot: string;
   familiarId?: string | null;
+  /** A routed file open (cave-ohcj): selects this path in the tree/preview.
+   *  `focusNonce` re-applies the jump when the same path repeats. */
+  focusPath?: string | null;
+  focusNonce?: number;
 }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
@@ -33,6 +39,11 @@ export function CodeWorkbenchFiles({
     },
     [projectRoot],
   );
+
+  useEffect(() => {
+    if (!focusPath) return;
+    openPath(focusPath);
+  }, [focusNonce, focusPath, openPath]);
 
   return (
     <div className="flex h-full min-h-0">

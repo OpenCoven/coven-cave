@@ -143,7 +143,7 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
-import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
+import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
@@ -467,7 +467,11 @@ export function Workspace() {
   // router applies opens in a deferred hop, so render-time ref reads always
   // lagged one update behind (the n-1 highlight bug).
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null);
-  const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
+  // Mirror for the []-dep file-open listener below: opens raised mid-chat
+  // attach the CURRENT session without re-subscribing on every change.
+  const activeChatSessionIdRef = useRef<string | null>(null);
+  activeChatSessionIdRef.current = activeChatSessionId;
+  const [pendingCodeOpen, setPendingCodeOpen] = useState<PendingCodeOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
@@ -783,30 +787,32 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // File/diff links target ChatSurface's code rail. ChatSurface only mounts in
-  // chat mode, so preserve event detail from non-chat surfaces until it mounts.
+  // File/diff links land on the Code surface (cave-ohcj): every open — from
+  // chat transcripts, the Projects hub, anywhere — routes into code mode with
+  // the raising chat session attached so CodeView can select its workbench.
+  // The event detail is preserved in state until CodeView mounts.
   useEffect(() => {
-    const enqueue = (kind: PendingCodeRailOpen["kind"], e: Event) => {
-      if (modeRef.current === "chat") return;
+    const enqueue = (kind: PendingCodeOpen["kind"], e: Event) => {
       const detail = (e as CustomEvent<{ path?: string; line?: number }>).detail;
       if (!detail?.path) return;
-      setPendingCodeRailOpen(
+      const sessionId = activeChatSessionIdRef.current ?? undefined;
+      setPendingCodeOpen(
         kind === "files"
-          ? { kind, path: detail.path, line: detail.line, nonce: Date.now() }
-          : { kind, path: detail.path, nonce: Date.now() },
+          ? { kind, path: detail.path, line: detail.line, sessionId, nonce: Date.now() }
+          : { kind, path: detail.path, sessionId, nonce: Date.now() },
       );
-      setMode("chat");
+      setMode("code");
     };
     const onOpenProjectFile = (e: Event) => enqueue("files", e);
     const onOpenFileDiff = (e: Event) => enqueue("changes", e);
     // Projects hub → "Browse files": carries a project ROOT (not a file path);
-    // ChatSurface browses that root with nothing selected (cave-z44).
+    // CodeView picks that project's newest session and browses its tree
+    // (cave-z44's peek, re-homed on the Code surface).
     const onBrowseProjectFiles = (e: Event) => {
-      if (modeRef.current === "chat") return;
       const detail = (e as CustomEvent<{ root?: string }>).detail;
       if (!detail?.root) return;
-      setPendingCodeRailOpen({ kind: "files", root: detail.root, nonce: Date.now() });
-      setMode("chat");
+      setPendingCodeOpen({ kind: "files", root: detail.root, nonce: Date.now() });
+      setMode("code");
     };
     window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
     window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
@@ -2719,12 +2725,10 @@ export function Workspace() {
         onRetryFamiliars={() => void loadFamiliars()}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
-        pendingCodeRailOpen={pendingCodeRailOpen}
         onSetActiveFamiliar={setActiveId}
         onFamiliarScopeChange={selectFamiliarScope}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
-        onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
         onActiveSessionChange={setActiveChatSessionId}
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
@@ -2843,6 +2847,8 @@ export function Workspace() {
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         githubTarget={githubTarget}
+        pendingOpen={pendingCodeOpen}
+        onPendingOpenHandled={() => setPendingCodeOpen(null)}
         onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
