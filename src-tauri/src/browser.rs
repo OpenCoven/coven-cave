@@ -3,7 +3,10 @@
 // Ports the design from BunsDev/comux/native/macos/comux-tauri: a real
 // Chromium child webview is added to the main window via
 // `tauri::webview::WebviewBuilder`, positioned with viewport-relative
-// LogicalPosition/LogicalSize. The frontend keeps the webview's bounds
+// PhysicalPosition/PhysicalSize. The frontend converts its CSS-pixel bounds
+// into native physical pixels before it calls these commands, so a child
+// WebView remains aligned when the renderer and OS use HiDPI scaling.
+// The frontend keeps the webview's bounds
 // in sync with a placeholder <div> via ResizeObserver +
 // getBoundingClientRect, calling browser_set_bounds whenever its layout
 // changes.
@@ -28,9 +31,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tauri::webview::{PageLoadEvent, WebviewBuilder};
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Url, WebviewUrl,
-};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, Url, WebviewUrl};
 
 const BROWSER_LABEL_PREFIX: &str = "cave-browser-";
 const OFFSCREEN_X: f64 = -10000.0;
@@ -52,7 +53,8 @@ mod browser_reconciliation;
 mod browser_state;
 
 use browser_bounds::{
-    browser_bounds_within_client, offscreen_browser_creation_bounds, BrowserBounds,
+    browser_bounds_within_client, offscreen_browser_creation_bounds, offscreen_browser_position,
+    BrowserBounds,
 };
 pub use browser_commands::*;
 use browser_events::BrowserEventTracker;

@@ -272,7 +272,7 @@ test("Windows native Browser children fail closed before WebView2 registration",
 
   assert.match(
     browser,
-    /with_main_webview2_environment\(app, builder\)[\s\S]*LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)[\s\S]*hide_webview/,
+    /offscreen_browser_position\([\s\S]*with_main_webview2_environment\(app, builder\)[\s\S]*PhysicalPosition::new\(offscreen_x, offscreen_y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*hide_webview/,
     "a child must reuse the main environment and remain offscreen/hidden until registration finishes",
   );
   assert.match(

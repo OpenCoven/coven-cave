@@ -15,9 +15,9 @@ import {
   BROWSER_MOTION_WINDOW_MS,
   BROWSER_RECONCILE_INTERVAL_MS,
   nodeContainsNativeWebviewCover,
+  nativeBrowserBounds,
   recordBrowserReconcile,
   surfaceIsCovered,
-  WEBVIEW_OFFSCREEN,
 } from "@/lib/browser-native-overlay";
 import {
   createExpectedBrowserNavigation,
@@ -370,10 +370,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
           hideAll();
         }
       } else {
-        const next = {
-          x: Math.round(rect.left), y: Math.round(rect.top),
-          w: Math.round(rect.width), h: Math.round(rect.height),
-        };
+        const next = nativeBrowserBounds(rect);
         if (
           hidden ||
           next.x !== last.x || next.y !== last.y ||
@@ -450,6 +447,18 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     // state rather than a body portal. The rAF runs after the DOM commit.
     const onInteraction = () => scheduleImmediateReconcile();
     const onShellLayout = () => startMotionWindow();
+    // A per-monitor DPI transition can preserve the CSS layout viewport, so
+    // neither ResizeObserver nor window.resize is guaranteed to run. Re-arm a
+    // resolution query after every change; the next reconcile recalculates the
+    // physical child-WebView bounds with the new device-pixel ratio.
+    let dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onDprChange = () => {
+      dprQuery.removeEventListener("change", onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", onDprChange);
+      scheduleImmediateReconcile();
+    };
+    dprQuery.addEventListener("change", onDprChange);
     window.addEventListener("resize", scheduleImmediateReconcile);
     window.addEventListener("scroll", scheduleImmediateReconcile, true);
     window.addEventListener("cave:native-webview-layout", onShellLayout);
@@ -472,6 +481,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       clearTimeout(motionTimer);
       resizeObserver.disconnect();
       portalObserver.disconnect();
+      dprQuery.removeEventListener("change", onDprChange);
       window.removeEventListener("resize", scheduleImmediateReconcile);
       window.removeEventListener("scroll", scheduleImmediateReconcile, true);
       window.removeEventListener("cave:native-webview-layout", onShellLayout);
@@ -510,9 +520,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       const navigationArgs = withNativeBrowserSequence({
         label: tabLabel(activeTab.id),
         url: activeTab.url,
-        x: covered ? WEBVIEW_OFFSCREEN : rect.left,
-        y: covered ? WEBVIEW_OFFSCREEN : rect.top,
-        w: rect.width, h: rect.height,
+        ...nativeBrowserBounds(rect, covered),
       });
       expectedPageLoadRef.current[activeTab.id] = createExpectedBrowserNavigation(
         activeTab.url,

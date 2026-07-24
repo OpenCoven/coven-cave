@@ -1,5 +1,7 @@
-use super::{browser_bounds_within_client, BrowserBounds, OFFSCREEN_X, OFFSCREEN_Y};
-use tauri::{LogicalPosition, LogicalSize, Rect};
+#[cfg(not(target_os = "windows"))]
+use super::offscreen_browser_position;
+use super::{browser_bounds_within_client, BrowserBounds};
+use tauri::{PhysicalPosition, PhysicalSize, Rect};
 
 // Park the webview offscreen at its CURRENT size. Do not shrink it to 1×1:
 // collapsing the layer lets WKWebView drop its backing surface, and a later
@@ -14,10 +16,24 @@ pub(super) fn hide_webview(webview: &tauri::Webview) -> Result<(), String> {
     webview.hide().map_err(|e| e.to_string())?;
 
     // WKWebView may drop its backing surface when hidden, so other platforms
-    // retain the realized layer at its current size and move it offscreen.
+    // retain the realized layer at its current size and move it entirely
+    // outside the physical client area.
+    #[cfg(not(target_os = "windows"))]
+    let offscreen_position = {
+        let window = webview.window();
+        let client = window.inner_size().map_err(|e| e.to_string())?;
+        let child = webview.size().map_err(|e| e.to_string())?;
+        let (x, y) = offscreen_browser_position(
+            f64::from(client.width),
+            f64::from(client.height),
+            f64::from(child.width),
+            f64::from(child.height),
+        )?;
+        PhysicalPosition::new(x, y)
+    };
     #[cfg(not(target_os = "windows"))]
     webview
-        .set_position(LogicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y))
+        .set_position(offscreen_position)
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -33,12 +49,15 @@ pub(super) fn show_webview_at(
     // dispatcher calls briefly expose an old-size/new-position WebView2 layer
     // during resize, which can cover unrelated UI and capture its clicks.
     let window = webview.window();
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let client = window
-        .inner_size()
-        .map_err(|e| e.to_string())?
-        .to_logical::<f64>(scale);
-    let bounds = match browser_bounds_within_client(client.width, client.height, x, y, w, h) {
+    let client = window.inner_size().map_err(|e| e.to_string())?;
+    let bounds = match browser_bounds_within_client(
+        f64::from(client.width),
+        f64::from(client.height),
+        x,
+        y,
+        w,
+        h,
+    ) {
         Ok(bounds) => bounds,
         Err(error) => {
             hide_webview(webview)?;
@@ -50,8 +69,8 @@ pub(super) fn show_webview_at(
     };
     webview
         .set_bounds(Rect {
-            position: LogicalPosition::new(x, y).into(),
-            size: LogicalSize::new(w, h).into(),
+            position: PhysicalPosition::new(x, y).into(),
+            size: PhysicalSize::new(w, h).into(),
         })
         .map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
