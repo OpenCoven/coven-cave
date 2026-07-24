@@ -58,10 +58,51 @@ export type AssistRunResult =
   | { ok: false; error: string };
 
 /**
+ * Pure: collapse a bounded stderr capture into a one-line reason suitable
+ * for appending to an error message — last 3 non-empty lines, joined, capped
+ * at the final 300 chars. Unit-tested.
+ */
+export function stderrReason(stderrTail: string): string {
+  return stderrTail.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" · ").slice(-300);
+}
+
+// Signals that codex exited without output because it isn't signed in. Kept
+// deliberately precise: loose substrings like `auth`, `token`, or `sign ?in`
+// would misread "unexpected token" / "author" / "design in…" stderr as a
+// sign-in problem and send the user to `codex login` for an unrelated
+// failure. A missed match is benign — the generic path below still surfaces
+// the stderr tail verbatim.
+const AUTH_STDERR_RE =
+  /not (?:logged|signed) in|codex login|please (?:log|sign) ?in|unauthorized|authentication (?:required|failed|error)|(?:invalid|missing|expired) (?:credentials?|api key)|credentials? (?:invalid|missing|expired)|token (?:expired|revoked)|\b401\b/i;
+
+/**
+ * Pure: error message for the "exited 0 but wrote no last message" case.
+ * codex does this when it is not signed in, leaving the real reason on
+ * stderr — so surface the stderr tail, plus an explicit sign-in hint (with a
+ * runnable login command) when that tail looks like an auth failure.
+ * Unit-tested.
+ */
+export function describeEmptyAssistOutput(command: string, stderrTail: string): string {
+  const tail = stderrReason(stderrTail);
+  if (AUTH_STDERR_RE.test(stderrTail)) {
+    const loginCommand = /\s/.test(command)
+      ? // Escape backslashes before quotes so a Windows path (C:\…\coven.cmd)
+        // can't break out of the double-quoted suggestion (js/incomplete-sanitization).
+        `"${command.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" login`
+      : `${command} login`;
+    return `${command} isn't signed in, so this assist produced no output. Run \`${loginCommand}\` in a terminal, then try again${
+      tail ? ` (${tail})` : ""
+    }.`;
+  }
+  return `assist produced no output${tail ? ` — ${tail}` : ""}`;
+}
+
+/**
  * Run one bounded assist end-to-end: spawn `codex exec`, wait (bounded), and
  * return the final message for the caller to parse against its own output
  * contract. Never throws. Spawn behavior is exercised manually — CI covers
- * `buildAssistInvocation` only.
+ * the pure pieces only (`buildAssistInvocation`, `stderrReason`,
+ * `describeEmptyAssistOutput`).
  */
 export async function runBoundedAssist(opts: {
   prompt: string;
@@ -140,7 +181,7 @@ export async function runBoundedAssist(opts: {
     });
     if (spawned.error) return { ok: false, error: spawned.error };
     if (spawned.code !== 0) {
-      const reason = stderrTail.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" · ").slice(-300);
+      const reason = stderrReason(stderrTail);
       return {
         ok: false,
         error: `codex exec exited with ${spawned.code}${reason ? ` — ${reason}` : ""}`,
@@ -150,7 +191,11 @@ export async function runBoundedAssist(opts: {
     try {
       lastMessage = await readFile(/* turbopackIgnore: true */ lastMessagePath, "utf8");
     } catch {
-      return { ok: false, error: "assist produced no output" };
+      // codex can exit 0 yet write no last-message file when it is not signed
+      // in. The real reason lands on stderr, so surface that (and an explicit
+      // sign-in hint for the auth case) instead of an opaque "produced no
+      // output".
+      return { ok: false, error: describeEmptyAssistOutput(inv.command, stderrTail) };
     }
     return { ok: true, lastMessage };
   } catch (err) {
