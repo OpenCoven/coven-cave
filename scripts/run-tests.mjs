@@ -1020,6 +1020,7 @@ export const SUITES = {
     "src/app/api/flows/run/route.test.ts",
     "src/app/api/research/missions/route.test.ts",
     "src/app/api/research/missions/[id]/route.test.ts",
+    "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
     "src/app/api/research/missions/[id]/actions/route.test.ts",
     "src/app/api/research/missions/[id]/schedule/route.test.ts",
     "src/app/api/research/generations/route.test.ts",

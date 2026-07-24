@@ -4,6 +4,7 @@ import type { ResearchMission } from "./research-missions.ts";
 import {
   actOnResearchMission,
   createResearchMission,
+  getResearchMissionFile,
   isActiveResearchMission,
   listResearchMissions,
   runResearchAutomationNow,
@@ -132,5 +133,50 @@ test("schedule and standard Automation controls use their owning APIs", async ()
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.window = priorWindow;
+  }
+});
+
+test("getResearchMissionFile fetches the file payload with encoded segments", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({
+      ok: true,
+      file: {
+        key: "source-ledger",
+        kind: "source-ledger",
+        title: "Source ledger",
+        fileName: "sources.json",
+        relativePath: "sources.json",
+        content: "[]",
+        workspacePath: "/tmp/research-missions/mission-1",
+        updatedAt: "2026-07-24T00:00:00.000Z",
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const file = await getResearchMissionFile("mission 1", "source-ledger");
+    assert.deepEqual(calls, ["/api/research/missions/mission%201/files/source-ledger"]);
+    assert.equal(file.content, "[]");
+    assert.equal(file.workspacePath, "/tmp/research-missions/mission-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getResearchMissionFile surfaces API errors", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(
+    JSON.stringify({ ok: false, error: "research artifact not found" }),
+    { status: 404, headers: { "content-type": "application/json" } },
+  )) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => getResearchMissionFile("mission-1", "nope"),
+      /research artifact not found/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
