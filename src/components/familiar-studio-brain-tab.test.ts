@@ -207,6 +207,16 @@ assert.match(
 );
 assert.match(
   source,
+  /previewAbortRef\.current\?\.abort\(\)[\s\S]{0,100}previewAbortRef\.current = null/,
+  "stopping a preview aborts local synthesis instead of only ignoring its result",
+);
+assert.match(
+  source,
+  /signal: localPreviewAbort\?\.signal/,
+  "local preview synthesis carries its abort signal to the sidecar endpoint",
+);
+assert.match(
+  source,
   /fetch\("\/api\/voice\/engines"\)/,
   "local voice choices load from the sidecar engine-readiness endpoint",
 );
