@@ -85,7 +85,18 @@ final class AppModel {
     // MARK: - Cross-view command routing
 
     /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
-    var selectedTab: AppTab = .chats
+    var selectedTab: AppTab = {
+        #if DEBUG
+        // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
+        // into a tab (incl. hidden ones) for screenshot automation.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
+           let tab = AppTab(rawValue: args[i + 1]) {
+            return tab
+        }
+        #endif
+        return .chats
+    }()
 
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).
