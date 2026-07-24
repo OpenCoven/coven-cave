@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POST } from "./route.ts";
 
-function request(form: FormData, host = "localhost") {
+function request(form: FormData, host = "localhost", bounded = true) {
   return new Request(`http://${host}/api/voice/engines/whisper`, {
     method: "POST",
-    headers: { host },
+    headers: bounded ? { host, "content-length": "1024" } : { host },
     body: form,
   });
 }
@@ -35,4 +35,14 @@ test("Whisper endpoint rejects remote and mobile-proxy origins before parsing au
   form.set("kind", "final");
   form.set("audio", new Blob(["wav"], { type: "audio/wav" }), "utterance.wav");
   assert.equal((await POST(request(form, "cave.example.com"))).status, 403);
+});
+
+test("Whisper endpoint rejects multipart bodies without a declared bound", async () => {
+  const form = new FormData();
+  form.set("session", "1");
+  form.set("kind", "final");
+  form.set("audio", new Blob(["wav"], { type: "audio/wav" }), "utterance.wav");
+  const response = await POST(request(form, "localhost", false));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "invalid_audio");
 });

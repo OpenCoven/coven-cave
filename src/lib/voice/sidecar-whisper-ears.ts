@@ -168,7 +168,8 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     let current = 0;
     let counter = 0;
     let stabilityTimer: unknown = null;
-    let capTimer: unknown = null;
+    let initialSilenceTimer: unknown = null;
+    let utteranceCapTimer: unknown = null;
     let partialTimer: unknown = null;
     let controller: AbortController | null = null;
     let partialController: AbortController | null = null;
@@ -184,7 +185,8 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
 
     const clearTimers = () => {
       if (stabilityTimer !== null) { unschedule(stabilityTimer); stabilityTimer = null; }
-      if (capTimer !== null) { unschedule(capTimer); capTimer = null; }
+      if (initialSilenceTimer !== null) { unschedule(initialSilenceTimer); initialSilenceTimer = null; }
+      if (utteranceCapTimer !== null) { unschedule(utteranceCapTimer); utteranceCapTimer = null; }
       if (partialTimer !== null) { unschedule(partialTimer); partialTimer = null; }
     };
 
@@ -358,7 +360,13 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
         const input = event.inputBuffer.getChannelData(0);
         chunks.push(input.slice());
         if (rms(input) < threshold) return;
-        hasSpeech = true;
+        if (!hasSpeech) {
+          hasSpeech = true;
+          if (initialSilenceTimer !== null) { unschedule(initialSilenceTimer); initialSilenceTimer = null; }
+          // The full cap applies to the utterance, not to time spent waiting
+          // for someone to start speaking.
+          utteranceCapTimer = schedule(() => finish(session), maxUtteranceMs);
+        }
         if (stabilityTimer !== null) unschedule(stabilityTimer);
         stabilityTimer = schedule(() => finish(session), stabilityMs);
         armPartial(session);
@@ -369,7 +377,8 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       silentOutput.connect(context.destination);
       // Bound initial silence and a failed/quiet microphone. The empty path in
       // finish() discards its PCM and reopens listening without a network call.
-      capTimer = schedule(() => finish(session), maxUtteranceMs);
+      // Once VAD detects speech, this is replaced with a full utterance cap.
+      initialSilenceTimer = schedule(() => finish(session), maxUtteranceMs);
       void context.resume().catch(() => { /* user gesture is supplied by call start */ });
     };
 

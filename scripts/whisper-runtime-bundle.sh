@@ -73,10 +73,19 @@ stage_macos() {
   git -C "$source" fetch -q --depth 1 origin f049fff95a089aa9969deb009cdd4892b3e74916
   git -C "$source" checkout -q --detach FETCH_HEAD
   test "$(git -C "$source" rev-parse HEAD)" = "f049fff95a089aa9969deb009cdd4892b3e74916"
-  cmake -S "$source" -B "$source/build" -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+  # Keep copied dylibs discoverable after the temporary build tree disappears.
+  # The release bundle co-locates them with whisper-cli, so @loader_path is
+  # both relocatable and compatible with the later nested-code-signing pass.
+  cmake -S "$source" -B "$source/build" \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DCMAKE_BUILD_RPATH='@loader_path' \
+    -DCMAKE_INSTALL_RPATH='@loader_path' \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
   cmake --build "$source/build" --target whisper-cli --parallel 2
   cp "$source/build/bin/whisper-cli" "$DEST/whisper-cli"
   find "$source/build/bin" -maxdepth 1 -type f -name '*.dylib' -exec cp {} "$DEST/" \;
+  install_name_tool -add_rpath '@loader_path' "$DEST/whisper-cli"
   chmod 755 "$DEST/whisper-cli"
 }
 

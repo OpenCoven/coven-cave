@@ -167,6 +167,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
+  assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
   assert.match(
     launcher,
@@ -212,6 +213,9 @@ test("clean release runners have resource glob placeholders", async () => {
     /!src-tauri\/resources\/node\/placeholder\.txt/,
     "node placeholder must be tracked so resources/node/**/* matches in clean CI",
   );
+  const releaseScript = await readFile(new URL("../scripts/release.sh", import.meta.url), "utf8");
+  assert.match(releaseScript, /WHISPER_CLI=.*resources\/whisper\/whisper-cli/, "macOS release must resolve bundled Whisper before signing");
+  assert.match(releaseScript, /"\$WHISPER_CLI" --version/, "macOS release must smoke-test the copied Whisper runtime");
   assert.match(
     gitignore,
     /!src-tauri\/resources\/whisper\/placeholder\.txt/,

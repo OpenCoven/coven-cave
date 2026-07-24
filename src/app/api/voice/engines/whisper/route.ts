@@ -29,8 +29,15 @@ export async function POST(req: Request) {
   if (!isLocalOrigin(req)) {
     return NextResponse.json({ ok: false, error: "local_origin_required" }, { status: 403 });
   }
-  const contentLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_WHISPER_WAV_BYTES + 128 * 1024) {
+  const contentLengthHeader = req.headers.get("content-length");
+  // formData() buffers and parses the entire multipart body. Browsers sending
+  // a FormData WAV provide this header; reject unknown/chunked bodies rather
+  // than allowing a local sidecar request to bypass its memory ceiling.
+  if (!contentLengthHeader || !/^(?:0|[1-9]\d*)$/.test(contentLengthHeader)) {
+    return badRequest("invalid_audio", "Local Whisper requires a bounded audio upload.");
+  }
+  const contentLength = Number(contentLengthHeader);
+  if (!Number.isSafeInteger(contentLength) || contentLength > MAX_WHISPER_WAV_BYTES + 128 * 1024) {
     return badRequest("invalid_audio", "The recorded utterance is too large for local Whisper.");
   }
   let form: FormData;

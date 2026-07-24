@@ -114,6 +114,9 @@ function fakeTimers() {
   return {
     setTimeout(fn, ms) { const id = ++next; pending.set(id, { fn, ms }); return id; },
     clearTimeout(id) { pending.delete(id); },
+    pendingIds(ms) {
+      return [...pending.entries()].filter(([, value]) => value.ms === ms).map(([id]) => id);
+    },
     fire(ms) {
       const entry = [...pending.entries()].find(([, value]) => value.ms === ms);
       assert.ok(entry, `missing timer ${ms}`);
@@ -167,6 +170,40 @@ test("initial silence is capped, discarded, and restarted without a Whisper requ
     assert.equal(closes, 1, "silent capture releases its first audio context");
     assert.equal(requests, 0, "silent capture never submits a WAV");
     assert.equal(processors.length, 2, "ears restart listening after the empty cap");
+  } finally {
+    ears.close();
+    globalThis.window = priorWindow;
+  }
+});
+
+test("voice activity receives a full utterance cap after initial silence", () => {
+  const priorWindow = globalThis.window;
+  const timers = fakeTimers();
+  const processors = [];
+  class AudioContext {
+    sampleRate = 48_000;
+    state = "running";
+    destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createBiquadFilter() { return { connect() {}, disconnect() {}, type: "", frequency: { value: 0 }, Q: { value: 0 } }; }
+    createScriptProcessor() { const processor = { connect() {}, disconnect() {}, onaudioprocess: null }; processors.push(processor); return processor; }
+    createGain() { return { connect() {}, disconnect() {}, gain: { value: 1 } }; }
+    resume() { return Promise.resolve(); }
+    close() { this.state = "closed"; return Promise.resolve(); }
+  }
+  globalThis.window = { AudioContext };
+  const ears = createSidecarWhisperEars({
+    maxUtteranceMs: 99,
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true, session: 1, kind: "final", text: "heard" })),
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  })({ onPartial() {}, onFinal() {}, onError() {} }, {});
+  try {
+    ears.listen();
+    const initialTimer = timers.pendingIds(99)[0];
+    processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.1) } });
+    const utteranceTimer = timers.pendingIds(99)[0];
+    assert.notEqual(utteranceTimer, initialTimer, "speech replaces the initial-silence timer with a full utterance cap");
   } finally {
     ears.close();
     globalThis.window = priorWindow;
