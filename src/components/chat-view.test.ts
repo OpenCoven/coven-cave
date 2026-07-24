@@ -295,6 +295,6 @@ assert.match(
 );
 assert.match(
   source,
-  /<SessionOverflowMenu[\s\S]*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
+  /<SessionOverflowMenu(?:(?!\/>)[\s\S])*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
   "the session kebab picker carries it too",
 );
