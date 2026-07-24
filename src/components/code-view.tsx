@@ -19,11 +19,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
+  CODE_GITHUB_TABS,
   codeSessionWorkRoot,
   groupCodeRailSessions,
+  isCodeGithubTab,
   parseCodeDeepLink,
+  type CodeGithubTab,
   type CodeTopTab,
 } from "@/lib/code-surface";
+import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
@@ -38,6 +42,21 @@ const LazyGitHubView = dynamic(
   () => import("@/components/github-view").then((m) => m.GitHubView),
   { ssr: false },
 );
+
+// The GitHub content tabs and the GitHubView filter each one drives.
+const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
+  prs: "pr",
+  issues: "issue",
+  reviews: "review_request",
+};
+const GITHUB_TAB_META: Record<
+  CodeGithubTab,
+  { label: string; icon: Parameters<typeof Icon>[0]["name"] }
+> = {
+  prs: { label: "PRs", icon: "ph:git-pull-request" },
+  issues: { label: "Issues", icon: "ph:circle-dashed" },
+  reviews: { label: "Reviews", icon: "ph:check-circle" },
+};
 
 export type CodeViewProps = {
   sessions: SessionRow[];
@@ -85,8 +104,9 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    githubTarget ? "github" : deepLink?.topTab ?? initialTopTab ?? "sessions",
+    githubTarget ? "prs" : deepLink?.topTab ?? initialTopTab ?? "sessions",
   );
+  const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
   // the session list (auto-pick must NOT re-select), string = a session.
@@ -180,27 +200,31 @@ export function CodeView({
           <Icon name="ph:code" width={14} height={14} />
           Sessions
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={topTab === "github"}
-          onClick={() => setTopTab("github")}
-          className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-            topTab === "github"
-              ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          <Icon name="ph:github-logo" width={14} height={14} />
-          GitHub
-        </button>
+        {CODE_GITHUB_TABS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={topTab === id}
+            onClick={() => setTopTab(id)}
+            className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+              topTab === id
+                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <Icon name={GITHUB_TAB_META[id].icon} width={14} height={14} />
+            {GITHUB_TAB_META[id].label}
+          </button>
+        ))}
       </div>
-      {topTab === "github" ? (
+      {githubTab ? (
         <div className="min-h-0 flex-1">
           <LazyGitHubView
             onJumpToSession={onJumpToSession}
             onFocusCard={onFocusCard}
             initialTarget={githubTarget}
+            initialFilter={GITHUB_TAB_FILTER[githubTab]}
             onTasksRefresh={onTasksRefresh}
           />
         </div>
