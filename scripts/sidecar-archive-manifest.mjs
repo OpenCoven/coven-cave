@@ -311,11 +311,19 @@ async function fileExists(file) {
   }
 }
 
-async function removePathWithRetries(file) {
+async function removeFileWithRetries(file) {
   let failure;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      await rm(file, { force: true, recursive: true });
+      const metadata = await lstat(file).catch((error) => {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!metadata) return;
+      if (!metadata.isFile()) {
+        throw new Error(`refusing to remove non-file sidecar publication path: ${file}`);
+      }
+      await rm(file, { force: true });
       return;
     } catch (error) {
       failure = error;
@@ -351,14 +359,14 @@ async function recoverPreviousPublication(
     // reached its public path before the manifest failed, remove it rather
     // than leaving an orphaned resource behind.
     if (await fileExists(archivePath) && !await archiveMatchesManifest(archivePath, manifestPath)) {
-      await removePathWithRetries(archivePath);
+      await removeFileWithRetries(archivePath);
     }
     return;
   }
 
   if (await archiveMatchesManifest(archivePath, manifestPath)) {
-    await removePathWithRetries(previousArchivePath);
-    await removePathWithRetries(previousManifestPath);
+    await removeFileWithRetries(previousArchivePath);
+    await removeFileWithRetries(previousManifestPath);
     return;
   }
 
@@ -366,16 +374,16 @@ async function recoverPreviousPublication(
   // the archived prior payload. Restore that archive first; this does not
   // require deleting a Windows-locked manifest.
   if (hasPreviousArchive && await archiveMatchesManifest(previousArchivePath, manifestPath)) {
-    await removePathWithRetries(archivePath);
+    await removeFileWithRetries(archivePath);
     await rename(previousArchivePath, archivePath);
-    if (hasPreviousManifest) await removePathWithRetries(previousManifestPath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
     return;
   }
 
   // A prior rollback may have restored the archive before it could restore
   // the manifest. Resume from that state without deleting the restored file.
   if (hasPreviousManifest && await archiveMatchesManifest(archivePath, previousManifestPath)) {
-    await removePathWithRetries(manifestPath);
+    await removeFileWithRetries(manifestPath);
     await rename(previousManifestPath, manifestPath);
     return;
   }
@@ -387,8 +395,8 @@ async function recoverPreviousPublication(
   // Neither public resource belongs to the prior pair. Remove the candidate
   // archive before replacing the manifest so a failed manifest deletion never
   // leaves it paired with stale metadata.
-  await removePathWithRetries(archivePath);
-  await removePathWithRetries(manifestPath);
+  await removeFileWithRetries(archivePath);
+  await removeFileWithRetries(manifestPath);
   await rename(previousArchivePath, archivePath);
   await rename(previousManifestPath, manifestPath);
 }
@@ -404,7 +412,7 @@ async function acquirePublicationLock(archivePath) {
       return {
         async release() {
           await handle.close();
-          await removePathWithRetries(lockPath);
+          await removeFileWithRetries(lockPath);
         },
       };
     } catch (error) {
@@ -418,7 +426,7 @@ async function acquirePublicationLock(archivePath) {
             process.kill(owner, 0);
           } catch (ownerError) {
             if (ownerError?.code === "ESRCH") {
-              await removePathWithRetries(lockPath);
+              await removeFileWithRetries(lockPath);
               continue;
             }
           }
@@ -473,8 +481,8 @@ async function publishSidecarArchiveUnlocked(
     await beforeManifestPublish?.();
     await rename(temporaryManifestPath, manifestPath);
     manifestPublished = true;
-    await removePathWithRetries(previousArchivePath);
-    await removePathWithRetries(previousManifestPath);
+    await removeFileWithRetries(previousArchivePath);
+    await removeFileWithRetries(previousManifestPath);
     return manifest;
   } catch (error) {
     const failures = [];
@@ -492,7 +500,7 @@ async function publishSidecarArchiveUnlocked(
     }
     for (const temporaryPath of [temporaryArchivePath, temporaryManifestPath]) {
       try {
-        await removePathWithRetries(temporaryPath);
+        await removeFileWithRetries(temporaryPath);
       } catch (cleanupError) {
         failures.push(cleanupError);
       }

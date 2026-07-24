@@ -216,6 +216,7 @@ try {
 
   const failedManifestArchive = path.join(fixture, "published", ".server.tar.zst.failed-manifest.tmp");
   const failedManifestTemp = path.join(fixture, "published", ".manifest.json.failed-manifest.tmp");
+  const failedManifestSentinel = path.join(publishedManifest, "unrelated.txt");
   await assert.rejects(
     publishSidecarArchive(
       path.join(projectRoot, "public"),
@@ -225,21 +226,39 @@ try {
       failedManifestTemp,
       {
         beforeManifestPublish: async () => {
-          const error = new Error("EPERM: injected final manifest rename failure");
-          error.code = "EPERM";
-          throw error;
+          await rm(publishedManifest);
+          await mkdir(publishedManifest);
+          await writeFile(failedManifestSentinel, "must survive rollback\n");
         },
       },
     ),
     /EISDIR|EPERM|ENOTDIR|EACCES/,
     "final manifest publication failure must reject",
   );
-  assert.deepEqual(await readFile(publishedArchive), publishedArchiveBytes, "final failure must restore the prior archive");
-  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "final failure must restore the prior manifest");
+  assert.ok(await missing(publishedArchive), "final failure must remove the candidate archive before recovery is pending");
+  assert.equal(await readFile(failedManifestSentinel, "utf8"), "must survive rollback\n");
   assert.ok(await missing(failedManifestArchive), "final failure must remove its staged archive");
   assert.ok(await missing(failedManifestTemp), "final failure must remove its staged manifest");
-  assert.ok(await missing(`${publishedArchive}.previous`), "final failure must consume its archive backup");
-  assert.ok(await missing(`${publishedManifest}.previous`), "final failure must consume its manifest backup");
+  assert.equal(await missing(`${publishedArchive}.previous`), false, "final failure must retain its archive backup");
+  assert.equal(await missing(`${publishedManifest}.previous`), false, "final failure must retain its manifest backup");
+
+  await rm(publishedManifest, { recursive: true });
+  const rollbackArchive = path.join(fixture, "published", ".server.tar.zst.rollback.tmp");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      rollbackArchive,
+      publishedArchive,
+      publishedManifest,
+    ),
+    /ENOENT/,
+    "the next publication must recover the preserved prior pair",
+  );
+  assert.deepEqual(await readFile(publishedArchive), publishedArchiveBytes, "recovery must restore the prior public archive");
+  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "recovery must restore the prior manifest");
+  assert.ok(await missing(rollbackArchive), "recovery failure must remove its staged archive");
+  assert.ok(await missing(`${publishedArchive}.previous`), "recovery must consume the prior archive backup");
+  assert.ok(await missing(`${publishedManifest}.previous`), "recovery must consume the prior manifest backup");
 
   const previousArchive = `${publishedArchive}.previous`;
   const previousManifest = `${publishedManifest}.previous`;
@@ -249,11 +268,11 @@ try {
   await rm(candidateArchive);
   await rm(candidateManifest);
 
-  const rollbackArchive = path.join(fixture, "published", ".server.tar.zst.rollback.tmp");
+  const interruptedRollbackArchive = path.join(fixture, "published", ".server.tar.zst.interrupted-rollback.tmp");
   await assert.rejects(
     publishSidecarArchive(
       path.join(fixture, "missing-runtime"),
-      rollbackArchive,
+      interruptedRollbackArchive,
       publishedArchive,
       publishedManifest,
     ),
@@ -266,7 +285,7 @@ try {
     "recovery must restore the prior public archive",
   );
   assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "recovery must restore the prior manifest");
-  assert.ok(await missing(rollbackArchive), "failed publication must remove its staged archive");
+  assert.ok(await missing(interruptedRollbackArchive), "failed publication must remove its staged archive");
   assert.ok(await missing(previousArchive), "recovery must consume the prior archive backup");
   assert.ok(await missing(previousManifest), "recovery must consume the prior manifest backup");
 
@@ -302,9 +321,8 @@ try {
       noPriorTemporaryManifest,
       {
         beforeManifestPublish: async () => {
-          const error = new Error("EPERM: injected final manifest rename failure");
-          error.code = "EPERM";
-          throw error;
+          await mkdir(noPriorManifest, { recursive: true });
+          await writeFile(path.join(noPriorManifest, "unrelated.txt"), "must survive first publish failure\n");
         },
       },
     ),
@@ -314,6 +332,10 @@ try {
   assert.ok(await missing(noPriorArchive), "a no-prior failure must not leave a public archive");
   assert.ok(await missing(noPriorTemporaryArchive), "a no-prior failure must remove its staged archive");
   assert.ok(await missing(noPriorTemporaryManifest), "a no-prior failure must remove its staged manifest");
+  assert.equal(
+    await readFile(path.join(noPriorManifest, "unrelated.txt"), "utf8"),
+    "must survive first publish failure\n",
+  );
   assert.ok(await missing(`${noPriorArchive}.publish.lock`), "a stale publication lock must be reclaimed");
 
   await writeFile(tracePath, `${JSON.stringify({ version: 1, files: ["../../../outside.txt"] })}\n`, "utf8");
