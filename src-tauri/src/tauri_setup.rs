@@ -1,5 +1,55 @@
 use super::*;
 
+/// Builds the verbose MSI log arguments as command-line segments.
+///
+/// `tauri-plugin-updater` joins `installer_args` into the raw parameter
+/// string supplied to `ShellExecuteW`, rather than passing them through a
+/// process argument API. Keep exactly one pair of quotes around the log path
+/// so msiexec receives a single `/L*V` path even when the app log directory
+/// contains spaces.
+#[cfg(any(target_os = "windows", test))]
+fn msi_verbose_log_installer_args(log_path: &std::path::Path) -> [std::ffi::OsString; 2] {
+    let mut quoted_log_path = std::ffi::OsString::from("\"");
+    quoted_log_path.push(log_path.as_os_str());
+    quoted_log_path.push("\"");
+
+    [std::ffi::OsString::from("/L*V"), quoted_log_path]
+}
+
+#[cfg(test)]
+mod updater_argument_tests {
+    use super::msi_verbose_log_installer_args;
+    use std::{ffi::OsStr, path::Path};
+
+    #[test]
+    fn msi_verbose_log_path_is_quoted_once_in_shell_execute_parameters() {
+        let log_path = Path::new(
+            r"C:\Users\A Coven\AppData\Local\Coven Cave\logs\msi-upgrade-from-0.1.6-123.log",
+        );
+
+        let installer_args = msi_verbose_log_installer_args(log_path);
+        assert_eq!(installer_args[0], OsStr::new("/L*V"));
+        assert_eq!(
+            installer_args[1],
+            OsStr::new(
+                r#""C:\Users\A Coven\AppData\Local\Coven Cave\logs\msi-upgrade-from-0.1.6-123.log""#
+            )
+        );
+
+        // This mirrors tauri-plugin-updater 2.10.1's `ShellExecuteW`
+        // parameter construction. A second pair of quotes would be passed
+        // literally to msiexec; no quotes would split this spaced path.
+        let parameters = installer_args.join(OsStr::new(" "));
+        assert_eq!(
+            parameters,
+            OsStr::new(
+                r#"/L*V "C:\Users\A Coven\AppData\Local\Coven Cave\logs\msi-upgrade-from-0.1.6-123.log""#
+            )
+        );
+        assert_eq!(parameters.to_string_lossy().matches('"').count(), 2);
+    }
+}
+
 /// Show or hide the macOS traffic lights (close/minimize/zoom) on the
 /// invoking window. The main window's title bar is an Overlay (see the main
 /// window builder), so the buttons float over web content — when the app's
@@ -229,10 +279,7 @@ pub fn run() {
                     std::process::id()
                 ));
                 log::info!("[cave] updater MSI log -> {}", log_path.display());
-                updater_builder.installer_args([
-                    std::ffi::OsString::from("/L*V"),
-                    std::ffi::OsString::from(format!("\"{}\"", log_path.display())),
-                ])
+                updater_builder.installer_args(msi_verbose_log_installer_args(&log_path))
             };
             app.handle().plugin(updater_builder.build())?;
             app.handle().plugin(tauri_plugin_process::init())?;
