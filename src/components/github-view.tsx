@@ -26,6 +26,7 @@ import {
 } from "react-resizable-panels";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useAppPreferences } from "@/lib/app-preferences";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -2459,21 +2460,24 @@ export function GitHubView({
   }, [refreshLinkedWork]);
 
   const items = activity?.items ?? [];
-  const filtered = useMemo(
-    () => (filter === "all" ? items : items.filter((i) => i.kind === filter)),
-    [items, filter],
-  );
+  // The configured organization scope (Settings → GitHub). Empty = all
+  // memberships; a non-empty list limits the whole surface to those orgs.
+  const orgScope = useAppPreferences().github.orgScope;
+  const filtered = useMemo(() => {
+    const byKind = filter === "all" ? items : items.filter((i) => i.kind === filter);
+    return orgScope.length === 0 ? byKind : byKind.filter((i) => orgScope.includes(orgOf(i.repo)));
+  }, [items, filter, orgScope]);
 
   // Memberships define the account's organization scope; activity adds any
   // organization represented by the current items. Repository options still
   // narrow to the chosen org so the two selects cascade (org → repo).
   const orgOptions = useMemo(
     () => Array.from(new Set([
-      ...(activity?.organizations ?? []),
+      ...(activity?.organizations ?? []).filter((o) => orgScope.length === 0 || orgScope.includes(o)),
       ...filtered.map((i) => orgOf(i.repo)),
       ...(orgFilter === "all" ? [] : [orgFilter]),
     ])).sort((a, b) => a.localeCompare(b)),
-    [activity?.organizations, filtered, orgFilter],
+    [activity?.organizations, filtered, orgFilter, orgScope],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);

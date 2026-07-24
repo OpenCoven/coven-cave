@@ -406,3 +406,37 @@ assert.equal(defaults.appearance.backdrop.style, "image");
   const imported = legacyStorageToPreferencesPatch(mirrored);
   assert.equal(imported.appearance?.backdrop?.style, "blaze", "legacy import restores the style");
 }
+
+// ── GitHub organization scope (issue #3701) ──────────────────────────────────
+{
+  // Default is "all organizations" → an empty scope list.
+  assert.deepEqual(createDefaultPreferences(false).github.orgScope, []);
+}
+{
+  // Normalize trims, drops non-strings/blanks, and dedupes.
+  const p = normalizeCavePreferences({ github: { orgScope: ["  Acme ", "Acme", "", 5, "Beta", null] } });
+  assert.deepEqual(p.github.orgScope, ["Acme", "Beta"], "orgScope is trimmed, deduped, string-only");
+  assert.deepEqual(normalizeCavePreferences({}).github.orgScope, [], "absent github → empty scope");
+}
+{
+  // Patch validation accepts an orgScope array and rejects a non-array / bad keys.
+  const patch = validatePreferencesPatch({ github: { orgScope: ["OpenCoven", "OpenCoven", " x "] } });
+  assert.deepEqual(patch.github?.orgScope, ["OpenCoven", "x"]);
+  assert.throws(
+    () => validatePreferencesPatch({ github: { orgScope: "OpenCoven" } }),
+    PreferencesValidationError,
+    "orgScope must be an array",
+  );
+  assert.throws(
+    () => validatePreferencesPatch({ github: { unknownKey: true } }),
+    PreferencesValidationError,
+    "unknown github keys are rejected",
+  );
+}
+{
+  // Applying a scope patch replaces the list; clearing returns to all.
+  const scoped = applyPreferencesPatch(createDefaultPreferences(true), { github: { orgScope: ["OpenCoven"] } });
+  assert.deepEqual(scoped.github.orgScope, ["OpenCoven"]);
+  const cleared = applyPreferencesPatch(scoped, { github: { orgScope: [] } });
+  assert.deepEqual(cleared.github.orgScope, [], "empty patch clears back to all");
+}
