@@ -166,7 +166,9 @@ assert.match(
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
 // prefill. Must ride the same resolveRepoRoot containment as every other GET
 // mode and go through execFile argv (no shell); an absent origin is a normal
-// state (null), never an error.
+// state (null), never an error. The returned URL is normalized server-side
+// (via normalizeGitHubRepoUrl) so credential-bearing or non-GitHub remotes
+// never reach the client.
 assert.match(
   source,
   /if \(wantRemote !== null\) return await originRemoteUrl\(root\.repoRoot\);/,
@@ -179,8 +181,13 @@ assert.match(
 );
 assert.match(
   source,
-  /NextResponse\.json\(\{ ok: true, remoteUrl: remoteUrl \|\| null \}\)/,
-  "absent origin remotes resolve to remoteUrl: null, not an error",
+  /normalizeGitHubRepoUrl\(remoteUrl\)/,
+  "the raw origin URL is normalized server-side before returning to the client",
+);
+assert.match(
+  source,
+  /NextResponse\.json\(\{ ok: true, remoteUrl: normalizeGitHubRepoUrl\(remoteUrl\) \}\)/,
+  "absent or non-GitHub remotes resolve to remoteUrl: null after normalization",
 );
 assert.match(
   source,

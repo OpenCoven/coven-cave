@@ -8,6 +8,7 @@ import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
+import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 
 export const dynamic = "force-dynamic";
@@ -474,13 +475,15 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** Origin remote URL for the repo, or null when no origin is configured —
- *  read-only probe behind the project-setup modal's GitHub prefill. */
+/** Origin remote URL for the repo, normalized to a canonical GitHub HTTPS URL
+ *  or null — read-only probe behind the project-setup modal's GitHub prefill.
+ *  Credential-bearing remotes (https://token@github.com/…) and non-GitHub
+ *  remotes are stripped to null so secrets never reach the client. */
 async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
   try {
     const { stdout } = await git(repoRoot, ["config", "--get", "remote.origin.url"]);
     const remoteUrl = stdout.trim();
-    return NextResponse.json({ ok: true, remoteUrl: remoteUrl || null });
+    return NextResponse.json({ ok: true, remoteUrl: normalizeGitHubRepoUrl(remoteUrl) });
   } catch {
     // `git config --get` exits 1 when the key is absent — a repo with no
     // origin remote is a normal state, not an error.
