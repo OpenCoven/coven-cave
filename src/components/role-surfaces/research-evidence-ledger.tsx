@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
 import {
   researchSourceStatusCounts,
   type ResearchMission,
@@ -13,6 +12,7 @@ import {
   type ResearchSourceRef,
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
+import { ResearchArtifactActions } from "./research-artifact-actions";
 
 type Props = {
   mission: ResearchMission;
@@ -150,15 +150,15 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
                   <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
                 </span>
                 {artifact.rejectionReason ? <p>{artifact.rejectionReason}</p> : null}
-                {artifact.knowledgeId ? (
-                  <button
-                    type="button"
-                    onClick={() => openGrimoireDoc("knowledge", artifact.knowledgeId!)}
-                  >
-                    Open in Grimoire
-                    <Icon name="ph:arrow-square-out" width={12} height={12} aria-hidden />
-                  </button>
-                ) : null}
+                <ResearchArtifactActions
+                  mission={mission}
+                  artifact={artifact}
+                  busy={busy}
+                  onPublish={async (artifactKey) => {
+                    const ok = await act({ action: "publish-artifact", artifactKey });
+                    if (ok) announce("Artifact published to the Grimoire.");
+                  }}
+                />
                 {artifact.state !== "rejected" ? (
                   <details className="research-artifact-reject">
                     <summary>Reject artifact</summary>

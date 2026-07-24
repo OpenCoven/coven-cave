@@ -5,13 +5,15 @@
  *
  * Center: kicker/title header, horizontal 6-phase stepper card with the bound
  * readings row, one status block per mission state (checkpoint tiles + refine,
- * live activity, completed abstract, failed retry config), the pinned
+ * live activity, completed abstract, a Grimoire/workspace "Saved" summary on
+ * completed or checkpoint runs, failed retry config), the pinned
  * decision-first stop banner, and a sticky action bar driven by
  * allowedResearchActions()/researchContinueLabel().
  *
  * Right rail: a state-dependent evidence panel (checkpoint delta triage,
- * streaming sources, artifact cards), quick links, and the full evidence
- * ledger folded into a disclosure so every ledger affordance stays reachable.
+ * streaming sources, artifact cards with the shared view/download/Grimoire/
+ * publish actions), quick links, and the full evidence ledger folded into a
+ * disclosure so every ledger affordance stays reachable.
  *
  * Every number shown is derived from real mission data; tiles whose datum is
  * missing are omitted rather than invented.
@@ -20,8 +22,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
 import {
   allowedResearchActions,
   describeResearchSchedule,
@@ -37,6 +39,7 @@ import {
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
+import { ResearchArtifactActions, fetchResearchWorkspacePath } from "./research-artifact-actions";
 import { ResearchEvidenceLedger } from "./research-evidence-ledger";
 
 type Props = {
@@ -104,11 +107,15 @@ export function ResearchMissionDetail({
   const [actionError, setActionError] = useState<string | null>(null);
   // null = untouched; the retry payload then adapts to the failure instead.
   const [retryRoot, setRetryRoot] = useState<string | null>(null);
+  // Toggles the "Saved" summary's copy-workspace-path button label; reverted
+  // by copyTimer below.
+  const [workspaceCopied, setWorkspaceCopied] = useState(false);
   const missionId = mission?.id ?? null;
   // Tracks the mission currently on screen so an action that settles after
   // the user switched missions is discarded instead of applying its
   // busy/error/announce state to the wrong mission's view.
   const missionIdRef = useRef(missionId);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A mission switch resets every piece of per-mission action state — the
   // in-flight action belongs to the previous mission (its settle handlers
@@ -119,6 +126,17 @@ export function ResearchMissionDetail({
     setRetryRoot(null);
     setActionError(null);
     setDirection("");
+  }, [missionId]);
+
+  // The copied-path confirmation is per-mission UI state too. Its cleanup
+  // clears any pending revert timer before the next mission's effect runs
+  // (or on unmount) so a stale timer from mission A can never flip mission
+  // B's confirmation back off early.
+  useEffect(() => {
+    setWorkspaceCopied(false);
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
   }, [missionId]);
 
   if (!mission) {
@@ -142,9 +160,16 @@ export function ResearchMissionDetail({
     : iteration
       ? `pass ${iteration.number} of ${mission.bounds.maxIterations}`
       : `0 of ${mission.bounds.maxIterations} passes`;
-  // The design's "draft synthesis updated · vN" tile — only when a working
-  // draft actually exists; its version is the iteration that wrote it.
-  const draftArtifact = mission.artifacts.filter((artifact) => artifact.state === "working").at(-1);
+  // The design's "draft synthesis updated · vN" tile — only when the primary
+  // deliverable is still a working draft; its version is the iteration that
+  // wrote it. Every mission now also carries the 3 standard refs (findings,
+  // source-ledger, research-log), so picking the last working ref by array
+  // position would resolve to the research-log instead of the primary draft.
+  // No fallback to a standard ref: once the primary is rejected the tile
+  // disappears, matching pre-standard-refs behavior.
+  const draftArtifact = mission.artifacts.find(
+    (artifact) => artifact.relativePath === "artifacts/primary.md" && artifact.state === "working",
+  );
   const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
   const isLive = LIVE_STATUSES.has(mission.status);
   // Archived missions are read-only: automation controls gate on this the
@@ -202,6 +227,16 @@ export function ResearchMissionDetail({
       if (stillCurrent()) setBusy(false);
     }
   };
+  // Publishing is offered on settled missions only — a cancelled/archived run
+  // should not gain a fresh Grimoire entry after the fact.
+  const settled = ["checkpoint", "completed", "failed"].includes(mission.status);
+  const publishArtifact = (artifactKey: string) => {
+    void runMissionAction(
+      "Artifact could not be published",
+      () => onAction({ action: "publish-artifact", artifactKey }),
+      () => announce("Artifact published to the Grimoire."),
+    );
+  };
   const runAction = (input: ResearchMissionActionInput) => runMissionAction(
     "Research action failed",
     () => onAction(input),
@@ -225,6 +260,26 @@ export function ResearchMissionDetail({
     () => onSchedule("RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"),
     () => announce("Paused daily research schedule created."),
   );
+  // Copies the mission workspace's on-disk path so an operator can open the
+  // working files directly. copyText falls back to execCommand outside
+  // secure contexts (the packaged Tauri webview), so the confirmation only
+  // shows on a real, verified copy.
+  const copyWorkspacePath = async () => {
+    const workspacePath = await fetchResearchWorkspacePath(mission.id);
+    if (!workspacePath) {
+      announce("Workspace path could not be resolved.");
+      return;
+    }
+    const copied = await copyText(workspacePath);
+    if (!copied) {
+      announce("Workspace path could not be copied.");
+      return;
+    }
+    setWorkspaceCopied(true);
+    announce("Workspace path copied.");
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setWorkspaceCopied(false), 2000);
+  };
 
   // Evidence-delta triage reuses the ledger's exact source-update mechanism:
   // Keep → used, Reject → rejected, Verify → stays conflicting + appends note.
@@ -463,6 +518,28 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
+          {/* ── Saved: how many artifacts are Grimoire-published (completed)
+                or still working in the mission workspace (checkpoint), plus a
+                quick way to copy that workspace's on-disk path. ── */}
+          {mission.status === "completed" || mission.status === "checkpoint" ? (
+            <section className="research-desk-block" aria-label="Saved artifacts">
+              <span className="research-desk-block__kicker">Saved</span>
+              <p className="research-desk-block__note">
+                {mission.status === "completed"
+                  ? `${mission.artifacts.filter((artifact) => artifact.knowledgeId).length} of ${mission.artifacts.filter((artifact) => artifact.state !== "rejected").length} artifacts published to the Grimoire.`
+                  : `${mission.artifacts.filter((artifact) => artifact.state === "working").length} working files saved in the mission workspace.`}
+              </p>
+              <button
+                type="button"
+                className="research-desk-artifact__open focus-ring"
+                onClick={() => void copyWorkspacePath()}
+              >
+                <Icon name="ph:copy" width={12} height={12} aria-hidden />
+                {workspaceCopied ? "Workspace path copied" : "Copy workspace path"}
+              </button>
+            </section>
+          ) : null}
+
           {/* ── Failed: retry-root config next to the pinned stop banner. ── */}
           {showRetryConfig ? (
             <div className="research-retry-config">
@@ -685,16 +762,12 @@ export function ResearchMissionDetail({
                         iteration {artifact.iteration} ·{" "}
                         <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
                       </span>
-                      {artifact.knowledgeId ? (
-                        <button
-                          type="button"
-                          className="research-desk-artifact__open"
-                          onClick={() => openGrimoireDoc("knowledge", artifact.knowledgeId!)}
-                        >
-                          Open in Grimoire
-                          <Icon name="ph:arrow-square-out" width={12} height={12} aria-hidden />
-                        </button>
-                      ) : null}
+                      <ResearchArtifactActions
+                        mission={mission}
+                        artifact={artifact}
+                        busy={busy}
+                        onPublish={settled ? publishArtifact : undefined}
+                      />
                     </li>
                   ))}
                 </ul>
