@@ -180,7 +180,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(noteToggle).toBeFocused();
     await noteToggle.click();
     await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified: lanes render, close gated.");
-    await cleanup.getByRole("button", { name: "Add note" }).click();
+    await cleanup.getByRole("button", { name: "Save note" }).click();
     await expect(noteToggle).toBeFocused();
 
     // The note posts as a comment on the bead…

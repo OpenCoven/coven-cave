@@ -8,7 +8,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/ui/search-input";
 import { Modal } from "@/components/ui/modal";
-import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -177,6 +176,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | "p0" | "p1" | "p2plus">("all");
   const [sortMode, setSortMode] = useState<"priority" | "recent">("priority");
+  // Scope segment (queue redesign): All vs. Unassigned. "Unassigned" narrows to
+  // work no familiar has picked up yet (the fastest thing to claim); it composes
+  // with — does not replace — the per-familiar rollup chips below it.
+  const [scope, setScope] = useState<"all" | "unassigned">("all");
   // Bead detail drawer — the id being inspected, null = closed.
   const [detailId, setDetailId] = useState<string | null>(null);
   // Per-lane disclosure + show-all state. Collapse persists across sessions;
@@ -421,10 +424,16 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     };
     const recency = (item: WorkQueueItem): number =>
       Date.parse(item.pr?.updatedAt ?? item.merged?.mergedAt ?? item.bead?.updated_at ?? "") || 0;
+    const matchesScope = (item: WorkQueueItem): boolean =>
+      scope === "all" || item.familiar === "unassigned";
     return queue.lanes
       .map((lane) => {
         let items = lane.items.filter(
-          (i) => (!familiarFilter || i.familiar === familiarFilter) && matchesSearch(i) && matchesPriority(i),
+          (i) =>
+            (!familiarFilter || i.familiar === familiarFilter) &&
+            matchesScope(i) &&
+            matchesSearch(i) &&
+            matchesPriority(i),
         );
         // "priority" keeps buildWorkQueue's deterministic triage order;
         // "recent" re-sorts the filtered copy without touching queue state
@@ -433,7 +442,18 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         return { ...lane, items };
       })
       .filter((lane) => lane.items.length > 0);
-  }, [queue, familiarFilter, search, priorityFilter, sortMode]);
+  }, [queue, familiarFilter, scope, search, priorityFilter, sortMode]);
+
+  // Scope counts for the segment (unfiltered by search/priority/familiar — the
+  // segment shows the whole-queue split, like the meta row's totals).
+  const scopeCounts = useMemo(() => {
+    if (!queue) return { all: 0, unassigned: 0 };
+    let unassigned = 0;
+    for (const lane of queue.lanes) {
+      for (const item of lane.items) if (item.familiar === "unassigned") unassigned += 1;
+    }
+    return { all: queue.total, unassigned };
+  }, [queue]);
 
   if (!hasLoaded) {
     return (
@@ -471,29 +491,66 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 
   return (
     <div className="fwq">
-      {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
-          Marketplace / Tasks / Grimoire): small title, live summary inline
-          (with a truthful "updated Xm ago" readout), Refresh on the right. */}
-      <header className="surface-compact-header">
-        {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
-        <p className="surface-compact-summary">
-          {q.total === 0
-            ? "No open PRs or ready beads."
-            : `${q.actionable} actionable · ${q.total} total${q.stale ? ` · ${q.stale} stale` : ""}`}
-          {lastUpdated ? <span className="fwq-updated"> · updated {relativeTime(lastUpdated)}</span> : null}
+      {/* Meta row (queue redesign) — the live summary with a truthful
+          "updated Xm ago" readout, Refresh on the right. The surface title +
+          Tasks/Queue tabs live in the hosting board header (embedded). */}
+      <header className="fwq-meta">
+        {embedded ? null : <h1 className="fwq-meta-title">Queue</h1>}
+        <p className="fwq-meta-summary">
+          {q.total === 0 ? (
+            "No open PRs or ready beads."
+          ) : (
+            <>
+              <span className="fwq-meta-strong">{q.actionable}</span> actionable
+              <span className="fwq-meta-sep">·</span>
+              <span className="fwq-meta-count">{q.total}</span> total
+              {q.stale ? (
+                <>
+                  <span className="fwq-meta-sep">·</span>
+                  {q.stale} stale
+                </>
+              ) : null}
+            </>
+          )}
+          {lastUpdated ? (
+            <>
+              <span className="fwq-meta-sep">·</span>updated {relativeTime(lastUpdated)}
+            </>
+          ) : null}
         </p>
-        <div className="surface-compact-actions">
-          <Button
-            variant="ghost"
-            size="sm"
-            leadingIcon="ph:arrow-clockwise"
-            onClick={() => void load(true)}
-            aria-label="Refresh queue"
-          >
-            Refresh
-          </Button>
-        </div>
+        <button
+          type="button"
+          className="fwq-refresh"
+          onClick={() => void load(true)}
+          aria-label="Refresh queue"
+        >
+          <Icon name="ph:arrow-clockwise" width={14} className="fwq-refresh-icon" aria-hidden />
+          Refresh
+        </button>
       </header>
+
+      {/* Scope segment — All vs. Unassigned (whole-queue split, unfiltered). */}
+      <div className="fwq-scope-row">
+        <div className="fwq-seg" role="group" aria-label="Filter by scope">
+          {(
+            [
+              ["all", "All", scopeCounts.all],
+              ["unassigned", "Unassigned", scopeCounts.unassigned],
+            ] as const
+          ).map(([value, label, count]) => (
+            <button
+              key={value}
+              type="button"
+              className={`fwq-seg-btn${scope === value ? " is-active" : ""}`}
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+            >
+              <span>{label}</span>
+              <span className="fwq-seg-count">{count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {q.byFamiliar.length > 0 ? (
         <div className="fwq-familiars" role="group" aria-label="Filter by familiar">
@@ -531,7 +588,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           aria-label="Search the queue"
           containerClassName="fwq-toolbar-search"
         />
-        <div className="fwq-toolbar-group" role="group" aria-label="Filter by priority">
+        <div className="fwq-seg" role="group" aria-label="Filter by priority">
           {(
             [
               ["all", "All"],
@@ -543,7 +600,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             <button
               key={value}
               type="button"
-              className={`fwq-chip${priorityFilter === value ? " is-active" : ""}`}
+              className={`fwq-seg-btn fwq-seg-btn--sm${priorityFilter === value ? " is-active" : ""}`}
               aria-pressed={priorityFilter === value}
               onClick={() => setPriorityFilter(value)}
             >
@@ -553,12 +610,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         </div>
         <button
           type="button"
-          className="fwq-chip fwq-toolbar-sort"
+          className="fwq-sort"
           aria-pressed={sortMode === "recent"}
           onClick={() => setSortMode((cur) => (cur === "priority" ? "recent" : "priority"))}
           title={sortMode === "priority" ? "Sort by recently updated" : "Sort by priority and oldest"}
         >
-          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={13} aria-hidden />
+          <Icon name={sortMode === "priority" ? "ph:sort-ascending" : "ph:clock"} width={14} aria-hidden />
           {sortMode === "priority" ? "Priority · oldest" : "Recently updated"}
         </button>
       </div>
@@ -622,6 +679,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                 variant="secondary"
                 onClick={() => {
                   setFamiliarFilter(null);
+                  setScope("all");
                   setSearch("");
                   setPriorityFilter("all");
                 }}
@@ -651,7 +709,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                       className={`fwq-lane-caret${collapsed ? "" : " is-open"}`}
                       aria-hidden
                     />
-                    <Icon name={LANE_ICON[lane.key]} width={15} aria-hidden />
+                    <Icon name={LANE_ICON[lane.key]} width={14} className="fwq-lane-icon" aria-hidden />
                     <span className="fwq-lane-title">{lane.title}</span>
                     <span className="fwq-lane-count">{lane.items.length}</span>
                   </button>
