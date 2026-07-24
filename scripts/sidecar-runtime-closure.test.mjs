@@ -205,6 +205,26 @@ try {
   assert.deepEqual(JSON.parse(await readFile(publishedManifest, "utf8")), published);
   assert.ok(await missing(verifiedArchive), "successful publication must consume its staged archive");
 
+  const manifestDirectory = path.join(fixture, "published", "manifest-directory");
+  const rollbackArchive = path.join(fixture, "published", ".server.tar.zst.rollback.tmp");
+  await mkdir(manifestDirectory);
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(projectRoot, "public"),
+      rollbackArchive,
+      publishedArchive,
+      manifestDirectory,
+    ),
+    /EISDIR|EPERM|ENOTDIR|EACCES/,
+    "manifest publication failure must reject",
+  );
+  assert.deepEqual(
+    await readFile(publishedArchive),
+    publishedArchiveBytes,
+    "manifest publication failure must restore the prior public archive",
+  );
+  assert.ok(await missing(rollbackArchive), "failed publication must remove its staged archive");
+
   await writeFile(tracePath, `${JSON.stringify({ version: 1, files: ["../../../outside.txt"] })}\n`, "utf8");
   await assert.rejects(
     collectTracedDependencies(projectRoot),

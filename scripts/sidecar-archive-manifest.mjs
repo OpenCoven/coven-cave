@@ -307,18 +307,34 @@ export async function publishSidecarArchive(
   manifestPath,
   temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`,
 ) {
+  const previousArchivePath = `${temporaryArchivePath}.previous`;
+  let previousArchive = false;
+  let publishedArchive = false;
   try {
     const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
     // Both files are fully written, hashed, and budgeted before either public
     // path changes. Publish the manifest last so readers never accept a new
-    // archive using stale integrity metadata.
+    // archive using stale integrity metadata. Keep the prior archive until
+    // that final rename succeeds so a manifest publication failure cannot
+    // leave a mismatched public archive/manifest pair behind.
+    try {
+      await rename(archivePath, previousArchivePath);
+      previousArchive = true;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
     await rename(temporaryArchivePath, archivePath);
+    publishedArchive = true;
     await rename(temporaryManifestPath, manifestPath);
+    await rm(previousArchivePath, { force: true }).catch(() => {});
     return manifest;
   } catch (error) {
+    if (publishedArchive) await rm(archivePath, { force: true });
+    if (previousArchive) await rename(previousArchivePath, archivePath);
     await Promise.all([
       rm(temporaryArchivePath, { force: true }),
       rm(temporaryManifestPath, { force: true }),
+      rm(previousArchivePath, { force: true }),
     ]);
     throw error;
   }
